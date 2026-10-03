@@ -1,0 +1,687 @@
+using Archipelago.MultiClient.Net;
+using Godot;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.IO.Compression;
+using System.Linq;
+using Newtonsoft.Json;
+using AP_Atlas.Core.PopTracker;
+using System.Net.Http;
+using System.Threading.Tasks;
+using System.Text.RegularExpressions;
+
+namespace AP_Atlas.Core
+{
+    public partial class MapPackManagerControl : MarginContainer
+    {
+        public event Action OnDataRefreshed;
+        private VBoxContainer _packListVBox;
+        private PanelContainer _selectedPackRow;
+        private Action<string> _logAction;
+        private Action _showOverlayAction;
+        private Action _hideOverlayAction;
+        private Func<HashSet<string>> _getActiveGamesFunc;
+
+        private Func<List<ArchipelagoSession>> _getActiveSessionsFunc;
+        private ScrollContainer _mainScroll;
+        private MarginContainer _inspectorContainer;
+        public Control SidebarContent { get; private set; }
+
+        public MapPackManagerControl(Action<string> logAction, Action showOverlayAction, Action hideOverlayAction, Func<HashSet<string>> getActiveGamesFunc, Func<List<ArchipelagoSession>> getActiveSessionsFunc = null)
+        {
+            _logAction = logAction;
+            _showOverlayAction = showOverlayAction;
+            _hideOverlayAction = hideOverlayAction;
+            _getActiveGamesFunc = getActiveGamesFunc;
+            _getActiveSessionsFunc = getActiveSessionsFunc;
+            SizeFlagsHorizontal = SizeFlags.ExpandFill;
+            SizeFlagsVertical = SizeFlags.ExpandFill;
+            
+            SidebarContent = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
+            var sidebarMargin = new MarginContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
+            SidebarContent.AddChild(sidebarMargin);
+            var sidebarVBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
+            sidebarMargin.AddChild(sidebarVBox);
+
+            _mainScroll = new ScrollContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
+            _packListVBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            _mainScroll.AddChild(_packListVBox);
+            sidebarVBox.AddChild(_mainScroll);
+            
+            var btnVBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            btnVBox.AddThemeConstantOverride("separation", 10);
+            
+            var searchBtn = new Button { Text = "Find Missing Packs Online" };
+            searchBtn.AddThemeColorOverride("font_color", Colors.SkyBlue);
+            searchBtn.Pressed += OnSearchPressed;
+            btnVBox.AddChild(searchBtn);
+            
+            var updatesBtn = new Button { Text = "Check for Updates" };
+            updatesBtn.AddThemeColorOverride("font_color", Colors.LightGreen);
+            updatesBtn.Pressed += OnCheckUpdatesPressed;
+            btnVBox.AddChild(updatesBtn);
+            
+            var importBtn = new Button { Text = "Install Pack (Zip)" };
+            importBtn.Pressed += OnImportPackPressed;
+            btnVBox.AddChild(importBtn);
+            
+            var folderBtn = new Button { Text = "Open Packs Folder" };
+            folderBtn.Pressed += OnOpenFolderPressed;
+            btnVBox.AddChild(folderBtn);
+            
+            var rescanBtn = new Button { Text = "Rescan Packs" };
+            rescanBtn.AddThemeColorOverride("font_color", Godot.Colors.Yellow);
+            rescanBtn.Pressed += RefreshPackList;
+            btnVBox.AddChild(rescanBtn);
+            
+            sidebarVBox.AddChild(new HSeparator());
+            sidebarVBox.AddChild(btnVBox);
+            
+            _inspectorContainer = new MarginContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
+            _inspectorContainer.AddThemeConstantOverride("margin_left", 20);
+            _inspectorContainer.AddThemeConstantOverride("margin_top", 20);
+            _inspectorContainer.AddThemeConstantOverride("margin_right", 20);
+            _inspectorContainer.AddThemeConstantOverride("margin_bottom", 20);
+            AddChild(_inspectorContainer);
+            
+            var emptyLbl = new Label { Text = "Select a map pack to view details.", HorizontalAlignment = HorizontalAlignment.Center };
+            _inspectorContainer.AddChild(emptyLbl);
+            
+            VisibilityChanged += () => { if (Visible) RefreshPackList(); };
+        }
+
+        
+
+        private void ShowPackDetails(string zipPath)
+        {
+            foreach (Node n in _inspectorContainer.GetChildren()) n.QueueFree();
+            var pack = PopTrackerPackLoader.InspectZipPack(zipPath, null);
+            if (pack == null) return;
+            var vbox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
+            _inspectorContainer.AddChild(vbox);
+            
+            var title = new Label { Text = pack.Manifest.Name };
+            title.AddThemeFontSizeOverride("font_size", 24);
+            vbox.AddChild(title);
+
+            ArchipelagoSession activeSession = null;
+            if (_getActiveSessionsFunc != null) {
+                var sessions = _getActiveSessionsFunc();
+                foreach (var s in sessions) {
+                    if (PopTrackerPackLoader.IsGameNameMatch(pack.Manifest.GameName, s.ConnectionInfo.Game) || PopTrackerPackLoader.IsGameNameMatch(pack.Manifest.Name, s.ConnectionInfo.Game)) {
+                        activeSession = s;
+                        break;
+                    }
+                }
+            }
+
+            var richText = new RichTextLabel { BbcodeEnabled = true, SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
+            string txt = $"[b]Game:[/b] {pack.Manifest.GameName}\n";
+            txt += $"[b]Author:[/b] {pack.Manifest.Author}\n";
+            txt += $"[b]Version:[/b] {pack.Manifest.GetActualVersion()}\n\n";
+
+            txt += $"[b]--- METADATA ---[/b]\n";
+            txt += $"[color=lime]Key Items Extracted:[/color] {pack.ItemsByCode.Count}\n";
+            txt += $"[color=lime]Maps Extracted:[/color] {pack.Maps.Count}\n";
+            txt += $"[color=lime]Nodes Extracted:[/color] {pack.Locations.Count}\n\n";
+
+            if (activeSession != null) {
+                txt += $"[b]--- LOGIC TRACKER COMPARISON (Active Session: {activeSession.ConnectionInfo.Game}) ---[/b]\n";
+                
+                var apIds = activeSession.Locations.AllLocations;
+                int apCount = apIds.Count;
+                
+                int matchedSections = 0;
+                int totalSections = 0;
+                int matchedIds = 0;
+                
+                var missingIds = new HashSet<long>();
+                var foundIds = new HashSet<long>();
+                
+                var idToName = new Dictionary<long, string>();
+                var nameToId = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+                foreach (var id in apIds) {
+                    string n = activeSession.Locations.GetLocationNameFromId(id);
+                    if (!string.IsNullOrEmpty(n)) {
+                        idToName[id] = n;
+                        nameToId[n] = id;
+                        int dash = n.IndexOf(" - ");
+                        if (dash > 0) nameToId[n.Substring(0, dash).Trim()] = id;
+                    }
+                    missingIds.Add(id);
+                }
+
+                foreach (var loc in pack.Locations) {
+                    string searchName = loc.Name;
+                    if (loc.Sections != null && loc.Sections.Count > 0) {
+                        foreach (var sec in loc.Sections) {
+                            totalSections++;
+                            string sName = !string.IsNullOrEmpty(sec.Name) ? sec.Name : searchName;
+                            if (nameToId.TryGetValue(sName, out long id)) {
+                                matchedSections++;
+                                if (!foundIds.Contains(id)) {
+                                    foundIds.Add(id);
+                                    missingIds.Remove(id);
+                                    matchedIds++;
+                                }
+                            }
+                        }
+                    } else {
+                        totalSections++;
+                        if (nameToId.TryGetValue(searchName, out long id)) {
+                            matchedSections++;
+                            if (!foundIds.Contains(id)) {
+                                foundIds.Add(id);
+                                missingIds.Remove(id);
+                                matchedIds++;
+                            }
+                        }
+                    }
+                }
+
+                txt += $"[color=cyan]AP Logic Engine Checks:[/color] {apCount}\n";
+                txt += $"[color=cyan]Map Pack Checks:[/color] {totalSections}\n";
+                txt += $"[color=lime]Successfully Linked:[/color] {matchedIds}\n";
+                
+                if (missingIds.Count > 0) {
+                    txt += $"\n[color=red]Warning: {missingIds.Count} checks in the Logic Engine are completely missing from the Map Pack![/color]\n";
+                    txt += $"[color=gray](This usually happens when map packs intentionally omit Menu/Shop items, or when location names don't match)[/color]\n";
+                    int sample = 0;
+                    foreach (var mId in missingIds) {
+                        if (sample++ < 5) txt += $"  - {idToName[mId]}\n";
+                    }
+                    if (missingIds.Count > 5) txt += $"  ...and {missingIds.Count - 5} more.\n";
+                }
+            } else {
+                txt += $"[color=gray]Connect to an Archipelago slot playing this game to see Logic Engine comparisons.[/color]\n";
+            }
+
+            txt += $"\n[b]--- MAP LIST ---[/b]\n";
+            foreach(var map in pack.Maps.Values) {
+                txt += $" - {map.Name} [color=gray]({map.Id})[/color]\n";
+            }
+
+            richText.Text = txt;
+            vbox.AddChild(richText);
+            
+            vbox.AddChild(new HSeparator());
+            var btnHBox = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
+            btnHBox.AddThemeConstantOverride("separation", 20);
+            
+            var updateBtn = new Button { Text = "Update Map Pack", CustomMinimumSize = new Vector2(200, 40) };
+            updateBtn.AddThemeColorOverride("font_color", Colors.SkyBlue);
+            updateBtn.Pressed += () => CheckSinglePackUpdate(zipPath);
+            btnHBox.AddChild(updateBtn);
+            
+            var deleteBtn = new Button { Text = "Delete Map Pack", CustomMinimumSize = new Vector2(200, 40) };
+            deleteBtn.AddThemeColorOverride("font_color", Colors.Crimson);
+            deleteBtn.Pressed += () => {
+                System.IO.File.Delete(zipPath);
+                RefreshPackList();
+                foreach (Node n in _inspectorContainer.GetChildren()) n.QueueFree();
+                _inspectorContainer.AddChild(new Label { Text = "Select a map pack to view details.", HorizontalAlignment = HorizontalAlignment.Center });
+            };
+            btnHBox.AddChild(deleteBtn);
+            
+            vbox.AddChild(btnHBox);
+            OnDataRefreshed?.Invoke();
+        }
+
+        private async void CheckSinglePackUpdate(string zipPath)
+        {
+            _logAction($"[color=cyan]Checking for updates...[/color]");
+            try
+            {
+                using var archive = System.IO.Compression.ZipFile.OpenRead(zipPath);
+                var manifestEntry = archive.Entries.FirstOrDefault(e => e.FullName.EndsWith("manifest.json", StringComparison.OrdinalIgnoreCase));
+                if (manifestEntry == null) { _logAction("[color=red]No manifest found in pack.[/color]"); return; }
+                using var stream = manifestEntry.Open();
+                using var reader = new System.IO.StreamReader(stream);
+                var json = reader.ReadToEnd();
+                var manifest = Newtonsoft.Json.JsonConvert.DeserializeObject<PopTrackerManifest>(json);
+                if (manifest == null || string.IsNullOrEmpty(manifest.VersionsUrl)) { _logAction("[color=yellow]Pack does not support auto-updates (No VersionsUrl provided).[/color]"); return; }
+                
+                using var client = new System.Net.Http.HttpClient();
+                client.DefaultRequestHeaders.Add("User-Agent", "AP-Atlas-Tracker");
+                var res = await client.GetStringAsync(manifest.VersionsUrl);
+                Newtonsoft.Json.Linq.JObject latestObj = null;
+                if (res.TrimStart().StartsWith("["))
+                {
+                    var versionsArray = Newtonsoft.Json.Linq.JArray.Parse(res);
+                    if (versionsArray.HasValues) latestObj = versionsArray[0] as Newtonsoft.Json.Linq.JObject;
+                }
+                else if (res.TrimStart().StartsWith("{"))
+                {
+                    latestObj = Newtonsoft.Json.Linq.JObject.Parse(res);
+                }
+                if (latestObj != null)
+                {
+                    string latestVersion = latestObj["version"]?.ToString() ?? latestObj["tag_name"]?.ToString() ?? latestObj["name"]?.ToString();
+                    if (!string.IsNullOrEmpty(latestVersion) && latestVersion != manifest.GetActualVersion())
+                    {
+                        string downloadUrl = latestObj?["download_url"]?.ToString();
+                        if (string.IsNullOrEmpty(downloadUrl)) {
+                            var assets = latestObj?["assets"] as Newtonsoft.Json.Linq.JArray;
+                            if (assets != null && assets.Count > 0) downloadUrl = assets[0]["browser_download_url"]?.ToString();
+                            else downloadUrl = latestObj?["html_url"]?.ToString() ?? latestObj?["url"]?.ToString() ?? "";
+                        }
+                        _logAction($"[color=lime]Update available for {manifest.Name}:[/color] v{latestVersion}");
+                        if (!string.IsNullOrEmpty(downloadUrl))
+                        {
+                            _logAction($"Opening download page...");
+                            Godot.OS.ShellOpen(downloadUrl);
+                        }
+                    }
+                    else
+                    {
+                        _logAction($"[color=green]{manifest.Name} is up to date (v{manifest.GetActualVersion()}).[/color]");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logAction($"[color=red]Failed to check for updates: {ex.Message}[/color]");
+            }
+        }
+private void RefreshPackList()
+        {
+
+            foreach (Node n in _packListVBox.GetChildren()) n.QueueFree();
+
+            string dataDir = System.IO.Path.Combine(DataManager.GetDataDirectory(), "packs");
+            if (!Directory.Exists(dataDir)) Directory.CreateDirectory(dataDir);
+
+            var files = Directory.GetFiles(dataDir, "*.zip");
+            if (files.Length == 0)
+            {
+                var lbl = new Label { Text = "No map packs installed.", HorizontalAlignment = HorizontalAlignment.Center };
+                lbl.AddThemeColorOverride("font_color", Colors.Gray);
+                _packListVBox.AddChild(lbl);
+                return;
+            }
+
+            foreach (var file in files)
+            {
+                try
+                {
+                    var pack = PopTrackerPackLoader.InspectZipPack(file, null);
+                    if (pack == null || pack.Manifest == null) continue;
+                    var manifest = pack.Manifest;
+
+                    var row = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+                    var style = new StyleBoxFlat { BgColor = new Color("#252526"), BorderColor = new Color("#333"), BorderWidthBottom = 1, BorderWidthTop = 1, BorderWidthLeft = 1, BorderWidthRight = 1, CornerRadiusTopLeft = 4, CornerRadiusTopRight = 4, CornerRadiusBottomLeft = 4, CornerRadiusBottomRight = 4, ContentMarginLeft = 15, ContentMarginRight = 15, ContentMarginTop = 10, ContentMarginBottom = 10 };
+                    row.AddThemeStyleboxOverride("panel", style);
+
+                    var hbox = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+                    var infoVBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+                    
+                    var titleLbl = new Label { Text = manifest.Name };
+                    titleLbl.AddThemeFontSizeOverride("font_size", 16);
+                    titleLbl.AddThemeColorOverride("font_color", Colors.White);
+                    infoVBox.AddChild(titleLbl);
+
+                    var detailLbl = new Label { Text = $"Game: {manifest.GameName} | v{manifest.GetActualVersion()}" };
+                    detailLbl.AddThemeFontSizeOverride("font_size", 12);
+                    detailLbl.AddThemeColorOverride("font_color", Colors.LightGray);
+                    infoVBox.AddChild(detailLbl);
+                    
+                    var capsHbox = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+                    capsHbox.AddThemeConstantOverride("separation", 15);
+                    var itemIndicator = new Label { Text = $"Items: {pack.ItemsByCode.Count}" };
+                    itemIndicator.AddThemeFontSizeOverride("font_size", 11);
+                    itemIndicator.AddThemeColorOverride("font_color", pack.ItemsByCode.Count > 0 ? Colors.LightGreen : Colors.DimGray);
+                    capsHbox.AddChild(itemIndicator);
+                    var mapIndicator = new Label { Text = $"Maps: {pack.Maps.Count}" };
+                    mapIndicator.AddThemeFontSizeOverride("font_size", 11);
+                    mapIndicator.AddThemeColorOverride("font_color", pack.Maps.Count > 0 ? Colors.LightGreen : Colors.DimGray);
+                    capsHbox.AddChild(mapIndicator);
+                    var locIndicator = new Label { Text = $"Locs: {pack.Locations.Count}" };
+                    locIndicator.AddThemeFontSizeOverride("font_size", 11);
+                    locIndicator.AddThemeColorOverride("font_color", pack.Locations.Count > 0 ? Colors.LightGreen : Colors.DimGray);
+                    capsHbox.AddChild(locIndicator);
+                    infoVBox.AddChild(capsHbox);
+                    
+                    hbox.AddChild(infoVBox);
+                    
+                    row.MouseFilter = MouseFilterEnum.Stop;
+                    row.MouseDefaultCursorShape = CursorShape.PointingHand;
+                    string localFilePath = file;
+                    row.GuiInput += (@event) => {
+                        if (@event is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Left)
+                        {
+                            if (_selectedPackRow != null && GodotObject.IsInstanceValid(_selectedPackRow)) {
+                                var oldStyle = new StyleBoxFlat { BgColor = new Color("#252526"), BorderColor = new Color("#333"), BorderWidthBottom = 1, BorderWidthTop = 1, BorderWidthLeft = 1, BorderWidthRight = 1, CornerRadiusTopLeft = 4, CornerRadiusTopRight = 4, CornerRadiusBottomLeft = 4, CornerRadiusBottomRight = 4, ContentMarginLeft = 15, ContentMarginRight = 15, ContentMarginTop = 10, ContentMarginBottom = 10 };
+                                _selectedPackRow.AddThemeStyleboxOverride("panel", oldStyle);
+                            }
+                            _selectedPackRow = row;
+                            var newStyle = new StyleBoxFlat { BgColor = new Color("#2A2D2E"), BorderColor = new Color("#007acc"), BorderWidthLeft = 4, BorderWidthBottom = 1, BorderWidthTop = 1, BorderWidthRight = 1, CornerRadiusTopLeft = 4, CornerRadiusTopRight = 4, CornerRadiusBottomLeft = 4, CornerRadiusBottomRight = 4, ContentMarginLeft = 15, ContentMarginRight = 15, ContentMarginTop = 10, ContentMarginBottom = 10 };
+                            row.AddThemeStyleboxOverride("panel", newStyle);
+                            
+                            ShowPackDetails(localFilePath);
+                        }
+                    };
+                    row.AddChild(hbox);
+                    _packListVBox.AddChild(row);
+                }
+                catch (Exception e)
+                {
+                    GD.PrintErr($"Failed to read pack {file}: {e.Message}");
+                }
+            }
+            OnDataRefreshed?.Invoke();
+        }
+
+        private void OnOpenFolderPressed()
+        {
+            string dataDir = System.IO.Path.Combine(DataManager.GetDataDirectory(), "packs");
+            if (!Directory.Exists(dataDir)) Directory.CreateDirectory(dataDir);
+            OS.ShellOpen(dataDir);
+            _logAction($"[color=yellow]Opened Packs directory.[/color]");
+        }
+
+        private async void OnSearchPressed()
+        {
+            var games = _getActiveGamesFunc?.Invoke() ?? new HashSet<string>();
+            if (games.Count == 0)
+            {
+                var dialog = new Godot.AcceptDialog { Title = "No Active Games", DialogText = "Please connect to at least one Archipelago slot first so AP Atlas knows which games to search for." };
+                AddChild(dialog);
+                dialog.PopupCentered();
+                _logAction("[color=yellow]Pack Search aborted: No active slots connected to Archipelago.[/color]");
+                return;
+            }
+
+            _showOverlayAction();
+            _logAction($"[color=cyan]Searching GitHub for map packs for {games.Count} active game(s)...[/color]");
+
+            using var client = new System.Net.Http.HttpClient();
+            client.DefaultRequestHeaders.Add("User-Agent", "AP-Atlas-Tracker");
+
+            HashSet<string> installedGames = new HashSet<string>();
+            string packsDir = System.IO.Path.Combine(DataManager.GetDataDirectory(), "packs");
+            if (System.IO.Directory.Exists(packsDir)) {
+                foreach (var file in System.IO.Directory.GetFiles(packsDir, "*.zip")) {
+                    try {
+                        using var archive = System.IO.Compression.ZipFile.OpenRead(file);
+                        var manifestEntry = archive.Entries.FirstOrDefault(e => e.FullName.EndsWith("manifest.json", StringComparison.OrdinalIgnoreCase));
+                        if (manifestEntry != null) {
+                            using var stream = manifestEntry.Open();
+                            using var reader = new System.IO.StreamReader(stream);
+                            string json = reader.ReadToEnd();
+                            var manifest = Newtonsoft.Json.JsonConvert.DeserializeObject<PopTracker.PopTrackerManifest>(json);
+                            if (manifest != null && !string.IsNullOrEmpty(manifest.GameName)) {
+                                installedGames.Add(manifest.GameName);
+                            }
+                        }
+                    } catch {}
+                }
+            }
+
+            foreach (var game in games)
+            {
+                bool alreadyInstalled = false;
+                foreach(var installed in installedGames) {
+                    if (PopTracker.PopTrackerPackLoader.IsGameNameMatch(installed, game)) {
+                        alreadyInstalled = true;
+                        break;
+                    }
+                }
+                
+                if (alreadyInstalled) {
+                    _logAction($"[color=green]--- {game} already has a map pack installed. Skipping search. ---[/color]");
+                    continue;
+                }
+
+                _logAction($"[color=gray]--- Searching for {game} ---[/color]");
+                try
+                {
+                    var variations = GetSearchVariations(game);
+                    bool found = false;
+                    Newtonsoft.Json.Linq.JArray items = null;
+
+                    foreach (var query in variations)
+                    {
+                        string searchUrl = $"https://api.github.com/search/repositories?q={Uri.EscapeDataString(query)}";
+                        var res = await client.GetStringAsync(searchUrl);
+                        var jObject = Newtonsoft.Json.Linq.JObject.Parse(res);
+                        items = jObject["items"] as Newtonsoft.Json.Linq.JArray;
+                        
+                        if (items != null && items.Count > 0)
+                        {
+                            found = true;
+                            _logAction($"[color=gray](Matched using query: {query})[/color]");
+                            break;
+                        }
+                    }
+
+                    if (found && items != null)
+                    {
+                        var firstHit = items[0];
+                        string repoFullName = firstHit["full_name"]?.ToString() ?? "";
+                        _logAction($"[color=lime]Found best map pack for {game}:[/color] {repoFullName}");
+                        
+                        string downloadUrl = "";
+                        string zipFileName = repoFullName.Replace("/", "_") + ".zip";
+
+                        try
+                        {
+                            var releaseUrl = $"https://api.github.com/repos/{repoFullName}/releases/latest";
+                            var releaseRes = await client.GetStringAsync(releaseUrl);
+                            var releaseObj = Newtonsoft.Json.Linq.JObject.Parse(releaseRes);
+                            var assets = releaseObj["assets"] as Newtonsoft.Json.Linq.JArray;
+                            if (assets != null)
+                            {
+                                foreach (var asset in assets)
+                                {
+                                    string assetName = asset["name"]?.ToString();
+                                    if (!string.IsNullOrEmpty(assetName) && assetName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        downloadUrl = asset["browser_download_url"]?.ToString();
+                                        zipFileName = assetName;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        catch { /* No releases or error fetching release */ }
+
+                        if (string.IsNullOrEmpty(downloadUrl))
+                        {
+                            _logAction("[color=gray]No release zip found, falling back to repository source zip...[/color]");
+                            downloadUrl = $"https://api.github.com/repos/{repoFullName}/zipball/HEAD";
+                        }
+
+                        _logAction($"[color=cyan]Downloading pack...[/color] ({downloadUrl})");
+                        try
+                        {
+                            var reqMsg = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, downloadUrl);
+                            reqMsg.Headers.Add("Accept", "application/vnd.github.v3+json");
+                            var response = await client.SendAsync(reqMsg);
+                            response.EnsureSuccessStatusCode();
+                            var zipBytes = await response.Content.ReadAsByteArrayAsync();
+
+                            string destDir = System.IO.Path.Combine(DataManager.GetDataDirectory(), "packs");
+                            if (!System.IO.Directory.Exists(destDir)) System.IO.Directory.CreateDirectory(destDir);
+                            string destPath = System.IO.Path.Combine(destDir, zipFileName);
+                            System.IO.File.WriteAllBytes(destPath, zipBytes);
+                            _logAction($"[color=lime]Successfully auto-installed {zipFileName}![/color]");
+                            
+                            // Re-render UI list
+                            Callable.From(RefreshPackList).CallDeferred();
+                        }
+                        catch (Exception ex)
+                        {
+                            _logAction($"[color=red]Failed to download pack:[/color] {ex.Message}");
+                        }
+                    }
+                    else
+                    {
+                        _logAction($"[color=orange]No map packs found for {game} after trying {variations.Count} variations.[/color]");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logAction($"[color=red]Search failed for {game}: {ex.Message}[/color]");
+                }
+            }
+
+            _hideOverlayAction();
+        }
+
+        private async void OnCheckUpdatesPressed()
+        {
+            _logAction($"[color=cyan]Checking installed packs for updates...[/color]");
+            _showOverlayAction();
+
+            string dataDir = System.IO.Path.Combine(DataManager.GetDataDirectory(), "packs");
+            if (!Directory.Exists(dataDir)) Directory.CreateDirectory(dataDir);
+
+            var files = Directory.GetFiles(dataDir, "*.zip");
+            using var client = new System.Net.Http.HttpClient();
+            client.DefaultRequestHeaders.Add("User-Agent", "AP-Atlas-Tracker");
+
+            int checkedCount = 0;
+            int updatesAvailable = 0;
+
+            foreach (var file in files)
+            {
+                try
+                {
+                    using var archive = ZipFile.OpenRead(file);
+                    var manifestEntry = archive.Entries.FirstOrDefault(e => e.FullName.EndsWith("manifest.json", StringComparison.OrdinalIgnoreCase));
+                    if (manifestEntry == null) continue;
+
+                    using var stream = manifestEntry.Open();
+                    using var reader = new StreamReader(stream);
+                    var json = reader.ReadToEnd();
+                    var manifest = JsonConvert.DeserializeObject<PopTrackerManifest>(json);
+
+                    if (manifest == null || string.IsNullOrEmpty(manifest.VersionsUrl)) continue;
+
+                    checkedCount++;
+                    _logAction($"[color=gray]Checking {manifest.Name} (Current: {manifest.GetActualVersion()})...[/color]");
+
+                    var res = await client.GetStringAsync(manifest.VersionsUrl);
+                    Newtonsoft.Json.Linq.JObject latestObj = null;
+                    if (res.TrimStart().StartsWith("["))
+                    {
+                        var versionsArray = Newtonsoft.Json.Linq.JArray.Parse(res);
+                        if (versionsArray.HasValues) latestObj = versionsArray[0] as Newtonsoft.Json.Linq.JObject;
+                    }
+                    else if (res.TrimStart().StartsWith("{"))
+                    {
+                        latestObj = Newtonsoft.Json.Linq.JObject.Parse(res);
+                    }
+                    
+                    if (latestObj != null)
+                    {
+                        string latestVersion = latestObj["version"]?.ToString() ?? latestObj["tag_name"]?.ToString() ?? latestObj["name"]?.ToString();
+                        
+                        if (!string.IsNullOrEmpty(latestVersion) && latestVersion != manifest.GetActualVersion())
+                        {
+                            string downloadUrl = latestObj?["download_url"]?.ToString();
+                            if (string.IsNullOrEmpty(downloadUrl)) {
+                                var assets = latestObj?["assets"] as Newtonsoft.Json.Linq.JArray;
+                                if (assets != null && assets.Count > 0) {
+                                    downloadUrl = assets[0]["browser_download_url"]?.ToString();
+                                } else {
+                                    downloadUrl = latestObj?["html_url"]?.ToString() ?? latestObj?["url"]?.ToString() ?? "";
+                                }
+                            }
+                            _logAction($"[color=lime]Update available for {manifest.Name}:[/color] v{latestVersion}");
+                            if (!string.IsNullOrEmpty(downloadUrl))
+                            {
+                                _logAction($"[url={downloadUrl}]Download v{latestVersion}[/url]");
+                            }
+                            updatesAvailable++;
+                        }
+                        else
+                        {
+                            _logAction($"[color=green]{manifest.Name} is up to date.[/color]");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logAction($"[color=red]Failed to check update for {Path.GetFileName(file)}: {ex.Message}[/color]");
+                }
+            }
+
+            if (checkedCount == 0)
+            {
+                _logAction("[color=orange]None of the installed packs support auto-updates (missing versions_url).[/color]");
+            }
+            else
+            {
+                _logAction($"[color=cyan]Update check complete. {updatesAvailable} update(s) found across {checkedCount} pack(s).[/color]");
+            }
+
+            _hideOverlayAction();
+        }
+    
+        private void OnImportPackPressed()
+        {
+            var fd = new FileDialog
+            {
+                FileMode = FileDialog.FileModeEnum.OpenFile,
+                Access = FileDialog.AccessEnum.Filesystem,
+                Title = "Select PopTracker Pack (.zip)",
+                Filters = new string[] { "*.zip ; Zip Archives" },
+                UseNativeDialog = true
+            };
+            
+            fd.FileSelected += (path) => {
+                try {
+                    string destDir = System.IO.Path.Combine(DataManager.GetDataDirectory(), "packs");
+                    if (!System.IO.Directory.Exists(destDir)) System.IO.Directory.CreateDirectory(destDir);
+                    string destPath = System.IO.Path.Combine(destDir, System.IO.Path.GetFileName(path));
+                    System.IO.File.Copy(path, destPath, true);
+                    _logAction($"[color=lime]Successfully installed map pack: {System.IO.Path.GetFileName(path)}[/color]");
+                    RefreshPackList();
+                } catch (Exception ex) {
+                    _logAction($"[color=red]Failed to install pack: {ex.Message}[/color]");
+                }
+                fd.QueueFree();
+            };
+            fd.Canceled += () => fd.QueueFree();
+            AddChild(fd);
+            fd.PopupCentered();
+        }
+
+        private List<string> GetSearchVariations(string gameName)
+        {
+            var variations = new List<string>();
+            variations.Add($"\"{gameName}\" Archipelago PopTracker");
+            variations.Add($"\"{gameName}\" PopTracker");
+            
+            string roman = gameName;
+            roman = Regex.Replace(roman, @"\bVIII\b", "8");
+            roman = Regex.Replace(roman, @"\bVII\b", "7");
+            roman = Regex.Replace(roman, @"\bVI\b", "6");
+            roman = Regex.Replace(roman, @"\bIV\b", "4");
+            roman = Regex.Replace(roman, @"\bV\b", "5");
+            roman = Regex.Replace(roman, @"\bIII\b", "3");
+            roman = Regex.Replace(roman, @"\bII\b", "2");
+            roman = Regex.Replace(roman, @"\bI\b", "1");
+            
+            if (roman != gameName)
+            {
+                variations.Add($"\"{roman}\" PopTracker");
+                variations.Add($"{roman} PopTracker");
+            }
+            
+            if (gameName.Contains(":"))
+            {
+                string subtitle = gameName.Substring(gameName.IndexOf(":") + 1).Trim();
+                if (!string.IsNullOrEmpty(subtitle))
+                {
+                    variations.Add($"\"{subtitle}\" PopTracker");
+                }
+            }
+            
+            variations.Add($"{gameName} PopTracker");
+            return variations;
+        }
+}
+}

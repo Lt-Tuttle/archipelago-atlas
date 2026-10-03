@@ -1,0 +1,28 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+config/icon="res://Assets/Graphics/icon.png"
+
+config/name="The Archipelago Atlas"
+run/main_scene="res://Scenes/Main_Window.tscn"
+config/features=PackedStringArray("4.3", "C#", "Forward Plus")
+
+[dotnet]
+
+project/assembly_name="AP_Atlas"
+
+
+[display]
+
+window/size/viewport_width=1152
+window/size/viewport_height=648
+
+config/windows_native_icon="res://Assets/Graphics/icon.ico"
