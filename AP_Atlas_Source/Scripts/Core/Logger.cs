@@ -7,6 +7,7 @@ namespace AP_Atlas.Core
     public static class Logger
     {
         private static string _logFilePath;
+        private static readonly object _fileLock = new object();
         public static Action<string, string> OnLogMessage;
 
         static Logger()
@@ -29,7 +30,8 @@ namespace AP_Atlas.Core
             string logEntry = $"[{time}] [{level}] {message}";
             try
             {
-                File.AppendAllText(_logFilePath, logEntry + System.Environment.NewLine);
+                // Called from network and process threads as well as the main thread.
+                lock (_fileLock) File.AppendAllText(_logFilePath, logEntry + System.Environment.NewLine);
             }
             catch (Exception ex)
             {

@@ -40,6 +40,14 @@ public class LogicEngineManager
     private StreamWriter _engineWriter;
     private StreamReader _engineReader;
 
+    // A ReadLineAsync that outlived a timed-out request. StreamReader allows only one outstanding read,
+    // so the next request must keep awaiting this task rather than starting another.
+    private Task<string> _pendingRead;
+
+    // Every request carries an id that the bridge echoes back, so a late reply to a timed-out
+    // request is discarded instead of being mistaken for the answer to the next one.
+    private int _nextRequestId = 0;
+
     public async Task<bool> StartEngineAsync(string game, string playerName, int slot, Dictionary<string, object> slotData, IEnumerable<long> allLocations = null)
     {
         if (_engineProcess != null && !_engineProcess.HasExited) return true;
@@ -63,12 +71,18 @@ public class LogicEngineManager
             };
 
             _engineProcess = new System.Diagnostics.Process { StartInfo = startInfo };
+            // stderr must be drained continuously: if its pipe buffer fills, the bridge blocks on its next log write.
+            _engineProcess.ErrorDataReceived += (_, e) =>
+            {
+                if (!string.IsNullOrWhiteSpace(e.Data)) _logger("PYTHON: " + e.Data);
+            };
             _engineProcess.Start();
+            _engineProcess.BeginErrorReadLine();
 
             _engineWriter = _engineProcess.StandardInput;
             _engineReader = _engineProcess.StandardOutput;
+            _pendingRead = null;
 
-            // Send Init
             var initReq = new Dictionary<string, object>
             {
                 { "action", "init" },
@@ -79,18 +93,14 @@ public class LogicEngineManager
                 { "all_locations", allLocations != null ? new List<long>(allLocations) : new List<long>() }
             };
 
-            await _engineWriter.WriteLineAsync(Newtonsoft.Json.JsonConvert.SerializeObject(initReq));
-            await _engineWriter.FlushAsync();
-
-            string responseStr = await ReadJsonResponseAsync(60000);
-            if (string.IsNullOrEmpty(responseStr))
+            var response = await SendRequestAsync(initReq, 60000);
+            if (response == null)
             {
-                _logger("Logic Engine Start Failed: ReadJsonResponseAsync timed out or returned empty.");
+                _logger("Logic Engine Start Failed: no response from the bridge within 60 seconds.");
                 StopEngine();
                 return false;
             }
 
-            var response = Newtonsoft.Json.Linq.JObject.Parse(responseStr);
             if (response["status"]?.ToString() == "ready")
             {
                 var poolToken = response["item_pool"];
@@ -101,12 +111,10 @@ public class LogicEngineManager
                 }
                 return true;
             }
-            else
-            {
-                _logger("Logic Engine Start Failed: " + responseStr);
-                StopEngine();
-                return false;
-            }
+
+            _logger("Logic Engine Start Failed: " + response.ToString(Newtonsoft.Json.Formatting.None));
+            StopEngine();
+            return false;
         }
         catch (Exception ex)
         {
@@ -116,11 +124,10 @@ public class LogicEngineManager
         }
     }
 
-    public List<long> LastExcludedLocations { get; private set; } = new List<long>();
+    public HashSet<long> LastExcludedLocations { get; private set; } = new HashSet<long>();
 
     public async Task<List<long>> GetReachableLocationsAsync(List<long> itemIds, IEnumerable<long> missingLocations = null)
     {
-        _logger("GetReachableLocationsAsync: Entered");
         if (_engineProcess == null || _engineProcess.HasExited) return new List<long>();
 
         try
@@ -135,27 +142,26 @@ public class LogicEngineManager
                 updateReq["missing_locations"] = new List<long>(missingLocations);
             }
 
-            _logger("GetReachableLocationsAsync: Writing request...");
-            await _engineWriter.WriteLineAsync(Newtonsoft.Json.JsonConvert.SerializeObject(updateReq));
-            await _engineWriter.FlushAsync();
-            _logger("GetReachableLocationsAsync: Request flushed. Waiting for response...");
-
-            string responseStr = await ReadJsonResponseAsync(10000);
-            _logger($"GetReachableLocationsAsync: Response received. IsNullOrEmpty: {string.IsNullOrEmpty(responseStr)}");
-
-            if (string.IsNullOrEmpty(responseStr)) return new List<long>();
-
-            var response = Newtonsoft.Json.Linq.JObject.Parse(responseStr);
-            var reachableToken = response["reachable"];
-            var excludedToken = response["excluded"];
-
-            if (excludedToken != null)
+            var response = await SendRequestAsync(updateReq, 10000);
+            if (response == null)
             {
-                LastExcludedLocations = excludedToken.ToObject<List<long>>();
+                _logger("GetReachableLocationsAsync: no response from the bridge within 10 seconds.");
+                return new List<long>();
             }
 
-            _logger($"GetReachableLocationsAsync: Parsed response. HasReachable: {reachableToken != null}");
+            if (response["error"] != null)
+            {
+                _logger("GetReachableLocationsAsync: bridge error: " + response["error"] + "\n" + response["trace"]);
+                return new List<long>();
+            }
 
+            var excludedToken = response["excluded"];
+            if (excludedToken != null)
+            {
+                LastExcludedLocations = new HashSet<long>(excludedToken.ToObject<List<long>>());
+            }
+
+            var reachableToken = response["reachable"];
             if (reachableToken != null)
             {
                 return reachableToken.ToObject<List<long>>();
@@ -169,37 +175,61 @@ public class LogicEngineManager
         return new List<long>();
     }
 
-    private async Task<string> ReadJsonResponseAsync(int timeoutMs)
+    /// <summary>Writes one request line and waits for the matching response. Returns null on timeout or if the bridge exits.</summary>
+    private async Task<JObject> SendRequestAsync(Dictionary<string, object> request, int timeoutMs)
     {
+        int id = ++_nextRequestId;
+        request["id"] = id;
+        await _engineWriter.WriteLineAsync(Newtonsoft.Json.JsonConvert.SerializeObject(request));
+        await _engineWriter.FlushAsync();
+
         var timeoutTask = Task.Delay(timeoutMs);
         while (true)
         {
-            var readTask = _engineReader.ReadLineAsync();
-            var completedTask = await Task.WhenAny(readTask, timeoutTask);
-            if (completedTask == timeoutTask) return null;
+            _pendingRead ??= _engineReader.ReadLineAsync();
+            var completedTask = await Task.WhenAny(_pendingRead, timeoutTask);
+            if (completedTask == timeoutTask) return null; // leave _pendingRead for the next request
 
-            string line = await readTask;
-            if (line == null) return null;
+            string line = await _pendingRead;
+            _pendingRead = null;
+            if (line == null) return null; // bridge exited
+
             line = line.Trim();
-            if (line.StartsWith("{") && line.EndsWith("}"))
+            if (!(line.StartsWith("{") && line.EndsWith("}")))
             {
-                return line;
+                if (!string.IsNullOrEmpty(line)) _logger("PYTHON: " + line);
+                continue;
             }
-            else if (!string.IsNullOrEmpty(line))
+
+            JObject response;
+            try { response = JObject.Parse(line); }
+            catch (Exception)
             {
                 _logger("PYTHON: " + line);
+                continue;
             }
+
+            // Responses without an id (e.g. a bridge boot failure) can't be stale, so accept them.
+            var responseId = response["id"];
+            if (responseId != null && responseId.Type == JTokenType.Integer && (int)responseId != id)
+            {
+                _logger($"Discarding stale bridge response for request {responseId} (waiting for {id}).");
+                continue;
+            }
+            return response;
         }
     }
 
     public void StopEngine()
     {
-        if (_engineProcess != null && !_engineProcess.HasExited)
-        {
-            try { _engineProcess.Kill(); } catch { }
-            try { _engineProcess.Dispose(); } catch { }
-            _engineProcess = null;
-        }
+        var process = _engineProcess;
+        _engineProcess = null;
+        _engineWriter = null;
+        _engineReader = null;
+        _pendingRead = null;
+        if (process == null) return;
+        try { if (!process.HasExited) process.Kill(); } catch { }
+        try { process.Dispose(); } catch { }
     }
 
     public string GetWorldsDirectory()
@@ -257,9 +287,12 @@ def launch_bridge(*args):
         while True:
             line = sys.stdin.readline()
             if not line: break
-            
+
+            # Echo the request id on every reply so the C# side can drop late replies.
+            rid = None
             try:
                 req = json.loads(line)
+                rid = req.get('id')
                 action = req.get('action')
                 
                 if action == 'init':
@@ -341,7 +374,7 @@ def launch_bridge(*args):
                         for debug_it in item_pool[:5]:
                             logger.info(' - ' + str(debug_it.get('name')) + ': Flags=' + str(debug_it.get('flags')))
 
-                    print(json.dumps({'status': 'ready', 'item_pool': item_pool}))
+                    print(json.dumps({'id': rid, 'status': 'ready', 'item_pool': item_pool}))
                     sys.stdout.flush()
                     
                 elif action == 'update':
@@ -366,11 +399,11 @@ def launch_bridge(*args):
                             if loc.name in world.location_name_to_id:
                                 excluded_ids.append(world.location_name_to_id[loc.name])
                             
-                    print(json.dumps({'reachable': reachable_ids, 'excluded': excluded_ids}))
+                    print(json.dumps({'id': rid, 'reachable': reachable_ids, 'excluded': excluded_ids}))
                     sys.stdout.flush()
-                    
+
             except Exception as e:
-                print(json.dumps({'error': str(e), 'trace': traceback.format_exc()}))
+                print(json.dumps({'id': rid, 'error': str(e), 'trace': traceback.format_exc()}))
                 sys.stdout.flush()
                 
     except Exception as e:
@@ -387,7 +420,8 @@ components.append(Component('UltimateBridge', None, func=launch_bridge, componen
             string looseDir = Path.Combine(worldsDir, "UltimateBridge");
             if (Directory.Exists(looseDir)) Directory.Delete(looseDir, true);
 
-            // Create or overwrite UltimateBridge.apworld
+            // Rewrite only when the script changed: another slot's bridge may be loading this file right now.
+            if (File.Exists(apworldPath) && ReadInstalledBridgeScript(apworldPath) == scriptContent) return;
             if (File.Exists(apworldPath)) File.Delete(apworldPath);
 
             using (var zipStream = new FileStream(apworldPath, FileMode.Create))
@@ -404,6 +438,22 @@ components.append(Component('UltimateBridge', None, func=launch_bridge, componen
         catch (Exception ex)
         {
             _logger("Failed to install UltimateBridge.apworld: " + ex.Message);
+        }
+    }
+
+    private static string ReadInstalledBridgeScript(string apworldPath)
+    {
+        try
+        {
+            using var archive = System.IO.Compression.ZipFile.OpenRead(apworldPath);
+            var entry = archive.GetEntry("UltimateBridge/__init__.py");
+            if (entry == null) return null;
+            using var reader = new StreamReader(entry.Open());
+            return reader.ReadToEnd();
+        }
+        catch (Exception)
+        {
+            return null;
         }
     }
 

@@ -26,11 +26,12 @@ public partial class SlotTrackerControl : MarginContainer
         get
         {
             if (_knownReachableLocations == null || Session == null) return 0;
+            // Polled every 0.5s by the sidebar; AllLocationsChecked is a list, so hash it once per call.
+            var checkedLocs = new HashSet<long>(Session.Locations.AllLocationsChecked);
             int count = 0;
             foreach (var loc in _knownReachableLocations)
             {
-                if (!Session.Locations.AllLocationsChecked.Contains(loc) &&
-                    (_logicEngine == null || !_logicEngine.LastExcludedLocations.Contains(loc)))
+                if (!checkedLocs.Contains(loc) && !IsExcluded(loc))
                 {
                     count++;
                 }
@@ -130,7 +131,7 @@ public partial class SlotTrackerControl : MarginContainer
         _logicEngine = new LogicEngineManager(_appSettings.ArchipelagoInstallationPath, AppendDebugLog);
 
         _progressionTracker = new AP_Atlas.Core.PopTracker.ProgressionTrackerControl();
-        _progressionTracker.Initialize(Session, _logicEngine, ProfileId, _slotName, AppendDebugLog);
+        _progressionTracker.Initialize(Session, _logicEngine, ProfileId, _slotName, _appSettings, AppendDebugLog);
 
         _mapTracker = new AP_Atlas.UI.MapTrackerControl(_appSettings);
         _mapTracker.SetSession(Session);
@@ -223,6 +224,7 @@ public partial class SlotTrackerControl : MarginContainer
         if (pack != null)
         {
             _mapTracker.LoadPack(pack);
+            _progressionTracker?.SetPack(pack);
             AppendDebugLog($"[MapTracker] Loaded pack '{pack.Manifest?.Name}' for {game}.");
             RaiseStateChanged();
         }
@@ -371,7 +373,7 @@ public partial class SlotTrackerControl : MarginContainer
     }
 
     private bool IsExcluded(long loc) =>
-        _logicEngine.LastExcludedLocations != null && _logicEngine.LastExcludedLocations.Contains(loc);
+        _logicEngine?.LastExcludedLocations?.Contains(loc) == true;
 
     // =====================================================================
     // Logic Tracker view

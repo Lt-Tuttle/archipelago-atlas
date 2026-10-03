@@ -320,7 +320,7 @@ public partial class MainTrackerWindow : Control
         fontSubMenu.SetItemDisabled(fontSubMenu.GetItemIndex(FontReadoutId), true);
         fontSubMenu.AddSeparator();
         fontSubMenu.AddItem("Increase  +", FontIncreaseId);
-        fontSubMenu.AddItem("Decrease  Ã¢Ë†â€™", FontDecreaseId);
+        fontSubMenu.AddItem("Decrease  −", FontDecreaseId);
         fontSubMenu.AddItem("Reset to Default (14px)", FontResetId);
         void RefreshFontReadout() =>
             fontSubMenu.SetItemText(fontSubMenu.GetItemIndex(FontReadoutId), $"Current Size: {_appSettings.GlobalFontSize}px");
@@ -852,8 +852,12 @@ public partial class MainTrackerWindow : Control
         }
     }
 
+    private bool _shuttingDown = false;
+
     private async void GracefulShutdown()
     {
+        if (_shuttingDown) return;
+        _shuttingDown = true;
         try
         {
             var win = GetWindow();
@@ -1018,7 +1022,9 @@ public partial class MainTrackerWindow : Control
     }
 
     private SlotTrackerControl _currentSelectedSlot = null;
+    /// <summary>Slots with a login in flight, keyed by SlotKey(profileId, slotName).</summary>
     private System.Collections.Generic.HashSet<string> _connectingSlots = new System.Collections.Generic.HashSet<string>();
+    private static string SlotKey(string profileId, string slotName) => profileId + "|" + slotName;
     private int _spinnerIndex = 0;
     private string[] _spinnerFrames = { "/", "-", "\\", "|" };
     private Texture2D _iconConnect;
@@ -1275,7 +1281,7 @@ public partial class MainTrackerWindow : Control
                 bool isSocketConnected = session != null && session.Session != null && session.Session.Socket.Connected;
                 bool isFullyLoaded = session != null && session.IsFullyLoaded;
                 bool isConnected = isSocketConnected && isFullyLoaded;
-                bool isConnecting = _connectingSlots.Contains(slotName) || (isSocketConnected && !isFullyLoaded);
+                bool isConnecting = _connectingSlots.Contains(SlotKey(profile.Id, slotName)) || (isSocketConnected && !isFullyLoaded);
                 bool isSelected = session != null && session == _currentSelectedSlot;
                 var cardPanel = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
                 cardPanel.SetMeta("slot_name", slotName);
@@ -1503,12 +1509,12 @@ public partial class MainTrackerWindow : Control
                 footerHBox.AddChild(gameNameFooter);
                 if (isConnected)
                 {
-                    statusFooter.Text = "Ã¢â€”Â Live";
+                    statusFooter.Text = "● Live";
                     statusFooter.AddThemeColorOverride("font_color", Colors.LimeGreen);
                 }
                 else if (isConnecting)
                 {
-                    statusFooter.Text = "Ã¢â€”Å’ Connecting...";
+                    statusFooter.Text = "◌ Connecting...";
                     statusFooter.AddThemeColorOverride("font_color", Colors.Yellow);
                 }
                 else
@@ -1798,7 +1804,7 @@ public partial class MainTrackerWindow : Control
                                         }
                                     }
                                 }
-                                bool isConnecting = _connectingSlots.Contains(slotName) || (isSocketConnected && !isFullyLoaded);
+                                bool isConnecting = _connectingSlots.Contains(SlotKey(profileId, slotName)) || (isSocketConnected && !isFullyLoaded);
                                 bool isConnected = isSocketConnected && isFullyLoaded;
                                 var disconnectBtn = row.GetNodeOrNull<Button>("DisconnectBtn");
                                 if (isConnecting)
@@ -1902,12 +1908,12 @@ public partial class MainTrackerWindow : Control
                                 {
                                     if (isConnected)
                                     {
-                                        statusFooter.Text = "Ã¢â€”Â Live";
+                                        statusFooter.Text = "● Live";
                                         statusFooter.AddThemeColorOverride("font_color", Colors.LimeGreen);
                                     }
                                     else if (isConnecting)
                                     {
-                                        statusFooter.Text = "Ã¢â€”Å’ Connecting...";
+                                        statusFooter.Text = "◌ Connecting...";
                                         statusFooter.AddThemeColorOverride("font_color", Colors.Yellow);
                                     }
                                     else
@@ -1952,7 +1958,7 @@ public partial class MainTrackerWindow : Control
                 if (connectBtn != null)
                 {
                     bool isSocketConnected = activeSlot != null && activeSlot.Session != null && activeSlot.Session.Socket.Connected;
-                    bool isConnecting = _connectingSlots.Contains(slotName) || (isSocketConnected && !activeSlot.IsFullyLoaded);
+                    bool isConnecting = _connectingSlots.Contains(SlotKey(_selectedProfile.Id, slotName)) || (isSocketConnected && !activeSlot.IsFullyLoaded);
                     bool isConnected = isSocketConnected && activeSlot.IsFullyLoaded;
                     if (isConnecting)
                     {
@@ -1985,17 +1991,7 @@ public partial class MainTrackerWindow : Control
 
     private void OnAddSlotPressed()
     {
-        if (_selectedProfile == null)
-        {
-            var watermark = new Label { Text = "Select a profile to edit slots.", HorizontalAlignment = HorizontalAlignment.Center, Modulate = new Godot.Color(0.5f, 0.5f, 0.5f) };
-            _slotsListVBox.AddChild(watermark);
-            return;
-        }
-        if (_selectedProfile.Slots.Count == 0)
-        {
-            var watermark = new Label { Text = "No slots configured. Click 'Add Slot' below.", HorizontalAlignment = HorizontalAlignment.Center, Modulate = new Godot.Color(0.5f, 0.5f, 0.5f) };
-            _slotsListVBox.AddChild(watermark);
-        }
+        if (_selectedProfile == null) return;
         _selectedProfile.Slots.Add("New Slot");
         MarkDirty();
         PopulateSlotsList();
@@ -2136,10 +2132,16 @@ public partial class MainTrackerWindow : Control
     {
         if (_isConnectingSlot) return;
         _isConnectingSlot = true;
-        ShowConnectingOverlay($"CONNECTING TO\n{slotName}...");
-        await ConnectSlotInternalAsync(slotName, profile);
-        HideConnectingOverlay();
-        _isConnectingSlot = false;
+        try
+        {
+            ShowConnectingOverlay($"CONNECTING TO\n{slotName}...");
+            await ConnectSlotInternalAsync(slotName, profile);
+        }
+        finally
+        {
+            HideConnectingOverlay();
+            _isConnectingSlot = false;
+        }
     }
 
     private async System.Threading.Tasks.Task<bool> ConnectSlotInternalAsync(string slotName, MultiworldProfile profile)
@@ -2162,7 +2164,7 @@ public partial class MainTrackerWindow : Control
         _statusLabel.AddThemeColorOverride("font_color", Colors.Yellow);
         if (_globalStatusLabel != null) _globalStatusLabel.Text = "Connecting to " + profile.ServerUrl + " as " + slotName + "...";
         LogToSystem("[color=cyan]Attempting to connect to " + profile.ServerUrl + " as " + slotName + "...[/color]");
-        _connectingSlots.Add(slotName);
+        _connectingSlots.Add(SlotKey(profile.Id, slotName));
         UpdateSidebar();
         try
         {
@@ -2210,7 +2212,7 @@ public partial class MainTrackerWindow : Control
                     _statusLabel.AddThemeColorOverride("font_color", Colors.Red);
                     if (_globalStatusLabel != null) _globalStatusLabel.Text = "Connection Timeout (" + slotName + ")";
                     LogToSystem("[color=red]Connection timed out for " + slotName + " after 10 seconds.[/color]");
-                    _connectingSlots.Remove(slotName);
+                    _connectingSlots.Remove(SlotKey(profile.Id, slotName));
                     UpdateSidebar();
                 }).CallDeferred();
                 return false;
@@ -2249,12 +2251,11 @@ public partial class MainTrackerWindow : Control
                     );
                     _terminalStage.AddChild(slotTracker);
                     session.MessageLog.OnMessageReceived -= earlyHandler;
-                    _ = session.Socket.DisconnectAsync();
                     lock (earlyMessages)
                     {
                         if (earlyMessages.Count > 0) slotTracker.InjectEarlyMessages(earlyMessages);
                     }
-                    _connectingSlots.Remove(slotName);
+                    _connectingSlots.Remove(SlotKey(profile.Id, slotName));
                     UpdateSidebar();
                     _currentSelectedSlot = slotTracker; RefreshContextViews();
                     var timer = GetTree().CreateTimer(0.1);
@@ -2270,7 +2271,7 @@ public partial class MainTrackerWindow : Control
                     _statusLabel.AddThemeColorOverride("font_color", Colors.Red);
                     if (_globalStatusLabel != null) _globalStatusLabel.Text = "Connection Failed (" + slotName + ")";
                     LogToSystem("[color=red]Authentication Failed for " + slotName + ":[/color] " + errs);
-                    _connectingSlots.Remove(slotName);
+                    _connectingSlots.Remove(SlotKey(profile.Id, slotName));
                     UpdateSidebar();
                 }
             }).CallDeferred();
@@ -2283,7 +2284,7 @@ public partial class MainTrackerWindow : Control
                 _statusLabel.AddThemeColorOverride("font_color", Colors.Red);
                 if (_globalStatusLabel != null) _globalStatusLabel.Text = "Connection Error";
                 LogToSystem("[color=red]Exception during connection:[/color] " + ex.Message);
-                _connectingSlots.Remove(slotName);
+                _connectingSlots.Remove(SlotKey(profile.Id, slotName));
                 UpdateSidebar();
             }).CallDeferred();
         }

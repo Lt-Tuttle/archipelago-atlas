@@ -82,6 +82,10 @@ namespace AP_Atlas.UI
             _camera = new Camera2D { Zoom = new Vector2(1, 1), AnchorMode = Camera2D.AnchorModeEnum.DragCenter };
             _viewport.AddChild(_camera);
             _viewportContainer.GuiInput += OnViewportGuiInput;
+            _viewportContainer.Resized += () =>
+            {
+                if (!string.IsNullOrEmpty(_currentMapId) && !_appSettings.MapCameras.ContainsKey(_currentMapId)) AutoFitCamera();
+            };
             _emptyStateContainer = new CenterContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
             var emptyVBox = new VBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
             emptyVBox.AddThemeConstantOverride("separation", 20);
@@ -93,7 +97,14 @@ namespace AP_Atlas.UI
             emptySubLbl.AddThemeColorOverride("font_color", Colors.Gray);
             emptyVBox.AddChild(emptySubLbl);
             AddChild(_emptyStateContainer);
+
+            // Camera moves fire on every mouse-motion event; batch them into one settings write.
+            _cameraSaveTimer = new Timer { OneShot = true, WaitTime = 0.5 };
+            _cameraSaveTimer.Timeout += () => DataManager.SaveSettings(_appSettings);
+            AddChild(_cameraSaveTimer);
         }
+
+        private Timer _cameraSaveTimer;
         public void SetSession(Archipelago.MultiClient.Net.ArchipelagoSession session)
         {
             _session = session;
@@ -105,7 +116,7 @@ namespace AP_Atlas.UI
             if (checkedLocs != null) _checkedLocs = new System.Collections.Generic.HashSet<long>(checkedLocs);
             if (hintedLocs != null) _hintedLocs = hintedLocs;
             RefreshMapListCounters();
-            if (!string.IsNullOrEmpty(_currentMapId)) SwitchMap(_currentMapId);
+            if (!string.IsNullOrEmpty(_currentMapId)) RenderLocations();
         }
         private void BuildLocationMaps()
         {
@@ -345,7 +356,9 @@ namespace AP_Atlas.UI
             {
                 _camera.Zoom = new Vector2(1, 1);
             }
-            SaveCurrentCamera();
+            // Before the view is laid out the fit is only a placeholder; don't persist it, so the
+            // Resized handler re-fits once the real size is known.
+            if (viewSize.X > 0 && viewSize.Y > 0) SaveCurrentCamera();
         }
         private void SaveCurrentCamera()
         {
@@ -357,7 +370,18 @@ namespace AP_Atlas.UI
                 Y = _camera.Position.Y,
                 Zoom = _camera.Zoom.X
             };
-            DataManager.SaveSettings(_appSettings);
+            if (_cameraSaveTimer.IsInsideTree()) _cameraSaveTimer.Start();
+            else DataManager.SaveSettings(_appSettings);
+        }
+
+        public override void _ExitTree()
+        {
+            // Flush a pending debounced camera save.
+            if (!_cameraSaveTimer.IsStopped())
+            {
+                _cameraSaveTimer.Stop();
+                DataManager.SaveSettings(_appSettings);
+            }
         }
         private void SwitchMap(string mapId)
         {

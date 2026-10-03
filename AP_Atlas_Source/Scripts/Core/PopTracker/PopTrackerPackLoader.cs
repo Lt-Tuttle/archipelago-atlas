@@ -22,7 +22,22 @@ namespace AP_Atlas.Core.PopTracker
 
     public static class PopTrackerPackLoader
     {
-        private static Dictionary<string, (DateTime lastWrite, LoadedPack pack)> _inspectionCache = new Dictionary<string, (DateTime, LoadedPack)>();
+        // Fully parsed packs keyed by zip path. Read from both the main thread and slot loader threads, so guard with _cacheLock.
+        private static readonly Dictionary<string, (DateTime lastWrite, LoadedPack pack)> _packCache = new Dictionary<string, (DateTime, LoadedPack)>(StringComparer.OrdinalIgnoreCase);
+        private static readonly object _cacheLock = new object();
+
+        private static LoadedPack GetCachedPack(string zipPath, DateTime lastWriteUtc)
+        {
+            lock (_cacheLock)
+            {
+                return _packCache.TryGetValue(zipPath, out var cached) && cached.lastWrite == lastWriteUtc ? cached.pack : null;
+            }
+        }
+
+        private static void CachePack(string zipPath, DateTime lastWriteUtc, LoadedPack pack)
+        {
+            lock (_cacheLock) _packCache[zipPath] = (lastWriteUtc, pack);
+        }
 
         public static string GetPacksDirectory()
         {
@@ -36,17 +51,14 @@ namespace AP_Atlas.Core.PopTracker
 
         public static LoadedPack InspectZipPack(string zipPath, Action<string> logDebug = null)
         {
-
             var info = new System.IO.FileInfo(zipPath);
             if (!info.Exists) return null;
 
-            if (_inspectionCache.TryGetValue(zipPath, out var cached))
-            {
-                if (cached.lastWrite == info.LastWriteTimeUtc) return cached.pack;
-            }
+            var cached = GetCachedPack(zipPath, info.LastWriteTimeUtc);
+            if (cached != null) return cached;
 
             var pack = TryLoadZipPack(zipPath, null, logDebug);
-            if (pack != null) _inspectionCache[zipPath] = (info.LastWriteTimeUtc, pack);
+            if (pack != null) CachePack(zipPath, info.LastWriteTimeUtc, pack);
             return pack;
         }
 
@@ -57,15 +69,27 @@ namespace AP_Atlas.Core.PopTracker
 
             foreach (var file in Directory.GetFiles(packsDir, "*.zip"))
             {
+                var info = new System.IO.FileInfo(file);
+                var cached = GetCachedPack(file, info.LastWriteTimeUtc);
+                if (cached != null)
+                {
+                    if (IsPackForGame(cached.Manifest, targetGameName)) return cached;
+                    continue;
+                }
+
                 var pack = TryLoadZipPack(file, targetGameName, logDebug);
                 if (pack != null)
                 {
-                    return pack; // Found it
+                    CachePack(file, info.LastWriteTimeUtc, pack);
+                    return pack;
                 }
             }
 
             return null;
         }
+
+        private static bool IsPackForGame(PopTrackerManifest manifest, string targetGameName) =>
+            manifest != null && (IsGameNameMatch(manifest.GameName, targetGameName) || IsGameNameMatch(manifest.Name, targetGameName));
 
         private static LoadedPack TryLoadZipPack(string zipPath, string targetGameName, Action<string> logDebug = null)
         {
@@ -110,7 +134,9 @@ namespace AP_Atlas.Core.PopTracker
                             return null;
                         }
 
-                        manifest = new PopTrackerManifest { Name = targetGameName, GameName = targetGameName };
+                        // Without a manifest the zip's file name is the only hint about which game the pack is for.
+                        string fileName = Path.GetFileNameWithoutExtension(zipPath);
+                        manifest = new PopTrackerManifest { Name = fileName, GameName = fileName };
                     }
 
                     if (manifest == null)
@@ -119,8 +145,7 @@ namespace AP_Atlas.Core.PopTracker
                         return null;
                     }
 
-                    // If manifest doesn't match game name and we aren't faking it
-                    if (!string.IsNullOrEmpty(targetGameName) && !IsGameNameMatch(manifest.GameName, targetGameName) && !IsGameNameMatch(manifest.Name, targetGameName))
+                    if (!string.IsNullOrEmpty(targetGameName) && !IsPackForGame(manifest, targetGameName))
                     {
                         if (logDebug != null) logDebug($"[PopTracker] Skipping {zipPath} - Game Name '{manifest.GameName}' or Tracker Name '{manifest.Name}' does not match '{targetGameName}'.");
                         return null; // Not the right game

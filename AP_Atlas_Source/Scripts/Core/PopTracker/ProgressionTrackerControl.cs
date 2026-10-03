@@ -9,6 +9,7 @@ namespace AP_Atlas.Core.PopTracker
     public partial class ProgressionTrackerControl : VBoxContainer
     {
         private ArchipelagoSession _session;
+        private AppSettings _appSettings;
         private LogicEngineManager _logicEngine;
         private string _profileId;
         private string _slotName;
@@ -25,7 +26,6 @@ namespace AP_Atlas.Core.PopTracker
         private ScrollContainer _visualScroll;
         private VBoxContainer _visualGrid;
         private HBoxContainer _visualFooter;
-        private void ApplyZoom(float zoomVal) { float size = 64f * zoomVal; if (_visualGrid != null) { foreach (Node row in _visualGrid.GetChildren()) { foreach (Node cell in row.GetChildren()) { if (cell is Control c) { c.CustomMinimumSize = new Vector2(size, size); } } } } }
         private ScrollContainer _textScroll;
         private Tree _textTree;
 
@@ -40,9 +40,10 @@ namespace AP_Atlas.Core.PopTracker
         private ImageTexture _texCollected;
         private ImageTexture _texMissing;
 
-        public void Initialize(ArchipelagoSession session, LogicEngineManager logicEngine, string profileId, string slotName, Action<string> appendDebugLog)
+        public void Initialize(ArchipelagoSession session, LogicEngineManager logicEngine, string profileId, string slotName, AppSettings appSettings, Action<string> appendDebugLog)
         {
             _session = session;
+            _appSettings = appSettings;
             _logicEngine = logicEngine;
             _profileId = profileId;
             _slotName = slotName;
@@ -68,23 +69,25 @@ namespace AP_Atlas.Core.PopTracker
 
             BuildUI();
 
-            // Try load pack
-            if (_session != null && _session.ConnectionInfo != null && !string.IsNullOrEmpty(_session.ConnectionInfo.Game))
-            {
-                _pack = PopTrackerPackLoader.LoadPackForGame(_session.ConnectionInfo.Game);
-            }
-
-            if (_pack != null && _pack.ItemGrids.Count > 0)
-            {
-                _isVisualMode = true;
-            }
-            else
-            {
-                _isVisualMode = false;
-            }
-
+            // The pack is loaded off the main thread by SlotTrackerControl and handed over via SetPack().
+            _isVisualMode = false;
             UpdateModeToggleBtn();
             RefreshData();
+        }
+
+        public void SetPack(LoadedPack pack)
+        {
+            _pack = pack;
+            _isVisualMode = _pack != null && _pack.ItemGrids.Count > 0;
+            UpdateModeToggleBtn();
+            RefreshData();
+        }
+
+        private void ChangeZoom(float delta)
+        {
+            _appSettings.KeyItemZoom = Math.Clamp(_appSettings.KeyItemZoom + delta, 0.5f, 3.0f);
+            DataManager.SaveSettings(_appSettings);
+            RenderActiveMode();
         }
 
         private void BuildUI()
@@ -154,23 +157,11 @@ namespace AP_Atlas.Core.PopTracker
             _visualFooter.AddChild(zoomLabel);
 
             var zoomMinus = new Button { Text = "-", CustomMinimumSize = new Vector2(24, 24), FocusMode = FocusModeEnum.None };
-            zoomMinus.Pressed += () =>
-            {
-                var appSettings = DataManager.LoadSettings() ?? new AppSettings();
-                appSettings.KeyItemZoom = Math.Max(0.5f, appSettings.KeyItemZoom - 0.25f);
-                DataManager.SaveSettings(appSettings);
-                ApplyZoom(appSettings.KeyItemZoom);
-            };
+            zoomMinus.Pressed += () => ChangeZoom(-0.25f);
             _visualFooter.AddChild(zoomMinus);
 
             var zoomPlus = new Button { Text = "+", CustomMinimumSize = new Vector2(24, 24), FocusMode = FocusModeEnum.None };
-            zoomPlus.Pressed += () =>
-            {
-                var appSettings = DataManager.LoadSettings() ?? new AppSettings();
-                appSettings.KeyItemZoom = Math.Min(3.0f, appSettings.KeyItemZoom + 0.25f);
-                DataManager.SaveSettings(appSettings);
-                ApplyZoom(appSettings.KeyItemZoom);
-            };
+            zoomPlus.Pressed += () => ChangeZoom(0.25f);
             _visualFooter.AddChild(zoomPlus);
             AddChild(_visualFooter);
 
@@ -294,8 +285,7 @@ namespace AP_Atlas.Core.PopTracker
         {
             foreach (Node n in _visualGrid.GetChildren()) n.QueueFree();
 
-            var appSettings = DataManager.LoadSettings() ?? new AppSettings();
-            float zoomSize = 64f * appSettings.KeyItemZoom;
+            float zoomSize = 64f * _appSettings.KeyItemZoom;
 
             foreach (var row in _pack.ItemGrids)
             {
@@ -436,7 +426,6 @@ namespace AP_Atlas.Core.PopTracker
 
         private void RenderTextMode(string filter)
         {
-            _logger?.Invoke("[Key Items] RenderTextMode called.");
             _textTree.Clear();
             var root = _textTree.CreateItem();
 
@@ -455,7 +444,6 @@ namespace AP_Atlas.Core.PopTracker
                 return;
             }
 
-            _logger?.Invoke($"[Key Items] Pool size: {_logicEngine.LastItemPool.Count}");
 
             // Group pool by item name
             var poolCounts = new Dictionary<string, int>();
@@ -469,7 +457,6 @@ namespace AP_Atlas.Core.PopTracker
                 }
             }
 
-            _logger?.Invoke($"[Key Items] Items marked as Progression flags: {poolCounts.Count} unique items.");
 
             // Failsafe: If python bridge failed to assign flags, show everything
             if (poolCounts.Count == 0 && _logicEngine.LastItemPool.Count > 0)
@@ -487,7 +474,6 @@ namespace AP_Atlas.Core.PopTracker
             // Group by basic inferred types
             var categories = new Dictionary<string, List<(string Name, int Received, int Max)>>();
 
-            _logger?.Invoke($"[Key Items] Current search filter: '{filter}'");
 
             bool showCollected = _btnShowCollected.ButtonPressed;
             bool showMissing = _btnShowMissing.ButtonPressed;
@@ -514,7 +500,6 @@ namespace AP_Atlas.Core.PopTracker
                 categories[type].Add((name, receivedQty, maxQty));
             }
 
-            _logger?.Invoke($"[Key Items] Filtered into {categories.Count} categories. Total items across categories: {totalProgression}.");
 
             int shownCount = 0;
 
@@ -583,7 +568,6 @@ namespace AP_Atlas.Core.PopTracker
                 }
             }
 
-            _logger?.Invoke($"[Key Items] Rendering complete. Created {shownCount} item rows.");
         }
 
         private string InferItemType(string name)

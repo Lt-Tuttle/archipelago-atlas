@@ -238,7 +238,15 @@ namespace AP_Atlas.Core
             deleteBtn.AddThemeColorOverride("font_color", Colors.Crimson);
             deleteBtn.Pressed += () =>
             {
-                System.IO.File.Delete(zipPath);
+                try
+                {
+                    System.IO.File.Delete(zipPath);
+                }
+                catch (Exception ex)
+                {
+                    _logAction($"[color=red]Failed to delete map pack: {ex.Message}[/color]");
+                    return;
+                }
                 RefreshPackList();
                 foreach (Node n in _inspectorContainer.GetChildren()) n.QueueFree();
                 _inspectorContainer.AddChild(new Label { Text = "Select a map pack to view details.", HorizontalAlignment = HorizontalAlignment.Center });
@@ -417,244 +425,256 @@ namespace AP_Atlas.Core
             }
 
             _showOverlayAction();
-            _logAction($"[color=cyan]Searching GitHub for map packs for {games.Count} active game(s)...[/color]");
-
-            using var client = new System.Net.Http.HttpClient();
-            client.DefaultRequestHeaders.Add("User-Agent", "AP-Atlas-Tracker");
-
-            HashSet<string> installedGames = new HashSet<string>();
-            string packsDir = System.IO.Path.Combine(DataManager.GetDataDirectory(), "packs");
-            if (System.IO.Directory.Exists(packsDir))
+            try
             {
-                foreach (var file in System.IO.Directory.GetFiles(packsDir, "*.zip"))
+                _logAction($"[color=cyan]Searching GitHub for map packs for {games.Count} active game(s)...[/color]");
+
+                using var client = new System.Net.Http.HttpClient();
+                client.DefaultRequestHeaders.Add("User-Agent", "AP-Atlas-Tracker");
+
+                HashSet<string> installedGames = new HashSet<string>();
+                string packsDir = System.IO.Path.Combine(DataManager.GetDataDirectory(), "packs");
+                if (System.IO.Directory.Exists(packsDir))
                 {
-                    try
+                    foreach (var file in System.IO.Directory.GetFiles(packsDir, "*.zip"))
                     {
-                        using var archive = System.IO.Compression.ZipFile.OpenRead(file);
-                        var manifestEntry = archive.Entries.FirstOrDefault(e => e.FullName.EndsWith("manifest.json", StringComparison.OrdinalIgnoreCase));
-                        if (manifestEntry != null)
+                        try
                         {
-                            using var stream = manifestEntry.Open();
-                            using var reader = new System.IO.StreamReader(stream);
-                            string json = reader.ReadToEnd();
-                            var manifest = Newtonsoft.Json.JsonConvert.DeserializeObject<PopTracker.PopTrackerManifest>(json);
-                            if (manifest != null && !string.IsNullOrEmpty(manifest.GameName))
+                            using var archive = System.IO.Compression.ZipFile.OpenRead(file);
+                            var manifestEntry = archive.Entries.FirstOrDefault(e => e.FullName.EndsWith("manifest.json", StringComparison.OrdinalIgnoreCase));
+                            if (manifestEntry != null)
                             {
-                                installedGames.Add(manifest.GameName);
+                                using var stream = manifestEntry.Open();
+                                using var reader = new System.IO.StreamReader(stream);
+                                string json = reader.ReadToEnd();
+                                var manifest = Newtonsoft.Json.JsonConvert.DeserializeObject<PopTracker.PopTrackerManifest>(json);
+                                if (manifest != null && !string.IsNullOrEmpty(manifest.GameName))
+                                {
+                                    installedGames.Add(manifest.GameName);
+                                }
                             }
                         }
-                    }
-                    catch { }
-                }
-            }
-
-            foreach (var game in games)
-            {
-                bool alreadyInstalled = false;
-                foreach (var installed in installedGames)
-                {
-                    if (PopTracker.PopTrackerPackLoader.IsGameNameMatch(installed, game))
-                    {
-                        alreadyInstalled = true;
-                        break;
+                        catch { }
                     }
                 }
 
-                if (alreadyInstalled)
+                foreach (var game in games)
                 {
-                    _logAction($"[color=green]--- {game} already has a map pack installed. Skipping search. ---[/color]");
-                    continue;
-                }
-
-                _logAction($"[color=gray]--- Searching for {game} ---[/color]");
-                try
-                {
-                    var variations = GetSearchVariations(game);
-                    bool found = false;
-                    Newtonsoft.Json.Linq.JArray items = null;
-
-                    foreach (var query in variations)
+                    bool alreadyInstalled = false;
+                    foreach (var installed in installedGames)
                     {
-                        string searchUrl = $"https://api.github.com/search/repositories?q={Uri.EscapeDataString(query)}";
-                        var res = await client.GetStringAsync(searchUrl);
-                        var jObject = Newtonsoft.Json.Linq.JObject.Parse(res);
-                        items = jObject["items"] as Newtonsoft.Json.Linq.JArray;
-
-                        if (items != null && items.Count > 0)
+                        if (PopTracker.PopTrackerPackLoader.IsGameNameMatch(installed, game))
                         {
-                            found = true;
-                            _logAction($"[color=gray](Matched using query: {query})[/color]");
+                            alreadyInstalled = true;
                             break;
                         }
                     }
 
-                    if (found && items != null)
+                    if (alreadyInstalled)
                     {
-                        var firstHit = items[0];
-                        string repoFullName = firstHit["full_name"]?.ToString() ?? "";
-                        _logAction($"[color=lime]Found best map pack for {game}:[/color] {repoFullName}");
+                        _logAction($"[color=green]--- {game} already has a map pack installed. Skipping search. ---[/color]");
+                        continue;
+                    }
 
-                        string downloadUrl = "";
-                        string zipFileName = repoFullName.Replace("/", "_") + ".zip";
+                    _logAction($"[color=gray]--- Searching for {game} ---[/color]");
+                    try
+                    {
+                        var variations = GetSearchVariations(game);
+                        bool found = false;
+                        Newtonsoft.Json.Linq.JArray items = null;
 
-                        try
+                        foreach (var query in variations)
                         {
-                            var releaseUrl = $"https://api.github.com/repos/{repoFullName}/releases/latest";
-                            var releaseRes = await client.GetStringAsync(releaseUrl);
-                            var releaseObj = Newtonsoft.Json.Linq.JObject.Parse(releaseRes);
-                            var assets = releaseObj["assets"] as Newtonsoft.Json.Linq.JArray;
-                            if (assets != null)
+                            string searchUrl = $"https://api.github.com/search/repositories?q={Uri.EscapeDataString(query)}";
+                            var res = await client.GetStringAsync(searchUrl);
+                            var jObject = Newtonsoft.Json.Linq.JObject.Parse(res);
+                            items = jObject["items"] as Newtonsoft.Json.Linq.JArray;
+
+                            if (items != null && items.Count > 0)
                             {
-                                foreach (var asset in assets)
+                                found = true;
+                                _logAction($"[color=gray](Matched using query: {query})[/color]");
+                                break;
+                            }
+                        }
+
+                        if (found && items != null)
+                        {
+                            var firstHit = items[0];
+                            string repoFullName = firstHit["full_name"]?.ToString() ?? "";
+                            _logAction($"[color=lime]Found best map pack for {game}:[/color] {repoFullName}");
+
+                            string downloadUrl = "";
+                            string zipFileName = repoFullName.Replace("/", "_") + ".zip";
+
+                            try
+                            {
+                                var releaseUrl = $"https://api.github.com/repos/{repoFullName}/releases/latest";
+                                var releaseRes = await client.GetStringAsync(releaseUrl);
+                                var releaseObj = Newtonsoft.Json.Linq.JObject.Parse(releaseRes);
+                                var assets = releaseObj["assets"] as Newtonsoft.Json.Linq.JArray;
+                                if (assets != null)
                                 {
-                                    string assetName = asset["name"]?.ToString();
-                                    if (!string.IsNullOrEmpty(assetName) && assetName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                                    foreach (var asset in assets)
                                     {
-                                        downloadUrl = asset["browser_download_url"]?.ToString();
-                                        zipFileName = assetName;
-                                        break;
+                                        string assetName = asset["name"]?.ToString();
+                                        if (!string.IsNullOrEmpty(assetName) && assetName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            downloadUrl = asset["browser_download_url"]?.ToString();
+                                            zipFileName = assetName;
+                                            break;
+                                        }
                                     }
                                 }
                             }
+                            catch { /* No releases or error fetching release */ }
+
+                            if (string.IsNullOrEmpty(downloadUrl))
+                            {
+                                _logAction("[color=gray]No release zip found, falling back to repository source zip...[/color]");
+                                downloadUrl = $"https://api.github.com/repos/{repoFullName}/zipball/HEAD";
+                            }
+
+                            _logAction($"[color=cyan]Downloading pack...[/color] ({downloadUrl})");
+                            try
+                            {
+                                var reqMsg = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, downloadUrl);
+                                reqMsg.Headers.Add("Accept", "application/vnd.github.v3+json");
+                                var response = await client.SendAsync(reqMsg);
+                                response.EnsureSuccessStatusCode();
+                                var zipBytes = await response.Content.ReadAsByteArrayAsync();
+
+                                string destDir = System.IO.Path.Combine(DataManager.GetDataDirectory(), "packs");
+                                if (!System.IO.Directory.Exists(destDir)) System.IO.Directory.CreateDirectory(destDir);
+                                string destPath = System.IO.Path.Combine(destDir, zipFileName);
+                                System.IO.File.WriteAllBytes(destPath, zipBytes);
+                                _logAction($"[color=lime]Successfully auto-installed {zipFileName}![/color]");
+
+                                // Re-render UI list
+                                Callable.From(RefreshPackList).CallDeferred();
+                            }
+                            catch (Exception ex)
+                            {
+                                _logAction($"[color=red]Failed to download pack:[/color] {ex.Message}");
+                            }
                         }
-                        catch { /* No releases or error fetching release */ }
-
-                        if (string.IsNullOrEmpty(downloadUrl))
+                        else
                         {
-                            _logAction("[color=gray]No release zip found, falling back to repository source zip...[/color]");
-                            downloadUrl = $"https://api.github.com/repos/{repoFullName}/zipball/HEAD";
-                        }
-
-                        _logAction($"[color=cyan]Downloading pack...[/color] ({downloadUrl})");
-                        try
-                        {
-                            var reqMsg = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, downloadUrl);
-                            reqMsg.Headers.Add("Accept", "application/vnd.github.v3+json");
-                            var response = await client.SendAsync(reqMsg);
-                            response.EnsureSuccessStatusCode();
-                            var zipBytes = await response.Content.ReadAsByteArrayAsync();
-
-                            string destDir = System.IO.Path.Combine(DataManager.GetDataDirectory(), "packs");
-                            if (!System.IO.Directory.Exists(destDir)) System.IO.Directory.CreateDirectory(destDir);
-                            string destPath = System.IO.Path.Combine(destDir, zipFileName);
-                            System.IO.File.WriteAllBytes(destPath, zipBytes);
-                            _logAction($"[color=lime]Successfully auto-installed {zipFileName}![/color]");
-
-                            // Re-render UI list
-                            Callable.From(RefreshPackList).CallDeferred();
-                        }
-                        catch (Exception ex)
-                        {
-                            _logAction($"[color=red]Failed to download pack:[/color] {ex.Message}");
+                            _logAction($"[color=orange]No map packs found for {game} after trying {variations.Count} variations.[/color]");
                         }
                     }
-                    else
+                    catch (Exception ex)
                     {
-                        _logAction($"[color=orange]No map packs found for {game} after trying {variations.Count} variations.[/color]");
+                        _logAction($"[color=red]Search failed for {game}: {ex.Message}[/color]");
                     }
                 }
-                catch (Exception ex)
-                {
-                    _logAction($"[color=red]Search failed for {game}: {ex.Message}[/color]");
-                }
-            }
 
-            _hideOverlayAction();
+            }
+            finally
+            {
+                _hideOverlayAction();
+            }
         }
 
         private async void OnCheckUpdatesPressed()
         {
             _logAction($"[color=cyan]Checking installed packs for updates...[/color]");
             _showOverlayAction();
-
-            string dataDir = System.IO.Path.Combine(DataManager.GetDataDirectory(), "packs");
-            if (!Directory.Exists(dataDir)) Directory.CreateDirectory(dataDir);
-
-            var files = Directory.GetFiles(dataDir, "*.zip");
-            using var client = new System.Net.Http.HttpClient();
-            client.DefaultRequestHeaders.Add("User-Agent", "AP-Atlas-Tracker");
-
-            int checkedCount = 0;
-            int updatesAvailable = 0;
-
-            foreach (var file in files)
+            try
             {
-                try
+
+                string dataDir = System.IO.Path.Combine(DataManager.GetDataDirectory(), "packs");
+                if (!Directory.Exists(dataDir)) Directory.CreateDirectory(dataDir);
+
+                var files = Directory.GetFiles(dataDir, "*.zip");
+                using var client = new System.Net.Http.HttpClient();
+                client.DefaultRequestHeaders.Add("User-Agent", "AP-Atlas-Tracker");
+
+                int checkedCount = 0;
+                int updatesAvailable = 0;
+
+                foreach (var file in files)
                 {
-                    using var archive = ZipFile.OpenRead(file);
-                    var manifestEntry = archive.Entries.FirstOrDefault(e => e.FullName.EndsWith("manifest.json", StringComparison.OrdinalIgnoreCase));
-                    if (manifestEntry == null) continue;
-
-                    using var stream = manifestEntry.Open();
-                    using var reader = new StreamReader(stream);
-                    var json = reader.ReadToEnd();
-                    var manifest = JsonConvert.DeserializeObject<PopTrackerManifest>(json);
-
-                    if (manifest == null || string.IsNullOrEmpty(manifest.VersionsUrl)) continue;
-
-                    checkedCount++;
-                    _logAction($"[color=gray]Checking {manifest.Name} (Current: {manifest.GetActualVersion()})...[/color]");
-
-                    var res = await client.GetStringAsync(manifest.VersionsUrl);
-                    Newtonsoft.Json.Linq.JObject latestObj = null;
-                    if (res.TrimStart().StartsWith("["))
+                    try
                     {
-                        var versionsArray = Newtonsoft.Json.Linq.JArray.Parse(res);
-                        if (versionsArray.HasValues) latestObj = versionsArray[0] as Newtonsoft.Json.Linq.JObject;
-                    }
-                    else if (res.TrimStart().StartsWith("{"))
-                    {
-                        latestObj = Newtonsoft.Json.Linq.JObject.Parse(res);
-                    }
+                        using var archive = ZipFile.OpenRead(file);
+                        var manifestEntry = archive.Entries.FirstOrDefault(e => e.FullName.EndsWith("manifest.json", StringComparison.OrdinalIgnoreCase));
+                        if (manifestEntry == null) continue;
 
-                    if (latestObj != null)
-                    {
-                        string latestVersion = latestObj["version"]?.ToString() ?? latestObj["tag_name"]?.ToString() ?? latestObj["name"]?.ToString();
+                        using var stream = manifestEntry.Open();
+                        using var reader = new StreamReader(stream);
+                        var json = reader.ReadToEnd();
+                        var manifest = JsonConvert.DeserializeObject<PopTrackerManifest>(json);
 
-                        if (!string.IsNullOrEmpty(latestVersion) && latestVersion != manifest.GetActualVersion())
+                        if (manifest == null || string.IsNullOrEmpty(manifest.VersionsUrl)) continue;
+
+                        checkedCount++;
+                        _logAction($"[color=gray]Checking {manifest.Name} (Current: {manifest.GetActualVersion()})...[/color]");
+
+                        var res = await client.GetStringAsync(manifest.VersionsUrl);
+                        Newtonsoft.Json.Linq.JObject latestObj = null;
+                        if (res.TrimStart().StartsWith("["))
                         {
-                            string downloadUrl = latestObj?["download_url"]?.ToString();
-                            if (string.IsNullOrEmpty(downloadUrl))
-                            {
-                                var assets = latestObj?["assets"] as Newtonsoft.Json.Linq.JArray;
-                                if (assets != null && assets.Count > 0)
-                                {
-                                    downloadUrl = assets[0]["browser_download_url"]?.ToString();
-                                }
-                                else
-                                {
-                                    downloadUrl = latestObj?["html_url"]?.ToString() ?? latestObj?["url"]?.ToString() ?? "";
-                                }
-                            }
-                            _logAction($"[color=lime]Update available for {manifest.Name}:[/color] v{latestVersion}");
-                            if (!string.IsNullOrEmpty(downloadUrl))
-                            {
-                                _logAction($"[url={downloadUrl}]Download v{latestVersion}[/url]");
-                            }
-                            updatesAvailable++;
+                            var versionsArray = Newtonsoft.Json.Linq.JArray.Parse(res);
+                            if (versionsArray.HasValues) latestObj = versionsArray[0] as Newtonsoft.Json.Linq.JObject;
                         }
-                        else
+                        else if (res.TrimStart().StartsWith("{"))
                         {
-                            _logAction($"[color=green]{manifest.Name} is up to date.[/color]");
+                            latestObj = Newtonsoft.Json.Linq.JObject.Parse(res);
                         }
+
+                        if (latestObj != null)
+                        {
+                            string latestVersion = latestObj["version"]?.ToString() ?? latestObj["tag_name"]?.ToString() ?? latestObj["name"]?.ToString();
+
+                            if (!string.IsNullOrEmpty(latestVersion) && latestVersion != manifest.GetActualVersion())
+                            {
+                                string downloadUrl = latestObj?["download_url"]?.ToString();
+                                if (string.IsNullOrEmpty(downloadUrl))
+                                {
+                                    var assets = latestObj?["assets"] as Newtonsoft.Json.Linq.JArray;
+                                    if (assets != null && assets.Count > 0)
+                                    {
+                                        downloadUrl = assets[0]["browser_download_url"]?.ToString();
+                                    }
+                                    else
+                                    {
+                                        downloadUrl = latestObj?["html_url"]?.ToString() ?? latestObj?["url"]?.ToString() ?? "";
+                                    }
+                                }
+                                _logAction($"[color=lime]Update available for {manifest.Name}:[/color] v{latestVersion}");
+                                if (!string.IsNullOrEmpty(downloadUrl))
+                                {
+                                    _logAction($"[url={downloadUrl}]Download v{latestVersion}[/url]");
+                                }
+                                updatesAvailable++;
+                            }
+                            else
+                            {
+                                _logAction($"[color=green]{manifest.Name} is up to date.[/color]");
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logAction($"[color=red]Failed to check update for {Path.GetFileName(file)}: {ex.Message}[/color]");
                     }
                 }
-                catch (Exception ex)
+
+                if (checkedCount == 0)
                 {
-                    _logAction($"[color=red]Failed to check update for {Path.GetFileName(file)}: {ex.Message}[/color]");
+                    _logAction("[color=orange]None of the installed packs support auto-updates (missing versions_url).[/color]");
                 }
-            }
+                else
+                {
+                    _logAction($"[color=cyan]Update check complete. {updatesAvailable} update(s) found across {checkedCount} pack(s).[/color]");
+                }
 
-            if (checkedCount == 0)
-            {
-                _logAction("[color=orange]None of the installed packs support auto-updates (missing versions_url).[/color]");
             }
-            else
+            finally
             {
-                _logAction($"[color=cyan]Update check complete. {updatesAvailable} update(s) found across {checkedCount} pack(s).[/color]");
+                _hideOverlayAction();
             }
-
-            _hideOverlayAction();
         }
 
         private void OnImportPackPressed()
