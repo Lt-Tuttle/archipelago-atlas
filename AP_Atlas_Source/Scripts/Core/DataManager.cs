@@ -3,7 +3,8 @@ using Godot;
 using Newtonsoft.Json;
 using System.Collections.Generic;
 
-public class MapCameraSave {
+public class MapCameraSave
+{
     public float X { get; set; }
     public float Y { get; set; }
     public float Zoom { get; set; }
@@ -23,13 +24,13 @@ public class AppSettings
     public float ScaleStatusBar { get; set; } = 1.0f;
     public string ThemeAccentColor { get; set; } = "#8A2BE2";
     public string ArchipelagoInstallationPath { get; set; } = "";
-    
+
     // Layout State
     public int MainSplitOffset { get; set; } = 300;
     public int SplitRightSidebarOffset { get; set; } = 0;
     public int SplitCenterRightOffset { get; set; } = 0;
     public int SplitContentOffset { get; set; } = 0;
-    
+
     // Map Tracker State
     public int MapSplitOffset { get; set; } = 350;
     public int MapFontSize { get; set; } = 15;
@@ -63,7 +64,7 @@ public class MultiworldProfile
     public List<string> Slots { get; set; } = new List<string>();
     public List<string> ActiveSlots { get; set; } = new List<string>();
     public Dictionary<string, SlotStats> SavedStats { get; set; } = new Dictionary<string, SlotStats>();
-    
+
     // Legacy support
     public string SlotName { get; set; } = "";
 }
@@ -129,8 +130,8 @@ public static class DataManager
 
         string json = File.ReadAllText(path);
         var list = JsonConvert.DeserializeObject<List<MultiworldProfile>>(json) ?? new List<MultiworldProfile>();
-        
-        foreach(var profile in list)
+
+        foreach (var profile in list)
         {
             if (!string.IsNullOrEmpty(profile.SlotName))
             {
@@ -140,7 +141,7 @@ public static class DataManager
                 }
                 profile.SlotName = ""; // Clear it so we don't migrate again
             }
-            
+
             // Cleanup orphaned ActiveSlots (slots that were deleted but stayed pinned due to previous bug)
             if (profile.ActiveSlots != null)
             {
@@ -152,7 +153,7 @@ public static class DataManager
                 profile.SavedStats = new Dictionary<string, SlotStats>();
             }
         }
-        
+
         return list;
     }
 
@@ -181,9 +182,11 @@ public static class DataManager
         foreach (char c in Path.GetInvalidFileNameChars()) filename = filename.Replace(c, '_');
         string path = Path.Combine(GetDataDirectory(), filename);
         if (!File.Exists(path)) return null;
-        try {
+        try
+        {
             return JsonConvert.DeserializeObject<OfflineSlotCache>(File.ReadAllText(path));
-        } catch { return null; }
+        }
+        catch { return null; }
     }
 
     public static void DeleteOfflineCache(string profileId, string slotName)
@@ -194,4 +197,3 @@ public static class DataManager
         if (File.Exists(path)) File.Delete(path);
     }
 }
-

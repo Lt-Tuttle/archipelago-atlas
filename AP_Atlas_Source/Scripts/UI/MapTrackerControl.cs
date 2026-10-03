@@ -9,16 +9,16 @@ namespace AP_Atlas.UI
     {
         public Control SidebarContent { get; private set; }
         public event Action OnDataRefreshed;
-        
+
         private AppSettings _appSettings;
         private Archipelago.MultiClient.Net.ArchipelagoSession _session;
         private LoadedPack _pack;
         private string _currentMapId = "";
-        
+
         private Dictionary<long, string> _locIdToMap = new Dictionary<long, string>();
         private Dictionary<string, long> _locNameToId = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
         private Dictionary<long, string> _locIdToName = new Dictionary<long, string>();
-        
+
         private HashSet<long> _reachableLocs = new HashSet<long>();
         private HashSet<long> _checkedLocs = new HashSet<long>();
         private HashSet<long> _hintedLocs = new HashSet<long>();
@@ -166,7 +166,7 @@ namespace AP_Atlas.UI
             string searchName = loc.Name;
             if (loc.Sections != null && loc.Sections.Count > 0)
             {
-                foreach(var sec in loc.Sections)
+                foreach (var sec in loc.Sections)
                 {
                     string secName = !string.IsNullOrEmpty(sec.Name) ? sec.Name : searchName;
                     if (_locNameToId.TryGetValue(secName, out long sId)) ids.Add(sId);
@@ -178,7 +178,8 @@ namespace AP_Atlas.UI
             }
             return ids;
         }
-        private class MapStat {
+        private class MapStat
+        {
             public int Reachable = 0;
             public int Inaccessible = 0;
             public int HintedReachable = 0;
@@ -189,7 +190,8 @@ namespace AP_Atlas.UI
         private void RefreshMapList()
         {
             var oldNodes = _mapListContainer.GetChildren();
-            foreach (Node n in oldNodes) {
+            foreach (Node n in oldNodes)
+            {
                 _mapListContainer.RemoveChild(n);
                 n.QueueFree();
             }
@@ -254,15 +256,20 @@ namespace AP_Atlas.UI
                 bool isAllChecked = (reachableChecks == 0 && hintedReachableChecks == 0 && hintedInaccessibleChecks == 0 && inaccessibleChecks == 0);
                 var refs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 if (!string.IsNullOrEmpty(loc.MapRef)) refs.Add(loc.MapRef);
-                if (loc.MapLocations != null) {
-                    foreach (var ml in loc.MapLocations) {
+                if (loc.MapLocations != null)
+                {
+                    foreach (var ml in loc.MapLocations)
+                    {
                         if (!string.IsNullOrEmpty(ml.Map)) refs.Add(ml.Map);
                     }
                 }
-                foreach (var mRef in refs) {
-                    if (mapCounts.TryGetValue(mRef, out var stat)) {
+                foreach (var mRef in refs)
+                {
+                    if (mapCounts.TryGetValue(mRef, out var stat))
+                    {
                         if (isAllChecked) stat.Checked++;
-                        else {
+                        else
+                        {
                             stat.HintedReachable += hintedReachableChecks;
                             stat.HintedInaccessible += hintedInaccessibleChecks;
                             stat.Reachable += reachableChecks;
@@ -283,7 +290,8 @@ namespace AP_Atlas.UI
                         if (counterHBox != null)
                         {
                             foreach (Node n in counterHBox.GetChildren()) { counterHBox.RemoveChild(n); n.QueueFree(); }
-                            void AddPill(int count, Color bgColor, Color textColor) {
+                            void AddPill(int count, Color bgColor, Color textColor)
+                            {
                                 if (count <= 0) return;
                                 var panel = new PanelContainer { MouseFilter = MouseFilterEnum.Ignore };
                                 var style = new StyleBoxFlat { BgColor = bgColor, CornerRadiusTopLeft = 4, CornerRadiusTopRight = 4, CornerRadiusBottomLeft = 4, CornerRadiusBottomRight = 4, ContentMarginLeft = 6, ContentMarginRight = 6, ContentMarginTop = 2, ContentMarginBottom = 2 };
@@ -326,12 +334,15 @@ namespace AP_Atlas.UI
             _camera.Position = map.BackgroundTexture.GetSize() / 2f;
             var mapSize = map.BackgroundTexture.GetSize();
             var viewSize = _viewportContainer.Size;
-            if (viewSize.X > 0 && viewSize.Y > 0 && (mapSize.X > viewSize.X || mapSize.Y > viewSize.Y)) {
+            if (viewSize.X > 0 && viewSize.Y > 0 && (mapSize.X > viewSize.X || mapSize.Y > viewSize.Y))
+            {
                 float scaleX = viewSize.X / mapSize.X;
                 float scaleY = viewSize.Y / mapSize.Y;
                 float minScale = Math.Min(scaleX, scaleY) * 0.95f; // 5% padding
                 _camera.Zoom = new Vector2(minScale, minScale);
-            } else {
+            }
+            else
+            {
                 _camera.Zoom = new Vector2(1, 1);
             }
             SaveCurrentCamera();
@@ -340,17 +351,19 @@ namespace AP_Atlas.UI
         {
             if (string.IsNullOrEmpty(_currentMapId) || _appSettings == null) return;
             if (_appSettings.MapCameras == null) _appSettings.MapCameras = new Dictionary<string, MapCameraSave>();
-            _appSettings.MapCameras[_currentMapId] = new MapCameraSave { 
-                X = _camera.Position.X, 
-                Y = _camera.Position.Y, 
-                Zoom = _camera.Zoom.X 
+            _appSettings.MapCameras[_currentMapId] = new MapCameraSave
+            {
+                X = _camera.Position.X,
+                Y = _camera.Position.Y,
+                Zoom = _camera.Zoom.X
             };
             DataManager.SaveSettings(_appSettings);
         }
         private void SwitchMap(string mapId)
         {
             if (_pack == null || !_pack.Maps.ContainsKey(mapId)) return;
-            if (!string.IsNullOrEmpty(_currentMapId)) {
+            if (!string.IsNullOrEmpty(_currentMapId))
+            {
                 SaveCurrentCamera();
             }
             _currentMapId = mapId;
@@ -358,10 +371,13 @@ namespace AP_Atlas.UI
             if (map.BackgroundTexture != null)
             {
                 _mapBackground.Texture = map.BackgroundTexture;
-                if (_appSettings != null && _appSettings.MapCameras != null && _appSettings.MapCameras.TryGetValue(mapId, out var state)) {
+                if (_appSettings != null && _appSettings.MapCameras != null && _appSettings.MapCameras.TryGetValue(mapId, out var state))
+                {
                     _camera.Position = new Vector2(state.X, state.Y);
                     _camera.Zoom = new Vector2(state.Zoom, state.Zoom);
-                } else {
+                }
+                else
+                {
                     AutoFitCamera();
                 }
             }
@@ -421,20 +437,27 @@ namespace AP_Atlas.UI
                 }
                 else if (currentMap != null && currentMap.BackgroundTexture != null)
                 {
-                                        size = Math.Max(16f, Math.Min(currentMap.BackgroundTexture.GetWidth(), currentMap.BackgroundTexture.GetHeight()) * 0.015f);
+                    size = Math.Max(16f, Math.Min(currentMap.BackgroundTexture.GetWidth(), currentMap.BackgroundTexture.GetHeight()) * 0.015f);
                 }
                 size = size * _appSettings.MapNodeScale;
-                var btn = new Button 
-                { 
-                    Position = new Vector2(node.X - (size/2), node.Y - (size/2)), 
+                var btn = new Button
+                {
+                    Position = new Vector2(node.X - (size / 2), node.Y - (size / 2)),
                     CustomMinimumSize = new Vector2(size, size),
                     TooltipText = loc.Name + (ids.Count > 0 ? "" : "\n(Not found in AP logic)"),
                     MouseDefaultCursorShape = CursorShape.PointingHand
                 };
-                var style = new StyleBoxFlat { 
-                    BgColor = nodeColor, 
-                    CornerRadiusTopLeft = (int)size, CornerRadiusTopRight = (int)size, CornerRadiusBottomLeft = (int)size, CornerRadiusBottomRight = (int)size,
-                    BorderWidthTop = 2, BorderWidthBottom = 2, BorderWidthLeft = 2, BorderWidthRight = 2,
+                var style = new StyleBoxFlat
+                {
+                    BgColor = nodeColor,
+                    CornerRadiusTopLeft = (int)size,
+                    CornerRadiusTopRight = (int)size,
+                    CornerRadiusBottomLeft = (int)size,
+                    CornerRadiusBottomRight = (int)size,
+                    BorderWidthTop = 2,
+                    BorderWidthBottom = 2,
+                    BorderWidthLeft = 2,
+                    BorderWidthRight = 2,
                     BorderColor = Colors.Black
                 };
                 var hoverStyle = (StyleBoxFlat)style.Duplicate();
@@ -450,7 +473,7 @@ namespace AP_Atlas.UI
                     foreach (long id in ids) if (newlyUnlocked.Contains(id)) isNew = true;
                     if (isNew)
                     {
-                        btn.PivotOffset = new Vector2(size/2, size/2);
+                        btn.PivotOffset = new Vector2(size / 2, size / 2);
                         var scaleTween = btn.CreateTween().SetLoops(10);
                         scaleTween.TweenProperty(btn, "scale", new Vector2(1.5f, 1.5f), 0.4f).SetTrans(Tween.TransitionType.Sine);
                         scaleTween.TweenProperty(btn, "scale", new Vector2(1.0f, 1.0f), 0.4f).SetTrans(Tween.TransitionType.Sine);

@@ -790,7 +790,8 @@ public partial class SlotTrackerControl : MarginContainer
         _filterChat.Toggled += (b) => RedrawChat();
         _filterSystem.Toggled += (b) => RedrawChat();
 
-        _chatScroll = new ScrollContainer {
+        _chatScroll = new ScrollContainer
+        {
             SizeFlagsVertical = SizeFlags.ExpandFill,
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
             HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled
@@ -815,7 +816,8 @@ public partial class SlotTrackerControl : MarginContainer
 
     private void OnSocketClosed(string reason)
     {
-        Callable.From(() => {
+        Callable.From(() =>
+        {
             AppendSystemMessage($"[color=red]Connection lost: {reason}[/color]");
             RaiseStateChanged();
         }).CallDeferred();
@@ -823,7 +825,8 @@ public partial class SlotTrackerControl : MarginContainer
 
     private void AppendSystemMessage(string bbcodeText, bool isReplay = false)
     {
-        if (!isReplay) {
+        if (!isReplay)
+        {
             _chatHistory.Add(new ChatEntry { SystemMessage = bbcodeText });
             if (_chatHistory.Count > 1000) _chatHistory.RemoveAt(0);
         }
@@ -831,13 +834,18 @@ public partial class SlotTrackerControl : MarginContainer
         if (_filterSystem != null && !_filterSystem.ButtonPressed && !isReplay) return;
 
         var panel = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        var style = new StyleBoxFlat {
+        var style = new StyleBoxFlat
+        {
             BgColor = _nextChatAltBg ? new Godot.Color("#2a2a2a") : new Godot.Color("#1e1e1e"),
-            ContentMarginLeft = 5, ContentMarginRight = 5, ContentMarginTop = 2, ContentMarginBottom = 2
+            ContentMarginLeft = 5,
+            ContentMarginRight = 5,
+            ContentMarginTop = 2,
+            ContentMarginBottom = 2
         };
         panel.AddThemeStyleboxOverride("panel", style);
 
-        var lbl = new RichTextLabel {
+        var lbl = new RichTextLabel
+        {
             BbcodeEnabled = true,
             FitContent = true,
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
@@ -875,7 +883,8 @@ public partial class SlotTrackerControl : MarginContainer
 
     private void OnAPMessageReceived(LogMessage msg)
     {
-        Callable.From(() => {
+        Callable.From(() =>
+        {
             _chatHistory.Add(new ChatEntry { APMessage = msg });
             if (_chatHistory.Count > 1000) _chatHistory.RemoveAt(0);
             ProcessSingleMessage(msg);
@@ -887,7 +896,8 @@ public partial class SlotTrackerControl : MarginContainer
         if (msg is HintItemSendLogMessage hintMsg)
         {
             var parts = hintMsg.Parts.OfType<Archipelago.MultiClient.Net.MessageLog.Parts.LocationMessagePart>();
-            foreach (var part in parts) {
+            foreach (var part in parts)
+            {
                 _knownHintedLocations.Add(part.LocationId);
             }
             RaiseStateChanged();
@@ -902,9 +912,12 @@ public partial class SlotTrackerControl : MarginContainer
         _nextChatAltBg = false;
         foreach (var entry in _chatHistory)
         {
-            if (entry.IsSystemMessage) {
+            if (entry.IsSystemMessage)
+            {
                 if (_filterSystem == null || _filterSystem.ButtonPressed) AppendSystemMessage(entry.SystemMessage, true);
-            } else {
+            }
+            else
+            {
                 if (!ShouldFilterMessage(entry.APMessage))
                 {
                     AppendMessageToChat(entry.APMessage);
@@ -965,13 +978,18 @@ public partial class SlotTrackerControl : MarginContainer
         }
 
         var panel = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        var style = new StyleBoxFlat {
+        var style = new StyleBoxFlat
+        {
             BgColor = _nextChatAltBg ? new Godot.Color("#2a2a2a") : new Godot.Color("#1e1e1e"),
-            ContentMarginLeft = 5, ContentMarginRight = 5, ContentMarginTop = 2, ContentMarginBottom = 2
+            ContentMarginLeft = 5,
+            ContentMarginRight = 5,
+            ContentMarginTop = 2,
+            ContentMarginBottom = 2
         };
         panel.AddThemeStyleboxOverride("panel", style);
 
-        var lbl = new RichTextLabel {
+        var lbl = new RichTextLabel
+        {
             BbcodeEnabled = true,
             FitContent = true,
             SizeFlagsHorizontal = SizeFlags.ExpandFill,

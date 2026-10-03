@@ -39,7 +39,7 @@ namespace AP_Atlas.Core.PopTracker
 
             var info = new System.IO.FileInfo(zipPath);
             if (!info.Exists) return null;
-            
+
             if (_inspectionCache.TryGetValue(zipPath, out var cached))
             {
                 if (cached.lastWrite == info.LastWriteTimeUtc) return cached.pack;
@@ -76,7 +76,7 @@ namespace AP_Atlas.Core.PopTracker
                 {
                     // 1. Read manifest to check game name
                     var manifestEntry = archive.Entries.FirstOrDefault(e => e.FullName.EndsWith("manifest.json", StringComparison.OrdinalIgnoreCase) || e.FullName.EndsWith("pack.json", StringComparison.OrdinalIgnoreCase));
-                    
+
                     PopTrackerManifest manifest = null;
                     string rootPrefix = "";
 
@@ -87,10 +87,11 @@ namespace AP_Atlas.Core.PopTracker
                         {
                             manifest = JsonConvert.DeserializeObject<PopTrackerManifest>(json);
                         }
-                        catch (Exception e) { 
+                        catch (Exception e)
+                        {
                             if (logDebug != null) logDebug($"[PopTracker] Failed to parse manifest in {zipPath}: {e.Message}");
                         }
-                        
+
                         string manifestName = manifestEntry.FullName.EndsWith("manifest.json", StringComparison.OrdinalIgnoreCase) ? "manifest.json" : "pack.json";
                         rootPrefix = manifestEntry.FullName.Substring(0, manifestEntry.FullName.Length - manifestName.Length);
                     }
@@ -108,11 +109,11 @@ namespace AP_Atlas.Core.PopTracker
                             if (logDebug != null) logDebug($"[PopTracker] Could not find any maps directory in {zipPath}. Skipping.");
                             return null;
                         }
-                        
+
                         manifest = new PopTrackerManifest { Name = targetGameName, GameName = targetGameName };
                     }
 
-                    if (manifest == null) 
+                    if (manifest == null)
                     {
                         if (logDebug != null) logDebug($"[PopTracker] Skipping {zipPath} - Invalid manifest.");
                         return null;
@@ -157,13 +158,14 @@ namespace AP_Atlas.Core.PopTracker
 
                     // 3. Read layouts to extract grid rows
                     var layoutEntries = archive.Entries.Where(e => e.FullName.StartsWith(rootPrefix + "layouts/", StringComparison.OrdinalIgnoreCase) && (e.FullName.EndsWith(".json", StringComparison.OrdinalIgnoreCase) || e.FullName.EndsWith(".jsonc", StringComparison.OrdinalIgnoreCase))).ToList();
-                    
-                    layoutEntries.Sort((a, b) => {
+
+                    layoutEntries.Sort((a, b) =>
+                    {
                         bool aItems = a.FullName.EndsWith("items.json", StringComparison.OrdinalIgnoreCase);
                         bool bItems = b.FullName.EndsWith("items.json", StringComparison.OrdinalIgnoreCase);
                         bool aTracker = a.FullName.EndsWith("tracker.json", StringComparison.OrdinalIgnoreCase);
                         bool bTracker = b.FullName.EndsWith("tracker.json", StringComparison.OrdinalIgnoreCase);
-                        
+
                         if (aItems && !bItems) return -1;
                         if (!aItems && bItems) return 1;
                         if (aTracker && !bTracker) return -1;
@@ -179,9 +181,9 @@ namespace AP_Atlas.Core.PopTracker
                             var jToken = JToken.Parse(json);
                             int gridCount = pack.ItemGrids.Count;
                             ExtractItemGrids(jToken, pack.ItemGrids);
-                            
+
                             // If we found grids in this layout, stop reading other files to prevent duplicate alternate layouts
-                            if (pack.ItemGrids.Count > gridCount) 
+                            if (pack.ItemGrids.Count > gridCount)
                             {
                                 break;
                             }
@@ -199,7 +201,7 @@ namespace AP_Atlas.Core.PopTracker
                     {
                         string localPath = entry.FullName.Substring(rootPrefix.Length).TrimStart('/');
                         // e.g. "images/items/Annex Key.png"
-                        
+
                         // Godot image loading
                         byte[] buffer;
                         using (var stream = entry.Open())
@@ -318,7 +320,7 @@ namespace AP_Atlas.Core.PopTracker
                                         if (kvp.Value is Newtonsoft.Json.Linq.JObject locObj)
                                         {
                                             var loc = locObj.ToObject<PopTrackerLocation>();
-                                            if (loc != null) 
+                                            if (loc != null)
                                             {
                                                 if (string.IsNullOrEmpty(loc.Name)) loc.Name = kvp.Key;
                                                 ExtractLocationsRecursive(loc, pack.Locations);
@@ -329,7 +331,7 @@ namespace AP_Atlas.Core.PopTracker
                                             foreach (var item in locArr)
                                             {
                                                 var loc = item.ToObject<PopTrackerLocation>();
-                                                if (loc != null) 
+                                                if (loc != null)
                                                 {
                                                     if (string.IsNullOrEmpty(loc.Name)) loc.Name = kvp.Key;
                                                     ExtractLocationsRecursive(loc, pack.Locations);
@@ -350,12 +352,17 @@ namespace AP_Atlas.Core.PopTracker
                     if (logDebug != null) logDebug($"[PopTracker] Extraction Complete! Items: {pack.ItemsByCode.Count}, Layout Grids: {pack.ItemGrids.Count}, Maps: {pack.Maps.Count}, Locations: {pack.Locations.Count}");
 
                     // Link Textures
-                    foreach(var map in pack.Maps.Values) {
-                        if (!string.IsNullOrEmpty(map.MapBg)) {
+                    foreach (var map in pack.Maps.Values)
+                    {
+                        if (!string.IsNullOrEmpty(map.MapBg))
+                        {
                             string key = "/" + map.MapBg.Replace("\\", "/");
-                            if (pack.Images.ContainsKey(key)) {
+                            if (pack.Images.ContainsKey(key))
+                            {
                                 map.BackgroundTexture = pack.Images[key];
-                            } else if (pack.Images.ContainsKey(map.MapBg)) {
+                            }
+                            else if (pack.Images.ContainsKey(map.MapBg))
+                            {
                                 map.BackgroundTexture = pack.Images[map.MapBg];
                             }
                         }
@@ -434,7 +441,7 @@ namespace AP_Atlas.Core.PopTracker
                 }
             }
         }
-    
+
         public static bool IsGameNameMatch(string manifestName, string targetName)
         {
             if (string.IsNullOrEmpty(manifestName) || string.IsNullOrEmpty(targetName)) return false;
@@ -442,7 +449,7 @@ namespace AP_Atlas.Core.PopTracker
 
             string m = NormalizeName(manifestName);
             string t = NormalizeName(targetName);
-            
+
             if (string.Equals(m, t, StringComparison.OrdinalIgnoreCase)) return true;
 
             if (m.Contains(":") && m.Substring(m.IndexOf(":") + 1).Trim().Equals(t, StringComparison.OrdinalIgnoreCase)) return true;
@@ -463,5 +470,5 @@ namespace AP_Atlas.Core.PopTracker
             roman = Regex.Replace(roman, @"\bII\b", "2", RegexOptions.IgnoreCase);
             return roman;
         }
-}
+    }
 }

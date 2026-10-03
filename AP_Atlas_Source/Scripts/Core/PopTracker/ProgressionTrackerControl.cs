@@ -19,14 +19,14 @@ namespace AP_Atlas.Core.PopTracker
         private Button _btnViewText;
         private Button _btnShowCollected;
         private Button _btnShowMissing;
-                private LineEdit _searchBox;
+        private LineEdit _searchBox;
         private OptionButton _optSortBy;
 
         private ScrollContainer _visualScroll;
         private VBoxContainer _visualGrid;
         private HBoxContainer _visualFooter;
         private void ApplyZoom(float zoomVal) { float size = 64f * zoomVal; if (_visualGrid != null) { foreach (Node row in _visualGrid.GetChildren()) { foreach (Node cell in row.GetChildren()) { if (cell is Control c) { c.CustomMinimumSize = new Vector2(size, size); } } } } }
-private ScrollContainer _textScroll;
+        private ScrollContainer _textScroll;
         private Tree _textTree;
 
         private LoadedPack _pack;
@@ -56,12 +56,13 @@ private ScrollContainer _textScroll;
             var imgMis = Godot.Image.CreateEmpty(16, 16, false, Godot.Image.Format.Rgba8);
             imgCol.Fill(Colors.Transparent);
             imgMis.Fill(Colors.Transparent);
-            for(int x=0; x<16; x++) for(int y=0; y<16; y++) {
-                float dist = (x-7.5f)*(x-7.5f) + (y-7.5f)*(y-7.5f);
-                if (dist <= 30) imgCol.SetPixel(x, y, Colors.LimeGreen);
-                if (dist <= 30) imgMis.SetPixel(x, y, Colors.DarkGray);
-                else if (dist <= 40) imgMis.SetPixel(x, y, Colors.DimGray); // Outline for missing
-            }
+            for (int x = 0; x < 16; x++) for (int y = 0; y < 16; y++)
+                {
+                    float dist = (x - 7.5f) * (x - 7.5f) + (y - 7.5f) * (y - 7.5f);
+                    if (dist <= 30) imgCol.SetPixel(x, y, Colors.LimeGreen);
+                    if (dist <= 30) imgMis.SetPixel(x, y, Colors.DarkGray);
+                    else if (dist <= 40) imgMis.SetPixel(x, y, Colors.DimGray); // Outline for missing
+                }
             _texCollected = ImageTexture.CreateFromImage(imgCol);
             _texMissing = ImageTexture.CreateFromImage(imgMis);
 
@@ -134,7 +135,7 @@ private ScrollContainer _textScroll;
             var spacer = new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill };
             toolbar.AddChild(spacer);
 
-                        _lblProgress = new Label { Text = "0 / 0", CustomMinimumSize = new Vector2(100, 0), HorizontalAlignment = HorizontalAlignment.Right };
+            _lblProgress = new Label { Text = "0 / 0", CustomMinimumSize = new Vector2(100, 0), HorizontalAlignment = HorizontalAlignment.Right };
             toolbar.AddChild(_lblProgress);
 
             // Visual Mode Container
@@ -153,7 +154,8 @@ private ScrollContainer _textScroll;
             _visualFooter.AddChild(zoomLabel);
 
             var zoomMinus = new Button { Text = "-", CustomMinimumSize = new Vector2(24, 24), FocusMode = FocusModeEnum.None };
-            zoomMinus.Pressed += () => {
+            zoomMinus.Pressed += () =>
+            {
                 var appSettings = DataManager.LoadSettings() ?? new AppSettings();
                 appSettings.KeyItemZoom = Math.Max(0.5f, appSettings.KeyItemZoom - 0.25f);
                 DataManager.SaveSettings(appSettings);
@@ -162,7 +164,8 @@ private ScrollContainer _textScroll;
             _visualFooter.AddChild(zoomMinus);
 
             var zoomPlus = new Button { Text = "+", CustomMinimumSize = new Vector2(24, 24), FocusMode = FocusModeEnum.None };
-            zoomPlus.Pressed += () => {
+            zoomPlus.Pressed += () =>
+            {
                 var appSettings = DataManager.LoadSettings() ?? new AppSettings();
                 appSettings.KeyItemZoom = Math.Min(3.0f, appSettings.KeyItemZoom + 0.25f);
                 DataManager.SaveSettings(appSettings);
@@ -178,8 +181,9 @@ private ScrollContainer _textScroll;
             textMargin.AddThemeConstantOverride("margin_right", 10);
             textMargin.AddThemeConstantOverride("margin_top", 10);
             _textScroll.AddChild(textMargin);
-            _textTree = new Tree { 
-                SizeFlagsHorizontal = SizeFlags.ExpandFill, 
+            _textTree = new Tree
+            {
+                SizeFlagsHorizontal = SizeFlags.ExpandFill,
                 SizeFlagsVertical = SizeFlags.ExpandFill,
                 Columns = 3,
                 ColumnTitlesVisible = true,
@@ -208,7 +212,7 @@ private ScrollContainer _textScroll;
             if (_optSortBy != null) _optSortBy.Visible = !_isVisualMode;
         }
 
-        
+
 
         public void UpdateFromSession()
         {
@@ -275,7 +279,7 @@ private ScrollContainer _textScroll;
         private void RenderActiveMode()
         {
             string filter = _searchBox.Text.ToLowerInvariant();
-            
+
             if (_isVisualMode && _pack != null)
             {
                 RenderVisualMode(filter);
@@ -317,7 +321,7 @@ private ScrollContainer _textScroll;
                     _receivedCounts.TryGetValue(itemDef.Name, out receivedQty);
 
                     var tile = CreateVisualTile(itemDef, receivedQty, zoomSize);
-                    
+
                     if (!isSearchMatch)
                     {
                         tile.Modulate = new Color(0.2f, 0.2f, 0.2f, 0.2f);
@@ -336,7 +340,7 @@ private ScrollContainer _textScroll;
             container.TooltipText = $"{itemDef.Name}\nCollected: {receivedQty}";
 
             var texRect = new TextureRect { ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered, CustomMinimumSize = new Vector2(zoomSize, zoomSize) };
-            
+
             // Determine image to show based on progressive stages
             string imgPath = itemDef.Img;
             if (string.IsNullOrEmpty(imgPath))
@@ -344,7 +348,7 @@ private ScrollContainer _textScroll;
                 var codes = itemDef.GetCodes();
                 if (codes.Count > 0) imgPath = "images/items/" + codes[0] + ".png";
             }
-            
+
             if (itemDef.Type == "progressive" && itemDef.Stages.Count > 0)
             {
                 int stageIdx = Math.Min(receivedQty, itemDef.Stages.Count) - 1;
@@ -357,7 +361,7 @@ private ScrollContainer _textScroll;
                         var codesStr = itemDef.Stages[stageIdx].Codes;
                         if (!string.IsNullOrEmpty(codesStr))
                         {
-                            var codes = codesStr.Split(new char[]{','}, System.StringSplitOptions.RemoveEmptyEntries);
+                            var codes = codesStr.Split(new char[] { ',' }, System.StringSplitOptions.RemoveEmptyEntries);
                             if (codes.Length > 0) imgPath = "images/items/" + codes[0].Trim() + ".png";
                         }
                     }
@@ -373,7 +377,7 @@ private ScrollContainer _textScroll;
                 {
                     // Fallback: try different extensions or ignore extension
                     string baseName = imgPath.Contains(".") ? imgPath.Substring(0, imgPath.LastIndexOf('.')) : imgPath;
-                    foreach(var kvp in _pack.Images)
+                    foreach (var kvp in _pack.Images)
                     {
                         string testName = kvp.Key.Contains(".") ? kvp.Key.Substring(0, kvp.Key.LastIndexOf('.')) : kvp.Key;
                         if (testName.TrimStart('/') == baseName.TrimStart('/'))
@@ -394,7 +398,7 @@ private ScrollContainer _textScroll;
             {
                 texRect.Modulate = new Color(0.4f, 0.4f, 0.5f, 0.5f);
             }
-            
+
             container.AddChild(texRect);
 
             // Add collected green dot if collected
@@ -403,8 +407,9 @@ private ScrollContainer _textScroll;
                 var dotContainer = new MarginContainer();
                 dotContainer.AddThemeConstantOverride("margin_right", 4);
                 dotContainer.AddThemeConstantOverride("margin_bottom", 4);
-                
-                var dotTex = new TextureRect {
+
+                var dotTex = new TextureRect
+                {
                     Texture = _texCollected,
                     StretchMode = TextureRect.StretchModeEnum.Keep,
                     SizeFlagsHorizontal = SizeFlags.ShrinkEnd,
@@ -412,10 +417,11 @@ private ScrollContainer _textScroll;
                 };
                 dotContainer.AddChild(dotTex);
                 container.AddChild(dotContainer);
-                
+
                 if (receivedQty > 1 && itemDef.Type == "progressive")
                 {
-                    var qtyLabel = new Label {
+                    var qtyLabel = new Label
+                    {
                         Text = receivedQty.ToString(),
                         LabelSettings = new LabelSettings { FontSize = 16, OutlineSize = 4, OutlineColor = Colors.Black },
                         HorizontalAlignment = HorizontalAlignment.Left,
@@ -462,7 +468,7 @@ private ScrollContainer _textScroll;
                     else poolCounts[wName] = 1;
                 }
             }
-            
+
             _logger?.Invoke($"[Key Items] Items marked as Progression flags: {poolCounts.Count} unique items.");
 
             // Failsafe: If python bridge failed to assign flags, show everything
@@ -480,7 +486,7 @@ private ScrollContainer _textScroll;
 
             // Group by basic inferred types
             var categories = new Dictionary<string, List<(string Name, int Received, int Max)>>();
-            
+
             _logger?.Invoke($"[Key Items] Current search filter: '{filter}'");
 
             bool showCollected = _btnShowCollected.ButtonPressed;
@@ -491,7 +497,7 @@ private ScrollContainer _textScroll;
             {
                 string name = kvp.Key;
                 int maxQty = kvp.Value;
-                
+
                 if (!string.IsNullOrEmpty(filter) && !name.ToLowerInvariant().Contains(filter)) continue;
 
                 int receivedQty = 0;
@@ -511,8 +517,8 @@ private ScrollContainer _textScroll;
             _logger?.Invoke($"[Key Items] Filtered into {categories.Count} categories. Total items across categories: {totalProgression}.");
 
             int shownCount = 0;
-            
-            var orderedCategories = sortMode == 0 
+
+            var orderedCategories = sortMode == 0
                 ? categories.OrderBy(c => c.Key)
                 : categories.OrderByDescending(c => c.Key == "Key / Access")
                             .ThenByDescending(c => c.Key == "Magic / Spell")
@@ -547,7 +553,7 @@ private ScrollContainer _textScroll;
                     row.SetText(0, " " + item.Name);
                     row.SetIcon(0, item.Received > 0 ? _texCollected : _texMissing);
                     row.SetText(1, cat.Key);
-                    
+
                     if (item.Max > 1 || item.Received > 1)
                         row.SetText(2, $"{item.Received} / {item.Max}");
                     else if (item.Received > 0)

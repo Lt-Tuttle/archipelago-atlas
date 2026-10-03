@@ -142,20 +142,20 @@ public class LogicEngineManager
 
             string responseStr = await ReadJsonResponseAsync(10000);
             _logger($"GetReachableLocationsAsync: Response received. IsNullOrEmpty: {string.IsNullOrEmpty(responseStr)}");
-            
+
             if (string.IsNullOrEmpty(responseStr)) return new List<long>();
 
             var response = Newtonsoft.Json.Linq.JObject.Parse(responseStr);
             var reachableToken = response["reachable"];
             var excludedToken = response["excluded"];
-            
+
             if (excludedToken != null)
             {
                 LastExcludedLocations = excludedToken.ToObject<List<long>>();
             }
 
             _logger($"GetReachableLocationsAsync: Parsed response. HasReachable: {reachableToken != null}");
-            
+
             if (reachableToken != null)
             {
                 return reachableToken.ToObject<List<long>>();
@@ -196,8 +196,8 @@ public class LogicEngineManager
     {
         if (_engineProcess != null && !_engineProcess.HasExited)
         {
-            try { _engineProcess.Kill(); } catch {}
-            try { _engineProcess.Dispose(); } catch {}
+            try { _engineProcess.Kill(); } catch { }
+            try { _engineProcess.Dispose(); } catch { }
             _engineProcess = null;
         }
     }
@@ -205,13 +205,13 @@ public class LogicEngineManager
     public string GetWorldsDirectory()
     {
         if (string.IsNullOrEmpty(_apPath) || !Directory.Exists(_apPath)) return null;
-        
+
         string customWorlds = Path.Combine(_apPath, "custom_worlds");
         string libWorlds = Path.Combine(_apPath, "lib", "worlds");
-        
+
         if (Directory.Exists(customWorlds)) return customWorlds;
         if (Directory.Exists(libWorlds)) return libWorlds;
-        
+
         // If neither exists but it's a valid directory, create custom_worlds
         Directory.CreateDirectory(customWorlds);
         return customWorlds;
@@ -221,7 +221,7 @@ public class LogicEngineManager
     {
         string worldsDir = GetWorldsDirectory();
         if (worldsDir == null) return false;
-        
+
         return File.Exists(Path.Combine(worldsDir, "tracker.apworld"));
     }
 
@@ -423,11 +423,11 @@ components.append(Component('UltimateBridge', None, func=launch_bridge, componen
             var response = await _httpClient.GetStringAsync(GitHubApiUrl);
             var json = JObject.Parse(response);
             var assets = json["assets"] as JArray;
-            
+
             string downloadUrl = null;
             if (assets != null)
             {
-                foreach(var asset in assets)
+                foreach (var asset in assets)
                 {
                     if (asset["name"]?.ToString() == "tracker.apworld")
                     {
@@ -442,13 +442,13 @@ components.append(Component('UltimateBridge', None, func=launch_bridge, componen
                 onProgress?.Invoke("Error: Could not find tracker.apworld in latest release.");
                 return false;
             }
-            
+
             onProgress?.Invoke("Downloading tracker.apworld...");
             byte[] fileBytes = await _httpClient.GetByteArrayAsync(downloadUrl);
-            
+
             string destPath = Path.Combine(worldsDir, "tracker.apworld");
             File.WriteAllBytes(destPath, fileBytes);
-            
+
             onProgress?.Invoke("Universal Tracker installed successfully.");
             InstallPythonBridge();
             return true;
@@ -460,9 +460,3 @@ components.append(Component('UltimateBridge', None, func=launch_bridge, componen
         }
     }
 }
-
-
-
-
-
-

@@ -14,9 +14,9 @@ namespace AP_Atlas.Core
             string dir = DataManager.GetDataDirectory();
             string logDir = Path.Combine(dir, "logs");
             if (!Directory.Exists(logDir)) Directory.CreateDirectory(logDir);
-            
+
             _logFilePath = Path.Combine(logDir, "atlas_log.txt");
-            
+
             if (File.Exists(_logFilePath) && new FileInfo(_logFilePath).Length > 5 * 1024 * 1024)
             {
                 File.Move(_logFilePath, Path.Combine(logDir, "atlas_log_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".txt"));
