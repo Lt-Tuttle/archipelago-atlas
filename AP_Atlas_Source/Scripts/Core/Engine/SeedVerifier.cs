@@ -130,7 +130,8 @@ namespace AP_Atlas.Core.EngineSetup
                 log?.Invoke($"Testing logic against {Path.GetFileName(seedPath)} (rebuilding each world and replaying the seed's spheres)…");
                 SeedTestReport report = null;
                 var errors = new StringBuilder();
-                string request = JsonConvert.SerializeObject(new { seed = Path.GetFullPath(seedPath) });
+                // With the cache index, a seed made with another apworld version is tested on that version when Atlas has it.
+                string request = JsonConvert.SerializeObject(new { seed = Path.GetFullPath(seedPath), apworld_cache_index = ApworldSources.CacheIndexFile });
                 try
                 {
                     await AtlasEngine.RunComponentAsync(install, "AtlasSeedTest", request, line =>

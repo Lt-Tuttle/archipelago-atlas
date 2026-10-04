@@ -76,6 +76,9 @@ public class LogicEngineManager
     /// <summary>Python / Archipelago / Universal Tracker versions the engine reported.</summary>
     public JObject LastVersions { get; private set; }
 
+    /// <summary>Whether the seed's cached apworld was used in place of the installed one (used / matches / error), from the last start.</summary>
+    public JObject LastApworldOverride { get; private set; }
+
     /// <summary>The installed apworld's data checksum (compare with the server's for the seed), from the last start.</summary>
     public string LastDataChecksum { get; private set; }
 
@@ -94,10 +97,12 @@ public class LogicEngineManager
     // request is discarded instead of being mistaken for the answer to the next one.
     private int _nextRequestId = 0;
 
-    public async Task<bool> StartEngineAsync(string game, string playerName, int slot, Dictionary<string, object> slotData, IEnumerable<long> allLocations = null, string yamlPath = null)
+    public async Task<bool> StartEngineAsync(string game, string playerName, int slot, Dictionary<string, object> slotData, IEnumerable<long> allLocations = null, string yamlPath = null,
+        string apworldOverride = null, string expectedChecksum = null)
     {
         if (_engineProcess != null && !_engineProcess.HasExited) return true;
         LastStartError = null;
+        LastApworldOverride = null;
         string problem = AP_Atlas.Core.EngineSetup.AtlasEngine.ProblemWith(_install);
         if (problem != null)
         {
@@ -142,7 +147,10 @@ public class LogicEngineManager
                 { "slot", slot },
                 { "slot_data", slotData },
                 { "all_locations", allLocations != null ? new List<long>(allLocations) : new List<long>() },
-                { "yaml_path", string.IsNullOrEmpty(yamlPath) ? null : yamlPath }
+                { "yaml_path", string.IsNullOrEmpty(yamlPath) ? null : yamlPath },
+                // The seed's apworld version from Atlas's cache, used for this slot in place of the installed copy.
+                { "apworld_override", string.IsNullOrEmpty(apworldOverride) ? null : apworldOverride },
+                { "expected_checksum", string.IsNullOrEmpty(expectedChecksum) ? null : expectedChecksum }
             };
 
             // Loading every game and rebuilding the world can take a while on a slow disk or a big install.
@@ -160,6 +168,7 @@ public class LogicEngineManager
                 return false;
             }
             LastVersions = response["versions"] as JObject;
+            LastApworldOverride = (response["yaml"]?["apworld_override"] ?? response["apworld_override"]) as JObject;
 
             if (response["status"]?.ToString() == "error")
             {

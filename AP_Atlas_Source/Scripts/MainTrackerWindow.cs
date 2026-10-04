@@ -389,6 +389,10 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         settingsMenu.AddCheckItem("Reconnect dropped connections automatically", AutoReconnectId);
         settingsMenu.SetItemChecked(settingsMenu.GetItemIndex(AutoReconnectId), _appSettings.AutoReconnect);
         settingsMenu.SetItemTooltip(settingsMenu.GetItemIndex(AutoReconnectId), "A few tries over about 30 minutes, then Atlas stops so it never keeps a closed room busy.");
+        const int AutoFixApworldId = 2;
+        settingsMenu.AddCheckItem("Use each seed's apworld version automatically", AutoFixApworldId);
+        settingsMenu.SetItemChecked(settingsMenu.GetItemIndex(AutoFixApworldId), _appSettings.AutoFixApworldVersions);
+        settingsMenu.SetItemTooltip(settingsMenu.GetItemIndex(AutoFixApworldId), "When a seed was made with another version of a game's apworld, Atlas finds that version and uses it for that slot.\nIt downloads only from sources you've trusted, and never changes your Archipelago install.");
         settingsMenu.IdPressed += (id) =>
         {
             if (id == 0) OpenEngineSetup();
@@ -398,6 +402,12 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 settingsMenu.SetItemChecked(settingsMenu.GetItemIndex(AutoReconnectId), _appSettings.AutoReconnect);
                 DataManager.SaveSettings(_appSettings);
                 if (!_appSettings.AutoReconnect) _reconnectAttempts.Clear();
+            }
+            else if (id == AutoFixApworldId)
+            {
+                _appSettings.AutoFixApworldVersions = !_appSettings.AutoFixApworldVersions;
+                settingsMenu.SetItemChecked(settingsMenu.GetItemIndex(AutoFixApworldId), _appSettings.AutoFixApworldVersions);
+                DataManager.SaveSettings(_appSettings);
             }
         };
         // Race Mode: when restrictions apply, and how much they hide.

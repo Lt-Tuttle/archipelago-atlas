@@ -441,11 +441,11 @@ namespace AP_Atlas.UI
                     unlink.Pressed += () => slot.LinkYaml(null);
                     row.AddChild(unlink);
                 }
-                if (slot.ApworldMatchesSeed == false && ApworldSources.Find(slot.Game) != null)
+                if (slot.ApworldMatchesSeed == false)
                 {
-                    var fix = new Button { Text = "Find the seed's version…", TooltipText = "Download the version of this game's apworld whose data matches the seed, install it and restart logic", Disabled = slot.EngineBooting || _busy };
+                    var fix = new Button { Text = "Use the seed's version…", TooltipText = "Find the apworld version this seed was made with and use it for this slot only (your install isn't changed)", Disabled = slot.EngineBooting };
                     var s = slot;
-                    fix.Pressed += () => DownloadGame(s.Game, s.ServerChecksumFor(s.Game), s);
+                    fix.Pressed += () => s.FixApworldVersion(interactive: true);
                     row.AddChild(fix);
                 }
                 var retry = new Button { Text = "Restart logic", TooltipText = "Start this slot's logic engine again", Disabled = slot.EngineBooting };

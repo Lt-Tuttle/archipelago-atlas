@@ -200,10 +200,14 @@ namespace AP_Atlas.UI
             string serverChecksum = slot.ServerChecksumFor(slot.Game), localChecksum = slot.LogicEngine?.LastDataChecksum;
             string Short(string c) => string.IsNullOrEmpty(c) ? "?" : c.Substring(0, Math.Min(8, c.Length));
             if (slot.ApworldMatchesSeed == true)
-                Row("Apworld vs seed", Colored($"Same version (data {Short(localChecksum)})", Good), "The installed apworld's data checksum equals the one the server reports for this seed");
+                Row("Apworld vs seed", Colored(slot.UsingSeedApworld
+                        ? $"Same version: Atlas's copy of {slot.InstalledWorldVersion ?? "the seed's version"} (data {Short(localChecksum)})"
+                        : $"Same version (data {Short(localChecksum)})", Good),
+                    slot.UsingSeedApworld ? "This slot runs on the apworld version its seed was made with, from Atlas's cache. Your Archipelago install isn't changed."
+                        : "The installed apworld's data checksum equals the one the server reports for this seed");
             else if (slot.ApworldMatchesSeed == false)
                 Row("Apworld vs seed", Colored($"Different version (installed {Short(localChecksum)}, seed {Short(serverChecksum)})", Warn),
-                    "Atlas Engine → Slots → Find the seed's version installs the matching one when it's listed");
+                    "Fix automatically on the Logic Tracker's banner finds the seed's version and uses it for this slot (your install isn't changed)");
             else PlainRow("Apworld vs seed", "Not reported by the server or engine");
 
             var tested = AP_Atlas.Core.EngineSetup.SeedVerifier.For(slot.Game, localChecksum);

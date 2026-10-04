@@ -238,6 +238,30 @@ def yaml_candidates(cls, game, slot_name, slot_data, linked_path, players_dir):
                 cands.append(('players', fname, overlay(doc)))
     return cands, notes, len(resolved), total
 
+def apply_apworld_override(req):
+    # When Atlas has the apworld version this seed was made with (req: apworld_override + expected_checksum), use it
+    # for this slot instead of the installed copy, unless the installed copy already matches.
+    from worlds.AutoWorld import AutoWorldRegister
+    path = req.get('apworld_override')
+    if not path:
+        return None
+    game = req.get('game')
+    expected = req.get('expected_checksum')
+    current = AutoWorldRegister.world_types.get(game)
+    if current is not None and expected and world_identity(current).get('data_checksum') == expected:
+        return {'used': False, 'reason': 'the installed copy already matches the seed'}
+    try:
+        swap_in_apworld(path, game)
+        loaded = AutoWorldRegister.world_types.get(game)
+        identity = world_identity(loaded) if loaded is not None else {}
+        return {'used': loaded is not None, 'file': os.path.basename(path),
+                'matches': bool(expected) and identity.get('data_checksum') == expected,
+                'world_version': identity.get('world_version')}
+    except Exception as e:
+        # swap_in_apworld restored the installed copy: the slot carries on with it, and Atlas reports why.
+        return {'used': False, 'error': (type(e).__name__ + ': ' + str(e))[:300]}
+
+
 def start_slot(req, logger):
     # Rebuilds one slot's world the way a live slot does; shared by the bridge and the seed test.
     from worlds.tracker.TrackerCore import TrackerCore
@@ -246,11 +270,13 @@ def start_slot(req, logger):
     slot_name = req.get('player_name')
     slot_data = req.get('slot_data') or {}
     all_locations = req.get('all_locations') or []
+    override = apply_apworld_override(req)
     cls = AutoWorldRegister.world_types.get(game)
     if cls is None:
         import worlds
         return None, {'code': 'world_missing', 'message': game + ' is not installed in this engine.',
-                      'failed_worlds': [str(w) for w in getattr(worlds, 'failed_world_loads', [])]}
+                      'failed_worlds': [str(w) for w in getattr(worlds, 'failed_world_loads', [])],
+                      'apworld_override': override}
     if getattr(cls, 'disable_ut', False):
         return None, {'code': 'ut_disabled', 'message': "This game's author asked for the Universal Tracker not to be used with it."}
     missing_api = ut_api_missing()
@@ -266,7 +292,7 @@ def start_slot(req, logger):
             return None, {'code': 'ut_disabled', 'message': "This game's author asked for the Universal Tracker not to be used with it."}
         if c.multiworld is None or c.player_id is None:
             return None, {'code': 'generation_failed', 'message': getattr(c, 'gen_error', None) or 'The world could not be rebuilt from the slot data.'}
-        info = {'source': 'not_needed'}
+        info = {'source': 'not_needed', 'apworld_override': override}
         info.update(verify(c, all_locations))
         return c, info
     cands, notes, used, total = yaml_candidates(cls, game, slot_name, slot_data, req.get('yaml_path'), players_dir)
@@ -295,7 +321,7 @@ def start_slot(req, logger):
                    game + " needs this player's YAML: its slot data doesn't include the options.")
         return None, {'code': code, 'message': message, 'attempts': attempts, 'notes': notes}
     info = {'source': best[2], 'file': best[3], 'options_from_slot_data': used, 'options_total': total,
-            'attempts': attempts, 'notes': notes}
+            'attempts': attempts, 'notes': notes, 'apworld_override': override}
     info.update(best[4])
     return best[1], info
 
@@ -622,6 +648,21 @@ def load_multidata(path):
     return Utils.restricted_loads(zlib.decompress(raw[1:]))
 
 
+def cached_apworld(index_path, game, checksum):
+    # Atlas's cached apworld file matching a seed's checksum for a game, if any.
+    if not index_path or not checksum or not os.path.isfile(index_path):
+        return None
+    try:
+        with open(index_path, encoding='utf-8-sig') as f:
+            entries = json.load(f) or []
+        for e in entries:
+            if str(e.get('Game', '')).lower() == str(game).lower() and e.get('Checksum') == checksum and os.path.isfile(e.get('File') or ''):
+                return e['File']
+    except Exception:
+        pass
+    return None
+
+
 def atlas_seed_test(*args):
     # Accuracy against ground truth. stdin: {"seed": path, "players": [slots] (optional), "yaml_paths": {slot: path}}.
     # For each player: rebuild the world from the seed's slot data exactly as a live slot does, compare the data
@@ -657,10 +698,18 @@ def atlas_seed_test(*args):
                 result['local_checksum'] = world_identity(cls).get('data_checksum')
                 result['checksum_match'] = result['local_checksum'] == expected_checksum
             locs = sorted(all_locations[player].keys())
+            override = cached_apworld(req.get('apworld_cache_index'), game, expected_checksum)
             core, start = start_slot({'game': game, 'player_name': name,
                                       'slot_data': (data.get('slot_data') or {}).get(player) or {},
                                       'all_locations': locs,
-                                      'yaml_path': (req.get('yaml_paths') or {}).get(str(player))}, logger)
+                                      'yaml_path': (req.get('yaml_paths') or {}).get(str(player)),
+                                      'apworld_override': override, 'expected_checksum': expected_checksum}, logger)
+            if cls is not None and expected_checksum and override:
+                # The test ran on the seed's own version when Atlas had it cached.
+                current = AutoWorldRegister.world_types.get(game)
+                result['local_checksum'] = world_identity(current).get('data_checksum') if current else None
+                result['checksum_match'] = result['local_checksum'] == expected_checksum
+                result['apworld_override'] = start.get('apworld_override') if isinstance(start, dict) else None
             if core is None:
                 result['error'] = start
                 continue
@@ -694,44 +743,74 @@ def atlas_seed_test(*args):
     sys.stdout.flush()
 
 
+def swap_in_apworld(path, game=None):
+    # Loads an apworld file in place of the installed copy of the same world, in this process only (the user's
+    # install isn't touched). Returns the game it registers. Imported the way Archipelago imports .apworld files:
+    # a zip importer's spec served by a module finder.
+    import importlib
+    import importlib.abc
+    import zipimport
+    import worlds  # noqa: F401
+    from worlds.AutoWorld import AutoWorldRegister
+    pkg = os.path.splitext(os.path.basename(path))[0]
+    spec = zipimport.zipimporter(path).find_spec('worlds.' + pkg)
+    if spec is None:
+        raise RuntimeError(os.path.basename(path) + ' has no ' + pkg + ' package inside.')
+    # Kept so a candidate that fails to load leaves the installed copy exactly as it was.
+    saved_modules = {m: sys.modules.pop(m) for m in list(sys.modules) if m == 'worlds.' + pkg or m.startswith('worlds.' + pkg + '.')}
+    saved_worlds = {}
+    for registered, cls in list(AutoWorldRegister.world_types.items()):
+        if cls.__module__.split('.')[1:2] == [pkg] or registered == game:
+            saved_worlds[registered] = AutoWorldRegister.world_types.pop(registered)
+
+    class _ApworldFinder(importlib.abc.MetaPathFinder):
+        def find_spec(self, fullname, _path=None, _target=None):
+            return spec if fullname == 'worlds.' + pkg else None
+
+    finder = _ApworldFinder()
+    sys.meta_path.insert(0, finder)
+    before = set(AutoWorldRegister.world_types)
+    try:
+        importlib.import_module('worlds.' + pkg)
+        new = [g for g in AutoWorldRegister.world_types if g not in before]
+        if not new:
+            raise RuntimeError('The apworld loaded but registered no game.')
+        # Archipelago takes an apworld's version from its manifest when it loads it; do the same.
+        try:
+            import zipfile
+            from Utils import tuplize_version
+            with zipfile.ZipFile(path) as z:
+                manifest = next((n for n in z.namelist() if n.endswith('archipelago.json')), None)
+                if manifest:
+                    version = json.loads(z.read(manifest).decode('utf-8-sig')).get('world_version')
+                    if version:
+                        AutoWorldRegister.world_types[new[0]].world_version = tuplize_version(version)
+        except Exception:
+            pass
+        return new[0]
+    except BaseException:
+        for m in [m for m in list(sys.modules) if m == 'worlds.' + pkg or m.startswith('worlds.' + pkg + '.')]:
+            del sys.modules[m]
+        for registered in [g for g in AutoWorldRegister.world_types if g not in before]:
+            del AutoWorldRegister.world_types[registered]
+        sys.modules.update(saved_modules)
+        AutoWorldRegister.world_types.update(saved_worlds)
+        if finder in sys.meta_path:
+            sys.meta_path.remove(finder)
+        raise
+
+
 def atlas_checksum(*args):
     # The data checksum of a candidate apworld file, to find the version a seed was made with.
-    # stdin: {"apworld": path, "game": expected game (optional)}. Runs in a throwaway process: an installed copy of
-    # the same world is unloaded first so the candidate loads in its place.
+    # stdin: {"apworld": path, "game": expected game (optional)}. Runs in a throwaway process.
     line = sys.stdin.readline()
     req = json.loads(line) if line else {}
     out = {}
     try:
-        import worlds
         from worlds.AutoWorld import AutoWorldRegister
-        path = req['apworld']
-        pkg = os.path.splitext(os.path.basename(path))[0]
-        for name in [m for m in list(sys.modules) if m == 'worlds.' + pkg or m.startswith('worlds.' + pkg + '.')]:
-            del sys.modules[name]
-        for game, cls in list(AutoWorldRegister.world_types.items()):
-            if cls.__module__.split('.')[1:2] == [pkg] or game == req.get('game'):
-                del AutoWorldRegister.world_types[game]
-        # Import it the way Archipelago imports .apworld files: a zip importer's spec served by a module finder.
-        import importlib
-        import importlib.abc
-        import zipimport
-        spec = zipimport.zipimporter(path).find_spec('worlds.' + pkg)
-        if spec is None:
-            raise RuntimeError(os.path.basename(path) + ' has no ' + pkg + ' package inside.')
-
-        class _CandidateFinder(importlib.abc.MetaPathFinder):
-            def find_spec(self, fullname, _path=None, _target=None):
-                return spec if fullname == 'worlds.' + pkg else None
-
-        sys.meta_path.insert(0, _CandidateFinder())
-        before = set(AutoWorldRegister.world_types)
-        importlib.import_module('worlds.' + pkg)
-        new = [g for g in AutoWorldRegister.world_types if g not in before]
-        if not new:
-            out['error'] = 'The apworld loaded but registered no game.'
-        else:
-            out['game'] = new[0]
-            out.update(world_identity(AutoWorldRegister.world_types[new[0]]))
+        game = swap_in_apworld(req['apworld'], req.get('game'))
+        out['game'] = game
+        out.update(world_identity(AutoWorldRegister.world_types[game]))
     except Exception:
         out['error'] = traceback.format_exc()[-800:]
     print(json.dumps(out))

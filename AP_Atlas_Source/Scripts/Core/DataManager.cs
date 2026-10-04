@@ -59,6 +59,9 @@ public class AppSettings
     /// <summary>Reconnect a slot whose connection dropped (a few tries over about 30 minutes, then stop).</summary>
     public bool AutoReconnect { get; set; } = true;
 
+    /// <summary>When a seed was made with another apworld version, find and use that version automatically (from trusted sources only).</summary>
+    public bool AutoFixApworldVersions { get; set; } = true;
+
     /// <summary>Optional URL of a newer apworld source list (Atlas's format). Empty: the bundled list and GitHub releases.</summary>
     public string ApworldSourcesUrl { get; set; } = "";
     /// <summary>Download sources the user trusts ("github.com/owner/repo" or a host), so they're asked only once.</summary>

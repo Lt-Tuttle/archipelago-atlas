@@ -374,8 +374,9 @@ public partial class SlotTrackerControl : MarginContainer
         {
             if (!_engineRunning) return null;
             if (ApworldMatchesSeed == false)
-                return $"Logic may be off: the installed {Game} apworld" + (InstalledWorldVersion != null ? $" (version {InstalledWorldVersion})" : "") +
-                       " isn't the version this seed was made with. Install the version the seed used (Atlas Engine → Games).";
+                return $"Logic may be off: this seed was made with a different version of the {Game} apworld than the one installed" +
+                       (InstalledWorldVersion != null ? $" ({InstalledWorldVersion})" : "") + "." +
+                       (_apworldFixStatus != null ? " " + _apworldFixStatus : "");
             var info = _logicEngine?.LastYamlInfo;
             if (info?["match"]?.Type == Newtonsoft.Json.Linq.JTokenType.Boolean && !(bool)info["match"])
                 return $"Logic is approximate: your world was rebuilt, but it doesn't match the seed ({info["missing"]} locations missing, {info["extra"]} extra). " +
@@ -390,7 +391,165 @@ public partial class SlotTrackerControl : MarginContainer
         string warning = LogicHidden ? null : LogicAccuracyWarning;
         _accuracyBanner.Visible = warning != null;
         _accuracyText.Text = "⚠ " + warning;
-        _accuracyLinkYaml.Visible = warning != null && ApworldMatchesSeed != false;
+        bool versionProblem = warning != null && ApworldMatchesSeed == false;
+        _accuracyLinkYaml.Visible = warning != null && !versionProblem;
+        _accuracyFix.Visible = versionProblem && !_apworldFixRunning && AP_Atlas.Core.EngineSetup.ApworldSources.Find(Game) != null;
+        _accuracyChooseApworld.Visible = versionProblem && !_apworldFixRunning;
+    }
+
+    // =====================================================================
+    // Using the apworld version the seed was made with
+    // =====================================================================
+
+    private Button _accuracyFix, _accuracyChooseApworld;
+    private string _apworldFixStatus;
+    private bool _apworldFixRunning;
+    private readonly HashSet<string> _apworldFixAttempted = new HashSet<string>();
+    private readonly HashSet<string> _apworldOverrideFailed = new HashSet<string>();
+
+    /// <summary>Atlas's cached copy of the seed's apworld version for this slot, if it has one (used in place of the installed copy).</summary>
+    private string SeedApworldFile()
+    {
+        string checksum = ServerChecksumFor(Game);
+        if (checksum == null || _apworldOverrideFailed.Contains(checksum)) return null;
+        return AP_Atlas.Core.EngineSetup.ApworldSources.CachedFor(Game, checksum)?.File;
+    }
+
+    /// <summary>
+    /// Gets the apworld version this seed was made with and restarts logic on it, for this slot only (the installed
+    /// copy and other slots are untouched). Uses Atlas's cache when it has the version; otherwise searches the known
+    /// versions of the game. Without interaction it only downloads from sources the user already trusts.
+    /// </summary>
+    public void FixApworldVersion(bool interactive)
+    {
+        string game = Game, checksum = ServerChecksumFor(game);
+        if (checksum == null || _apworldFixRunning || Session == null) return;
+        _apworldFixAttempted.Add(checksum);
+        if (AP_Atlas.Core.EngineSetup.ApworldSources.CachedFor(game, checksum) != null && !_apworldOverrideFailed.Contains(checksum))
+        {
+            AppendDebugLog($"Atlas already has the {game} apworld this seed was made with; restarting logic on it.");
+            RetryLogicEngine();
+            return;
+        }
+        var source = AP_Atlas.Core.EngineSetup.ApworldSources.Find(game);
+        if (source == null)
+        {
+            _apworldFixStatus = $"Atlas doesn't know where to download {game} versions. Choose the apworld file the seed's host used.";
+            SyncAccuracyBanner();
+            return;
+        }
+        string approvalUrl = source.Repo != null ? $"https://github.com/{source.Repo}/" : source.Versions.LastOrDefault()?.Url;
+        string where = AP_Atlas.Core.EngineSetup.ApworldSources.SourceKey(approvalUrl);
+        if (!AP_Atlas.Core.EngineSetup.ApworldSources.IsApproved(_appSettings, approvalUrl))
+        {
+            if (!interactive)
+            {
+                _apworldFixStatus = $"Fix automatically downloads the seed's version from {where} (you'll be asked to trust it once).";
+                SyncAccuracyBanner();
+                return;
+            }
+            var dialog = new ConfirmationDialog
+            {
+                Title = "Use the seed's apworld version",
+                DialogText = $"Download versions of the {game} apworld from {where} until one matches this seed, and use it for {_slotName}?\n\n" +
+                             "Only this slot's logic uses it: your Archipelago install isn't changed. Each file is checked against its published SHA-256 when one exists.\n\n" +
+                             "Apworlds are programs that run inside the logic engine. Only continue if you trust this source.",
+                DialogAutowrap = true,
+                MinSize = new Vector2I(560, 0),
+                OkButtonText = "Download"
+            };
+            var trust = new CheckBox { Text = $"Trust {where} from now on (fix future seeds automatically)", ButtonPressed = true };
+            dialog.AddChild(trust);
+            dialog.Confirmed += () =>
+            {
+                if (trust.ButtonPressed) AP_Atlas.Core.EngineSetup.ApworldSources.Approve(_appSettings, approvalUrl);
+                dialog.QueueFree();
+                SearchSeedApworld(game, checksum);
+            };
+            dialog.Canceled += () => dialog.QueueFree();
+            GetTree().Root.AddChild(dialog);
+            dialog.PopupCentered();
+            return;
+        }
+        SearchSeedApworld(game, checksum);
+    }
+
+    private async void SearchSeedApworld(string game, string checksum)
+    {
+        _apworldFixRunning = true;
+        _apworldFixStatus = $"Looking for the {game} version this seed was made with…";
+        SyncAccuracyBanner();
+        var install = _logicEngine.Install;
+        (AP_Atlas.Core.EngineSetup.ApworldVersion Version, string File) found = (null, null);
+        string failure = null;
+        try
+        {
+            found = await System.Threading.Tasks.Task.Run(() => AP_Atlas.Core.EngineSetup.ApworldSources.FindMatchingAsync(install, game, checksum, line =>
+            {
+                AppendDebugLog(line);
+                string trimmed = line.Trim();
+                Callable.From(() =>
+                {
+                    if (!GodotObject.IsInstanceValid(this) || !_apworldFixRunning) return;
+                    _apworldFixStatus = $"Looking for the seed's version… {trimmed}";
+                    SyncAccuracyBanner();
+                }).CallDeferred();
+            }, System.Threading.CancellationToken.None, maxTries: 25));
+        }
+        catch (Exception ex) { failure = ex.Message; }
+        if (!GodotObject.IsInstanceValid(this)) return;
+        _apworldFixRunning = false;
+        if (found.File != null)
+        {
+            _apworldFixStatus = null;
+            AP_Atlas.Core.Logger.LogInfo($"[{_slotName}] Found the {game} apworld this seed was made with ({found.Version?.Version}); restarting logic on it.");
+            ShowToast?.Invoke($"{_slotName}: using {game} {found.Version?.Version}, the version this seed was made with.", Colors.LimeGreen);
+            RetryLogicEngine();
+            return;
+        }
+        _apworldFixStatus = failure != null
+            ? $"Couldn't look for the seed's version: {failure}"
+            : $"None of the listed {game} versions matches this seed. Choose the apworld file the seed's host used.";
+        SyncAccuracyBanner();
+    }
+
+    /// <summary>Uses an apworld file the user picked (e.g. from the seed's host), if it's the seed's version.</summary>
+    public void ChooseSeedApworld()
+    {
+        string game = Game, checksum = ServerChecksumFor(game);
+        if (checksum == null) return;
+        var dialog = new FileDialog
+        {
+            FileMode = FileDialog.FileModeEnum.OpenFile,
+            Access = FileDialog.AccessEnum.Filesystem,
+            Filters = new[] { "*.apworld ; Archipelago world" },
+            UseNativeDialog = true,
+            Title = $"The {game} apworld this seed was made with"
+        };
+        dialog.FileSelected += async path =>
+        {
+            dialog.QueueFree();
+            _apworldFixRunning = true;
+            _apworldFixStatus = "Checking that file…";
+            SyncAccuracyBanner();
+            var install = _logicEngine.Install;
+            var (entry, problem) = await System.Threading.Tasks.Task.Run(() => AP_Atlas.Core.EngineSetup.ApworldSources.AddUserFileAsync(install, path, game, checksum, System.Threading.CancellationToken.None));
+            if (!GodotObject.IsInstanceValid(this)) return;
+            _apworldFixRunning = false;
+            if (entry != null)
+            {
+                _apworldFixStatus = null;
+                _apworldOverrideFailed.Remove(checksum);
+                ShowToast?.Invoke($"{_slotName}: using your {game} apworld, which matches this seed.", Colors.LimeGreen);
+                RetryLogicEngine();
+                return;
+            }
+            _apworldFixStatus = $"That file can't be used: {problem}.";
+            SyncAccuracyBanner();
+        };
+        dialog.Canceled += () => dialog.QueueFree();
+        GetTree().Root.AddChild(dialog);
+        dialog.PopupCentered(new Vector2I(900, 600));
     }
 
     private void SyncLogicViews()
@@ -493,6 +652,9 @@ public partial class SlotTrackerControl : MarginContainer
     public bool? ApworldMatchesSeed { get; private set; }
 
     public string InstalledWorldVersion => _engineRunning ? _logicEngine?.LastWorldVersion : null;
+
+    /// <summary>True when this slot runs on Atlas's cached copy of the seed's apworld version instead of the installed one.</summary>
+    public bool UsingSeedApworld => _engineRunning && _logicEngine?.LastApworldOverride?["used"]?.Type == Newtonsoft.Json.Linq.JTokenType.Boolean && (bool)_logicEngine.LastApworldOverride["used"];
 
     /// <summary>Opens the Atlas Engine setup window (set by MainTrackerWindow).</summary>
     public Action OpenEngineSetup { get; set; }
@@ -877,7 +1039,8 @@ public partial class SlotTrackerControl : MarginContainer
             AppendDebugLog($"InitializeLogicEngine: StartEngineAsync Game='{Session.ConnectionInfo.Game}', Slot='{_slotName}', engine={_logicEngine.Install.Describe()}");
             // No ConfigureAwait(false): the continuation must resume on Godot's main thread.
             bool started = await _logicEngine.StartEngineAsync(
-                Session.ConnectionInfo.Game, _slotName, Session.ConnectionInfo.Slot, _slotData, Session.Locations.AllLocations, LinkedYamlPath);
+                Session.ConnectionInfo.Game, _slotName, Session.ConnectionInfo.Slot, _slotData, Session.Locations.AllLocations, LinkedYamlPath,
+                SeedApworldFile(), ServerChecksumFor(Game));
 
             if (!GodotObject.IsInstanceValid(this)) return;
             AppendDebugLog($"InitializeLogicEngine: StartEngineAsync returned {started}");
@@ -936,17 +1099,29 @@ public partial class SlotTrackerControl : MarginContainer
         AppendDebugLog($"Logic engine running: world rebuilt {how}; locations {info?["got"]} of {info?["expected"]} expected, {info?["missing"]} missing, {info?["extra"]} extra.");
         string serverChecksum = ServerChecksumFor(Game), localChecksum = _logicEngine.LastDataChecksum;
         ApworldMatchesSeed = serverChecksum == null || localChecksum == null ? null : serverChecksum == localChecksum;
+        var applied = _logicEngine.LastApworldOverride;
+        if (applied?["used"]?.Type == Newtonsoft.Json.Linq.JTokenType.Boolean && (bool)applied["used"])
+            AppendDebugLog($"Using {Game} {applied["world_version"]} ({applied["file"]}) from Atlas's cache for this seed, in place of the installed copy (which isn't changed).");
+        else if (applied?["error"] != null)
+        {
+            // The cached version couldn't load in this engine: don't offer it again this session.
+            _apworldOverrideFailed.Add(serverChecksum ?? "");
+            AP_Atlas.Core.Logger.LogWarning($"[{_slotName}] The seed's {Game} apworld couldn't be loaded in this engine ({applied["error"]}); using the installed copy.");
+        }
         if (ApworldMatchesSeed == false)
         {
             string version = _logicEngine.LastWorldVersion != null ? $" (version {_logicEngine.LastWorldVersion})" : "";
             SetStatus("Running (apworld differs from the seed's)");
-            SyncAccuracyBanner();
             AP_Atlas.Core.Logger.LogWarning($"[{_slotName}] The installed {Game} apworld{version} isn't the one this seed was generated with: its data " +
                 $"(checksum {localChecksum[..Math.Min(8, localChecksum.Length)]}) differs from the server's ({serverChecksum[..Math.Min(8, serverChecksum.Length)]}). " +
-                "Logic may be wrong. Install the apworld version the seed used (Atlas Engine → Slots).");
+                "Atlas will look for the seed's version.");
+            SyncAccuracyBanner();
+            // Fix it without asking when the download source is already trusted (or the version is cached).
+            if (_appSettings.AutoFixApworldVersions && !_apworldFixAttempted.Contains(serverChecksum))
+                FixApworldVersion(interactive: false);
             return;
         }
-        if (ApworldMatchesSeed == true) AppendDebugLog($"The installed {Game} apworld matches the seed's data (checksum {localChecksum[..Math.Min(8, localChecksum.Length)]}).");
+        if (ApworldMatchesSeed == true) AppendDebugLog($"The {Game} apworld in use matches the seed's data (checksum {localChecksum[..Math.Min(8, localChecksum.Length)]}).");
         if (match == false)
         {
             int missing = info["missing"]?.ToObject<int>() ?? 0, extra = info["extra"]?.ToObject<int>() ?? 0;
@@ -1238,6 +1413,12 @@ public partial class SlotTrackerControl : MarginContainer
         _accuracyLinkYaml = new Button { Text = "Link YAML…", TooltipText = "Choose the YAML used to generate this seed; Atlas remembers it for this slot" };
         _accuracyLinkYaml.Pressed += PickYaml;
         bannerRow.AddChild(_accuracyLinkYaml);
+        _accuracyFix = new Button { Text = "Fix automatically", TooltipText = "Find the apworld version this seed was made with and use it for this slot (your install isn't changed)" };
+        _accuracyFix.Pressed += () => FixApworldVersion(interactive: true);
+        bannerRow.AddChild(_accuracyFix);
+        _accuracyChooseApworld = new Button { Text = "Choose apworld file…", TooltipText = "Use the apworld file the seed's host gave you, if it's this seed's version" };
+        _accuracyChooseApworld.Pressed += ChooseSeedApworld;
+        bannerRow.AddChild(_accuracyChooseApworld);
         _accuracyBanner.AddChild(bannerRow);
         vbox.AddChild(_accuracyBanner);
 

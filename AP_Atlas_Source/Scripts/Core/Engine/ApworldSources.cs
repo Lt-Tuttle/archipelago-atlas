@@ -31,6 +31,18 @@ namespace AP_Atlas.Core.EngineSetup
         [JsonProperty("versions")] public List<ApworldVersion> Versions { get; set; } = new();
     }
 
+    /// <summary>An apworld file Atlas has on disk and has identified: which game, which data checksum.</summary>
+    public class CachedApworld
+    {
+        public string Game { get; set; }
+        public string Checksum { get; set; }
+        public string Version { get; set; }
+        public string File { get; set; }
+        /// <summary>Where it came from: a download source key, or "your file".</summary>
+        public string Source { get; set; }
+        public DateTime Added { get; set; } = DateTime.Now;
+    }
+
     public class ApworldSourceList
     {
         [JsonProperty("format")] public string Format { get; set; }
@@ -53,6 +65,56 @@ namespace AP_Atlas.Core.EngineSetup
 
         private static string RefreshedPath => Path.Combine(AtlasEngine.EngineDir, "apworld_sources.json");
         private static string CacheDir => Path.Combine(AtlasEngine.EngineDir, "apworld_cache");
+        private static string CacheIndexPath => Path.Combine(CacheDir, "index.json");
+
+        /// <summary>The cache index file (for engine components that pick the seed's version themselves).</summary>
+        public static string CacheIndexFile => CacheIndexPath;
+        private static List<CachedApworld> _cacheIndex;
+        private static List<CachedApworld> CacheIndex => _cacheIndex ??= SafeFile.ReadJson(CacheIndexPath, () => new List<CachedApworld>());
+
+        /// <summary>
+        /// A cached apworld whose data matches this checksum (a seed's), if Atlas has one. Slots run with it in place
+        /// of the installed copy, so the user's install is never changed and different seeds can use different versions.
+        /// </summary>
+        public static CachedApworld CachedFor(string game, string checksum)
+        {
+            if (string.IsNullOrEmpty(game) || string.IsNullOrEmpty(checksum)) return null;
+            lock (CacheIndex)
+                return CacheIndex.Where(c => string.Equals(c.Game, game, StringComparison.OrdinalIgnoreCase)
+                                             && string.Equals(c.Checksum, checksum, StringComparison.OrdinalIgnoreCase)
+                                             && File.Exists(c.File))
+                    .OrderByDescending(c => c.Added).FirstOrDefault();
+        }
+
+        private static void Remember(string game, string checksum, string version, string file, string source)
+        {
+            if (string.IsNullOrEmpty(game) || string.IsNullOrEmpty(checksum) || string.IsNullOrEmpty(file)) return;
+            lock (CacheIndex)
+            {
+                CacheIndex.RemoveAll(c => string.Equals(c.File, file, StringComparison.OrdinalIgnoreCase) || !File.Exists(c.File));
+                CacheIndex.Add(new CachedApworld { Game = game, Checksum = checksum, Version = version, File = file, Source = source });
+                try { SafeFile.WriteJson(CacheIndexPath, CacheIndex); }
+                catch (Exception ex) { Logger.LogWarning("Couldn't save the apworld cache index: " + ex.Message); }
+            }
+        }
+
+        /// <summary>
+        /// Adds an apworld the user chose (e.g. from the seed's host) to the cache, if its data matches the expected
+        /// checksum. Returns the cache entry, or an explanation of why it doesn't match.
+        /// </summary>
+        public static async Task<(CachedApworld Entry, string Problem)> AddUserFileAsync(EngineInstall install, string file, string game, string expectedChecksum, CancellationToken ct)
+        {
+            var id = await IdentifyAsync(install, file, game, ct);
+            if (id.Error != null) return (null, "it couldn't be loaded: " + FirstLine(id.Error));
+            if (!string.Equals(id.Game, game, StringComparison.OrdinalIgnoreCase)) return (null, $"it's for {id.Game}, not {game}");
+            if (!string.Equals(id.Checksum, expectedChecksum, StringComparison.OrdinalIgnoreCase))
+                return (null, $"it's a different version (data {Short(id.Checksum)}{(id.WorldVersion != null ? ", version " + id.WorldVersion : "")}) than the seed's ({Short(expectedChecksum)})");
+            string target = Path.Combine(CacheDir, "yours", id.Checksum.Substring(0, Math.Min(12, id.Checksum.Length)), Path.GetFileName(file));
+            Directory.CreateDirectory(Path.GetDirectoryName(target));
+            File.Copy(file, target, true);
+            Remember(id.Game, id.Checksum, id.WorldVersion, target, "your file");
+            return (CachedFor(game, expectedChecksum), null);
+        }
 
         public static ApworldSourceList List => _list ??= Load();
 
@@ -210,6 +272,12 @@ namespace AP_Atlas.Core.EngineSetup
         public static Task<(ApworldVersion Version, string File)> FindMatchingAsync(EngineInstall install, string game, string seedChecksum, Action<string> log, CancellationToken ct, int maxTries = 15) =>
             AtlasEngine.Exclusive(async () =>
             {
+                var cached = CachedFor(game, seedChecksum);
+                if (cached != null)
+                {
+                    log?.Invoke($"Already have {game} {cached.Version ?? "?"} matching the seed.");
+                    return (new ApworldVersion { Version = cached.Version, Url = cached.File }, cached.File);
+                }
                 var source = Find(game) ?? throw new Exception($"No download source is known for {game}.");
                 var versions = await VersionsAsync(source, ct);
                 log?.Invoke($"Looking for the {game} apworld the seed was made with among {versions.Count} known version(s)…");
@@ -223,6 +291,8 @@ namespace AP_Atlas.Core.EngineSetup
                     catch (Exception ex) { log?.Invoke($"  {version.Version}: couldn't download ({ex.Message})"); continue; }
                     var id = await IdentifyAsync(install, file, game, ct);
                     if (id.Error != null) { log?.Invoke($"  {version.Version}: couldn't be loaded here ({FirstLine(id.Error)})"); continue; }
+                    // Every identified version is remembered, so another seed made with it is matched instantly.
+                    Remember(id.Game, id.Checksum, version.Version, file, SourceKey(version.Url));
                     bool match = string.Equals(id.Checksum, seedChecksum, StringComparison.OrdinalIgnoreCase);
                     log?.Invoke($"  {version.Version}: data {Short(id.Checksum)}{(match ? " ✔ matches the seed" : "")}");
                     if (match) return (version, file);
