@@ -76,6 +76,12 @@ public class LogicEngineManager
     /// <summary>Python / Archipelago / Universal Tracker versions the engine reported.</summary>
     public JObject LastVersions { get; private set; }
 
+    /// <summary>The installed apworld's data checksum (compare with the server's for the seed), from the last start.</summary>
+    public string LastDataChecksum { get; private set; }
+
+    /// <summary>The installed apworld's declared version, if it declares one.</summary>
+    public string LastWorldVersion { get; private set; }
+
     private System.Diagnostics.Process _engineProcess;
     private StreamWriter _engineWriter;
     private StreamReader _engineReader;
@@ -171,6 +177,8 @@ public class LogicEngineManager
             if (response["status"]?.ToString() == "ready")
             {
                 LastYamlInfo = response["yaml"] as JObject;
+                LastDataChecksum = response["data_checksum"]?.ToString();
+                LastWorldVersion = response["world_version"]?.ToString();
                 var poolToken = response["item_pool"];
                 if (poolToken != null)
                 {

@@ -25,6 +25,8 @@ namespace AP_Atlas.Core.EngineSetup
         [JsonProperty("tracker")] public bool TrackerLoads { get; set; }
         [JsonProperty("tracker_error")] public string TrackerError { get; set; }
         [JsonProperty("error")] public string Error { get; set; }
+        /// <summary>Why each failed world didn't load (portable engine): a missing module and the error.</summary>
+        [JsonProperty("failed_details")] public Dictionary<string, FailedWorldInfo> FailedDetails { get; set; } = new();
         /// <summary>Universal Tracker functions the bridge needs that this version lacks (it changed incompatibly).</summary>
         [JsonProperty("api_missing")] public List<string> ApiMissing { get; set; } = new();
         /// <summary>End-to-end test: a small built-in game rebuilt and its logic computed. Null when no test game exists.</summary>
@@ -49,6 +51,14 @@ namespace AP_Atlas.Core.EngineSetup
         private static string LastLine(string s) => string.IsNullOrWhiteSpace(s) ? "unknown error" : s.Trim().Split('\n')[^1].Trim();
     }
 
+    public class FailedWorldInfo
+    {
+        [JsonProperty("missing")] public string MissingModule { get; set; }
+        [JsonProperty("error")] public string Error { get; set; }
+        [JsonProperty("path")] public string Path { get; set; }
+        [JsonProperty("is_zip")] public bool IsZip { get; set; }
+    }
+
     public class EngineSmokeResult
     {
         [JsonProperty("game")] public string Game { get; set; }
@@ -64,6 +74,8 @@ namespace AP_Atlas.Core.EngineSetup
         public string Python { get; set; }
         public string Archipelago { get; set; }
         public string PackagesSignature { get; set; }
+        /// <summary>World → signature of the requirements already tried, so a package that can't install isn't retried on every setup.</summary>
+        public Dictionary<string, string> WorldPackagesTried { get; set; } = new();
         public string Tracker { get; set; }
         public EngineCheckResult LastCheck { get; set; }
     }
@@ -294,13 +306,16 @@ namespace AP_Atlas.Core.EngineSetup
                 });
                 string wanted = ap ? PackagesSignature() : null;
                 bool packages = ap && State.PackagesSignature != null && State.PackagesSignature == wanted;
+                var worldPackages = packages ? InstallableWorldPackages(install) : new List<(string World, string Requirements)>();
                 steps.Add(new EngineStepStatus
                 {
                     Id = EngineStepId.Packages,
                     Title = "Python packages",
-                    State = packages ? EngineStepState.Ok : State.PackagesSignature != null && ap ? EngineStepState.Warning : EngineStepState.Missing,
-                    Detail = packages ? "Archipelago's packages (no desktop GUI)" : State.PackagesSignature != null && ap ? "Archipelago's requirements changed; update the packages" : "Archipelago's packages from PyPI, about 20 MB",
-                    Action = packages ? null : ap && python ? "Install" : null
+                    State = packages && worldPackages.Count == 0 ? EngineStepState.Ok : (State.PackagesSignature != null && ap) || worldPackages.Count > 0 ? EngineStepState.Warning : EngineStepState.Missing,
+                    Detail = packages && worldPackages.Count > 0 ? $"{worldPackages.Count} world(s) need their own packages: {string.Join(", ", worldPackages.Select(w => w.World))}"
+                        : packages ? "Archipelago's packages (no desktop GUI)"
+                        : State.PackagesSignature != null && ap ? "Archipelago's requirements changed; update the packages" : "Archipelago's packages from PyPI, about 20 MB",
+                    Action = packages && worldPackages.Count == 0 ? null : ap && python ? "Install" : null
                 });
             }
             else
@@ -412,7 +427,7 @@ namespace AP_Atlas.Core.EngineSetup
 
         public static bool SetupRunning => SetupLock.CurrentCount == 0;
 
-        private static async Task<T> Exclusive<T>(Func<Task<T>> body, CancellationToken ct)
+        internal static async Task<T> Exclusive<T>(Func<Task<T>> body, CancellationToken ct)
         {
             await SetupLock.WaitAsync(ct);
             try { return await body(); }
@@ -583,7 +598,11 @@ namespace AP_Atlas.Core.EngineSetup
                     steps = Steps(install);
                     if (steps.First(s => s.Id == EngineStepId.Tracker).State == EngineStepState.Missing) await InstallTrackerCore(install, log, progress, ct);
                     InstallBridge(install, log);
-                    return await CheckCommitOrRollBack(install, log, ct);
+                    bool ok = await CheckCommitOrRollBack(install, log, ct);
+                    // Worlds that couldn't load for want of their own packages: install those, then verify again.
+                    if (ok && install.Mode == EngineMode.Portable && await InstallWorldPackagesCore(install, log, ct, force: false))
+                        ok = await CheckCommitOrRollBack(install, log, ct);
+                    return ok;
                 }
                 catch (OperationCanceledException)
                 {
@@ -616,7 +635,11 @@ namespace AP_Atlas.Core.EngineSetup
                     {
                         case EngineStepId.Runtime: await InstallRuntimeCore(log, progress, ct); break;
                         case EngineStepId.Archipelago: await InstallArchipelagoCore(log, progress, ct); break;
-                        case EngineStepId.Packages: await InstallPackagesCore(log, ct); break;
+                        case EngineStepId.Packages:
+                            if (State.PackagesSignature != PackagesSignature()) await InstallPackagesCore(log, ct);
+                            if (install.Mode == EngineMode.Portable && LastCheck(install) == null) await RunCheckAsync(install, log, ct);
+                            await InstallWorldPackagesCore(install, log, ct, force: true);
+                            break;
                         case EngineStepId.Tracker: await InstallTrackerCore(install, log, progress, ct); break;
                         case EngineStepId.Bridge: InstallBridge(install, log); break;
                     }
@@ -784,6 +807,106 @@ namespace AP_Atlas.Core.EngineSetup
             State.PackagesSignature = PackagesSignature();
             SaveState();
             log("Packages ready.");
+        }
+
+        /// <summary>
+        /// Worlds that failed to load and declare their own packages (a requirements.txt bundled with Archipelago or
+        /// inside the apworld). Only declared requirements are installed: a package name is never guessed from an
+        /// error, which could pull in a look-alike package.
+        /// </summary>
+        public static List<(string World, string Requirements)> InstallableWorldPackages(EngineInstall install, bool includeTried = false)
+        {
+            var result = new List<(string, string)>();
+            var check = LastCheck(install);
+            if (install.Mode != EngineMode.Portable || check?.FailedWorlds == null) return result;
+            foreach (var world in check.FailedWorlds)
+            {
+                string text = WorldRequirements(world, check);
+                if (text == null) continue;
+                if (!includeTried && State.WorldPackagesTried != null && State.WorldPackagesTried.TryGetValue(world, out var tried) && tried == Signature(text)) continue;
+                result.Add((world, text));
+            }
+            return result;
+        }
+
+        private static string WorldRequirements(string world, EngineCheckResult check)
+        {
+            string bundled = Path.Combine(ArchipelagoDir, "worlds", world, "requirements.txt");
+            if (File.Exists(bundled)) return File.ReadAllText(bundled);
+            string apworld = check.FailedDetails != null && check.FailedDetails.TryGetValue(world, out var info) && info.IsZip ? info.Path : null;
+            apworld ??= Path.Combine(ArchipelagoDir, "custom_worlds", world + ".apworld");
+            if (!File.Exists(apworld)) return null;
+            try
+            {
+                using var zip = ZipFile.OpenRead(apworld);
+                var entry = zip.Entries.FirstOrDefault(e => e.FullName.Replace('\\', '/').Count(c => c == '/') == 1 && e.Name.Equals("requirements.txt", StringComparison.OrdinalIgnoreCase));
+                if (entry == null) return null;
+                using var reader = new StreamReader(entry.Open());
+                return reader.ReadToEnd();
+            }
+            catch { return null; }
+        }
+
+        private static string Signature(string text) =>
+            Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(text ?? "")))[..16];
+
+        /// <summary>
+        /// Makes a requirements file installable without git: "name @ git+https://github.com/owner/repo@ref" becomes
+        /// GitHub's source archive for that exact ref. Other git sources are dropped (reported) when git isn't present.
+        /// </summary>
+        private static string WithoutGit(string requirements, Action<string> log)
+        {
+            var output = new List<string>();
+            foreach (var line in requirements.Replace("\r\n", "\n").Split('\n'))
+            {
+                var m = Regex.Match(line, @"^\s*([A-Za-z0-9_.\-]+)\s*@\s*git\+https://github\.com/([^@\s#]+?)(?:\.git)?@([^\s#]+)");
+                if (m.Success)
+                {
+                    output.Add($"{m.Groups[1].Value} @ https://github.com/{m.Groups[2].Value}/archive/{m.Groups[3].Value}.zip");
+                    continue;
+                }
+                if (line.Contains("git+"))
+                {
+                    log("  Skipped (needs git): " + line.Trim());
+                    continue;
+                }
+                output.Add(line);
+            }
+            return string.Join("\n", output);
+        }
+
+        /// <summary>
+        /// Installs the declared packages of worlds that failed to load, one world at a time (one failure can't block
+        /// the rest), with the runtime copied first so a bad install rolls back. Returns true if anything was installed.
+        /// </summary>
+        private static async Task<bool> InstallWorldPackagesCore(EngineInstall install, Action<string> log, CancellationToken ct, bool force)
+        {
+            var targets = InstallableWorldPackages(install, includeTried: force);
+            if (targets.Count == 0) return false;
+            EnsureFreeSpace(EngineDir);
+            await StopEnginesUsing(ArchipelagoDir, log, ct);
+            string previous = PythonDir + ".previous";
+            if (!Directory.Exists(previous))
+            {
+                log("Keeping a copy of the current runtime in case the update has to be undone…");
+                RememberStateBeforeUpdate();
+                CopyDir(PythonDir, previous);
+            }
+            bool any = false;
+            State.WorldPackagesTried ??= new Dictionary<string, string>();
+            foreach (var (world, requirements) in targets)
+            {
+                log($"Installing the packages {world} declares…");
+                string file = Path.Combine(EngineDir, $"requirements-{world}.txt");
+                File.WriteAllText(file, WithoutGit(requirements, log));
+                int code = await RunAsync(PythonExe, new[] { "-m", "pip", "install", "-r", file, "--prefer-binary", "--disable-pip-version-check", "--no-warn-script-location", "--retries", "5", "--timeout", "60" },
+                    PythonDir, log, ct, TimeSpan.FromMinutes(10));
+                State.WorldPackagesTried[world] = Signature(requirements);
+                if (code == 0) { any = true; log($"Packages for {world} installed."); }
+                else log($"The packages for {world} couldn't be installed; {world} won't be available (everything else is unaffected).");
+            }
+            SaveState();
+            return any;
         }
 
         private static void CopyDir(string from, string to)
@@ -1038,7 +1161,14 @@ namespace AP_Atlas.Core.EngineSetup
             return RunAsync(info, null, line => log?.Invoke("  " + line), line => log?.Invoke("  " + line), ct, timeout);
         }
 
-        private static async Task<int> RunAsync(ProcessStartInfo info, string engineRoot, Action<string> onOut, Action<string> onErr, CancellationToken ct, TimeSpan timeout)
+        /// <summary>Runs one bridge component with an optional request line on stdin.</summary>
+        internal static Task<int> RunComponentAsync(EngineInstall install, string component, string request, Action<string> onOut, Action<string> onErr, CancellationToken ct, TimeSpan timeout)
+        {
+            InstallBridge(install);
+            return RunAsync(install.StartInfo(component), install.Root, onOut, onErr, ct, timeout, request);
+        }
+
+        private static async Task<int> RunAsync(ProcessStartInfo info, string engineRoot, Action<string> onOut, Action<string> onErr, CancellationToken ct, TimeSpan timeout, string stdin = null)
         {
             using var process = new Process { StartInfo = info, EnableRaisingEvents = true };
             var exited = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1049,7 +1179,12 @@ namespace AP_Atlas.Core.EngineSetup
             ProcessJob.Track(process, engineRoot);
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
-            try { process.StandardInput.Close(); } catch { } // nothing to send; a component waiting on stdin sees EOF
+            try
+            {
+                if (stdin != null) await process.StandardInput.WriteLineAsync(stdin);
+                process.StandardInput.Close(); // a component waiting on stdin sees the request, then EOF
+            }
+            catch { }
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeoutCts.CancelAfter(timeout);
             try

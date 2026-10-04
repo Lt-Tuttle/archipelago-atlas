@@ -62,6 +62,10 @@ namespace AP_Atlas.Core
             if (!string.IsNullOrWhiteSpace(ap))
                 await TestAsync($"Engine end to end on {ap}", () => EngineEndToEnd(ap));
 
+            string seeds = System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_SEEDS");
+            if (!string.IsNullOrWhiteSpace(seeds))
+                await TestAsync("Logic matches real seeds (no game worse than the baseline)", () => SeedRegression(seeds, ap));
+
             Print($"SELFTEST DONE: {_passes} passed, {_failures} failed");
             try { File.WriteAllLines(Path.Combine(dataDir, "selftest_results.txt"), _results); } catch { }
             return _failures == 0 ? 0 : 1;
@@ -304,6 +308,66 @@ namespace AP_Atlas.Core
                 return;
             }
             Expect(!File.Exists(target) && !File.Exists(target + ".part"), "a rejected download was left on disk");
+        }
+
+        /// <summary>
+        /// Replays every generated seed in a folder through the engine. The first run records a baseline (some games
+        /// can't be exact without the player's YAML); later runs fail if any game gets worse, and report improvements.
+        /// ATLAS_SELFTEST_BASELINE overrides where the baseline lives; ATLAS_SELFTEST_UPDATE_BASELINE=1 rewrites it.
+        /// </summary>
+        private static async Task SeedRegression(string folder, string apPath)
+        {
+            var install = string.IsNullOrWhiteSpace(apPath) ? EngineInstall.Portable() : EngineInstall.Existing(apPath);
+            Expect(AtlasEngine.ProblemWith(install) == null, "the engine can't run: " + AtlasEngine.ProblemWith(install));
+            var seedFiles = Directory.GetFiles(folder, "*.zip").Concat(Directory.GetFiles(folder, "*.archipelago")).OrderBy(f => f).ToList();
+            Expect(seedFiles.Count > 0, "no generated seeds in " + folder);
+
+            // State per "seed|player|game": exact; differs (rebuild matched the seed, so differences are real rule gaps);
+            // unverifiable (the rebuild can't match: other apworld version, or options missing from slot data, which are
+            // re-rolled randomly, so counts vary run to run and only the state is compared); error.
+            var now = new Dictionary<string, SeedBaselineEntry>();
+            foreach (var seed in seedFiles)
+            {
+                var report = await SeedVerifier.VerifyAsync(install, seed, null, default);
+                if (report.Error != null) Print($"  {Path.GetFileName(seed)}: couldn't run ({report.Error})");
+                foreach (var p in report.Players)
+                {
+                    Print($"  {Path.GetFileName(seed)} · {p.Game} ({p.Name}): {p.Verdict}");
+                    string state = p.Error != null ? "error" : p.Exact ? "exact"
+                        : p.ChecksumMatch == false || p.Rebuild?.Match == false ? "unverifiable" : "differs";
+                    now[$"{Path.GetFileName(seed)}|{p.Player}|{p.Game}"] = new SeedBaselineEntry { State = state, Differences = p.Late + p.Early };
+                }
+            }
+
+            string baselinePath = System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_BASELINE");
+            if (string.IsNullOrWhiteSpace(baselinePath)) baselinePath = ProjectSettings.GlobalizePath("res://Tests/seed_baseline.json");
+            Dictionary<string, SeedBaselineEntry> baseline = null;
+            try { baseline = SafeFile.ReadJson<Dictionary<string, SeedBaselineEntry>>(baselinePath, () => null); } catch { }
+            if (baseline == null || baseline.Values.Any(v => v?.State == null) || System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_UPDATE_BASELINE") == "1")
+            {
+                SafeFile.WriteJson(baselinePath, now);
+                Print($"  Baseline recorded in {baselinePath}: " + string.Join(", ", now.GroupBy(v => v.Value.State).Select(g => $"{g.Count()} {g.Key}")) + ".");
+                return;
+            }
+            var worse = new List<string>();
+            foreach (var kv in baseline)
+            {
+                if (!now.TryGetValue(kv.Key, out var cur)) { worse.Add($"{kv.Key}: no result any more"); continue; }
+                var was = kv.Value;
+                if (was.State == "exact" && cur.State != "exact") worse.Add($"{kv.Key}: was exact, now {cur.State} ({cur.Differences} differences)");
+                else if (was.State == "differs" && (cur.State is "unverifiable" or "error" || cur.State == "differs" && cur.Differences > was.Differences))
+                    worse.Add($"{kv.Key}: {cur.State} with {cur.Differences} differences (baseline {was.Differences})");
+                else if (was.State == "unverifiable" && cur.State == "error") worse.Add($"{kv.Key}: now fails to rebuild");
+                else if (cur.State == "exact" && was.State != "exact") Print($"  Improved: {kv.Key} is now exact. Update the baseline to lock it in.");
+            }
+            foreach (var key in now.Keys.Except(baseline.Keys)) Print($"  New in this run (not in the baseline): {key} ({now[key].State})");
+            Expect(worse.Count == 0, "logic got worse: " + string.Join("; ", worse));
+        }
+
+        public class SeedBaselineEntry
+        {
+            public string State { get; set; }
+            public int Differences { get; set; }
         }
 
         private static async Task EngineEndToEnd(string apPath)

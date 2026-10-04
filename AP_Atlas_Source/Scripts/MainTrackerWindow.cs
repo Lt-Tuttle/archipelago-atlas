@@ -2479,6 +2479,15 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 lock (earlyMessages) earlyMessages.Add(msg);
             }
             session.MessageLog.OnMessageReceived += earlyHandler;
+            // The server's RoomInfo (sent before login) carries each game's data checksum: kept so the slot can
+            // skip re-downloading names it already has, and compare its apworld version with the seed's.
+            var dataChecksums = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            void roomInfoHandler(Archipelago.MultiClient.Net.ArchipelagoPacketBase packet)
+            {
+                if (packet is Archipelago.MultiClient.Net.Packets.RoomInfoPacket info && info.DataPackageChecksums != null)
+                    lock (dataChecksums) foreach (var kv in info.DataPackageChecksums) dataChecksums[kv.Key] = kv.Value;
+            }
+            session.Socket.PacketReceived += roomInfoHandler;
             session.Socket.ErrorReceived += (ex, msg) =>
             {
                 LogToSystem("[color=red]Socket Error (" + slotName + "):[/color] " + msg);
@@ -2507,7 +2516,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 slotName,
                 Archipelago.MultiClient.Net.Enums.ItemsHandlingFlags.AllItems,
                 new Version(0, 5, 0),
-                new[] { "TextOnly" },
+                // "Tracker": the server treats it like TextOnly (can't send checks) and announces Atlas as "tracking".
+                new[] { "Tracker" },
                 null,
                 profile.Password == "" ? null : profile.Password
             ));
@@ -2578,6 +2588,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                         (msg) => { if (_globalStatusLabel != null) _globalStatusLabel.Text = msg; },
                         (msg) => { LogToDebug(msg, slotName); }
                     );
+                    session.Socket.PacketReceived -= roomInfoHandler;
+                    lock (dataChecksums) slotTracker.ServerDataChecksums = new Dictionary<string, string>(dataChecksums, StringComparer.OrdinalIgnoreCase);
                     slotTracker.ResolveOtherSlotLogic = (slot, loc) => ResolveSlotLogic(slotTracker, slot, loc);
                     slotTracker.ShowToast = ShowToast;
                     slotTracker.ShowActionToast = ShowToast;

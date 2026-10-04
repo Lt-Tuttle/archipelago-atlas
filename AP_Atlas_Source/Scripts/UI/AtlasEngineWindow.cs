@@ -124,6 +124,20 @@ namespace AP_Atlas.UI
             _gamesBox = new VBoxContainer();
             _gamesBox.AddThemeConstantOverride("separation", 4);
             page.AddChild(_gamesBox);
+            var verifyRow = new HBoxContainer();
+            verifyRow.AddThemeConstantOverride("separation", 8);
+            var verify = new Button
+            {
+                Text = "Verify logic against a seed…",
+                TooltipText = "Pick a seed generated with Archipelago (the .zip in its output folder). Atlas rebuilds each world the way a live\n" +
+                              "slot does, replays the seed's playthrough, and checks its logic matches the real one at every step."
+            };
+            verify.Pressed += PickSeed;
+            verifyRow.AddChild(verify);
+            var verifyNote = new Label { Text = "Proves the logic for a game against the real generator, not just its location list.", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart };
+            verifyNote.AddThemeColorOverride("font_color", Muted);
+            verifyRow.AddChild(verifyNote);
+            page.AddChild(verifyRow);
 
             page.AddChild(Header("Slots"));
             _slotsBox = new VBoxContainer();
@@ -312,9 +326,14 @@ namespace AP_Atlas.UI
                 icon.AddThemeColorOverride("font_color", installed == true ? Good : installed == false ? Bad : Muted);
                 row.AddChild(icon);
                 row.AddChild(new Label { Text = game, CustomMinimumSize = new Vector2(240, 0) });
+                var tested = SeedVerifier.For(game, null);
+                string testedText = tested == null ? "" : tested.Exact
+                    ? $" · logic verified exactly against seed {tested.SeedName} ({tested.Spheres} spheres, {tested.Tested:d})"
+                    : $" · logic differs from seed {tested.SeedName}: {tested.Late} late, {tested.Early} early ({tested.Tested:d})";
                 var detail = new Label
                 {
-                    Text = installed == true ? "Installed" : installed == false ? "Not in the engine: its apworld is needed" : "",
+                    Text = (installed == true ? "Installed" : installed == false ? "Not in the engine: its apworld is needed" : "") + testedText,
+                    TooltipText = tested?.Verdict ?? "",
                     SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
                     AutowrapMode = TextServer.AutowrapMode.WordSmart
                 };
@@ -338,12 +357,19 @@ namespace AP_Atlas.UI
                 _gamesBox.AddChild(row);
             }
             if (check?.FailedWorlds?.Count > 0)
-                _gamesBox.AddChild(Note($"{check.FailedWorlds.Count} worlds couldn't load (they need extra packages or a newer Archipelago): {string.Join(", ", check.FailedWorlds.Take(10))}"));
+            {
+                string Why(string world) =>
+                    check.FailedDetails != null && check.FailedDetails.TryGetValue(world, out var d) && !string.IsNullOrEmpty(d.MissingModule)
+                        ? $"{world} (needs package {d.MissingModule})" : world;
+                bool fixable = AtlasEngine.InstallableWorldPackages(install, includeTried: true).Count > 0;
+                _gamesBox.AddChild(Note($"{check.FailedWorlds.Count} world(s) couldn't load: {string.Join(", ", check.FailedWorlds.Take(10).Select(Why))}." +
+                    (fixable ? " Setup → Python packages → Install adds the packages they declare." : "")));
+            }
         }
 
         private string SlotsSignature() =>
             string.Join("|", (_slots?.Invoke() ?? Enumerable.Empty<SlotTrackerControl>()).Where(IsInstanceValid)
-                .Select(s => $"{s.SlotName}:{s.EngineRunning}:{s.EngineBooting}:{s.EngineProblem?.Code}:{s.LinkedYamlSetting}:{s.EngineYamlInfo?["source"]}"));
+                .Select(s => $"{s.SlotName}:{s.EngineRunning}:{s.EngineBooting}:{s.EngineProblem?.Code}:{s.LinkedYamlSetting}:{s.EngineYamlInfo?["source"]}:{s.ApworldMatchesSeed}"));
 
         private void RefreshSlotsIfChanged()
         {
@@ -413,10 +439,13 @@ namespace AP_Atlas.UI
                 _ => "Running"
             };
             var match = info?["match"];
+            if (slot.ApworldMatchesSeed == false)
+                return ("▲", Warn, $"{how}, but the installed {slot.Game} apworld" + (slot.InstalledWorldVersion != null ? $" (version {slot.InstalledWorldVersion})" : "") +
+                                   " isn't the one this seed was made with (its data differs from the server's). Logic may be wrong: install the version the seed used.");
             if (match?.Type == Newtonsoft.Json.Linq.JTokenType.Boolean && !(bool)match)
                 return ("▲", Warn, $"{how}, but it differs from the server: {info["missing"]} locations missing, {info["extra"]} extra. Link the YAML used for the seed.");
             if (match?.Type == Newtonsoft.Json.Linq.JTokenType.Boolean)
-                return ("✔", Good, $"{how}; all {info["expected"]} locations match the server.");
+                return ("✔", Good, $"{how}; all {info["expected"]} locations match the server" + (slot.ApworldMatchesSeed == true ? ", and the apworld's data matches the seed's." : "."));
             return ("✔", Good, how);
         }
 
@@ -451,6 +480,29 @@ namespace AP_Atlas.UI
         {
             var install = AtlasEngine.Current;
             RunOperation("Adding " + Path.GetFileName(source), (log, _, ct) => AtlasEngine.InstallApworldAsync(install, source, log, ct));
+        }
+
+        private void PickSeed()
+        {
+            var dialog = new FileDialog
+            {
+                FileMode = FileDialog.FileModeEnum.OpenFile,
+                Access = FileDialog.AccessEnum.Filesystem,
+                Filters = new[] { "*.zip, *.archipelago ; Generated Archipelago seed" },
+                UseNativeDialog = true,
+                Title = "Choose a generated seed (Archipelago's output folder)"
+            };
+            string folder = SeedVerifier.DefaultSeedFolder();
+            if (folder != null) dialog.CurrentDir = folder;
+            dialog.FileSelected += path =>
+            {
+                dialog.QueueFree();
+                var install = AtlasEngine.Current;
+                RunOperation("Seed test", (log, _, ct) => SeedVerifier.VerifyAsync(install, path, log, ct));
+            };
+            dialog.Canceled += () => dialog.QueueFree();
+            GetTree().Root.AddChild(dialog);
+            dialog.PopupCentered(new Vector2I(900, 600));
         }
 
         private void PickApworld()

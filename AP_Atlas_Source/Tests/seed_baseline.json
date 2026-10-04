@@ -1,0 +1,26 @@
+{
+  "AP_05912744374807909145.zip|1|Dark Souls III": {
+    "State": "exact",
+    "Differences": 0
+  },
+  "AP_12170300467581269085.zip|1|Ocarina of Time": {
+    "State": "unverifiable",
+    "Differences": 212
+  },
+  "AP_24027355282950100822.zip|1|Brotato": {
+    "State": "unverifiable",
+    "Differences": 66
+  },
+  "AP_32186062202680496572.zip|1|Ship of Harkinian": {
+    "State": "exact",
+    "Differences": 0
+  },
+  "AP_63890709853691231749.zip|1|Dark Souls II": {
+    "State": "exact",
+    "Differences": 0
+  },
+  "AP_65905938186228772852.zip|1|Dark Souls III": {
+    "State": "unverifiable",
+    "Differences": 174
+  }
+}

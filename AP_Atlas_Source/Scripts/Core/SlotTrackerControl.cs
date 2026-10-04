@@ -363,9 +363,40 @@ public partial class SlotTrackerControl : MarginContainer
     /// Shows logic, or why there is none: race mode, or an engine problem with buttons to fix it. While logic is unknown
     /// the map uses neutral colors (open / hinted) instead of calling every check out of logic.
     /// </summary>
+    private PanelContainer _accuracyBanner;
+    private Label _accuracyText;
+    private Button _accuracyLinkYaml;
+
+    /// <summary>Why this slot's logic is only approximate (null when the rebuild matches the seed as far as Atlas can check).</summary>
+    public string LogicAccuracyWarning
+    {
+        get
+        {
+            if (!_engineRunning) return null;
+            if (ApworldMatchesSeed == false)
+                return $"Logic may be off: the installed {Game} apworld" + (InstalledWorldVersion != null ? $" (version {InstalledWorldVersion})" : "") +
+                       " isn't the version this seed was made with. Install the version the seed used (Atlas Engine → Games).";
+            var info = _logicEngine?.LastYamlInfo;
+            if (info?["match"]?.Type == Newtonsoft.Json.Linq.JTokenType.Boolean && !(bool)info["match"])
+                return $"Logic is approximate: your world was rebuilt, but it doesn't match the seed ({info["missing"]} locations missing, {info["extra"]} extra). " +
+                       "Usually the game keeps some options out of the server's data. Link the YAML used to generate the seed for exact logic.";
+            return null;
+        }
+    }
+
+    private void SyncAccuracyBanner()
+    {
+        if (_accuracyBanner == null) return;
+        string warning = LogicHidden ? null : LogicAccuracyWarning;
+        _accuracyBanner.Visible = warning != null;
+        _accuracyText.Text = "⚠ " + warning;
+        _accuracyLinkYaml.Visible = warning != null && ApworldMatchesSeed != false;
+    }
+
     private void SyncLogicViews()
     {
         if (!GodotObject.IsInstanceValid(this)) return;
+        SyncAccuracyBanner();
         bool problem = !LogicHidden && !_engineRunning && EngineProblem != null;
         if (_mapTracker != null) _mapTracker.LogicHidden = LogicHidden || !_engineRunning;
         if (_logicTree != null) _logicTree.Visible = !LogicHidden && !problem;
@@ -454,6 +485,14 @@ public partial class SlotTrackerControl : MarginContainer
     public Newtonsoft.Json.Linq.JObject EngineYamlInfo => _engineRunning ? _logicEngine?.LastYamlInfo : null;
 
     public Newtonsoft.Json.Linq.JObject EngineVersions => _logicEngine?.LastVersions;
+
+    /// <summary>
+    /// Whether the installed apworld's data matches the seed's (checksums of names, ids and groups; null when either
+    /// side didn't report one). It can't see rule-only changes, which the location check and seed tests cover.
+    /// </summary>
+    public bool? ApworldMatchesSeed { get; private set; }
+
+    public string InstalledWorldVersion => _engineRunning ? _logicEngine?.LastWorldVersion : null;
 
     /// <summary>Opens the Atlas Engine setup window (set by MainTrackerWindow).</summary>
     public Action OpenEngineSetup { get; set; }
@@ -622,9 +661,23 @@ public partial class SlotTrackerControl : MarginContainer
     /// Asks the server for this game's data package (item and location name tables) once per connection.
     /// It's stored and saved, so the Pack Doctor and other slots can use it offline later.
     /// </summary>
+    /// <summary>Each game's data checksum from the server's RoomInfo (set by MainTrackerWindow at connect).</summary>
+    public IReadOnlyDictionary<string, string> ServerDataChecksums { get; set; }
+
+    public string ServerChecksumFor(string game) =>
+        game != null && ServerDataChecksums != null && ServerDataChecksums.TryGetValue(game, out var c) && !string.IsNullOrEmpty(c) ? c : null;
+
     private void RequestGameNames()
     {
         if (Session == null || string.IsNullOrEmpty(Game)) return;
+        // Names are fixed by the checksum: when the stored copy has the same one, there's nothing to download.
+        string checksum = ServerChecksumFor(Game);
+        var stored = AP_Atlas.Core.PopTracker.GameNames.Server(Game);
+        if (checksum != null && stored != null && stored.Version == checksum && stored.Locations.Count > 0)
+        {
+            AppendDebugLog($"Names for {Game} are already stored for checksum {checksum[..Math.Min(8, checksum.Length)]}; not downloading them again.");
+            return;
+        }
         Session.Socket.PacketReceived += OnDataPackagePacket;
         _ = Session.Socket.SendPacketAsync(new GetDataPackagePacket { Games = new[] { Game } });
     }
@@ -881,6 +934,19 @@ public partial class SlotTrackerControl : MarginContainer
             _ => "by the engine"
         };
         AppendDebugLog($"Logic engine running: world rebuilt {how}; locations {info?["got"]} of {info?["expected"]} expected, {info?["missing"]} missing, {info?["extra"]} extra.");
+        string serverChecksum = ServerChecksumFor(Game), localChecksum = _logicEngine.LastDataChecksum;
+        ApworldMatchesSeed = serverChecksum == null || localChecksum == null ? null : serverChecksum == localChecksum;
+        if (ApworldMatchesSeed == false)
+        {
+            string version = _logicEngine.LastWorldVersion != null ? $" (version {_logicEngine.LastWorldVersion})" : "";
+            SetStatus("Running (apworld differs from the seed's)");
+            SyncAccuracyBanner();
+            AP_Atlas.Core.Logger.LogWarning($"[{_slotName}] The installed {Game} apworld{version} isn't the one this seed was generated with: its data " +
+                $"(checksum {localChecksum[..Math.Min(8, localChecksum.Length)]}) differs from the server's ({serverChecksum[..Math.Min(8, serverChecksum.Length)]}). " +
+                "Logic may be wrong. Install the apworld version the seed used (Atlas Engine → Slots).");
+            return;
+        }
+        if (ApworldMatchesSeed == true) AppendDebugLog($"The installed {Game} apworld matches the seed's data (checksum {localChecksum[..Math.Min(8, localChecksum.Length)]}).");
         if (match == false)
         {
             int missing = info["missing"]?.ToObject<int>() ?? 0, extra = info["extra"]?.ToObject<int>() ?? 0;
@@ -889,6 +955,7 @@ public partial class SlotTrackerControl : MarginContainer
                 "Linking the YAML used to generate the seed, or matching the game's apworld version, usually fixes this.");
         }
         else SetStatus("Engine Running");
+        SyncAccuracyBanner();
     }
 
     /// <summary>Coalesces refresh requests so concurrent item bursts never run the engine loop twice in parallel.</summary>
@@ -1150,6 +1217,29 @@ public partial class SlotTrackerControl : MarginContainer
         toolbar.AddChild(_logicFlaggedOnly);
         _engineStatusLabel = new Label { Text = "Engine: Offline", SizeFlagsHorizontal = SizeFlags.ExpandFill, HorizontalAlignment = HorizontalAlignment.Right };
         toolbar.AddChild(_engineStatusLabel);
+
+        // Shown when the logic can't be trusted as exact: the rebuilt world or the apworld doesn't match the seed.
+        _accuracyBanner = new PanelContainer { Visible = false };
+        _accuracyBanner.AddThemeStyleboxOverride("panel", new StyleBoxFlat
+        {
+            BgColor = new Godot.Color("#3a2a10"),
+            BorderColor = Colors.Orange,
+            BorderWidthLeft = 3,
+            ContentMarginLeft = 10,
+            ContentMarginRight = 10,
+            ContentMarginTop = 6,
+            ContentMarginBottom = 6
+        });
+        var bannerRow = new HBoxContainer();
+        bannerRow.AddThemeConstantOverride("separation", 10);
+        _accuracyText = new Label { SizeFlagsHorizontal = SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart };
+        _accuracyText.AddThemeColorOverride("font_color", Colors.Orange);
+        bannerRow.AddChild(_accuracyText);
+        _accuracyLinkYaml = new Button { Text = "Link YAML…", TooltipText = "Choose the YAML used to generate this seed; Atlas remembers it for this slot" };
+        _accuracyLinkYaml.Pressed += PickYaml;
+        bannerRow.AddChild(_accuracyLinkYaml);
+        _accuracyBanner.AddChild(bannerRow);
+        vbox.AddChild(_accuracyBanner);
 
         _logicTree = new Tree { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, Columns = 3 };
         _logicTree.SetColumnTitle(0, "Order");

@@ -120,6 +120,23 @@ REQUIRED_UT_API = ['set_slot_params', 'run_generator', 'initalize_tracker_core',
 SMOKE_GAMES = ['Clique', 'ChecksFinder', 'Hylics 2', 'Bumper Stickers']
 
 
+def world_identity(cls):
+    # The installed apworld's data checksum (computed exactly as Archipelago does; the server sends the seed's in
+    # RoomInfo) and its declared version, so Atlas can tell whether this is the apworld the seed was made with.
+    out = {}
+    try:
+        out['data_checksum'] = cls.get_data_package_data()['checksum']
+    except Exception:
+        pass
+    try:
+        version = getattr(cls, 'world_version', None)
+        if version is not None:
+            out['world_version'] = '.'.join(str(part) for part in version) if isinstance(version, tuple) else str(version)
+    except Exception:
+        pass
+    return out
+
+
 def ut_api_missing():
     import inspect
     from worlds.tracker.TrackerCore import TrackerCore
@@ -183,6 +200,121 @@ def smoke_test():
     return None
 
 
+def yaml_candidates(cls, game, slot_name, slot_data, linked_path, players_dir):
+    # In order: the YAML the user linked to this slot, one built from slot data, a match in the Players folder.
+    resolved, total = resolved_options(cls, slot_data)
+    notes = []
+    cands = []
+
+    def overlay(doc):
+        doc = dict(doc)
+        doc['name'] = slot_name
+        doc['game'] = game
+        section = dict(doc.get(game) or {})
+        section.update(resolved)
+        doc[game] = section
+        return doc
+
+    if linked_path:
+        try:
+            doc = pick_doc(load_yaml_docs(linked_path), game, slot_name, False)
+            if doc is not None:
+                cands.append(('linked', os.path.basename(linked_path), overlay(doc)))
+            else:
+                notes.append('The linked YAML has no ' + game + ' player.')
+        except Exception as e:
+            notes.append('The linked YAML could not be read: ' + str(e))
+    if resolved:
+        cands.append(('slot_data', None, {'name': slot_name, 'game': game, game: dict(resolved)}))
+    if players_dir and os.path.isdir(players_dir):
+        for fname in sorted(os.listdir(players_dir)):
+            if not fname.lower().endswith(('.yaml', '.yml')):
+                continue
+            try:
+                doc = pick_doc(load_yaml_docs(os.path.join(players_dir, fname)), game, slot_name, True)
+            except Exception:
+                continue
+            if doc is not None:
+                cands.append(('players', fname, overlay(doc)))
+    return cands, notes, len(resolved), total
+
+def start_slot(req, logger):
+    # Rebuilds one slot's world the way a live slot does; shared by the bridge and the seed test.
+    from worlds.tracker.TrackerCore import TrackerCore
+    from worlds.AutoWorld import AutoWorldRegister
+    game = req.get('game')
+    slot_name = req.get('player_name')
+    slot_data = req.get('slot_data') or {}
+    all_locations = req.get('all_locations') or []
+    cls = AutoWorldRegister.world_types.get(game)
+    if cls is None:
+        import worlds
+        return None, {'code': 'world_missing', 'message': game + ' is not installed in this engine.',
+                      'failed_worlds': [str(w) for w in getattr(worlds, 'failed_world_loads', [])]}
+    if getattr(cls, 'disable_ut', False):
+        return None, {'code': 'ut_disabled', 'message': "This game's author asked for the Universal Tracker not to be used with it."}
+    missing_api = ut_api_missing()
+    if missing_api:
+        return None, {'code': 'ut_incompatible', 'message': 'This Universal Tracker version is incompatible with Atlas (missing: ' +
+                      ', '.join(missing_api) + '). Install the tested version from the Atlas Engine window.'}
+    players_dir = ensure_players_folder()
+    if getattr(cls, 'ut_can_gen_without_yaml', False):
+        c = TrackerCore(logger, False, False)
+        c.set_slot_params(game, 1, slot_name, 1)
+        c.initalize_tracker_core(cls, slot_data)
+        if getattr(c, 'tracker_disabled', False):
+            return None, {'code': 'ut_disabled', 'message': "This game's author asked for the Universal Tracker not to be used with it."}
+        if c.multiworld is None or c.player_id is None:
+            return None, {'code': 'generation_failed', 'message': getattr(c, 'gen_error', None) or 'The world could not be rebuilt from the slot data.'}
+        info = {'source': 'not_needed'}
+        info.update(verify(c, all_locations))
+        return c, info
+    cands, notes, used, total = yaml_candidates(cls, game, slot_name, slot_data, req.get('yaml_path'), players_dir)
+    attempts = []
+    best = None
+    for source, fname, doc in cands:
+        try:
+            c, err = generate_with(TrackerCore, logger, cls, game, slot_name, slot_data, doc)
+        except Exception as e:
+            c, err = None, str(e)
+        if c is None:
+            attempts.append({'source': source, 'file': fname, 'ok': False, 'error': (err or '')[:400]})
+            continue
+        v = verify(c, all_locations)
+        attempt = {'source': source, 'file': fname, 'ok': True}
+        attempt.update(v)
+        attempts.append(attempt)
+        score = v['missing'] + v['extra']
+        if best is None or score < best[0]:
+            best = (score, c, source, fname, v)
+        if v['match'] is not False:
+            break  # this YAML rebuilds exactly the server's locations
+    if best is None:
+        code = 'generation_failed' if cands else 'yaml_needed'
+        message = ('None of the YAMLs tried could rebuild this world.' if cands else
+                   game + " needs this player's YAML: its slot data doesn't include the options.")
+        return None, {'code': code, 'message': message, 'attempts': attempts, 'notes': notes}
+    info = {'source': best[2], 'file': best[3], 'options_from_slot_data': used, 'options_total': total,
+            'attempts': attempts, 'notes': notes}
+    info.update(best[4])
+    return best[1], info
+
+
+def reachable_after(core, item_ids, missing_locations=None):
+    # The location ids in logic with these items received (the same query the live 'update' answers).
+    from NetUtils import NetworkItem
+    if missing_locations is not None:
+        core.set_missing_locations(set(missing_locations))
+    core.set_items_received([NetworkItem(i, -1, -1, 0) for i in item_ids])
+    state = core.updateTracker()
+    world = core.get_current_world()
+    ids = []
+    for loc_name in getattr(state, 'in_logic_locations', None) or []:
+        if loc_name in world.location_name_to_id:
+            ids.append(world.location_name_to_id[loc_name])
+    return ids, state
+
+
 def launch_bridge(*args):
     try:
         from worlds.tracker.TrackerCore import TrackerCore
@@ -193,108 +325,6 @@ def launch_bridge(*args):
         logger = logging.getLogger('UltimateBridge')
         # Built per slot at 'init', from that slot's own YAML only (other YAMLs can't break it).
         core = None
-
-        def yaml_candidates(cls, game, slot_name, slot_data, linked_path, players_dir):
-            # In order: the YAML the user linked to this slot, one built from slot data, a match in the Players folder.
-            resolved, total = resolved_options(cls, slot_data)
-            notes = []
-            cands = []
-
-            def overlay(doc):
-                doc = dict(doc)
-                doc['name'] = slot_name
-                doc['game'] = game
-                section = dict(doc.get(game) or {})
-                section.update(resolved)
-                doc[game] = section
-                return doc
-
-            if linked_path:
-                try:
-                    doc = pick_doc(load_yaml_docs(linked_path), game, slot_name, False)
-                    if doc is not None:
-                        cands.append(('linked', os.path.basename(linked_path), overlay(doc)))
-                    else:
-                        notes.append('The linked YAML has no ' + game + ' player.')
-                except Exception as e:
-                    notes.append('The linked YAML could not be read: ' + str(e))
-            if resolved:
-                cands.append(('slot_data', None, {'name': slot_name, 'game': game, game: dict(resolved)}))
-            if players_dir and os.path.isdir(players_dir):
-                for fname in sorted(os.listdir(players_dir)):
-                    if not fname.lower().endswith(('.yaml', '.yml')):
-                        continue
-                    try:
-                        doc = pick_doc(load_yaml_docs(os.path.join(players_dir, fname)), game, slot_name, True)
-                    except Exception:
-                        continue
-                    if doc is not None:
-                        cands.append(('players', fname, overlay(doc)))
-            return cands, notes, len(resolved), total
-
-        def start_slot(req):
-            game = req.get('game')
-            slot_name = req.get('player_name')
-            slot_data = req.get('slot_data') or {}
-            all_locations = req.get('all_locations') or []
-            cls = AutoWorldRegister.world_types.get(game)
-            if cls is None:
-                import worlds
-                return None, {'code': 'world_missing', 'message': game + ' is not installed in this engine.',
-                              'failed_worlds': [str(w) for w in getattr(worlds, 'failed_world_loads', [])]}
-            if getattr(cls, 'disable_ut', False):
-                return None, {'code': 'ut_disabled', 'message': "This game's author asked for the Universal Tracker not to be used with it."}
-            missing_api = ut_api_missing()
-            if missing_api:
-                return None, {'code': 'ut_incompatible', 'message': 'This Universal Tracker version is incompatible with Atlas (missing: ' +
-                              ', '.join(missing_api) + '). Install the tested version from the Atlas Engine window.'}
-            players_dir = ensure_players_folder()
-            if getattr(cls, 'ut_can_gen_without_yaml', False):
-                c = TrackerCore(logger, False, False)
-                c.set_slot_params(game, 1, slot_name, 1)
-                c.initalize_tracker_core(cls, slot_data)
-                if getattr(c, 'tracker_disabled', False):
-                    return None, {'code': 'ut_disabled', 'message': "This game's author asked for the Universal Tracker not to be used with it."}
-                if c.multiworld is None or c.player_id is None:
-                    return None, {'code': 'generation_failed', 'message': getattr(c, 'gen_error', None) or 'The world could not be rebuilt from the slot data.'}
-                info = {'source': 'not_needed'}
-                info.update(verify(c, all_locations))
-                return c, info
-            cands, notes, used, total = yaml_candidates(cls, game, slot_name, slot_data, req.get('yaml_path'), players_dir)
-            attempts = []
-            best = None
-            for source, fname, doc in cands:
-                try:
-                    c, err = generate_with(TrackerCore, logger, cls, game, slot_name, slot_data, doc)
-                except Exception as e:
-                    c, err = None, str(e)
-                if c is None:
-                    attempts.append({'source': source, 'file': fname, 'ok': False, 'error': (err or '')[:400]})
-                    continue
-                v = verify(c, all_locations)
-                attempt = {'source': source, 'file': fname, 'ok': True}
-                attempt.update(v)
-                attempts.append(attempt)
-                score = v['missing'] + v['extra']
-                if best is None or score < best[0]:
-                    best = (score, c, source, fname, v)
-                if v['match'] is not False:
-                    break  # this YAML rebuilds exactly the server's locations
-            if best is None:
-                code = 'generation_failed' if cands else 'yaml_needed'
-                message = ('None of the YAMLs tried could rebuild this world.' if cands else
-                           game + " needs this player's YAML: its slot data doesn't include the options.")
-                return None, {'code': code, 'message': message, 'attempts': attempts, 'notes': notes}
-            info = {'source': best[2], 'file': best[3], 'options_from_slot_data': used, 'options_total': total,
-                    'attempts': attempts, 'notes': notes}
-            info.update(best[4])
-            return best[1], info
-
-        item_cache = {}
-        def get_net_item(item_id):
-            if item_id not in item_cache:
-                item_cache[item_id] = NetworkItem(item_id, -1, -1, 0)
-            return item_cache[item_id]
 
         last_state = None
         last_glitch_state = None
@@ -432,7 +462,7 @@ def launch_bridge(*args):
                 
                 if action == 'init':
                     all_locations = req.get('all_locations') or []
-                    new_core, info = start_slot(req)
+                    new_core, info = start_slot(req, logger)
                     if new_core is None:
                         reply = {'id': rid, 'status': 'error', 'game': req.get('game'), 'versions': versions()}
                         reply.update(info)
@@ -508,7 +538,11 @@ def launch_bridge(*args):
                         for debug_it in item_pool[:5]:
                             logger.info(' - ' + str(debug_it.get('name')) + ': Flags=' + str(debug_it.get('flags')))
 
-                    print(json.dumps({'id': rid, 'status': 'ready', 'item_pool': item_pool, 'yaml': info, 'versions': versions()}))
+                    reply = {'id': rid, 'status': 'ready', 'item_pool': item_pool, 'yaml': info, 'versions': versions()}
+                    world_cls = AutoWorldRegister.world_types.get(req.get('game'))
+                    if world_cls is not None:
+                        reply.update(world_identity(world_cls))
+                    print(json.dumps(reply))
                     sys.stdout.flush()
 
                 elif core is None:
@@ -516,18 +550,9 @@ def launch_bridge(*args):
                     sys.stdout.flush()
 
                 elif action == 'update':
-                    item_ids = req.get('items', [])
-                    missing_locs = req.get('missing_locations')
-                    if missing_locs is not None:
-                        core.set_missing_locations(set(missing_locs))
-                        
-                    core.set_items_received([get_net_item(i) for i in item_ids])
-                    state = core.updateTracker()
+                    # The same query the seed test verifies against real playthroughs.
+                    reachable_ids, state = reachable_after(core, req.get('items', []), req.get('missing_locations'))
                     world = core.get_current_world()
-                    reachable_ids = []
-                    for loc_name in getattr(state, 'in_logic_locations', []):
-                        if loc_name in world.location_name_to_id:
-                            reachable_ids.append(world.location_name_to_id[loc_name])
                             
                     excluded_ids = []
                     target_player = getattr(core, 'player_id', None) or 1
@@ -581,6 +606,94 @@ def atlas_names(*args):
         print(json.dumps({'error': traceback.format_exc()}))
     sys.stdout.flush()
 
+def load_multidata(path):
+    # A generated seed's server data (.archipelago, or the output .zip holding it), read with Archipelago's own
+    # restricted loader.
+    import zipfile
+    import zlib
+    import Utils
+    if path.lower().endswith('.zip'):
+        with zipfile.ZipFile(path) as z:
+            name = next(n for n in z.namelist() if n.lower().endswith('.archipelago'))
+            raw = z.read(name)
+    else:
+        with open(path, 'rb') as f:
+            raw = f.read()
+    return Utils.restricted_loads(zlib.decompress(raw[1:]))
+
+
+def atlas_seed_test(*args):
+    # Accuracy against ground truth. stdin: {"seed": path, "players": [slots] (optional), "yaml_paths": {slot: path}}.
+    # For each player: rebuild the world from the seed's slot data exactly as a live slot does, compare the data
+    # checksum and location list with the seed's, then replay the generator's spheres: with the items found in
+    # spheres before i received, the reachable set must be exactly the locations of spheres 0..i. "late" = the seed
+    # reaches it but Atlas wouldn't show it in logic yet; "early" = Atlas would show it in logic too soon.
+    import time
+    logger = logging.getLogger('AtlasSeedTest')
+    line = sys.stdin.readline()
+    req = json.loads(line) if line else {}
+    out = {'seed': req.get('seed'), 'players': []}
+    try:
+        from worlds.AutoWorld import AutoWorldRegister
+        data = load_multidata(req['seed'])
+        out['seed_name'] = data.get('seed_name')
+        out['generator'] = '.'.join(str(v) for v in (data.get('version') or ()))
+        all_locations = data['locations']
+        spheres = data.get('spheres') or []
+        precollected = data.get('precollected_items') or {}
+        wanted = {int(p) for p in (req.get('players') or all_locations.keys())}
+        out['spheres'] = len(spheres)
+        for player, slot in data['slot_info'].items():
+            if player not in wanted or player not in all_locations:
+                continue
+            game, name = slot.game, slot.name
+            result = {'player': player, 'name': name, 'game': game}
+            out['players'].append(result)
+            started = time.time()
+            cls = AutoWorldRegister.world_types.get(game)
+            expected_checksum = ((data.get('datapackage') or {}).get(game) or {}).get('checksum')
+            if cls is not None and expected_checksum:
+                result['seed_checksum'] = expected_checksum
+                result['local_checksum'] = world_identity(cls).get('data_checksum')
+                result['checksum_match'] = result['local_checksum'] == expected_checksum
+            locs = sorted(all_locations[player].keys())
+            core, start = start_slot({'game': game, 'player_name': name,
+                                      'slot_data': (data.get('slot_data') or {}).get(player) or {},
+                                      'all_locations': locs,
+                                      'yaml_path': (req.get('yaml_paths') or {}).get(str(player))}, logger)
+            if core is None:
+                result['error'] = start
+                continue
+            result['rebuild'] = {k: start.get(k) for k in ('source', 'file', 'match', 'expected', 'got', 'missing', 'extra')}
+            world = core.get_current_world()
+            names = getattr(world, 'location_id_to_name', {}) or {}
+            inventory = list(precollected.get(player, []))
+            reached = set()
+            steps = []
+            for i, sphere in enumerate(spheres):
+                reached |= set(sphere.get(player, ()))
+                reach, _ = reachable_after(core, inventory, locs)
+                reach = set(reach)
+                late, early = reached - reach, reach - reached
+                steps.append({'sphere': i, 'expected': len(reached), 'reachable': len(reach),
+                              'late_count': len(late), 'early_count': len(early),
+                              'late': [names.get(l, str(l)) for l in sorted(late)[:15]],
+                              'early': [names.get(l, str(l)) for l in sorted(early)[:15]]})
+                # The items found in this sphere that belong to this player (from any player's world).
+                for finder, found in sphere.items():
+                    for loc in found:
+                        entry = all_locations.get(finder, {}).get(loc)
+                        if entry is not None and entry[1] == player:
+                            inventory.append(entry[0])
+            result['steps'] = steps
+            result['exact'] = bool(steps) and all(s['late_count'] == 0 and s['early_count'] == 0 for s in steps)
+            result['seconds'] = round(time.time() - started, 1)
+    except Exception:
+        out['error'] = traceback.format_exc()[-1500:]
+    print(json.dumps(out))
+    sys.stdout.flush()
+
+
 def atlas_check(*args):
     # Health check for the setup page: versions, installed games, worlds that failed to load, tracker import.
     out = versions()
@@ -589,6 +702,18 @@ def atlas_check(*args):
         from worlds.AutoWorld import AutoWorldRegister
         out['games'] = sorted(AutoWorldRegister.world_types.keys())
         out['failed'] = [str(w) for w in getattr(worlds, 'failed_world_loads', [])]
+        # Why each failed (recorded by atlas_run.py in the portable engine), with where its declared packages are.
+        try:
+            import __main__
+            details = dict(getattr(__main__, 'ATLAS_LOAD_ERRORS', {}) or {})
+        except Exception:
+            details = {}
+        for source in getattr(worlds, 'world_sources', []) or []:
+            name = os.path.splitext(os.path.basename(getattr(source, 'path', '') or ''))[0]
+            if name in details:
+                details[name]['path'] = getattr(source, 'resolved_path', None) or getattr(source, 'path', None)
+                details[name]['is_zip'] = bool(getattr(source, 'is_zip', False))
+        out['failed_details'] = details
         try:
             from worlds.tracker.TrackerCore import TrackerCore  # noqa: F401
             out['tracker'] = True
@@ -610,3 +735,4 @@ from worlds.LauncherComponents import Component, components, Type
 components.append(Component('UltimateBridge', None, func=launch_bridge, component_type=Type.CLIENT))
 components.append(Component('AtlasNames', None, func=atlas_names, component_type=Type.CLIENT))
 components.append(Component('AtlasCheck', None, func=atlas_check, component_type=Type.CLIENT))
+components.append(Component('AtlasSeedTest', None, func=atlas_seed_test, component_type=Type.CLIENT))
