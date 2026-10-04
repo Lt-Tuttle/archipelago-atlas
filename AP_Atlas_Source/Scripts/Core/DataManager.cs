@@ -59,6 +59,11 @@ public class AppSettings
     /// <summary>Reconnect a slot whose connection dropped (a few tries over about 30 minutes, then stop).</summary>
     public bool AutoReconnect { get; set; } = true;
 
+    /// <summary>Optional URL of a newer apworld source list (Atlas's format). Empty: the bundled list and GitHub releases.</summary>
+    public string ApworldSourcesUrl { get; set; } = "";
+    /// <summary>Download sources the user trusts ("github.com/owner/repo" or a host), so they're asked only once.</summary>
+    public List<string> ApprovedApworldSources { get; set; } = new List<string>();
+
     // Window State
     public int WindowWidth { get; set; } = 1024;
     public int WindowHeight { get; set; } = 768;
@@ -151,6 +156,8 @@ public static class DataManager
         settings.SlotYamlPaths ??= new Dictionary<string, string>();
         settings.EngineMode ??= "";
         settings.ArchipelagoInstallationPath ??= "";
+        settings.ApworldSourcesUrl ??= "";
+        settings.ApprovedApworldSources ??= new List<string>();
         if (settings.MapNodeScale <= 0 || float.IsNaN(settings.MapNodeScale)) settings.MapNodeScale = 1f;
         return settings;
     }

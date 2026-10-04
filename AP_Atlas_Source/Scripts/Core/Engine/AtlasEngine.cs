@@ -1136,6 +1136,19 @@ namespace AP_Atlas.Core.EngineSetup
             Directory.CreateDirectory(worlds);
             string target = Path.Combine(worlds, Path.GetFileName(sourceFile));
             if (string.Equals(Path.GetFullPath(target), Path.GetFullPath(sourceFile), StringComparison.OrdinalIgnoreCase)) return target;
+            // Another file for the same game would conflict (Archipelago loads only one): move it to backups.
+            string game = GameOfApworld(sourceFile);
+            if (game != null)
+            {
+                foreach (var other in EngineInstall.SafeFiles(worlds, "*.apworld"))
+                {
+                    if (string.Equals(Path.GetFileName(other), Path.GetFileName(target), StringComparison.OrdinalIgnoreCase)) continue;
+                    if (!string.Equals(GameOfApworld(other), game, StringComparison.OrdinalIgnoreCase)) continue;
+                    Directory.CreateDirectory(BackupsDir);
+                    File.Move(other, Path.Combine(BackupsDir, $"{DateTime.Now:yyyyMMdd-HHmmss}_{Path.GetFileName(other)}"));
+                    log?.Invoke($"Moved the other {game} apworld ({Path.GetFileName(other)}) to the engine's backups folder.");
+                }
+            }
             if (File.Exists(target))
             {
                 Directory.CreateDirectory(BackupsDir);

@@ -121,6 +121,7 @@ namespace AP_Atlas.UI
             page.AddChild(setupRow);
 
             page.AddChild(Header("Games"));
+            page.AddChild(BuildSourcesRow());
             _gamesBox = new VBoxContainer();
             _gamesBox.AddThemeConstantOverride("separation", 4);
             page.AddChild(_gamesBox);
@@ -346,9 +347,24 @@ namespace AP_Atlas.UI
                     if (local != null && local.Count > 0)
                     {
                         var copy = new Button { Text = "Copy from my install", TooltipText = "Copy " + local[0] + " into the Atlas engine", Disabled = _busy };
-                        string source = local[0];
-                        copy.Pressed += () => InstallApworld(source);
+                        string localFile = local[0];
+                        copy.Pressed += () => InstallApworld(localFile);
                         row.AddChild(copy);
+                    }
+                    var source = ApworldSources.Find(game);
+                    if (source != null)
+                    {
+                        string seedChecksum = SeedChecksumFor(game);
+                        var download = new Button
+                        {
+                            Text = seedChecksum != null ? "Download the seed's version…" : "Download…",
+                            TooltipText = (seedChecksum != null ? "Finds the version whose data matches your connected seed, then installs it.\n" : "Installs the newest known version.\n") +
+                                          "Source: " + (source.Repo != null ? "github.com/" + source.Repo : source.Home ?? "community index"),
+                            Disabled = _busy
+                        };
+                        string g = game;
+                        download.Pressed += () => DownloadGame(g, seedChecksum, null);
+                        row.AddChild(download);
                     }
                     var pick = new Button { Text = "Choose apworld…", TooltipText = "Pick the game's .apworld file (from its release page or the Archipelago Discord)", Disabled = _busy };
                     pick.Pressed += PickApworld;
@@ -415,6 +431,13 @@ namespace AP_Atlas.UI
                     unlink.Pressed += () => slot.LinkYaml(null);
                     row.AddChild(unlink);
                 }
+                if (slot.ApworldMatchesSeed == false && ApworldSources.Find(slot.Game) != null)
+                {
+                    var fix = new Button { Text = "Find the seed's version…", TooltipText = "Download the version of this game's apworld whose data matches the seed, install it and restart logic", Disabled = slot.EngineBooting || _busy };
+                    var s = slot;
+                    fix.Pressed += () => DownloadGame(s.Game, s.ServerChecksumFor(s.Game), s);
+                    row.AddChild(fix);
+                }
                 var retry = new Button { Text = "Restart logic", TooltipText = "Start this slot's logic engine again", Disabled = slot.EngineBooting };
                 retry.Pressed += slot.RetryLogicEngine;
                 row.AddChild(retry);
@@ -480,6 +503,92 @@ namespace AP_Atlas.UI
         {
             var install = AtlasEngine.Current;
             RunOperation("Adding " + Path.GetFileName(source), (log, _, ct) => AtlasEngine.InstallApworldAsync(install, source, log, ct));
+        }
+
+        private Control BuildSourcesRow()
+        {
+            var row = new HBoxContainer();
+            row.AddThemeConstantOverride("separation", 8);
+            var list = ApworldSources.List;
+            var info = new Label { Text = $"Apworld sources: {list.Games.Count} games (list built {list.Built}), plus each project's GitHub releases.", AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+            info.AddThemeColorOverride("font_color", Muted);
+            row.AddChild(info);
+            var url = new LineEdit { PlaceholderText = "Newer list URL (optional)", Text = _settings.ApworldSourcesUrl ?? "", CustomMinimumSize = new Vector2(260, 0), TooltipText = "A URL serving a newer Atlas apworld source list (for example a maintained fork of the community index)." };
+            row.AddChild(url);
+            var refresh = new Button { Text = "Refresh" };
+            refresh.Pressed += () =>
+            {
+                _settings.ApworldSourcesUrl = url.Text.Trim();
+                DataManager.SaveSettings(_settings);
+                RunOperation("Refreshing the apworld source list", async (log, _, ct) => log(await ApworldSources.RefreshAsync(_settings.ApworldSourcesUrl, ct)));
+            };
+            row.AddChild(refresh);
+            return row;
+        }
+
+        /// <summary>The checksum of a connected slot's seed for this game (to pick the matching apworld version), or null.</summary>
+        private string SeedChecksumFor(string game) =>
+            (_slots?.Invoke() ?? Enumerable.Empty<SlotTrackerControl>()).Where(IsInstanceValid)
+                .Where(s => string.Equals(s.Game, game, StringComparison.OrdinalIgnoreCase))
+                .Select(s => s.ServerChecksumFor(game)).FirstOrDefault(c => c != null);
+
+        /// <summary>
+        /// Downloads a game's apworld, after the user approves the source: the version matching a seed when its checksum
+        /// is known, else the newest. Installs it (verified by a health check) and restarts logic for a waiting slot.
+        /// </summary>
+        private void DownloadGame(string game, string seedChecksum, SlotTrackerControl slot)
+        {
+            var source = ApworldSources.Find(game);
+            if (source == null) return;
+            var newest = source.Versions.LastOrDefault();
+            string where = source.Repo != null ? "github.com/" + source.Repo : newest != null ? ApworldSources.SourceKey(newest.Url) : "?";
+            void Go()
+            {
+                var install = AtlasEngine.Current;
+                RunOperation(seedChecksum != null ? $"Finding {game}'s version for the seed" : $"Downloading {game}", async (log, _, ct) =>
+                {
+                    string file;
+                    if (seedChecksum != null)
+                    {
+                        var (version, match) = await ApworldSources.FindMatchingAsync(install, game, seedChecksum, log, ct);
+                        if (match == null) return;
+                        log($"Installing {game} {version.Version}…");
+                        file = match;
+                    }
+                    else
+                    {
+                        var versions = await ApworldSources.VersionsAsync(source, ct);
+                        var latest = versions.FirstOrDefault() ?? throw new Exception("No versions are listed.");
+                        file = await ApworldSources.DownloadAsync(source, latest, log, ct);
+                        log($"Installing {game} {latest.Version}…");
+                    }
+                    bool ok = await AtlasEngine.InstallApworldAsync(install, file, log, ct);
+                    if (ok && slot != null) Callable.From(() => { if (IsInstanceValid(slot)) slot.RetryLogicEngine(); }).CallDeferred();
+                });
+            }
+            if (newest != null && ApworldSources.IsApproved(_settings, newest.Url)) { Go(); return; }
+            var dialog = new ConfirmationDialog
+            {
+                Title = "Download an apworld",
+                DialogText = $"Download {game} from {where}?\n\n" +
+                             (seedChecksum != null ? "Atlas will try the listed versions (newest first) until one's data matches your seed, and install that one.\n" : "Atlas will install the newest listed version.\n") +
+                             "Every file is checked against its published SHA-256 when one exists.\n\n" +
+                             "Apworlds are programs that run inside the engine. Only continue if you trust this source.",
+                DialogAutowrap = true,
+                MinSize = new Vector2I(560, 0),
+                OkButtonText = "Download"
+            };
+            var trust = new CheckBox { Text = $"Don't ask again for {where}" };
+            dialog.AddChild(trust);
+            dialog.Confirmed += () =>
+            {
+                if (trust.ButtonPressed && newest != null) ApworldSources.Approve(_settings, newest.Url);
+                dialog.QueueFree();
+                Go();
+            };
+            dialog.Canceled += () => dialog.QueueFree();
+            AddChild(dialog);
+            dialog.PopupCentered();
         }
 
         private void PickSeed()

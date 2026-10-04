@@ -694,6 +694,50 @@ def atlas_seed_test(*args):
     sys.stdout.flush()
 
 
+def atlas_checksum(*args):
+    # The data checksum of a candidate apworld file, to find the version a seed was made with.
+    # stdin: {"apworld": path, "game": expected game (optional)}. Runs in a throwaway process: an installed copy of
+    # the same world is unloaded first so the candidate loads in its place.
+    line = sys.stdin.readline()
+    req = json.loads(line) if line else {}
+    out = {}
+    try:
+        import worlds
+        from worlds.AutoWorld import AutoWorldRegister
+        path = req['apworld']
+        pkg = os.path.splitext(os.path.basename(path))[0]
+        for name in [m for m in list(sys.modules) if m == 'worlds.' + pkg or m.startswith('worlds.' + pkg + '.')]:
+            del sys.modules[name]
+        for game, cls in list(AutoWorldRegister.world_types.items()):
+            if cls.__module__.split('.')[1:2] == [pkg] or game == req.get('game'):
+                del AutoWorldRegister.world_types[game]
+        # Import it the way Archipelago imports .apworld files: a zip importer's spec served by a module finder.
+        import importlib
+        import importlib.abc
+        import zipimport
+        spec = zipimport.zipimporter(path).find_spec('worlds.' + pkg)
+        if spec is None:
+            raise RuntimeError(os.path.basename(path) + ' has no ' + pkg + ' package inside.')
+
+        class _CandidateFinder(importlib.abc.MetaPathFinder):
+            def find_spec(self, fullname, _path=None, _target=None):
+                return spec if fullname == 'worlds.' + pkg else None
+
+        sys.meta_path.insert(0, _CandidateFinder())
+        before = set(AutoWorldRegister.world_types)
+        importlib.import_module('worlds.' + pkg)
+        new = [g for g in AutoWorldRegister.world_types if g not in before]
+        if not new:
+            out['error'] = 'The apworld loaded but registered no game.'
+        else:
+            out['game'] = new[0]
+            out.update(world_identity(AutoWorldRegister.world_types[new[0]]))
+    except Exception:
+        out['error'] = traceback.format_exc()[-800:]
+    print(json.dumps(out))
+    sys.stdout.flush()
+
+
 def atlas_check(*args):
     # Health check for the setup page: versions, installed games, worlds that failed to load, tracker import.
     out = versions()
@@ -736,3 +780,4 @@ components.append(Component('UltimateBridge', None, func=launch_bridge, componen
 components.append(Component('AtlasNames', None, func=atlas_names, component_type=Type.CLIENT))
 components.append(Component('AtlasCheck', None, func=atlas_check, component_type=Type.CLIENT))
 components.append(Component('AtlasSeedTest', None, func=atlas_seed_test, component_type=Type.CLIENT))
+components.append(Component('AtlasChecksum', None, func=atlas_checksum, component_type=Type.CLIENT))
