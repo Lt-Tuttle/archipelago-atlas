@@ -40,6 +40,22 @@ namespace AP_Atlas.Core.PopTracker
         private ImageTexture _texCollected;
         private ImageTexture _texMissing;
 
+        /// <summary>An item tile or row was clicked (item name).</summary>
+        public event Action<string> ItemPicked;
+
+        /// <summary>Flag, special and note markers for an item name. Set by the owner.</summary>
+        public Func<string, (int Flag, bool Special, bool Note)> MarkerLookup { get; set; }
+
+        public void RefreshMarkers() => RenderActiveMode();
+
+        /// <summary>Filters the view to one item so it's easy to spot.</summary>
+        public void RevealItem(string itemName)
+        {
+            if (_searchBox == null) return;
+            _searchBox.Text = itemName ?? "";
+            RenderActiveMode();
+        }
+
         public void Initialize(ArchipelagoSession session, LogicEngineManager logicEngine, string profileId, string slotName, AppSettings appSettings, Action<string> appendDebugLog)
         {
             _session = session;
@@ -75,12 +91,34 @@ namespace AP_Atlas.Core.PopTracker
             RefreshData();
         }
 
-        public void SetPack(LoadedPack pack)
+        private PackIndex _index;
+        private readonly Dictionary<long, int> _receivedById = new Dictionary<long, int>();
+
+        /// <summary>Uses a pack's item grids, paired with this slot's items through the index.</summary>
+        public void SetPack(LoadedPack pack, PackIndex index)
         {
+            bool firstPack = _pack == null;
             _pack = pack;
-            _isVisualMode = _pack != null && _pack.ItemGrids.Count > 0;
+            _index = index;
+            if (firstPack) _isVisualMode = _pack != null && VisibleGrids().Any();
             UpdateModeToggleBtn();
             RefreshData();
+        }
+
+        /// <summary>The grids Key Items shows: item grids, without the pack's settings toggles.</summary>
+        private IEnumerable<PackItemGrid> VisibleGrids() =>
+            _pack?.ItemGridGroups.Where(g => !g.LooksLikeSettings) ?? Enumerable.Empty<PackItemGrid>();
+
+        /// <summary>The Archipelago name a grid code stands for (falls back to the pack's display name).</summary>
+        private string ApNameFor(string code, PopTrackerItem itemDef)
+        {
+            var ids = _index?.ItemIdsFor(code);
+            if (ids != null && ids.Count > 0)
+            {
+                string n = _index.ItemName(ids[0]) ?? _session?.Items.GetItemName(ids[0], _session.ConnectionInfo.Game);
+                if (!string.IsNullOrEmpty(n)) return n;
+            }
+            return itemDef?.Name ?? code;
         }
 
         private void ChangeZoom(float delta)
@@ -186,6 +224,11 @@ namespace AP_Atlas.Core.PopTracker
             _textTree.SetColumnExpandRatio(0, 5);
             _textTree.SetColumnExpandRatio(1, 3);
             _textTree.SetColumnExpandRatio(2, 2);
+            TreePicks.Hook(_textTree, (row, column) =>
+            {
+                var meta = row.GetMetadata(0);
+                if (meta.VariantType == Variant.Type.String) ItemPicked?.Invoke(meta.AsString());
+            });
             textMargin.AddChild(_textTree);
             AddChild(_textScroll);
         }
@@ -216,8 +259,10 @@ namespace AP_Atlas.Core.PopTracker
 
             // Recalculate received counts
             _receivedCounts.Clear();
+            _receivedById.Clear();
             foreach (var item in _session.Items.AllItemsReceived)
             {
+                _receivedById[item.ItemId] = _receivedById.GetValueOrDefault(item.ItemId) + 1;
                 string name = _session.Items.GetItemName(item.ItemId);
                 if (!string.IsNullOrEmpty(name))
                 {
@@ -269,6 +314,7 @@ namespace AP_Atlas.Core.PopTracker
 
         private void RenderActiveMode()
         {
+            using var __perf = AP_Atlas.Core.PerfMonitor.Measure("Key Items refresh");
             string filter = _searchBox.Text.ToLowerInvariant();
 
             if (_isVisualMode && _pack != null)
@@ -285,49 +331,148 @@ namespace AP_Atlas.Core.PopTracker
         {
             foreach (Node n in _visualGrid.GetChildren()) n.QueueFree();
 
-            float zoomSize = 64f * _appSettings.KeyItemZoom;
+            float baseSize = 64f * _appSettings.KeyItemZoom;
+            var grids = VisibleGrids().ToList();
+            // The pack's tile sizes are kept relative to its most common size (e.g. DS3's 62px Cinders beside 40px keys).
+            int commonSize = grids.Count == 0 ? 32 : grids.GroupBy(g => g.ItemSize).OrderByDescending(g => g.Count()).First().Key;
+            string lastHeader = null;
 
-            foreach (var row in _pack.ItemGrids)
+            foreach (var grid in grids)
             {
-                var rowContainer = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
-                _visualGrid.AddChild(rowContainer);
-
-                foreach (var code in row)
+                if (!string.IsNullOrEmpty(grid.Header) && grid.Header != lastHeader && grids.Select(g => g.Header).Distinct().Count() > 1)
                 {
-                    if (string.IsNullOrWhiteSpace(code))
+                    var header = new Label { Text = grid.Header, HorizontalAlignment = HorizontalAlignment.Center };
+                    header.AddThemeColorOverride("font_color", ThemeColors.Accent);
+                    _visualGrid.AddChild(header);
+                }
+                lastHeader = grid.Header;
+                float scale = Math.Clamp(grid.ItemSize / (float)Math.Max(1, commonSize), 0.6f, 1.8f);
+                float zoomSize = baseSize * scale;
+
+                foreach (var row in grid.Rows)
+                {
+                    var rowContainer = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
+                    _visualGrid.AddChild(rowContainer);
+
+                    foreach (var code in row)
                     {
-                        // Empty space in grid
-                        var spacer = new Control { CustomMinimumSize = new Vector2(zoomSize, zoomSize) };
-                        rowContainer.AddChild(spacer);
-                        continue;
+                        if (string.IsNullOrWhiteSpace(code) || !_pack.ItemsByCode.TryGetValue(code, out var itemDef))
+                        {
+                            // Empty cell (or a code the pack doesn't define): keep the grid's spacing.
+                            rowContainer.AddChild(new Control { CustomMinimumSize = new Vector2(zoomSize, zoomSize) });
+                            continue;
+                        }
+
+                        string apName = ApNameFor(code, itemDef);
+                        bool isSearchMatch = string.IsNullOrEmpty(filter) ||
+                                             (itemDef.Name ?? "").ToLowerInvariant().Contains(filter) ||
+                                             apName.ToLowerInvariant().Contains(filter);
+
+                        int receivedQty = _index != null
+                            ? _index.ReceivedCount(code, _receivedById, n => _receivedCounts.GetValueOrDefault(n))
+                            : _receivedCounts.GetValueOrDefault(itemDef.Name ?? "");
+
+                        // The pack's own scripts know this item best (stages, counts); the mapping still lights
+                        // tiles the scripts miss (e.g. an outdated script id the user re-linked in the Doctor).
+                        int? stage = null;
+                        var state = ScriptState?.Invoke(code);
+                        if (state != null && state.Touched)
+                        {
+                            bool consumable = (itemDef.Type ?? "") == "consumable";
+                            int scriptQty = consumable ? state.Count : state.Active ? Math.Max(1, state.Stage) : 0;
+                            receivedQty = Math.Max(receivedQty, scriptQty);
+                            if (state.Active && (itemDef.Type ?? "").StartsWith("progressive")) stage = state.Stage;
+                        }
+
+                        var tile = CreateVisualTile(itemDef, apName, receivedQty, zoomSize, stage);
+                        if (!isSearchMatch) tile.Modulate = new Color(0.2f, 0.2f, 0.2f, 0.2f);
+                        rowContainer.AddChild(tile);
                     }
+                }
+            }
 
-                    if (!_pack.ItemsByCode.TryGetValue(code, out var itemDef)) continue;
+            RenderSeedSettings(baseSize, commonSize, filter);
+        }
 
-                    string nameLower = itemDef.Name.ToLowerInvariant();
-                    bool isSearchMatch = string.IsNullOrEmpty(filter) || nameLower.Contains(filter);
+        /// <summary>Gets the pack scripts' state for a code (null when the scripts aren't running). Set by the owner.</summary>
+        public Func<string, PackScriptHost.TileState> ScriptState { get; set; }
 
-                    int receivedQty = 0;
-                    _receivedCounts.TryGetValue(itemDef.Name, out receivedQty);
+        /// <summary>The seed's settings as the pack shows them. Set by the owner.</summary>
+        public Func<List<PackScriptHost.SettingInfo>> SeedSettings { get; set; }
 
-                    var tile = CreateVisualTile(itemDef, receivedQty, zoomSize);
+        /// <summary>
+        /// The pack's settings grid(s), lit from the seed's options by the pack's own scripts. Shown only when the
+        /// scripts ran (otherwise the state would be a guess).
+        /// </summary>
+        private void RenderSeedSettings(float baseSize, int commonSize, string filter)
+        {
+            var settingGrids = _pack.ItemGridGroups.Where(g => g.LooksLikeSettings).ToList();
+            var settings = SeedSettings?.Invoke();
+            if (settingGrids.Count == 0 || settings == null || settings.Count == 0) return;
+            var byCode = new Dictionary<string, PackScriptHost.SettingInfo>(StringComparer.OrdinalIgnoreCase);
+            foreach (var s in settings)
+            {
+                if (_pack.ItemsByCode.TryGetValue(s.Code, out var def))
+                    foreach (var c in def.GetCodes()) byCode.TryAdd(c, s);
+            }
 
-                    if (!isSearchMatch)
+            _visualGrid.AddChild(new HSeparator());
+            var header = new Label { Text = "Seed settings", HorizontalAlignment = HorizontalAlignment.Center, TooltipText = "Read from this slot's options by the map pack's own script" };
+            header.AddThemeColorOverride("font_color", ThemeColors.Accent);
+            _visualGrid.AddChild(header);
+
+            foreach (var grid in settingGrids)
+            {
+                float zoomSize = baseSize * Math.Clamp(grid.ItemSize / (float)Math.Max(1, commonSize), 0.6f, 1.8f) * 0.85f;
+                foreach (var row in grid.Rows)
+                {
+                    var rowContainer = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
+                    _visualGrid.AddChild(rowContainer);
+                    foreach (var code in row)
                     {
-                        tile.Modulate = new Color(0.2f, 0.2f, 0.2f, 0.2f);
+                        if (string.IsNullOrWhiteSpace(code) || !_pack.ItemsByCode.TryGetValue(code, out var def))
+                        {
+                            rowContainer.AddChild(new Control { CustomMinimumSize = new Vector2(zoomSize, zoomSize) });
+                            continue;
+                        }
+                        byCode.TryGetValue(code, out var info);
+                        bool on = info?.On == true;
+                        var tile = CreateVisualTile(def, def.Name ?? code, on ? 1 : 0, zoomSize, info != null && def.Stages?.Count > 0 ? info.Stage : null, isSetting: true);
+                        string value = info?.OptionValue == null ? "" : info.OptionValue.Type == Newtonsoft.Json.Linq.JTokenType.String ? info.OptionValue.ToString() : info.OptionValue.ToString(Newtonsoft.Json.Formatting.None);
+                        tile.TooltipText = $"{def.Name}: {(info?.StageName ?? (on ? "on" : "off"))}" +
+                                           (info?.OptionPath != null ? $"\nOption: {info.OptionPath}" + (info.OptionMissing ? " (not in this slot's data)" : $" = {value}") : "") +
+                                           "\nSet by the map pack's script from this slot's options.";
+                        if (!string.IsNullOrEmpty(filter) && !(def.Name ?? "").ToLowerInvariant().Contains(filter)) tile.Modulate = new Color(0.2f, 0.2f, 0.2f, 0.2f);
+                        rowContainer.AddChild(tile);
                     }
-
-                    rowContainer.AddChild(tile);
                 }
             }
         }
 
-        private Control CreateVisualTile(PopTrackerItem itemDef, int receivedQty, float zoomSize)
+        private Control CreateVisualTile(PopTrackerItem itemDef, string apName, int receivedQty, float zoomSize, int? stage = null, bool isSetting = false)
         {
-            var container = new PanelContainer { CustomMinimumSize = new Vector2(zoomSize, zoomSize) };
+            var container = new PanelContainer { CustomMinimumSize = new Vector2(zoomSize, zoomSize), MouseDefaultCursorShape = isSetting ? CursorShape.Arrow : CursorShape.PointingHand };
             var style = new StyleBoxFlat { BgColor = new Color(0, 0, 0, 0) };
+            // Setting indicators aren't items: no flags, specials or item details.
+            (int Flag, bool Special, bool Note) marker = isSetting ? (0, false, false) : MarkerLookup?.Invoke(apName) ?? (0, false, false);
+            if (marker.Flag > 0 || marker.Special)
+            {
+                // Special items get a gold frame and glow; flagged ones a frame in the flag's color.
+                style.BorderColor = marker.Special ? Annotations.SpecialColor : Annotations.FlagColor(marker.Flag);
+                style.BorderWidthTop = style.BorderWidthBottom = style.BorderWidthLeft = style.BorderWidthRight = 3;
+                style.CornerRadiusTopLeft = style.CornerRadiusTopRight = style.CornerRadiusBottomLeft = style.CornerRadiusBottomRight = 6;
+                if (marker.Special) { style.ShadowColor = new Color(Annotations.SpecialColor, 0.5f); style.ShadowSize = 6; }
+            }
             container.AddThemeStyleboxOverride("panel", style);
-            container.TooltipText = $"{itemDef.Name}\nCollected: {receivedQty}";
+            container.TooltipText = apName + (apName != itemDef.Name ? $"\n(pack: {itemDef.Name})" : "") + $"\nCollected: {receivedQty}" +
+                                    (marker.Special ? "\n◆ Special" : "") +
+                                    (marker.Flag > 0 ? $"\nFlag: {Annotations.FlagLabel(marker.Flag)}" : "") +
+                                    "\nClick for details";
+            string pickedName = apName;
+            container.GuiInput += ev =>
+            {
+                if (!isSetting && ev is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Left) ItemPicked?.Invoke(pickedName);
+            };
 
             var texRect = new TextureRect { ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered, CustomMinimumSize = new Vector2(zoomSize, zoomSize) };
 
@@ -339,9 +484,10 @@ namespace AP_Atlas.Core.PopTracker
                 if (codes.Count > 0) imgPath = "images/items/" + codes[0] + ".png";
             }
 
-            if (itemDef.Type == "progressive" && itemDef.Stages.Count > 0)
+            if ((itemDef.Type ?? "").StartsWith("progressive") && itemDef.Stages.Count > 0)
             {
-                int stageIdx = Math.Min(receivedQty, itemDef.Stages.Count) - 1;
+                // The scripts give the exact stage; otherwise the received count picks it.
+                int stageIdx = stage != null ? Math.Clamp(stage.Value, 0, itemDef.Stages.Count - 1) : Math.Min(receivedQty, itemDef.Stages.Count) - 1;
                 if (stageIdx >= 0)
                 {
                     if (!string.IsNullOrEmpty(itemDef.Stages[stageIdx].Img))
@@ -358,26 +504,7 @@ namespace AP_Atlas.Core.PopTracker
                 }
             }
 
-            Texture2D matchedTex = null;
-            if (!string.IsNullOrEmpty(imgPath))
-            {
-                if (_pack.Images.TryGetValue(imgPath, out var tex)) matchedTex = tex;
-                else if (_pack.Images.TryGetValue("/" + imgPath, out tex)) matchedTex = tex;
-                else
-                {
-                    // Fallback: try different extensions or ignore extension
-                    string baseName = imgPath.Contains(".") ? imgPath.Substring(0, imgPath.LastIndexOf('.')) : imgPath;
-                    foreach (var kvp in _pack.Images)
-                    {
-                        string testName = kvp.Key.Contains(".") ? kvp.Key.Substring(0, kvp.Key.LastIndexOf('.')) : kvp.Key;
-                        if (testName.TrimStart('/') == baseName.TrimStart('/'))
-                        {
-                            matchedTex = kvp.Value;
-                            break;
-                        }
-                    }
-                }
-            }
+            Texture2D matchedTex = _pack.FindImage(imgPath);
 
             if (matchedTex != null)
             {
@@ -521,7 +648,7 @@ namespace AP_Atlas.Core.PopTracker
                 // Category Header
                 var catItem = _textTree.CreateItem(root);
                 catItem.SetText(0, cat.Key);
-                catItem.SetCustomColor(0, Colors.LightSkyBlue);
+                catItem.SetCustomColor(0, ThemeColors.Accent);
                 catItem.SetCustomBgColor(0, new Color(0.1f, 0.1f, 0.15f, 0.8f));
                 catItem.SetCustomBgColor(1, new Color(0.1f, 0.1f, 0.15f, 0.8f));
                 catItem.SetCustomBgColor(2, new Color(0.1f, 0.1f, 0.15f, 0.8f));
@@ -538,6 +665,10 @@ namespace AP_Atlas.Core.PopTracker
                     row.SetText(0, " " + item.Name);
                     row.SetIcon(0, item.Received > 0 ? _texCollected : _texMissing);
                     row.SetText(1, cat.Key);
+                    row.SetMetadata(0, item.Name);
+                    var marker = MarkerLookup?.Invoke(item.Name) ?? (0, false, false);
+                    row.SetIcon(1, Annotations.MarkerIcon(marker.Flag, marker.Special, marker.Note));
+                    row.SetIconMaxWidth(1, Math.Max(16, _appSettings.ContentFontSize * 2));
 
                     if (item.Max > 1 || item.Received > 1)
                         row.SetText(2, $"{item.Received} / {item.Max}");

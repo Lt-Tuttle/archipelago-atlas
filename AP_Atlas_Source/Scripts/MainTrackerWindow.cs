@@ -5,7 +5,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Archipelago.MultiClient.Net;
 
-public partial class MainTrackerWindow : Control
+public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
 {
     private HSplitContainer _mainSplit;
     private PanelContainer _sidebar;
@@ -44,12 +44,14 @@ public partial class MainTrackerWindow : Control
     private AppSettings _appSettings;
     private int _currentGlobalTab = 0;
     private int _currentTerminalTab = 0;
-    private TabBar _workspaceSwitcher;
+    private AP_Atlas.UI.WrappingTabStrip _workspaceSwitcher;
     private PanelContainer _midLeftSidebar;
+    private StyleBoxFlat _midLeftStyle;
+    private StyleBoxFlat _contentStageStyle;
     private PanelContainer _propertiesSidebar;
     private Label _midLeftTitle;
     private VBoxContainer _midLeftContent;
-    private VBoxContainer _propertiesContent;
+    private AP_Atlas.UI.PropertiesPanel _propertiesPanel;
     private List<MultiworldProfile> _profiles = new();
     private MultiworldProfile _selectedProfile = null;
     private VSplitContainer _contentSplit;
@@ -87,12 +89,7 @@ public partial class MainTrackerWindow : Control
         var bottomHeader = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         bottomWrapper.AddChild(bottomHeader);
         _bottomTabs = new TabBar { SizeFlagsHorizontal = SizeFlags.ExpandFill, FocusMode = FocusModeEnum.None };
-        var tabEmpty = new StyleBoxFlat { BgColor = new Godot.Color(0, 0, 0, 0), CornerRadiusTopLeft = 8, CornerRadiusTopRight = 8, BorderWidthTop = 2, BorderColor = new Godot.Color(0, 0, 0, 0), ContentMarginLeft = 24, ContentMarginRight = 24, ContentMarginTop = 8, ContentMarginBottom = 8 };
-        var tabHover = new StyleBoxFlat { BgColor = new Godot.Color("#2a2d2e"), CornerRadiusTopLeft = 8, CornerRadiusTopRight = 8, BorderWidthTop = 2, BorderColor = new Godot.Color(0, 0, 0, 0), ContentMarginLeft = 24, ContentMarginRight = 24, ContentMarginTop = 8, ContentMarginBottom = 8 };
-        var tabSelected = new StyleBoxFlat { BgColor = new Godot.Color("#1e1e1e"), CornerRadiusTopLeft = 8, CornerRadiusTopRight = 8, BorderWidthTop = 2, BorderColor = new Godot.Color(_appSettings.ThemeAccentColor), ContentMarginLeft = 24, ContentMarginRight = 24, ContentMarginTop = 8, ContentMarginBottom = 8 };
-        _bottomTabs.AddThemeStyleboxOverride("tab_unselected", tabEmpty);
-        _bottomTabs.AddThemeStyleboxOverride("tab_selected", tabSelected);
-        _bottomTabs.AddThemeStyleboxOverride("tab_hovered", tabHover);
+        ApplyTabBarStyle(_bottomTabs, 8);
         _bottomTabs.AddTab("Chat");
         _bottomTabs.AddTab("System Log");
         _bottomTabs.AddTab("Debug Log");
@@ -229,7 +226,29 @@ public partial class MainTrackerWindow : Control
     public override void _ExitTree()
     {
         AP_Atlas.Core.Logger.OnLogMessage -= OnLogMessageReceived;
+        AP_Atlas.Core.Annotations.Changed -= OnAnnotationsChanged;
+        AP_Atlas.Core.PopTracker.PackDoctorService.ReviewSuggested -= OnPackReviewSuggested;
     }
+
+    /// <summary>The Pack Doctor found things to review (or an update replaced fixes): log it and offer to open it.</summary>
+    private void OnPackReviewSuggested(string packKey, string message)
+    {
+        LogToSystem($"[color=orange]{message}[/color]");
+        if (!AP_Atlas.Core.PopTracker.PackDoctorService.Reports.TryGetValue(packKey, out var report) || report?.Pack == null) return;
+        string path = report.Pack.SourcePath;
+        ShowToast(message, Godot.Colors.Orange, "Review", () => OpenPackDoctor(path));
+    }
+
+    /// <summary>Opens the Pack Doctor for a pack zip.</summary>
+    public void OpenPackDoctor(string zipPath, string startTab = null)
+    {
+        var original = AP_Atlas.Core.PopTracker.PopTrackerPackLoader.InspectZipPack(zipPath);
+        if (original == null) { ShowToast("Couldn't read that map pack.", Godot.Colors.Salmon); return; }
+        AP_Atlas.UI.PackDoctorWindow.Open(this, original, _appSettings.ContentFontSize, startTab);
+    }
+
+    // Slot cards show special-item progress, so redraw them when special marks change.
+    private void OnAnnotationsChanged() => Callable.From(UpdateSidebar).CallDeferred();
 
     private void OnLogMessageReceived(string msg, string level)
     {
@@ -245,10 +264,32 @@ public partial class MainTrackerWindow : Control
 
     public override void _Ready()
     {
+        AP_Atlas.Core.CrashGuard.Install();
+        if (AP_Atlas.Core.SelfTest.Requested)
+        {
+            RunSelfTest();
+            return;
+        }
+        if (!AP_Atlas.Core.CrashGuard.TryAcquireInstance())
+        {
+            OS.Alert("The Archipelago Atlas is already running from this folder.\n\nOnly one copy can use the same data at a time, " +
+                     "so your profiles and notes can't be overwritten by a second window.", "Atlas is already open");
+            GetTree().Quit();
+            return;
+        }
+        // Damaged-file recoveries and failed saves are shown as toasts once the UI exists.
+        AP_Atlas.Core.SafeFile.Recovered += OnFileRecovered;
+        DataManager.SaveFailed += OnSaveFailed;
         GetTree().AutoAcceptQuit = false;
         AP_Atlas.Core.Logger.OnLogMessage += OnLogMessageReceived;
+        AP_Atlas.Core.Annotations.Changed += OnAnnotationsChanged;
         AP_Atlas.Core.Logger.LogInfo("AP Atlas UI Initialized.");
         _appSettings = DataManager.LoadSettings();
+        AP_Atlas.Core.ThemeColors.SetAccent(_appSettings.ThemeAccentColor);
+        AP_Atlas.Core.RaceRules.Initialize(_appSettings);
+        AP_Atlas.Core.EngineSetup.AtlasEngine.Initialize(_appSettings);
+        AP_Atlas.Core.PopTracker.PackDoctorService.Initialize(_appSettings);
+        AP_Atlas.Core.PopTracker.PackDoctorService.ReviewSuggested += OnPackReviewSuggested;
         _profiles = DataManager.LoadProfiles();
         // Restore window state
         var window = GetTree().Root;
@@ -343,13 +384,56 @@ public partial class MainTrackerWindow : Control
         _menuHbox.AddChild(viewMenuBtn);
         var settingsMenuBtn = new MenuButton { Text = "Settings" };
         var settingsMenu = settingsMenuBtn.GetPopup();
-        settingsMenu.AddItem("Archipelago Engine Path", 0);
-        settingsMenu.AddItem("Update Universal Tracker Engine", 1);
+        settingsMenu.AddItem("Atlas Engine (logic setup)…", 0);
+        const int AutoReconnectId = 1;
+        settingsMenu.AddCheckItem("Reconnect dropped connections automatically", AutoReconnectId);
+        settingsMenu.SetItemChecked(settingsMenu.GetItemIndex(AutoReconnectId), _appSettings.AutoReconnect);
+        settingsMenu.SetItemTooltip(settingsMenu.GetItemIndex(AutoReconnectId), "A few tries over about 30 minutes, then Atlas stops so it never keeps a closed room busy.");
         settingsMenu.IdPressed += (id) =>
         {
-            if (id == 0) OpenEnginePathDialog();
-            else if (id == 1) UpdateUniversalTracker();
+            if (id == 0) OpenEngineSetup();
+            else if (id == AutoReconnectId)
+            {
+                _appSettings.AutoReconnect = !_appSettings.AutoReconnect;
+                settingsMenu.SetItemChecked(settingsMenu.GetItemIndex(AutoReconnectId), _appSettings.AutoReconnect);
+                DataManager.SaveSettings(_appSettings);
+                if (!_appSettings.AutoReconnect) _reconnectAttempts.Clear();
+            }
         };
+        // Race Mode: when restrictions apply, and how much they hide.
+        const int RaceFollowId = 0, RaceOnId = 1, RaceOffId = 2, RaceHideAllId = 10, RaceInfoId = 20;
+        var raceMenu = new PopupMenu { Name = "RaceModeMenu", HideOnCheckableItemSelection = false };
+        raceMenu.AddRadioCheckItem("Follow the server (on in race rooms)", RaceFollowId);
+        raceMenu.AddRadioCheckItem("Always on", RaceOnId);
+        raceMenu.AddRadioCheckItem("Off", RaceOffId);
+        raceMenu.AddSeparator();
+        raceMenu.AddCheckItem("Hide all logic while on (not just explanations)", RaceHideAllId);
+        raceMenu.AddSeparator();
+        raceMenu.AddItem("What does race mode change?", RaceInfoId);
+        void RefreshRaceMenu()
+        {
+            raceMenu.SetItemChecked(raceMenu.GetItemIndex(RaceFollowId), AP_Atlas.Core.RaceRules.Mode == AP_Atlas.Core.RaceModeSetting.FollowServer);
+            raceMenu.SetItemChecked(raceMenu.GetItemIndex(RaceOnId), AP_Atlas.Core.RaceRules.Mode == AP_Atlas.Core.RaceModeSetting.AlwaysOn);
+            raceMenu.SetItemChecked(raceMenu.GetItemIndex(RaceOffId), AP_Atlas.Core.RaceRules.Mode == AP_Atlas.Core.RaceModeSetting.Off);
+            raceMenu.SetItemChecked(raceMenu.GetItemIndex(RaceHideAllId), AP_Atlas.Core.RaceRules.HideAllLogic);
+        }
+        raceMenu.AboutToPopup += RefreshRaceMenu;
+        raceMenu.IdPressed += (id) =>
+        {
+            switch (id)
+            {
+                case RaceFollowId: AP_Atlas.Core.RaceRules.SetMode(AP_Atlas.Core.RaceModeSetting.FollowServer); break;
+                case RaceOnId: AP_Atlas.Core.RaceRules.SetMode(AP_Atlas.Core.RaceModeSetting.AlwaysOn); break;
+                case RaceOffId: AP_Atlas.Core.RaceRules.SetMode(AP_Atlas.Core.RaceModeSetting.Off); break;
+                case RaceHideAllId: AP_Atlas.Core.RaceRules.SetHideAllLogic(!AP_Atlas.Core.RaceRules.HideAllLogic); break;
+                case RaceInfoId: ShowRaceModeInfo(); return;
+            }
+            RefreshRaceMenu();
+            LogToSystem($"[color=orange]Race mode: {DescribeRaceMode()}[/color]");
+            UpdateSidebar();
+        };
+        settingsMenu.AddChild(raceMenu);
+        settingsMenu.AddSubmenuNodeItem("Race Mode", raceMenu);
         _menuHbox.AddChild(settingsMenuBtn);
         var interiorMargin = new MarginContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
         interiorMargin.AddThemeConstantOverride("margin_left", 8);
@@ -387,13 +471,23 @@ public partial class MainTrackerWindow : Control
         _activeSessionsList = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         sessionScroll.AddChild(_activeSessionsList);
         // --- 2. REST OF LAYOUT ---
+        // Layout: [slots] | [tabs over (explorer | content) over terminal] | [properties].
+        // The explorer lives inside the content area, so showing or hiding it only resizes the content stage:
+        // the tabs and terminal never move, and the tab bar's menu sits at the content's top-right corner.
+        var centerRightSplit = new HSplitContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, SplitOffset = _appSettings.SplitCenterRightOffset };
+        centerRightSplit.Dragged += (offset) => { _appSettings.SplitCenterRightOffset = (int)offset; DataManager.SaveSettings(_appSettings); };
+        centerRightSplit.AddThemeConstantOverride("separation", 8);
+        _mainSplit.AddChild(centerRightSplit);
+        var rightColumn = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        centerRightSplit.AddChild(rightColumn);
         var rightOfSidebarSplit = new HSplitContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, SplitOffset = _appSettings.SplitRightSidebarOffset };
         rightOfSidebarSplit.Dragged += (offset) => { _appSettings.SplitRightSidebarOffset = (int)offset; DataManager.SaveSettings(_appSettings); };
         rightOfSidebarSplit.AddThemeConstantOverride("separation", 8);
-        _mainSplit.AddChild(rightOfSidebarSplit);
         // --- 3. MID LEFT EXPLORER SIDEBAR ---
         _midLeftSidebar = new PanelContainer { SizeFlagsVertical = SizeFlags.ExpandFill, CustomMinimumSize = new Godot.Vector2(250, 0), Visible = false };
-        _midLeftSidebar.AddThemeStyleboxOverride("panel", GetVSCodePanelStyle());
+        _midLeftStyle = GetVSCodePanelStyle();
+        _midLeftStyle.CornerRadiusTopLeft = 0; // Seamless connection to the tab bar while the explorer is shown
+        _midLeftSidebar.AddThemeStyleboxOverride("panel", _midLeftStyle);
         rightOfSidebarSplit.AddChild(_midLeftSidebar);
         var midLeftMargin = new MarginContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
         midLeftMargin.AddThemeConstantOverride("margin_left", 8);
@@ -412,25 +506,19 @@ public partial class MainTrackerWindow : Control
         _midLeftVBox.AddChild(_midLeftContent);
         // --- 4. CENTER STAGE AND BOTTOM TABS ---
         // --- 5. GLOBAL TAB BAR ---
-        var rightSideVBox = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        rightOfSidebarSplit.AddChild(rightSideVBox);
         var globalTabHBox = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        _workspaceSwitcher = new TabBar { SizeFlagsHorizontal = SizeFlags.ExpandFill, FocusMode = FocusModeEnum.None };
-        var tabEmpty = new StyleBoxFlat { BgColor = new Godot.Color(0, 0, 0, 0), CornerRadiusTopLeft = 12, CornerRadiusTopRight = 12, BorderWidthTop = 2, BorderColor = new Godot.Color(0, 0, 0, 0), ContentMarginLeft = 24, ContentMarginRight = 24, ContentMarginTop = 8, ContentMarginBottom = 8 };
-        var tabHover = new StyleBoxFlat { BgColor = new Godot.Color("#2a2d2e"), CornerRadiusTopLeft = 12, CornerRadiusTopRight = 12, BorderWidthTop = 2, BorderColor = new Godot.Color(0, 0, 0, 0), ContentMarginLeft = 24, ContentMarginRight = 24, ContentMarginTop = 8, ContentMarginBottom = 8 };
-        var tabSelected = new StyleBoxFlat { BgColor = new Godot.Color("#1e1e1e"), CornerRadiusTopLeft = 12, CornerRadiusTopRight = 12, BorderWidthTop = 2, BorderColor = new Godot.Color(_appSettings.ThemeAccentColor), ContentMarginLeft = 24, ContentMarginRight = 24, ContentMarginTop = 8, ContentMarginBottom = 8 };
-        _workspaceSwitcher.AddThemeStyleboxOverride("tab_unselected", tabEmpty);
-        _workspaceSwitcher.AddThemeStyleboxOverride("tab_selected", tabSelected);
-        _workspaceSwitcher.AddThemeStyleboxOverride("tab_hovered", tabHover);
+        // Never scrolls: tabs tighten their padding when space runs short and wrap only as a last resort.
+        _workspaceSwitcher = new AP_Atlas.UI.WrappingTabStrip { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        _workspaceSwitcher.ApplyStyle(12, AP_Atlas.Core.ThemeColors.Accent);
         _workspaceSwitcher.AddTab("Connections");
         _workspaceSwitcher.AddTab("Map Packs");
         _workspaceSwitcher.AddTab("Map Tracker");
         _workspaceSwitcher.AddTab("Key Items");
         _workspaceSwitcher.AddTab("Logic Tracker");
         _workspaceSwitcher.AddTab("Item History");
-        _workspaceSwitcher.TabSelected += (long tab) => { ChangeGlobalTab((int)tab); };
+        _workspaceSwitcher.AddTab("Hints");
+        _workspaceSwitcher.TabSelected += ChangeGlobalTab;
         globalTabHBox.AddChild(_workspaceSwitcher);
-        globalTabHBox.AddChild(new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill }); // Spacer
         var contentMenuBtn = new Button { Text = "...", Flat = true, FocusMode = FocusModeEnum.None };
         contentMenuBtn.AddThemeColorOverride("font_color", Colors.LightGray);
         AttachFontMenuPopup(contentMenuBtn,
@@ -438,24 +526,22 @@ public partial class MainTrackerWindow : Control
             (newSize) => { _appSettings.ContentFontSize = newSize; ApplyUIScale(); DataManager.SaveSettings(_appSettings); }
         );
         globalTabHBox.AddChild(contentMenuBtn);
-        rightSideVBox.AddChild(globalTabHBox);
-        var centerRightSplit = new HSplitContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, SplitOffset = _appSettings.SplitCenterRightOffset };
-        centerRightSplit.Dragged += (offset) => { _appSettings.SplitCenterRightOffset = (int)offset; DataManager.SaveSettings(_appSettings); };
-        centerRightSplit.AddThemeConstantOverride("separation", 8);
-        rightSideVBox.AddChild(centerRightSplit);
+        rightColumn.AddChild(globalTabHBox);
         _contentSplit = new VSplitContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, SplitOffset = _appSettings.SplitContentOffset };
         _contentSplit.Dragged += (offset) => { _appSettings.SplitContentOffset = (int)offset; DataManager.SaveSettings(_appSettings); };
         _contentSplit.AddThemeConstantOverride("separation", 8);
-        centerRightSplit.AddChild(_contentSplit);
+        rightColumn.AddChild(_contentSplit);
         // --- 5. CONTENT STAGE ---
         var contentWrapper = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
         contentWrapper.AddThemeConstantOverride("separation", 0);
         _contentStage = new PanelContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        var contentStyle = GetVSCodePanelStyle();
-        contentStyle.CornerRadiusTopLeft = 0; // Seamless connection
-        _contentStage.AddThemeStyleboxOverride("panel", contentStyle);
+        _contentStageStyle = GetVSCodePanelStyle();
+        _contentStageStyle.CornerRadiusTopLeft = 0; // Seamless connection (rounded again while the explorer is shown)
+        _contentStage.AddThemeStyleboxOverride("panel", _contentStageStyle);
         contentWrapper.AddChild(_contentStage);
-        _contentSplit.AddChild(contentWrapper);
+        // The explorer shares the top half with the content stage only, so the terminal below keeps its full width.
+        rightOfSidebarSplit.AddChild(contentWrapper);
+        _contentSplit.AddChild(rightOfSidebarSplit);
         // --- 6. FAR RIGHT PROPERTIES SIDEBAR ---
         _propertiesSidebar = new PanelContainer { SizeFlagsVertical = SizeFlags.ExpandFill, CustomMinimumSize = new Godot.Vector2(250, 0), Visible = true };
         _propertiesSidebar.AddThemeStyleboxOverride("panel", GetVSCodePanelStyle());
@@ -472,12 +558,11 @@ public partial class MainTrackerWindow : Control
             () => _appSettings.PropertiesFontSize,
             (newSize) => { _appSettings.PropertiesFontSize = newSize; ApplyUIScale(); DataManager.SaveSettings(_appSettings); }
         );
-        var props = new MenuButton { Text = "...", Flat = true, FocusMode = FocusModeEnum.None };
         propsVBox.AddChild(_propsHeaderBox);
-        _propertiesContent = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        propsVBox.AddChild(_propertiesContent);
+        _propertiesPanel = new AP_Atlas.UI.PropertiesPanel(this);
+        propsVBox.AddChild(_propertiesPanel);
         _globalStatusBar = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        var statusStyle = new StyleBoxFlat { BgColor = new Godot.Color("#007acc"), ContentMarginLeft = 10, ContentMarginRight = 10, ContentMarginTop = 2, ContentMarginBottom = 2 };
+        var statusStyle = new StyleBoxFlat { BgColor = AP_Atlas.Core.ThemeColors.Accent, ContentMarginLeft = 10, ContentMarginRight = 10, ContentMarginTop = 2, ContentMarginBottom = 2 };
         _globalStatusBar.AddThemeStyleboxOverride("panel", statusStyle);
         var statusHBox = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         _globalStatusBar.AddChild(statusHBox);
@@ -514,7 +599,12 @@ public partial class MainTrackerWindow : Control
             }
         );
         _packManagerPanel.Visible = false;
-        _packManagerPanel.OnDataRefreshed += ApplyUIScale;
+        _packManagerPanel.OpenDoctor = path => OpenPackDoctor(path);
+        _packManagerPanel.OnDataRefreshed += () =>
+        {
+            SetFontSizeRecursive(_packManagerPanel, _appSettings.ContentFontSize);
+            SetFontSizeRecursive(_packManagerPanel.SidebarContent, _appSettings.ExplorerFontSize);
+        };
         _contentStage.AddChild(_packManagerPanel);
         _packManagerPanel.SidebarContent.Visible = false;
         _midLeftVBox.AddChild(_packManagerPanel.SidebarContent);
@@ -524,18 +614,61 @@ public partial class MainTrackerWindow : Control
         var statusTimer = new Godot.Timer { WaitTime = 0.5f, Autostart = true };
         statusTimer.Timeout += UpdateSlotStatuses;
         AddChild(statusTimer);
+        // Reports long frames (with what caused them) to the System Log and status bar.
+        AddChild(new AP_Atlas.Core.HitchMonitor(msg => { if (_globalStatusLabel != null) _globalStatusLabel.Text = msg; }));
         SetupModernTheme();
         RefreshProfileList();
         SelectProfile(null);
         UpdateSidebar();
         SwapContentView(null);
+        _uiReady = true;
+        foreach (var (msg, color) in _pendingNotices) ShowToast(msg, color);
+        _pendingNotices.Clear();
+    }
+
+    /// <summary>Reliability self-test mode (ATLAS_SELFTEST=1): runs the checks and exits with their result.</summary>
+    private async void RunSelfTest()
+    {
+        int code = 1;
+        try { code = await AP_Atlas.Core.SelfTest.RunAsync(); }
+        catch (System.Exception ex) { GD.PrintErr("SELFTEST CRASHED: " + ex); }
+        GetTree().Quit(code);
+    }
+
+    private bool _uiReady;
+    private readonly List<(string, Godot.Color)> _pendingNotices = new List<(string, Godot.Color)>();
+    private readonly Dictionary<string, System.DateTime> _lastSaveFailureToast = new Dictionary<string, System.DateTime>();
+
+    private void Notice(string message, Godot.Color color)
+    {
+        Callable.From(() =>
+        {
+            if (!IsInstanceValid(this)) return;
+            if (_uiReady) ShowToast(message, color);
+            else _pendingNotices.Add((message, color));
+        }).CallDeferred();
+    }
+
+    private void OnFileRecovered(string path, string what) =>
+        Notice($"{System.IO.Path.GetFileName(path)} {what}.", Godot.Colors.Orange);
+
+    private void OnSaveFailed(string file, string reason)
+    {
+        // A full disk fails every save: tell the user once a minute, not on every keystroke.
+        lock (_lastSaveFailureToast)
+        {
+            if (_lastSaveFailureToast.TryGetValue(file, out var last) && (System.DateTime.Now - last).TotalSeconds < 60) return;
+            _lastSaveFailureToast[file] = System.DateTime.Now;
+        }
+        Notice($"Couldn't save {file}: {reason}. Check free disk space and folder permissions.", Godot.Colors.Salmon);
     }
 
     private void SetupModernTheme()
     {
         var theme = new Theme();
-        string accentHex = string.IsNullOrEmpty(_appSettings.ThemeAccentColor) ? "#8A2BE2" : _appSettings.ThemeAccentColor;
-        var accentColor = new Godot.Color(accentHex);
+        AP_Atlas.Core.ThemeColors.SetAccent(_appSettings.ThemeAccentColor);
+        var accentColor = AP_Atlas.Core.ThemeColors.Accent;
+        var textOnAccent = AP_Atlas.Core.ThemeColors.TextOnAccent;
         var panelBg = new StyleBoxFlat
         {
             BgColor = new Godot.Color("#252526"),
@@ -625,12 +758,21 @@ public partial class MainTrackerWindow : Control
         theme.SetStylebox("hover", "Button", btnHover);
         var btnPressed = new StyleBoxFlat { BgColor = accentColor, CornerRadiusTopLeft = 4, CornerRadiusTopRight = 4, CornerRadiusBottomLeft = 4, CornerRadiusBottomRight = 4, ContentMarginLeft = 10, ContentMarginRight = 10, ContentMarginTop = 5, ContentMarginBottom = 5 };
         theme.SetStylebox("pressed", "Button", btnPressed);
+        theme.SetStylebox("hover_pressed", "Button", btnPressed);
+        // Every state needs the same content margins: Godot 4.3 measures a button with its current stylebox and does
+        // not re-measure on Disabled changes, so a button created disabled with Godot's thinner default clipped its text.
+        var btnDisabled = new StyleBoxFlat { BgColor = new Godot.Color("#2d2d30"), CornerRadiusTopLeft = 4, CornerRadiusTopRight = 4, CornerRadiusBottomLeft = 4, CornerRadiusBottomRight = 4, ContentMarginLeft = 10, ContentMarginRight = 10, ContentMarginTop = 5, ContentMarginBottom = 5 };
+        theme.SetStylebox("disabled", "Button", btnDisabled);
+        theme.SetColor("font_disabled_color", "Button", new Godot.Color(1, 1, 1, 0.35f));
+        theme.SetColor("font_pressed_color", "Button", textOnAccent);
+        theme.SetColor("font_hover_pressed_color", "Button", textOnAccent);
         var cbNormal = new StyleBoxEmpty();
         theme.SetStylebox("normal", "CheckBox", cbNormal);
         theme.SetStylebox("hover", "CheckBox", cbNormal);
         theme.SetStylebox("pressed", "CheckBox", cbNormal);
         theme.SetStylebox("focus", "CheckBox", cbNormal);
         theme.SetStylebox("hover_pressed", "CheckBox", cbNormal);
+        theme.SetStylebox("disabled", "CheckBox", cbNormal);
         var lineEdit = new StyleBoxFlat { BgColor = new Godot.Color("#3c3c3c"), CornerRadiusTopLeft = 2, CornerRadiusTopRight = 2, CornerRadiusBottomLeft = 2, CornerRadiusBottomRight = 2, ContentMarginLeft = 8, ContentMarginRight = 8, ContentMarginTop = 6, ContentMarginBottom = 6, BorderWidthBottom = 1, BorderColor = accentColor };
         theme.SetStylebox("normal", "LineEdit", lineEdit);
         var sysFont = GD.Load<FontFile>("res://Assets/Fonts/GoogleSans-Regular.ttf");
@@ -659,13 +801,35 @@ public partial class MainTrackerWindow : Control
             theme.SetFont("normal_font", "RichTextLabel", monoFallback);
             theme.SetFont("mono_font", "RichTextLabel", monoFallback);
         }
+        theme.SetStylebox("panel", "PopupMenu", new StyleBoxFlat
+        {
+            BgColor = new Godot.Color("#252526"),
+            BorderColor = new Godot.Color("#444444"),
+            BorderWidthLeft = 1,
+            BorderWidthTop = 1,
+            BorderWidthRight = 1,
+            BorderWidthBottom = 1,
+            CornerRadiusTopLeft = 6,
+            CornerRadiusTopRight = 6,
+            CornerRadiusBottomLeft = 6,
+            CornerRadiusBottomRight = 6,
+            ContentMarginLeft = 16,
+            ContentMarginRight = 16,
+            ContentMarginTop = 16,
+            ContentMarginBottom = 16
+        });
         this.Theme = theme;
+        // Popups and windows (dialogs, the Pack Doctor) live under the root, not this control, so share the theme there too.
+        if (IsInsideTree()) GetTree().Root.Theme = theme;
         RenderingServer.SetDefaultClearColor(new Godot.Color("#1e1e1e"));
         if (_globalStatusBar != null)
         {
             var statusStyle = new StyleBoxFlat { BgColor = accentColor, ContentMarginLeft = 10, ContentMarginRight = 10, ContentMarginTop = 2, ContentMarginBottom = 2 };
             _globalStatusBar.AddThemeStyleboxOverride("panel", statusStyle);
+            _globalStatusLabel?.AddThemeColorOverride("font_color", textOnAccent);
         }
+        if (_workspaceSwitcher != null) _workspaceSwitcher.ApplyStyle(12, AP_Atlas.Core.ThemeColors.Accent);
+        if (_bottomTabs != null) ApplyTabBarStyle(_bottomTabs, 8);
         ApplyUIScale();
     }
 
@@ -678,85 +842,48 @@ public partial class MainTrackerWindow : Control
         else if (id == 4) _appSettings.ThemeAccentColor = "#32A0FF"; // Zelda ALttP
         else if (id == 5) _appSettings.ThemeAccentColor = "#FF781E"; // Dark Souls
         DataManager.SaveSettings(_appSettings);
-        DataManager.SaveProfiles(_profiles);
         SetupModernTheme();
         RefreshProfileListStyles();
+        UpdateSidebar();
     }
 
-    private FileDialog _enginePathDialog;
-
-    private async void UpdateUniversalTracker()
+    /// <summary>Opens the Atlas Engine setup window.</summary>
+    public void OpenEngineSetup()
     {
-        LogToSystem("[color=yellow]Starting Universal Tracker Update...[/color]");
-        _globalStatusLabel.Text = "Updating Universal Tracker...";
-        var logicEngine = new LogicEngineManager(_appSettings.ArchipelagoInstallationPath, msg =>
-        {
-            CallDeferred(nameof(LogToSystem), msg);
-        });
-        bool success = await logicEngine.DownloadLatestEngineAsync(msg =>
-        {
-            CallDeferred(nameof(LogToSystem), msg);
-            Callable.From(() => _globalStatusLabel.Text = msg.Replace("Status: ", "")).CallDeferred();
-        });
-        Callable.From(() =>
-        {
-            if (success)
-            {
-                LogToSystem("[color=green]Universal Tracker Update Complete![/color]");
-                _globalStatusLabel.Text = "Update Complete";
-            }
-            else
-            {
-                LogToSystem("[color=red]Universal Tracker Update Failed.[/color]");
-                _globalStatusLabel.Text = "Update Failed";
-            }
-        }).CallDeferred();
-    }
-
-    private void OpenEnginePathDialog()
-    {
-        if (_enginePathDialog == null)
-        {
-            _enginePathDialog = new FileDialog
-            {
-                FileMode = FileDialog.FileModeEnum.OpenDir,
-                Access = FileDialog.AccessEnum.Filesystem,
-                Title = "Select Archipelago Installation Directory",
-                UseNativeDialog = true
-            };
-            _enginePathDialog.DirSelected += (dir) =>
-            {
-                _appSettings.ArchipelagoInstallationPath = dir;
-                DataManager.SaveSettings(_appSettings);
-                LogToSystem("[color=green]Archipelago Engine Path set to:[/color] " + dir);
-            };
-            AddChild(_enginePathDialog);
-        }
-        _enginePathDialog.CurrentDir = string.IsNullOrEmpty(_appSettings.ArchipelagoInstallationPath) ? OS.GetSystemDir(OS.SystemDir.Documents) : _appSettings.ArchipelagoInstallationPath;
-        _enginePathDialog.PopupCentered(new Vector2I(600, 400));
+        AP_Atlas.UI.AtlasEngineWindow.Open(this, _appSettings,
+            () => ActiveSlotNodes().OfType<SlotTrackerControl>(),
+            () => ActiveSlotNodes().OfType<SlotTrackerControl>().Select(s => s.Game)
+                .Concat(_profiles.SelectMany(p => p.SavedStats.Values.Select(st => st.GameName))),
+            _appSettings.ContentFontSize);
     }
 
     private void AutoDetectArchipelagoPath()
     {
-        if (!string.IsNullOrEmpty(_appSettings.ArchipelagoInstallationPath)) return;
-        string programData = System.Environment.GetFolderPath(System.Environment.SpecialFolder.CommonApplicationData);
-        string defaultPath = System.IO.Path.Combine(programData, "Archipelago");
-        string localAppData = System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData);
-        string localPath = System.IO.Path.Combine(localAppData, "Programs", "Archipelago");
-        string[] possiblePaths = { defaultPath, localPath, "C:\\Archipelago" };
-        foreach (string path in possiblePaths)
+        if (string.IsNullOrEmpty(_appSettings.ArchipelagoInstallationPath) || !System.IO.File.Exists(System.IO.Path.Combine(_appSettings.ArchipelagoInstallationPath, "ArchipelagoLauncher.exe")))
         {
-            if (System.IO.Directory.Exists(path) && System.IO.File.Exists(System.IO.Path.Combine(path, "ArchipelagoLauncher.exe")))
+            string found = AP_Atlas.Core.EngineSetup.AtlasEngine.FindArchipelagoInstalls().FirstOrDefault();
+            if (found != null && found != _appSettings.ArchipelagoInstallationPath)
             {
-                _appSettings.ArchipelagoInstallationPath = path;
+                _appSettings.ArchipelagoInstallationPath = found;
                 DataManager.SaveSettings(_appSettings);
-                LogToSystem("[color=green]Auto-detected Archipelago Engine at:[/color] " + path);
-                return;
+                LogToSystem("[color=green]Found Archipelago at:[/color] " + found);
             }
         }
+        var engine = AP_Atlas.Core.EngineSetup.AtlasEngine.Current;
+        string problem = AP_Atlas.Core.EngineSetup.AtlasEngine.ProblemWith(engine);
+        if (problem == null)
+        {
+            LogToSystem($"[color=gray]Logic engine: {engine.Describe()}.[/color]");
+            return;
+        }
+        LogToSystem($"[color=orange]Logic engine: {problem}[/color] Settings → Atlas Engine sets it up.");
+        Callable.From(() => ShowToast("Logic needs the Atlas Engine. Atlas can set it up for you (about 50 MB, no installer).", Godot.Colors.Orange, "Set up", OpenEngineSetup)).CallDeferred();
     }
 
-    private void ShowToast(string message, Godot.Color color)
+    private void ShowToast(string message, Godot.Color color) => ShowToast(message, color, null, null);
+
+    /// <summary>A toast; with an action it shows a button and stays up longer.</summary>
+    private void ShowToast(string message, Godot.Color color, string actionText, System.Action action)
     {
         var toastPanel = new PanelContainer();
         var style = new StyleBoxFlat
@@ -783,16 +910,23 @@ public partial class MainTrackerWindow : Control
         var label = new Label { Text = message };
         hbox.AddChild(circle);
         hbox.AddChild(label);
-        toastPanel.AddChild(hbox);
         var canvas = new CanvasLayer { Layer = 100 };
+        if (action != null)
+        {
+            var button = new Button { Text = actionText ?? "Open", FocusMode = FocusModeEnum.None };
+            button.Pressed += () => { action(); canvas.QueueFree(); };
+            hbox.AddChild(button);
+        }
+        toastPanel.AddChild(hbox);
         canvas.AddChild(toastPanel);
         AddChild(canvas);
         toastPanel.Modulate = new Godot.Color(1, 1, 1, 0);
+        SetFontSizeRecursive(toastPanel, _appSettings.GlobalFontSize);
         // Wait a frame to let Godot calculate the minimum size
-        CallDeferred(nameof(AnimateToast), toastPanel, canvas);
+        CallDeferred(nameof(AnimateToast), toastPanel, canvas, action != null ? 10.0f : 3.0f);
     }
 
-    private void AnimateToast(PanelContainer toastPanel, CanvasLayer canvas)
+    private void AnimateToast(PanelContainer toastPanel, CanvasLayer canvas, float hold)
     {
         var winSize = GetWindow().Size;
         var panelSize = toastPanel.Size;
@@ -800,48 +934,49 @@ public partial class MainTrackerWindow : Control
         toastPanel.Position = new Godot.Vector2(winSize.X - panelSize.X - 20, winSize.Y - panelSize.Y - 20);
         var tween = CreateTween();
         tween.TweenProperty(toastPanel, "modulate", new Godot.Color(1, 1, 1, 1), 0.3f).SetTrans(Tween.TransitionType.Cubic);
-        tween.TweenInterval(3.0f);
+        tween.TweenInterval(hold);
         tween.TweenProperty(toastPanel, "modulate", new Godot.Color(1, 1, 1, 0), 0.5f).SetTrans(Tween.TransitionType.Cubic);
         tween.TweenCallback(Callable.From(() => canvas.QueueFree()));
     }
 
     private void ApplyUIScale()
     {
+        using var _ = AP_Atlas.Core.PerfMonitor.Measure("Apply font sizes (whole UI)");
+
         int globalSize = _appSettings.GlobalFontSize;
         if (this.Theme == null) this.Theme = new Theme();
-        this.Theme.SetFontSize("font_size", "PopupMenu", globalSize);
-        this.Theme.SetFontSize("font_size", "MenuButton", globalSize);
-        var popupStyle = new StyleBoxFlat
-        {
-            BgColor = new Godot.Color("#252526"),
-            BorderColor = new Godot.Color("#444444"),
-            BorderWidthLeft = 1,
-            BorderWidthTop = 1,
-            BorderWidthRight = 1,
-            BorderWidthBottom = 1,
-            CornerRadiusTopLeft = 6,
-            CornerRadiusTopRight = 6,
-            CornerRadiusBottomLeft = 6,
-            CornerRadiusBottomRight = 6,
-            ContentMarginLeft = 16,
-            ContentMarginRight = 16,
-            ContentMarginTop = 16,
-            ContentMarginBottom = 16
-        };
-        this.Theme.SetStylebox("panel", "PopupMenu", popupStyle);
+        // Any Theme mutation re-themes every control in the window (forcing all text to re-layout),
+        // even when the value is unchanged, so only touch it when the size actually changed.
+        SetThemeFontSizeIfChanged(this.Theme, "PopupMenu", globalSize);
+        SetThemeFontSizeIfChanged(this.Theme, "MenuButton", globalSize);
         if (_menuHbox != null) SetFontSizeRecursive(_menuHbox, globalSize);
-        if (_workspaceSwitcher != null) _workspaceSwitcher.AddThemeFontSizeOverride("font_size", globalSize);
-        if (_bottomTabs != null) _bottomTabs.AddThemeFontSizeOverride("font_size", globalSize);
+        if (_workspaceSwitcher != null) _workspaceSwitcher.SetFontSize(globalSize);
+        if (_bottomTabs != null) SetFontSizeOverride(_bottomTabs, "font_size", globalSize);
         if (_globalStatusBar != null) SetFontSizeRecursive(_globalStatusBar, globalSize);
-        if (_bottomTabs != null) _bottomTabs.AddThemeFontSizeOverride("font_size", globalSize);
-        if (_sidebarTitle != null) _sidebarTitle.AddThemeFontSizeOverride("font_size", globalSize);
-        if (_midLeftTitle != null) _midLeftTitle.AddThemeFontSizeOverride("font_size", globalSize);
-        if (_propsTitle != null) _propsTitle.AddThemeFontSizeOverride("font_size", globalSize);
+        if (_sidebarTitle != null) SetFontSizeOverride(_sidebarTitle, "font_size", globalSize);
+        if (_midLeftTitle != null) SetFontSizeOverride(_midLeftTitle, "font_size", globalSize);
+        if (_propsTitle != null) SetFontSizeOverride(_propsTitle, "font_size", globalSize);
         if (_sidebar != null) SetFontSizeRecursive(_sidebar, _appSettings.SlotsFontSize);
         if (_midLeftSidebar != null) SetFontSizeRecursive(_midLeftSidebar, _appSettings.ExplorerFontSize);
         if (_propertiesSidebar != null) SetFontSizeRecursive(_propertiesSidebar, _appSettings.PropertiesFontSize);
         if (_contentStage != null) SetFontSizeRecursive(_contentStage, _appSettings.ContentFontSize);
         if (_terminalStage != null) SetFontSizeRecursive(_terminalStage, _appSettings.ConsoleFontSize);
+    }
+
+    private static void SetThemeFontSizeIfChanged(Theme theme, string themeType, int size)
+    {
+        if (theme.HasFontSize("font_size", themeType) && theme.GetFontSize("font_size", themeType) == size) return;
+        theme.SetFontSize("font_size", themeType, size);
+    }
+
+    /// <summary>
+    /// Adds a font size override only when it differs from the current one: every override change makes the
+    /// control re-shape its text, which is expensive across thousands of chat lines and tree rows.
+    /// </summary>
+    private static void SetFontSizeOverride(Control c, StringName name, int size)
+    {
+        if (c.HasThemeFontSizeOverride(name) && c.GetThemeFontSize(name) == size) return;
+        c.AddThemeFontSizeOverride(name, size);
     }
 
     public override void _Notification(int what)
@@ -872,21 +1007,17 @@ public partial class MainTrackerWindow : Control
             DataManager.SaveSettings(_appSettings);
             if (_globalStatusLabel != null) _globalStatusLabel.Text = "Disconnecting sessions...";
             LogToSystem("[color=yellow]Shutting down... Disconnecting active slots...[/color]");
-            var disconnectTasks = new System.Collections.Generic.List<Task>();
-            if (_contentStage != null)
-            {
-                foreach (Node n in ActiveSlotNodes())
-                {
-                    if (n is SlotTrackerControl slot && slot.Session != null && slot.Session.Socket.Connected)
-                    {
-                        var t = slot.Session.Socket.DisconnectAsync();
-                        if (t != null) disconnectTasks.Add(t);
-                    }
-                }
-            }
+            // Close every session we opened (connected slots and any still connecting) with a proper close frame,
+            // so the server drops them immediately instead of waiting for a timeout.
+            ArchipelagoSession[] sessions;
+            lock (_openSessions) sessions = _openSessions.ToArray();
+            var disconnectTasks = sessions.Select(CloseSession).ToList();
             if (disconnectTasks.Count > 0)
             {
-                await Task.WhenAny(Task.WhenAll(disconnectTasks), Task.Delay(3000));
+                var all = Task.WhenAll(disconnectTasks);
+                await Task.WhenAny(all, Task.Delay(3000));
+                if (all.IsCompleted) LogToSystem($"[color=yellow]Closed {disconnectTasks.Count} server connection(s).[/color]");
+                else AP_Atlas.Core.Logger.LogWarning("Some server connections did not confirm closing within 3 seconds; the OS closes them as the app exits.");
             }
         }
         catch (Exception ex)
@@ -921,15 +1052,15 @@ public partial class MainTrackerWindow : Control
                 }
             }
             if (c.Name == "FixedHeaderTitle" || c.Name == "HeaderBox") return;
-            if (c is Label || c is Button || c is LineEdit || c is CheckBox || c is TabContainer || c is Tree)
+            if (c is Label || c is Button || c is LineEdit || c is CheckBox || c is TabContainer || c is Tree || c is ItemList)
             {
-                c.AddThemeFontSizeOverride("font_size", finalSize);
-                if (c is Tree t) t.AddThemeFontSizeOverride("title_button_font_size", finalSize);
+                SetFontSizeOverride(c, "font_size", finalSize);
+                if (c is Tree t) SetFontSizeOverride(t, "title_button_font_size", finalSize);
             }
             else if (c is RichTextLabel rtl)
             {
-                rtl.AddThemeFontSizeOverride("normal_font_size", finalSize);
-                rtl.AddThemeFontSizeOverride("mono_font_size", finalSize);
+                SetFontSizeOverride(rtl, "normal_font_size", finalSize);
+                SetFontSizeOverride(rtl, "mono_font_size", finalSize);
             }
             if (c is MenuButton mb)
             {
@@ -938,7 +1069,8 @@ public partial class MainTrackerWindow : Control
         }
         else if (node is PopupMenu pm)
         {
-            pm.AddThemeFontSizeOverride("font_size", size);
+            if (!(pm.HasThemeFontSizeOverride("font_size") && pm.GetThemeFontSize("font_size") == size))
+                pm.AddThemeFontSizeOverride("font_size", size);
         }
         foreach (Node child in node.GetChildren())
         {
@@ -1010,6 +1142,8 @@ public partial class MainTrackerWindow : Control
 
     private void LogToDebug(string msg, string slotName = "")
     {
+        // Slot debug lines (engine starts, failures) go to the log file too, for diagnosing problems after the fact.
+        AP_Atlas.Core.Logger.LogDebug(string.IsNullOrEmpty(slotName) ? msg : $"[{slotName}] {msg}");
         string time = System.DateTime.Now.ToString("HH:mm:ss");
         string prefix = string.IsNullOrEmpty(slotName) ? "[color=gray]" : $"[color=orange][{slotName}][/color] [color=gray]";
         string formatted = $"{prefix}[{time}][/color] {msg}\n";
@@ -1025,12 +1159,173 @@ public partial class MainTrackerWindow : Control
     /// <summary>Slots with a login in flight, keyed by SlotKey(profileId, slotName).</summary>
     private System.Collections.Generic.HashSet<string> _connectingSlots = new System.Collections.Generic.HashSet<string>();
     private static string SlotKey(string profileId, string slotName) => profileId + "|" + slotName;
+
+    // Every session this app has opened and not yet closed, including ones still connecting or logging in,
+    // so shutdown can close all of them (not just the slots that made it into the UI).
+    private readonly HashSet<ArchipelagoSession> _openSessions = new HashSet<ArchipelagoSession>();
+
+    // =====================================================================
+    // Automatic reconnect
+    // =====================================================================
+
+    /// <summary>Sessions that finished logging in (only those are reconnected when they drop). Guarded by _openSessions.</summary>
+    private readonly HashSet<ArchipelagoSession> _loggedInSessions = new HashSet<ArchipelagoSession>();
+    private readonly Dictionary<string, int> _reconnectAttempts = new Dictionary<string, int>();
+    private readonly Dictionary<string, string> _lastLoginErrors = new Dictionary<string, string>();
+
+    /// <summary>
+    /// Waits between reconnect tries, about 30 minutes in all. Deliberately short and slow: a connection attempt wakes a
+    /// sleeping archipelago.gg room, so Atlas must never keep a closed room busy with endless retries.
+    /// </summary>
+    private static readonly int[] ReconnectDelaysSeconds = { 15, 30, 60, 120, 300, 600 };
+
+    private void OnSessionDropped(MultiworldProfile profile, string slotName)
+    {
+        if (_shuttingDown) return;
+        if (!_appSettings.AutoReconnect)
+        {
+            ShowToast($"Connection to {slotName} was lost.", Godot.Colors.Orange, "Reconnect", () => OnConnectSlotPressed(slotName, profile));
+            return;
+        }
+        ScheduleReconnect(profile, slotName);
+    }
+
+    private void ScheduleReconnect(MultiworldProfile profile, string slotName)
+    {
+        string key = SlotKey(profile.Id, slotName);
+        int attempt = _reconnectAttempts.TryGetValue(key, out var a) ? a : 0;
+        if (attempt >= ReconnectDelaysSeconds.Length)
+        {
+            _reconnectAttempts.Remove(key);
+            LogToSystem($"[color=orange]Stopped trying to reconnect {slotName} after {attempt} tries over about 30 minutes.[/color] Reconnect it when the server is back.");
+            ShowToast($"{slotName} couldn't reconnect. The server may be down or the room closed.", Godot.Colors.Orange, "Try again", () => OnConnectSlotPressed(slotName, profile));
+            return;
+        }
+        _reconnectAttempts[key] = attempt + 1;
+        // ±20% jitter, so many trackers that lost the same server don't all come back in the same second.
+        double delay = ReconnectDelaysSeconds[attempt] * (0.8 + System.Random.Shared.NextDouble() * 0.4);
+        LogToSystem($"[color=orange]Connection to {slotName} lost.[/color] Reconnecting in {delay:0} s (try {attempt + 1} of {ReconnectDelaysSeconds.Length}).");
+        if (attempt == 0) ShowToast($"Connection to {slotName} lost. Reconnecting automatically…", Godot.Colors.Orange);
+        GetTree().CreateTimer(delay).Timeout += () => TryReconnect(profile, slotName);
+    }
+
+    private bool IsSlotLive(string profileId, string slotName) =>
+        ActiveSlotNodes().OfType<SlotTrackerControl>().Any(s => IsInstanceValid(s) && s.ProfileId == profileId && s.SlotName == slotName && s.Session?.Socket?.Connected == true);
+
+    private async void TryReconnect(MultiworldProfile profile, string slotName)
+    {
+        string key = SlotKey(profile.Id, slotName);
+        if (_shuttingDown || !_reconnectAttempts.ContainsKey(key)) return; // cancelled: the user connected or disconnected
+        if (IsSlotLive(profile.Id, slotName)) { _reconnectAttempts.Remove(key); return; }
+        if (_isConnectingSlot || _connectingSlots.Contains(key))
+        {
+            GetTree().CreateTimer(5).Timeout += () => TryReconnect(profile, slotName);
+            return;
+        }
+        _lastLoginErrors.Remove(key);
+        try { await ConnectSlotInternalAsync(slotName, profile); }
+        catch (Exception ex) { AP_Atlas.Core.Logger.LogWarning($"Reconnect of {slotName} failed: {ex.Message}"); }
+        // The login result is applied on the main thread just after; look once it has been.
+        GetTree().CreateTimer(1.0).Timeout += () =>
+        {
+            if (_shuttingDown || !_reconnectAttempts.ContainsKey(key)) return;
+            if (IsSlotLive(profile.Id, slotName))
+            {
+                _reconnectAttempts.Remove(key);
+                LogToSystem($"[color=lime]Reconnected {slotName}.[/color]");
+                ShowToast($"Reconnected {slotName}.", Godot.Colors.LimeGreen);
+                return;
+            }
+            if (_lastLoginErrors.TryGetValue(key, out var errors))
+            {
+                // The server answered and refused (slot gone, wrong password, room changed): retrying won't help.
+                _reconnectAttempts.Remove(key);
+                LogToSystem($"[color=red]Stopped reconnecting {slotName}: the server refused the login ({errors}).[/color]");
+                ShowToast($"{slotName} can't reconnect: {errors}", Godot.Colors.Salmon);
+                return;
+            }
+            ScheduleReconnect(profile, slotName);
+        };
+    }
+
+    private void TrackSession(ArchipelagoSession session)
+    {
+        lock (_openSessions) _openSessions.Add(session);
+    }
+
+    /// <summary>Closes a session's socket with a normal close frame and forgets it. Safe to call more than once.</summary>
+    private Task CloseSession(ArchipelagoSession session)
+    {
+        if (session == null) return Task.CompletedTask;
+        lock (_openSessions)
+        {
+            _loggedInSessions.Remove(session);
+            if (!_openSessions.Remove(session)) return Task.CompletedTask;
+        }
+        try
+        {
+            return session.Socket.DisconnectAsync() ?? Task.CompletedTask;
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"Error closing session: {ex.Message}");
+            return Task.CompletedTask;
+        }
+    }
     private int _spinnerIndex = 0;
     private string[] _spinnerFrames = { "/", "-", "\\", "|" };
     private Texture2D _iconConnect;
     private Texture2D _iconCheck;
     private Texture2D _iconDisconnect;
     private Texture2D _iconDelete;
+    /// <summary>Styles a slot card in the SLOTS sidebar; the selected card is tinted and outlined in the accent color.</summary>
+    private static void ApplySlotCardStyle(PanelContainer card, Button slotButton, bool isSelected)
+    {
+        var accent = AP_Atlas.Core.ThemeColors.Accent;
+        card.AddThemeStyleboxOverride("panel", new StyleBoxFlat
+        {
+            BgColor = isSelected ? AP_Atlas.Core.ThemeColors.AccentTint : new Godot.Color("#1A1A1F"),
+            CornerRadiusTopLeft = 4,
+            CornerRadiusTopRight = 4,
+            CornerRadiusBottomLeft = 4,
+            CornerRadiusBottomRight = 4,
+            BorderWidthLeft = 1,
+            BorderWidthRight = 1,
+            BorderWidthTop = 1,
+            BorderWidthBottom = 1,
+            BorderColor = isSelected ? accent : new Godot.Color("#2C2D35"),
+            ContentMarginLeft = 6,
+            ContentMarginRight = 6,
+            ContentMarginTop = 5,
+            ContentMarginBottom = 5
+        });
+        if (slotButton == null) return;
+        string[] fontColors = { "font_color", "font_hover_color", "font_pressed_color", "font_focus_color" };
+        string[] styles = { "normal", "hover", "pressed", "focus" };
+        if (isSelected)
+        {
+            var textColor = AP_Atlas.Core.ThemeColors.TextOnAccent;
+            var style = new StyleBoxFlat
+            {
+                BgColor = accent,
+                CornerRadiusTopLeft = 4,
+                CornerRadiusTopRight = 4,
+                CornerRadiusBottomLeft = 4,
+                CornerRadiusBottomRight = 4,
+                ContentMarginLeft = 8,
+                ContentMarginRight = 8,
+                ContentMarginTop = 4,
+                ContentMarginBottom = 4
+            };
+            foreach (var c in fontColors) slotButton.AddThemeColorOverride(c, textColor);
+            foreach (var s in styles) slotButton.AddThemeStyleboxOverride(s, style);
+        }
+        else
+        {
+            foreach (var c in fontColors) slotButton.RemoveThemeColorOverride(c);
+            foreach (var s in styles) slotButton.RemoveThemeStyleboxOverride(s);
+        }
+    }
 
     private void UpdateSidebarHighlighting()
     {
@@ -1044,86 +1339,24 @@ public partial class MainTrackerWindow : Control
                 bool isSelected = _currentSelectedSlot != null &&
                                   _currentSelectedSlot.SlotName == slotName &&
                                   _currentSelectedSlot.ProfileId == profileId;
-                var cardStyle = new StyleBoxFlat
-                {
-                    BgColor = isSelected ? new Godot.Color("#1B261E") : new Godot.Color("#1A1A1F"),
-                    CornerRadiusTopLeft = 4,
-                    CornerRadiusTopRight = 4,
-                    CornerRadiusBottomLeft = 4,
-                    CornerRadiusBottomRight = 4,
-                    BorderWidthLeft = 1,
-                    BorderWidthRight = 1,
-                    BorderWidthTop = 1,
-                    BorderWidthBottom = 1,
-                    BorderColor = isSelected ? new Godot.Color("#4CAF50") : new Godot.Color("#2C2D35"),
-                    ContentMarginLeft = 6,
-                    ContentMarginRight = 6,
-                    ContentMarginTop = 5,
-                    ContentMarginBottom = 5
-                };
-                card.AddThemeStyleboxOverride("panel", cardStyle);
                 var cardVBox = card.GetChildOrNull<VBoxContainer>(0);
-                if (cardVBox != null)
-                {
-                    var row = cardVBox.GetChildOrNull<HBoxContainer>(0);
-                    if (row != null)
-                    {
-                        var btn = row.GetChildOrNull<Button>(0);
-                        if (btn != null)
-                        {
-                            if (isSelected)
-                            {
-                                btn.AddThemeColorOverride("font_color", Colors.White);
-                                btn.AddThemeColorOverride("font_hover_color", Colors.White);
-                                btn.AddThemeColorOverride("font_pressed_color", Colors.White);
-                                btn.AddThemeColorOverride("font_focus_color", Colors.White);
-                                var style = new StyleBoxFlat
-                                {
-                                    BgColor = new Godot.Color("#2E7D32"),
-                                    CornerRadiusTopLeft = 4,
-                                    CornerRadiusTopRight = 4,
-                                    CornerRadiusBottomLeft = 4,
-                                    CornerRadiusBottomRight = 4,
-                                    ContentMarginLeft = 8,
-                                    ContentMarginRight = 8,
-                                    ContentMarginTop = 4,
-                                    ContentMarginBottom = 4
-                                };
-                                btn.AddThemeStyleboxOverride("normal", style);
-                                btn.AddThemeStyleboxOverride("hover", style);
-                                btn.AddThemeStyleboxOverride("pressed", style);
-                                btn.AddThemeStyleboxOverride("focus", style);
-                            }
-                            else
-                            {
-                                btn.RemoveThemeColorOverride("font_color");
-                                btn.RemoveThemeColorOverride("font_hover_color");
-                                btn.RemoveThemeColorOverride("font_pressed_color");
-                                btn.RemoveThemeColorOverride("font_focus_color");
-                                btn.RemoveThemeStyleboxOverride("normal");
-                                btn.RemoveThemeStyleboxOverride("hover");
-                                btn.RemoveThemeStyleboxOverride("pressed");
-                                btn.RemoveThemeStyleboxOverride("focus");
-                            }
-                        }
-                    }
-                }
+                var btn = cardVBox?.GetChildOrNull<HBoxContainer>(0)?.GetChildOrNull<Button>(0);
+                ApplySlotCardStyle(card, btn, isSelected);
             }
         }
     }
 
     private void SwapSidebar(string title, Control activeContent = null)
     {
-        if (activeContent == null)
-        {
-            _midLeftSidebar.Visible = false;
-            return;
-        }
-        _midLeftSidebar.Visible = true;
+        SetExplorerVisible(activeContent != null);
+        if (activeContent == null) return;
         _midLeftTitle.Text = title.ToUpper();
         if (activeContent.GetParent() != _midLeftVBox)
         {
+            using var _ = AP_Atlas.Core.PerfMonitor.Measure($"Mount sidebar '{title}'");
+
             activeContent.GetParent()?.RemoveChild(activeContent);
+            SetFontSizeRecursive(activeContent, _appSettings.ExplorerFontSize);
             _midLeftVBox.AddChild(activeContent);
         }
         foreach (Godot.Node c in _midLeftVBox.GetChildren())
@@ -1131,6 +1364,17 @@ public partial class MainTrackerWindow : Control
             if (c is Control ctrl && ctrl != _midLeftHeaderBox) ctrl.Visible = false;
         }
         activeContent.Visible = true;
+    }
+
+    /// <summary>
+    /// Shows or hides the explorer. The panel directly under the tab bar gets the square top-left corner
+    /// so it reads as attached to the tabs. Skips the work when nothing changes, so tab switches don't relayout.
+    /// </summary>
+    private void SetExplorerVisible(bool visible)
+    {
+        if (_midLeftSidebar.Visible == visible) return;
+        _midLeftSidebar.Visible = visible;
+        if (_contentStageStyle != null) _contentStageStyle.CornerRadiusTopLeft = visible ? _midLeftStyle.CornerRadiusTopRight : 0;
     }
 
     private void SwapContentView(Control target)
@@ -1176,6 +1420,9 @@ public partial class MainTrackerWindow : Control
 
     private void RefreshContextViews()
     {
+        using var __perf = AP_Atlas.Core.PerfMonitor.Measure("Refresh context views");
+
+        _propertiesPanel?.OnSelectedSlotChanged(_currentSelectedSlot);
         UpdateSidebarHighlighting();
         RefreshTerminalView();
         // Tabs 0 (Connections) and 1 (Map Packs) are global and handled by ChangeGlobalTab.
@@ -1196,6 +1443,7 @@ public partial class MainTrackerWindow : Control
             case 3: view = _currentSelectedSlot.ProgressionTracker; break;
             case 4: view = _currentSelectedSlot.LogicTrackerView; break;
             case 5: view = _currentSelectedSlot.ItemHistoryView; break;
+            case 6: view = _currentSelectedSlot.HintsView; break;
         }
         MountInContentStage(view);
         SwapSidebar(sidebarTitle, sidebar);
@@ -1214,13 +1462,66 @@ public partial class MainTrackerWindow : Control
         return result;
     }
 
+    /// <summary>Other connected slots in the same multiworld (same profile and team) as the given slot.</summary>
+    private IEnumerable<SlotTrackerControl> SiblingSlots(SlotTrackerControl slot)
+    {
+        if (slot == null || !GodotObject.IsInstanceValid(slot) || slot.Session == null) yield break;
+        int team = slot.Session.ConnectionInfo.Team;
+        foreach (Node n in ActiveSlotNodes())
+        {
+            if (n is SlotTrackerControl other && other != slot && other.ProfileId == slot.ProfileId &&
+                other.Session != null && other.Session.ConnectionInfo.Team == team)
+            {
+                yield return other;
+            }
+        }
+    }
+
+    /// <summary>In-logic state of another player's location, if that player is connected here; otherwise null.</summary>
+    private bool? ResolveSlotLogic(SlotTrackerControl asker, int slotNumber, long locationId)
+    {
+        foreach (var other in SiblingSlots(asker))
+        {
+            if (other.Session.ConnectionInfo.Slot == slotNumber) return other.IsLocationInLogic(locationId);
+        }
+        return null;
+    }
+
     private void MountInContentStage(Control view)
     {
         if (view == null || _contentStage == null) return;
         if (view.GetParent() == _contentStage) return;
+        using var _ = AP_Atlas.Core.PerfMonitor.Measure($"Mount view '{view.Name}'");
+
         view.GetParent()?.RemoveChild(view);
+        // Font sizes first: changing them after the view is in the tree makes every cell re-shape again.
+        SetFontSizeRecursive(view, _appSettings.ContentFontSize);
         _contentStage.AddChild(view);
-        ApplyUIScale();
+    }
+
+    /// <summary>
+    /// Attaches a new slot's views (still empty) to the content stage and explorer, hidden.
+    /// Attaching a Tree that already holds thousands of rows costs hundreds of milliseconds, so doing it now,
+    /// before the views are populated, keeps the first switch to each tab fast.
+    /// </summary>
+    private void PreMountSlotViews(SlotTrackerControl slot)
+    {
+        using var _ = AP_Atlas.Core.PerfMonitor.Measure($"Attach views for {slot.SlotName}");
+
+        foreach (var view in new Control[] { slot.MapTracker, slot.ProgressionTracker, slot.LogicTrackerView, slot.ItemHistoryView, slot.HintsView })
+        {
+            if (view == null || view.GetParent() != null) continue;
+            view.Visible = false;
+            SetFontSizeRecursive(view, _appSettings.ContentFontSize);
+            _contentStage.AddChild(view);
+        }
+        var sidebar = slot.MapTracker?.SidebarContent;
+        if (sidebar != null && sidebar.GetParent() == null)
+        {
+            sidebar.Visible = false;
+            SetFontSizeRecursive(sidebar, _appSettings.ExplorerFontSize);
+            _midLeftVBox.AddChild(sidebar);
+        }
     }
 
     private Label _noSlotPlaceholder;
@@ -1245,6 +1546,8 @@ public partial class MainTrackerWindow : Control
 
     private void UpdateSidebar()
     {
+        using var __perf = AP_Atlas.Core.PerfMonitor.Measure("Rebuild SLOTS sidebar");
+
         if (_activeSessionsList == null) return;
         foreach (Node child in _activeSessionsList.GetChildren())
         {
@@ -1253,7 +1556,7 @@ public partial class MainTrackerWindow : Control
         foreach (var profile in _profiles)
         {
             var profileHeaderPanel = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            var profileHeaderStyle = new StyleBoxFlat { BgColor = new Godot.Color(_appSettings.ThemeAccentColor), ContentMarginTop = 4, ContentMarginBottom = 4, CornerRadiusTopLeft = 4, CornerRadiusTopRight = 4, CornerRadiusBottomLeft = 4, CornerRadiusBottomRight = 4 };
+            var profileHeaderStyle = new StyleBoxFlat { BgColor = AP_Atlas.Core.ThemeColors.Accent, ContentMarginTop = 4, ContentMarginBottom = 4, CornerRadiusTopLeft = 4, CornerRadiusTopRight = 4, CornerRadiusBottomLeft = 4, CornerRadiusBottomRight = 4 };
             profileHeaderPanel.AddThemeStyleboxOverride("panel", profileHeaderStyle);
             var header = new Label
             {
@@ -1261,7 +1564,7 @@ public partial class MainTrackerWindow : Control
                 HorizontalAlignment = HorizontalAlignment.Center,
                 SizeFlagsHorizontal = SizeFlags.ExpandFill
             };
-            header.AddThemeColorOverride("font_color", Colors.White);
+            header.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextOnAccent);
             profileHeaderPanel.AddChild(header);
             _activeSessionsList.AddChild(profileHeaderPanel);
             foreach (var slotName in profile.Slots)
@@ -1286,24 +1589,6 @@ public partial class MainTrackerWindow : Control
                 var cardPanel = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
                 cardPanel.SetMeta("slot_name", slotName);
                 cardPanel.SetMeta("profile_id", profile.Id);
-                var cardStyle = new StyleBoxFlat
-                {
-                    BgColor = isSelected ? new Godot.Color("#1B261E") : new Godot.Color("#1A1A1F"),
-                    CornerRadiusTopLeft = 4,
-                    CornerRadiusTopRight = 4,
-                    CornerRadiusBottomLeft = 4,
-                    CornerRadiusBottomRight = 4,
-                    BorderWidthLeft = 1,
-                    BorderWidthRight = 1,
-                    BorderWidthTop = 1,
-                    BorderWidthBottom = 1,
-                    BorderColor = isSelected ? new Godot.Color("#4CAF50") : new Godot.Color("#2C2D35"),
-                    ContentMarginLeft = 6,
-                    ContentMarginRight = 6,
-                    ContentMarginTop = 5,
-                    ContentMarginBottom = 5
-                };
-                cardPanel.AddThemeStyleboxOverride("panel", cardStyle);
                 var cardVBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
                 cardVBox.AddThemeConstantOverride("separation", 3);
                 cardPanel.AddChild(cardVBox);
@@ -1324,29 +1609,7 @@ public partial class MainTrackerWindow : Control
                     SizeFlagsHorizontal = SizeFlags.ExpandFill,
                     Alignment = HorizontalAlignment.Left
                 };
-                if (isSelected)
-                {
-                    btn.AddThemeColorOverride("font_color", Colors.White);
-                    btn.AddThemeColorOverride("font_hover_color", Colors.White);
-                    btn.AddThemeColorOverride("font_pressed_color", Colors.White);
-                    btn.AddThemeColorOverride("font_focus_color", Colors.White);
-                    var style = new StyleBoxFlat
-                    {
-                        BgColor = new Godot.Color("#2E7D32"),
-                        CornerRadiusTopLeft = 4,
-                        CornerRadiusTopRight = 4,
-                        CornerRadiusBottomLeft = 4,
-                        CornerRadiusBottomRight = 4,
-                        ContentMarginLeft = 8,
-                        ContentMarginRight = 8,
-                        ContentMarginTop = 4,
-                        ContentMarginBottom = 4
-                    };
-                    btn.AddThemeStyleboxOverride("normal", style);
-                    btn.AddThemeStyleboxOverride("hover", style);
-                    btn.AddThemeStyleboxOverride("pressed", style);
-                    btn.AddThemeStyleboxOverride("focus", style);
-                }
+                ApplySlotCardStyle(cardPanel, btn, isSelected);
                 string capturedSlotName = slotName;
                 string capturedProfileId = profile.Id;
                 btn.Pressed += () =>
@@ -1363,7 +1626,16 @@ public partial class MainTrackerWindow : Control
                             }
                         }
                     }
-                    if (targetSlot != null) { _currentSelectedSlot = targetSlot; RefreshContextViews(); }
+                    if (targetSlot != null)
+                    {
+                        AP_Atlas.Core.PerfMonitor.SetAction($"Select slot {capturedSlotName}");
+                        using var _ = AP_Atlas.Core.PerfMonitor.Measure($"Select slot {capturedSlotName}");
+
+                        _currentSelectedSlot = targetSlot;
+                        RefreshContextViews();
+                    }
+                    // Clicking a card also shows that slot in Properties (its summary, or saved stats when offline).
+                    AP_Atlas.Core.Inspector.Inspect(AP_Atlas.Core.InspectTarget.ForSlot(capturedProfileId, capturedSlotName));
                 };
                 cardPanel.GuiInput += (ev) =>
                 {
@@ -1425,19 +1697,21 @@ public partial class MainTrackerWindow : Control
                 // Stats calculation and persistence
                 int total = 0, complete = 0, logic = 0;
                 bool hasData = false;
+                bool logicHidden = false;
                 System.DateTime lastUpdated = System.DateTime.MinValue;
                 if (isConnected && session != null)
                 {
                     total = session.TotalLocationsCount;
                     complete = session.CheckedLocationsCount;
                     logic = session.ActiveLogicCount;
+                    logicHidden = session.LogicHidden;
                     hasData = true;
                     lastUpdated = System.DateTime.Now;
                     if (profile.SavedStats == null) profile.SavedStats = new Dictionary<string, SlotStats>();
                     if (!profile.SavedStats.ContainsKey(slotName)) profile.SavedStats[slotName] = new SlotStats();
                     profile.SavedStats[slotName].TotalCount = total;
                     profile.SavedStats[slotName].CompleteCount = complete;
-                    profile.SavedStats[slotName].LogicCount = logic;
+                    if (!logicHidden) profile.SavedStats[slotName].LogicCount = logic;
                     profile.SavedStats[slotName].LastUpdated = lastUpdated;
                 }
                 else if (profile.SavedStats != null && profile.SavedStats.TryGetValue(slotName, out var saved))
@@ -1485,7 +1759,19 @@ public partial class MainTrackerWindow : Control
                 AddKpiCol("Total", total.ToString(), Colors.LightGray);
                 AddKpiCol("Done", complete.ToString(), Colors.LightCyan);
                 AddKpiCol("%", $"{percent}%", percent >= 100 ? Colors.LimeGreen : (percent > 0 ? Colors.Cyan : Colors.LightGray));
-                AddKpiCol("Logic", logic.ToString(), logic > 0 ? Colors.LimeGreen : Colors.DimGray);
+                if (logicHidden) AddKpiCol("Logic", "—", Colors.DimGray);
+                else AddKpiCol("Logic", logic.ToString(), logic > 0 ? Colors.LimeGreen : Colors.DimGray);
+                // Special-item progress for games that have a special list (e.g. items needed to goal).
+                if (isConnected && session != null)
+                {
+                    var (specialGot, specialTotal) = session.SpecialItemProgress();
+                    if (specialTotal > 0)
+                        AddKpiCol("◆", $"{specialGot}/{specialTotal}", specialGot >= specialTotal ? Colors.LimeGreen : AP_Atlas.Core.Annotations.SpecialColor);
+                }
+                else if (AP_Atlas.Core.Annotations.SpecialItemNames(gameName).Any())
+                {
+                    AddKpiCol("◆", AP_Atlas.Core.Annotations.SpecialItemNames(gameName).Count().ToString(), Colors.DimGray);
+                }
                 cardVBox.AddChild(statsContainer);
                 var footerHBox = new HBoxContainer { Name = "FooterHBox", SizeFlagsHorizontal = SizeFlags.ExpandFill };
                 var statusFooter = new Label
@@ -1509,7 +1795,7 @@ public partial class MainTrackerWindow : Control
                 footerHBox.AddChild(gameNameFooter);
                 if (isConnected)
                 {
-                    statusFooter.Text = "● Live";
+                    statusFooter.Text = session.RaceRestricted ? "● Live · Race mode" : "● Live";
                     statusFooter.AddThemeColorOverride("font_color", Colors.LimeGreen);
                 }
                 else if (isConnecting)
@@ -1548,17 +1834,22 @@ public partial class MainTrackerWindow : Control
         {
             var btn = new Button { Text = profile.Name };
             btn.SetMeta("profile_id", profile.Id);
-            btn.Pressed += () => SelectProfile(profile);
+            btn.Pressed += () =>
+            {
+                SelectProfile(profile);
+                AP_Atlas.Core.Inspector.Inspect(AP_Atlas.Core.InspectTarget.ForProfile(profile.Id));
+            };
             _profileListContainer.AddChild(btn);
         }
-        ApplyUIScale();
+        SetFontSizeRecursive(_profileListContainer, _appSettings.ExplorerFontSize);
         RefreshProfileListStyles();
     }
 
     private void RefreshProfileListStyles()
     {
-        string accentHex = string.IsNullOrEmpty(_appSettings.ThemeAccentColor) ? "#8A2BE2" : _appSettings.ThemeAccentColor;
-        var accentColor = new Godot.Color(accentHex);
+        var accentColor = AP_Atlas.Core.ThemeColors.Accent;
+        var textOnAccent = AP_Atlas.Core.ThemeColors.TextOnAccent;
+        string[] fontColors = { "font_color", "font_hover_color", "font_pressed_color", "font_focus_color" };
         foreach (Node child in _profileListContainer.GetChildren())
         {
             if (child is Button btn && btn.HasMeta("profile_id"))
@@ -1582,9 +1873,11 @@ public partial class MainTrackerWindow : Control
                     btn.AddThemeStyleboxOverride("hover", style);
                     btn.AddThemeStyleboxOverride("pressed", style);
                     btn.AddThemeStyleboxOverride("focus", style);
+                    foreach (var c in fontColors) btn.AddThemeColorOverride(c, textOnAccent);
                 }
                 else
                 {
+                    foreach (var c in fontColors) btn.RemoveThemeColorOverride(c);
                     btn.RemoveThemeStyleboxOverride("normal");
                     btn.RemoveThemeStyleboxOverride("hover");
                     btn.RemoveThemeStyleboxOverride("pressed");
@@ -1664,6 +1957,10 @@ public partial class MainTrackerWindow : Control
             {
                 OnConnectSlotPressed(newText, _selectedProfile);
             };
+            // Clicking into a slot row shows that slot's details (saved stats, connection) in Properties.
+            string rowProfileId = _selectedProfile.Id;
+            lineEdit.FocusEntered += () =>
+                AP_Atlas.Core.Inspector.Inspect(AP_Atlas.Core.InspectTarget.ForProfile(rowProfileId, lineEdit.Text));
             row.AddChild(lineEdit);
             var connectBtn = new Button
             {
@@ -1750,16 +2047,14 @@ public partial class MainTrackerWindow : Control
 
     private void DisconnectSlot(string profileId, string slotName)
     {
+        _reconnectAttempts.Remove(SlotKey(profileId, slotName)); // the user chose to disconnect: no automatic reconnect
         if (_terminalStage == null) return;
         foreach (Node n in ActiveSlotNodes())
         {
             if (n is SlotTrackerControl slot && slot.ProfileId == profileId && slot.SlotName == slotName)
             {
                 LogToSystem("[color=yellow]Disconnected slot: " + slotName + "[/color]");
-                if (slot.Session != null && slot.Session.Socket.Connected)
-                {
-                    slot.Session.Socket.DisconnectAsync();
-                }
+                _ = CloseSession(slot.Session);
             }
         }
         DataManager.SaveProfiles(_profiles);
@@ -1768,6 +2063,8 @@ public partial class MainTrackerWindow : Control
 
     private void UpdateSlotStatuses()
     {
+        using var __perf = AP_Atlas.Core.PerfMonitor.Measure("Update slot status lights");
+
         _spinnerIndex = (_spinnerIndex + 1) % _spinnerFrames.Length;
         // Also update sidebar buttons directly
         if (_activeSessionsList != null)
@@ -1834,11 +2131,13 @@ public partial class MainTrackerWindow : Control
                                 int total = 0, complete = 0, logic = 0;
                                 bool hasSaved = false;
                                 System.DateTime lastUpdated = System.DateTime.MinValue;
+                                bool logicHidden = false;
                                 if (isConnected && activeSlot != null)
                                 {
                                     total = activeSlot.TotalLocationsCount;
                                     complete = activeSlot.CheckedLocationsCount;
                                     logic = activeSlot.ActiveLogicCount;
+                                    logicHidden = activeSlot.LogicHidden;
                                     hasSaved = true;
                                     lastUpdated = System.DateTime.Now;
                                     if (profile != null)
@@ -1847,7 +2146,7 @@ public partial class MainTrackerWindow : Control
                                         if (!profile.SavedStats.ContainsKey(slotName)) profile.SavedStats[slotName] = new SlotStats();
                                         profile.SavedStats[slotName].TotalCount = total;
                                         profile.SavedStats[slotName].CompleteCount = complete;
-                                        profile.SavedStats[slotName].LogicCount = logic;
+                                        if (!logicHidden) profile.SavedStats[slotName].LogicCount = logic;
                                         profile.SavedStats[slotName].LastUpdated = lastUpdated;
                                     }
                                 }
@@ -1896,8 +2195,8 @@ public partial class MainTrackerWindow : Control
                                             var valAvail = availVBox.GetChildOrNull<Label>(1);
                                             if (valAvail != null)
                                             {
-                                                valAvail.Text = logic.ToString();
-                                                if (logic > 0) valAvail.AddThemeColorOverride("font_color", Colors.LimeGreen);
+                                                valAvail.Text = logicHidden ? "—" : logic.ToString();
+                                                if (logic > 0 && !logicHidden) valAvail.AddThemeColorOverride("font_color", Colors.LimeGreen);
                                                 else valAvail.RemoveThemeColorOverride("font_color");
                                             }
                                         }
@@ -1908,7 +2207,7 @@ public partial class MainTrackerWindow : Control
                                 {
                                     if (isConnected)
                                     {
-                                        statusFooter.Text = "● Live";
+                                        statusFooter.Text = activeSlot != null && activeSlot.RaceRestricted ? "● Live · Race mode" : "● Live";
                                         statusFooter.AddThemeColorOverride("font_color", Colors.LimeGreen);
                                     }
                                     else if (isConnecting)
@@ -2043,7 +2342,7 @@ public partial class MainTrackerWindow : Control
                     if (n is SlotTrackerControl slot && slot.ProfileId == profileId)
                     {
                         if (_currentSelectedSlot == slot) _currentSelectedSlot = null;
-                        if (slot.Session?.Socket != null) _ = slot.Session.Socket.DisconnectAsync();
+                        _ = CloseSession(slot.Session);
                         slot.QueueFree();
                     }
                 }
@@ -2116,6 +2415,7 @@ public partial class MainTrackerWindow : Control
             foreach (var slotName in _selectedProfile.Slots)
             {
                 if (string.IsNullOrWhiteSpace(slotName)) continue;
+                _reconnectAttempts.Remove(SlotKey(_selectedProfile.Id, slotName));
                 ShowConnectingOverlay($"CONNECTING TO\n{slotName}...");
                 await ConnectSlotInternalAsync(slotName, _selectedProfile);
                 await ToSignal(GetTree().CreateTimer(1.5f), "timeout");
@@ -2131,6 +2431,7 @@ public partial class MainTrackerWindow : Control
     private async void OnConnectSlotPressed(string slotName, MultiworldProfile profile)
     {
         if (_isConnectingSlot) return;
+        _reconnectAttempts.Remove(SlotKey(profile.Id, slotName)); // the user took over
         _isConnectingSlot = true;
         try
         {
@@ -2146,6 +2447,7 @@ public partial class MainTrackerWindow : Control
 
     private async System.Threading.Tasks.Task<bool> ConnectSlotInternalAsync(string slotName, MultiworldProfile profile)
     {
+        if (_shuttingDown) return false;
         if (string.IsNullOrWhiteSpace(profile.ServerUrl))
         {
             _statusLabel.Text = "Status: Server URL cannot be empty";
@@ -2166,9 +2468,11 @@ public partial class MainTrackerWindow : Control
         LogToSystem("[color=cyan]Attempting to connect to " + profile.ServerUrl + " as " + slotName + "...[/color]");
         _connectingSlots.Add(SlotKey(profile.Id, slotName));
         UpdateSidebar();
+        ArchipelagoSession session = null;
         try
         {
-            var session = ArchipelagoSessionFactory.CreateSession(profile.ServerUrl);
+            session = ArchipelagoSessionFactory.CreateSession(profile.ServerUrl);
+            TrackSession(session);
             var earlyMessages = new List<Archipelago.MultiClient.Net.MessageLog.Messages.LogMessage>();
             void earlyHandler(Archipelago.MultiClient.Net.MessageLog.Messages.LogMessage msg)
             {
@@ -2190,6 +2494,13 @@ public partial class MainTrackerWindow : Control
                 {
                     Callable.From(() => _globalStatusLabel.Text = "Disconnected: " + reason).CallDeferred();
                 }
+                // Atlas forgets a session before closing it on purpose, so one still tracked here dropped by itself.
+                bool dropped;
+                lock (_openSessions)
+                {
+                    dropped = _loggedInSessions.Remove(session) && _openSessions.Remove(session);
+                }
+                if (dropped && !_shuttingDown) Callable.From(() => OnSessionDropped(profile, slotName)).CallDeferred();
             };
             var connectTask = Task.Run(() => session.TryConnectAndLogin(
                 "",
@@ -2205,7 +2516,16 @@ public partial class MainTrackerWindow : Control
             if (completedTask == timeoutTask)
             {
                 session.MessageLog.OnMessageReceived -= earlyHandler;
-                _ = session.Socket.DisconnectAsync();
+                _ = CloseSession(session);
+                // The login may still finish after we gave up on it; close it then too so it isn't left open on the server.
+                _ = connectTask.ContinueWith(t =>
+                {
+                    if (t.Status == TaskStatus.RanToCompletion && t.Result.Successful)
+                    {
+                        TrackSession(session);
+                        _ = CloseSession(session);
+                    }
+                });
                 Callable.From(() =>
                 {
                     _statusLabel.Text = "Status: Connection Timeout";
@@ -2220,8 +2540,17 @@ public partial class MainTrackerWindow : Control
             var result = await connectTask;
             Callable.From(() =>
             {
+                if (_shuttingDown)
+                {
+                    // The app is closing; don't build a slot around this session, just close it.
+                    session.MessageLog.OnMessageReceived -= earlyHandler;
+                    _ = CloseSession(session);
+                    return;
+                }
                 if (result.Successful)
                 {
+                    lock (_openSessions) _loggedInSessions.Add(session);
+                    _lastLoginErrors.Remove(SlotKey(profile.Id, slotName));
                     _statusLabel.Text = "Status: Connected successfully as " + slotName + "!";
                     _statusLabel.AddThemeColorOverride("font_color", Colors.Green);
                     if (_globalStatusLabel != null) _globalStatusLabel.Text = "Booting Engine for " + slotName + "...";
@@ -2238,7 +2567,7 @@ public partial class MainTrackerWindow : Control
                         if (n is SlotTrackerControl oldSlot && oldSlot.ProfileId == profile.Id && oldSlot.SlotName == slotName)
                         {
                             if (_currentSelectedSlot == oldSlot) _currentSelectedSlot = null;
-                            if (oldSlot.Session?.Socket != null) _ = oldSlot.Session.Socket.DisconnectAsync();
+                            _ = CloseSession(oldSlot.Session);
                             oldSlot.QueueFree();
                         }
                     }
@@ -2249,7 +2578,18 @@ public partial class MainTrackerWindow : Control
                         (msg) => { if (_globalStatusLabel != null) _globalStatusLabel.Text = msg; },
                         (msg) => { LogToDebug(msg, slotName); }
                     );
+                    slotTracker.ResolveOtherSlotLogic = (slot, loc) => ResolveSlotLogic(slotTracker, slot, loc);
+                    slotTracker.ShowToast = ShowToast;
+                    slotTracker.ShowActionToast = ShowToast;
+                    slotTracker.OpenEngineSetup = OpenEngineSetup;
+                    // When this slot's logic moves, hints at its locations change for the other slots of the same multiworld.
+                    slotTracker.StateChanged += () =>
+                    {
+                        foreach (var sibling in SiblingSlots(slotTracker)) sibling.RefreshHints();
+                        _propertiesPanel?.QueueRefresh();
+                    };
                     _terminalStage.AddChild(slotTracker);
+                    PreMountSlotViews(slotTracker);
                     session.MessageLog.OnMessageReceived -= earlyHandler;
                     lock (earlyMessages)
                     {
@@ -2258,15 +2598,20 @@ public partial class MainTrackerWindow : Control
                     _connectingSlots.Remove(SlotKey(profile.Id, slotName));
                     UpdateSidebar();
                     _currentSelectedSlot = slotTracker; RefreshContextViews();
+                    // Scale just the new slot's text client once its UI is built (not the whole window).
                     var timer = GetTree().CreateTimer(0.1);
-                    timer.Timeout += ApplyUIScale;
+                    timer.Timeout += () =>
+                    {
+                        if (GodotObject.IsInstanceValid(slotTracker)) SetFontSizeRecursive(slotTracker, _appSettings.ConsoleFontSize);
+                    };
                 }
                 else
                 {
                     session.MessageLog.OnMessageReceived -= earlyHandler;
-                    _ = session.Socket.DisconnectAsync();
+                    _ = CloseSession(session);
                     var loginFailure = (Archipelago.MultiClient.Net.LoginFailure)result;
                     string errs = string.Join(", ", loginFailure.Errors);
+                    _lastLoginErrors[SlotKey(profile.Id, slotName)] = errs;
                     _statusLabel.Text = "Status: Failed to connect:\n" + errs;
                     _statusLabel.AddThemeColorOverride("font_color", Colors.Red);
                     if (_globalStatusLabel != null) _globalStatusLabel.Text = "Connection Failed (" + slotName + ")";
@@ -2278,6 +2623,7 @@ public partial class MainTrackerWindow : Control
         }
         catch (System.Exception ex)
         {
+            _ = CloseSession(session);
             Callable.From(() =>
             {
                 _statusLabel.Text = "Status: Connection Error:\n" + ex.Message;
@@ -2289,6 +2635,27 @@ public partial class MainTrackerWindow : Control
             }).CallDeferred();
         }
         return true;
+    }
+
+    /// <summary>Styles a VS Code-like tab strip whose selected tab is underlined (top border) in the accent color.</summary>
+    private static void ApplyTabBarStyle(TabBar bar, int cornerRadius)
+    {
+        StyleBoxFlat Tab(Godot.Color bg, Godot.Color border) => new StyleBoxFlat
+        {
+            BgColor = bg,
+            CornerRadiusTopLeft = cornerRadius,
+            CornerRadiusTopRight = cornerRadius,
+            BorderWidthTop = 2,
+            BorderColor = border,
+            ContentMarginLeft = 24,
+            ContentMarginRight = 24,
+            ContentMarginTop = 8,
+            ContentMarginBottom = 8
+        };
+        var clear = new Godot.Color(0, 0, 0, 0);
+        bar.AddThemeStyleboxOverride("tab_unselected", Tab(clear, clear));
+        bar.AddThemeStyleboxOverride("tab_hovered", Tab(new Godot.Color("#2a2d2e"), clear));
+        bar.AddThemeStyleboxOverride("tab_selected", Tab(new Godot.Color("#1e1e1e"), AP_Atlas.Core.ThemeColors.Accent));
     }
 
     private StyleBoxFlat GetVSCodePanelStyle()
@@ -2312,11 +2679,100 @@ public partial class MainTrackerWindow : Control
         };
     }
 
+    // =====================================================================
+    // Race mode
+    // =====================================================================
+
+    private static string DescribeRaceMode()
+    {
+        string when = AP_Atlas.Core.RaceRules.Mode switch
+        {
+            AP_Atlas.Core.RaceModeSetting.AlwaysOn => "always on",
+            AP_Atlas.Core.RaceModeSetting.Off => "off",
+            _ => "on in rooms the server marks as races"
+        };
+        if (AP_Atlas.Core.RaceRules.Mode == AP_Atlas.Core.RaceModeSetting.Off) return "off.";
+        return when + (AP_Atlas.Core.RaceRules.HideAllLogic ? "; hides all logic." : "; hides logic explanations.");
+    }
+
+    private void ShowRaceModeInfo()
+    {
+        var dialog = new AcceptDialog
+        {
+            Title = "Race Mode",
+            DialogText =
+                "Some races and community events limit which tracker features are allowed. Race mode makes Atlas follow those limits.\n\n" +
+                "When race mode is on for a slot:\n" +
+                "  • Properties never asks the logic engine WHY a location is or isn't in logic\n" +
+                "    (no \"opens with\" items, access rules or region paths).\n\n" +
+                "With \"Hide all logic\" also ticked:\n" +
+                "  • The Logic Tracker tab is hidden.\n" +
+                "  • Map pins show open / hinted / checked only, never in or out of logic.\n" +
+                "  • Hints, slot cards and Properties show no in-logic information.\n\n" +
+                "Always available: items, checks, hints you paid for, chat, notes and flags.\n" +
+                "Never done in any mode: looking up the contents of unchecked locations.\n\n" +
+                "\"Follow the server\" turns race mode on automatically in rooms the server marks as races.\n" +
+                "If your event's rules are stricter, use \"Always on\" with \"Hide all logic\"."
+        };
+        dialog.Confirmed += () => dialog.QueueFree();
+        dialog.Canceled += () => dialog.QueueFree();
+        AddChild(dialog);
+        dialog.PopupCentered();
+    }
+
+    // =====================================================================
+    // Properties panel host
+    // =====================================================================
+
+    AppSettings AP_Atlas.UI.IPropertiesHost.Settings => _appSettings;
+
+    SlotTrackerControl AP_Atlas.UI.IPropertiesHost.SelectedSlot =>
+        _currentSelectedSlot != null && GodotObject.IsInstanceValid(_currentSelectedSlot) ? _currentSelectedSlot : null;
+
+    IEnumerable<SlotTrackerControl> AP_Atlas.UI.IPropertiesHost.ConnectedSlots => ActiveSlotNodes().OfType<SlotTrackerControl>();
+
+    IReadOnlyList<MultiworldProfile> AP_Atlas.UI.IPropertiesHost.Profiles => _profiles;
+
+    bool AP_Atlas.UI.IPropertiesHost.IsSlotConnecting(string profileId, string slotName) => _connectingSlots.Contains(SlotKey(profileId, slotName));
+
+    void AP_Atlas.UI.IPropertiesHost.SelectSlot(SlotTrackerControl slot)
+    {
+        if (slot == null || !GodotObject.IsInstanceValid(slot)) return;
+        _currentSelectedSlot = slot;
+        RefreshContextViews();
+    }
+
+    void AP_Atlas.UI.IPropertiesHost.ConnectSlot(string profileId, string slotName)
+    {
+        var profile = _profiles.FirstOrDefault(p => p.Id == profileId);
+        if (profile != null) OnConnectSlotPressed(slotName, profile);
+    }
+
+    void AP_Atlas.UI.IPropertiesHost.DisconnectSlot(string profileId, string slotName) => DisconnectSlot(profileId, slotName);
+
+    void AP_Atlas.UI.IPropertiesHost.ShowGlobalTab(int tab)
+    {
+        if (_workspaceSwitcher.CurrentTab != tab) _workspaceSwitcher.CurrentTab = tab;
+        if (_currentGlobalTab != tab) ChangeGlobalTab(tab);
+    }
+
+    void AP_Atlas.UI.IPropertiesHost.SelectProfile(string profileId)
+    {
+        var profile = _profiles.FirstOrDefault(p => p.Id == profileId);
+        if (profile != null) SelectProfile(profile);
+    }
+
+    void AP_Atlas.UI.IPropertiesHost.Toast(string message, Godot.Color color) => ShowToast(message, color);
+
     private void ChangeGlobalTab(int tab)
     {
+        string tabName = _workspaceSwitcher.GetTabTitle(tab);
+        AP_Atlas.Core.PerfMonitor.SetAction($"Switch to {tabName} tab");
+        using var _ = AP_Atlas.Core.PerfMonitor.Measure($"Switch to {tabName} tab");
+
         _currentGlobalTab = tab;
         if (tab == 0) { SwapSidebar("Connections", _connectionSidebarContent); SwapContentView(_connectionPanel); RefreshContextViews(); }
         else if (tab == 1) { SwapSidebar("Packs", _packManagerPanel.SidebarContent); SwapContentView(_packManagerPanel); RefreshContextViews(); }
-        else RefreshContextViews(); // 2 Map Tracker, 3 Key Items, 4 Logic Tracker, 5 Item History
+        else RefreshContextViews(); // 2 Map Tracker, 3 Key Items, 4 Logic Tracker, 5 Item History, 6 Hints
     }
 }

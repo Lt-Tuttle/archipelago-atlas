@@ -19,22 +19,62 @@ public class WorldItemInfo
     public int Flags { get; set; }
 }
 
+/// <summary>The bridge's answer to "why is this location (not) in logic?" for the current items.</summary>
+public class LogicExplanation
+{
+    public class EntranceInfo
+    {
+        [Newtonsoft.Json.JsonProperty("name")] public string Name { get; set; } = "";
+        [Newtonsoft.Json.JsonProperty("from")] public string From { get; set; } = "";
+        [Newtonsoft.Json.JsonProperty("reachable")] public bool Reachable { get; set; }
+        [Newtonsoft.Json.JsonProperty("rule")] public string Rule { get; set; } = "";
+    }
+
+    [Newtonsoft.Json.JsonProperty("error")] public string Error { get; set; }
+    [Newtonsoft.Json.JsonProperty("location")] public string Location { get; set; } = "";
+    [Newtonsoft.Json.JsonProperty("region")] public string Region { get; set; } = "";
+    [Newtonsoft.Json.JsonProperty("progress_type")] public string ProgressType { get; set; } = "";
+    [Newtonsoft.Json.JsonProperty("rule")] public string Rule { get; set; } = "";
+    [Newtonsoft.Json.JsonProperty("in_logic")] public bool InLogic { get; set; }
+    [Newtonsoft.Json.JsonProperty("region_reachable")] public bool RegionReachable { get; set; }
+    [Newtonsoft.Json.JsonProperty("glitched")] public bool Glitched { get; set; }
+    [Newtonsoft.Json.JsonProperty("entrances")] public List<EntranceInfo> Entrances { get; set; } = new List<EntranceInfo>();
+    [Newtonsoft.Json.JsonProperty("candidates")] public int Candidates { get; set; }
+    [Newtonsoft.Json.JsonProperty("unreachable_with_all")] public bool UnreachableWithAll { get; set; }
+    [Newtonsoft.Json.JsonProperty("single_unlocks")] public List<string> SingleUnlocks { get; set; }
+    [Newtonsoft.Json.JsonProperty("required")] public List<string> Required { get; set; }
+    [Newtonsoft.Json.JsonProperty("partial")] public bool Partial { get; set; }
+}
+
 public class LogicEngineManager
 {
     public List<WorldItemInfo> LastItemPool { get; private set; } = new List<WorldItemInfo>();
 
-    private const string GitHubApiUrl = "https://api.github.com/repos/FarisTheAncient/Archipelago/releases/latest";
-    private readonly string _apPath;
-    private readonly System.Net.Http.HttpClient _httpClient;
+    private AP_Atlas.Core.EngineSetup.EngineInstall _install;
     private readonly Action<string> _logger;
 
-    public LogicEngineManager(string apPath, Action<string> logger = null)
+    public LogicEngineManager(AP_Atlas.Core.EngineSetup.EngineInstall install, Action<string> logger = null)
     {
-        _apPath = apPath;
+        _install = install;
         _logger = logger ?? (msg => GD.Print(msg));
-        _httpClient = new System.Net.Http.HttpClient();
-        _httpClient.DefaultRequestHeaders.Add("User-Agent", "AP_Atlas-AutoUpdater");
     }
+
+    public AP_Atlas.Core.EngineSetup.EngineInstall Install => _install;
+
+    /// <summary>Points a stopped manager at another engine (the user switched engines or finished setup).</summary>
+    public void SetInstall(AP_Atlas.Core.EngineSetup.EngineInstall install)
+    {
+        if (_engineProcess == null || _engineProcess.HasExited) _install = install;
+    }
+
+    /// <summary>Why the last start failed (code: world_missing, yaml_needed, generation_failed, ut_disabled, no_engine, no_response, crashed), or null.</summary>
+    public EngineStartError LastStartError { get; private set; }
+
+    /// <summary>How the slot's world was rebuilt: which YAML (or none) and whether its locations match the server's.</summary>
+    public JObject LastYamlInfo { get; private set; }
+
+    /// <summary>Python / Archipelago / Universal Tracker versions the engine reported.</summary>
+    public JObject LastVersions { get; private set; }
 
     private System.Diagnostics.Process _engineProcess;
     private StreamWriter _engineWriter;
@@ -48,35 +88,40 @@ public class LogicEngineManager
     // request is discarded instead of being mistaken for the answer to the next one.
     private int _nextRequestId = 0;
 
-    public async Task<bool> StartEngineAsync(string game, string playerName, int slot, Dictionary<string, object> slotData, IEnumerable<long> allLocations = null)
+    public async Task<bool> StartEngineAsync(string game, string playerName, int slot, Dictionary<string, object> slotData, IEnumerable<long> allLocations = null, string yamlPath = null)
     {
         if (_engineProcess != null && !_engineProcess.HasExited) return true;
-        if (!IsEngineInstalled()) return false;
+        LastStartError = null;
+        string problem = AP_Atlas.Core.EngineSetup.AtlasEngine.ProblemWith(_install);
+        if (problem != null)
+        {
+            LastStartError = new EngineStartError { Code = "no_engine", Message = problem };
+            return false;
+        }
 
-        InstallPythonBridge();
+        AP_Atlas.Core.EngineSetup.AtlasEngine.InstallBridge(_install, _logger);
 
         try
         {
-            _logger("Starting Python Bridge (ArchipelagoLauncher.exe UltimateBridge)...");
-            var startInfo = new System.Diagnostics.ProcessStartInfo
+            _logger($"Starting the logic bridge ({_install.Describe()})...");
+            _stopping = false;
+            _engineProcess = new System.Diagnostics.Process { StartInfo = _install.StartInfo("UltimateBridge"), EnableRaisingEvents = true };
+            var started = _engineProcess;
+            _engineProcess.Exited += (_, _) =>
             {
-                FileName = Path.Combine(_apPath, "ArchipelagoLauncher.exe"),
-                Arguments = "UltimateBridge",
-                RedirectStandardInput = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                WorkingDirectory = _apPath
+                if (_stopping || !ReferenceEquals(started, _engineProcess)) return;
+                int code = -1;
+                try { code = started.ExitCode; } catch { }
+                _logger($"The logic engine process exited unexpectedly (exit code {code}).");
+                EngineExited?.Invoke(code);
             };
-
-            _engineProcess = new System.Diagnostics.Process { StartInfo = startInfo };
             // stderr must be drained continuously: if its pipe buffer fills, the bridge blocks on its next log write.
             _engineProcess.ErrorDataReceived += (_, e) =>
             {
                 if (!string.IsNullOrWhiteSpace(e.Data)) _logger("PYTHON: " + e.Data);
             };
             _engineProcess.Start();
+            AP_Atlas.Core.EngineSetup.ProcessJob.Track(_engineProcess, _install.Root);
             _engineProcess.BeginErrorReadLine();
 
             _engineWriter = _engineProcess.StandardInput;
@@ -90,19 +135,42 @@ public class LogicEngineManager
                 { "player_name", playerName },
                 { "slot", slot },
                 { "slot_data", slotData },
-                { "all_locations", allLocations != null ? new List<long>(allLocations) : new List<long>() }
+                { "all_locations", allLocations != null ? new List<long>(allLocations) : new List<long>() },
+                { "yaml_path", string.IsNullOrEmpty(yamlPath) ? null : yamlPath }
             };
 
-            var response = await SendRequestAsync(initReq, 60000);
+            // Loading every game and rebuilding the world can take a while on a slow disk or a big install.
+            var response = await SendRequestAsync(initReq, 180000);
             if (response == null)
             {
-                _logger("Logic Engine Start Failed: no response from the bridge within 60 seconds.");
+                bool crashed = _engineProcess?.HasExited == true;
+                LastStartError = new EngineStartError
+                {
+                    Code = crashed ? "crashed" : "no_response",
+                    Message = crashed ? "The engine closed while starting (see the slot's debug log)." : "The engine didn't answer within 3 minutes."
+                };
+                _logger("Logic Engine Start Failed: " + LastStartError.Message);
+                StopEngine();
+                return false;
+            }
+            LastVersions = response["versions"] as JObject;
+
+            if (response["status"]?.ToString() == "error")
+            {
+                LastStartError = new EngineStartError
+                {
+                    Code = response["code"]?.ToString() ?? "error",
+                    Message = response["message"]?.ToString() ?? "The engine couldn't start this slot.",
+                    Details = response
+                };
+                _logger($"Logic Engine Start Failed ({LastStartError.Code}): {LastStartError.Message}");
                 StopEngine();
                 return false;
             }
 
             if (response["status"]?.ToString() == "ready")
             {
+                LastYamlInfo = response["yaml"] as JObject;
                 var poolToken = response["item_pool"];
                 if (poolToken != null)
                 {
@@ -112,12 +180,14 @@ public class LogicEngineManager
                 return true;
             }
 
+            LastStartError = new EngineStartError { Code = "error", Message = response["error"]?.ToString() ?? "The engine couldn't start this slot.", Details = response };
             _logger("Logic Engine Start Failed: " + response.ToString(Newtonsoft.Json.Formatting.None));
             StopEngine();
             return false;
         }
         catch (Exception ex)
         {
+            LastStartError = new EngineStartError { Code = "error", Message = ex.Message };
             _logger("Logic Engine Start Exception: " + ex.Message);
             StopEngine();
             return false;
@@ -126,9 +196,25 @@ public class LogicEngineManager
 
     public HashSet<long> LastExcludedLocations { get; private set; } = new HashSet<long>();
 
+    /// <summary>Locations reachable only with the world's glitch/sequence-break logic, from the last update.</summary>
+    public HashSet<long> LastGlitchedLocations { get; private set; } = new HashSet<long>();
+
+    /// <summary>Why the last query failed (when GetReachableLocationsAsync returned null).</summary>
+    public string LastQueryFailure { get; private set; }
+
+    /// <summary>
+    /// The locations in logic with these items. Returns null when the engine couldn't answer (stopped, crashed,
+    /// timed out twice, or reported an error): never an empty list in place of an answer, so a failure can't be
+    /// mistaken for "these items unlock nothing".
+    /// </summary>
     public async Task<List<long>> GetReachableLocationsAsync(List<long> itemIds, IEnumerable<long> missingLocations = null)
     {
-        if (_engineProcess == null || _engineProcess.HasExited) return new List<long>();
+        LastQueryFailure = null;
+        if (_engineProcess == null || _engineProcess.HasExited)
+        {
+            LastQueryFailure = "the logic engine isn't running";
+            return null;
+        }
 
         try
         {
@@ -142,17 +228,25 @@ public class LogicEngineManager
                 updateReq["missing_locations"] = new List<long>(missingLocations);
             }
 
-            var response = await SendRequestAsync(updateReq, 10000);
+            // A big world on a slow PC can take a while; a second, longer wait picks up a late answer.
+            var response = await SendRequestAsync(updateReq, 30000);
+            if (response == null && _engineProcess != null && !_engineProcess.HasExited)
+            {
+                _logger("GetReachableLocationsAsync: no answer within 30 seconds; asking again.");
+                response = await SendRequestAsync(updateReq, 90000);
+            }
             if (response == null)
             {
-                _logger("GetReachableLocationsAsync: no response from the bridge within 10 seconds.");
-                return new List<long>();
+                LastQueryFailure = _engineProcess == null || _engineProcess.HasExited ? "the logic engine stopped" : "the logic engine stopped answering";
+                _logger("GetReachableLocationsAsync: " + LastQueryFailure + ".");
+                return null;
             }
 
             if (response["error"] != null)
             {
+                LastQueryFailure = "the logic engine reported an error: " + response["error"];
                 _logger("GetReachableLocationsAsync: bridge error: " + response["error"] + "\n" + response["trace"]);
-                return new List<long>();
+                return null;
             }
 
             var excludedToken = response["excluded"];
@@ -160,23 +254,146 @@ public class LogicEngineManager
             {
                 LastExcludedLocations = new HashSet<long>(excludedToken.ToObject<List<long>>());
             }
+            var glitchedToken = response["glitched"];
+            if (glitchedToken != null)
+            {
+                LastGlitchedLocations = new HashSet<long>(glitchedToken.ToObject<List<long>>());
+            }
 
             var reachableToken = response["reachable"];
             if (reachableToken != null)
             {
                 return reachableToken.ToObject<List<long>>();
             }
+            LastQueryFailure = "the logic engine's answer had no locations";
         }
         catch (Exception ex)
         {
+            LastQueryFailure = "the logic engine failed: " + ex.Message;
             _logger("GetReachableLocationsAsync Exception: " + ex.Message);
         }
 
-        return new List<long>();
+        return null;
     }
+
+    /// <summary>Raised (on a process thread) when the engine process exits without being stopped by Atlas.</summary>
+    public event Action<int> EngineExited;
+
+    private bool _stopping;
+
+    /// <summary>
+    /// Reads games' item and location name tables from the local Archipelago install (offline). Runs a short-lived
+    /// "AtlasNames" process; no tracker engine is started. Returns null if Archipelago isn't set up or it failed.
+    /// </summary>
+    public async Task<(Dictionary<string, AP_Atlas.Core.PopTracker.GameNameTable> Tables, List<string> KnownGames)?> FetchLocalNamesAsync(IEnumerable<string> games)
+    {
+        if (_install == null || !_install.CanLaunch) return null;
+        AP_Atlas.Core.EngineSetup.AtlasEngine.InstallBridge(_install);
+        System.Diagnostics.Process process = null;
+        try
+        {
+            process = new System.Diagnostics.Process { StartInfo = _install.StartInfo("AtlasNames") };
+            process.ErrorDataReceived += (_, e) => { };
+            process.Start();
+            AP_Atlas.Core.EngineSetup.ProcessJob.Track(process, _install.Root);
+            process.BeginErrorReadLine();
+            await process.StandardInput.WriteLineAsync(Newtonsoft.Json.JsonConvert.SerializeObject(new { games = games.ToList() }));
+            await process.StandardInput.FlushAsync();
+
+            var deadline = DateTime.Now.AddSeconds(90);
+            while (DateTime.Now < deadline)
+            {
+                var readTask = process.StandardOutput.ReadLineAsync();
+                var done = await Task.WhenAny(readTask, Task.Delay(deadline - DateTime.Now));
+                if (done != readTask) break;
+                string line = readTask.Result;
+                if (line == null) break;
+                line = line.Trim();
+                if (!line.StartsWith("{")) continue;
+                JObject reply;
+                try { reply = JObject.Parse(line); } catch { continue; }
+                if (reply["error"] != null)
+                {
+                    _logger("AtlasNames failed: " + reply["error"]);
+                    return null;
+                }
+                if (reply["games"] is not JObject gamesObj) continue;
+                var tables = new Dictionary<string, AP_Atlas.Core.PopTracker.GameNameTable>(StringComparer.OrdinalIgnoreCase);
+                foreach (var prop in gamesObj.Properties())
+                {
+                    tables[prop.Name] = new AP_Atlas.Core.PopTracker.GameNameTable
+                    {
+                        Game = prop.Name,
+                        Source = AP_Atlas.Core.PopTracker.GameNames.LocalSource,
+                        Fetched = DateTime.Now,
+                        Version = prop.Value["version"]?.ToString() ?? "",
+                        Items = prop.Value["items"]?.ToObject<Dictionary<string, long>>() ?? new Dictionary<string, long>(),
+                        Locations = prop.Value["locations"]?.ToObject<Dictionary<string, long>>() ?? new Dictionary<string, long>()
+                    };
+                }
+                var known = reply["known"]?.ToObject<List<string>>() ?? new List<string>();
+                return (tables, known);
+            }
+            _logger("AtlasNames: no reply from the local Archipelago install within 90 seconds.");
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger("AtlasNames exception: " + ex.Message);
+            return null;
+        }
+        finally
+        {
+            try { if (process != null && !process.HasExited) process.Kill(); } catch { }
+            process?.Dispose();
+        }
+    }
+
+    /// <summary>Asks the bridge why a location is or isn't in logic for the current items. Null if the engine isn't running or timed out.</summary>
+    public async Task<LogicExplanation> ExplainLocationAsync(long locationId, bool analyze = true)
+    {
+        if (_engineProcess == null || _engineProcess.HasExited) return null;
+        try
+        {
+            var req = new Dictionary<string, object>
+            {
+                { "action", "explain" },
+                { "location", locationId },
+                { "analyze", analyze },
+                { "budget", 6.0 }
+            };
+            var response = await SendRequestAsync(req, 15000);
+            if (response == null) return null;
+            if (response["trace"] != null) _logger("ExplainLocationAsync: bridge error: " + response["error"] + "\n" + response["trace"]);
+            return response.ToObject<LogicExplanation>();
+        }
+        catch (Exception ex)
+        {
+            _logger("ExplainLocationAsync Exception: " + ex.Message);
+            return null;
+        }
+    }
+
+    // One request at a time: the bridge answers in order over a single pipe, and an explain issued while a
+    // logic update is in flight must not read the update's reply.
+    private readonly System.Threading.SemaphoreSlim _requestLock = new System.Threading.SemaphoreSlim(1, 1);
 
     /// <summary>Writes one request line and waits for the matching response. Returns null on timeout or if the bridge exits.</summary>
     private async Task<JObject> SendRequestAsync(Dictionary<string, object> request, int timeoutMs)
+    {
+        await _requestLock.WaitAsync();
+        try
+        {
+            if (_engineWriter == null || _engineReader == null) return null;
+            return await SendRequestLockedAsync(request, timeoutMs);
+        }
+        finally
+        {
+            _requestLock.Release();
+        }
+    }
+
+    private async Task<JObject> SendRequestLockedAsync(Dictionary<string, object> request, int timeoutMs)
     {
         int id = ++_nextRequestId;
         request["id"] = id;
@@ -222,6 +439,7 @@ public class LogicEngineManager
 
     public void StopEngine()
     {
+        _stopping = true;
         var process = _engineProcess;
         _engineProcess = null;
         _engineWriter = null;
@@ -232,281 +450,14 @@ public class LogicEngineManager
         try { process.Dispose(); } catch { }
     }
 
-    public string GetWorldsDirectory()
-    {
-        if (string.IsNullOrEmpty(_apPath) || !Directory.Exists(_apPath)) return null;
+    /// <summary>Whether this engine can run logic (program files and the Universal Tracker are present).</summary>
+    public bool IsEngineInstalled() => _install != null && AP_Atlas.Core.EngineSetup.AtlasEngine.ProblemWith(_install) == null;
+}
 
-        string customWorlds = Path.Combine(_apPath, "custom_worlds");
-        string libWorlds = Path.Combine(_apPath, "lib", "worlds");
-
-        if (Directory.Exists(customWorlds)) return customWorlds;
-        if (Directory.Exists(libWorlds)) return libWorlds;
-
-        // If neither exists but it's a valid directory, create custom_worlds
-        Directory.CreateDirectory(customWorlds);
-        return customWorlds;
-    }
-
-    public bool IsEngineInstalled()
-    {
-        string worldsDir = GetWorldsDirectory();
-        if (worldsDir == null) return false;
-
-        return File.Exists(Path.Combine(worldsDir, "tracker.apworld"));
-    }
-
-    private void InstallPythonBridge()
-    {
-        string worldsDir = GetWorldsDirectory();
-        if (worldsDir == null) return;
-
-        string apworldPath = Path.Combine(worldsDir, "UltimateBridge.apworld");
-
-        string scriptContent = @"import sys
-import json
-import logging
-import traceback
-
-def launch_bridge(*args):
-    try:
-        from worlds.tracker.TrackerCore import TrackerCore
-        from worlds.AutoWorld import AutoWorldRegister
-        from NetUtils import NetworkItem
-        from BaseClasses import LocationProgressType
-
-        logger = logging.getLogger('UltimateBridge')
-        core = TrackerCore(logger, False, False)
-        core.run_generator(None, None)
-
-        item_cache = {}
-        def get_net_item(item_id):
-            if item_id not in item_cache:
-                item_cache[item_id] = NetworkItem(item_id, -1, -1, 0)
-            return item_cache[item_id]
-
-        while True:
-            line = sys.stdin.readline()
-            if not line: break
-
-            # Echo the request id on every reply so the C# side can drop late replies.
-            rid = None
-            try:
-                req = json.loads(line)
-                rid = req.get('id')
-                action = req.get('action')
-                
-                if action == 'init':
-                    game = req.get('game')
-                    slot_name = req.get('player_name')
-                    slot = req.get('slot', 1)
-                    slot_data = req.get('slot_data') or {}
-                    all_locations = req.get('all_locations') or []
-                    
-                    connected_cls = AutoWorldRegister.world_types.get(game)
-
-                    core.set_slot_params(game, 1, slot_name, 1)
-                    core.initalize_tracker_core(connected_cls, slot_data)
-                    if all_locations:
-                        core.set_missing_locations(set(all_locations))
-                    
-                    item_pool = []
-                    mw = getattr(core, 'multiworld', None)
-                    if mw:
-                        target_player = getattr(core, 'player_id', None)
-                        if target_player is None:
-                            target_player = getattr(core, 'slot', 1)
-                            
-                        pool_items = [it for it in mw.itempool if it.player == target_player and it.code is not None]
-                        if not pool_items and len(mw.itempool) > 0 and target_player != 1:
-                            pool_items = [it for it in mw.itempool if it.player == 1 and it.code is not None]
-                            
-                        loc_items = [loc.item for loc in mw.get_locations(target_player) if loc.item and (loc.item.player == target_player or loc.item.player == 1) and loc.item.code is not None]
-                        pre_items = [it for it in mw.precollected_items.get(target_player, []) if it.code is not None]
-                        
-                        all_items = pool_items + loc_items + pre_items
-                        
-                        if not all_items:
-                            world = core.get_current_world()
-                            if world:
-                                item_names = getattr(world, 'item_name_to_id', {})
-                                for item_name in item_names:
-                                    try:
-                                        it = world.create_item(item_name)
-                                        if getattr(it, 'code', None) is not None:
-                                            all_items.append(it)
-                                    except Exception:
-                                        pass
-                        
-                        for it in all_items:
-                            flags = 0
-                            cls = getattr(it, 'classification', None)
-                            if cls is not None:
-                                # New AP ItemClassification
-                                try:
-                                    if cls & 1: flags |= 1
-                                    if cls & 2: flags |= 2
-                                    if cls & 4: flags |= 4
-                                except Exception:
-                                    try:
-                                        val = cls.value
-                                        if val & 1: flags |= 1
-                                        if val & 2: flags |= 2
-                                        if val & 4: flags |= 4
-                                    except Exception:
-                                        pass
-                            else:
-                                # Legacy
-                                if getattr(it, 'advancement', False):
-                                    flags |= 1
-                                if getattr(it, 'never_exclude', False):
-                                    flags |= 2
-                                if getattr(it, 'trap', False):
-                                    flags |= 4
-                                    
-                            item_pool.append({
-                                'id': it.code,
-                                'name': getattr(it, 'name', 'Unknown Item'),
-                                'flags': flags
-                            })
-                            
-                        # Debug print the first 5 items
-                        logger.info('UltimateBridge Item Dump:')
-                        for debug_it in item_pool[:5]:
-                            logger.info(' - ' + str(debug_it.get('name')) + ': Flags=' + str(debug_it.get('flags')))
-
-                    print(json.dumps({'id': rid, 'status': 'ready', 'item_pool': item_pool}))
-                    sys.stdout.flush()
-                    
-                elif action == 'update':
-                    item_ids = req.get('items', [])
-                    missing_locs = req.get('missing_locations')
-                    if missing_locs is not None:
-                        core.set_missing_locations(set(missing_locs))
-                        
-                    core.set_items_received([get_net_item(i) for i in item_ids])
-                    state = core.updateTracker()
-                    world = core.get_current_world()
-                    reachable_ids = []
-                    for loc_name in getattr(state, 'in_logic_locations', []):
-                        if loc_name in world.location_name_to_id:
-                            reachable_ids.append(world.location_name_to_id[loc_name])
-                            
-                    excluded_ids = []
-                    target_player = getattr(core, 'player_id', None) or 1
-                    for loc in core.multiworld.get_locations(target_player):
-                        pt = getattr(loc, 'progress_type', None)
-                        if pt is not None and getattr(pt, 'name', '') == 'EXCLUDED':
-                            if loc.name in world.location_name_to_id:
-                                excluded_ids.append(world.location_name_to_id[loc.name])
-                            
-                    print(json.dumps({'id': rid, 'reachable': reachable_ids, 'excluded': excluded_ids}))
-                    sys.stdout.flush()
-
-            except Exception as e:
-                print(json.dumps({'id': rid, 'error': str(e), 'trace': traceback.format_exc()}))
-                sys.stdout.flush()
-                
-    except Exception as e:
-        print(json.dumps({'error': 'Bridge Boot Failed', 'trace': traceback.format_exc()}))
-        sys.stdout.flush()
-
-from worlds.LauncherComponents import Component, components, Type
-components.append(Component('UltimateBridge', None, func=launch_bridge, component_type=Type.CLIENT))
-";
-
-        try
-        {
-            // Clean up any stale loose directory
-            string looseDir = Path.Combine(worldsDir, "UltimateBridge");
-            if (Directory.Exists(looseDir)) Directory.Delete(looseDir, true);
-
-            // Rewrite only when the script changed: another slot's bridge may be loading this file right now.
-            if (File.Exists(apworldPath) && ReadInstalledBridgeScript(apworldPath) == scriptContent) return;
-            if (File.Exists(apworldPath)) File.Delete(apworldPath);
-
-            using (var zipStream = new FileStream(apworldPath, FileMode.Create))
-            using (var archive = new System.IO.Compression.ZipArchive(zipStream, System.IO.Compression.ZipArchiveMode.Create))
-            {
-                var entry = archive.CreateEntry("UltimateBridge/__init__.py");
-                using (var entryStream = entry.Open())
-                using (var writer = new StreamWriter(entryStream))
-                {
-                    writer.Write(scriptContent);
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger("Failed to install UltimateBridge.apworld: " + ex.Message);
-        }
-    }
-
-    private static string ReadInstalledBridgeScript(string apworldPath)
-    {
-        try
-        {
-            using var archive = System.IO.Compression.ZipFile.OpenRead(apworldPath);
-            var entry = archive.GetEntry("UltimateBridge/__init__.py");
-            if (entry == null) return null;
-            using var reader = new StreamReader(entry.Open());
-            return reader.ReadToEnd();
-        }
-        catch (Exception)
-        {
-            return null;
-        }
-    }
-
-
-    public async Task<bool> DownloadLatestEngineAsync(Action<string> onProgress)
-    {
-        try
-        {
-            string worldsDir = GetWorldsDirectory();
-            if (worldsDir == null)
-            {
-                onProgress?.Invoke("Error: Archipelago Installation Path is not set or invalid.");
-                return false;
-            }
-
-            onProgress?.Invoke("Checking for latest Universal Tracker release...");
-            var response = await _httpClient.GetStringAsync(GitHubApiUrl);
-            var json = JObject.Parse(response);
-            var assets = json["assets"] as JArray;
-
-            string downloadUrl = null;
-            if (assets != null)
-            {
-                foreach (var asset in assets)
-                {
-                    if (asset["name"]?.ToString() == "tracker.apworld")
-                    {
-                        downloadUrl = asset["browser_download_url"]?.ToString();
-                        break;
-                    }
-                }
-            }
-
-            if (string.IsNullOrEmpty(downloadUrl))
-            {
-                onProgress?.Invoke("Error: Could not find tracker.apworld in latest release.");
-                return false;
-            }
-
-            onProgress?.Invoke("Downloading tracker.apworld...");
-            byte[] fileBytes = await _httpClient.GetByteArrayAsync(downloadUrl);
-
-            string destPath = Path.Combine(worldsDir, "tracker.apworld");
-            File.WriteAllBytes(destPath, fileBytes);
-
-            onProgress?.Invoke("Universal Tracker installed successfully.");
-            InstallPythonBridge();
-            return true;
-        }
-        catch (Exception ex)
-        {
-            onProgress?.Invoke($"Error downloading engine: {ex.Message}");
-            return false;
-        }
-    }
+/// <summary>Why the logic engine couldn't start a slot.</summary>
+public class EngineStartError
+{
+    public string Code { get; set; }
+    public string Message { get; set; }
+    public JObject Details { get; set; }
 }

@@ -12,16 +12,33 @@ namespace AP_Atlas.Core
 
         static Logger()
         {
-            string dir = DataManager.GetDataDirectory();
-            string logDir = Path.Combine(dir, "logs");
-            if (!Directory.Exists(logDir)) Directory.CreateDirectory(logDir);
-
-            _logFilePath = Path.Combine(logDir, "atlas_log.txt");
-
-            if (File.Exists(_logFilePath) && new FileInfo(_logFilePath).Length > 5 * 1024 * 1024)
+            // A failure here would make every later log call throw (a broken type initializer), so nothing may escape.
+            try
             {
-                File.Move(_logFilePath, Path.Combine(logDir, "atlas_log_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".txt"));
+                string logDir = Path.Combine(DataManager.GetDataDirectory(), "logs");
+                Directory.CreateDirectory(logDir);
+                _logFilePath = Path.Combine(logDir, "atlas_log.txt");
+                RotateIfLarge(logDir);
             }
+            catch (Exception ex)
+            {
+                _logFilePath = null;
+                GD.PrintErr("Logging to file is unavailable: " + ex.Message);
+            }
+        }
+
+        private static void RotateIfLarge(string logDir)
+        {
+            try
+            {
+                if (File.Exists(_logFilePath) && new FileInfo(_logFilePath).Length > 5 * 1024 * 1024)
+                    File.Move(_logFilePath, Path.Combine(logDir, "atlas_log_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".txt"));
+                // Keep the ten most recent archived logs.
+                var old = new DirectoryInfo(logDir).GetFiles("atlas_log_*.txt");
+                Array.Sort(old, (a, b) => b.LastWriteTimeUtc.CompareTo(a.LastWriteTimeUtc));
+                for (int i = 10; i < old.Length; i++) { try { old[i].Delete(); } catch { } }
+            }
+            catch { }
         }
 
         private static void WriteLog(string level, string message)
@@ -31,7 +48,7 @@ namespace AP_Atlas.Core
             try
             {
                 // Called from network and process threads as well as the main thread.
-                lock (_fileLock) File.AppendAllText(_logFilePath, logEntry + System.Environment.NewLine);
+                if (_logFilePath != null) lock (_fileLock) File.AppendAllText(_logFilePath, logEntry + System.Environment.NewLine);
             }
             catch (Exception ex)
             {

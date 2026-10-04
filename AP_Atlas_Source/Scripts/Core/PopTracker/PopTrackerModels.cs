@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Godot;
@@ -34,6 +35,9 @@ namespace AP_Atlas.Core.PopTracker
 
         // Sometimes locations define item_count directly at the root if there are no sections
         [JsonProperty("item_count")] public int ItemCount { get; set; } = 1;
+
+        /// <summary>"Parent/Child/Name" as mapping scripts address it ("@Parent/Child/Name/Section"). Set at load.</summary>
+        [JsonIgnore] public string FullPath { get; set; } = "";
     }
 
     public class PopTrackerMap
@@ -56,6 +60,10 @@ namespace AP_Atlas.Core.PopTracker
         [JsonProperty("package_version")] public string PackageVersion { get; set; } = "";
         [JsonProperty("author")] public string Author { get; set; } = "Unknown";
         [JsonProperty("versions_url")] public string VersionsUrl { get; set; } = "";
+        [JsonProperty("package_uid")] public string PackageUid { get; set; } = "";
+
+        /// <summary>Variant uid → { display_name, flags }. The first ("standard" when present) is what PopTracker opens by default.</summary>
+        [JsonProperty("variants")] public JObject Variants { get; set; }
 
         public string GetActualVersion()
         {
@@ -83,23 +91,38 @@ namespace AP_Atlas.Core.PopTracker
         [JsonProperty("stages")] public List<PopTrackerItemStage> Stages { get; set; } = new List<PopTrackerItemStage>();
         [JsonProperty("max_quantity")] public int MaxQuantity { get; set; } = 1;
 
+        /// <summary>
+        /// The item's codes. PopTracker allows a comma-separated string ("cinders, abyss") or an array, so both are
+        /// split and trimmed; an item answers to any of its codes.
+        /// </summary>
         public List<string> GetCodes()
         {
             var list = new List<string>();
             if (CodesRaw == null) return list;
 
-            if (CodesRaw.Type == JTokenType.String)
+            IEnumerable<string> raw = CodesRaw.Type == JTokenType.Array
+                ? CodesRaw.Select(t => t.ToString())
+                : new[] { CodesRaw.ToString() };
+            foreach (var part in raw.SelectMany(r => r.Split(',')))
             {
-                list.Add(CodesRaw.ToString());
-            }
-            else if (CodesRaw.Type == JTokenType.Array)
-            {
-                foreach (var token in CodesRaw)
-                {
-                    list.Add(token.ToString());
-                }
+                string code = part.Trim();
+                if (code.Length > 0 && !list.Contains(code)) list.Add(code);
             }
             return list;
         }
+    }
+
+    /// <summary>One itemgrid from the pack's layouts, with the group it sits under.</summary>
+    public class PackItemGrid
+    {
+        /// <summary>Header of the enclosing layout group (e.g. "Items", "Settings"), if any.</summary>
+        public string Header { get; set; } = "";
+        /// <summary>The layout key the grid was found under (e.g. "shared_item_grid").</summary>
+        public string LayoutKey { get; set; } = "";
+        /// <summary>The pack's tile size for this grid (PopTracker default 32).</summary>
+        public int ItemSize { get; set; } = 32;
+        public List<List<string>> Rows { get; set; } = new List<List<string>>();
+        /// <summary>Looks like tracker options (e.g. "Shuffle Weapons") rather than Archipelago items; hidden by default.</summary>
+        public bool LooksLikeSettings { get; set; }
     }
 }

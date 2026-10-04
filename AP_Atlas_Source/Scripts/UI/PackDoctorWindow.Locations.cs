@@ -1,0 +1,664 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using AP_Atlas.Core;
+using AP_Atlas.Core.PopTracker;
+using Godot;
+using Color = Godot.Color;
+
+namespace AP_Atlas.UI
+{
+    public partial class PackDoctorWindow
+    {
+        private string _locationFilter = "";
+
+        // =====================================================================
+        // Locations: unlinked sections, partial matches, locations with no pin
+        // =====================================================================
+
+        private Control BuildLocationsTab()
+        {
+            var scroll = new ScrollContainer { SizeFlagsVertical = Control.SizeFlags.ExpandFill, HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
+            var box = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+            box.AddThemeConstantOverride("separation", 8);
+            scroll.AddChild(box);
+
+            var search = new LineEdit { PlaceholderText = "Filter by pin, section or location name…", Text = _locationFilter, ClearButtonEnabled = true };
+            search.TextSubmitted += t => { _locationFilter = t; RenderCurrentTab(); };
+            search.TextChanged += t => { if (t.Length == 0 && _locationFilter.Length > 0) { _locationFilter = ""; RenderCurrentTab(); } };
+            box.AddChild(search);
+            bool Pass(params string[] texts) => _locationFilter.Length == 0 || texts.Any(t => t != null && t.IndexOf(_locationFilter, StringComparison.OrdinalIgnoreCase) >= 0);
+
+            // ---- Unlinked sections ----
+            var unlinked = _report.Findings.Where(f => f.Key.StartsWith("loc:unmatched:") && !f.Ignored).ToList();
+            box.AddChild(Heading($"Pin sections not linked to a location ({unlinked.Count})"));
+            box.AddChild(Note("These pins stay red and never clear. Accept the suggested match, choose another, or ignore ones the game doesn't have."));
+            var strong = unlinked.Where(f => f.Suggestions.Count > 0 && f.Suggestions[0].Score >= 0.85).ToList();
+            if (strong.Count > 0)
+            {
+                box.AddChild(Btn($"Accept all {strong.Count} strong suggestions (85%+)", "Link each to its best match in one step (undoable)", () =>
+                {
+                    PackFixes.Edit(_key, $"Accept {strong.Count} suggestions", file =>
+                    {
+                        foreach (var f in strong)
+                        {
+                            var parts = f.Subject.Substring(5).Split('|');
+                            var s = f.Suggestions[0];
+                            file.Links.RemoveAll(x => x.Subject == f.Subject);
+                            file.Links.Add(new LocationLinkFix
+                            {
+                                Subject = f.Subject,
+                                PinPath = parts[0],
+                                SectionName = parts.Length > 1 ? parts[1] : "",
+                                ApLocationId = s.Id,
+                                ApLocationName = s.Label,
+                                AuthorStamp = PackFixes.AuthorStamp(_original, f.Subject)
+                            });
+                        }
+                    });
+                    SetStatus($"Linked {strong.Count} sections.");
+                }));
+            }
+            foreach (var f in unlinked.Take(300))
+            {
+                var parts = f.Subject.Substring(5).Split('|');
+                string pinPath = parts[0], section = parts.Length > 1 ? parts[1] : "";
+                var best = f.Suggestions.FirstOrDefault();
+                if (!Pass(pinPath, section, best?.Label)) continue;
+                var row = new HBoxContainer();
+                row.AddThemeConstantOverride("separation", 8);
+                var label = new Label { Text = $"{pinPath} / {(string.IsNullOrEmpty(section) ? "(pin)" : section)}", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart };
+                row.AddChild(label);
+                if (best != null)
+                {
+                    var match = new Label { Text = $"→ {best.Label} ({best.Score:P0})", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart };
+                    match.AddThemeColorOverride("font_color", best.Score >= 0.85 ? Good : best.Score >= 0.6 ? Warn : Muted);
+                    row.AddChild(match);
+                    row.AddChild(Btn("Accept", "Link to the suggested location", () => LinkSection(pinPath, section, best.Id, best.Label)));
+                }
+                else row.AddChild(Note("no close match", Muted));
+                var fc = f;
+                row.AddChild(Btn("Choose…", "Pick the location", () => PickSectionLocation(pinPath, section, fc.Suggestions)));
+                row.AddChild(Btn("Map", "Show this pin in the Maps tab", () => { _focusPinPath = pinPath; SelectTab("Maps"); }));
+                row.AddChild(Btn("Ignore", "Hide this finding", () => ToggleIgnore(fc)));
+                box.AddChild(row);
+            }
+            if (unlinked.Count > 300) box.AddChild(Note($"…and {unlinked.Count - 300} more (use the filter)."));
+
+            // ---- Partial-name matches ----
+            var loose = _report.Index.ByLocation
+                .SelectMany(kv => kv.Value.Where(m => m.Source == MatchSource.LooseName).Select(m => (Id: kv.Key, Match: m)))
+                .ToList();
+            box.AddChild(new HSeparator());
+            box.AddChild(Heading($"Matched by partial name ({loose.Count})"));
+            box.AddChild(Note("Matched on the part of the Archipelago name before \" - \". Usually right; change any that aren't."));
+            foreach (var (id, m) in loose.Take(300))
+            {
+                string section = m.Section?.Name ?? "";
+                string apName = _report.Index.LocationName(id);
+                if (!Pass(m.Pin.FullPath, section, apName)) continue;
+                var row = new HBoxContainer();
+                row.AddChild(new Label { Text = $"{m.Pin.FullPath} / {(string.IsNullOrEmpty(section) ? "(pin)" : section)}", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart });
+                row.AddChild(new Label { Text = "→ " + apName, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart });
+                string pp = m.Pin.FullPath;
+                row.AddChild(Btn("Change…", "Pick a different location", () => PickSectionLocation(pp, section, null)));
+                row.AddChild(Btn("Unlink", "This section shows no location", () => LinkSection(pp, section, null, null)));
+                box.AddChild(row);
+            }
+
+            // ---- Locations with no pin ----
+            var unplaced = _report.Index.UnplacedLocations().Select(id => (Id: id, Name: _report.Index.LocationName(id))).OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase).ToList();
+            box.AddChild(new HSeparator());
+            box.AddChild(Heading($"Game locations with no pin ({unplaced.Count})"));
+            box.AddChild(Note("Some may be turned off by your game's options. Place a pin for any of them on a map."));
+            int shown = 0;
+            foreach (var (id, name) in unplaced)
+            {
+                if (!Pass(name)) continue;
+                if (++shown > 300) { box.AddChild(Note("…more (use the filter).")); break; }
+                var row = new HBoxContainer();
+                row.AddChild(new Label { Text = name, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart });
+                long lid = id; string lname = name;
+                row.AddChild(Btn("Place on map…", "Click a spot on a map to put a pin there", () => { _placeLocation = (lid, lname); SelectTab("Maps"); }));
+                row.AddChild(Btn("Add to a pin…", "Show it in an existing pin as an extra section", () => PickPinForLocation(lid, lname)));
+                box.AddChild(row);
+            }
+            return scroll;
+        }
+
+        /// <summary>Links an unplaced location into an existing pin (as an added section on that pin).</summary>
+        private void PickPinForLocation(long id, string name)
+        {
+            var pins = _report.Pack.Locations
+                .Select((p, i) => (Key: (long)i, Name: p.FullPath))
+                .ToDictionary(x => x.Key, x => x.Name);
+            var suggestions = PackDoctor.Suggest(name, pins, 8);
+            NamePickerDialog.Open(this, "Which pin should show it?", name, pins, suggestions, (pinIndex, pinPath) =>
+            {
+                var pin = _report.Pack.Locations[(int)pinIndex];
+                var mapId = MapTrackerControl.MapsOf(pin).FirstOrDefault() ?? "";
+                var (x, y) = PinPosition(pin, mapId);
+                PackFixes.Edit(_key, $"Add {name} to pin {pin.Name}", f =>
+                {
+                    // A one-section added pin at the same spot reads as part of that pin.
+                    f.AddedPins.Add(new AddedPin { Subject = "added:pin:" + id, Name = name, MapId = mapId, X = x + 6, Y = y + 6, ApLocationIds = new List<long> { id } });
+                });
+            });
+        }
+
+        private static (float X, float Y) PinPosition(PopTrackerLocation pin, string mapId)
+        {
+            if (string.Equals(pin.MapRef, mapId, StringComparison.OrdinalIgnoreCase)) return (pin.X, pin.Y);
+            var ml = pin.MapLocations?.FirstOrDefault(m => string.Equals(m.Map, mapId, StringComparison.OrdinalIgnoreCase));
+            return ml != null ? (ml.X, ml.Y) : (pin.X, pin.Y);
+        }
+
+        // =====================================================================
+        // Maps: pin editor
+        // =====================================================================
+
+        private string _focusPinPath;
+        private string _editorMapId;
+        private float _editorZoom = 0;
+        private (long Id, string Name)? _placeLocation;
+        private string _selectedPinPath;
+
+        private Control BuildMapsTab()
+        {
+            var pack = _report.Pack;
+            var root = new VBoxContainer { SizeFlagsVertical = Control.SizeFlags.ExpandFill };
+            root.AddThemeConstantOverride("separation", 6);
+            if (pack.Maps.Count == 0)
+            {
+                root.AddChild(Note("This pack has no maps."));
+                return root;
+            }
+
+            // Pick the map: the focused pin's, else the last one, else the first.
+            if (_focusPinPath != null)
+            {
+                var focusPin = pack.Locations.FirstOrDefault(l => l.FullPath == _focusPinPath);
+                if (focusPin != null)
+                {
+                    string focusMap = MapTrackerControl.MapsOf(focusPin).FirstOrDefault() ?? _editorMapId;
+                    if (focusMap != _editorMapId) { _editorZoom = 0; _mapScrollPos = Vector2.Zero; }
+                    _editorMapId = focusMap;
+                    _selectedPinPath = _focusPinPath;
+                    _centerOnSelected = true;
+                }
+                _focusPinPath = null;
+            }
+            if (_editorMapId == null || !pack.Maps.ContainsKey(_editorMapId)) _editorMapId = pack.Maps.Values.OrderBy(m => m.Name).First().Id;
+            var map = pack.Maps[_editorMapId];
+
+            // ---- Toolbar ----
+            var bar = new HFlowContainer();
+            bar.AddThemeConstantOverride("h_separation", 6);
+            var picker = new OptionButton();
+            var ordered = pack.Maps.Values.OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase).ToList();
+            for (int i = 0; i < ordered.Count; i++)
+            {
+                picker.AddItem(ordered[i].Name + (ordered[i].BackgroundTexture == null ? "  (no image)" : ""), i);
+                if (ordered[i].Id == _editorMapId) picker.Selected = i;
+            }
+            picker.ItemSelected += i => { _editorMapId = ordered[(int)i].Id; _editorZoom = 0; _mapScrollPos = Vector2.Zero; _selectedPinPath = null; RenderCurrentTab(); };
+            bar.AddChild(picker);
+            bar.AddChild(Btn("−", "Zoom out (or mouse wheel)", () => ZoomAtCenter(1 / 1.25f)));
+            bar.AddChild(Btn("+", "Zoom in (or mouse wheel)", () => ZoomAtCenter(1.25f)));
+            bar.AddChild(Btn("Fit", "Fit the whole map in view", () => FitMap()));
+            bar.AddChild(Btn("1:1", "Actual size", () => { _editorZoom = 1f; LayoutMapCanvas(); }));
+            if (_selectedPinPath != null)
+                bar.AddChild(Btn("Go to selected", "Center on the selected pin", () => FocusPin(_selectedPinPath)));
+            var find = new LineEdit { PlaceholderText = "Find a pin on this map…", CustomMinimumSize = new Vector2(260, 0), ClearButtonEnabled = true };
+            find.TextSubmitted += text =>
+            {
+                text = text.Trim();
+                if (text.Length == 0) return;
+                var hit = PinsOn(pack, _editorMapId).Select(p => p.Pin)
+                    .FirstOrDefault(p => p.FullPath.IndexOf(text, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                         (p.Sections?.Any(s => (s.Name ?? "").IndexOf(text, StringComparison.OrdinalIgnoreCase) >= 0) ?? false));
+                if (hit == null) { SetStatus($"No pin on this map matches \"{text}\"."); return; }
+                FocusPin(hit.FullPath);
+            };
+            bar.AddChild(find);
+            bar.AddChild(Btn("Add pin…", "Pick a location, then click the map where its pin goes", () =>
+                NamePickerDialog.Open(this, "Place a pin for which location?", null, LocationNames, new List<Suggestion>(),
+                    (id, name) => { _placeLocation = (id, name); RenderCurrentTab(); })));
+            bar.AddChild(Btn("Replace background…", "Use an image file for this map", () => ReplaceMapImage(_editorMapId)));
+            if (!string.IsNullOrEmpty(_original.Maps.TryGetValue(_editorMapId, out var om) ? om.MapBg : null))
+                bar.AddChild(Btn("Open original image", "Open the pack's image (e.g. to re-save it as PNG)", () => OpenPackImage(om.MapBg)));
+            var mapFix = PackFixes.Get(_key).MapImages.FirstOrDefault(m => m.MapId == _editorMapId);
+            if (mapFix != null) bar.AddChild(Btn("Reset background", "Use the pack's image again", () => PackFixes.Reset(_key, "maps", mapFix.Subject)));
+            root.AddChild(bar);
+
+            if (_placeLocation != null)
+            {
+                var banner = new HBoxContainer();
+                var msg = Note($"Click on the map to place a pin for: {_placeLocation.Value.Name}", Fixed);
+                banner.AddChild(msg);
+                banner.AddChild(Btn("Cancel", "Stop placing", () => { _placeLocation = null; RenderCurrentTab(); }));
+                root.AddChild(banner);
+            }
+            else root.AddChild(Note("Drag pins to move them. Click a pin to see and change its links. Outline: green = all linked · orange = some · red = none · gold = added by you."));
+
+            var split = new HSplitContainer { SizeFlagsVertical = Control.SizeFlags.ExpandFill };
+            root.AddChild(split);
+
+            var scroll = new ScrollContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, SizeFlagsVertical = Control.SizeFlags.ExpandFill, SizeFlagsStretchRatio = 2.2f };
+            split.AddChild(scroll);
+            var side = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+            side.AddThemeConstantOverride("separation", 6);
+            var sideScroll = new ScrollContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
+            sideScroll.AddChild(side);
+            split.AddChild(sideScroll);
+
+            _mapScroll = scroll;
+            _mapImgSize = map.BackgroundTexture?.GetSize() ?? new Vector2(1600, 1000);
+            _mapPins.Clear();
+            float zoom = _editorZoom > 0 ? _editorZoom : 0.2f; // real fit happens once the view has its size
+            var canvas = new Control { CustomMinimumSize = _mapImgSize * zoom, MouseFilter = Control.MouseFilterEnum.Stop };
+            _mapCanvas = canvas;
+            scroll.AddChild(canvas);
+            _mapBg = null;
+            if (map.BackgroundTexture != null)
+            {
+                _mapBg = new TextureRect
+                {
+                    Texture = map.BackgroundTexture,
+                    ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+                    StretchMode = TextureRect.StretchModeEnum.Scale,
+                    Size = _mapImgSize * zoom,
+                    MouseFilter = Control.MouseFilterEnum.Ignore
+                };
+                canvas.AddChild(_mapBg);
+            }
+            else
+            {
+                canvas.AddChild(new Label { Text = "This map has no usable background image. Pins are still shown at their positions.", Position = new Vector2(10, 10), MouseFilter = Control.MouseFilterEnum.Ignore });
+            }
+
+            // Remember where the user was, so selecting a pin (which redraws the tab) doesn't jump the view.
+            scroll.GetHScrollBar().ValueChanged += v => { if (_mapScroll == scroll) _mapScrollPos.X = (float)v; };
+            scroll.GetVScrollBar().ValueChanged += v => { if (_mapScroll == scroll) _mapScrollPos.Y = (float)v; };
+
+            Vector2 panLast = Vector2.Zero;
+            canvas.GuiInput += ev =>
+            {
+                switch (ev)
+                {
+                    // Wheel zooms around the cursor.
+                    case InputEventMouseButton wheel when wheel.Pressed && (wheel.ButtonIndex == MouseButton.WheelUp || wheel.ButtonIndex == MouseButton.WheelDown):
+                        ZoomAtMouse(wheel.ButtonIndex == MouseButton.WheelUp ? 1.2f : 1 / 1.2f);
+                        canvas.AcceptEvent();
+                        break;
+                    // Right or middle drag pans.
+                    case InputEventMouseButton pan when pan.ButtonIndex is MouseButton.Right or MouseButton.Middle:
+                        if (pan.Pressed) panLast = pan.GlobalPosition;
+                        canvas.AcceptEvent();
+                        break;
+                    case InputEventMouseMotion motion when (motion.ButtonMask & (MouseButtonMask.Right | MouseButtonMask.Middle)) != 0:
+                        var delta = motion.GlobalPosition - panLast;
+                        panLast = motion.GlobalPosition;
+                        scroll.ScrollHorizontal -= (int)delta.X;
+                        scroll.ScrollVertical -= (int)delta.Y;
+                        canvas.AcceptEvent();
+                        break;
+                    // Placement: a left click on the empty map places the pending pin.
+                    case InputEventMouseButton place when place.Pressed && place.ButtonIndex == MouseButton.Left && _placeLocation != null:
+                        var (id, name) = _placeLocation.Value;
+                        var at = place.Position / _editorZoom;
+                        PackFixes.Edit(_key, $"Place a pin for {name}", f =>
+                        {
+                            f.AddedPins.RemoveAll(p => p.Subject == "added:pin:" + id);
+                            f.AddedPins.Add(new AddedPin { Subject = "added:pin:" + id, Name = name, MapId = _editorMapId, X = at.X, Y = at.Y, ApLocationIds = new List<long> { id } });
+                        });
+                        _selectedPinPath = "atlas/" + name;
+                        _placeLocation = null;
+                        SetStatus($"Placed a pin for {name}.");
+                        break;
+                }
+            };
+
+            var fixes = PackFixes.Get(_key);
+            var added = new HashSet<string>(fixes.AddedPins.Select(p => p.PinPath));
+            var moved = new HashSet<string>(fixes.Pins.Where(p => !p.Removed && p.MapId == _editorMapId).Select(p => p.PinPath));
+            (PopTrackerLocation Pin, float X, float Y) selected = default;
+            foreach (var (pin, x, y) in PinsOn(pack, _editorMapId))
+            {
+                var b = PinButton(pin, added.Contains(pin.FullPath), moved.Contains(pin.FullPath));
+                canvas.AddChild(b);
+                _mapPins.Add((b, x, y));
+                if (pin.FullPath == _selectedPinPath) selected = (pin, x, y);
+            }
+
+            // A pulsing ring makes the selected pin easy to spot at any zoom.
+            _selRing = null;
+            if (selected.Pin != null)
+            {
+                // Yellow ring with a dark outline (shadow) so it reads on light and dark maps alike.
+                _selRing = new Panel { MouseFilter = Control.MouseFilterEnum.Ignore, Size = new Vector2(PinScreenSize * 3.2f, PinScreenSize * 3.2f) };
+                _selRing.AddThemeStyleboxOverride("panel", new StyleBoxFlat
+                {
+                    BgColor = new Color(1f, 0.85f, 0.1f, 0.18f),
+                    BorderColor = new Color("#FFD43B"),
+                    ShadowColor = new Color(0, 0, 0, 0.85f),
+                    ShadowSize = 4,
+                    BorderWidthTop = 6,
+                    BorderWidthBottom = 6,
+                    BorderWidthLeft = 6,
+                    BorderWidthRight = 6,
+                    CornerRadiusTopLeft = 99,
+                    CornerRadiusTopRight = 99,
+                    CornerRadiusBottomLeft = 99,
+                    CornerRadiusBottomRight = 99
+                });
+                _selRing.PivotOffset = _selRing.Size / 2;
+                _selRing.SetMeta("x", selected.X);
+                _selRing.SetMeta("y", selected.Y);
+                canvas.AddChild(_selRing);
+                canvas.MoveChild(_selRing, _mapBg == null ? 0 : 1); // under the pins
+                var tween = _selRing.CreateTween().SetLoops();
+                tween.TweenProperty(_selRing, "scale", new Vector2(1.35f, 1.35f), 0.6f).SetTrans(Tween.TransitionType.Sine);
+                tween.TweenProperty(_selRing, "scale", Vector2.One, 0.6f).SetTrans(Tween.TransitionType.Sine);
+            }
+            LayoutMapCanvas();
+
+            BuildPinInspector(side, pack);
+
+            // Once the view has its real size: fit if needed, then center on the selected pin or restore the last view.
+            bool center = _centerOnSelected && selected.Pin != null;
+            _centerOnSelected = false;
+            SettleMapView(scroll, center, selected.X, selected.Y, _mapScrollPos);
+            return root;
+        }
+
+        private async void SettleMapView(ScrollContainer scroll, bool center, float x, float y, Vector2 restore)
+        {
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            if (!IsInstanceValid(scroll) || _mapScroll != scroll) return;
+            if (_editorZoom <= 0) FitMap(apply: false);
+            if (center) _editorZoom = Math.Max(_editorZoom, 1.0f);
+            LayoutMapCanvas();
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            if (!IsInstanceValid(scroll)) return;
+            if (center)
+            {
+                scroll.ScrollHorizontal = (int)Math.Max(0, x * _editorZoom - scroll.Size.X / 2);
+                scroll.ScrollVertical = (int)Math.Max(0, y * _editorZoom - scroll.Size.Y / 2);
+            }
+            else
+            {
+                scroll.ScrollHorizontal = (int)restore.X;
+                scroll.ScrollVertical = (int)restore.Y;
+            }
+        }
+
+        // ---- Map view state (zoom and pan happen in place, without rebuilding the tab) ----
+
+        private const float PinScreenSize = 22f;
+        private ScrollContainer _mapScroll;
+        private Control _mapCanvas;
+        private TextureRect _mapBg;
+        private Panel _selRing;
+        private Vector2 _mapImgSize;
+        private Vector2 _mapScrollPos;
+        private bool _centerOnSelected;
+        private readonly List<(Button B, float X, float Y)> _mapPins = new List<(Button, float, float)>();
+
+        /// <summary>Positions the background, pins and selection ring for the current zoom.</summary>
+        private void LayoutMapCanvas()
+        {
+            if (_mapCanvas == null || !IsInstanceValid(_mapCanvas)) return;
+            float z = _editorZoom > 0 ? _editorZoom : 0.2f;
+            _mapCanvas.CustomMinimumSize = _mapImgSize * z;
+            if (_mapBg != null && IsInstanceValid(_mapBg)) _mapBg.Size = _mapImgSize * z;
+            foreach (var (b, x, y) in _mapPins)
+            {
+                if (IsInstanceValid(b)) b.Position = new Vector2(x * z - PinScreenSize / 2, y * z - PinScreenSize / 2);
+            }
+            if (_selRing != null && IsInstanceValid(_selRing))
+            {
+                float x = (float)_selRing.GetMeta("x").AsDouble(), y = (float)_selRing.GetMeta("y").AsDouble();
+                _selRing.Position = new Vector2(x * z, y * z) - _selRing.Size / 2;
+            }
+        }
+
+        /// <summary>Zooms keeping the map point under the mouse in place.</summary>
+        private async void ZoomAtMouse(float factor)
+        {
+            if (_mapScroll == null || !IsInstanceValid(_mapScroll)) return;
+            var scroll = _mapScroll;
+            float oldZoom = _editorZoom > 0 ? _editorZoom : 0.2f;
+            float newZoom = Math.Clamp(oldZoom * factor, 0.05f, 6f);
+            if (Math.Abs(newZoom - oldZoom) < 0.0001f) return;
+            var anchor = scroll.GetLocalMousePosition();
+            var mapPoint = (new Vector2(scroll.ScrollHorizontal, scroll.ScrollVertical) + anchor) / oldZoom;
+            _editorZoom = newZoom;
+            LayoutMapCanvas();
+            // The scroll range grows on the next layout pass; scroll after it.
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            if (!IsInstanceValid(scroll)) return;
+            scroll.ScrollHorizontal = (int)Math.Max(0, mapPoint.X * newZoom - anchor.X);
+            scroll.ScrollVertical = (int)Math.Max(0, mapPoint.Y * newZoom - anchor.Y);
+        }
+
+        /// <summary>Zooms around the middle of the visible area (toolbar buttons).</summary>
+        private async void ZoomAtCenter(float factor)
+        {
+            if (_mapScroll == null || !IsInstanceValid(_mapScroll)) return;
+            var scroll = _mapScroll;
+            float oldZoom = _editorZoom > 0 ? _editorZoom : 0.2f;
+            float newZoom = Math.Clamp(oldZoom * factor, 0.05f, 6f);
+            var anchor = scroll.Size / 2;
+            var mapPoint = (new Vector2(scroll.ScrollHorizontal, scroll.ScrollVertical) + anchor) / oldZoom;
+            _editorZoom = newZoom;
+            LayoutMapCanvas();
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            if (!IsInstanceValid(scroll)) return;
+            scroll.ScrollHorizontal = (int)Math.Max(0, mapPoint.X * newZoom - anchor.X);
+            scroll.ScrollVertical = (int)Math.Max(0, mapPoint.Y * newZoom - anchor.Y);
+        }
+
+        /// <summary>Zoom so the whole map fits the visible area.</summary>
+        private void FitMap(bool apply = true)
+        {
+            if (_mapScroll == null || !IsInstanceValid(_mapScroll) || _mapImgSize.X <= 0) return;
+            var avail = _mapScroll.Size - new Vector2(16, 16);
+            if (avail.X <= 0 || avail.Y <= 0) return;
+            _editorZoom = Math.Clamp(Math.Min(avail.X / _mapImgSize.X, avail.Y / _mapImgSize.Y), 0.05f, 4f);
+            if (!apply) return;
+            LayoutMapCanvas();
+            _mapScroll.ScrollHorizontal = 0;
+            _mapScroll.ScrollVertical = 0;
+        }
+
+        /// <summary>Selects a pin and centers the view on it, zoomed in enough to see it.</summary>
+        private void FocusPin(string pinPath)
+        {
+            _selectedPinPath = pinPath;
+            _centerOnSelected = true;
+            RenderCurrentTab();
+        }
+
+        private static IEnumerable<(PopTrackerLocation Pin, float X, float Y)> PinsOn(LoadedPack pack, string mapId)
+        {
+            foreach (var pin in pack.Locations)
+            {
+                if (string.Equals(pin.MapRef, mapId, StringComparison.OrdinalIgnoreCase)) yield return (pin, pin.X, pin.Y);
+                foreach (var ml in pin.MapLocations ?? new List<PopTrackerMapLocation>())
+                    if (string.Equals(ml.Map, mapId, StringComparison.OrdinalIgnoreCase)) yield return (pin, ml.X, ml.Y);
+            }
+        }
+
+        private Button PinButton(PopTrackerLocation pin, bool isAdded, bool isMoved)
+        {
+            const float size = PinScreenSize;
+            int sections = pin.Sections != null && pin.Sections.Count > 0 ? pin.Sections.Count : 1;
+            int linked = _report.Index.IdsFor(pin).Count;
+            Color fill = isAdded ? Fixed : linked == 0 ? Bad : linked >= sections ? Good : Warn;
+            bool selected = pin.FullPath == _selectedPinPath;
+            var b = new Button
+            {
+                CustomMinimumSize = new Vector2(size, size),
+                Size = new Vector2(size, size),
+                TooltipText = $"{pin.FullPath}\n{linked} of {sections} linked" + (isMoved ? "\n(moved by you)" : ""),
+                FocusMode = Control.FocusModeEnum.None
+            };
+            var style = new StyleBoxFlat
+            {
+                BgColor = fill,
+                BorderColor = selected ? Colors.White : isMoved ? Fixed : Colors.Black,
+                BorderWidthTop = selected ? 3 : 2,
+                BorderWidthBottom = selected ? 3 : 2,
+                BorderWidthLeft = selected ? 3 : 2,
+                BorderWidthRight = selected ? 3 : 2,
+                CornerRadiusTopLeft = (int)size,
+                CornerRadiusTopRight = (int)size,
+                CornerRadiusBottomLeft = (int)size,
+                CornerRadiusBottomRight = (int)size
+            };
+            foreach (var s in new[] { "normal", "hover", "pressed", "focus" }) b.AddThemeStyleboxOverride(s, style);
+
+            // Drag to move; a click without movement selects.
+            bool dragging = false;
+            Vector2 grabOffset = Vector2.Zero, startPos = Vector2.Zero;
+            b.GuiInput += ev =>
+            {
+                // Wheel and right/middle drag over a pin act on the map, as they do elsewhere on it.
+                if (ev is InputEventMouseButton wheel && wheel.Pressed && (wheel.ButtonIndex == MouseButton.WheelUp || wheel.ButtonIndex == MouseButton.WheelDown))
+                {
+                    ZoomAtMouse(wheel.ButtonIndex == MouseButton.WheelUp ? 1.2f : 1 / 1.2f);
+                    b.AcceptEvent();
+                    return;
+                }
+                if (ev is InputEventMouseButton mb && mb.ButtonIndex == MouseButton.Left)
+                {
+                    if (mb.Pressed) { dragging = true; startPos = b.Position; grabOffset = mb.Position; b.AcceptEvent(); }
+                    else if (dragging)
+                    {
+                        dragging = false;
+                        b.AcceptEvent();
+                        if ((b.Position - startPos).Length() < 3)
+                        {
+                            _selectedPinPath = pin.FullPath;
+                            RenderCurrentTab();
+                            return;
+                        }
+                        var center = (b.Position + new Vector2(size / 2, size / 2)) / _editorZoom;
+                        MovePin(pin, center.X, center.Y, isAdded);
+                    }
+                }
+                else if (ev is InputEventMouseMotion mm && dragging)
+                {
+                    b.Position += mm.Position - grabOffset;
+                    b.AcceptEvent();
+                }
+            };
+            return b;
+        }
+
+        private void MovePin(PopTrackerLocation pin, float x, float y, bool isAdded)
+        {
+            _selectedPinPath = pin.FullPath;
+            if (isAdded)
+            {
+                PackFixes.Edit(_key, $"Move added pin {pin.Name}", f =>
+                {
+                    var ap = f.AddedPins.FirstOrDefault(p => p.PinPath == pin.FullPath);
+                    if (ap != null) { ap.X = x; ap.Y = y; ap.MapId = _editorMapId; ap.Made = DateTime.Now; }
+                });
+                return;
+            }
+            string subject = $"pin:{pin.FullPath}@{_editorMapId}";
+            PackFixes.Edit(_key, $"Move pin {pin.Name}", f =>
+            {
+                f.Pins.RemoveAll(p => p.Subject == subject);
+                f.Pins.Add(new PinFix { Subject = subject, PinPath = pin.FullPath, MapId = _editorMapId, X = x, Y = y, AuthorStamp = PackFixes.AuthorStamp(_original, subject) });
+            });
+            SetStatus($"Moved {pin.Name}.");
+        }
+
+        private void BuildPinInspector(VBoxContainer box, LoadedPack pack)
+        {
+            var fixes = PackFixes.Get(_key);
+            BuildRemovedPinsList(box, fixes);
+            var pin = _selectedPinPath == null ? null : pack.Locations.FirstOrDefault(l => l.FullPath == _selectedPinPath);
+            if (pin == null)
+            {
+                box.AddChild(Heading("Pin"));
+                box.AddChild(Note("Click a pin to see which Archipelago locations it shows and change them."));
+                return;
+            }
+            bool isAdded = fixes.AddedPins.Any(p => p.PinPath == pin.FullPath);
+            box.AddChild(Heading(pin.Name));
+            box.AddChild(Note(pin.FullPath));
+
+            var sections = pin.Sections != null && pin.Sections.Count > 0 ? pin.Sections.Select(s => (PopTrackerSection)s).ToList() : new List<PopTrackerSection> { null };
+            foreach (var sec in sections)
+            {
+                string secName = sec?.Name ?? "";
+                var ids = _report.Index.IdsFor(pin).Where(id => _report.Index.ByLocation.TryGetValue(id, out var ms) && ms.Any(m => m.Pin == pin && m.Section == sec)).ToList();
+                var match = ids.Select(id => _report.Index.ByLocation[id].First(m => m.Pin == pin && m.Section == sec)).FirstOrDefault();
+                string shown = ids.Count == 0 ? "not linked" : string.Join(", ", ids.Select(id => _report.Index.LocationName(id)));
+                string src = match == null ? "" : match.Source switch
+                {
+                    MatchSource.MappingScript => "script",
+                    MatchSource.Name => "name",
+                    MatchSource.LooseName => "partial name",
+                    _ => "your fix"
+                };
+                var row = new VBoxContainer();
+                row.AddChild(new Label { Text = secName.StartsWith("atlas:") ? "(added)" : string.IsNullOrEmpty(secName) ? "(the pin itself)" : secName, AutowrapMode = TextServer.AutowrapMode.WordSmart });
+                var l = Note($"→ {shown}" + (src.Length > 0 ? $"  ({src})" : ""), ids.Count == 0 ? Bad : Colors.LightGray);
+                row.AddChild(l);
+                if (!secName.StartsWith("atlas:"))
+                {
+                    var btns = new HBoxContainer();
+                    string pp = pin.FullPath;
+                    btns.AddChild(Btn("Change…", "Pick the location this section shows", () => PickSectionLocation(pp, secName, null)));
+                    if (ids.Count > 0) btns.AddChild(Btn("Unlink", "Show no location here", () => LinkSection(pp, secName, null, null)));
+                    var linkFix = fixes.Links.FirstOrDefault(x => x.Subject == $"link:{pp}|{secName}");
+                    if (linkFix != null) btns.AddChild(Btn("Reset", "Use the author's link", () => PackFixes.Reset(_key, "links", linkFix.Subject)));
+                    row.AddChild(btns);
+                }
+                box.AddChild(row);
+            }
+
+            box.AddChild(new HSeparator());
+            if (isAdded)
+            {
+                var ap = fixes.AddedPins.First(p => p.PinPath == pin.FullPath);
+                box.AddChild(Btn("Delete this pin", "Remove the pin you added", () => PackFixes.Edit(_key, "Delete added pin", f => f.AddedPins.RemoveAll(p => p.Subject == ap.Subject))));
+            }
+            else
+            {
+                string subject = $"pin:{pin.FullPath}@{_editorMapId}";
+                var pf = fixes.Pins.FirstOrDefault(p => p.Subject == subject);
+                if (pf != null && !pf.Removed) box.AddChild(Btn("Reset position", "Back to the author's position", () => PackFixes.Reset(_key, "pins", subject)));
+                box.AddChild(Btn("Remove this pin", "Hide it from the map (reset brings it back)", () =>
+                    PackFixes.Edit(_key, $"Remove pin {pin.Name}", f =>
+                    {
+                        f.Pins.RemoveAll(p => p.Subject == subject);
+                        f.Pins.Add(new PinFix { Subject = subject, PinPath = pin.FullPath, MapId = _editorMapId, Removed = true, AuthorStamp = PackFixes.AuthorStamp(_original, subject) });
+                    })));
+            }
+        }
+
+        private void BuildRemovedPinsList(VBoxContainer box, PackFixFile fixes)
+        {
+            var removed = fixes.Pins.Where(p => p.Removed && p.MapId == _editorMapId).ToList();
+            if (removed.Count > 0)
+            {
+                box.AddChild(Heading("Removed pins on this map"));
+                foreach (var r in removed)
+                {
+                    var row = new HBoxContainer();
+                    row.AddChild(new Label { Text = r.PinPath, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart });
+                    string subj = r.Subject;
+                    row.AddChild(Btn("Restore", "Show it again", () => PackFixes.Reset(_key, "pins", subj)));
+                    box.AddChild(row);
+                }
+            }
+        }
+    }
+}

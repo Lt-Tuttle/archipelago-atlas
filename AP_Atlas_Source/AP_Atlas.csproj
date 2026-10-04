@@ -15,5 +15,14 @@
       <HintPath>Lib\Newtonsoft.Json.dll</HintPath>
     </Reference>
   </ItemGroup>
+  
+  <ItemGroup>
+    <PackageReference Include="MoonSharp" Version="2.0.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The Atlas Engine's Python, written into the engine at setup. -->
+    <EmbeddedResource Include="Scripts/Core/Engine/Python/atlas_bridge.py" LogicalName="AtlasEngine.atlas_bridge.py" />
+    <EmbeddedResource Include="Scripts/Core/Engine/Python/atlas_run.py" LogicalName="AtlasEngine.atlas_run.py" />
+  </ItemGroup>
 </Project>
 

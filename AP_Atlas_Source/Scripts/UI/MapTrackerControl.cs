@@ -10,14 +10,140 @@ namespace AP_Atlas.UI
         public Control SidebarContent { get; private set; }
         public event Action OnDataRefreshed;
 
+        /// <summary>A pin was clicked: map id, pin (pack location) name, and the AP location ids it covers.</summary>
+        public event Action<string, string, List<long>> PinPicked;
+
+        /// <summary>A map was chosen in the list.</summary>
+        public event Action<string> MapPicked;
+
+        /// <summary>Flag color and special mark for an AP location id. Set by the owner.</summary>
+        public Func<long, (int Flag, bool Special)> MarkerLookup { get; set; }
+
+        /// <summary>Whether a location is excluded (by the seed's options or by the user). Set by the owner.</summary>
+        public Func<long, bool> IsExcluded { get; set; }
+
+        /// <summary>Raised when the map display options change, so every slot's map redraws with them.</summary>
+        public static event Action DisplayOptionsChanged;
+
+        private const int ModeShow = 0, ModeDim = 1, ModeHide = 2;
+        private const float DimAlpha = 0.35f;
+        private static readonly Color NotInSeedColor = new Color("#5A5F6E");
+
+        private bool Excluded(long id) => IsExcluded?.Invoke(id) == true;
+
+        /// <summary>The checks of a pin that count: excluded ones drop out unless the user shows them.</summary>
+        private List<long> CountedIds(List<long> ids) =>
+            _appSettings.MapExcludedMode == ModeShow || IsExcluded == null ? ids : ids.Where(id => !Excluded(id)).ToList();
+
+        public LoadedPack Pack => _pack;
+
+        private bool _logicHidden;
+
+        /// <summary>Race mode: pins show open/hinted/checked only, never in or out of logic.</summary>
+        public bool LogicHidden
+        {
+            get => _logicHidden;
+            set
+            {
+                if (_logicHidden == value) return;
+                _logicHidden = value;
+                RefreshMapListCounters();
+                if (!string.IsNullOrEmpty(_currentMapId)) RenderLocations();
+            }
+        }
+
+        private static readonly Color OpenNeutral = Colors.SteelBlue;
+        private static readonly Color HintedNeutral = Colors.MediumPurple;
+        public string CurrentMapId => _currentMapId;
+
+        /// <summary>Re-draws pins after flags or special marks changed.</summary>
+        public void RefreshMarkers()
+        {
+            if (!string.IsNullOrEmpty(_currentMapId)) RenderLocations();
+        }
+
+        public bool HasLocation(long locationId) => _locIdToMap.ContainsKey(locationId);
+
+        public void ShowMap(string mapId) => SwitchMap(mapId);
+
+        /// <summary>Switches to the map holding a location, centers it, and pulses its pin. False if the pack doesn't place it.</summary>
+        public bool RevealLocation(long locationId)
+        {
+            if (_pack == null || !_locIdToMap.TryGetValue(locationId, out var mapId)) return false;
+            if (!string.Equals(mapId, _currentMapId, StringComparison.OrdinalIgnoreCase)) SwitchMap(mapId);
+            foreach (var pin in PinsOnMap(mapId))
+            {
+                if (!GetLocationIds(pin.Loc).Contains(locationId)) continue;
+                _camera.Position = new Vector2(pin.X, pin.Y);
+                SaveCurrentCamera();
+                RenderLocations(new HashSet<long> { locationId });
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>Pack locations (pins) that cover an AP location id, with every map each appears on.</summary>
+        public List<(PopTrackerLocation Pin, PopTrackerSection Section, List<string> Maps)> PinsFor(long locationId)
+        {
+            var result = new List<(PopTrackerLocation, PopTrackerSection, List<string>)>();
+            if (_pack == null || _index == null || !_index.ByLocation.TryGetValue(locationId, out var matches)) return result;
+            foreach (var m in matches) result.Add((m.Pin, m.Section, MapsOf(m.Pin)));
+            return result;
+        }
+
+        public PopTrackerLocation FindPin(string mapId, string pinName)
+        {
+            if (_pack == null) return null;
+            return _pack.Locations.FirstOrDefault(l => l.Name == pinName && MapsOf(l).Any(m => string.Equals(m, mapId, StringComparison.OrdinalIgnoreCase)))
+                   ?? _pack.Locations.FirstOrDefault(l => l.Name == pinName);
+        }
+
+        public static List<string> MapsOf(PopTrackerLocation loc)
+        {
+            var maps = new List<string>();
+            if (!string.IsNullOrEmpty(loc.MapRef)) maps.Add(loc.MapRef);
+            if (loc.MapLocations != null)
+            {
+                foreach (var ml in loc.MapLocations)
+                {
+                    if (!string.IsNullOrEmpty(ml.Map) && !maps.Contains(ml.Map, StringComparer.OrdinalIgnoreCase)) maps.Add(ml.Map);
+                }
+            }
+            return maps;
+        }
+
+        public List<(PopTrackerLocation Loc, float X, float Y)> PinsOnMap(string mapId)
+        {
+            var pins = new List<(PopTrackerLocation, float, float)>();
+            if (_pack == null) return pins;
+            foreach (var loc in _pack.Locations)
+            {
+                if (loc.MapRef.Equals(mapId, StringComparison.OrdinalIgnoreCase)) pins.Add((loc, loc.X, loc.Y));
+                if (loc.MapLocations == null) continue;
+                foreach (var ml in loc.MapLocations)
+                {
+                    if (ml.Map.Equals(mapId, StringComparison.OrdinalIgnoreCase)) pins.Add((loc, ml.X, ml.Y));
+                }
+            }
+            return pins;
+        }
+
+        /// <summary>Status of one AP location as the map colors it.</summary>
+        public string LocationState(long id)
+        {
+            if (_checkedLocs.Contains(id)) return "checked";
+            string excluded = Excluded(id) ? ", excluded" : "";
+            if (_logicHidden) return (_hintedLocs.Contains(id) ? "hinted" : "open") + excluded;
+            bool r = _reachableLocs.Contains(id), h = _hintedLocs.Contains(id);
+            return (h && r ? "hinted, in logic" : h ? "hinted, out of logic" : r ? "in logic" : "out of logic") + excluded;
+        }
+
         private AppSettings _appSettings;
         private Archipelago.MultiClient.Net.ArchipelagoSession _session;
         private LoadedPack _pack;
         private string _currentMapId = "";
 
         private Dictionary<long, string> _locIdToMap = new Dictionary<long, string>();
-        private Dictionary<string, long> _locNameToId = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
-        private Dictionary<long, string> _locIdToName = new Dictionary<long, string>();
 
         private HashSet<long> _reachableLocs = new HashSet<long>();
         private HashSet<long> _checkedLocs = new HashSet<long>();
@@ -59,7 +185,10 @@ namespace AP_Atlas.UI
             _sortDropdown.Selected = _appSettings.MapSortIndex;
             _sortDropdown.ItemSelected += (idx) => { _appSettings.MapSortIndex = (int)idx; DataManager.SaveSettings(_appSettings); RefreshMapList(); };
             sortHBox.AddChild(_sortDropdown);
-            sortMargin.AddChild(sortHBox);
+            var sortVBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            sortVBox.AddChild(sortHBox);
+            sortVBox.AddChild(BuildDisplayOptions());
+            sortMargin.AddChild(sortVBox);
             var listScroll = new ScrollContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
             leftVBox.AddChild(listScroll);
             var listMargin = new MarginContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
@@ -104,6 +233,122 @@ namespace AP_Atlas.UI
             AddChild(_cameraSaveTimer);
         }
 
+        public override void _EnterTree()
+        {
+            DisplayOptionsChanged += OnDisplayOptionsChanged;
+            // Options changed while this map was out of the tree: catch up.
+            if (_shownDisplayVersion != _displayVersion) OnDisplayOptionsChanged();
+        }
+
+        // --- Display options (shared by every slot's map) ---
+
+        private Button _displayToggle;
+        private HSlider _nodeSizeSlider;
+        private Label _nodeSizeValue;
+        private OptionButton _excludedModeDropdown;
+        private OptionButton _notInSeedDropdown;
+        private CheckBox _hideCheckedBox;
+        private bool _syncingDisplay;
+        private static int _displayVersion;
+        private int _shownDisplayVersion;
+
+        private Control BuildDisplayOptions()
+        {
+            var box = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            _displayToggle = new Button { Text = "▸ Display", Flat = true, Alignment = HorizontalAlignment.Left, TooltipText = "Node size and which pins the map shows" };
+            box.AddChild(_displayToggle);
+            var panel = new VBoxContainer { Visible = false, SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            panel.AddThemeConstantOverride("separation", 6);
+            box.AddChild(panel);
+            _displayToggle.Pressed += () =>
+            {
+                panel.Visible = !panel.Visible;
+                _displayToggle.Text = (panel.Visible ? "▾" : "▸") + " Display";
+            };
+
+            var sizeRow = new HBoxContainer();
+            sizeRow.AddChild(new Label { Text = "Node size", Modulate = Colors.DarkGray, CustomMinimumSize = new Vector2(100, 0) });
+            _nodeSizeSlider = new HSlider { MinValue = 0.3, MaxValue = 3.0, Step = 0.05, SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ShrinkCenter, TooltipText = "Size of the map pins (double-click to reset)" };
+            _nodeSizeValue = new Label { CustomMinimumSize = new Vector2(48, 0), HorizontalAlignment = HorizontalAlignment.Right };
+            _nodeSizeSlider.ValueChanged += v =>
+            {
+                _nodeSizeValue.Text = $"{Math.Round(v * 100)}%";
+                if (_syncingDisplay) return;
+                _appSettings.MapNodeScale = (float)v;
+                DisplayChanged();
+            };
+            _nodeSizeSlider.GuiInput += e =>
+            {
+                if (e is InputEventMouseButton { DoubleClick: true, ButtonIndex: MouseButton.Left }) _nodeSizeSlider.Value = 1.0;
+            };
+            sizeRow.AddChild(_nodeSizeSlider);
+            sizeRow.AddChild(_nodeSizeValue);
+            panel.AddChild(sizeRow);
+
+            OptionButton ModeRow(string label, string tooltip, Action<int> set)
+            {
+                var row = new HBoxContainer { TooltipText = tooltip };
+                row.AddChild(new Label { Text = label, Modulate = Colors.DarkGray, CustomMinimumSize = new Vector2(100, 0), TooltipText = tooltip, MouseFilter = MouseFilterEnum.Pass });
+                var dd = new OptionButton { SizeFlagsHorizontal = SizeFlags.ExpandFill, TooltipText = tooltip };
+                dd.AddItem("Show");
+                dd.AddItem("Dim");
+                dd.AddItem("Hide");
+                dd.ItemSelected += idx =>
+                {
+                    if (_syncingDisplay) return;
+                    set((int)idx);
+                    DisplayChanged();
+                };
+                row.AddChild(dd);
+                panel.AddChild(row);
+                return dd;
+            }
+            _excludedModeDropdown = ModeRow("Excluded", "Checks excluded by your seed's options, or by you (Properties → Exclude).\nDim or Hide also leaves them out of the map counts.",
+                m => _appSettings.MapExcludedMode = m);
+            _notInSeedDropdown = ModeRow("Not in seed", "Pins whose checks don't exist in your seed (options turned them off), or that the pack couldn't match.\nThe Pack Doctor can fix pins that should match.",
+                m => _appSettings.MapNotInSeedMode = m);
+
+            _hideCheckedBox = new CheckBox { Text = "Hide checked pins", TooltipText = "Hide pins whose checks are all done" };
+            _hideCheckedBox.Toggled += on =>
+            {
+                if (_syncingDisplay) return;
+                _appSettings.MapHideChecked = on;
+                DisplayChanged();
+            };
+            panel.AddChild(_hideCheckedBox);
+            SyncDisplayControls();
+            return box;
+        }
+
+        private void SyncDisplayControls()
+        {
+            _syncingDisplay = true;
+            _nodeSizeSlider.Value = Math.Clamp(_appSettings.MapNodeScale, 0.3f, 3.0f);
+            _nodeSizeValue.Text = $"{Math.Round(_nodeSizeSlider.Value * 100)}%";
+            _excludedModeDropdown.Selected = Math.Clamp(_appSettings.MapExcludedMode, 0, 2);
+            _notInSeedDropdown.Selected = Math.Clamp(_appSettings.MapNotInSeedMode, 0, 2);
+            _hideCheckedBox.ButtonPressed = _appSettings.MapHideChecked;
+            _syncingDisplay = false;
+        }
+
+        private void DisplayChanged()
+        {
+            // The slider fires continuously while dragged: save once it settles.
+            if (_cameraSaveTimer.IsInsideTree()) _cameraSaveTimer.Start();
+            else DataManager.SaveSettings(_appSettings);
+            _displayVersion++;
+            DisplayOptionsChanged?.Invoke();
+        }
+
+        private void OnDisplayOptionsChanged()
+        {
+            if (!IsInstanceValid(this)) return;
+            _shownDisplayVersion = _displayVersion;
+            SyncDisplayControls();
+            RefreshMapListCounters();
+            if (!string.IsNullOrEmpty(_currentMapId)) RenderLocations();
+        }
+
         private Timer _cameraSaveTimer;
         public void SetSession(Archipelago.MultiClient.Net.ArchipelagoSession session)
         {
@@ -121,11 +366,10 @@ namespace AP_Atlas.UI
         private void BuildLocationMaps()
         {
             _locIdToMap.Clear();
-            if (_pack == null) return;
+            if (_pack == null || _index == null) return;
             foreach (var loc in _pack.Locations)
             {
-                var ids = GetLocationIds(loc);
-                foreach (long id in ids)
+                foreach (long id in _index.IdsFor(loc))
                 {
                     if (!string.IsNullOrEmpty(loc.MapRef)) _locIdToMap[id] = loc.MapRef;
                     if (loc.MapLocations != null)
@@ -138,57 +382,34 @@ namespace AP_Atlas.UI
                 }
             }
         }
-        public void LoadPack(LoadedPack pack)
+
+        private PackIndex _index;
+
+        /// <summary>The pin ↔ location pairing in use (mapping scripts, names and the user's fixes).</summary>
+        public PackIndex Index => _index;
+
+        /// <summary>Loads a pack with its pairing to this slot's locations.</summary>
+        public void LoadPack(LoadedPack pack, PackIndex index)
         {
+            using var __perf = AP_Atlas.Core.PerfMonitor.Measure("Map Tracker: load pack");
             _pack = pack;
+            _index = index;
             if (_emptyStateContainer != null) _emptyStateContainer.Visible = false;
             if (_viewportContainer != null) _viewportContainer.Visible = true;
-            BuildNameLookup();
-            if (_session != null) BuildLocationMaps();
+            BuildLocationMaps();
             RefreshMapList();
-            if (_pack.Maps.Count > 0)
+            if (_pack.Maps.Count > 0 && (string.IsNullOrEmpty(_currentMapId) || !_pack.Maps.ContainsKey(_currentMapId)))
             {
                 SwitchMap(_pack.Maps.Keys.First());
             }
-        }
-        private void BuildNameLookup()
-        {
-            _locNameToId.Clear();
-            _locIdToName.Clear();
-            if (_session == null) return;
-            foreach (var id in _session.Locations.AllLocations)
+            else if (!string.IsNullOrEmpty(_currentMapId))
             {
-                string n = _session.Locations.GetLocationNameFromId(id);
-                if (string.IsNullOrEmpty(n)) continue;
-                _locIdToName[id] = n;
-                _locNameToId[n] = id;
-                int dash = n.IndexOf(" - ");
-                if (dash > 0)
-                {
-                    string prefix = n.Substring(0, dash).Trim();
-                    if (!_locNameToId.ContainsKey(prefix)) _locNameToId[prefix] = id;
-                }
+                RenderLocations();
             }
         }
-        private List<long> GetLocationIds(PopTrackerLocation loc)
-        {
-            var ids = new List<long>();
-            if (_session == null || _pack == null) return ids;
-            string searchName = loc.Name;
-            if (loc.Sections != null && loc.Sections.Count > 0)
-            {
-                foreach (var sec in loc.Sections)
-                {
-                    string secName = !string.IsNullOrEmpty(sec.Name) ? sec.Name : searchName;
-                    if (_locNameToId.TryGetValue(secName, out long sId)) ids.Add(sId);
-                }
-            }
-            else
-            {
-                if (_locNameToId.TryGetValue(searchName, out long id)) ids.Add(id);
-            }
-            return ids;
-        }
+
+        /// <summary>AP location ids a pin covers.</summary>
+        public List<long> GetLocationIds(PopTrackerLocation loc) => _index?.IdsFor(loc) ?? new List<long>();
         private class MapStat
         {
             public int Reachable = 0;
@@ -235,7 +456,7 @@ namespace AP_Atlas.UI
                 rowBtn.CustomMinimumSize = new Vector2(0, rowMargin.GetCombinedMinimumSize().Y);
                 _mapListContainer.AddChild(btn);
                 string mapId = map.Id;
-                btn.Pressed += () => SwitchMap(mapId);
+                btn.Pressed += () => { SwitchMap(mapId); MapPicked?.Invoke(mapId); };
             }
             _mapListContainer.AddThemeConstantOverride("separation", 4);
             RefreshMapListCounters();
@@ -243,12 +464,13 @@ namespace AP_Atlas.UI
         }
         private void RefreshMapListCounters()
         {
+            using var __perf = AP_Atlas.Core.PerfMonitor.Measure("Map Tracker: map list counters");
             if (_pack == null || _session == null) return;
             var mapCounts = new Dictionary<string, MapStat>(StringComparer.OrdinalIgnoreCase);
             foreach (var map in _pack.Maps.Values) mapCounts[map.Id] = new MapStat();
             foreach (var loc in _pack.Locations)
             {
-                var ids = GetLocationIds(loc);
+                var ids = CountedIds(GetLocationIds(loc));
                 if (ids.Count == 0) continue;
                 int reachableChecks = 0;
                 int hintedReachableChecks = 0;
@@ -296,7 +518,10 @@ namespace AP_Atlas.UI
                     string mId = btn.GetMeta("map_id").AsString();
                     if (mapCounts.TryGetValue(mId, out var stat))
                     {
-                        btn.SetMeta("sort_count", stat.TotalSort);
+                        // With logic hidden, sort by all open checks so the order doesn't reveal logic.
+                        btn.SetMeta("sort_count", _logicHidden
+                            ? stat.Reachable + stat.Inaccessible + stat.HintedReachable + stat.HintedInaccessible
+                            : stat.TotalSort);
                         var counterHBox = btn.GetNodeOrNull<HBoxContainer>("Margin/HBox/Counters");
                         if (counterHBox != null)
                         {
@@ -312,10 +537,18 @@ namespace AP_Atlas.UI
                                 panel.AddChild(lbl);
                                 counterHBox.AddChild(panel);
                             }
-                            AddPill(stat.Reachable, Colors.LimeGreen, Colors.Black);
-                            AddPill(stat.HintedReachable, Colors.DeepSkyBlue, Colors.Black);
-                            AddPill(stat.HintedInaccessible, Colors.Purple, Colors.White);
-                            AddPill(stat.Inaccessible, Colors.Crimson, Colors.White);
+                            if (_logicHidden)
+                            {
+                                AddPill(stat.Reachable + stat.Inaccessible, OpenNeutral, Colors.White);
+                                AddPill(stat.HintedReachable + stat.HintedInaccessible, HintedNeutral, Colors.White);
+                            }
+                            else
+                            {
+                                AddPill(stat.Reachable, Colors.LimeGreen, Colors.Black);
+                                AddPill(stat.HintedReachable, Colors.DeepSkyBlue, Colors.Black);
+                                AddPill(stat.HintedInaccessible, Colors.Purple, Colors.White);
+                                AddPill(stat.Inaccessible, Colors.Crimson, Colors.White);
+                            }
                         }
                     }
                 }
@@ -376,6 +609,7 @@ namespace AP_Atlas.UI
 
         public override void _ExitTree()
         {
+            DisplayOptionsChanged -= OnDisplayOptionsChanged;
             // Flush a pending debounced camera save.
             if (!_cameraSaveTimer.IsStopped())
             {
@@ -413,6 +647,7 @@ namespace AP_Atlas.UI
         }
         private void RenderLocations(HashSet<long> newlyUnlocked = null)
         {
+            using var __perf = AP_Atlas.Core.PerfMonitor.Measure("Map Tracker: draw markers");
             foreach (Node n in _nodesOverlay.GetChildren()) n.QueueFree();
             if (_pack == null || string.IsNullOrEmpty(_currentMapId)) return;
             var nodesToDraw = new List<(PopTrackerLocation Loc, float X, float Y)>();
@@ -433,26 +668,50 @@ namespace AP_Atlas.UI
                     }
                 }
             }
+            int excludedMode = _appSettings.MapExcludedMode, notInSeedMode = _appSettings.MapNotInSeedMode;
             foreach (var node in nodesToDraw)
             {
                 var loc = node.Loc;
                 var ids = GetLocationIds(loc);
                 Color nodeColor = Colors.Crimson; // Red by default
-                if (ids.Count > 0 && _session != null)
+                bool dim = false;
+                string stateNote = "";
+                if (ids.Count == 0)
                 {
-                    bool anyReachable = false;
-                    bool allChecked = true;
-                    bool anyHinted = false;
-                    foreach (long id in ids)
+                    // No check of this pin exists in the seed (turned off by options, or the pack doesn't match).
+                    if (notInSeedMode == ModeHide) continue;
+                    if (notInSeedMode == ModeDim) { nodeColor = NotInSeedColor; dim = true; }
+                    stateNote = "\n(Not in your seed, or not matched to it)";
+                }
+                else
+                {
+                    var open = ids.Where(id => !_checkedLocs.Contains(id)).ToList();
+                    int excludedOpen = open.Count(Excluded);
+                    // Excluded checks don't color the pin unless they're shown like any other check.
+                    var counted = excludedMode == ModeShow ? open : open.Where(id => !Excluded(id)).ToList();
+                    if (open.Count == 0)
                     {
-                        if (!_checkedLocs.Contains(id)) allChecked = false;
-                        if (_reachableLocs.Contains(id) && !_checkedLocs.Contains(id)) anyReachable = true;
-                        if (_hintedLocs.Contains(id)) anyHinted = true;
+                        if (_appSettings.MapHideChecked) continue;
+                        nodeColor = Colors.DimGray;
                     }
-                    if (allChecked) nodeColor = Colors.DimGray;
-                    else if (anyHinted && anyReachable) nodeColor = Colors.DeepSkyBlue;
-                    else if (anyHinted && !anyReachable) nodeColor = Colors.Purple;
-                    else if (anyReachable) nodeColor = Colors.LimeGreen;
+                    else if (counted.Count == 0)
+                    {
+                        // Everything left here is excluded.
+                        if (excludedMode == ModeHide) continue;
+                        dim = true;
+                        nodeColor = Colors.DimGray;
+                        stateNote = excludedOpen == 1 ? "\nExcluded" : $"\nExcluded ({excludedOpen} checks)";
+                    }
+                    else
+                    {
+                        bool anyReachable = counted.Any(_reachableLocs.Contains);
+                        bool anyHinted = counted.Any(_hintedLocs.Contains);
+                        if (_logicHidden) nodeColor = anyHinted ? HintedNeutral : OpenNeutral;
+                        else if (anyHinted && anyReachable) nodeColor = Colors.DeepSkyBlue;
+                        else if (anyHinted && !anyReachable) nodeColor = Colors.Purple;
+                        else if (anyReachable) nodeColor = Colors.LimeGreen;
+                        if (excludedOpen > 0) stateNote = $"\n{excludedOpen} excluded";
+                    }
                 }
                 float size = 24f;
                 if (_pack.Maps.TryGetValue(_currentMapId, out var currentMap) && currentMap.LocationSize > 0)
@@ -468,9 +727,11 @@ namespace AP_Atlas.UI
                 {
                     Position = new Vector2(node.X - (size / 2), node.Y - (size / 2)),
                     CustomMinimumSize = new Vector2(size, size),
-                    TooltipText = loc.Name + (ids.Count > 0 ? "" : "\n(Not found in AP logic)"),
+                    TooltipText = loc.Name + stateNote,
                     MouseDefaultCursorShape = CursorShape.PointingHand
                 };
+                // Dimmed pins stay clickable, so an excluded check can be included again from Properties.
+                if (dim) btn.Modulate = new Color(1f, 1f, 1f, DimAlpha);
                 var style = new StyleBoxFlat
                 {
                     BgColor = nodeColor,
@@ -484,12 +745,44 @@ namespace AP_Atlas.UI
                     BorderWidthRight = 2,
                     BorderColor = Colors.Black
                 };
+                // Flags color the pin's ring; special locations get a gold glow.
+                if (MarkerLookup != null && ids.Count > 0)
+                {
+                    int flag = 0;
+                    bool special = false;
+                    foreach (long id in ids)
+                    {
+                        var m = MarkerLookup(id);
+                        if (m.Flag > 0 && flag == 0) flag = m.Flag;
+                        special |= m.Special;
+                    }
+                    if (flag > 0)
+                    {
+                        style.BorderColor = AP_Atlas.Core.Annotations.FlagColor(flag);
+                        int ring = Math.Max(3, (int)(size * 0.18f));
+                        style.BorderWidthTop = style.BorderWidthBottom = style.BorderWidthLeft = style.BorderWidthRight = ring;
+                    }
+                    if (special)
+                    {
+                        style.ShadowColor = AP_Atlas.Core.Annotations.SpecialColor;
+                        style.ShadowSize = Math.Max(4, (int)(size * 0.35f));
+                    }
+                    if (flag > 0 || special)
+                    {
+                        string extra = (flag > 0 ? $"\nFlag: {AP_Atlas.Core.Annotations.FlagLabel(flag)}" : "") + (special ? "\n◆ Special" : "");
+                        btn.TooltipText += extra;
+                    }
+                }
                 var hoverStyle = (StyleBoxFlat)style.Duplicate();
                 hoverStyle.BgColor = nodeColor.Lightened(0.2f);
                 btn.AddThemeStyleboxOverride("normal", style);
                 btn.AddThemeStyleboxOverride("hover", hoverStyle);
                 btn.AddThemeStyleboxOverride("pressed", style);
                 btn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+                var pinIds = ids;
+                string pinName = loc.Name;
+                string pinMap = _currentMapId;
+                btn.Pressed += () => PinPicked?.Invoke(pinMap, pinName, pinIds);
                 _nodesOverlay.AddChild(btn);
                 if (newlyUnlocked != null)
                 {
@@ -502,8 +795,9 @@ namespace AP_Atlas.UI
                         scaleTween.TweenProperty(btn, "scale", new Vector2(1.5f, 1.5f), 0.4f).SetTrans(Tween.TransitionType.Sine);
                         scaleTween.TweenProperty(btn, "scale", new Vector2(1.0f, 1.0f), 0.4f).SetTrans(Tween.TransitionType.Sine);
                         var colorTween = btn.CreateTween().SetLoops(10);
-                        colorTween.TweenProperty(btn, "modulate", new Color(2f, 2f, 2f, 1f), 0.4f);
-                        colorTween.TweenProperty(btn, "modulate", new Color(1f, 1f, 1f, 1f), 0.4f);
+                        float alpha = btn.Modulate.A;
+                        colorTween.TweenProperty(btn, "modulate", new Color(2f, 2f, 2f, Math.Max(alpha, 0.8f)), 0.4f);
+                        colorTween.TweenProperty(btn, "modulate", new Color(1f, 1f, 1f, alpha), 0.4f);
                     }
                 }
             }

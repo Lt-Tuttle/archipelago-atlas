@@ -53,12 +53,12 @@ namespace AP_Atlas.Core
             btnVBox.AddThemeConstantOverride("separation", 10);
 
             var searchBtn = new Button { Text = "Find Missing Packs Online" };
-            searchBtn.AddThemeColorOverride("font_color", Colors.SkyBlue);
+            AddAccentText(searchBtn);
             searchBtn.Pressed += OnSearchPressed;
             btnVBox.AddChild(searchBtn);
 
             var updatesBtn = new Button { Text = "Check for Updates" };
-            updatesBtn.AddThemeColorOverride("font_color", Colors.LightGreen);
+            AddAccentText(updatesBtn);
             updatesBtn.Pressed += OnCheckUpdatesPressed;
             btnVBox.AddChild(updatesBtn);
 
@@ -71,7 +71,7 @@ namespace AP_Atlas.Core
             btnVBox.AddChild(folderBtn);
 
             var rescanBtn = new Button { Text = "Rescan Packs" };
-            rescanBtn.AddThemeColorOverride("font_color", Godot.Colors.Yellow);
+            AddAccentText(rescanBtn);
             rescanBtn.Pressed += RefreshPackList;
             btnVBox.AddChild(rescanBtn);
 
@@ -88,16 +88,65 @@ namespace AP_Atlas.Core
             var emptyLbl = new Label { Text = "Select a map pack to view details.", HorizontalAlignment = HorizontalAlignment.Center };
             _inspectorContainer.AddChild(emptyLbl);
 
-            VisibilityChanged += () => { if (Visible) RefreshPackList(); };
+            // Re-scan only when the packs folder changed since the list was last built.
+            VisibilityChanged += () => { if (Visible) RefreshPackListIfChanged(); };
         }
 
 
+
+        // Buttons whose label is drawn in the theme accent; re-colored when the accent changes.
+        private readonly List<Button> _accentTextButtons = new List<Button>();
+
+        private void AddAccentText(Button button)
+        {
+            button.AddThemeColorOverride("font_color", ThemeColors.Accent);
+            _accentTextButtons.Add(button);
+        }
+
+        private static StyleBoxFlat PackRowStyle(bool selected) => new StyleBoxFlat
+        {
+            BgColor = new Color(selected ? "#2A2D2E" : "#252526"),
+            BorderColor = selected ? ThemeColors.Accent : new Color("#333"),
+            BorderWidthLeft = selected ? 4 : 1,
+            BorderWidthBottom = 1,
+            BorderWidthTop = 1,
+            BorderWidthRight = 1,
+            CornerRadiusTopLeft = 4,
+            CornerRadiusTopRight = 4,
+            CornerRadiusBottomLeft = 4,
+            CornerRadiusBottomRight = 4,
+            ContentMarginLeft = 15,
+            ContentMarginRight = 15,
+            ContentMarginTop = 10,
+            ContentMarginBottom = 10
+        };
+
+        public override void _EnterTree()
+        {
+            ThemeColors.AccentChanged += OnAccentChanged;
+            PackDoctorService.ReportReady += OnDoctorReportReady;
+        }
+
+        public override void _ExitTree()
+        {
+            ThemeColors.AccentChanged -= OnAccentChanged;
+            PackDoctorService.ReportReady -= OnDoctorReportReady;
+        }
+
+        private void OnAccentChanged()
+        {
+            _accentTextButtons.RemoveAll(b => !GodotObject.IsInstanceValid(b));
+            foreach (var b in _accentTextButtons) b.AddThemeColorOverride("font_color", ThemeColors.Accent);
+            if (_selectedPackRow != null && GodotObject.IsInstanceValid(_selectedPackRow))
+                _selectedPackRow.AddThemeStyleboxOverride("panel", PackRowStyle(true));
+        }
 
         private void ShowPackDetails(string zipPath)
         {
             foreach (Node n in _inspectorContainer.GetChildren()) n.QueueFree();
             var pack = PopTrackerPackLoader.InspectZipPack(zipPath, null);
             if (pack == null) return;
+            _shownPackPath = zipPath;
             var vbox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
             _inspectorContainer.AddChild(vbox);
 
@@ -129,92 +178,27 @@ namespace AP_Atlas.Core
             txt += $"[color=lime]Maps Extracted:[/color] {pack.Maps.Count}\n";
             txt += $"[color=lime]Nodes Extracted:[/color] {pack.Locations.Count}\n\n";
 
-            if (activeSession != null)
+            // Pack Doctor summary: how well the pack pairs with the game's real items and locations.
+            txt += "[b]--- PACK DOCTOR ---[/b]\n";
+            if (PackDoctorService.Reports.TryGetValue(PackFixes.KeyFor(pack), out var report) && report != null)
             {
-                txt += $"[b]--- LOGIC TRACKER COMPARISON (Active Session: {activeSession.ConnectionInfo.Game}) ---[/b]\n";
-
-                var apIds = activeSession.Locations.AllLocations;
-                int apCount = apIds.Count;
-
-                int matchedSections = 0;
-                int totalSections = 0;
-                int matchedIds = 0;
-
-                var missingIds = new HashSet<long>();
-                var foundIds = new HashSet<long>();
-
-                var idToName = new Dictionary<long, string>();
-                var nameToId = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
-                foreach (var id in apIds)
-                {
-                    string n = activeSession.Locations.GetLocationNameFromId(id);
-                    if (!string.IsNullOrEmpty(n))
-                    {
-                        idToName[id] = n;
-                        nameToId[n] = id;
-                        int dash = n.IndexOf(" - ");
-                        if (dash > 0) nameToId[n.Substring(0, dash).Trim()] = id;
-                    }
-                    missingIds.Add(id);
-                }
-
-                foreach (var loc in pack.Locations)
-                {
-                    string searchName = loc.Name;
-                    if (loc.Sections != null && loc.Sections.Count > 0)
-                    {
-                        foreach (var sec in loc.Sections)
-                        {
-                            totalSections++;
-                            string sName = !string.IsNullOrEmpty(sec.Name) ? sec.Name : searchName;
-                            if (nameToId.TryGetValue(sName, out long id))
-                            {
-                                matchedSections++;
-                                if (!foundIds.Contains(id))
-                                {
-                                    foundIds.Add(id);
-                                    missingIds.Remove(id);
-                                    matchedIds++;
-                                }
-                            }
-                        }
-                    }
-                    else
-                    {
-                        totalSections++;
-                        if (nameToId.TryGetValue(searchName, out long id))
-                        {
-                            matchedSections++;
-                            if (!foundIds.Contains(id))
-                            {
-                                foundIds.Add(id);
-                                missingIds.Remove(id);
-                                matchedIds++;
-                            }
-                        }
-                    }
-                }
-
-                txt += $"[color=cyan]AP Logic Engine Checks:[/color] {apCount}\n";
-                txt += $"[color=cyan]Map Pack Checks:[/color] {totalSections}\n";
-                txt += $"[color=lime]Successfully Linked:[/color] {matchedIds}\n";
-
-                if (missingIds.Count > 0)
-                {
-                    txt += $"\n[color=red]Warning: {missingIds.Count} checks in the Logic Engine are completely missing from the Map Pack![/color]\n";
-                    txt += $"[color=gray](This usually happens when map packs intentionally omit Menu/Shop items, or when location names don't match)[/color]\n";
-                    int sample = 0;
-                    foreach (var mId in missingIds)
-                    {
-                        if (sample++ < 5) txt += $"  - {idToName[mId]}\n";
-                    }
-                    if (missingIds.Count > 5) txt += $"  ...and {missingIds.Count - 5} more.\n";
-                }
+                int needs = report.NeedsReview.Count();
+                txt += report.Names == null
+                    ? "[color=orange]No name list for this game yet (connect a slot or set the Archipelago install path).[/color]\n"
+                    : $"[color=gray]Checked against {report.Names.Game} names from the {report.Names.Source}.[/color]\n";
+                txt += $"[color=cyan]Key Items tiles linked:[/color] {report.TilesLinked} / {report.TilesTotal}\n";
+                txt += $"[color=cyan]Pin sections linked:[/color] {report.SectionsLinked} / {report.SectionsTotal}\n";
+                txt += $"[color=cyan]Game locations on a map:[/color] {report.ApLocationsPlaced} / {report.ApLocationsTotal}\n";
+                txt += needs > 0 ? $"[color=orange]{needs} thing{(needs == 1 ? "" : "s")} to review.[/color]\n" : "[color=lime]Nothing needs your attention.[/color]\n";
+                int fixCount = PackFixes.Get(PackFixes.KeyFor(pack)).Count;
+                if (fixCount > 0) txt += $"[color=#FFC53D]{fixCount} local fix{(fixCount == 1 ? "" : "es")} applied.[/color]\n";
             }
             else
             {
-                txt += $"[color=gray]Connect to an Archipelago slot playing this game to see Logic Engine comparisons.[/color]\n";
+                txt += "[color=gray]Checking…[/color]\n";
+                _ = PackDoctorService.CheckAsync(pack, prompt: false);
             }
+            _ = activeSession; // the Doctor uses every name source, not just a connected session
 
             txt += $"\n[b]--- MAP LIST ---[/b]\n";
             foreach (var map in pack.Maps.Values)
@@ -229,8 +213,13 @@ namespace AP_Atlas.Core
             var btnHBox = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
             btnHBox.AddThemeConstantOverride("separation", 20);
 
+            var doctorBtn = new Button { Text = "Pack Doctor…", CustomMinimumSize = new Vector2(200, 40), TooltipText = "Check this pack against the game and fix problems locally" };
+            AddAccentText(doctorBtn);
+            doctorBtn.Pressed += () => OpenDoctor?.Invoke(zipPath);
+            btnHBox.AddChild(doctorBtn);
+
             var updateBtn = new Button { Text = "Update Map Pack", CustomMinimumSize = new Vector2(200, 40) };
-            updateBtn.AddThemeColorOverride("font_color", Colors.SkyBlue);
+            AddAccentText(updateBtn);
             updateBtn.Pressed += () => CheckSinglePackUpdate(zipPath);
             btnHBox.AddChild(updateBtn);
 
@@ -314,15 +303,67 @@ namespace AP_Atlas.Core
                 _logAction($"[color=red]Failed to check for updates: {ex.Message}[/color]");
             }
         }
-        private void RefreshPackList()
+        private string _packListSignature;
+        private bool _packListLoading;
+
+        private static string[] GetPackFiles()
         {
-
-            foreach (Node n in _packListVBox.GetChildren()) n.QueueFree();
-
             string dataDir = System.IO.Path.Combine(DataManager.GetDataDirectory(), "packs");
             if (!Directory.Exists(dataDir)) Directory.CreateDirectory(dataDir);
+            return Directory.GetFiles(dataDir, "*.zip");
+        }
 
-            var files = Directory.GetFiles(dataDir, "*.zip");
+        private static string PackFolderSignature(string[] files) =>
+            string.Join("|", files.Select(f => { var i = new FileInfo(f); return $"{f}:{i.Length}:{i.LastWriteTimeUtc.Ticks}"; }));
+
+        private void RefreshPackListIfChanged()
+        {
+            if (PackFolderSignature(GetPackFiles()) != _packListSignature) RefreshPackList();
+        }
+
+        /// <summary>
+        /// Rebuilds the pack list. Packs that haven't been parsed yet (each zip holds every map/item image)
+        /// are read on a worker thread first so opening the tab doesn't freeze the UI.
+        /// </summary>
+        private async void RefreshPackList()
+        {
+            if (_packListLoading) return;
+            _packListLoading = true;
+            try
+            {
+                var files = GetPackFiles();
+                var uncached = files.Where(f => !PopTrackerPackLoader.IsPackCached(f)).ToList();
+                if (uncached.Count > 0)
+                {
+                    foreach (Node n in _packListVBox.GetChildren()) n.QueueFree();
+                    var loading = new Label { Text = $"Reading {uncached.Count} map pack(s)...", HorizontalAlignment = HorizontalAlignment.Center };
+                    loading.AddThemeColorOverride("font_color", Colors.Gray);
+                    _packListVBox.AddChild(loading);
+                    _logAction($"[color=gray]Reading {uncached.Count} map pack(s) in the background (map and item images are decoded once, then cached)...[/color]");
+                    var sw = System.Diagnostics.Stopwatch.StartNew();
+                    await Task.Run(() =>
+                    {
+                        foreach (var f in uncached) PopTrackerPackLoader.InspectZipPack(f, null);
+                    });
+                    if (!GodotObject.IsInstanceValid(this)) return;
+                    _logAction($"[color=gray]Map packs ready ({sw.ElapsedMilliseconds} ms).[/color]");
+                }
+                _packListSignature = PackFolderSignature(files);
+                using (PerfMonitor.Measure("Build map pack list"))
+                {
+                    BuildPackRows(files);
+                }
+            }
+            finally
+            {
+                _packListLoading = false;
+            }
+        }
+
+        private void BuildPackRows(string[] files)
+        {
+            foreach (Node n in _packListVBox.GetChildren()) n.QueueFree();
+
             if (files.Length == 0)
             {
                 var lbl = new Label { Text = "No map packs installed.", HorizontalAlignment = HorizontalAlignment.Center };
@@ -340,8 +381,7 @@ namespace AP_Atlas.Core
                     var manifest = pack.Manifest;
 
                     var row = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-                    var style = new StyleBoxFlat { BgColor = new Color("#252526"), BorderColor = new Color("#333"), BorderWidthBottom = 1, BorderWidthTop = 1, BorderWidthLeft = 1, BorderWidthRight = 1, CornerRadiusTopLeft = 4, CornerRadiusTopRight = 4, CornerRadiusBottomLeft = 4, CornerRadiusBottomRight = 4, ContentMarginLeft = 15, ContentMarginRight = 15, ContentMarginTop = 10, ContentMarginBottom = 10 };
-                    row.AddThemeStyleboxOverride("panel", style);
+                    row.AddThemeStyleboxOverride("panel", PackRowStyle(false));
 
                     var hbox = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
                     var infoVBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
@@ -370,6 +410,12 @@ namespace AP_Atlas.Core
                     locIndicator.AddThemeFontSizeOverride("font_size", 11);
                     locIndicator.AddThemeColorOverride("font_color", pack.Locations.Count > 0 ? Colors.LightGreen : Colors.DimGray);
                     capsHbox.AddChild(locIndicator);
+                    // Pack Doctor status (filled in when a check finishes).
+                    var doctorBadge = new Label { Name = "DoctorBadge" };
+                    doctorBadge.AddThemeFontSizeOverride("font_size", 11);
+                    doctorBadge.SetMeta("pack_key", PackFixes.KeyFor(pack));
+                    capsHbox.AddChild(doctorBadge);
+                    UpdateDoctorBadge(doctorBadge);
                     infoVBox.AddChild(capsHbox);
 
                     hbox.AddChild(infoVBox);
@@ -383,14 +429,13 @@ namespace AP_Atlas.Core
                         {
                             if (_selectedPackRow != null && GodotObject.IsInstanceValid(_selectedPackRow))
                             {
-                                var oldStyle = new StyleBoxFlat { BgColor = new Color("#252526"), BorderColor = new Color("#333"), BorderWidthBottom = 1, BorderWidthTop = 1, BorderWidthLeft = 1, BorderWidthRight = 1, CornerRadiusTopLeft = 4, CornerRadiusTopRight = 4, CornerRadiusBottomLeft = 4, CornerRadiusBottomRight = 4, ContentMarginLeft = 15, ContentMarginRight = 15, ContentMarginTop = 10, ContentMarginBottom = 10 };
-                                _selectedPackRow.AddThemeStyleboxOverride("panel", oldStyle);
+                                _selectedPackRow.AddThemeStyleboxOverride("panel", PackRowStyle(false));
                             }
                             _selectedPackRow = row;
-                            var newStyle = new StyleBoxFlat { BgColor = new Color("#2A2D2E"), BorderColor = new Color("#007acc"), BorderWidthLeft = 4, BorderWidthBottom = 1, BorderWidthTop = 1, BorderWidthRight = 1, CornerRadiusTopLeft = 4, CornerRadiusTopRight = 4, CornerRadiusBottomLeft = 4, CornerRadiusBottomRight = 4, ContentMarginLeft = 15, ContentMarginRight = 15, ContentMarginTop = 10, ContentMarginBottom = 10 };
-                            row.AddThemeStyleboxOverride("panel", newStyle);
+                            row.AddThemeStyleboxOverride("panel", PackRowStyle(true));
 
                             ShowPackDetails(localFilePath);
+                            Inspector.Inspect(InspectTarget.ForPack(localFilePath));
                         }
                     };
                     row.AddChild(hbox);
@@ -402,7 +447,61 @@ namespace AP_Atlas.Core
                 }
             }
             OnDataRefreshed?.Invoke();
+            CheckNewOrChangedPacks(files);
         }
+
+        // =====================================================================
+        // Pack Doctor
+        // =====================================================================
+
+        /// <summary>Opens the Pack Doctor for a zip (set by the main window).</summary>
+        public Action<string> OpenDoctor { get; set; }
+
+        // Zips seen this session (path → last write), so installs and updates are checked, but not every pack at startup.
+        private static readonly Dictionary<string, DateTime> _seenPacks = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+        private static bool _firstScanDone;
+
+        private void CheckNewOrChangedPacks(string[] files)
+        {
+            foreach (var file in files)
+            {
+                var stamp = System.IO.File.GetLastWriteTimeUtc(file);
+                bool isNewOrChanged = !_seenPacks.TryGetValue(file, out var seen) || seen != stamp;
+                _seenPacks[file] = stamp;
+                if (!_firstScanDone || !isNewOrChanged) continue;
+                var pack = PopTrackerPackLoader.InspectZipPack(file, null);
+                if (pack != null) _ = PackDoctorService.CheckAsync(pack);
+            }
+            _firstScanDone = true;
+        }
+
+        private void UpdateDoctorBadge(Label badge)
+        {
+            if (!GodotObject.IsInstanceValid(badge)) return;
+            string key = badge.GetMeta("pack_key").AsString();
+            if (!PackDoctorService.Reports.TryGetValue(key, out var report) || report == null)
+            {
+                badge.Text = "";
+                return;
+            }
+            int needs = report.NeedsReview.Count();
+            int fixes = PackFixes.Get(key).Count;
+            badge.Text = needs > 0 ? $"⚠ {needs} to review" : "✔ Checked" + (fixes > 0 ? $" · {fixes} fix{(fixes == 1 ? "" : "es")}" : "");
+            badge.AddThemeColorOverride("font_color", needs > 0 ? Colors.Orange : Colors.LightGreen);
+        }
+
+        private void OnDoctorReportReady(string key)
+        {
+            if (!GodotObject.IsInstanceValid(this)) return;
+            foreach (Node row in _packListVBox.GetChildren())
+            {
+                var badge = row.FindChild("DoctorBadge", true, false) as Label;
+                if (badge != null && badge.GetMeta("pack_key").AsString() == key) UpdateDoctorBadge(badge);
+            }
+            if (_shownPackPath != null && PackFixes.KeyFor(PopTrackerPackLoader.InspectZipPack(_shownPackPath)) == key) ShowPackDetails(_shownPackPath);
+        }
+
+        private string _shownPackPath;
 
         private void OnOpenFolderPressed()
         {
@@ -547,7 +646,13 @@ namespace AP_Atlas.Core
                                 string destDir = System.IO.Path.Combine(DataManager.GetDataDirectory(), "packs");
                                 if (!System.IO.Directory.Exists(destDir)) System.IO.Directory.CreateDirectory(destDir);
                                 string destPath = System.IO.Path.Combine(destDir, zipFileName);
-                                System.IO.File.WriteAllBytes(destPath, zipBytes);
+                                // A truncated download or an error page saved as .zip would break pack loading: verify first.
+                                using (var check = new System.IO.Compression.ZipArchive(new System.IO.MemoryStream(zipBytes), System.IO.Compression.ZipArchiveMode.Read))
+                                {
+                                    if (!check.Entries.Any(e => e.FullName.EndsWith("manifest.json", StringComparison.OrdinalIgnoreCase)))
+                                        throw new System.IO.InvalidDataException("the download isn't a PopTracker pack (no manifest.json)");
+                                }
+                                AP_Atlas.Core.SafeFile.WriteAllBytes(destPath, zipBytes);
                                 _logAction($"[color=lime]Successfully auto-installed {zipFileName}![/color]");
 
                                 // Re-render UI list

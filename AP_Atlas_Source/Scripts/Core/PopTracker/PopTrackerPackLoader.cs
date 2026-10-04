@@ -13,11 +13,51 @@ namespace AP_Atlas.Core.PopTracker
     public class LoadedPack
     {
         public PopTrackerManifest Manifest { get; set; } = new PopTrackerManifest();
-        public Dictionary<string, PopTrackerItem> ItemsByCode { get; set; } = new Dictionary<string, PopTrackerItem>();
-        public List<List<string>> ItemGrids { get; set; } = new List<List<string>>(); // A flattened list of all item rows
+        public string SourcePath { get; set; } = "";
+
+        /// <summary>Folder inside the zip that holds manifest.json ("" when it's at the root).</summary>
+        public string RootPrefix { get; set; } = "";
+        public Dictionary<string, PopTrackerItem> ItemsByCode { get; set; } = new Dictionary<string, PopTrackerItem>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Every itemgrid in the pack's tracker layout, in display order, with its group header and size.</summary>
+        public List<PackItemGrid> ItemGridGroups { get; set; } = new List<PackItemGrid>();
+
+        /// <summary>Rows of the grids that hold items (settings grids left out).</summary>
+        public List<List<string>> ItemGrids => ItemGridGroups.Where(g => !g.LooksLikeSettings).SelectMany(g => g.Rows).ToList();
+
         public Dictionary<string, ImageTexture> Images { get; set; } = new Dictionary<string, ImageTexture>(StringComparer.OrdinalIgnoreCase);
         public Dictionary<string, PopTrackerMap> Maps { get; set; } = new Dictionary<string, PopTrackerMap>(StringComparer.OrdinalIgnoreCase);
         public List<PopTrackerLocation> Locations { get; set; } = new List<PopTrackerLocation>();
+
+        /// <summary>From item_mapping.lua: Archipelago item id → pack item codes.</summary>
+        public Dictionary<long, List<string>> ItemMapping { get; set; } = new Dictionary<long, List<string>>();
+
+        /// <summary>From location_mapping.lua: Archipelago location id → "@Pin/Path/Section" strings.</summary>
+        public Dictionary<long, List<string>> LocationMappingById { get; set; } = new Dictionary<long, List<string>>();
+
+        /// <summary>From location_mapping.lua files that list paths without ids (matched to AP locations by name).</summary>
+        public List<string> UnkeyedLocationPaths { get; set; } = new List<string>();
+
+        /// <summary>Problems found while reading the pack, for the Pack Doctor.</summary>
+        public List<string> LoadIssues { get; set; } = new List<string>();
+
+        /// <summary>Image paths items or maps referenced that weren't in the pack or couldn't be decoded.</summary>
+        public HashSet<string> BrokenImages { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Finds an image by a path as items/maps write it ("images/x.png", "/images/x.png", or without extension).</summary>
+        public ImageTexture FindImage(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return null;
+            string p = path.Replace("\\", "/");
+            if (Images.TryGetValue(p, out var tex) || Images.TryGetValue("/" + p.TrimStart('/'), out tex) || Images.TryGetValue(p.TrimStart('/'), out tex)) return tex;
+            string baseName = p.Contains('.') ? p.Substring(0, p.LastIndexOf('.')) : p;
+            foreach (var kvp in Images)
+            {
+                string key = kvp.Key.Contains('.') ? kvp.Key.Substring(0, kvp.Key.LastIndexOf('.')) : kvp.Key;
+                if (key.TrimStart('/') == baseName.TrimStart('/')) return kvp.Value;
+            }
+            return null;
+        }
     }
 
     public static class PopTrackerPackLoader
@@ -47,6 +87,13 @@ namespace AP_Atlas.Core.PopTracker
                 Directory.CreateDirectory(dir);
             }
             return dir;
+        }
+
+        /// <summary>True when the zip at this path has already been parsed and is unchanged on disk.</summary>
+        public static bool IsPackCached(string zipPath)
+        {
+            var info = new System.IO.FileInfo(zipPath);
+            return info.Exists && GetCachedPack(zipPath, info.LastWriteTimeUtc) != null;
         }
 
         public static LoadedPack InspectZipPack(string zipPath, Action<string> logDebug = null)
@@ -152,73 +199,34 @@ namespace AP_Atlas.Core.PopTracker
                     }
 
                     if (logDebug != null) logDebug($"[PopTracker] Match found! Extracting pack '{manifest.Name}' for game '{targetGameName}' with root prefix '{rootPrefix}'...");
-                    var pack = new LoadedPack { Manifest = manifest };
+                    var pack = new LoadedPack { Manifest = manifest, SourcePath = zipPath, RootPrefix = rootPrefix };
 
                     // 2. Read items
-                    var itemEntries = archive.Entries.Where(e => e.FullName.StartsWith(rootPrefix + "items/", StringComparison.OrdinalIgnoreCase) && (e.FullName.EndsWith(".json", StringComparison.OrdinalIgnoreCase) || e.FullName.EndsWith(".jsonc", StringComparison.OrdinalIgnoreCase)));
+                    var itemEntries = archive.Entries.Where(e => e.FullName.StartsWith(rootPrefix + "items/", StringComparison.OrdinalIgnoreCase) && IsJsonFile(e.FullName));
                     foreach (var entry in itemEntries)
                     {
-                        string json = ReadStringFromEntry(entry);
-                        try
+                        var token = ParseJsonLenient(entry, pack, logDebug);
+                        if (token is not JArray itemsArray) continue;
+                        foreach (var itemToken in itemsArray)
                         {
-                            var itemsList = JsonConvert.DeserializeObject<List<PopTrackerItem>>(json);
-                            if (itemsList != null)
+                            PopTrackerItem item;
+                            try { item = itemToken.ToObject<PopTrackerItem>(); }
+                            catch (Exception ex)
                             {
-                                foreach (var item in itemsList)
-                                {
-                                    var codes = item.GetCodes();
-                                    foreach (var code in codes)
-                                    {
-                                        pack.ItemsByCode[code] = item;
-                                    }
-                                }
+                                pack.LoadIssues.Add($"{entry.FullName}: skipped an item that couldn't be read ({ex.Message}).");
+                                continue;
                             }
-                        }
-                        catch (Exception ex)
-                        {
-                            if (logDebug != null) logDebug($"[PopTracker] Error: Failed to parse items json {entry.FullName}: {ex.Message}");
-                            GD.PrintErr($"Failed to parse items json {entry.FullName}: {ex.Message}");
+                            if (item == null) continue;
+                            foreach (var code in item.GetCodes())
+                            {
+                                // A code shared by several items (e.g. "cinders") keeps the first; specific codes stay unique.
+                                if (!pack.ItemsByCode.ContainsKey(code)) pack.ItemsByCode[code] = item;
+                            }
                         }
                     }
 
-                    // 3. Read layouts to extract grid rows
-                    var layoutEntries = archive.Entries.Where(e => e.FullName.StartsWith(rootPrefix + "layouts/", StringComparison.OrdinalIgnoreCase) && (e.FullName.EndsWith(".json", StringComparison.OrdinalIgnoreCase) || e.FullName.EndsWith(".jsonc", StringComparison.OrdinalIgnoreCase))).ToList();
-
-                    layoutEntries.Sort((a, b) =>
-                    {
-                        bool aItems = a.FullName.EndsWith("items.json", StringComparison.OrdinalIgnoreCase);
-                        bool bItems = b.FullName.EndsWith("items.json", StringComparison.OrdinalIgnoreCase);
-                        bool aTracker = a.FullName.EndsWith("tracker.json", StringComparison.OrdinalIgnoreCase);
-                        bool bTracker = b.FullName.EndsWith("tracker.json", StringComparison.OrdinalIgnoreCase);
-
-                        if (aItems && !bItems) return -1;
-                        if (!aItems && bItems) return 1;
-                        if (aTracker && !bTracker) return -1;
-                        if (!aTracker && bTracker) return 1;
-                        return a.FullName.CompareTo(b.FullName);
-                    });
-
-                    foreach (var entry in layoutEntries)
-                    {
-                        string json = ReadStringFromEntry(entry);
-                        try
-                        {
-                            var jToken = JToken.Parse(json);
-                            int gridCount = pack.ItemGrids.Count;
-                            ExtractItemGrids(jToken, pack.ItemGrids);
-
-                            // If we found grids in this layout, stop reading other files to prevent duplicate alternate layouts
-                            if (pack.ItemGrids.Count > gridCount)
-                            {
-                                break;
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            if (logDebug != null) logDebug($"[PopTracker] Error: Failed to parse layout json {entry.FullName}: {ex.Message}");
-                            GD.PrintErr($"Failed to parse layout json {entry.FullName}: {ex.Message}");
-                        }
-                    }
+                    // 3. Read layouts: follow the tracker layout through its groups to find the item grids.
+                    ExtractLayoutGrids(archive, rootPrefix, pack, logDebug);
 
                     // 4. Load Images
                     var imageEntries = archive.Entries.Where(e => e.FullName.StartsWith(rootPrefix + "images/", StringComparison.OrdinalIgnoreCase) && !e.FullName.EndsWith("/"));
@@ -250,6 +258,13 @@ namespace AP_Atlas.Core.PopTracker
                             var texture = ImageTexture.CreateFromImage(img);
                             pack.Images["/" + localPath] = texture; // Match the /images/... pathing from items.json
                             pack.Images[localPath] = texture; // And without slash just in case
+                        }
+                        else if (err != Error.Failed) // Failed = unsupported extension, skipped on purpose
+                        {
+                            // Godot logs only a bare ERR_PARSE_ERROR for these; name the image so the user knows what's missing.
+                            AP_Atlas.Core.Logger.LogWarning($"Map pack '{System.IO.Path.GetFileName(zipPath)}': could not decode image '{localPath}' ({err}). Anything using it (e.g. a map background) will appear blank.");
+                            pack.BrokenImages.Add(localPath);
+                            pack.LoadIssues.Add($"Image '{localPath}' couldn't be decoded ({err}).");
                         }
                     }
 
@@ -374,7 +389,11 @@ namespace AP_Atlas.Core.PopTracker
                         }
                     }
 
-                    if (logDebug != null) logDebug($"[PopTracker] Extraction Complete! Items: {pack.ItemsByCode.Count}, Layout Grids: {pack.ItemGrids.Count}, Maps: {pack.Maps.Count}, Locations: {pack.Locations.Count}");
+                    // 7. Read the autotracking mapping scripts: the pack's own AP id ↔ item code / location path tables.
+                    ReadMappingScripts(archive, rootPrefix, pack);
+                    pack.LoadIssues = pack.LoadIssues.Distinct().ToList();
+
+                    if (logDebug != null) logDebug($"[PopTracker] Extraction Complete! Items: {pack.ItemsByCode.Count}, Layout Grids: {pack.ItemGridGroups.Count}, Maps: {pack.Maps.Count}, Locations: {pack.Locations.Count}, Item mappings: {pack.ItemMapping.Count}, Location mappings: {pack.LocationMappingById.Count + pack.UnkeyedLocationPaths.Count}");
 
                     // Link Textures
                     foreach (var map in pack.Maps.Values)
@@ -403,13 +422,14 @@ namespace AP_Atlas.Core.PopTracker
             }
         }
 
-        private static void ExtractLocationsRecursive(PopTrackerLocation loc, List<PopTrackerLocation> outList)
+        private static void ExtractLocationsRecursive(PopTrackerLocation loc, List<PopTrackerLocation> outList, string parentPath = "")
         {
+            loc.FullPath = string.IsNullOrEmpty(parentPath) ? loc.Name : parentPath + "/" + loc.Name;
             if (loc.Children != null && loc.Children.Count > 0)
             {
                 foreach (var child in loc.Children)
                 {
-                    ExtractLocationsRecursive(child, outList);
+                    ExtractLocationsRecursive(child, outList, loc.FullPath);
                 }
             }
             if (loc.MapLocations != null && loc.MapLocations.Count > 0)
@@ -431,38 +451,215 @@ namespace AP_Atlas.Core.PopTracker
             }
         }
 
-        private static void ExtractItemGrids(JToken token, List<List<string>> outputGrids)
+        private static bool IsJsonFile(string name) =>
+            name.EndsWith(".json", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".jsonc", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Parses pack JSON the way PopTracker tolerates it: comments allowed, and trailing commas repaired.
+        /// Repairs and failures are recorded on the pack for the Doctor.
+        /// </summary>
+        private static JToken ParseJsonLenient(ZipArchiveEntry entry, LoadedPack pack, Action<string> logDebug)
         {
-            if (token.Type == JTokenType.Object)
+            string json = ReadStringFromEntry(entry);
+            var settings = new JsonLoadSettings { CommentHandling = CommentHandling.Ignore };
+            try
             {
-                var obj = (JObject)token;
-                if (obj["type"]?.ToString() == "itemgrid" && obj["rows"] is JArray rowsArray)
+                return JToken.Parse(json, settings);
+            }
+            catch (Exception first)
+            {
+                string repaired = Regex.Replace(json, @",(\s*[\]}])", "$1");
+                try
                 {
-                    foreach (var rowToken in rowsArray)
+                    var token = JToken.Parse(repaired, settings);
+                    pack.LoadIssues.Add($"{entry.FullName}: repaired invalid JSON (trailing commas).");
+                    return token;
+                }
+                catch (Exception)
+                {
+                    pack.LoadIssues.Add($"{entry.FullName}: couldn't be read ({first.Message}).");
+                    logDebug?.Invoke($"[PopTracker] Error: Failed to parse {entry.FullName}: {first.Message}");
+                    return null;
+                }
+            }
+        }
+
+        // Root layouts PopTracker shows, in the order it prefers them.
+        private static readonly string[] RootLayoutKeys = { "tracker_default", "tracker_horizontal", "tracker_vertical", "tracker_broadcast" };
+
+        /// <summary>
+        /// Collects the pack's item grids by walking its tracker layout the way PopTracker renders it: through
+        /// "layout" references (by key), "group" headers, docks, tabs and arrays. Each grid keeps its group header
+        /// and tile size, and grids under a settings-like group are marked so Key Items can leave them out.
+        /// </summary>
+        private static void ExtractLayoutGrids(ZipArchive archive, string rootPrefix, LoadedPack pack, Action<string> logDebug)
+        {
+            var layouts = new Dictionary<string, JToken>(StringComparer.OrdinalIgnoreCase);
+            var layoutEntries = archive.Entries
+                .Where(e => e.FullName.StartsWith(rootPrefix + "layouts/", StringComparison.OrdinalIgnoreCase) && IsJsonFile(e.FullName))
+                .OrderBy(e => e.FullName, StringComparer.OrdinalIgnoreCase);
+            foreach (var entry in layoutEntries)
+            {
+                if (ParseJsonLenient(entry, pack, logDebug) is JObject obj)
+                {
+                    foreach (var prop in obj.Properties()) layouts[prop.Name] = prop.Value;
+                }
+            }
+            if (layouts.Count == 0) return;
+
+            var seen = new HashSet<string>();
+            void AddGrid(PackItemGrid grid)
+            {
+                if (grid.Rows.Count == 0) return;
+                string signature = string.Join(";", grid.Rows.Select(r => string.Join(",", r)));
+                if (!seen.Add(signature)) return; // the same grid reached through another root layout
+                pack.ItemGridGroups.Add(grid);
+            }
+
+            void Walk(JToken token, string header, string layoutKey, HashSet<string> visiting)
+            {
+                if (token is JArray arr)
+                {
+                    // Consecutive single "item" elements form a row, as PopTracker lays them out.
+                    var pendingRow = new List<string>();
+                    void FlushRow()
                     {
-                        if (rowToken is JArray colArray)
+                        if (pendingRow.Count == 0) return;
+                        AddGrid(new PackItemGrid { Header = header, LayoutKey = layoutKey, Rows = new List<List<string>> { new List<string>(pendingRow) } });
+                        pendingRow.Clear();
+                    }
+                    foreach (var child in arr)
+                    {
+                        if (child is JObject co && co["type"]?.ToString() == "item" && co["item"] != null) { pendingRow.Add(co["item"].ToString()); continue; }
+                        FlushRow();
+                        Walk(child, header, layoutKey, visiting);
+                    }
+                    FlushRow();
+                    return;
+                }
+                if (token is not JObject obj) return;
+                string type = obj["type"]?.ToString() ?? "";
+                switch (type)
+                {
+                    case "itemgrid":
+                        var grid = new PackItemGrid { Header = header, LayoutKey = layoutKey };
+                        if (obj["item_size"] != null && int.TryParse(obj["item_size"].ToString().Split(',')[0].Trim(), out int size))
                         {
-                            var rowList = colArray.Select(c => c.ToString()).ToList();
-                            if (rowList.Count > 0)
+                            // Some packs write tiny values ("4, 4") that can't be pixels; keep the default and report it.
+                            if (size >= 12) grid.ItemSize = size;
+                            else pack.LoadIssues.Add($"Layout '{layoutKey}': item_size \"{obj["item_size"]}\" is too small to be a pixel size; using the default.");
+                        }
+                        if (obj["rows"] is JArray rows)
+                        {
+                            foreach (var row in rows.OfType<JArray>())
                             {
-                                outputGrids.Add(rowList);
+                                var codes = row.Select(c => c.Type == JTokenType.Null ? "" : c.ToString()).ToList();
+                                if (codes.Count > 0) grid.Rows.Add(codes);
                             }
                         }
-                    }
+                        AddGrid(grid);
+                        return;
+                    case "item":
+                        if (obj["item"] != null) AddGrid(new PackItemGrid { Header = header, LayoutKey = layoutKey, Rows = { new List<string> { obj["item"].ToString() } } });
+                        return;
+                    case "layout":
+                        string key = obj["key"]?.ToString();
+                        if (key != null && layouts.TryGetValue(key, out var referenced) && visiting.Add(key))
+                        {
+                            Walk(referenced, header, key, visiting);
+                            visiting.Remove(key);
+                        }
+                        return;
+                    case "group":
+                        string groupHeader = obj["header"]?.ToString();
+                        if (obj["content"] != null) Walk(obj["content"], string.IsNullOrEmpty(groupHeader) ? header : groupHeader, layoutKey, visiting);
+                        return;
+                    case "map":
+                        return;
                 }
-                else
+                if (obj["content"] != null) Walk(obj["content"], header, layoutKey, visiting);
+                if (obj["tabs"] is JArray tabs)
                 {
-                    foreach (var property in obj.Properties())
+                    foreach (var tab in tabs.OfType<JObject>())
                     {
-                        ExtractItemGrids(property.Value, outputGrids);
+                        string title = tab["title"]?.ToString();
+                        if (tab["content"] != null) Walk(tab["content"], string.IsNullOrEmpty(title) ? header : title, layoutKey, visiting);
                     }
                 }
             }
-            else if (token.Type == JTokenType.Array)
+
+            var roots = RootLayoutKeys.Where(layouts.ContainsKey).ToList();
+            if (roots.Count == 0) roots = layouts.Keys.Where(k => k.StartsWith("tracker", StringComparison.OrdinalIgnoreCase)).ToList();
+            foreach (var root in roots) Walk(layouts[root], "", root, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { root });
+
+            // No tracker layout: fall back to every layout key, in file order.
+            if (pack.ItemGridGroups.Count == 0)
             {
-                foreach (var child in token)
+                foreach (var kv in layouts) Walk(kv.Value, "", kv.Key, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { kv.Key });
+            }
+
+            foreach (var grid in pack.ItemGridGroups) grid.LooksLikeSettings = LooksLikeSettingsGrid(grid, pack);
+            // Show item grids before settings grids, keeping the pack's order otherwise.
+            pack.ItemGridGroups = pack.ItemGridGroups.OrderBy(g => g.LooksLikeSettings).ToList();
+        }
+
+        private static readonly string[] SettingsHeaderWords = { "setting", "option", "config", "mode", "toggle" };
+        private static readonly string[] SettingsNamePrefixes = { "Shuffle ", "Setting", "Option", "Enable ", "Randomize ", "Goal" };
+
+        /// <summary>Tracker option grids (e.g. "Shuffle Weapons") rather than Archipelago items.</summary>
+        private static bool LooksLikeSettingsGrid(PackItemGrid grid, LoadedPack pack)
+        {
+            string header = grid.Header ?? "";
+            if (SettingsHeaderWords.Any(w => header.IndexOf(w, StringComparison.OrdinalIgnoreCase) >= 0)) return true;
+            var names = grid.Rows.SelectMany(r => r)
+                .Where(c => !string.IsNullOrWhiteSpace(c))
+                .Select(c => pack.ItemsByCode.TryGetValue(c, out var it) ? it.Name ?? "" : "")
+                .ToList();
+            return names.Count > 0 && names.All(n => SettingsNamePrefixes.Any(p => n.StartsWith(p, StringComparison.OrdinalIgnoreCase)));
+        }
+
+        // Item types in item_mapping.lua entries ({"code", "toggle"}); everything else is a code.
+        private static readonly HashSet<string> MappingTypeWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "toggle", "progressive", "consumable", "progressive_toggle", "static", "toggle_badged", "composite_toggle", "progressive_toggle_plus"
+        };
+
+        /// <summary>Reads item_mapping.lua and location_mapping.lua, wherever the pack keeps them.</summary>
+        private static void ReadMappingScripts(ZipArchive archive, string rootPrefix, LoadedPack pack)
+        {
+            var itemScript = archive.Entries.FirstOrDefault(e => e.FullName.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase) &&
+                                                                 e.FullName.EndsWith("item_mapping.lua", StringComparison.OrdinalIgnoreCase));
+            if (itemScript != null)
+            {
+                var result = LuaMappingReader.Read(ReadStringFromEntry(itemScript));
+                foreach (var problem in result.Problems) pack.LoadIssues.Add($"{itemScript.FullName}: {problem}");
+                foreach (var entry in result.Entries.Where(e => e.Id != null))
                 {
-                    ExtractItemGrids(child, outputGrids);
+                    var codes = entry.Strings.Where(s => !MappingTypeWords.Contains(s) && s.Length > 0).ToList();
+                    if (codes.Count == 0) continue;
+                    if (!pack.ItemMapping.TryGetValue(entry.Id.Value, out var list)) pack.ItemMapping[entry.Id.Value] = list = new List<string>();
+                    list.AddRange(codes.Where(c => !list.Contains(c)));
+                }
+                if (result.Entries.Count > 0 && pack.ItemMapping.Count == 0)
+                    pack.LoadIssues.Add($"{itemScript.FullName}: no entries keyed by item id were found.");
+            }
+
+            var locationScript = archive.Entries.FirstOrDefault(e => e.FullName.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase) &&
+                                                                     e.FullName.EndsWith("location_mapping.lua", StringComparison.OrdinalIgnoreCase));
+            if (locationScript != null)
+            {
+                var result = LuaMappingReader.Read(ReadStringFromEntry(locationScript));
+                foreach (var problem in result.Problems) pack.LoadIssues.Add($"{locationScript.FullName}: {problem}");
+                foreach (var entry in result.Entries)
+                {
+                    var paths = entry.Strings.Where(s => s.StartsWith("@")).ToList();
+                    if (paths.Count == 0) continue;
+                    if (entry.Id != null)
+                    {
+                        if (!pack.LocationMappingById.TryGetValue(entry.Id.Value, out var list)) pack.LocationMappingById[entry.Id.Value] = list = new List<string>();
+                        list.AddRange(paths);
+                    }
+                    else pack.UnkeyedLocationPaths.AddRange(paths);
                 }
             }
         }

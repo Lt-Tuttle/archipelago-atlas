@@ -1,0 +1,1069 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.IO.Compression;
+using System.Linq;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+
+namespace AP_Atlas.Core.EngineSetup
+{
+    /// <summary>What the engine's health check reported (the AtlasCheck bridge component).</summary>
+    public class EngineCheckResult
+    {
+        [JsonProperty("python")] public string Python { get; set; }
+        [JsonProperty("ap")] public string Archipelago { get; set; }
+        [JsonProperty("ut")] public string Tracker { get; set; }
+        [JsonProperty("tested_ut")] public List<string> TestedTracker { get; set; } = new();
+        [JsonProperty("games")] public List<string> Games { get; set; } = new();
+        [JsonProperty("failed")] public List<string> FailedWorlds { get; set; } = new();
+        [JsonProperty("tracker")] public bool TrackerLoads { get; set; }
+        [JsonProperty("tracker_error")] public string TrackerError { get; set; }
+        [JsonProperty("error")] public string Error { get; set; }
+        /// <summary>Universal Tracker functions the bridge needs that this version lacks (it changed incompatibly).</summary>
+        [JsonProperty("api_missing")] public List<string> ApiMissing { get; set; } = new();
+        /// <summary>End-to-end test: a small built-in game rebuilt and its logic computed. Null when no test game exists.</summary>
+        [JsonProperty("smoke")] public EngineSmokeResult Smoke { get; set; }
+        public DateTime Checked { get; set; } = DateTime.Now;
+        public string Root { get; set; }
+
+        [JsonIgnore] public bool TrackerTested => !string.IsNullOrEmpty(Tracker) && TestedTracker.Contains(Tracker);
+
+        /// <summary>Everything logic needs works: loads, the tracker's API matches, and the end-to-end test computed logic.</summary>
+        [JsonIgnore] public bool Passed => Error == null && TrackerLoads && (ApiMissing == null || ApiMissing.Count == 0) && (Smoke == null || Smoke.Ok);
+
+        /// <summary>Why the check failed, in one line (null when it passed).</summary>
+        [JsonIgnore]
+        public string Problem =>
+            Error != null ? "the engine didn't start: " + LastLine(Error)
+            : !TrackerLoads ? "the Universal Tracker didn't load: " + LastLine(TrackerError)
+            : ApiMissing?.Count > 0 ? $"this Universal Tracker version is incompatible with Atlas (missing: {string.Join(", ", ApiMissing)})"
+            : Smoke != null && !Smoke.Ok ? $"the end-to-end logic test on {Smoke.Game} failed: {LastLine(Smoke.Error)}"
+            : null;
+
+        private static string LastLine(string s) => string.IsNullOrWhiteSpace(s) ? "unknown error" : s.Trim().Split('\n')[^1].Trim();
+    }
+
+    public class EngineSmokeResult
+    {
+        [JsonProperty("game")] public string Game { get; set; }
+        [JsonProperty("ok")] public bool Ok { get; set; }
+        [JsonProperty("locations")] public int Locations { get; set; }
+        [JsonProperty("in_logic")] public int InLogic { get; set; }
+        [JsonProperty("error")] public string Error { get; set; }
+    }
+
+    /// <summary>What's installed in the portable engine (PortableData/engine/engine.json).</summary>
+    public class PortableEngineState
+    {
+        public string Python { get; set; }
+        public string Archipelago { get; set; }
+        public string PackagesSignature { get; set; }
+        public string Tracker { get; set; }
+        public EngineCheckResult LastCheck { get; set; }
+    }
+
+    public enum EngineStepId { Runtime, Archipelago, Packages, Tracker, Bridge, Check }
+
+    public enum EngineStepState { Ok, Missing, Warning, Error }
+
+    public class EngineStepStatus
+    {
+        public EngineStepId Id { get; set; }
+        public string Title { get; set; }
+        public EngineStepState State { get; set; }
+        public string Detail { get; set; }
+        /// <summary>Button text for the step's fix, or null when there's nothing to do.</summary>
+        public string Action { get; set; }
+    }
+
+    /// <summary>
+    /// The Atlas Engine: the Archipelago + Universal Tracker setup that logic runs on. By default Atlas downloads its
+    /// own portable copy into PortableData/engine (pinned, hash-checked versions; no installer, no admin rights);
+    /// an existing Archipelago install can be used instead. Everything here runs off the main thread except the
+    /// quick status checks.
+    /// </summary>
+    public static class AtlasEngine
+    {
+        // --- Pinned versions (update together, after testing the bridge against them) ---
+        public const string PythonVersion = "3.12.10";
+        private const string PythonUrl = "https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip";
+        private const string PythonSha256 = "4acbed6dd1c744b0376e3b1cf57ce906f9dc9e95e68824584c8099a63025a3c3";
+        private const string PythonPth = "python312._pth";
+        private const string GetPipUrl = "https://bootstrap.pypa.io/get-pip.py";
+
+        public const string ArchipelagoVersion = "0.6.7";
+        private const string ArchipelagoUrl = "https://github.com/ArchipelagoMW/Archipelago/archive/refs/tags/0.6.7.zip";
+        private const string ArchipelagoSha256 = "440dfc50afd35663ccac1052a14bd7dc733b130894282870becb6903174d674a";
+
+        public const string TrackerVersion = "v0.3.4";
+        private const string TrackerUrl = "https://github.com/FarisTheAncient/Archipelago/releases/download/Tracker_v0.3.4/tracker.apworld";
+        private const string TrackerSha256 = "2978cabdac919ba19a7fddb0ed0cf79bee5553f29a6b681f2941a79e0ba02f75";
+
+        /// <summary>Archipelago requirements Atlas leaves out: the desktop GUI and build tools, which the engine never uses.</summary>
+        private static readonly string[] SkippedRequirements = { "kivy", "kivymd", "cython", "pyshortcuts" };
+
+        /// <summary>Packages some bundled worlds import at load time without listing them in requirements.txt.</summary>
+        private static readonly string[] ExtraRequirements = { "requests", "setuptools<81" };
+
+        // --- Paths ---
+        public static string EngineDir => Path.Combine(DataManager.GetDataDirectory(), "engine");
+        public static string PythonDir => Path.Combine(EngineDir, "python");
+        public static string PythonExe => Path.Combine(PythonDir, "python.exe");
+        public static string ArchipelagoDir => Path.Combine(EngineDir, "archipelago");
+        public static string RunnerPath => Path.Combine(EngineDir, "atlas_run.py");
+        private static string StatePath => Path.Combine(EngineDir, "engine.json");
+        private static string DownloadsDir => Path.Combine(EngineDir, "downloads");
+        private static string BackupsDir => Path.Combine(EngineDir, "backups");
+
+        private static AppSettings _settings;
+
+        /// <summary>Raised (on any thread) when the engine's setup or mode changed.</summary>
+        public static event Action Changed;
+
+        public static void Initialize(AppSettings settings)
+        {
+            _settings = settings;
+            RecoverInterruptedUpdate();
+        }
+
+        public static void NotifyChanged() => Changed?.Invoke();
+
+        // =====================================================================
+        // Mode
+        // =====================================================================
+
+        public static bool PortableInstalled => EngineInstall.Portable().CanLaunch;
+
+        /// <summary>
+        /// The engine in use: the user's choice; until they choose, a working existing install keeps being used
+        /// (so downloading the portable engine never silently changes a setup that works), else the portable engine.
+        /// </summary>
+        public static EngineMode EffectiveMode(AppSettings s)
+        {
+            if (s != null && Enum.TryParse<EngineMode>(s.EngineMode, out var chosen)) return chosen;
+            var existing = EngineInstall.Existing(s?.ArchipelagoInstallationPath);
+            if (existing.CanLaunch && existing.HasTracker) return EngineMode.Existing;
+            return EngineMode.Portable;
+        }
+
+        public static EngineInstall Resolve(AppSettings s) =>
+            EffectiveMode(s) == EngineMode.Portable ? EngineInstall.Portable() : EngineInstall.Existing(s?.ArchipelagoInstallationPath);
+
+        public static EngineInstall Current => Resolve(_settings);
+
+        public static void SetMode(EngineMode mode)
+        {
+            if (_settings == null) return;
+            _settings.EngineMode = mode.ToString();
+            DataManager.SaveSettings(_settings);
+            NotifyChanged();
+        }
+
+        /// <summary>Why logic can't run on an engine, or null when it can.</summary>
+        public static string ProblemWith(EngineInstall install)
+        {
+            if (!install.CanLaunch)
+                return install.Mode == EngineMode.Portable ? "The Atlas Engine isn't set up yet." : "Archipelago wasn't found at the chosen folder.";
+            if (!install.HasTracker) return "The Universal Tracker isn't installed in the engine.";
+            return null;
+        }
+
+        // =====================================================================
+        // Existing Archipelago installs
+        // =====================================================================
+
+        /// <summary>Archipelago installs on this PC: the usual folders plus wherever its installer registered itself.</summary>
+        public static List<string> FindArchipelagoInstalls()
+        {
+            var candidates = new List<string>();
+            void Add(string p)
+            {
+                if (string.IsNullOrWhiteSpace(p)) return;
+                try { p = Path.GetFullPath(p.Trim().Trim('"')); } catch { return; }
+                if (!candidates.Contains(p, StringComparer.OrdinalIgnoreCase)) candidates.Add(p);
+            }
+            Add(_settings?.ArchipelagoInstallationPath);
+            Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Archipelago"));
+            Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Archipelago"));
+            Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Archipelago"));
+            Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Archipelago"));
+            foreach (var drive in new[] { "C", "D", "E" }) Add($@"{drive}:\Archipelago");
+            foreach (var p in RegisteredInstalls()) Add(p);
+            return candidates.Where(p => File.Exists(Path.Combine(p, "ArchipelagoLauncher.exe"))).ToList();
+        }
+
+        private static IEnumerable<string> RegisteredInstalls()
+        {
+            var found = new List<string>();
+            if (!OperatingSystem.IsWindows()) return found;
+            try
+            {
+                foreach (var hive in new[] { Microsoft.Win32.Registry.LocalMachine, Microsoft.Win32.Registry.CurrentUser })
+                {
+                    foreach (var path in new[] { @"Software\Microsoft\Windows\CurrentVersion\Uninstall", @"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall" })
+                    {
+                        using var root = hive.OpenSubKey(path);
+                        if (root == null) continue;
+                        foreach (var name in root.GetSubKeyNames())
+                        {
+                            using var key = root.OpenSubKey(name);
+                            string display = key?.GetValue("DisplayName") as string;
+                            if (display == null || !display.StartsWith("Archipelago", StringComparison.OrdinalIgnoreCase)) continue;
+                            if (key.GetValue("InstallLocation") is string location) found.Add(location);
+                        }
+                    }
+                }
+            }
+            catch { }
+            return found;
+        }
+
+        public static void UseExistingInstall(string path)
+        {
+            if (_settings == null) return;
+            _settings.ArchipelagoInstallationPath = path;
+            _settings.EngineMode = EngineMode.Existing.ToString();
+            DataManager.SaveSettings(_settings);
+            NotifyChanged();
+        }
+
+        // =====================================================================
+        // Status
+        // =====================================================================
+
+        private static PortableEngineState _state;
+
+        public static PortableEngineState State
+        {
+            get
+            {
+                if (_state != null) return _state;
+                _state = SafeFile.ReadJson<PortableEngineState>(StatePath, () => null);
+                return _state ??= new PortableEngineState();
+            }
+        }
+
+        private static void SaveState()
+        {
+            try
+            {
+                SafeFile.WriteJson(StatePath, State);
+            }
+            catch (Exception ex) { Logger.LogWarning("Couldn't save the engine state: " + ex.Message); }
+        }
+
+        private static readonly Dictionary<string, EngineCheckResult> _existingChecks = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>The last health check of an engine (this session for an existing install; saved for the portable one).</summary>
+        public static EngineCheckResult LastCheck(EngineInstall install)
+        {
+            if (install.Mode == EngineMode.Portable) return State.LastCheck;
+            lock (_existingChecks) return _existingChecks.TryGetValue(install.Root, out var r) ? r : null;
+        }
+
+        /// <summary>Each setup step's status, cheap enough for the UI thread (no processes started).</summary>
+        public static List<EngineStepStatus> Steps(EngineInstall install)
+        {
+            var steps = new List<EngineStepStatus>();
+            var check = LastCheck(install);
+            if (install.Mode == EngineMode.Portable)
+            {
+                bool python = File.Exists(PythonExe) && File.Exists(Path.Combine(PythonDir, "Lib", "site-packages", "pip", "__init__.py"));
+                steps.Add(new EngineStepStatus
+                {
+                    Id = EngineStepId.Runtime,
+                    Title = "Python runtime",
+                    State = python ? EngineStepState.Ok : EngineStepState.Missing,
+                    Detail = python ? $"Python {State.Python ?? PythonVersion} (portable, {Size(PythonDir)})" : $"Python {PythonVersion} for Windows, about 11 MB from python.org",
+                    Action = python ? null : "Download"
+                });
+                bool ap = File.Exists(Path.Combine(ArchipelagoDir, "Utils.py"));
+                steps.Add(new EngineStepStatus
+                {
+                    Id = EngineStepId.Archipelago,
+                    Title = "Archipelago",
+                    State = ap ? EngineStepState.Ok : EngineStepState.Missing,
+                    Detail = ap ? $"Archipelago {State.Archipelago ?? "?"} (source, {Size(ArchipelagoDir)})" : $"Archipelago {ArchipelagoVersion} source, about 22 MB from GitHub",
+                    Action = ap ? null : "Download"
+                });
+                string wanted = ap ? PackagesSignature() : null;
+                bool packages = ap && State.PackagesSignature != null && State.PackagesSignature == wanted;
+                steps.Add(new EngineStepStatus
+                {
+                    Id = EngineStepId.Packages,
+                    Title = "Python packages",
+                    State = packages ? EngineStepState.Ok : State.PackagesSignature != null && ap ? EngineStepState.Warning : EngineStepState.Missing,
+                    Detail = packages ? "Archipelago's packages (no desktop GUI)" : State.PackagesSignature != null && ap ? "Archipelago's requirements changed; update the packages" : "Archipelago's packages from PyPI, about 20 MB",
+                    Action = packages ? null : ap && python ? "Install" : null
+                });
+            }
+            else
+            {
+                bool ok = install.CanLaunch;
+                steps.Add(new EngineStepStatus
+                {
+                    Id = EngineStepId.Archipelago,
+                    Title = "Archipelago install",
+                    State = ok ? EngineStepState.Ok : EngineStepState.Error,
+                    Detail = ok ? install.Root + (check?.Archipelago != null ? $" (Archipelago {check.Archipelago})" : "") : "No Archipelago install at " + (string.IsNullOrEmpty(install.Root) ? "(no folder chosen)" : install.Root),
+                    Action = ok ? null : "Choose folder"
+                });
+            }
+
+            var trackers = install.CanLaunch ? install.FindAllTrackers() : new List<string>();
+            string trackerDetail;
+            EngineStepState trackerState;
+            if (trackers.Count == 0 && install.FindTracker() == null)
+            {
+                trackerState = EngineStepState.Missing;
+                trackerDetail = $"Universal Tracker {TrackerVersion}, about 0.2 MB from GitHub";
+            }
+            else if (trackers.Count > 1)
+            {
+                trackerState = EngineStepState.Warning;
+                trackerDetail = $"{trackers.Count} copies installed; they conflict ({string.Join(", ", trackers.Select(Path.GetFileName))})";
+            }
+            else if (check != null && !string.IsNullOrEmpty(check.Tracker) && !check.TrackerTested)
+            {
+                trackerState = EngineStepState.Warning;
+                trackerDetail = $"Universal Tracker {check.Tracker} hasn't been tested with Atlas (tested: {string.Join(", ", check.TestedTracker)})";
+            }
+            else
+            {
+                trackerState = EngineStepState.Ok;
+                trackerDetail = "Universal Tracker " + (check?.Tracker ?? "installed");
+            }
+            steps.Add(new EngineStepStatus
+            {
+                Id = EngineStepId.Tracker,
+                Title = "Universal Tracker",
+                State = trackerState,
+                Detail = trackerDetail,
+                Action = !install.CanLaunch ? null : trackerState == EngineStepState.Ok ? null : trackerState == EngineStepState.Missing ? "Download" : $"Use {TrackerVersion}"
+            });
+
+            bool bridge = install.WorldsDir != null && BridgeIsCurrent(install);
+            steps.Add(new EngineStepStatus
+            {
+                Id = EngineStepId.Bridge,
+                Title = "Atlas bridge",
+                State = bridge ? EngineStepState.Ok : EngineStepState.Missing,
+                Detail = bridge ? "Installed" : "Atlas's connector to the tracker (written by Atlas, no download)",
+                Action = bridge || !install.CanLaunch ? null : "Install"
+            });
+
+            EngineStepState checkState;
+            string checkDetail;
+            if (check == null) { checkState = EngineStepState.Missing; checkDetail = "Not run yet"; }
+            else if (!check.Passed) { checkState = EngineStepState.Error; checkDetail = "Failed: " + check.Problem; }
+            else
+            {
+                checkState = EngineStepState.Ok;
+                checkDetail = $"Working: Archipelago {check.Archipelago}, tracker {check.Tracker}, {check.Games.Count} games" +
+                              (check.Smoke != null ? $", logic test passed on {check.Smoke.Game}" : "") +
+                              (check.FailedWorlds.Count > 0 ? $" ({check.FailedWorlds.Count} worlds couldn't load)" : "") +
+                              $", checked {check.Checked:g}";
+            }
+            steps.Add(new EngineStepStatus
+            {
+                Id = EngineStepId.Check,
+                Title = "Health check",
+                State = checkState,
+                Detail = checkDetail,
+                Action = install.CanLaunch && install.HasTracker ? (check == null ? "Run" : "Run again") : null
+            });
+            return steps;
+        }
+
+        private static string FirstLine(string s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return "unknown error";
+            var lines = s.Trim().Split('\n');
+            return lines[^1].Trim();
+        }
+
+        private static string Size(string dir)
+        {
+            try
+            {
+                long bytes = new DirectoryInfo(dir).EnumerateFiles("*", SearchOption.AllDirectories).Sum(f => f.Length);
+                return bytes > 1 << 20 ? $"{bytes / (1 << 20)} MB" : $"{bytes / 1024} KB";
+            }
+            catch { return "?"; }
+        }
+
+        // =====================================================================
+        // Setup
+        // =====================================================================
+
+        // --- Safety: one setup at a time, never under a running engine, never left half-installed ---
+
+        private static readonly SemaphoreSlim SetupLock = new SemaphoreSlim(1, 1);
+        private const long RequiredFreeBytes = 700L * 1024 * 1024;
+
+        /// <summary>Asks the slots using an engine (by root folder) to pause their logic so its files can change. Any thread.</summary>
+        public static event Action<string> PauseRequested;
+
+        public static bool SetupRunning => SetupLock.CurrentCount == 0;
+
+        private static async Task<T> Exclusive<T>(Func<Task<T>> body, CancellationToken ct)
+        {
+            await SetupLock.WaitAsync(ct);
+            try { return await body(); }
+            finally
+            {
+                SetupLock.Release();
+                // After the release, so slots waiting on the engine see it free when they react.
+                NotifyChanged();
+            }
+        }
+
+        /// <summary>Stops everything running from this engine (slots pause and resume afterwards) so files can be replaced.</summary>
+        private static async Task StopEnginesUsing(string root, Action<string> log, CancellationToken ct)
+        {
+            if (ProcessJob.RunningUnder(root) == 0) return;
+            log("Pausing logic for the slots using this engine while it changes…");
+            PauseRequested?.Invoke(root);
+            for (int i = 0; i < 100 && ProcessJob.RunningUnder(root) > 0; i++) await Task.Delay(100, ct);
+            int killed = ProcessJob.KillAllUnder(root);
+            if (killed > 0) log($"Stopped {killed} engine process(es) that didn't exit on their own.");
+            await Task.Delay(300, ct); // let Windows release the file handles
+        }
+
+        private static void EnsureFreeSpace(string dir)
+        {
+            DriveInfo drive;
+            try { drive = new DriveInfo(Path.GetPathRoot(Path.GetFullPath(dir))); }
+            catch { return; } // network paths etc.: can't tell, don't block
+            long free;
+            try { free = drive.AvailableFreeSpace; } catch { return; }
+            if (free < RequiredFreeBytes)
+                throw new IOException($"Only {free / (1 << 20)} MB is free on {drive.Name}; the engine needs about {RequiredFreeBytes / (1 << 20)} MB. Free some space and try again.");
+        }
+
+        private static readonly string[] SwappedDirs = { "python", "archipelago" };
+
+        /// <summary>
+        /// Puts a fully prepared folder in place. The version it replaces is kept as "*.previous" until a health check
+        /// passes, so a bad update can always be rolled back.
+        /// </summary>
+        private static void SwapIn(string staged, string target)
+        {
+            string previous = target + ".previous";
+            if (Directory.Exists(target))
+            {
+                // A version from an earlier, unconfirmed update is older than the current one: keep the current.
+                if (Directory.Exists(previous)) DeleteDir(previous);
+                MoveDir(target, previous);
+            }
+            try { MoveDir(staged, target); }
+            catch
+            {
+                if (!Directory.Exists(target) && Directory.Exists(previous)) MoveDir(previous, target);
+                throw;
+            }
+        }
+
+        /// <summary>After a passed health check: drop the kept previous versions.</summary>
+        private static void CommitUpdates()
+        {
+            foreach (var name in SwappedDirs) DeleteDir(Path.Combine(EngineDir, name + ".previous"));
+            _stateBeforeUpdate = null;
+        }
+
+        private static PortableEngineState _stateBeforeUpdate;
+
+        private static void RememberStateBeforeUpdate()
+        {
+            _stateBeforeUpdate ??= JsonConvert.DeserializeObject<PortableEngineState>(JsonConvert.SerializeObject(State));
+        }
+
+        /// <summary>A health check failed after an update: put the previous working versions back.</summary>
+        private static bool RollBack(Action<string> log)
+        {
+            bool any = false;
+            foreach (var name in SwappedDirs)
+            {
+                string dir = Path.Combine(EngineDir, name), previous = dir + ".previous";
+                if (!Directory.Exists(previous)) continue;
+                if (Directory.Exists(dir)) DeleteDir(dir);
+                MoveDir(previous, dir);
+                any = true;
+                log($"Rolled {name} back to the previous working version.");
+            }
+            if (any && _stateBeforeUpdate != null)
+            {
+                _state = _stateBeforeUpdate;
+                _stateBeforeUpdate = null;
+                SaveState();
+            }
+            return any;
+        }
+
+        /// <summary>
+        /// Repairs an engine a crash or power loss left mid-update (called at startup and before setup): restores a
+        /// folder that was moved aside but not replaced, and clears half-finished staging folders and downloads.
+        /// </summary>
+        public static void RecoverInterruptedUpdate()
+        {
+            try
+            {
+                if (!Directory.Exists(EngineDir)) return;
+                foreach (var name in SwappedDirs)
+                {
+                    string dir = Path.Combine(EngineDir, name), previous = dir + ".previous";
+                    if (!Directory.Exists(dir) && Directory.Exists(previous))
+                    {
+                        MoveDir(previous, dir);
+                        Logger.LogWarning($"[Atlas Engine] Restored {name} after an interrupted update.");
+                    }
+                    DeleteDir(dir + ".new");
+                }
+                foreach (var trash in Directory.GetDirectories(EngineDir, "*.trash-*")) DeleteDir(trash);
+                if (Directory.Exists(DownloadsDir))
+                    foreach (var part in Directory.GetFiles(DownloadsDir, "*.part")) EngineDownloader.TryDelete(part);
+            }
+            catch (Exception ex) { Logger.LogWarning("[Atlas Engine] Couldn't check for an interrupted update: " + ex.Message); }
+        }
+
+        private static void MoveDir(string from, string to)
+        {
+            for (int attempt = 0; ; attempt++)
+            {
+                try { Directory.Move(from, to); return; }
+                catch (IOException) when (attempt < 10) { Thread.Sleep(200); } // antivirus scanning a fresh folder
+                catch (UnauthorizedAccessException) when (attempt < 10) { Thread.Sleep(200); }
+            }
+        }
+
+        private static void DeleteDir(string dir)
+        {
+            if (!Directory.Exists(dir)) return;
+            for (int attempt = 0; attempt < 5; attempt++)
+            {
+                try { Directory.Delete(dir, true); return; }
+                catch { Thread.Sleep(200); }
+            }
+            // Still locked: move it out of the way and clean it up next time.
+            try { Directory.Move(dir, dir + ".trash-" + DateTime.Now.ToString("yyyyMMddHHmmss")); } catch { }
+        }
+
+        // --- Setup ---
+
+        /// <summary>
+        /// Runs every step the engine still needs, then a health check. Updated parts are verified before they're
+        /// swapped in; if the check fails afterwards, the previous working engine is restored.
+        /// </summary>
+        public static Task<bool> SetUpAsync(EngineInstall install, Action<string> log, Action<float> progress, CancellationToken ct) =>
+            Exclusive(async () =>
+            {
+                try
+                {
+                    RecoverInterruptedUpdate();
+                    var steps = Steps(install);
+                    bool Needs(EngineStepId id) => steps.Any(s => s.Id == id && s.State != EngineStepState.Ok);
+                    if (install.Mode == EngineMode.Portable)
+                    {
+                        if (Needs(EngineStepId.Runtime)) await InstallRuntimeCore(log, progress, ct);
+                        if (Needs(EngineStepId.Archipelago)) await InstallArchipelagoCore(log, progress, ct);
+                        steps = Steps(install);
+                        if (Needs(EngineStepId.Packages)) await InstallPackagesCore(log, ct);
+                    }
+                    else if (!install.CanLaunch)
+                    {
+                        log("Choose your Archipelago folder first.");
+                        return false;
+                    }
+                    steps = Steps(install);
+                    if (steps.First(s => s.Id == EngineStepId.Tracker).State == EngineStepState.Missing) await InstallTrackerCore(install, log, progress, ct);
+                    InstallBridge(install, log);
+                    return await CheckCommitOrRollBack(install, log, ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    log("Cancelled. Nothing half-installed was kept.");
+                    RecoverInterruptedUpdate();
+                    return false;
+                }
+                catch (Exception ex)
+                {
+                    log("Setup stopped: " + ex.Message);
+                    Logger.LogWarning("[Atlas Engine] " + ex);
+                    RecoverInterruptedUpdate();
+                    if (install.Mode == EngineMode.Portable && RollBack(log)) log("The previous working engine is back in place.");
+                    return false;
+                }
+                finally
+                {
+                    NotifyChanged();
+                }
+            }, ct);
+
+        /// <summary>Runs one step (from the setup window), then verifies the engine the same way setup does.</summary>
+        public static Task<bool> RunStepAsync(EngineInstall install, EngineStepId step, Action<string> log, Action<float> progress, CancellationToken ct) =>
+            Exclusive(async () =>
+            {
+                try
+                {
+                    RecoverInterruptedUpdate();
+                    switch (step)
+                    {
+                        case EngineStepId.Runtime: await InstallRuntimeCore(log, progress, ct); break;
+                        case EngineStepId.Archipelago: await InstallArchipelagoCore(log, progress, ct); break;
+                        case EngineStepId.Packages: await InstallPackagesCore(log, ct); break;
+                        case EngineStepId.Tracker: await InstallTrackerCore(install, log, progress, ct); break;
+                        case EngineStepId.Bridge: InstallBridge(install, log); break;
+                    }
+                    if (step != EngineStepId.Check && !install.CanLaunch) return true; // more steps to go before a check makes sense
+                    InstallBridge(install, log);
+                    return await CheckCommitOrRollBack(install, log, ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    log("Cancelled. Nothing half-installed was kept.");
+                    RecoverInterruptedUpdate();
+                    return false;
+                }
+                catch (Exception ex)
+                {
+                    log("Stopped: " + ex.Message);
+                    Logger.LogWarning("[Atlas Engine] " + ex);
+                    RecoverInterruptedUpdate();
+                    if (install.Mode == EngineMode.Portable && RollBack(log)) log("The previous working engine is back in place.");
+                    return false;
+                }
+                finally
+                {
+                    NotifyChanged();
+                }
+            }, ct);
+
+        private static async Task<bool> CheckCommitOrRollBack(EngineInstall install, Action<string> log, CancellationToken ct)
+        {
+            if (!install.CanLaunch || !install.HasTracker) return false;
+            var check = await RunCheckAsync(install, log, ct);
+            if (check.Passed)
+            {
+                if (install.Mode == EngineMode.Portable) CommitUpdates();
+                return true;
+            }
+            if (install.Mode == EngineMode.Portable && RollBack(log))
+            {
+                log("The updated engine failed its health check, so the previous working version was restored.");
+                await RunCheckAsync(install, log, ct);
+            }
+            return false;
+        }
+
+        private static async Task InstallRuntimeCore(Action<string> log, Action<float> progress, CancellationToken ct)
+        {
+            EnsureFreeSpace(EngineDir);
+            log($"Downloading Python {PythonVersion} from python.org…");
+            string zip = Path.Combine(DownloadsDir, Path.GetFileName(PythonUrl));
+            await EngineDownloader.DownloadAsync(PythonUrl, zip, PythonSha256, Report(progress), ct);
+            log("Verified. Unpacking…");
+            string staging = PythonDir + ".new";
+            DeleteDir(staging);
+            ZipFile.ExtractToDirectory(zip, staging);
+            // site-packages for pip; Archipelago's own folder is added by atlas_run.py at start. Paths are relative,
+            // so the folder still works after it's moved into place.
+            File.WriteAllText(Path.Combine(staging, PythonPth), "python312.zip\n.\nLib\\site-packages\nimport site\n");
+            EngineDownloader.TryDelete(zip);
+
+            log("Installing pip…");
+            string getPip = Path.Combine(DownloadsDir, "get-pip.py");
+            await EngineDownloader.DownloadAsync(GetPipUrl, getPip, null, null, ct);
+            string stagedExe = Path.Combine(staging, "python.exe");
+            int code = await RunAsync(stagedExe, new[] { getPip, "--no-warn-script-location", "--disable-pip-version-check" }, staging, log, ct, TimeSpan.FromMinutes(5));
+            EngineDownloader.TryDelete(getPip);
+            if (code != 0) throw new Exception("pip couldn't be installed (see the log above).");
+            if (await RunAsync(stagedExe, new[] { "-c", "import pip, ssl, sqlite3; print('ok')" }, staging, log, ct, TimeSpan.FromMinutes(1)) != 0)
+                throw new Exception("The new Python runtime doesn't work on this PC (see the log above).");
+
+            await StopEnginesUsing(ArchipelagoDir, log, ct);
+            RememberStateBeforeUpdate();
+            SwapIn(staging, PythonDir);
+            State.Python = PythonVersion;
+            State.PackagesSignature = null; // packages live inside the runtime folder
+            SaveState();
+            log($"Python {PythonVersion} ready.");
+        }
+
+        private static async Task InstallArchipelagoCore(Action<string> log, Action<float> progress, CancellationToken ct)
+        {
+            EnsureFreeSpace(EngineDir);
+            log($"Downloading Archipelago {ArchipelagoVersion} from GitHub…");
+            string zip = Path.Combine(DownloadsDir, $"Archipelago-{ArchipelagoVersion}.zip");
+            await EngineDownloader.DownloadAsync(ArchipelagoUrl, zip, ArchipelagoSha256, Report(progress), ct);
+            log("Verified. Unpacking…");
+            string staging = ArchipelagoDir + ".new";
+            DeleteDir(staging);
+            ZipFile.ExtractToDirectory(zip, staging);
+            // The archive holds one top folder (Archipelago-0.6.7/).
+            var tops = Directory.GetDirectories(staging);
+            if (tops.Length != 1 || !File.Exists(Path.Combine(tops[0], "Utils.py")))
+                throw new InvalidDataException("The Archipelago download doesn't look like Archipelago's source.");
+            string inner = tops[0];
+            // Keep what the user added to an older engine: apworlds, YAMLs, settings.
+            if (Directory.Exists(ArchipelagoDir))
+            {
+                foreach (var keep in new[] { "custom_worlds", "Players" })
+                {
+                    string from = Path.Combine(ArchipelagoDir, keep), to = Path.Combine(inner, keep);
+                    if (!Directory.Exists(from)) continue;
+                    Directory.CreateDirectory(to);
+                    foreach (var f in Directory.GetFiles(from)) File.Copy(f, Path.Combine(to, Path.GetFileName(f)), true);
+                }
+                string hostYaml = Path.Combine(ArchipelagoDir, "host.yaml");
+                if (File.Exists(hostYaml)) File.Copy(hostYaml, Path.Combine(inner, "host.yaml"), true);
+            }
+            Directory.CreateDirectory(Path.Combine(inner, "custom_worlds"));
+            Directory.CreateDirectory(Path.Combine(inner, "Players"));
+            EngineDownloader.TryDelete(zip);
+
+            await StopEnginesUsing(ArchipelagoDir, log, ct);
+            RememberStateBeforeUpdate();
+            SwapIn(inner, ArchipelagoDir);
+            DeleteDir(staging);
+            State.Archipelago = ArchipelagoVersion;
+            State.PackagesSignature = null;
+            State.LastCheck = null;
+            SaveState();
+            WriteRunner();
+            log($"Archipelago {ArchipelagoVersion} ready.");
+        }
+
+        /// <summary>Archipelago's requirements minus the GUI and build tools, plus packages worlds need but don't list.</summary>
+        private static string FilteredRequirements()
+        {
+            string file = Path.Combine(ArchipelagoDir, "requirements.txt");
+            var lines = new List<string>();
+            if (File.Exists(file))
+            {
+                foreach (var raw in File.ReadAllLines(file))
+                {
+                    string line = raw.Split('#')[0].Trim();
+                    if (line.Length == 0 || line.StartsWith("-")) continue;
+                    string name = Regex.Match(line, @"^[A-Za-z0-9_.\-]+").Value.ToLowerInvariant();
+                    if (SkippedRequirements.Contains(name) || line.Contains("git+")) continue;
+                    lines.Add(line);
+                }
+            }
+            lines.AddRange(ExtraRequirements);
+            return string.Join("\n", lines) + "\n";
+        }
+
+        private static string PackagesSignature() =>
+            Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(FilteredRequirements())))[..16];
+
+        private static async Task InstallPackagesCore(Action<string> log, CancellationToken ct)
+        {
+            if (!File.Exists(PythonExe)) throw new Exception("Install the Python runtime first.");
+            EnsureFreeSpace(EngineDir);
+            await StopEnginesUsing(ArchipelagoDir, log, ct);
+            // pip changes the runtime in place and can't undo a half-finished install: keep a copy to roll back to.
+            string previous = PythonDir + ".previous";
+            if (!Directory.Exists(previous))
+            {
+                log("Keeping a copy of the current runtime in case the update has to be undone…");
+                RememberStateBeforeUpdate();
+                CopyDir(PythonDir, previous);
+            }
+            log("Installing Archipelago's Python packages from PyPI…");
+            string req = Path.Combine(EngineDir, "requirements-atlas.txt");
+            File.WriteAllText(req, FilteredRequirements());
+            int code = await RunAsync(PythonExe, new[] { "-m", "pip", "install", "-r", req, "--prefer-binary", "--disable-pip-version-check", "--no-warn-script-location", "--retries", "5", "--timeout", "60" },
+                PythonDir, log, ct, TimeSpan.FromMinutes(15));
+            if (code != 0) throw new Exception("Some packages couldn't be installed (see the log above).");
+            State.PackagesSignature = PackagesSignature();
+            SaveState();
+            log("Packages ready.");
+        }
+
+        private static void CopyDir(string from, string to)
+        {
+            foreach (var dir in Directory.GetDirectories(from, "*", SearchOption.AllDirectories))
+                Directory.CreateDirectory(Path.Combine(to, Path.GetRelativePath(from, dir)));
+            Directory.CreateDirectory(to);
+            foreach (var file in Directory.GetFiles(from, "*", SearchOption.AllDirectories))
+                File.Copy(file, Path.Combine(to, Path.GetRelativePath(from, file)), true);
+        }
+
+        /// <summary>Installs the tested Universal Tracker. Other copies are moved to the engine's backups folder (they'd conflict), and put back if anything fails.</summary>
+        private static async Task InstallTrackerCore(EngineInstall install, Action<string> log, Action<float> progress, CancellationToken ct)
+        {
+            string worlds = install.WorldsDir ?? throw new Exception("The engine has no worlds folder.");
+            log($"Downloading Universal Tracker {TrackerVersion} from GitHub…");
+            string temp = Path.Combine(DownloadsDir, "tracker.apworld");
+            await EngineDownloader.DownloadAsync(TrackerUrl, temp, TrackerSha256, Report(progress), ct);
+            await StopEnginesUsing(install.Root, log, ct);
+            var moved = new List<(string From, string To)>();
+            try
+            {
+                foreach (var other in install.FindAllTrackers())
+                {
+                    Directory.CreateDirectory(BackupsDir);
+                    string backup = Path.Combine(BackupsDir, $"{DateTime.Now:yyyyMMdd-HHmmss}_{Path.GetFileName(other)}");
+                    File.Move(other, backup);
+                    moved.Add((other, backup));
+                    log($"Moved the other tracker copy {Path.GetFileName(other)} to {backup}.");
+                }
+                Directory.CreateDirectory(worlds);
+                File.Move(temp, Path.Combine(worlds, "tracker.apworld"), true);
+            }
+            catch
+            {
+                foreach (var (from, to) in moved) { try { if (!File.Exists(from)) File.Move(to, from); } catch { } }
+                throw;
+            }
+            if (install.Mode == EngineMode.Portable) { State.Tracker = TrackerVersion; SaveState(); }
+            log($"Universal Tracker {TrackerVersion} installed in {worlds}.");
+        }
+
+        // =====================================================================
+        // Bridge
+        // =====================================================================
+
+        public static string BridgeScript() => ReadResource("AtlasEngine.atlas_bridge.py");
+
+        private static string RunnerScript() => ReadResource("AtlasEngine.atlas_run.py");
+
+        private static string ReadResource(string name)
+        {
+            using var stream = typeof(AtlasEngine).Assembly.GetManifestResourceStream(name)
+                ?? throw new InvalidOperationException("Missing embedded resource " + name);
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+            return reader.ReadToEnd();
+        }
+
+        private static bool BridgeIsCurrent(EngineInstall install)
+        {
+            string apworld = Path.Combine(install.WorldsDir, "UltimateBridge.apworld");
+            if (!File.Exists(apworld)) return false;
+            if (install.Mode == EngineMode.Portable && (!File.Exists(RunnerPath) || File.ReadAllText(RunnerPath) != RunnerScript())) return false;
+            return ReadInstalledBridge(apworld) == BridgeScript();
+        }
+
+        /// <summary>Writes the bridge apworld (and the portable runner) when they differ from this build's.</summary>
+        public static void InstallBridge(EngineInstall install, Action<string> log = null)
+        {
+            string worlds = install.WorldsDir;
+            if (worlds == null) return;
+            try
+            {
+                Directory.CreateDirectory(worlds);
+                string looseDir = Path.Combine(worlds, "UltimateBridge");
+                if (Directory.Exists(looseDir)) Directory.Delete(looseDir, true);
+                if (install.Mode == EngineMode.Portable) WriteRunner();
+                string apworld = Path.Combine(worlds, "UltimateBridge.apworld");
+                string script = BridgeScript();
+                // Rewrite only when changed: another slot's bridge may be loading this file right now.
+                if (File.Exists(apworld) && ReadInstalledBridge(apworld) == script) return;
+                string temp = apworld + ".tmp";
+                using (var stream = new FileStream(temp, FileMode.Create))
+                using (var archive = new ZipArchive(stream, ZipArchiveMode.Create))
+                {
+                    var entry = archive.CreateEntry("UltimateBridge/__init__.py");
+                    using var writer = new StreamWriter(entry.Open(), new UTF8Encoding(false));
+                    writer.Write(script);
+                }
+                File.Move(temp, apworld, true);
+                log?.Invoke("Atlas bridge installed.");
+            }
+            catch (Exception ex)
+            {
+                log?.Invoke("Couldn't install the Atlas bridge: " + ex.Message);
+                Logger.LogWarning("[Atlas Engine] Couldn't install the bridge: " + ex.Message);
+            }
+        }
+
+        private static void WriteRunner()
+        {
+            Directory.CreateDirectory(EngineDir);
+            string script = RunnerScript();
+            if (!File.Exists(RunnerPath) || File.ReadAllText(RunnerPath) != script) File.WriteAllText(RunnerPath, script);
+        }
+
+        private static string ReadInstalledBridge(string apworld)
+        {
+            try
+            {
+                using var zip = ZipFile.OpenRead(apworld);
+                var entry = zip.GetEntry("UltimateBridge/__init__.py");
+                if (entry == null) return null;
+                using var reader = new StreamReader(entry.Open(), Encoding.UTF8);
+                return reader.ReadToEnd();
+            }
+            catch { return null; }
+        }
+
+        // =====================================================================
+        // Health check
+        // =====================================================================
+
+        public static async Task<EngineCheckResult> RunCheckAsync(EngineInstall install, Action<string> log, CancellationToken ct)
+        {
+            log?.Invoke("Starting the engine for a health check (loading every game takes a few seconds)…");
+            InstallBridge(install);
+            EngineCheckResult result = null;
+            var errors = new StringBuilder();
+            try
+            {
+                int code = await RunAsync(install.StartInfo("AtlasCheck"), install.Root, line =>
+                {
+                    string t = line.Trim();
+                    if (t.StartsWith("{") && t.Contains("\"python\""))
+                    {
+                        try { result = JsonConvert.DeserializeObject<EngineCheckResult>(t); } catch { }
+                    }
+                }, err => { if (errors.Length < 4000) errors.AppendLine(err); }, ct, TimeSpan.FromMinutes(3));
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex) { errors.AppendLine(ex.Message); }
+
+            result ??= new EngineCheckResult { Error = errors.Length > 0 ? errors.ToString() : "The engine exited without reporting." };
+            result.Checked = DateTime.Now;
+            result.Root = install.Root;
+            if (install.Mode == EngineMode.Portable) { State.LastCheck = result; SaveState(); }
+            else lock (_existingChecks) _existingChecks[install.Root] = result;
+
+            if (!result.Passed) log?.Invoke("Health check failed: " + result.Problem);
+            else
+            {
+                log?.Invoke($"Health check passed: Archipelago {result.Archipelago}, Universal Tracker {result.Tracker}, Python {result.Python}, {result.Games.Count} games" +
+                            (result.Smoke != null ? $"; logic test on {result.Smoke.Game}: {result.Smoke.Locations} locations, {result.Smoke.InLogic} in starting logic." : "."));
+                if (!result.TrackerTested) log?.Invoke($"Note: Universal Tracker {result.Tracker} hasn't been tested with Atlas (tested: {string.Join(", ", result.TestedTracker)}).");
+                if (result.FailedWorlds.Count > 0) log?.Invoke($"{result.FailedWorlds.Count} worlds couldn't load (they need extra packages or a newer Archipelago): {string.Join(", ", result.FailedWorlds.Take(12))}");
+            }
+            NotifyChanged();
+            return result;
+        }
+
+        // =====================================================================
+        // Game apworlds
+        // =====================================================================
+
+        /// <summary>The game an apworld provides, read from its manifest or its world class. Null if unknown.</summary>
+        public static string GameOfApworld(string file)
+        {
+            try
+            {
+                using var zip = ZipFile.OpenRead(file);
+                var manifest = zip.Entries.FirstOrDefault(e => e.FullName.EndsWith("archipelago.json", StringComparison.OrdinalIgnoreCase));
+                if (manifest != null)
+                {
+                    using var r = new StreamReader(manifest.Open());
+                    var game = JObject.Parse(r.ReadToEnd())["game"]?.ToString();
+                    if (!string.IsNullOrEmpty(game)) return game;
+                }
+                var init = zip.Entries.Where(e => e.FullName.Count(c => c == '/') == 1 && e.FullName.EndsWith("/__init__.py")).FirstOrDefault();
+                if (init == null) return null;
+                using var reader = new StreamReader(init.Open());
+                string src = reader.ReadToEnd();
+                // class XWorld(World): ... game = "Name"  /  game: str = "Name"  /  game: ClassVar[str] = "Name"
+                var m = Regex.Match(src, @"class\s+\w+\s*\([^)]*World[^)]*\)\s*:[\s\S]*?^\s+game\s*(?::\s*[\w\.\[\]]+\s*)?=\s*[""']([^""']+)[""']", RegexOptions.Multiline);
+                return m.Success ? m.Groups[1].Value : null;
+            }
+            catch { return null; }
+        }
+
+        /// <summary>Apworlds for a game in an existing Archipelago install (to copy into the portable engine).</summary>
+        public static List<string> FindApworldsFor(string game, IEnumerable<string> installRoots)
+        {
+            var found = new List<string>();
+            foreach (var root in installRoots)
+            {
+                foreach (var dir in new[] { Path.Combine(root, "custom_worlds"), Path.Combine(root, "lib", "worlds") })
+                {
+                    if (!Directory.Exists(dir)) continue;
+                    foreach (var file in EngineInstall.SafeFiles(dir, "*.apworld"))
+                        if (string.Equals(GameOfApworld(file), game, StringComparison.OrdinalIgnoreCase)) found.Add(file);
+                }
+            }
+            return found;
+        }
+
+        /// <summary>Adds an apworld to the engine (exclusively, pausing engines if a file they use is replaced), then health-checks it.</summary>
+        public static Task<bool> InstallApworldAsync(EngineInstall install, string sourceFile, Action<string> log, CancellationToken ct) =>
+            Exclusive(async () =>
+            {
+                try
+                {
+                    string target = Path.Combine(install.WorldsDir ?? throw new Exception("The engine has no worlds folder."), Path.GetFileName(sourceFile));
+                    if (File.Exists(target)) await StopEnginesUsing(install.Root, log, ct);
+                    InstallApworld(install, sourceFile, log);
+                    var check = await RunCheckAsync(install, log, ct);
+                    return check.Passed;
+                }
+                catch (OperationCanceledException) { log("Cancelled."); return false; }
+                catch (Exception ex) { log("Couldn't add the apworld: " + ex.Message); return false; }
+                finally { NotifyChanged(); }
+            }, ct);
+
+        /// <summary>Copies an apworld into the engine. A file of the same name is moved to backups first.</summary>
+        private static string InstallApworld(EngineInstall install, string sourceFile, Action<string> log)
+        {
+            string worlds = install.WorldsDir ?? throw new Exception("The engine has no worlds folder.");
+            Directory.CreateDirectory(worlds);
+            string target = Path.Combine(worlds, Path.GetFileName(sourceFile));
+            if (string.Equals(Path.GetFullPath(target), Path.GetFullPath(sourceFile), StringComparison.OrdinalIgnoreCase)) return target;
+            if (File.Exists(target))
+            {
+                Directory.CreateDirectory(BackupsDir);
+                File.Move(target, Path.Combine(BackupsDir, $"{DateTime.Now:yyyyMMdd-HHmmss}_{Path.GetFileName(target)}"));
+            }
+            File.Copy(sourceFile, target);
+            log?.Invoke($"Installed {Path.GetFileName(sourceFile)} ({GameOfApworld(target) ?? "unknown game"}).");
+            NotifyChanged();
+            return target;
+        }
+
+        // =====================================================================
+        // Processes
+        // =====================================================================
+
+        private static Action<long, long> Report(Action<float> progress) =>
+            progress == null ? null : (done, total) => progress(total > 0 ? (float)done / total : -1f);
+
+        private static Task<int> RunAsync(string exe, IEnumerable<string> args, string workDir, Action<string> log, CancellationToken ct, TimeSpan timeout)
+        {
+            var info = new ProcessStartInfo { FileName = exe, WorkingDirectory = workDir, RedirectStandardOutput = true, RedirectStandardError = true, RedirectStandardInput = true, UseShellExecute = false, CreateNoWindow = true };
+            foreach (var a in args) info.ArgumentList.Add(a);
+            return RunAsync(info, null, line => log?.Invoke("  " + line), line => log?.Invoke("  " + line), ct, timeout);
+        }
+
+        private static async Task<int> RunAsync(ProcessStartInfo info, string engineRoot, Action<string> onOut, Action<string> onErr, CancellationToken ct, TimeSpan timeout)
+        {
+            using var process = new Process { StartInfo = info, EnableRaisingEvents = true };
+            var exited = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            process.OutputDataReceived += (_, e) => { if (!string.IsNullOrWhiteSpace(e.Data)) onOut?.Invoke(e.Data); };
+            process.ErrorDataReceived += (_, e) => { if (!string.IsNullOrWhiteSpace(e.Data)) onErr?.Invoke(e.Data); };
+            process.Exited += (_, _) => exited.TrySetResult(true);
+            process.Start();
+            ProcessJob.Track(process, engineRoot);
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+            try { process.StandardInput.Close(); } catch { } // nothing to send; a component waiting on stdin sees EOF
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(timeout);
+            try
+            {
+                await exited.Task.WaitAsync(timeoutCts.Token);
+                process.WaitForExit(); // flush the output events
+                return process.ExitCode;
+            }
+            catch (OperationCanceledException)
+            {
+                try { process.Kill(true); } catch { }
+                if (ct.IsCancellationRequested) throw;
+                throw new TimeoutException($"{Path.GetFileName(info.FileName)} took longer than {timeout.TotalMinutes:0} minutes and was stopped.");
+            }
+        }
+    }
+}
