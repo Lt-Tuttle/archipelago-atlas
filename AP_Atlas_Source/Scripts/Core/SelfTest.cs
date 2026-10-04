@@ -62,6 +62,13 @@ namespace AP_Atlas.Core
             if (!string.IsNullOrWhiteSpace(ap))
                 await TestAsync($"Engine end to end on {ap}", () => EngineEndToEnd(ap));
 
+            if (System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_ALLGAMES") == "1")
+                await TestAsync("Every installed game still rebuilds (no game worse than the baseline)", () => GameRegression(ap));
+
+            string packFolder = System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_PACKS");
+            if (!string.IsNullOrWhiteSpace(packFolder))
+                await TestAsync("Map packs load and link (no pack worse than the baseline)", () => PackRegression(packFolder, ap));
+
             string seeds = System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_SEEDS");
             if (!string.IsNullOrWhiteSpace(seeds))
                 await TestAsync("Logic matches real seeds (no game worse than the baseline)", () => SeedRegression(seeds, ap));
@@ -362,6 +369,145 @@ namespace AP_Atlas.Core
             }
             foreach (var key in now.Keys.Except(baseline.Keys)) Print($"  New in this run (not in the baseline): {key} ({now[key].State})");
             Expect(worse.Count == 0, "logic got worse: " + string.Join("; ", worse));
+        }
+
+        /// <summary>Rebuilds every installed game; fails if a game that worked in the baseline doesn't any more.</summary>
+        private static async Task GameRegression(string apPath)
+        {
+            var install = string.IsNullOrWhiteSpace(apPath) ? EngineInstall.Portable() : EngineInstall.Existing(apPath);
+            Expect(AtlasEngine.ProblemWith(install) == null, "the engine can't run: " + AtlasEngine.ProblemWith(install));
+            var record = await GameSweep.RunAsync(install, null, default);
+            var now = record.Results.ToDictionary(kv => kv.Key, kv => kv.Value.Ok, StringComparer.OrdinalIgnoreCase);
+            Print($"  {now.Values.Count(v => v)} of {now.Count} games rebuild and compute logic with default options.");
+            string baselinePath = System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_GAMES_BASELINE");
+            if (string.IsNullOrWhiteSpace(baselinePath)) baselinePath = ProjectSettings.GlobalizePath("res://Tests/games_baseline.json");
+            Dictionary<string, bool> baseline = null;
+            try { baseline = SafeFile.ReadJson<Dictionary<string, bool>>(baselinePath, () => null); } catch { }
+            if (baseline == null || System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_UPDATE_BASELINE") == "1")
+            {
+                SafeFile.WriteJson(baselinePath, now);
+                Print($"  Baseline recorded in {baselinePath}.");
+                return;
+            }
+            var broken = baseline.Where(kv => kv.Value && (!now.TryGetValue(kv.Key, out var ok) || !ok)).Select(kv => kv.Key).ToList();
+            foreach (var g in now.Where(kv => kv.Value && baseline.TryGetValue(kv.Key, out var was) && !was)) Print($"  Improved: {g.Key} now rebuilds.");
+            Expect(broken.Count == 0, "games that rebuilt before no longer do: " + string.Join(", ", broken));
+        }
+
+        /// <summary>
+        /// Loads every map pack in a folder (Tools/fetch_pack_corpus.py builds one) and runs the Pack Doctor on each
+        /// against its game's real names from the engine. Fails when a pack that loaded no longer does, or its
+        /// linking gets worse than the baseline (ATLAS_SELFTEST_PACKS_BASELINE, default res://Tests/packs_baseline.json).
+        /// </summary>
+        private static async Task PackRegression(string folder, string apPath)
+        {
+            var install = string.IsNullOrWhiteSpace(apPath) ? EngineInstall.Portable() : EngineInstall.Existing(apPath);
+            var zips = Directory.GetFiles(folder, "*.zip").OrderBy(f => f).ToList();
+            Expect(zips.Count > 0, "no pack zips in " + folder);
+
+            // Names for every installed game, fetched once, so each pack is loaded, checked and released in turn
+            // (packs hold decoded map images: keeping 40 in memory at once could exhaust it).
+            var engine = new LogicEngineManager(install, _ => { });
+            var known = await engine.FetchLocalNamesAsync(new string[0]);
+            if (known != null)
+            {
+                PopTracker.GameNames.SetKnownGames(known.Value.KnownGames);
+                var all = await engine.FetchLocalNamesAsync(known.Value.KnownGames);
+                if (all != null) foreach (var t in all.Value.Tables.Values) PopTracker.GameNames.Store(t);
+            }
+
+            var now = new Dictionary<string, PackBaselineEntry>(StringComparer.OrdinalIgnoreCase);
+            foreach (var zip in zips)
+            {
+                string key = Path.GetFileName(zip);
+                var sw = Stopwatch.StartNew();
+                PopTracker.LoadedPack pack = null;
+                string loadError = null;
+                try
+                {
+                    pack = await Task.Run(() => PopTracker.PopTrackerPackLoader.InspectZipPack(zip));
+                    if (pack == null) loadError = "not a PopTracker pack (no usable manifest)";
+                }
+                catch (Exception ex) { loadError = "the loader crashed: " + ex.GetType().Name + ": " + ex.Message; }
+                if (pack == null)
+                {
+                    now[key] = new PackBaselineEntry { Loaded = false, Note = loadError };
+                    Print($"  {key}: {loadError}");
+                    continue;
+                }
+                string game = PopTracker.GameNames.ResolveGame(pack.Manifest);
+                var entry = new PackBaselineEntry
+                {
+                    Loaded = true,
+                    Game = game,
+                    Maps = pack.Maps.Count,
+                    Pins = pack.Locations.Count,
+                    LoadIssues = pack.LoadIssues.Count
+                };
+                if (game != null)
+                {
+                    try
+                    {
+                        var report = await Task.Run(() => PopTracker.PackDoctor.Analyze(pack, PopTracker.GameNames.Best(game)));
+                        entry.SectionsPct = Pct(report.SectionsLinked, report.SectionsTotal);
+                        entry.TilesPct = Pct(report.TilesLinked, report.TilesTotal);
+                        entry.PlacedPct = Pct(report.ApLocationsPlaced, report.ApLocationsTotal);
+                        entry.Problems = report.Findings.Count(f => f.Severity == PopTracker.FindingSeverity.Problem);
+                        entry.ScriptsRan = report.ScriptsRan;
+                    }
+                    catch (Exception ex) { entry.Note = "the Pack Doctor crashed: " + ex.GetType().Name + ": " + ex.Message; }
+                }
+                else entry.Note = "its game isn't installed in the engine (loader checked only)";
+                now[key] = entry;
+                Print($"  {key}: {(game ?? pack.Manifest?.GameName ?? "?")} · {entry.Maps} maps, {entry.Pins} pins, {entry.LoadIssues} load issues" +
+                      (entry.SectionsPct >= 0 ? $" · checks linked {entry.SectionsPct}%, tiles {entry.TilesPct}%, locations placed {entry.PlacedPct}%, {entry.Problems} problems" : "") +
+                      (entry.Note != null ? " · " + entry.Note : "") + $" ({sw.Elapsed.TotalSeconds:0.0}s)");
+                pack = null;
+                GC.Collect();
+            }
+
+            string baselinePath = System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_PACKS_BASELINE");
+            if (string.IsNullOrWhiteSpace(baselinePath)) baselinePath = ProjectSettings.GlobalizePath("res://Tests/packs_baseline.json");
+            Dictionary<string, PackBaselineEntry> baseline = null;
+            try { baseline = SafeFile.ReadJson<Dictionary<string, PackBaselineEntry>>(baselinePath, () => null); } catch { }
+            int crashed = now.Values.Count(v => v.Note != null && v.Note.Contains("crashed"));
+            if (baseline == null || System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_UPDATE_BASELINE") == "1")
+            {
+                SafeFile.WriteJson(baselinePath, now);
+                Print($"  Baseline recorded in {baselinePath}: {now.Values.Count(v => v.Loaded)} of {now.Count} loaded, {now.Values.Count(v => v.SectionsPct >= 0)} checked against real names.");
+                Expect(crashed == 0, $"{crashed} pack(s) crashed the loader or the Pack Doctor");
+                return;
+            }
+            var worse = new List<string>();
+            foreach (var kv in baseline)
+            {
+                if (!now.TryGetValue(kv.Key, out var cur)) continue; // pack removed from the corpus
+                var was = kv.Value;
+                if (was.Loaded && !cur.Loaded) worse.Add($"{kv.Key} no longer loads ({cur.Note})");
+                if (cur.Note != null && cur.Note.Contains("crashed") && (was.Note == null || !was.Note.Contains("crashed"))) worse.Add($"{kv.Key}: {cur.Note}");
+                if (was.SectionsPct >= 0 && cur.SectionsPct >= 0 && cur.SectionsPct < was.SectionsPct - 1) worse.Add($"{kv.Key} links fewer checks ({was.SectionsPct}% → {cur.SectionsPct}%)");
+                if (was.TilesPct >= 0 && cur.TilesPct >= 0 && cur.TilesPct < was.TilesPct - 1) worse.Add($"{kv.Key} links fewer tiles ({was.TilesPct}% → {cur.TilesPct}%)");
+                if (was.PlacedPct >= 0 && cur.PlacedPct >= 0 && cur.PlacedPct < was.PlacedPct - 1) worse.Add($"{kv.Key} places fewer locations ({was.PlacedPct}% → {cur.PlacedPct}%)");
+                if (cur.LoadIssues > was.LoadIssues) worse.Add($"{kv.Key} has more load issues ({was.LoadIssues} → {cur.LoadIssues})");
+            }
+            Expect(worse.Count == 0, "map packs got worse: " + string.Join("; ", worse));
+        }
+
+        private static int Pct(int part, int total) => total <= 0 ? -1 : (int)Math.Round(100.0 * part / total);
+
+        public class PackBaselineEntry
+        {
+            public bool Loaded { get; set; }
+            public string Game { get; set; }
+            public int Maps { get; set; }
+            public int Pins { get; set; }
+            public int LoadIssues { get; set; }
+            public int SectionsPct { get; set; } = -1;
+            public int TilesPct { get; set; } = -1;
+            public int PlacedPct { get; set; } = -1;
+            public int Problems { get; set; }
+            public bool ScriptsRan { get; set; }
+            public string Note { get; set; }
         }
 
         public class SeedBaselineEntry

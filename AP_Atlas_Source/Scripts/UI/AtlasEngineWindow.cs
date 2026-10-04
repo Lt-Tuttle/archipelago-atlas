@@ -135,6 +135,13 @@ namespace AP_Atlas.UI
             };
             verify.Pressed += PickSeed;
             verifyRow.AddChild(verify);
+            var sweep = new Button { Text = "Test every game", TooltipText = "Rebuild each installed game with default options and compute its starting logic (a few seconds)" };
+            sweep.Pressed += () =>
+            {
+                var install = AtlasEngine.Current;
+                RunOperation("Testing every game", (log, _, ct) => GameSweep.RunAsync(install, log, ct));
+            };
+            verifyRow.AddChild(sweep);
             var verifyNote = new Label { Text = "Proves the logic for a game against the real generator, not just its location list.", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart };
             verifyNote.AddThemeColorOverride("font_color", Muted);
             verifyRow.AddChild(verifyNote);
@@ -327,14 +334,17 @@ namespace AP_Atlas.UI
                 icon.AddThemeColorOverride("font_color", installed == true ? Good : installed == false ? Bad : Muted);
                 row.AddChild(icon);
                 row.AddChild(new Label { Text = game, CustomMinimumSize = new Vector2(240, 0) });
+                GameSweepResult swept = null;
+                GameSweep.LastFor(install)?.Results.TryGetValue(game, out swept);
                 var tested = SeedVerifier.For(game, null);
                 string testedText = tested == null ? "" : tested.Exact
                     ? $" · logic verified exactly against seed {tested.SeedName} ({tested.Spheres} spheres, {tested.Tested:d})"
                     : $" · logic differs from seed {tested.SeedName}: {tested.Late} late, {tested.Early} early ({tested.Tested:d})";
                 var detail = new Label
                 {
-                    Text = (installed == true ? "Installed" : installed == false ? "Not in the engine: its apworld is needed" : "") + testedText,
-                    TooltipText = tested?.Verdict ?? "",
+                    Text = (installed == true ? "Installed" : installed == false ? "Not in the engine: its apworld is needed" : "") +
+                           (installed == true && swept != null ? (swept.Ok ? " · rebuilds and computes logic" : " · not testable with default options") : "") + testedText,
+                    TooltipText = string.Join("\n", new[] { swept?.Summary, tested?.Verdict }.Where(x => x != null)),
                     SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
                     AutowrapMode = TextServer.AutowrapMode.WordSmart
                 };

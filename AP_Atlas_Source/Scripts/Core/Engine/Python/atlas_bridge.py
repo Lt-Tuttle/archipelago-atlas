@@ -738,6 +738,51 @@ def atlas_checksum(*args):
     sys.stdout.flush()
 
 
+def atlas_game_sweep(*args):
+    # Rebuilds games with default options and computes their starting logic, to find worlds that can't be tracked
+    # before a user connects one. stdin: {"games": [names] (optional: all installed)}. One JSON line per game, then
+    # {"done": true}, so a hang in one game only loses that game.
+    import time
+    line = sys.stdin.readline()
+    req = json.loads(line) if line else {}
+    from worlds.AutoWorld import AutoWorldRegister
+    from worlds.tracker.TrackerCore import TrackerCore
+    logger = logging.getLogger('AtlasGameSweep')
+    games = req.get('games') or sorted(g for g in AutoWorldRegister.world_types if g not in ('Archipelago', 'Universal Tracker'))
+    for game in games:
+        started = time.time()
+        out = {'game': game}
+        cls = AutoWorldRegister.world_types.get(game)
+        try:
+            if cls is None:
+                out['error'] = 'not installed'
+            else:
+                out['yamlless'] = bool(getattr(cls, 'ut_can_gen_without_yaml', False))
+                out['ut_disabled'] = bool(getattr(cls, 'disable_ut', False))
+                out.update(world_identity(cls))
+                if out['ut_disabled']:
+                    out['error'] = "the game's author disabled the Universal Tracker for it"
+                else:
+                    c, err = generate_with(TrackerCore, logger, cls, game, 'AtlasSweep', {}, {'name': 'AtlasSweep', 'game': game, game: {}})
+                    if c is None:
+                        out['error'] = err or 'the world could not be generated with default options'
+                    else:
+                        locs = {l.address for l in c.multiworld.get_locations(c.player_id) if l.address is not None}
+                        reach, _ = reachable_after(c, [], locs)
+                        out['locations'] = len(locs)
+                        out['in_logic'] = len(reach)
+                        out['ok'] = len(locs) > 0
+        except BaseException as e:
+            if isinstance(e, KeyboardInterrupt):
+                raise
+            out['error'] = (traceback.format_exc().strip().split('\n') or ['?'])[-1][:300]
+        out['seconds'] = round(time.time() - started, 2)
+        print(json.dumps(out))
+        sys.stdout.flush()
+    print(json.dumps({'done': True}))
+    sys.stdout.flush()
+
+
 def atlas_check(*args):
     # Health check for the setup page: versions, installed games, worlds that failed to load, tracker import.
     out = versions()
@@ -781,3 +826,4 @@ components.append(Component('AtlasNames', None, func=atlas_names, component_type
 components.append(Component('AtlasCheck', None, func=atlas_check, component_type=Type.CLIENT))
 components.append(Component('AtlasSeedTest', None, func=atlas_seed_test, component_type=Type.CLIENT))
 components.append(Component('AtlasChecksum', None, func=atlas_checksum, component_type=Type.CLIENT))
+components.append(Component('AtlasGameSweep', None, func=atlas_game_sweep, component_type=Type.CLIENT))

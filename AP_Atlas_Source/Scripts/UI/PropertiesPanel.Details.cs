@@ -162,6 +162,74 @@ namespace AP_Atlas.UI
         // Slot summary (also the empty state)
         // =====================================================================
 
+        /// <summary>
+        /// How far this slot's information can be trusted, item by item: what comes straight from the server, how the
+        /// logic was rebuilt and checked, whether the apworld matches the seed, whether its logic was proven against a
+        /// real seed, and how much of the seed the map pack covers.
+        /// </summary>
+        private void BuildAccuracy(SlotTrackerControl slot)
+        {
+            Section("Accuracy");
+            Row("Checks, items, hints", Colored("From the server (exact)", Good), "Atlas shows these exactly as the server reports them");
+            if (slot.LogicHidden) { Row("Logic", Colored("Hidden by race mode", Muted)); return; }
+            if (!slot.EngineRunning)
+            {
+                Row("Logic", Colored(slot.EngineProblem != null ? "Not running: " + slot.EngineProblem.Message : "Not running", Muted));
+                return;
+            }
+
+            var info = slot.EngineYamlInfo;
+            string source = info?["source"]?.ToString();
+            string file = info?["file"]?.ToString();
+            PlainRow("Logic rebuilt from", source switch
+            {
+                "not_needed" => "The server's data (this game needs no YAML)",
+                "slot_data" => $"Options in the server's data ({info?["options_from_slot_data"]} of {info?["options_total"]})",
+                "linked" => "Your linked YAML " + file,
+                "players" => file + " in the Players folder",
+                _ => "The engine"
+            });
+
+            var match = info?["match"];
+            if (match?.Type == Newtonsoft.Json.Linq.JTokenType.Boolean)
+                Row("Locations vs server", (bool)match
+                    ? Colored($"All {info["expected"]} match", Good)
+                    : Colored($"{info["missing"]} missing, {info["extra"]} extra: logic is approximate", Warn),
+                    "The rebuilt world's locations compared with the list the server sent for this slot");
+
+            string serverChecksum = slot.ServerChecksumFor(slot.Game), localChecksum = slot.LogicEngine?.LastDataChecksum;
+            string Short(string c) => string.IsNullOrEmpty(c) ? "?" : c.Substring(0, Math.Min(8, c.Length));
+            if (slot.ApworldMatchesSeed == true)
+                Row("Apworld vs seed", Colored($"Same version (data {Short(localChecksum)})", Good), "The installed apworld's data checksum equals the one the server reports for this seed");
+            else if (slot.ApworldMatchesSeed == false)
+                Row("Apworld vs seed", Colored($"Different version (installed {Short(localChecksum)}, seed {Short(serverChecksum)})", Warn),
+                    "Atlas Engine → Slots → Find the seed's version installs the matching one when it's listed");
+            else PlainRow("Apworld vs seed", "Not reported by the server or engine");
+
+            var tested = AP_Atlas.Core.EngineSetup.SeedVerifier.For(slot.Game, localChecksum);
+            if (tested == null)
+                Row("Proven on a real seed", Colored("Not yet", Muted), "Atlas Engine → Verify logic against a seed replays a generated seed's playthrough to prove this game's logic");
+            else if (tested.Exact)
+                Row("Proven on a real seed", Colored($"Exact on seed {tested.SeedName} ({tested.Spheres} spheres, {tested.Tested:d})", Good), tested.Verdict);
+            else
+                Row("Proven on a real seed", Colored($"Differs on seed {tested.SeedName}: {tested.Late} late, {tested.Early} early", Warn), tested.Verdict);
+
+            if (slot.PackIndex != null)
+            {
+                var all = slot.Session.Locations.AllLocations;
+                int placed = all.Count(id => slot.PackIndex.ByLocation.ContainsKey(id));
+                int pct = all.Count > 0 ? (int)Math.Round(100.0 * placed / all.Count) : 0;
+                Row("Map pack coverage", Colored($"{placed} / {all.Count} of your locations have a pin ({pct}%)", pct >= 95 ? Good : pct >= 70 ? Colors.White : Warn),
+                    "Locations with no pin still appear in the Logic Tracker; the Pack Doctor can add or link pins");
+            }
+
+            string warning = slot.LogicAccuracyWarning;
+            if (warning != null) AddText(Colored("⚠ " + warning, Warn));
+            else if (match?.Type == Newtonsoft.Json.Linq.JTokenType.Boolean && (bool)match && slot.ApworldMatchesSeed != false)
+                AddHint(tested?.Exact == true ? "Everything Atlas can check matches the seed, and this game's logic is proven exact on a real seed."
+                    : "Everything Atlas can check matches the seed. Verifying against a generated seed would prove the rules too.");
+        }
+
         private void BuildSlot(InspectTarget t)
         {
             var slot = t == null ? _host.SelectedSlot : SlotByName(t.ProfileId, t.SlotName);
@@ -250,6 +318,8 @@ namespace AP_Atlas.UI
                 Row("Progression items", Colored($"{Math.Min(progGot, progTotal)} / {progTotal}", Colors.Plum));
                 PlainRow("Item pool size", pool.Count.ToString());
             }
+
+            BuildAccuracy(slot);
 
             Section("Hints");
             var room = s.RoomState;
