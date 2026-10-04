@@ -560,7 +560,8 @@ namespace AP_Atlas.UI
                     string file;
                     if (seedChecksum != null)
                     {
-                        var (version, match) = await ApworldSources.FindMatchingAsync(install, game, seedChecksum, log, ct);
+                        var repos = await ApworldSources.ReposForAsync(_settings, install, game, log, ct);
+                        var (version, match) = await ApworldSources.FindMatchingAsync(install, game, seedChecksum, repos.Select(r => r.Repo), log, ct);
                         if (match == null) return;
                         log($"Installing {game} {version.Version}…");
                         file = match;

@@ -141,6 +141,7 @@ namespace AP_Atlas.Core.EngineSetup
         public static void Initialize(AppSettings settings)
         {
             _settings = settings;
+            ApworldSources.Initialize(settings);
             RecoverInterruptedUpdate();
         }
 

@@ -66,6 +66,8 @@ public class AppSettings
     public string ApworldSourcesUrl { get; set; } = "";
     /// <summary>Download sources the user trusts ("github.com/owner/repo" or a host), so they're asked only once.</summary>
     public List<string> ApprovedApworldSources { get; set; } = new List<string>();
+    /// <summary>Game → GitHub projects ("owner/name") the user added as sources of its apworld.</summary>
+    public Dictionary<string, List<string>> ExtraApworldRepos { get; set; } = new Dictionary<string, List<string>>();
 
     // Window State
     public int WindowWidth { get; set; } = 1024;
@@ -161,6 +163,7 @@ public static class DataManager
         settings.ArchipelagoInstallationPath ??= "";
         settings.ApworldSourcesUrl ??= "";
         settings.ApprovedApworldSources ??= new List<string>();
+        settings.ExtraApworldRepos = new Dictionary<string, List<string>>(settings.ExtraApworldRepos ?? new Dictionary<string, List<string>>(), System.StringComparer.OrdinalIgnoreCase);
         if (settings.MapNodeScale <= 0 || float.IsNaN(settings.MapNodeScale)) settings.MapNodeScale = 1f;
         return settings;
     }

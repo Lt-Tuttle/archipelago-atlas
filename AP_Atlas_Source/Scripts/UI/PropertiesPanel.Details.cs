@@ -210,6 +210,13 @@ namespace AP_Atlas.UI
                     "Fix automatically on the Logic Tracker's banner finds the seed's version and uses it for this slot (your install isn't changed)");
             else PlainRow("Apworld vs seed", "Not reported by the server or engine");
 
+            var installedCopy = AP_Atlas.Core.EngineSetup.ApworldSources.InstalledCopies(slot.LogicEngine?.Install, slot.Game).FirstOrDefault();
+            if (installedCopy.Sha256 != null)
+            {
+                var (repo, tag) = AP_Atlas.Core.EngineSetup.ApworldSources.KnownSourceOf(installedCopy.Sha256);
+                PlainRow("Installed apworld", repo != null ? $"{tag} from github.com/{repo}" : System.IO.Path.GetFileName(installedCopy.File) + " (source not looked up yet)");
+            }
+
             var tested = AP_Atlas.Core.EngineSetup.SeedVerifier.For(slot.Game, localChecksum);
             if (tested == null)
                 Row("Proven on a real seed", Colored("Not yet", Muted), "Atlas Engine → Verify logic against a seed replays a generated seed's playthrough to prove this game's logic");

@@ -393,7 +393,8 @@ public partial class SlotTrackerControl : MarginContainer
         _accuracyText.Text = "⚠ " + warning;
         bool versionProblem = warning != null && ApworldMatchesSeed == false;
         _accuracyLinkYaml.Visible = warning != null && !versionProblem;
-        _accuracyFix.Visible = versionProblem && !_apworldFixRunning && AP_Atlas.Core.EngineSetup.ApworldSources.Find(Game) != null;
+        _accuracyFix.Visible = versionProblem && !_apworldFixRunning;
+        _accuracyAddSource.Visible = versionProblem && !_apworldFixRunning;
         _accuracyChooseApworld.Visible = versionProblem && !_apworldFixRunning;
     }
 
@@ -401,7 +402,7 @@ public partial class SlotTrackerControl : MarginContainer
     // Using the apworld version the seed was made with
     // =====================================================================
 
-    private Button _accuracyFix, _accuracyChooseApworld;
+    private Button _accuracyFix, _accuracyChooseApworld, _accuracyAddSource;
     private string _apworldFixStatus;
     private bool _apworldFixRunning;
     private readonly HashSet<string> _apworldFixAttempted = new HashSet<string>();
@@ -417,10 +418,11 @@ public partial class SlotTrackerControl : MarginContainer
 
     /// <summary>
     /// Gets the apworld version this seed was made with and restarts logic on it, for this slot only (the installed
-    /// copy and other slots are untouched). Uses Atlas's cache when it has the version; otherwise searches the known
-    /// versions of the game. Without interaction it only downloads from sources the user already trusts.
+    /// copy and other slots are untouched). Uses Atlas's cache when it has the version; otherwise looks where the
+    /// game's versions are published: the repository the installed copy came from (found by its SHA-256), the one in
+    /// the community index, and any the user added. Without interaction it only downloads from trusted repositories.
     /// </summary>
-    public void FixApworldVersion(bool interactive)
+    public async void FixApworldVersion(bool interactive)
     {
         string game = Game, checksum = ServerChecksumFor(game);
         if (checksum == null || _apworldFixRunning || Session == null) return;
@@ -431,50 +433,73 @@ public partial class SlotTrackerControl : MarginContainer
             RetryLogicEngine();
             return;
         }
-        var source = AP_Atlas.Core.EngineSetup.ApworldSources.Find(game);
-        if (source == null)
+
+        // Where are this game's versions published? (Reads release lists only; nothing is downloaded.)
+        _apworldFixRunning = true;
+        _apworldFixStatus = $"Finding where {game} versions are published…";
+        SyncAccuracyBanner();
+        var install = _logicEngine.Install;
+        List<AP_Atlas.Core.EngineSetup.ApworldSources.ApworldRepo> repos;
+        try
         {
-            _apworldFixStatus = $"Atlas doesn't know where to download {game} versions. Choose the apworld file the seed's host used.";
+            repos = await System.Threading.Tasks.Task.Run(() => AP_Atlas.Core.EngineSetup.ApworldSources.ReposForAsync(_appSettings, install, game, AppendDebugLog, System.Threading.CancellationToken.None));
+        }
+        catch (Exception ex)
+        {
+            AppendDebugLog("Couldn't look up where the apworld is published: " + ex.Message);
+            repos = new List<AP_Atlas.Core.EngineSetup.ApworldSources.ApworldRepo>();
+        }
+        if (!GodotObject.IsInstanceValid(this)) return;
+        _apworldFixRunning = false;
+        if (repos.Count == 0)
+        {
+            _apworldFixStatus = $"Atlas doesn't know where {game} versions are published. Add the project's GitHub link, or choose the apworld file the seed's host used.";
             SyncAccuracyBanner();
             return;
         }
-        string approvalUrl = source.Repo != null ? $"https://github.com/{source.Repo}/" : source.Versions.LastOrDefault()?.Url;
-        string where = AP_Atlas.Core.EngineSetup.ApworldSources.SourceKey(approvalUrl);
-        if (!AP_Atlas.Core.EngineSetup.ApworldSources.IsApproved(_appSettings, approvalUrl))
+
+        var trusted = repos.Where(r => r.Approved).ToList();
+        var untrusted = repos.Where(r => !r.Approved).ToList();
+        if (!interactive)
         {
-            if (!interactive)
+            if (trusted.Count > 0) SearchSeedApworld(game, checksum, trusted, untrusted);
+            else
             {
-                _apworldFixStatus = $"Fix automatically downloads the seed's version from {where} (you'll be asked to trust it once).";
+                _apworldFixStatus = "Fix automatically looks in " + string.Join(" and ", repos.Select(r => $"{r.Display} ({r.Reason})")) + ". You'll be asked to trust them once.";
                 SyncAccuracyBanner();
-                return;
             }
-            var dialog = new ConfirmationDialog
-            {
-                Title = "Use the seed's apworld version",
-                DialogText = $"Download versions of the {game} apworld from {where} until one matches this seed, and use it for {_slotName}?\n\n" +
-                             "Only this slot's logic uses it: your Archipelago install isn't changed. Each file is checked against its published SHA-256 when one exists.\n\n" +
-                             "Apworlds are programs that run inside the logic engine. Only continue if you trust this source.",
-                DialogAutowrap = true,
-                MinSize = new Vector2I(560, 0),
-                OkButtonText = "Download"
-            };
-            var trust = new CheckBox { Text = $"Trust {where} from now on (fix future seeds automatically)", ButtonPressed = true };
-            dialog.AddChild(trust);
-            dialog.Confirmed += () =>
-            {
-                if (trust.ButtonPressed) AP_Atlas.Core.EngineSetup.ApworldSources.Approve(_appSettings, approvalUrl);
-                dialog.QueueFree();
-                SearchSeedApworld(game, checksum);
-            };
-            dialog.Canceled += () => dialog.QueueFree();
-            GetTree().Root.AddChild(dialog);
-            dialog.PopupCentered();
             return;
         }
-        SearchSeedApworld(game, checksum);
+        if (untrusted.Count == 0)
+        {
+            SearchSeedApworld(game, checksum, repos, new List<AP_Atlas.Core.EngineSetup.ApworldSources.ApworldRepo>());
+            return;
+        }
+        var dialog = new ConfirmationDialog
+        {
+            Title = "Use the seed's apworld version",
+            DialogText = $"Look for the {game} apworld this seed was made with, and use it for {_slotName}?\n\nAtlas will check versions published in:\n" +
+                         string.Join("\n", repos.Select(r => $"  •  {r.Display}: {r.Reason}{(r.Approved ? " (trusted)" : "")}")) +
+                         "\n\nOnly this slot's logic uses it: your Archipelago install isn't changed. Each file is checked against its published SHA-256 when one exists.\n\n" +
+                         "Apworlds are programs that run inside the logic engine. Only continue if you trust these sources.",
+            DialogAutowrap = true,
+            MinSize = new Vector2I(600, 0),
+            OkButtonText = "Look and use it"
+        };
+        var trust = new CheckBox { Text = "Trust these from now on (fix future seeds automatically)", ButtonPressed = true };
+        dialog.AddChild(trust);
+        dialog.Confirmed += () =>
+        {
+            if (trust.ButtonPressed) foreach (var r in untrusted) AP_Atlas.Core.EngineSetup.ApworldSources.ApproveRepo(_appSettings, r.Repo);
+            dialog.QueueFree();
+            SearchSeedApworld(game, checksum, repos, new List<AP_Atlas.Core.EngineSetup.ApworldSources.ApworldRepo>());
+        };
+        dialog.Canceled += () => dialog.QueueFree();
+        GetTree().Root.AddChild(dialog);
+        dialog.PopupCentered();
     }
 
-    private async void SearchSeedApworld(string game, string checksum)
+    private async void SearchSeedApworld(string game, string checksum, List<AP_Atlas.Core.EngineSetup.ApworldSources.ApworldRepo> repos, List<AP_Atlas.Core.EngineSetup.ApworldSources.ApworldRepo> notSearched)
     {
         _apworldFixRunning = true;
         _apworldFixStatus = $"Looking for the {game} version this seed was made with…";
@@ -484,7 +509,7 @@ public partial class SlotTrackerControl : MarginContainer
         string failure = null;
         try
         {
-            found = await System.Threading.Tasks.Task.Run(() => AP_Atlas.Core.EngineSetup.ApworldSources.FindMatchingAsync(install, game, checksum, line =>
+            found = await System.Threading.Tasks.Task.Run(() => AP_Atlas.Core.EngineSetup.ApworldSources.FindMatchingAsync(install, game, checksum, repos.Select(r => r.Repo), line =>
             {
                 AppendDebugLog(line);
                 string trimmed = line.Trim();
@@ -494,7 +519,7 @@ public partial class SlotTrackerControl : MarginContainer
                     _apworldFixStatus = $"Looking for the seed's version… {trimmed}";
                     SyncAccuracyBanner();
                 }).CallDeferred();
-            }, System.Threading.CancellationToken.None, maxTries: 25));
+            }, System.Threading.CancellationToken.None));
         }
         catch (Exception ex) { failure = ex.Message; }
         if (!GodotObject.IsInstanceValid(this)) return;
@@ -502,15 +527,59 @@ public partial class SlotTrackerControl : MarginContainer
         if (found.File != null)
         {
             _apworldFixStatus = null;
-            AP_Atlas.Core.Logger.LogInfo($"[{_slotName}] Found the {game} apworld this seed was made with ({found.Version?.Version}); restarting logic on it.");
-            ShowToast?.Invoke($"{_slotName}: using {game} {found.Version?.Version}, the version this seed was made with.", Colors.LimeGreen);
+            string from = found.Version?.Url != null ? " from " + AP_Atlas.Core.EngineSetup.ApworldSources.SourceKey(found.Version.Url) : "";
+            AP_Atlas.Core.Logger.LogInfo($"[{_slotName}] Found the {game} apworld this seed was made with ({found.Version?.Version}{from}); restarting logic on it.");
+            ShowToast?.Invoke($"{_slotName}: using {game} {found.Version?.Version}{from}, the version this seed was made with.", Colors.LimeGreen);
             RetryLogicEngine();
             return;
         }
         _apworldFixStatus = failure != null
             ? $"Couldn't look for the seed's version: {failure}"
-            : $"None of the listed {game} versions matches this seed. Choose the apworld file the seed's host used.";
+            : notSearched.Count > 0
+                ? $"Not in the trusted sources. Fix automatically also looks in {string.Join(" and ", notSearched.Select(r => r.Display))}."
+                : $"None of the published {game} versions matches this seed. Add the project the seed's host used, or choose their apworld file.";
+        if (notSearched.Count > 0) _apworldFixAttempted.Remove(checksum); // let the user widen the search
         SyncAccuracyBanner();
+    }
+
+    /// <summary>Adds a GitHub project (pasted link) as a source of this game's apworld, then looks there for the seed's version.</summary>
+    public void AddApworldSource()
+    {
+        string game = Game;
+        var dialog = new ConfirmationDialog
+        {
+            Title = $"Add a source for {game}",
+            DialogText = $"Paste the GitHub link of the project that publishes the {game} apworld (its repository or releases page).\n" +
+                         "Atlas will trust it and download versions from it to match your seeds.",
+            DialogAutowrap = true,
+            MinSize = new Vector2I(560, 0),
+            OkButtonText = "Add and look"
+        };
+        var input = new LineEdit { PlaceholderText = "https://github.com/owner/project/releases" };
+        dialog.AddChild(input);
+        dialog.RegisterTextEnter(input);
+        dialog.Confirmed += async () =>
+        {
+            string link = input.Text;
+            dialog.QueueFree();
+            _apworldFixStatus = "Checking that project's releases…";
+            SyncAccuracyBanner();
+            var (repo, problem) = await System.Threading.Tasks.Task.Run(() => AP_Atlas.Core.EngineSetup.ApworldSources.AddUserRepoAsync(_appSettings, game, link, System.Threading.CancellationToken.None));
+            if (!GodotObject.IsInstanceValid(this)) return;
+            if (repo == null)
+            {
+                _apworldFixStatus = "Couldn't add it: " + problem + ".";
+                SyncAccuracyBanner();
+                return;
+            }
+            AppendDebugLog($"Added github.com/{repo} as a source of {game} apworlds.");
+            _apworldFixAttempted.Remove(ServerChecksumFor(game) ?? "");
+            FixApworldVersion(interactive: true);
+        };
+        dialog.Canceled += () => dialog.QueueFree();
+        GetTree().Root.AddChild(dialog);
+        dialog.PopupCentered();
+        input.GrabFocus();
     }
 
     /// <summary>Uses an apworld file the user picked (e.g. from the seed's host), if it's the seed's version.</summary>
@@ -1419,6 +1488,9 @@ public partial class SlotTrackerControl : MarginContainer
         _accuracyChooseApworld = new Button { Text = "Choose apworld file…", TooltipText = "Use the apworld file the seed's host gave you, if it's this seed's version" };
         _accuracyChooseApworld.Pressed += ChooseSeedApworld;
         bannerRow.AddChild(_accuracyChooseApworld);
+        _accuracyAddSource = new Button { Text = "Add a source…", TooltipText = "Paste the GitHub link of the project the seed's apworld comes from" };
+        _accuracyAddSource.Pressed += AddApworldSource;
+        bannerRow.AddChild(_accuracyAddSource);
         _accuracyBanner.AddChild(bannerRow);
         vbox.AddChild(_accuracyBanner);
 

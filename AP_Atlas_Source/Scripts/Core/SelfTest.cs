@@ -53,6 +53,7 @@ namespace AP_Atlas.Core
             Test("YAML reader: block lists, quotes, comments, unquoted colons", YamlBlockLists);
             Test("YAML reader: weighted games, flow lists, several players", YamlDocuments);
             Test("Engine: a missing engine reports why instead of starting", EngineReportsMissing);
+            Test("Apworld sources: GitHub links in any form are understood", RepoLinksParse);
             Test("Engine: an interrupted update is repaired at startup", EngineRecoversInterruptedUpdate);
             await TestAsync("Engine: process registry finds and stops engine processes", ProcessRegistry);
             await TestAsync("Logic: a failed query is a failure, never an empty answer", LogicFailureIsExplicit);
@@ -247,6 +248,27 @@ namespace AP_Atlas.Core
         // =====================================================================
         // Engine
         // =====================================================================
+
+        private static void RepoLinksParse()
+        {
+            var cases = new Dictionary<string, string>
+            {
+                ["https://github.com/tathxo/DSAP/releases#release-v0.2.6"] = "tathxo/DSAP",
+                ["https://github.com/tathxo/DSAP"] = "tathxo/DSAP",
+                ["github.com/tathxo/DSAP.git"] = "tathxo/DSAP",
+                ["https://github.com/ArsonAssassin/DSAP/releases/download/0.1.1.0/dsr.apworld"] = "ArsonAssassin/DSAP",
+                ["https://github.com/owner/my.project-2/tree/main"] = "owner/my.project-2",
+                ["git@github.com:owner/repo.git"] = "owner/repo",
+                ["owner/repo"] = "owner/repo",
+                ["https://example.com/owner/repo"] = null,
+                ["not a link"] = null
+            };
+            foreach (var kv in cases)
+            {
+                string got = ApworldSources.ParseRepo(kv.Key);
+                Expect(got == kv.Value, $"{kv.Key} read as {got ?? "nothing"}, expected {kv.Value ?? "nothing"}");
+            }
+        }
 
         private static void EngineReportsMissing()
         {
