@@ -1170,6 +1170,35 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
 
     /// <summary>Sessions that finished logging in (only those are reconnected when they drop). Guarded by _openSessions.</summary>
     private readonly HashSet<ArchipelagoSession> _loggedInSessions = new HashSet<ArchipelagoSession>();
+    private readonly Dictionary<ArchipelagoSession, (MultiworldProfile Profile, string SlotName)> _sessionOwners = new Dictionary<ArchipelagoSession, (MultiworldProfile, string)>();
+
+    /// <summary>
+    /// Catches connections that died without a "socket closed" event (a server that crashed or lost power only
+    /// produces a socket error): every half second, a logged-in session that's no longer connected counts as dropped.
+    /// </summary>
+    private void CheckForDroppedSessions()
+    {
+        if (_shuttingDown) return;
+        List<(MultiworldProfile, string)> dropped = null;
+        lock (_openSessions)
+        {
+            foreach (var session in _loggedInSessions.ToList())
+            {
+                bool connected;
+                try { connected = session.Socket.Connected; } catch { connected = false; }
+                if (connected) continue;
+                _loggedInSessions.Remove(session);
+                _openSessions.Remove(session);
+                if (_sessionOwners.Remove(session, out var owner)) (dropped ??= new()).Add(owner);
+            }
+        }
+        if (dropped == null) return;
+        foreach (var (profile, slotName) in dropped)
+        {
+            LogToSystem($"[color=yellow]Connection to {slotName} is gone (no close from the server).[/color]");
+            OnSessionDropped(profile, slotName);
+        }
+    }
     private readonly Dictionary<string, int> _reconnectAttempts = new Dictionary<string, int>();
     private readonly Dictionary<string, string> _lastLoginErrors = new Dictionary<string, string>();
 
@@ -1260,6 +1289,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         lock (_openSessions)
         {
             _loggedInSessions.Remove(session);
+            _sessionOwners.Remove(session);
             if (!_openSessions.Remove(session)) return Task.CompletedTask;
         }
         try
@@ -2064,6 +2094,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     private void UpdateSlotStatuses()
     {
         using var __perf = AP_Atlas.Core.PerfMonitor.Measure("Update slot status lights");
+        CheckForDroppedSessions();
 
         _spinnerIndex = (_spinnerIndex + 1) % _spinnerFrames.Length;
         // Also update sidebar buttons directly
@@ -2508,6 +2539,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 lock (_openSessions)
                 {
                     dropped = _loggedInSessions.Remove(session) && _openSessions.Remove(session);
+                    _sessionOwners.Remove(session);
                 }
                 if (dropped && !_shuttingDown) Callable.From(() => OnSessionDropped(profile, slotName)).CallDeferred();
             };
@@ -2559,7 +2591,11 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 }
                 if (result.Successful)
                 {
-                    lock (_openSessions) _loggedInSessions.Add(session);
+                    lock (_openSessions)
+                    {
+                        _loggedInSessions.Add(session);
+                        _sessionOwners[session] = (profile, slotName);
+                    }
                     _lastLoginErrors.Remove(SlotKey(profile.Id, slotName));
                     _statusLabel.Text = "Status: Connected successfully as " + slotName + "!";
                     _statusLabel.AddThemeColorOverride("font_color", Colors.Green);
@@ -2623,11 +2659,17 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                     _ = CloseSession(session);
                     var loginFailure = (Archipelago.MultiClient.Net.LoginFailure)result;
                     string errs = string.Join(", ", loginFailure.Errors);
-                    _lastLoginErrors[SlotKey(profile.Id, slotName)] = errs;
+                    // Only a refusal (wrong slot, game, version, password) stops automatic reconnects; a server that
+                    // couldn't be reached just means try again later.
+                    var refusals = (loginFailure.ErrorCodes ?? System.Array.Empty<Archipelago.MultiClient.Net.Enums.ConnectionRefusedError>())
+                        .Where(c => c != Archipelago.MultiClient.Net.Enums.ConnectionRefusedError.UnknownError).ToList();
+                    if (refusals.Count > 0) _lastLoginErrors[SlotKey(profile.Id, slotName)] = errs;
                     _statusLabel.Text = "Status: Failed to connect:\n" + errs;
                     _statusLabel.AddThemeColorOverride("font_color", Colors.Red);
                     if (_globalStatusLabel != null) _globalStatusLabel.Text = "Connection Failed (" + slotName + ")";
-                    LogToSystem("[color=red]Authentication Failed for " + slotName + ":[/color] " + errs);
+                    LogToSystem(refusals.Count > 0
+                        ? "[color=red]The server refused the login for " + slotName + ":[/color] " + errs
+                        : "[color=orange]Couldn't reach the server for " + slotName + ":[/color] " + errs);
                     _connectingSlots.Remove(SlotKey(profile.Id, slotName));
                     UpdateSidebar();
                 }
