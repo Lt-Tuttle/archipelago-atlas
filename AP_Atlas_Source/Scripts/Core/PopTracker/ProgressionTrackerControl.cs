@@ -438,7 +438,7 @@ namespace AP_Atlas.Core.PopTracker
                         byCode.TryGetValue(code, out var info);
                         bool on = info?.On == true;
                         var tile = CreateVisualTile(def, def.Name ?? code, on ? 1 : 0, zoomSize, info != null && def.Stages?.Count > 0 ? info.Stage : null, isSetting: true);
-                        string value = info?.OptionValue == null ? "" : info.OptionValue.Type == Newtonsoft.Json.Linq.JTokenType.String ? info.OptionValue.ToString() : info.OptionValue.ToString(Newtonsoft.Json.Formatting.None);
+                        string value = info?.ValueText ?? "";
                         tile.TooltipText = $"{def.Name}: {(info?.StageName ?? (on ? "on" : "off"))}" +
                                            (info?.OptionPath != null ? $"\nOption: {info.OptionPath}" + (info.OptionMissing ? " (not in this slot's data)" : $" = {value}") : "") +
                                            "\nSet by the map pack's script from this slot's options.";

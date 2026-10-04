@@ -582,7 +582,9 @@ namespace AP_Atlas.Core.PopTracker
                 if (name == null) return DynValue.Nil;
                 JToken value = token is JObject jo ? jo[name] : (key.Type == DataType.Number && token is JArray ja && key.Number >= 1 && key.Number <= ja.Count ? ja[(int)key.Number - 1] : null);
                 string full = path.Length == 0 ? name : path + "." + name;
-                if (_pendingReads.Count < 200) _pendingReads.Add(full);
+                // Only single values decide a tile ("options.goal == 1"); reading a table ("slot_data.options") is
+                // just navigation and would credit the whole table to whatever the script sets next.
+                if (value != null && value is not JObject && value is not JArray && _pendingReads.Count < 200) _pendingReads.Add(full);
                 return value == null && !overlay.ContainsKey(name) ? DynValue.Nil : Child(name, value);
             });
             meta["__newindex"] = DynValue.NewCallback((ctx, args) =>
@@ -631,6 +633,27 @@ namespace AP_Atlas.Core.PopTracker
             /// <summary>That option's value in the slot data, or null if the slot data doesn't have it.</summary>
             public JToken OptionValue;
             public bool OptionMissing => OptionPath != null && OptionValue == null;
+
+            /// <summary>The option's value for display: short, and a summary for lists and tables rather than their contents.</summary>
+            public string ValueText => FormatValue(OptionValue);
+
+            public static string FormatValue(JToken value)
+            {
+                switch (value?.Type)
+                {
+                    case null: return "";
+                    case JTokenType.Object: return $"{{{((JObject)value).Count} options}}";
+                    case JTokenType.Array:
+                        var array = (JArray)value;
+                        if (array.Count <= 4 && array.All(v => v is JValue)) return "[" + string.Join(", ", array.Select(v => v.ToString())) + "]";
+                        return $"[{array.Count} items]";
+                    case JTokenType.String:
+                        string text = value.ToString();
+                        return text.Length > 60 ? text.Substring(0, 57) + "…" : text;
+                    default:
+                        return value.ToString(Newtonsoft.Json.Formatting.None);
+                }
+            }
         }
 
         /// <summary>

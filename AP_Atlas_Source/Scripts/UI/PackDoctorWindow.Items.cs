@@ -181,7 +181,7 @@ namespace AP_Atlas.UI
                     if (setting.OptionPath != null)
                         box.AddChild(Note(setting.OptionMissing
                             ? $"Reads {setting.OptionPath}, which that slot's data doesn't have."
-                            : $"Reads {setting.OptionPath} = {(setting.OptionValue?.Type == Newtonsoft.Json.Linq.JTokenType.String ? setting.OptionValue.ToString() : setting.OptionValue?.ToString(Newtonsoft.Json.Formatting.None))}",
+                            : $"Reads {setting.OptionPath} = {setting.ValueText}",
                             setting.OptionMissing ? Warn : Colors.LightGray));
                 }
                 box.AddChild(Note("Seed settings show in their own group in Key Items and in the slot's Properties; they never count as items. To count this grid as items instead, switch it on above."));

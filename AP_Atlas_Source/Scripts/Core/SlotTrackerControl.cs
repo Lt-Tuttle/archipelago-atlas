@@ -391,6 +391,11 @@ public partial class SlotTrackerControl : MarginContainer
         string warning = LogicHidden ? null : LogicAccuracyWarning;
         _accuracyBanner.Visible = warning != null;
         _accuracyText.Text = "⚠ " + warning;
+        if (warning != _lastAccuracyWarning)
+        {
+            _lastAccuracyWarning = warning;
+            AccuracyChanged?.Invoke();
+        }
         bool versionProblem = warning != null && ApworldMatchesSeed == false;
         _accuracyLinkYaml.Visible = warning != null && !versionProblem;
         _accuracyFix.Visible = versionProblem && !_apworldFixRunning;
@@ -403,6 +408,10 @@ public partial class SlotTrackerControl : MarginContainer
     // =====================================================================
 
     private Button _accuracyFix, _accuracyChooseApworld, _accuracyAddSource;
+    private string _lastAccuracyWarning;
+
+    /// <summary>Raised when this slot's accuracy warning or fix status changes (Properties shows it too).</summary>
+    public event Action AccuracyChanged;
     private string _apworldFixStatus;
     private bool _apworldFixRunning;
     private readonly HashSet<string> _apworldFixAttempted = new HashSet<string>();
@@ -2229,7 +2238,8 @@ public partial class SlotTrackerControl : MarginContainer
 
     public void InjectEarlyMessages(IEnumerable<LogMessage> msgs)
     {
-        if (_chatHistory.Count > 0) { AppendSystemMessage("[color=gray]--- Reconnected ---[/color]"); }
+        // Only a real reconnect has server messages from before; Atlas's own "Connected to…" line doesn't count.
+        if (_chatHistory.Any(e => !e.IsSystemMessage)) { AppendSystemMessage("[color=gray]--- Reconnected ---[/color]"); }
 
         foreach (var msg in msgs)
         {

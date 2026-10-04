@@ -315,8 +315,7 @@ namespace AP_Atlas.Core.PopTracker
             }
         }
 
-        private static string ValueText(Newtonsoft.Json.Linq.JToken v) =>
-            v == null ? "" : v.Type == Newtonsoft.Json.Linq.JTokenType.String ? v.ToString() : v.ToString(Newtonsoft.Json.Formatting.None);
+        private static string ValueText(Newtonsoft.Json.Linq.JToken v) => PackScriptHost.SettingInfo.FormatValue(v);
 
         // =====================================================================
         // Key Items

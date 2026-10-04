@@ -8,6 +8,8 @@
   </PropertyGroup>
   
   <ItemGroup>
+    <!-- Archipelago.MultiClient.Net 6.7.1, the lib/net6.0 build from its NuGet package: only that build enables
+         websocket compression (the netstandard2.0 build can't), which the Archipelago server asks clients to use. -->
     <Reference Include="Archipelago.MultiClient.Net">
       <HintPath>Lib\Archipelago.MultiClient.Net.dll</HintPath>
     </Reference>

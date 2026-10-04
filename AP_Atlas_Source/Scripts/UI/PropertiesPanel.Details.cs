@@ -459,7 +459,7 @@ namespace AP_Atlas.UI
             foreach (var s in settings.OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase))
             {
                 string state = s.StageName ?? (s.On ? "On" : "Off");
-                string value = s.OptionValue == null ? null : s.OptionValue.Type == Newtonsoft.Json.Linq.JTokenType.String ? s.OptionValue.ToString() : s.OptionValue.ToString(Newtonsoft.Json.Formatting.None);
+                string value = s.ValueText;
                 string detail = s.OptionPath == null ? "" : s.OptionMissing ? Colored($"  ({s.OptionPath} isn't in the slot data)", Warn) : Colored($"  ({s.OptionPath} = {value})", Muted);
                 Row(s.Name, Colored(state, s.On ? Good : Colors.LightGray) + detail, "Set by the map pack's script from this slot's options");
             }
