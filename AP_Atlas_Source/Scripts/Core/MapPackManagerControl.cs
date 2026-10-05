@@ -1,3 +1,4 @@
+#nullable disable
 using Archipelago.MultiClient.Net;
 using Godot;
 using System;

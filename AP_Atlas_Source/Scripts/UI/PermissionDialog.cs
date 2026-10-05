@@ -13,7 +13,7 @@ namespace AP_Atlas.UI
         /// <param name="scope">What it applies to, e.g. an install folder (null: everywhere).</param>
         /// <param name="details">Specifics for this time (the folder, the file, the site), shown under the explanation.</param>
         /// <param name="decided">Called once with true (allowed) or false (not allowed or closed).</param>
-        public static void Ask(Node parent, AppSettings settings, Permissions.Kind kind, string scope, string details, Action<bool> decided)
+        public static void Ask(Node parent, AppSettings settings, Permissions.Kind kind, string? scope, string? details, Action<bool> decided)
         {
             if (Permissions.IsAllowed(settings, kind, scope))
             {

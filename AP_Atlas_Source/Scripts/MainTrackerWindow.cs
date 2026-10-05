@@ -1,3 +1,4 @@
+#nullable disable
 using System.Linq;
 using Godot;
 using System;

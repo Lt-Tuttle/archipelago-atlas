@@ -1,3 +1,4 @@
+#nullable disable
 using System;
 
 namespace AP_Atlas.Core

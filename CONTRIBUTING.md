@@ -59,6 +59,10 @@ CI runs the build, formatting, guard rails and self-test on every push and pull 
   | Updating the window from another thread, or later | `Ui.Defer(owner, …)`, never `Callable.From(…).CallDeferred()` |
 
   The guard rails enforce the riskiest of these in CI.
+- **Null checks:**
+  - Nullable reference checks are on, and new code keeps them on.
+  - Files that start with `#nullable disable` predate the checks. When you rework one, annotate it and remove that line, then lower the limit in `Tools/check_guards.ps1`.
+  - The guard rails stop the number of such files from growing.
 - **Async code:** the build runs Microsoft's async analyzers. An unobserved task, `async void`, a blocking wait on unfinished work, or `ContinueWith` without a `TaskScheduler` stops the build. Methods that return a task end in `Async`.
 - **Tests:** every new protection gets a check in `Scripts/Core/SelfTest*.cs`, and tests never touch real data.
 - **Godot's `.uid` files:** Godot makes one next to each script (`Foo.cs.uid`). Commit it with the script.

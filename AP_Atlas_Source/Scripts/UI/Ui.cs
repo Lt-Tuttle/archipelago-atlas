@@ -12,7 +12,7 @@ namespace AP_Atlas.UI
         /// closed slot, window or tab); pass null when the work must happen regardless. A failure is logged with what was
         /// being done, instead of only reaching Godot's output.
         /// </summary>
-        public static void Defer(GodotObject owner, Action action, string doing = "updating the window")
+        public static void Defer(GodotObject? owner, Action action, string doing = "updating the window")
         {
             Callable.From(() =>
             {
@@ -26,7 +26,7 @@ namespace AP_Atlas.UI
         /// Like <see cref="Defer"/>, for writing to the window's logs: a failure goes only to Godot's output, because
         /// logging it would write to the logs again (and fail again, every frame).
         /// </summary>
-        public static void DeferQuiet(GodotObject owner, Action action)
+        public static void DeferQuiet(GodotObject? owner, Action action)
         {
             Callable.From(() =>
             {

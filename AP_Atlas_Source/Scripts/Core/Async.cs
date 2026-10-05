@@ -16,7 +16,7 @@ namespace AP_Atlas.Core
         /// Raised (on a worker thread or the main thread) when unawaited work failed and the user should hear about it:
         /// what was being done, in plain words such as "checking map packs for updates", and the exception.
         /// </summary>
-        public static event Action<string, Exception> Failed;
+        public static event Action<string, Exception>? Failed;
 
         /// <summary>Watches a task that nobody awaits.</summary>
         /// <param name="doing">What the work does, in plain words that complete "Something went wrong while …".</param>
@@ -24,7 +24,7 @@ namespace AP_Atlas.Core
         /// False for routine work whose failure is expected and handled elsewhere (such as closing a connection that
         /// already dropped): it's only logged.
         /// </param>
-        public static void Fire(Task task, string doing, bool tellUser = true)
+        public static void Fire(Task? task, string doing, bool tellUser = true)
         {
             if (task == null) return;
             if (task.IsCompleted) Observe(task, doing, tellUser);
@@ -46,12 +46,12 @@ namespace AP_Atlas.Core
         /// value (null) when it failed or was cancelled, and a failure is logged. A UI update in <paramref name="then"/>
         /// moves itself to the main thread (CallDeferred). Failures of <paramref name="then"/> itself are logged too.
         /// </summary>
-        public static void Then<T>(Task<T> task, Action<T> then, string doing)
+        public static void Then<T>(Task<T>? task, Action<T?> then, string doing)
         {
             if (task == null) return;
             Fire(task.ContinueWith(finished =>
             {
-                T result = default;
+                T? result = default;
                 if (finished.IsCompletedSuccessfully) result = finished.Result;
                 else if (finished.IsFaulted) Report(finished.Exception, doing, tellUser: false);
                 then(result);

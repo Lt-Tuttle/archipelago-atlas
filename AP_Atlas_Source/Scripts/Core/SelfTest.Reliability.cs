@@ -28,7 +28,7 @@ namespace AP_Atlas.Core
                 Async.Fire(Task.Run(() => throw new OperationCanceledException()), "testing a cancellation from inside");
                 Async.Fire(Task.Run(() => throw new InvalidOperationException("routine")), "testing routine work", tellUser: false);
                 Async.Fire(Task.CompletedTask, "testing success");
-                Async.Fire((Task)null, "testing nothing");
+                Async.Fire((Task?)null, "testing nothing");
 
                 for (int i = 0; i < 100; i++)
                 {
@@ -62,7 +62,7 @@ namespace AP_Atlas.Core
             SafeFile.WriteJson(path, new Sample { Version = 1 });
             SafeFile.WriteJson(path, new Sample { Version = 2 });
             Expect(File.Exists(path + ".bak"), "setup: the older version is the backup");
-            string folder = Path.GetDirectoryName(path);
+            string folder = Path.GetDirectoryName(path) ?? "";
             bool SetAside() => Directory.GetFiles(folder, "held.json.corrupt-*").Length > 0;
             var recovered = new List<string>();
             void OnRecovered(string file, string what) { lock (recovered) recovered.Add(what); }
@@ -89,7 +89,7 @@ namespace AP_Atlas.Core
                 try { SafeFile.WriteJson(path, new Sample { Version = 99 }); }
                 catch (IOException) { refused = true; }
                 Expect(refused, "a file that couldn't be read must not be saved over");
-                Expect(Newtonsoft.Json.JsonConvert.DeserializeObject<Sample>(File.ReadAllText(path)).Version == 2, "the file on disk is still the real one");
+                Expect(Newtonsoft.Json.JsonConvert.DeserializeObject<Sample>(File.ReadAllText(path))?.Version == 2, "the file on disk is still the real one");
                 Expect(!SetAside(), "still nothing set aside as damaged");
 
                 // Once it reads again, saving works again.
@@ -111,7 +111,7 @@ namespace AP_Atlas.Core
         private static async Task SettingsBurstsAreSavedOnce()
         {
             string path = Path.Combine(DataManager.GetDataDirectory(), "settings.json");
-            int OnDisk(string file) => Newtonsoft.Json.JsonConvert.DeserializeObject<AppSettings>(File.ReadAllText(file)).MainSplitOffset;
+            int OnDisk(string file) => Newtonsoft.Json.JsonConvert.DeserializeObject<AppSettings>(File.ReadAllText(file))?.MainSplitOffset ?? -1;
             var settings = new AppSettings { MainSplitOffset = 100 };
             DataManager.SaveSettings(settings);
 

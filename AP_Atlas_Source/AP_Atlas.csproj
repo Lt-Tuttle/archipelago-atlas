@@ -4,6 +4,9 @@
     <TargetFramework>net10.0</TargetFramework>
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <LangVersion>14</LangVersion>
+    <!-- Null checks for all new code. Files that start with "#nullable disable" predate this and are annotated as
+         they're reworked; the guard rails keep their number from growing. -->
+    <Nullable>enable</Nullable>
     <!-- The one place Atlas's version is set (SemVer). Tools/bump_version.ps1 changes it; the build adds the commit. -->
     <Version>0.1.0-beta.1</Version>
   </PropertyGroup>

@@ -14,7 +14,7 @@ using Godot;
 /// </summary>
 public partial class MainTrackerWindow
 {
-    private static string VisualCheckFolder => System.Environment.GetEnvironmentVariable("ATLAS_VISUALCHECK");
+    private static string VisualCheckFolder => System.Environment.GetEnvironmentVariable("ATLAS_VISUALCHECK") ?? "";
 
     private static bool VisualCheckRequested => !string.IsNullOrWhiteSpace(VisualCheckFolder);
 
@@ -57,7 +57,7 @@ public partial class MainTrackerWindow
     private async Task<int> VisualCheckAsync()
     {
         var host = (AP_Atlas.UI.IPropertiesHost)this;
-        string baseline = System.Environment.GetEnvironmentVariable("ATLAS_VISUALCHECK_BASELINE");
+        string? baseline = System.Environment.GetEnvironmentVariable("ATLAS_VISUALCHECK_BASELINE");
         if (!string.IsNullOrWhiteSpace(baseline) && !Directory.Exists(baseline))
         {
             VisualCheckPrint($"VISUALCHECK REFUSED: the baseline folder {baseline} doesn't exist.");

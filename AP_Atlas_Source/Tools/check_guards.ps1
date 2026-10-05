@@ -43,6 +43,18 @@ foreach ($rule in $rules) {
         $broken++
     }
 }
+# Nullable checks: files that still start with "#nullable disable" predate them and are annotated as they're reworked.
+# This number only goes down: lower it when a file is migrated.
+$nullableOptOutLimit = 64
+$optedOut = @($files | Select-String -Pattern '^#nullable disable' -List).Count
+if ($optedOut -gt $nullableOptOutLimit) {
+    Write-Host "GUARD: $optedOut files turn nullable checks off, more than the $nullableOptOutLimit allowed. New code keeps them on." -ForegroundColor Red
+    $broken++
+}
+elseif ($optedOut -lt $nullableOptOutLimit) {
+    Write-Host "Nullable checks: $optedOut files still opted out; lower the limit in check_guards.ps1 to $optedOut." -ForegroundColor Yellow
+}
+
 if ($broken -gt 0) {
     Write-Host "$broken guard rail problem(s)." -ForegroundColor Red
     exit 1
