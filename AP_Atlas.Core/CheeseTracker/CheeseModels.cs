@@ -2,7 +2,6 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using Godot;
 using Newtonsoft.Json;
 
 namespace AP_Atlas.Core.CheeseTracker
@@ -195,19 +194,6 @@ namespace AP_Atlas.Core.CheeseTracker
             "never" => "Never",
             null => "",
             _ => id
-        };
-
-        public static Color ColorOf(string id) => id switch
-        {
-            "unblocked" => Colors.WhiteSmoke,
-            "bk" => Colors.Tomato,
-            "soft_bk" => Colors.Gold,
-            "go" => Colors.LimeGreen,
-            "all_checks" or "goal" => Colors.SkyBlue,
-            "done" => Colors.LimeGreen,
-            "released" => Colors.Gray,
-            "incomplete" => Colors.LightGray,
-            _ => Colors.Gray
         };
 
         /// <summary>What a slot's badge shows: its completion once it's complete, otherwise how it's progressing.</summary>

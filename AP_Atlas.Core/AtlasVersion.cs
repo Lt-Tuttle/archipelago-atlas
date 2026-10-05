@@ -3,7 +3,7 @@ using System.Reflection;
 namespace AP_Atlas.Core
 {
     /// <summary>
-    /// Atlas's version. It is set in one place, &lt;Version&gt; in AP_Atlas.csproj, and the build adds the commit after a '+'
+    /// Atlas's version. It is set in one place, &lt;Version&gt; in Directory.Build.props, and the build adds the commit after a '+'
     /// (e.g. "0.1.0-beta.1+3f2a9c1…").
     /// </summary>
     public static class AtlasVersion

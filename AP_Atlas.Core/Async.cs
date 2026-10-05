@@ -72,10 +72,10 @@ namespace AP_Atlas.Core
                 Logger.LogError($"Something went wrong while {doing}: {ex.GetType().Name}: {ex.Message}");
                 Logger.LogDebug($"Details ({doing}): {ex}");
             }
-            catch (Exception logFailure) { Godot.GD.PrintErr($"Something went wrong while {doing} ({ex.Message}), and it couldn't be logged: {logFailure.Message}"); }
+            catch (Exception logFailure) { Console.Error.WriteLine($"Something went wrong while {doing} ({ex.Message}), and it couldn't be logged: {logFailure.Message}"); }
             if (!tellUser) return;
             try { Failed?.Invoke(doing, ex); }
-            catch (Exception handlerFailure) { Godot.GD.PrintErr($"A failure while {doing} couldn't be shown: {handlerFailure.Message}"); }
+            catch (Exception handlerFailure) { Logger.EchoError($"A failure while {doing} couldn't be shown: {handlerFailure.Message}"); }
         }
 
         private static void Observe(Task task, string doing, bool tellUser)

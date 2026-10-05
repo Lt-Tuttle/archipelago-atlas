@@ -56,7 +56,11 @@ jobs:
 
       - name: Check formatting
         working-directory: AP_Atlas_Source
-        run: dotnet format whitespace AP_Atlas.csproj --verify-no-changes
+        run: dotnet format whitespace AP_Atlas.sln --verify-no-changes
+
+      - name: Unit tests
+        working-directory: AP_Atlas_Source
+        run: dotnet test --solution AP_Atlas.sln --no-build
 
       - name: Cache Godot
         id: godot-cache

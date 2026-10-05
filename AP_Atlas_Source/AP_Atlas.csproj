@@ -7,8 +7,7 @@
     <!-- Null checks for all new code. Files that start with "#nullable disable" predate this and are annotated as
          they're reworked; the guard rails keep their number from growing. -->
     <Nullable>enable</Nullable>
-    <!-- The one place Atlas's version is set (SemVer). Tools/bump_version.ps1 changes it; the build adds the commit. -->
-    <Version>0.1.0-beta.1</Version>
+    <!-- The version is set once, in Directory.Build.props at the repository root. -->
   </PropertyGroup>
   
   <ItemGroup>
@@ -20,6 +19,9 @@
     <PackageReference Include="MoonSharp" Version="2.0.0" />
     <!-- Build-time only (never shipped): flags async mistakes such as unobserved tasks and blocking waits. -->
     <PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" Version="18.7.23" PrivateAssets="all" IncludeAssets="runtime; build; native; contentfiles; analyzers; buildtransitive" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\AP_Atlas.Core\AP_Atlas.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- The Atlas Engine's Python, written into the engine at setup. -->

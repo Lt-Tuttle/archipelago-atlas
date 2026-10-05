@@ -1,7 +1,10 @@
-
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 2012
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AP_Atlas", "AP_Atlas.csproj", "{00000000-0000-0000-0000-000000000000}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AP_Atlas.Core", "..\AP_Atlas.Core\AP_Atlas.Core.csproj", "{08469CEF-9E3E-44A4-BF9B-B52FC89881DF}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AP_Atlas.Core.Tests", "..\AP_Atlas.Core.Tests\AP_Atlas.Core.Tests.csproj", "{C5278937-4BCC-47E2-8A3C-1BF7E253DFE0}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -16,5 +19,17 @@ Global
 		{00000000-0000-0000-0000-000000000000}.ExportDebug|Any CPU.Build.0 = ExportDebug|Any CPU
 		{00000000-0000-0000-0000-000000000000}.ExportRelease|Any CPU.ActiveCfg = ExportRelease|Any CPU
 		{00000000-0000-0000-0000-000000000000}.ExportRelease|Any CPU.Build.0 = ExportRelease|Any CPU
+		{08469CEF-9E3E-44A4-BF9B-B52FC89881DF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{08469CEF-9E3E-44A4-BF9B-B52FC89881DF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{08469CEF-9E3E-44A4-BF9B-B52FC89881DF}.ExportDebug|Any CPU.ActiveCfg = Debug|Any CPU
+		{08469CEF-9E3E-44A4-BF9B-B52FC89881DF}.ExportDebug|Any CPU.Build.0 = Debug|Any CPU
+		{08469CEF-9E3E-44A4-BF9B-B52FC89881DF}.ExportRelease|Any CPU.ActiveCfg = Release|Any CPU
+		{08469CEF-9E3E-44A4-BF9B-B52FC89881DF}.ExportRelease|Any CPU.Build.0 = Release|Any CPU
+		{C5278937-4BCC-47E2-8A3C-1BF7E253DFE0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C5278937-4BCC-47E2-8A3C-1BF7E253DFE0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C5278937-4BCC-47E2-8A3C-1BF7E253DFE0}.ExportDebug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C5278937-4BCC-47E2-8A3C-1BF7E253DFE0}.ExportDebug|Any CPU.Build.0 = Debug|Any CPU
+		{C5278937-4BCC-47E2-8A3C-1BF7E253DFE0}.ExportRelease|Any CPU.ActiveCfg = Release|Any CPU
+		{C5278937-4BCC-47E2-8A3C-1BF7E253DFE0}.ExportRelease|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

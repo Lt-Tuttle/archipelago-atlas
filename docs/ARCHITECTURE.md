@@ -21,18 +21,29 @@ MainTrackerWindow (the shell)
  └─ services: CheeseTrackerService, SphereService, PackDoctorService
 ```
 
+## Projects
+
+- **`AP_Atlas.Core/`**: everything that doesn't need Godot. It has no Godot reference, so it can't touch the window from a worker thread, and its tests run with plain `dotnet test`.
+  - `SafeFile`, `Logger`, `Async`, `AtlasVersion`, `Secrets`.
+  - `PoliteHttp` and `GitHubApi`.
+  - `YamlExclusions`.
+  - The Cheese Tracker client, models, table rules, advisor and key store (`CheeseTracker/`).
+  - The Sphere Tracker parser, models and tables (`Spheres/`).
+  - `EngineDownloader` (`Engine/`).
+- **`AP_Atlas.Core.Tests/`**: its xUnit tests.
+- **`AP_Atlas_Source/`**: the Godot app, below. It starts the library's `Logger`: Godot's output for echoes, and the data folder's `logs/` once that folder has been checked.
+
 ## Folders (`AP_Atlas_Source/Scripts`)
 
 | Folder | What's there |
 |---|---|
 | `MainTrackerWindow*.cs` | **The shell**, in partial files:<br>• `MainTrackerWindow.cs`: the fields, startup (`_Ready`), shutdown and the Properties host.<br>• `.Layout`: the panels, theme and fonts.<br>• `.Notices`: toasts, failure notices and the logs.<br>• `.Connections`: connecting, careful reconnects and open sessions.<br>• `.Profiles`: the multiworld editor.<br>• `.Sidebar`: the slot cards.<br>• `.Views`: the tabs, explorer, content stage and terminal.<br>• `.Windows`: the Pack Doctor, Cheese, Sphere, Privacy, engine and race-mode windows. |
 | `Core/SlotTrackerControl*.cs` | **Everything about one connected slot**, in partial files:<br>• `SlotTrackerControl.cs`: startup, its session events and the queries Properties uses.<br>• `.Race`: race mode.<br>• `.Apworld`: matching the seed's apworld version.<br>• `.MapPack`: the pack, game names, its index and the pack's scripts.<br>• `.Logic`: the logic engine.<br>• `.LogicView`, `.History`, `.Chat`: its views. |
-| `Core/` | **Infrastructure:**<br>• `DataManager` (settings and profiles), `SafeFile` (crash-safe saves), `Logger`, `CrashGuard`, `Async` (work nobody awaits).<br>• `Annotations` (notes, flags, special items, exclusions), `RaceRules`, `ThemeColors`, `Inspect`.<br>• `YamlExclusions`, `AtlasVersion`. |
-| `Core/` (safety) | **Protections:**<br>• `PoliteHttp`: every web request.<br>• `GitHubApi`: GitHub's rules on top of it.<br>• `ExternalLinks`: the only way to open links and folders.<br>• `Permissions`: what the user allowed.<br>• `Secrets`: DPAPI encryption. |
-| `Core/Engine/` | **The Atlas Engine:**<br>• `AtlasEngine`: setup of the portable engine (Python, Archipelago, Universal Tracker, packages), health checks, rollback, and the user's own install with their consent.<br>• `EngineInstall`, `EngineDownloader`, `ProcessJob` (engine processes close with Atlas).<br>• `ApworldSources`: apworld versions, matched to each seed.<br>• `SeedVerifier`, `GameSweep`.<br>• `Python/`: the bridge (`atlas_bridge.py`) and the portable runner. |
+| `Core/` | **Infrastructure:**<br>• `DataManager` (settings and profiles), `CrashGuard`.<br>• `Annotations` (notes, flags, special items, exclusions), `RaceRules`, `ThemeColors`, `Inspect`.<br>• `ExternalLinks`: the only way to open links and folders.<br>• `Permissions`: what the user allowed. |
+| `Core/Engine/` | **The Atlas Engine:**<br>• `AtlasEngine`: setup of the portable engine (Python, Archipelago, Universal Tracker, packages), health checks, rollback, and the user's own install with their consent.<br>• `EngineInstall`, `ProcessJob` (engine processes close with Atlas).<br>• `ApworldSources`: apworld versions, matched to each seed.<br>• `SeedVerifier`, `GameSweep`.<br>• `Python/`: the bridge (`atlas_bridge.py`) and the portable runner. |
 | `Core/PopTracker/` | **Map packs:**<br>• `PopTrackerPackLoader` reads pack zips.<br>• `PackScriptHost` runs pack Lua in a sandbox.<br>• `PackIndex`, `LuaMappingReader`, `GameNames`.<br>• The Pack Doctor (`PackDoctor`, `PackDoctorService`, `PackFixes`: local fixes with undo).<br>• Key Items (`ProgressionTrackerControl`). |
-| `Core/CheeseTracker/` | **Cheese Tracker:** the API client, rooms and linking, status suggestions (`CheeseAdvisor`), opt-in automation, the table rules, the encrypted key. |
-| `Core/Spheres/` | **Sphere Tracker:** reads the host's spheretracker.de room (parser, tables, service). |
+| `Core/CheeseTracker/` | **Cheese Tracker:** the service: rooms and linking, opt-in automation (the client and rules are in `AP_Atlas.Core`). |
+| `Core/Spheres/` | **Sphere Tracker:** the service that reads the host's spheretracker.de room (the parser and tables are in `AP_Atlas.Core`). |
 | `UI/` | **Windows and views:**<br>• Properties, Hints, Map Tracker, the Cheese and Sphere tabs.<br>• The Pack Doctor and Atlas Engine windows.<br>• Privacy, the permission dialog, shared dialogs, the tab strip. |
 | `Core/SelfTest*.cs` | **The self-test:** run with `Tools/run_selftest.ps1`. |
 | `MainTrackerWindow.VisualCheck.cs` | **The visual check:** pictures of the main screens, compared with an earlier run; run with `Tools/run_visualcheck.ps1`. |
@@ -101,8 +112,8 @@ Downloads that become code are pinned:
 ## Building, testing, releasing
 
 - **Building and testing:** see [CONTRIBUTING.md](../CONTRIBUTING.md).
-- **CI** (`.github/workflows/ci.yml`): guard rails → build → format check → hash-checked Godot → import → self-test.
-- **Releases** (`.github/workflows/release.yml`): run when a `v*` tag is pushed. The version is set once, in `AP_Atlas.csproj`.
+- **CI** (`.github/workflows/ci.yml`): guard rails → build → format check → unit tests → hash-checked Godot → import → self-test.
+- **Releases** (`.github/workflows/release.yml`): run when a `v*` tag is pushed. The version is set once, in `Directory.Build.props`.
 
 ## Planned restructuring (roadmap Phase 1)
 

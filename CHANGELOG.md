@@ -43,6 +43,7 @@ Development toward the first public beta, 0.1.0.
   - `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` and `docs/ARCHITECTURE.md`.
   - Guard rails (`Tools/check_guards.ps1`) run in CI.
   - Microsoft's async analyzers check every build. An unobserved task, `async void`, a blocking wait, or `ContinueWith` without a scheduler fails it.
+  - Code that doesn't need Godot lives in its own library, `AP_Atlas.Core`, with xUnit tests that run with `dotnet test` (and in CI). The version is set once, in `Directory.Build.props`.
   - Nullable reference checks for all new code. Older files are annotated as they're reworked, and the guard rails keep their number from growing.
   - An optional self-test (`ATLAS_SELFTEST_SETUP=1`) sets up the portable engine from nothing and health-checks it.
   - A visual check (`Tools/run_visualcheck.ps1`): pictures of the main screens, compared pixel by pixel with an earlier run.

@@ -16,28 +16,31 @@
     Run it from anywhere; CI runs it on every push. Exit code 0 means every rule holds.
 #>
 $ErrorActionPreference = 'Stop'
-$scripts = Join-Path (Split-Path -Parent $PSScriptRoot) 'Scripts'
+# The app's scripts and the Godot-free library; paths below are relative to the repository root.
+$repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$roots = @('AP_Atlas_Source\Scripts', 'AP_Atlas.Core') | ForEach-Object { Join-Path $repo $_ }
 
 $rules = @(
-    @{ Name = 'Opening links or files through Windows'; Pattern = 'OS\.ShellOpen\s*\('; Allowed = @('Core\ExternalLinks.cs') },
-    @{ Name = 'Making web requests outside PoliteHttp'; Pattern = 'new\s+(System\.Net\.Http\.)?HttpClient\s*\(|WebClient\s*\(|HttpWebRequest'; Allowed = @('Core\PoliteHttp.cs') },
-    @{ Name = 'Reading the Windows registry'; Pattern = 'Microsoft\.Win32\.Registry|RegistryKey'; Allowed = @('Core\Engine\AtlasEngine.cs') },
-    @{ Name = 'Searching the PC for Archipelago'; Pattern = 'FindArchipelagoInstalls\s*\('; Allowed = @('Core\Engine\AtlasEngine.cs', 'UI\AtlasEngineWindow.cs') },
+    @{ Name = 'Opening links or files through Windows'; Pattern = 'OS\.ShellOpen\s*\('; Allowed = @('AP_Atlas_Source\Scripts\Core\ExternalLinks.cs') },
+    @{ Name = 'Making web requests outside PoliteHttp'; Pattern = 'new\s+(System\.Net\.Http\.)?HttpClient\s*\(|WebClient\s*\(|HttpWebRequest'; Allowed = @('AP_Atlas.Core\PoliteHttp.cs') },
+    @{ Name = 'Reading the Windows registry'; Pattern = 'Microsoft\.Win32\.Registry|RegistryKey'; Allowed = @('AP_Atlas_Source\Scripts\Core\Engine\AtlasEngine.cs') },
+    @{ Name = 'Searching the PC for Archipelago'; Pattern = 'FindArchipelagoInstalls\s*\('; Allowed = @('AP_Atlas_Source\Scripts\Core\Engine\AtlasEngine.cs', 'AP_Atlas_Source\Scripts\UI\AtlasEngineWindow.cs') },
     @{ Name = 'Letting Windows run a program by file type'; Pattern = 'UseShellExecute\s*=\s*true'; Allowed = @() },
-    @{ Name = 'An async void method (use Async.Fire)'; Pattern = '\basync\s+void\b'; Allowed = @('Core\Async.cs') },
-    @{ Name = 'Handing work to the main thread without Ui.Defer'; Pattern = '\)\.CallDeferred\(\)'; Allowed = @('UI\Ui.cs') },
-    @{ Name = 'Throwing away a call''s result (use Async.Fire for tasks)'; Pattern = '(?<!var\s)(?<![\w.])_\s*=\s*[^;=>]*\('; Allowed = @('Core\Async.cs', 'Core\SelfTest.Cheese.cs', 'Core\SelfTest.Spheres.cs') }
+    @{ Name = 'An async void method (use Async.Fire)'; Pattern = '\basync\s+void\b'; Allowed = @('AP_Atlas.Core\Async.cs') },
+    @{ Name = 'Handing work to the main thread without Ui.Defer'; Pattern = '\)\.CallDeferred\(\)'; Allowed = @('AP_Atlas_Source\Scripts\UI\Ui.cs') },
+    @{ Name = 'Throwing away a call''s result (use Async.Fire for tasks)'; Pattern = '(?<!var\s)(?<![\w.])_\s*=\s*[^;=>]*\('; Allowed = @('AP_Atlas.Core\Async.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.Cheese.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.Spheres.cs') }
 )
 
-$files = Get-ChildItem -Path $scripts -Recurse -Filter '*.cs' -File
+$files = $roots | ForEach-Object { Get-ChildItem -Path $_ -Recurse -Filter '*.cs' -File } |
+    Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' }
 $broken = 0
 foreach ($rule in $rules) {
     $hits = $files | Select-String -Pattern $rule.Pattern | Where-Object {
-        $relative = $_.Path.Substring($scripts.Length).TrimStart('\', '/')
+        $relative = $_.Path.Substring($repo.Length).TrimStart('\', '/')
         -not ($rule.Allowed -contains $relative)
     }
     foreach ($hit in $hits) {
-        $relative = $hit.Path.Substring($scripts.Length).TrimStart('\', '/')
+        $relative = $hit.Path.Substring($repo.Length).TrimStart('\', '/')
         Write-Host "GUARD: $($rule.Name) is only allowed in $(if ($rule.Allowed.Count) { $rule.Allowed -join ', ' } else { 'no file' }), but $relative line $($hit.LineNumber) does it:" -ForegroundColor Red
         Write-Host "    $($hit.Line.Trim())"
         $broken++

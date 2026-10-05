@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Atlas's code that doesn't need Godot: saving, logging, the web client, parsers and tables. Without a Godot
+       reference it can't touch the window from a worker thread, and its tests run with plain "dotnet test". -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>14</LangVersion>
+    <Nullable>enable</Nullable>
+    <RootNamespace>AP_Atlas.Core</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- 13.0.1 and later limit JSON nesting to 64 levels by default, so deeply nested input can't overflow the stack. -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <!-- Build-time only (never shipped): flags async mistakes such as unobserved tasks and blocking waits. -->
+    <PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" Version="18.7.23" PrivateAssets="all" IncludeAssets="runtime; build; native; contentfiles; analyzers; buildtransitive" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="AP_Atlas" />
+    <InternalsVisibleTo Include="AP_Atlas.Core.Tests" />
+  </ItemGroup>
+</Project>

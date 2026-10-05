@@ -59,6 +59,7 @@ namespace AP_Atlas.Core
                 return 2;
             }
             string dataDir = DataManager.GetDataDirectory();
+            Logger.UseFolder(Path.Combine(dataDir, "logs"));
 
             Print($"Atlas self-test in {dataDir}");
             Test("SafeFile keeps the previous version as .bak", SafeFileKeepsBackup);

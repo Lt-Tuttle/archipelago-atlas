@@ -38,10 +38,18 @@ You need:
 | Run | `Launch_The_Archipelago_Atlas.bat` |
 | Self-test | `AP_Atlas_Source/Tools/run_selftest.ps1` (builds, then tests in a new, empty scratch folder; never your real data). Set `ATLAS_SELFTEST_SETUP=1` to also set up the portable engine from nothing (about 55 MB of downloads), after changing engine setup |
 | Guard rails | `AP_Atlas_Source/Tools/check_guards.ps1` |
-| Formatting | `dotnet format whitespace AP_Atlas_Source/AP_Atlas.csproj` (C# files use CRLF line endings) |
+| Unit tests | `dotnet test --solution AP_Atlas_Source/AP_Atlas.sln` (`AP_Atlas.Core.Tests`: fast, no Godot) |
+| Formatting | `dotnet format whitespace AP_Atlas_Source/AP_Atlas.sln` (C# files use CRLF line endings) |
 | Visual check | `AP_Atlas_Source/Tools/run_visualcheck.ps1 [-Baseline <folder>]` (pictures of the main screens, as a new user sees them; with `-Baseline`, a `.diff.png` marks every changed pixel) |
 
-CI runs the build, formatting, guard rails and self-test on every push and pull request. The visual check needs a graphics card, so run it yourself before and after any change to how Atlas looks, and compare on the same PC.
+CI runs the build, formatting, guard rails, unit tests and self-test on every push and pull request.
+
+The repository holds three .NET projects:
+- `AP_Atlas_Source/AP_Atlas.csproj`: the Godot app (the window and everything that needs Godot).
+- `AP_Atlas.Core/`: code that doesn't need Godot (saving, logging, the web client, parsers). It can't touch the window, so it's safe on any thread.
+- `AP_Atlas.Core.Tests/`: its xUnit tests.
+
+New code that doesn't need Godot belongs in `AP_Atlas.Core`, with tests. The visual check needs a graphics card, so run it yourself before and after any change to how Atlas looks, and compare on the same PC.
 
 ## Writing code
 
@@ -81,7 +89,7 @@ By contributing, you agree that your contribution is licensed under the project'
 
 ## Versions and releases
 
-- **Version numbers:** Atlas uses [Semantic Versioning](https://semver.org). The version is set once, in `AP_Atlas_Source/AP_Atlas.csproj`.
+- **Version numbers:** Atlas uses [Semantic Versioning](https://semver.org). The version is set once, in `Directory.Build.props` at the repository root, and every project shares it.
 - **Releasing:** `AP_Atlas_Source/Tools/bump_version.ps1 <version>` sets the version and opens its changelog section. Pushing a tag like `v0.1.0-beta.1` builds the release.
 
 ## Security

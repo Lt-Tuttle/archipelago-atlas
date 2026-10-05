@@ -76,8 +76,8 @@ namespace AP_Atlas.UI
                 return;
             }
 
-            Row("Status", Colored(CtStatus.Label(row.Progression), CtStatus.ColorOf(row.Progression)) + Colored("  ·  ", Muted) +
-                Colored(CtStatus.Label(row.Completion), CtStatus.ColorOf(row.Completion)));
+            Row("Status", Colored(CtStatus.Label(row.Progression), AP_Atlas.UI.CheeseColors.Of(row.Progression)) + Colored("  ·  ", Muted) +
+                Colored(CtStatus.Label(row.Completion), AP_Atlas.UI.CheeseColors.Of(row.Completion)));
             Row("Claimed by", OwnerText(row, view.Ownership));
             Row("Checks", Colored($"{row.ChecksDone} / {row.ChecksTotal}", row.ChecksTotal > 0 && row.ChecksDone >= row.ChecksTotal ? Good : Colors.White),
                 "As Cheese Tracker last read them from the Archipelago tracker");
@@ -90,7 +90,7 @@ namespace AP_Atlas.UI
             else if (advice == null) Row("Atlas's logic", Colored("Working it out…", Muted));
             else if (advice.InSync) Row("Atlas's logic", Colored("Agrees: " + advice.Reason, Good));
             else if (advice.Status != null)
-                Row("Atlas suggests", Colored(CtStatus.Label(advice.Status), CtStatus.ColorOf(advice.Status)) + "  " +
+                Row("Atlas suggests", Colored(CtStatus.Label(advice.Status), AP_Atlas.UI.CheeseColors.Of(advice.Status)) + "  " +
                     Colored(advice.Reason + (advice.Ready ? "" : " (confirming)"), Colors.LightGray),
                     "From Atlas's logic for this slot. BK is suggested after 5 minutes with nothing in logic; good news after a minute.");
             else if (advice.Quiet != null) Row("Atlas's logic", Colored(advice.Quiet, Muted));
@@ -193,7 +193,7 @@ namespace AP_Atlas.UI
             var counts = t.Games.GroupBy(CtStatus.Headline).ToDictionary(g => g.Key ?? "unknown", g => g.Count());
             var order = new[] { "bk", "soft_bk", "unknown", "unblocked", "go", "all_checks", "goal", "done", "released" };
             Row("Slots", Colored($"{t.Games.Count}: ", Colors.LightGray) +
-                string.Join(Colored(", ", Muted), order.Where(counts.ContainsKey).Select(id => Colored($"{counts[id]} {CtStatus.Label(id)}", CtStatus.ColorOf(id)))));
+                string.Join(Colored(", ", Muted), order.Where(counts.ContainsKey).Select(id => Colored($"{counts[id]} {CtStatus.Label(id)}", AP_Atlas.UI.CheeseColors.Of(id)))));
             long done = t.Games.Sum(g => (long)g.ChecksDone), total = t.Games.Sum(g => (long)g.ChecksTotal);
             if (total > 0) PlainRow("Checks", $"{done} / {total} ({100.0 * done / total:0}%)");
 
@@ -213,7 +213,7 @@ namespace AP_Atlas.UI
                     : Colored(g.Name, Colors.White);
                 string owner = string.IsNullOrEmpty(g.OwnerName) ? Colored("unclaimed", Muted)
                     : Colored(g.OwnerName + (g.OwnerAway ? " (away)" : ""), g.OwnerAway ? Warn : Colors.LightGray);
-                lines.Add($"{Colored(g.Position + ".", Muted)} {name} {Colored(g.Game, Muted)}  {Colored(CtStatus.Label(headline), CtStatus.ColorOf(headline))}  " +
+                lines.Add($"{Colored(g.Position + ".", Muted)} {name} {Colored(g.Game, Muted)}  {Colored(CtStatus.Label(headline), AP_Atlas.UI.CheeseColors.Of(headline))}  " +
                           $"{owner}  {Colored($"{g.ChecksDone}/{g.ChecksTotal}", Colors.LightGray)}  {ActivityText(g, t)}" +
                           (string.IsNullOrWhiteSpace(g.Notes) ? "" : Colored("  *notes", Colors.LightGray)));
             }

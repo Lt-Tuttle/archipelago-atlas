@@ -35,3 +35,8 @@ dotnet_diagnostic.VSTHRD111.severity = none
 [**/SelfTest*.cs]
 dotnet_diagnostic.VSTHRD103.severity = none
 dotnet_diagnostic.VSTHRD200.severity = none
+
+# Unit tests: named for what they check, and may read and write files plainly.
+[AP_Atlas.Core.Tests/**.cs]
+dotnet_diagnostic.VSTHRD103.severity = none
+dotnet_diagnostic.VSTHRD200.severity = none

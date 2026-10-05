@@ -29,9 +29,9 @@ jobs:
         shell: pwsh
         run: |
           $tag = '${{ github.ref_name }}'.TrimStart('v')
-          [xml]$proj = Get-Content -Raw AP_Atlas_Source/AP_Atlas.csproj
-          $version = @($proj.Project.PropertyGroup | ForEach-Object { $_.Version } | Where-Object { $_ })[0]
-          if ($version -ne $tag) { throw "Tag v$tag doesn't match <Version>$version</Version> in AP_Atlas.csproj." }
+          [xml]$props = Get-Content -Raw Directory.Build.props
+          $version = @($props.Project.PropertyGroup | ForEach-Object { $_.Version } | Where-Object { $_ })[0]
+          if ($version -ne $tag) { throw "Tag v$tag doesn't match <Version>$version</Version> in Directory.Build.props." }
           "ATLAS_VERSION=$version" >> $env:GITHUB_ENV
 
       - name: Set up .NET

@@ -81,6 +81,9 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
 
     public override void _Ready()
     {
+        // Log lines also go to Godot's output (the log file starts once the data folder has been checked, below).
+        AP_Atlas.Core.Logger.Echo = line => GD.Print(line);
+        AP_Atlas.Core.Logger.EchoError = line => GD.PrintErr(line);
         AP_Atlas.Core.CrashGuard.Install();
         if (AP_Atlas.Core.SelfTest.Requested)
         {
@@ -96,6 +99,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             GetTree().Quit();
             return;
         }
+        AP_Atlas.Core.Logger.UseFolder(System.IO.Path.Combine(DataManager.GetDataDirectory(), "logs"));
         // Damaged-file recoveries and failed saves are shown as toasts once the UI exists.
         _subscribed = true;
         AP_Atlas.Core.SafeFile.Recovered += OnFileRecovered;

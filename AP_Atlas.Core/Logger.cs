@@ -1,7 +1,6 @@
 #nullable disable
 using System;
 using System.IO;
-using Godot;
 
 namespace AP_Atlas.Core
 {
@@ -15,29 +14,45 @@ namespace AP_Atlas.Core
         /// <summary>The time shown on log lines in Atlas's window. The visual check fixes it, so its pictures don't change with the clock.</summary>
         public static Func<DateTime> DisplayClock { get; set; } = () => DateTime.Now;
 
-        static Logger()
+        /// <summary>
+        /// Where every line is echoed besides the file. The app points these at Godot's output when it starts; until then
+        /// (and in tests) lines go to the console.
+        /// </summary>
+        public static Action<string> Echo { get; set; } = Console.WriteLine;
+
+        /// <inheritdoc cref="Echo"/>
+        public static Action<string> EchoError { get; set; } = Console.Error.WriteLine;
+
+        /// <summary>
+        /// Starts writing the log to atlas_log.txt in <paramref name="folder"/> (the app's data folder's logs), archiving a
+        /// large one first. Before this is called, lines are only echoed: nothing is written until the app has checked its
+        /// data folder (a refused test run writes nothing). Later calls change nothing.
+        /// </summary>
+        public static void UseFolder(string folder)
         {
-            // A failure here would make every later log call throw (a broken type initializer), so nothing may escape.
-            try
+            lock (_fileLock)
             {
-                string logDir = Path.Combine(DataManager.GetDataDirectory(), "logs");
-                Directory.CreateDirectory(logDir);
-                _logFilePath = Path.Combine(logDir, "atlas_log.txt");
-                RotateIfLarge(logDir);
-            }
-            catch (Exception ex)
-            {
-                _logFilePath = null;
-                GD.PrintErr("Logging to file is unavailable: " + ex.Message);
+                if (_logFilePath != null) return;
+                try
+                {
+                    Directory.CreateDirectory(folder);
+                    string path = Path.Combine(folder, "atlas_log.txt");
+                    RotateIfLarge(folder, path);
+                    _logFilePath = path;
+                }
+                catch (Exception ex)
+                {
+                    EchoError("Logging to file is unavailable: " + ex.Message);
+                }
             }
         }
 
-        private static void RotateIfLarge(string logDir)
+        private static void RotateIfLarge(string logDir, string logFile)
         {
             try
             {
-                if (File.Exists(_logFilePath) && new FileInfo(_logFilePath).Length > 5 * 1024 * 1024)
-                    File.Move(_logFilePath, Path.Combine(logDir, "atlas_log_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".txt"));
+                if (File.Exists(logFile) && new FileInfo(logFile).Length > 5 * 1024 * 1024)
+                    File.Move(logFile, Path.Combine(logDir, "atlas_log_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".txt"));
                 // Keep the ten most recent archived logs.
                 var old = new DirectoryInfo(logDir).GetFiles("atlas_log_*.txt");
                 Array.Sort(old, (a, b) => b.LastWriteTimeUtc.CompareTo(a.LastWriteTimeUtc));
@@ -57,9 +72,9 @@ namespace AP_Atlas.Core
             }
             catch (Exception ex)
             {
-                GD.PrintErr("Failed to write to log: " + ex.Message);
+                EchoError("Failed to write to log: " + ex.Message);
             }
-            GD.Print(logEntry);
+            Echo(logEntry);
         }
 
         public static void LogInfo(string message)

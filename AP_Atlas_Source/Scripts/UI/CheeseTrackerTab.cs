@@ -688,7 +688,7 @@ namespace AP_Atlas.UI
             if (barsSignature == _barsSignature) return;
             _barsSignature = barsSignature;
             var progressionOrder = new[] { "unknown", "bk", "soft_bk", "unblocked", "go" };
-            var checks = progressionOrder.Select(id => (CtStatus.Label(id) + " (remaining)", (double)stat.Where(r => r.Game.Progression == id).Sum(r => Math.Max(0, r.Game.ChecksTotal - r.Game.ChecksDone)), CtStatus.ColorOf(id) == Colors.WhiteSmoke ? Colors.LightSlateGray : CtStatus.ColorOf(id)))
+            var checks = progressionOrder.Select(id => (CtStatus.Label(id) + " (remaining)", (double)stat.Where(r => r.Game.Progression == id).Sum(r => Math.Max(0, r.Game.ChecksTotal - r.Game.ChecksDone)), AP_Atlas.UI.CheeseColors.Of(id) == Colors.WhiteSmoke ? Colors.LightSlateGray : AP_Atlas.UI.CheeseColors.Of(id)))
                 .Append(("Checked", done, Good.Darkened(0.25f)));
             FillBar(_checksBar, checks);
             FillBar(_slotsBar, order.Select(id => (UnifiedLabel(id), (double)unified.GetValueOrDefault(id), UnifiedColor(id))));
@@ -701,7 +701,7 @@ namespace AP_Atlas.UI
 
         private static string UnifiedLabel(string id) => id == "incomplete" ? "in progress" : CtStatus.Label(id);
 
-        private static Color UnifiedColor(string id) => id == "incomplete" ? Colors.LightSlateGray : CtStatus.ColorOf(id);
+        private static Color UnifiedColor(string id) => id == "incomplete" ? Colors.LightSlateGray : AP_Atlas.UI.CheeseColors.Of(id);
 
         private static void FillBar(HBoxContainer bar, IEnumerable<(string Label, double Value, Color Color)> parts)
         {
@@ -905,7 +905,7 @@ namespace AP_Atlas.UI
             var g = row.Game;
             string status = CtStatus.Headline(g);
             string text = CtStatus.Label(status);
-            var color = CtStatus.ColorOf(status);
+            var color = AP_Atlas.UI.CheeseColors.Of(status);
             string tip = g.IsComplete ? $"{CtStatus.Label(g.Completion)} (progression: {CtStatus.Label(g.Progression)})" : $"{CtStatus.Label(g.Progression)}, {CtStatus.Label(g.Completion)}";
             if (row.SlotName == null) return (text, color, tip);
             var view = _cheese.SlotView(row.ProfileId, row.SlotName);
@@ -1033,8 +1033,8 @@ namespace AP_Atlas.UI
             var facts = Rich();
             string owner = string.IsNullOrEmpty(g.OwnerName) ? Colored("unclaimed", Muted) : Colored(g.OwnerName + (g.OwnerAway ? " (away)" : ""), g.OwnerAway ? Warn : Colors.LightGray);
             int level = CheeseTable.ActivityLevel(g, row.Tracker, now);
-            facts.Text = (g.IsComplete ? "" : Colored(CtStatus.Label(g.Progression), CtStatus.ColorOf(g.Progression)) + Colored(" · ", Muted)) +
-                         Colored(CtStatus.Label(g.Completion), CtStatus.ColorOf(g.Completion)) + Colored("   Owner: ", Muted) + owner +
+            facts.Text = (g.IsComplete ? "" : Colored(CtStatus.Label(g.Progression), AP_Atlas.UI.CheeseColors.Of(g.Progression)) + Colored(" · ", Muted)) +
+                         Colored(CtStatus.Label(g.Completion), AP_Atlas.UI.CheeseColors.Of(g.Completion)) + Colored("   Owner: ", Muted) + owner +
                          Colored("   Availability: ", Muted) + Colored(CtStatus.Label(g.Availability), Colors.LightGray) +
                          (string.IsNullOrEmpty(g.OwnerName) ? "" : Colored("   Ping: ", Muted) + Colored(CtStatus.Label(CheeseTable.EffectivePing(row)), PingColor(CheeseTable.EffectivePing(row)))) +
                          Colored("   Last activity: ", Muted) + Colored(CheeseTable.ActivityText(g, now), level == 0 ? Good : level == 1 ? Colors.Gold : Bad) +
