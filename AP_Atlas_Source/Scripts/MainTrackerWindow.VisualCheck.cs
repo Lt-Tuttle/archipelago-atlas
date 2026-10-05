@@ -58,36 +58,36 @@ public partial class MainTrackerWindow
     {
         var host = (AP_Atlas.UI.IPropertiesHost)this;
         GetTree().Root.Size = VisualCheckWindowSize;
-        await VisualCheckWait(1.5);
+        await VisualCheckWaitAsync(1.5);
 
         // Every tab as a new user first sees it.
         for (int tab = 0; tab < _workspaceSwitcher.TabCount; tab++)
         {
             host.ShowGlobalTab(tab);
-            await VisualCheckWait(0.5);
-            await VisualCheckPicture($"tab{tab + 1:00}_{VisualCheckSlug(_workspaceSwitcher.GetTabTitle(tab))}");
+            await VisualCheckWaitAsync(0.5);
+            await VisualCheckPictureAsync($"tab{tab + 1:00}_{VisualCheckSlug(_workspaceSwitcher.GetTabTitle(tab))}");
         }
         host.ShowGlobalTab(0);
-        await VisualCheckWait(0.3);
+        await VisualCheckWaitAsync(0.3);
 
         // The engine window opens before anything is allowed, so it never goes online.
-        await VisualCheckWindow("engine", OpenEngineSetup, 1.5);
-        await VisualCheckWindow("privacy_empty", OpenPrivacy);
+        await VisualCheckWindowAsync("engine", OpenEngineSetup, 1.5);
+        await VisualCheckWindowAsync("privacy_empty", OpenPrivacy);
         AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.WriteArchipelago, @"C:\Games\Archipelago", true);
         AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.GitHubLookups, null, true);
         _appSettings.ApprovedApworldSources.Add("github.com/example/some-apworld");
-        await VisualCheckWindow("privacy_granted", OpenPrivacy);
-        await VisualCheckWindow("permission_find", () =>
+        await VisualCheckWindowAsync("privacy_granted", OpenPrivacy);
+        await VisualCheckWindowAsync("permission_find", () =>
             AP_Atlas.UI.PermissionDialog.Ask(this, _appSettings, AP_Atlas.Core.Permissions.FindArchipelago, null, null, _ => { }));
 
         // A new multiworld, then its Properties.
         OnAddProfilePressed();
-        await VisualCheckWait(0.5);
-        await VisualCheckPicture("profile_new");
+        await VisualCheckWaitAsync(0.5);
+        await VisualCheckPictureAsync("profile_new");
         var profile = _profiles.Last();
         AP_Atlas.Core.Inspector.Inspect(AP_Atlas.Core.InspectTarget.ForProfile(profile.Id, profile.Slots.FirstOrDefault()));
-        await VisualCheckWait(0.8);
-        await VisualCheckPicture("profile_properties");
+        await VisualCheckWaitAsync(0.8);
+        await VisualCheckPictureAsync("profile_properties");
 
         VisualCheckPrint($"VISUALCHECK TAKEN: {_visualCheckPictures.Count} pictures in {Path.GetFullPath(VisualCheckFolder)}");
         string baseline = System.Environment.GetEnvironmentVariable("ATLAS_VISUALCHECK_BASELINE");
@@ -95,21 +95,21 @@ public partial class MainTrackerWindow
     }
 
     /// <summary>Opens a window, takes its picture, then closes whatever the step opened.</summary>
-    private async Task VisualCheckWindow(string name, System.Action open, double settle = 0.6)
+    private async Task VisualCheckWindowAsync(string name, System.Action open, double settle = 0.6)
     {
         var before = VisualCheckOpenWindows();
         open();
-        await VisualCheckWait(settle);
-        await VisualCheckPicture(name);
+        await VisualCheckWaitAsync(settle);
+        await VisualCheckPictureAsync(name);
         foreach (var window in VisualCheckOpenWindows().Except(before)) window.QueueFree();
-        await VisualCheckWait(0.3);
+        await VisualCheckWaitAsync(0.3);
     }
 
     private List<Window> VisualCheckOpenWindows() => GetTree().Root.GetChildren().Concat(GetChildren()).OfType<Window>().ToList();
 
-    private async Task VisualCheckWait(double seconds) => await ToSignal(GetTree().CreateTimer(seconds), SceneTreeTimer.SignalName.Timeout);
+    private async Task VisualCheckWaitAsync(double seconds) => await ToSignal(GetTree().CreateTimer(seconds), SceneTreeTimer.SignalName.Timeout);
 
-    private async Task VisualCheckPicture(string name)
+    private async Task VisualCheckPictureAsync(string name)
     {
         // Frame-time reports in the status bar ("Hitch …") differ from run to run: pictures show the bar at rest.
         if (_globalStatusLabel != null && _globalStatusLabel.Text.StartsWith("Hitch ")) _globalStatusLabel.Text = "Ready";

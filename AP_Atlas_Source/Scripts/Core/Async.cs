@@ -28,7 +28,8 @@ namespace AP_Atlas.Core
         {
             if (task == null) return;
             if (task.IsCompleted) Observe(task, doing, tellUser);
-            else task.ContinueWith(t => Observe(t, doing, tellUser), CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+            // The continuation can't fail (Observe never throws), so its own task needs no watching.
+            else _ = task.ContinueWith(t => Observe(t, doing, tellUser), CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
         }
 
         /// <summary>Starts async work that nobody awaits. A throw before its first await is caught too.</summary>
@@ -38,6 +39,23 @@ namespace AP_Atlas.Core
             try { task = work(); }
             catch (Exception ex) { Report(ex, doing, tellUser); return; }
             Fire(task, doing, tellUser);
+        }
+
+        /// <summary>
+        /// When <paramref name="task"/> finishes, hands its result to <paramref name="then"/> on a worker thread: the default
+        /// value (null) when it failed or was cancelled, and a failure is logged. A UI update in <paramref name="then"/>
+        /// moves itself to the main thread (CallDeferred). Failures of <paramref name="then"/> itself are logged too.
+        /// </summary>
+        public static void Then<T>(Task<T> task, Action<T> then, string doing)
+        {
+            if (task == null) return;
+            Fire(task.ContinueWith(finished =>
+            {
+                T result = default;
+                if (finished.IsCompletedSuccessfully) result = finished.Result;
+                else if (finished.IsFaulted) Report(finished.Exception, doing, tellUser: false);
+                then(result);
+            }, CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default), doing, tellUser: false);
         }
 
         /// <summary>Logs a failure (the full details go to the log file) and, unless it's routine, raises Failed. Never throws.</summary>

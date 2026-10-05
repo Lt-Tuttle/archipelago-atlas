@@ -52,6 +52,13 @@ Archipelago's Python packages, from [PyPI](https://pypi.org) (exact versions, ev
 | urllib3 2.8.0 | Andrey Petrov and the urllib3 team | https://github.com/urllib3/urllib3 | MIT |
 | websockets 13.1 | Aymeric Augustin | https://github.com/python-websockets/websockets | BSD 3-Clause |
 
+## Used to build Atlas (not shipped)
+
+| Tool | Made by | Official releases | License |
+|---|---|---|---|
+| .NET SDK | Microsoft and the .NET Foundation contributors | https://dotnet.microsoft.com/download | MIT |
+| Microsoft.VisualStudio.Threading.Analyzers 18.7.23 (checks Atlas's async code while it's built) | Microsoft | https://github.com/microsoft/vs-threading | MIT |
+
 ## Content you add
 
 - **Map packs** (PopTracker format) are made by their authors and keep their own licenses. Atlas shows each pack's author and where it came from.

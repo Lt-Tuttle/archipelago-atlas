@@ -788,7 +788,7 @@ namespace AP_Atlas.Core
             }
             if (!GodotObject.IsInstanceValid(this)) return;
             _logAction($"[color=lime]Installed {safeName} from {where}.[/color]");
-            RefreshPackList();
+            await RefreshPackListAsync();
         }
 
         /// <summary>Why a file isn't a usable PopTracker pack zip, or null when it is.</summary>

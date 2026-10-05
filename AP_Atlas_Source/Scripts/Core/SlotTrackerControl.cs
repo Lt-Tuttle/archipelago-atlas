@@ -58,16 +58,16 @@ public partial class SlotTrackerControl : MarginContainer
     {
         if (_goalStatusAsked || Session == null) return;
         _goalStatusAsked = true;
-        ClientStatusAsync(PlayerSlot).ContinueWith(t =>
+        AP_Atlas.Core.Async.Then(ClientStatusAsync(PlayerSlot), status =>
         {
-            if (t.Status == System.Threading.Tasks.TaskStatus.RanToCompletion && t.Result == ArchipelagoClientState.ClientGoal)
+            if (status == ArchipelagoClientState.ClientGoal)
                 Callable.From(() =>
                 {
                     if (!GodotObject.IsInstanceValid(this)) return;
                     GoalCompleted = true;
                     RaiseStateChanged();
                 }).CallDeferred();
-        });
+        }, "asking the server whether this slot reached its goal");
     }
 
     /// <summary>Logic is running and finished evaluating every item received (not starting or rebuilding).</summary>
@@ -529,7 +529,7 @@ public partial class SlotTrackerControl : MarginContainer
         var untrusted = repos.Where(r => !r.Approved).ToList();
         if (!interactive)
         {
-            if (trusted.Count > 0) SearchSeedApworld(game, checksum, trusted, untrusted);
+            if (trusted.Count > 0) await SearchSeedApworldAsync(game, checksum, trusted, untrusted);
             else
             {
                 _apworldFixStatus = "Fix automatically looks in " + string.Join(" and ", repos.Select(r => $"{r.Display} ({r.Reason})")) + ". You'll be asked to trust them once.";
@@ -539,7 +539,7 @@ public partial class SlotTrackerControl : MarginContainer
         }
         if (untrusted.Count == 0)
         {
-            SearchSeedApworld(game, checksum, repos, new List<AP_Atlas.Core.EngineSetup.ApworldSources.ApworldRepo>());
+            await SearchSeedApworldAsync(game, checksum, repos, new List<AP_Atlas.Core.EngineSetup.ApworldSources.ApworldRepo>());
             return;
         }
         var dialog = new ConfirmationDialog
@@ -643,7 +643,7 @@ public partial class SlotTrackerControl : MarginContainer
             }
             AppendDebugLog($"Added github.com/{repo} as a source of {game} apworlds.");
             _apworldFixAttempted.Remove(ServerChecksumFor(game) ?? "");
-            FixApworldVersion(interactive: true);
+            await FixApworldVersionAsync(interactive: true);
         }, $"adding a source of {game} apworlds");
         dialog.Canceled += () => dialog.QueueFree();
         GetTree().Root.AddChild(dialog);
@@ -2583,7 +2583,7 @@ public partial class SlotTrackerControl : MarginContainer
         if (Session == null || !Session.Socket.Connected) return;
 
         _chatInput.Text = "";
-        Session.Socket.SendPacketAsync(new SayPacket { Text = text });
+        AP_Atlas.Core.Async.Fire(Session.Socket.SendPacketAsync(new SayPacket { Text = text }), "sending your chat message");
     }
 
     // =====================================================================
@@ -2733,13 +2733,13 @@ public partial class SlotTrackerControl : MarginContainer
             return System.Threading.Tasks.Task.FromResult<ScoutedItemInfo>(null);
         if (!_scoutCache.TryGetValue(locationId, out var task))
         {
-            task = ScoutOne(locationId);
+            task = ScoutOneAsync(locationId);
             _scoutCache[locationId] = task;
         }
         return task;
     }
 
-    private async System.Threading.Tasks.Task<ScoutedItemInfo> ScoutOne(long locationId)
+    private async System.Threading.Tasks.Task<ScoutedItemInfo> ScoutOneAsync(long locationId)
     {
         try
         {
@@ -2759,12 +2759,12 @@ public partial class SlotTrackerControl : MarginContainer
 
     /// <summary>The server's item name groups for a game (fetched once per game per connection).</summary>
     public System.Threading.Tasks.Task<Dictionary<string, string[]>> ItemGroupsAsync(string game) =>
-        CachedGroups(_itemGroupCache, game, g => Session.DataStorage.GetItemNameGroupsAsync(g));
+        CachedGroupsAsync(_itemGroupCache, game, g => Session.DataStorage.GetItemNameGroupsAsync(g));
 
     public System.Threading.Tasks.Task<Dictionary<string, string[]>> LocationGroupsAsync(string game) =>
-        CachedGroups(_locationGroupCache, game, g => Session.DataStorage.GetLocationNameGroupsAsync(g));
+        CachedGroupsAsync(_locationGroupCache, game, g => Session.DataStorage.GetLocationNameGroupsAsync(g));
 
-    private System.Threading.Tasks.Task<Dictionary<string, string[]>> CachedGroups(
+    private System.Threading.Tasks.Task<Dictionary<string, string[]>> CachedGroupsAsync(
         Dictionary<string, System.Threading.Tasks.Task<Dictionary<string, string[]>>> cache, string game,
         Func<string, System.Threading.Tasks.Task<Dictionary<string, string[]>>> fetch)
     {
@@ -2772,13 +2772,13 @@ public partial class SlotTrackerControl : MarginContainer
             return System.Threading.Tasks.Task.FromResult<Dictionary<string, string[]>>(null);
         if (!cache.TryGetValue(game, out var task))
         {
-            task = SafeFetch(() => fetch(game));
+            task = SafeFetchAsync(() => fetch(game));
             cache[game] = task;
         }
         return task;
     }
 
-    private static async System.Threading.Tasks.Task<T> SafeFetch<T>(Func<System.Threading.Tasks.Task<T>> fetch) where T : class
+    private static async System.Threading.Tasks.Task<T> SafeFetchAsync<T>(Func<System.Threading.Tasks.Task<T>> fetch) where T : class
     {
         try { return await fetch(); }
         catch { return null; }
@@ -2791,12 +2791,12 @@ public partial class SlotTrackerControl : MarginContainer
     {
         if (Session == null || !Session.Socket.Connected) return System.Threading.Tasks.Task.FromResult<ArchipelagoClientState?>(null);
         if (_statusCache.TryGetValue(player, out var cached) && (DateTime.Now - cached.At).TotalSeconds < 30) return cached.Task;
-        var task = FetchStatus(player);
+        var task = FetchStatusAsync(player);
         _statusCache[player] = (DateTime.Now, task);
         return task;
     }
 
-    private async System.Threading.Tasks.Task<ArchipelagoClientState?> FetchStatus(int player)
+    private async System.Threading.Tasks.Task<ArchipelagoClientState?> FetchStatusAsync(int player)
     {
         try { return await Session.DataStorage.GetClientStatusAsync(player, Team); }
         catch { return null; }

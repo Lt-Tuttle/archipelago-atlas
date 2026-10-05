@@ -431,7 +431,7 @@ namespace AP_Atlas.UI
             Section("Seed settings");
             AddHint("Reading this slot's saved options with the map pack…");
             var current = StillCurrent();
-            Async.Fire(System.Threading.Tasks.Task.Run(() =>
+            Async.Then(System.Threading.Tasks.Task.Run(() =>
             {
                 var pack = PopTrackerPackLoader.LoadPackForGame(saved.Game, null);
                 var host = pack == null ? null : PackScriptHost.Load(pack);
@@ -440,16 +440,15 @@ namespace AP_Atlas.UI
                 host.Clear(0, 0, saved.SlotData);
                 var codes = PackFixes.Effective(pack).ItemGridGroups.Where(g => g.LooksLikeSettings).SelectMany(g => g.Rows.SelectMany(r => r));
                 return host.Settings(codes);
-            }).ContinueWith(task =>
+            }), list =>
             {
-                if (task.IsFaulted) Logger.LogWarning($"Couldn't read {saved.Game}'s saved options with its map pack: {task.Exception?.GetBaseException().Message}");
-                var list = task.IsCompletedSuccessfully ? task.Result : new List<PackScriptHost.SettingInfo>();
+                list ??= new List<PackScriptHost.SettingInfo>();
                 Callable.From(() =>
                 {
                     _offlineSettings[key] = (saved.Saved, list);
                     current(() => Render(keepScroll: true));
                 }).CallDeferred();
-            }), "showing a slot's saved options", tellUser: false);
+            }, $"reading {saved.Game}'s saved options with its map pack");
         }
 
         private void BuildSeedSettings(List<PackScriptHost.SettingInfo> settings, bool scriptsRan, Newtonsoft.Json.Linq.JToken slotData, bool live, DateTime? savedAt = null)
@@ -676,9 +675,8 @@ namespace AP_Atlas.UI
             {
                 var placeholder = AddText(Colored("Looking up what was here…", Muted));
                 var current = StillCurrent();
-                owner.ScoutCheckedLocationAsync(t.LocationId).ContinueWith(task =>
+                Async.Then(owner.ScoutCheckedLocationAsync(t.LocationId), info =>
                 {
-                    var info = task.IsCompletedSuccessfully ? task.Result : null;
                     Callable.From(() => current(() =>
                     {
                         if (!IsInstanceValid(placeholder)) return;
@@ -686,7 +684,7 @@ namespace AP_Atlas.UI
                             ? Colored("Couldn't look this up.", Muted)
                             : $"{ItemLink(view, info.Player?.Slot ?? -1, info.ItemId, info.Flags)} for {PlayerLink(view, info.Player?.Slot ?? -1)}";
                     })).CallDeferred();
-                });
+                }, "looking up what was at a checked location");
             }
             else
             {
@@ -758,9 +756,8 @@ namespace AP_Atlas.UI
             var current = StillCurrent();
             int fontSize = _host.Settings.PropertiesFontSize;
 
-            owner.ExplainLocationAsync(locationId).ContinueWith(task =>
+            Async.Then(owner.ExplainLocationAsync(locationId), ex =>
             {
-                var ex = task.IsCompletedSuccessfully ? task.Result : null;
                 Callable.From(() => current(() =>
                 {
                     if (!IsInstanceValid(container)) return;
@@ -809,7 +806,7 @@ namespace AP_Atlas.UI
                         MainTrackerWindow.SetFontSizeRecursive(container, fontSize);
                     }
                 })).CallDeferred();
-            });
+            }, "asking the logic engine about a location");
         }
 
         /// <summary>
@@ -862,9 +859,8 @@ namespace AP_Atlas.UI
             var placeholder = AddText(Colored("Loading…", Muted));
             var current = StillCurrent();
             var task = isItem ? view.ItemGroupsAsync(game) : view.LocationGroupsAsync(game);
-            task.ContinueWith(t =>
+            Async.Then(task, groups =>
             {
-                var groups = t.IsCompletedSuccessfully ? t.Result : null;
                 Callable.From(() => current(() =>
                 {
                     if (!IsInstanceValid(placeholder)) return;
@@ -873,7 +869,7 @@ namespace AP_Atlas.UI
                         : mine.Count == 0 ? Colored("Not in any named group.", Muted)
                         : Colored(string.Join(", ", mine), Colors.LightGray);
                 })).CallDeferred();
-            });
+            }, "reading the game's item and location groups");
         }
 
         // =====================================================================
@@ -1063,11 +1059,10 @@ namespace AP_Atlas.UI
             PlainRow("Game", game);
             if (info?.IsGroup == true) PlainRow("Type", "Item link group");
             if (info?.Groups != null && info.Groups.Length > 0) PlainRow("Groups", string.Join(", ", info.Groups.Select(g => g.Name)));
-            var statusText = AddRowAsync("Status");
+            var statusText = AddPendingRow("Status");
             var current = StillCurrent();
-            view.ClientStatusAsync(p).ContinueWith(task =>
+            Async.Then(view.ClientStatusAsync(p), st =>
             {
-                var st = task.IsCompletedSuccessfully ? task.Result : null;
                 Callable.From(() => current(() =>
                 {
                     if (!IsInstanceValid(statusText)) return;
@@ -1081,7 +1076,7 @@ namespace AP_Atlas.UI
                         _ => Colored("Unavailable", Muted)
                     };
                 })).CallDeferred();
-            });
+            }, "asking the server for a player's status");
 
             if (!isYou)
             {
@@ -1121,7 +1116,7 @@ namespace AP_Atlas.UI
         }
 
         /// <summary>A row whose value is filled in later; returns the value label.</summary>
-        private RichTextLabel AddRowAsync(string label)
+        private RichTextLabel AddPendingRow(string label)
         {
             Row(label, Colored("…", Muted));
             var row = Target.GetChild(Target.GetChildCount() - 1);
@@ -1333,7 +1328,7 @@ namespace AP_Atlas.UI
                 {
                     try { PopTrackerPackLoader.InspectZipPack(path); }
                     catch (Exception ex) { Logger.LogWarning($"Couldn't read the map pack {Path.GetFileName(path)}: {ex.Message}"); }
-                }).ContinueWith(_ => Callable.From(() => current(() => Render(keepScroll: true))).CallDeferred()), "reading a map pack", tellUser: false);
+                }).ContinueWith(_ => Callable.From(() => current(() => Render(keepScroll: true))).CallDeferred(), System.Threading.Tasks.TaskScheduler.Default), "reading a map pack", tellUser: false);
                 return;
             }
             LoadedPack pack = null;
@@ -1723,7 +1718,7 @@ namespace AP_Atlas.UI
             };
             dialog.Confirmed += () =>
             {
-                s.Socket.SendPacketAsync(new SayPacket { Text = command });
+                Async.Fire(s.Socket.SendPacketAsync(new SayPacket { Text = command }), "sending your hint request");
                 _host.Toast("Requested: " + command, Colors.Gray);
                 dialog.QueueFree();
             };

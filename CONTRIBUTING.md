@@ -36,7 +36,7 @@ You need:
 |---|---|
 | Build | `dotnet build AP_Atlas_Source/AP_Atlas.sln` |
 | Run | `Launch_The_Archipelago_Atlas.bat` |
-| Self-test | `AP_Atlas_Source/Tools/run_selftest.ps1` (builds, then tests in a new, empty scratch folder; never your real data) |
+| Self-test | `AP_Atlas_Source/Tools/run_selftest.ps1` (builds, then tests in a new, empty scratch folder; never your real data). Set `ATLAS_SELFTEST_SETUP=1` to also set up the portable engine from nothing (about 55 MB of downloads), after changing engine setup |
 | Guard rails | `AP_Atlas_Source/Tools/check_guards.ps1` |
 | Formatting | `dotnet format whitespace AP_Atlas_Source/AP_Atlas.csproj` (C# files use CRLF line endings) |
 | Visual check | `AP_Atlas_Source/Tools/run_visualcheck.ps1 [-Baseline <folder>]` (pictures of the main screens, as a new user sees them; with `-Baseline`, a `.diff.png` marks every changed pixel) |
@@ -58,6 +58,7 @@ CI runs the build, formatting, guard rails and self-test on every push and pull 
   | Work nobody awaits (button handlers, background checks) | `Async.Fire(task, "what it's doing")`, never `async void` or `_ = …` |
 
   The guard rails enforce the riskiest of these in CI.
+- **Async code:** the build runs Microsoft's async analyzers. An unobserved task, `async void`, a blocking wait on unfinished work, or `ContinueWith` without a `TaskScheduler` stops the build. Methods that return a task end in `Async`.
 - **Tests:** every new protection gets a check in `Scripts/Core/SelfTest*.cs`, and tests never touch real data.
 - **Godot's `.uid` files:** Godot makes one next to each script (`Foo.cs.uid`). Commit it with the script.
 - **Third-party code, data or art:**

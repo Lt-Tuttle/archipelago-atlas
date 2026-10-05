@@ -42,6 +42,8 @@ Development toward the first public beta, 0.1.0.
   - `CREDITS.md` and `THIRD_PARTY_NOTICES.md` credit every component, service and inspiration, with license texts.
   - `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` and `docs/ARCHITECTURE.md`.
   - Guard rails (`Tools/check_guards.ps1`) run in CI.
+  - Microsoft's async analyzers check every build. An unobserved task, `async void`, a blocking wait, or `ContinueWith` without a scheduler fails it.
+  - An optional self-test (`ATLAS_SELFTEST_SETUP=1`) sets up the portable engine from nothing and health-checks it.
   - A visual check (`Tools/run_visualcheck.ps1`): pictures of the main screens, compared pixel by pixel with an earlier run.
 - **Settings → Privacy & permissions:** everything you've allowed Atlas to do without asking, and every apworld source you trust, each with a way to take it back.
 
@@ -81,6 +83,8 @@ Development toward the first public beta, 0.1.0.
   - Before, 28 such tasks could fail without a trace.
   - Reading a map pack, or a slot's saved options, now logs why it failed instead of showing nothing.
 - **Apworld fixes:** choosing an apworld file that couldn't be copied (a full disk, say) left that slot's apworld fixer stuck until you reconnected.
+- **Chat and hint requests:** a message or `!hint` request that couldn't be sent now says so, instead of looking sent.
+- **Engine setup:** unpacking Python and Archipelago can now be cancelled, and waiting for a finished engine step's output is bounded by the step's time limit.
 - **Memory:** an unused, hidden menu was created at startup and kept for the whole session. Godot now reports nothing left over when Atlas closes.
 - **Window icon:** Atlas's Windows icon setting was in the wrong section, so Godot ignored it and used the PNG.
 - **Running from source:** Godot no longer imports the files in Atlas's data folder (it had left 160 `.import` files there).

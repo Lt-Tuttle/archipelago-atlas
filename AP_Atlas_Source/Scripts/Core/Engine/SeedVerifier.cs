@@ -130,7 +130,7 @@ namespace AP_Atlas.Core.EngineSetup
 
         /// <summary>Runs the seed test for every player in a seed (.zip from Archipelago's output folder, or .archipelago).</summary>
         public static Task<SeedTestReport> VerifyAsync(EngineInstall install, string seedPath, Action<string> log, CancellationToken ct) =>
-            AtlasEngine.Exclusive(async () =>
+            AtlasEngine.ExclusiveAsync(async () =>
             {
                 log?.Invoke($"Testing logic against {Path.GetFileName(seedPath)} (rebuilding each world and replaying the seed's spheres)…");
                 SeedTestReport report = null;

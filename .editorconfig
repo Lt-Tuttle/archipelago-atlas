@@ -9,3 +9,29 @@ trim_trailing_whitespace = true
 [*.cs]
 indent_style = space
 indent_size = 4
+
+# Async analyzers (Microsoft.VisualStudio.Threading.Analyzers, build-time only).
+# The mistakes that lose failures or can freeze the window are build errors:
+# blocking waits on unfinished work, async void, async lambdas passed as void delegates,
+# tasks nobody observes, and ContinueWith without an explicit TaskScheduler.
+dotnet_diagnostic.VSTHRD002.severity = error
+dotnet_diagnostic.VSTHRD100.severity = error
+dotnet_diagnostic.VSTHRD101.severity = error
+dotnet_diagnostic.VSTHRD105.severity = error
+dotnet_diagnostic.VSTHRD110.severity = error
+# These are about Visual Studio's JoinableTaskFactory, which Atlas doesn't use.
+dotnet_diagnostic.VSTHRD001.severity = none
+dotnet_diagnostic.VSTHRD003.severity = none
+dotnet_diagnostic.VSTHRD004.severity = none
+dotnet_diagnostic.VSTHRD010.severity = none
+dotnet_diagnostic.VSTHRD012.severity = none
+dotnet_diagnostic.VSTHRD102.severity = none
+dotnet_diagnostic.VSTHRD108.severity = none
+dotnet_diagnostic.VSTHRD109.severity = none
+# A window app wants to come back to the main thread after an await.
+dotnet_diagnostic.VSTHRD111.severity = none
+
+# The self-test's methods are named for what they check, and may read and write files plainly.
+[**/SelfTest*.cs]
+dotnet_diagnostic.VSTHRD103.severity = none
+dotnet_diagnostic.VSTHRD200.severity = none

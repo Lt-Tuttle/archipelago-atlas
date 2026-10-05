@@ -329,7 +329,7 @@ public class LogicEngineManager
                 var readTask = process.StandardOutput.ReadLineAsync();
                 var done = await Task.WhenAny(readTask, Task.Delay(deadline - DateTime.Now));
                 if (done != readTask) break;
-                string line = readTask.Result;
+                string line = await readTask; // already finished: this only takes its result
                 if (line == null) break;
                 line = line.Trim();
                 if (!line.StartsWith("{")) continue;

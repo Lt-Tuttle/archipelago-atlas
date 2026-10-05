@@ -322,7 +322,7 @@ namespace AP_Atlas.Core.EngineSetup
 
             // Set when any lookup couldn't be done: then "not found" isn't known, so it isn't remembered.
             bool incomplete = false;
-            async Task<(string, string)> Check(string repo)
+            async Task<(string, string)> CheckAsync(string repo)
             {
                 var listing = await RepoAssetsAsync(repo, ct);
                 if (listing.Problem != null) incomplete = true;
@@ -334,14 +334,14 @@ namespace AP_Atlas.Core.EngineSetup
             (string Repo, string Tag) found = (null, null);
             foreach (var repo in known)
             {
-                found = await Check(repo);
+                found = await CheckAsync(repo);
                 if (found.Repo != null) break;
             }
             if (found.Repo == null)
             {
                 log?.Invoke($"Looking on GitHub for where your installed {game} apworld was published…");
                 var candidates = new List<string>();
-                async Task Search(string query, Func<JToken, bool> keep)
+                async Task SearchAsync(string query, Func<JToken, bool> keep)
                 {
                     var answer = await GitHubApi.GetAsync($"/search/repositories?q={Uri.EscapeDataString(query)}&per_page=20", ct);
                     if (!answer.Ok)
@@ -358,12 +358,12 @@ namespace AP_Atlas.Core.EngineSetup
                     }
                 }
                 // Repositories about the game (precise), then ones named exactly like a known project (forks, re-uploads).
-                await Search($"\"{game}\" archipelago in:name,description", _ => true);
+                await SearchAsync($"\"{game}\" archipelago in:name,description", _ => true);
                 foreach (var name in known.Select(r => r.Split('/').Last()).Distinct(StringComparer.OrdinalIgnoreCase))
-                    await Search($"{name} in:name", item => string.Equals(item["name"]?.ToString(), name, StringComparison.OrdinalIgnoreCase));
+                    await SearchAsync($"{name} in:name", item => string.Equals(item["name"]?.ToString(), name, StringComparison.OrdinalIgnoreCase));
                 foreach (var repo in candidates.Take(10))
                 {
-                    found = await Check(repo);
+                    found = await CheckAsync(repo);
                     if (found.Repo != null) break;
                 }
             }
@@ -540,7 +540,7 @@ namespace AP_Atlas.Core.EngineSetup
         /// throwaway process. Files identified before aren't loaded again. Returns the matching file, or null.
         /// </summary>
         public static Task<(ApworldVersion Version, string File)> FindMatchingAsync(EngineInstall install, string game, string seedChecksum, IEnumerable<string> repos, Action<string> log, CancellationToken ct, int maxTries = 40) =>
-            AtlasEngine.Exclusive(async () =>
+            AtlasEngine.ExclusiveAsync(async () =>
             {
                 var cached = CachedFor(game, seedChecksum);
                 if (cached != null)

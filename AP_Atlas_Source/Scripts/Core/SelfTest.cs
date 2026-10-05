@@ -15,6 +15,8 @@ namespace AP_Atlas.Core
     /// Run before every release:
     ///   set ATLAS_SELFTEST=1 and ATLAS_DATA_DIR=&lt;an empty scratch folder&gt;, then start Atlas (headless is fine).
     ///   Optional: ATLAS_SELFTEST_AP=&lt;an Archipelago install&gt; also health-checks that engine end to end.
+    ///   Optional: ATLAS_SELFTEST_SETUP=1 also sets up the portable engine from nothing in the scratch folder (about 55 MB
+    ///   from python.org, GitHub and PyPI, every file hash-checked) and health-checks it.
     /// It refuses to run against a real data folder. Results print as "SELFTEST PASS/FAIL …" lines and go to
     /// selftest_results.txt in the scratch folder; Atlas exits with code 1 if anything failed.
     /// </summary>
@@ -102,6 +104,9 @@ namespace AP_Atlas.Core
             string ap = System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_AP");
             if (!string.IsNullOrWhiteSpace(ap))
                 await TestAsync($"Engine end to end on {ap}", () => EngineEndToEnd(ap));
+
+            if (System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_SETUP") == "1")
+                await TestAsync("Engine: a portable setup from nothing downloads, verifies and passes its health check", PortableSetupEndToEnd);
 
             if (System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_ALLGAMES") == "1")
                 await TestAsync("Every installed game still rebuilds (no game worse than the baseline)", () => GameRegression(ap));
@@ -576,6 +581,18 @@ namespace AP_Atlas.Core
         {
             public string State { get; set; }
             public int Differences { get; set; }
+        }
+
+        /// <summary>The whole portable setup, as "Set up everything" runs it, in the scratch folder; then the health check.</summary>
+        private static async Task PortableSetupEndToEnd()
+        {
+            var install = EngineInstall.Portable();
+            Expect(!install.CanLaunch, "the scratch folder already has an engine");
+            bool ok = await AtlasEngine.SetUpAsync(install, line => Print("  " + line), _ => { }, default);
+            Expect(ok, "setup didn't finish (see the lines above)");
+            var check = await AtlasEngine.RunCheckAsync(install, line => Print("  " + line), default);
+            Expect(check.Passed, "health check failed: " + check.Problem);
+            Expect(check.Smoke != null && check.Smoke.Ok, "the end-to-end logic test didn't run or failed");
         }
 
         private static async Task EngineEndToEnd(string apPath)

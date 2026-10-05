@@ -54,7 +54,7 @@ namespace AP_Atlas.Core.EngineSetup
         }
 
         public static Task<GameSweepRecord> RunAsync(EngineInstall install, Action<string> log, CancellationToken ct) =>
-            AtlasEngine.Exclusive(async () =>
+            AtlasEngine.ExclusiveAsync(async () =>
             {
                 var check = AtlasEngine.LastCheck(install) ?? await AtlasEngine.RunCheckAsync(install, log, ct);
                 var games = (check.Games ?? new List<string>()).Where(g => g != "Archipelago" && g != "Universal Tracker").ToList();

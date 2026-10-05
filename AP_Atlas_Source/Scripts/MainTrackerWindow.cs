@@ -1146,7 +1146,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             // so the server drops them immediately instead of waiting for a timeout.
             ArchipelagoSession[] sessions;
             lock (_openSessions) sessions = _openSessions.ToArray();
-            var disconnectTasks = sessions.Select(CloseSession).ToList();
+            var disconnectTasks = sessions.Select(CloseSessionAsync).ToList();
             if (disconnectTasks.Count > 0)
             {
                 var all = Task.WhenAll(disconnectTasks);
@@ -1424,7 +1424,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     }
 
     /// <summary>Closes a session's socket with a normal close frame and forgets it. Safe to call more than once.</summary>
-    private Task CloseSession(ArchipelagoSession session)
+    private Task CloseSessionAsync(ArchipelagoSession session)
     {
         if (session == null) return Task.CompletedTask;
         lock (_openSessions)
@@ -2236,7 +2236,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             if (n is SlotTrackerControl slot && slot.ProfileId == profileId && slot.SlotName == slotName)
             {
                 LogToSystem("[color=yellow]Disconnected slot: " + slotName + "[/color]");
-                AP_Atlas.Core.Async.Fire(CloseSession(slot.Session), "closing a server connection", tellUser: false);
+                AP_Atlas.Core.Async.Fire(CloseSessionAsync(slot.Session), "closing a server connection", tellUser: false);
             }
         }
         DataManager.SaveProfiles(_profiles);
@@ -2557,7 +2557,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                     if (n is SlotTrackerControl slot && slot.ProfileId == profileId)
                     {
                         if (_currentSelectedSlot == slot) _currentSelectedSlot = null;
-                        AP_Atlas.Core.Async.Fire(CloseSession(slot.Session), "closing a server connection", tellUser: false);
+                        AP_Atlas.Core.Async.Fire(CloseSessionAsync(slot.Session), "closing a server connection", tellUser: false);
                         slot.QueueFree();
                     }
                 }
@@ -2746,7 +2746,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             if (completedTask == timeoutTask)
             {
                 session.MessageLog.OnMessageReceived -= earlyHandler;
-                AP_Atlas.Core.Async.Fire(CloseSession(session), "closing a server connection", tellUser: false);
+                AP_Atlas.Core.Async.Fire(CloseSessionAsync(session), "closing a server connection", tellUser: false);
                 // The login may still finish after we gave up on it; close it then too so it isn't left open on the server.
                 AP_Atlas.Core.Async.Fire(connectTask.ContinueWith(t =>
                 {
@@ -2758,9 +2758,9 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                     if (t.Status == TaskStatus.RanToCompletion && t.Result.Successful)
                     {
                         TrackSession(session);
-                        AP_Atlas.Core.Async.Fire(CloseSession(session), "closing a server connection", tellUser: false);
+                        AP_Atlas.Core.Async.Fire(CloseSessionAsync(session), "closing a server connection", tellUser: false);
                     }
-                }), "closing a connection that finished after it timed out", tellUser: false);
+                }, TaskScheduler.Default), "closing a connection that finished after it timed out", tellUser: false);
                 Callable.From(() =>
                 {
                     _statusLabel.Text = "Status: Connection Timeout";
@@ -2779,7 +2779,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 {
                     // The app is closing; don't build a slot around this session, just close it.
                     session.MessageLog.OnMessageReceived -= earlyHandler;
-                    AP_Atlas.Core.Async.Fire(CloseSession(session), "closing a server connection", tellUser: false);
+                    AP_Atlas.Core.Async.Fire(CloseSessionAsync(session), "closing a server connection", tellUser: false);
                     return;
                 }
                 if (result.Successful)
@@ -2806,7 +2806,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                         if (n is SlotTrackerControl oldSlot && oldSlot.ProfileId == profile.Id && oldSlot.SlotName == slotName)
                         {
                             if (_currentSelectedSlot == oldSlot) _currentSelectedSlot = null;
-                            AP_Atlas.Core.Async.Fire(CloseSession(oldSlot.Session), "closing a server connection", tellUser: false);
+                            AP_Atlas.Core.Async.Fire(CloseSessionAsync(oldSlot.Session), "closing a server connection", tellUser: false);
                             oldSlot.QueueFree();
                         }
                     }
@@ -2852,7 +2852,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 else
                 {
                     session.MessageLog.OnMessageReceived -= earlyHandler;
-                    AP_Atlas.Core.Async.Fire(CloseSession(session), "closing a server connection", tellUser: false);
+                    AP_Atlas.Core.Async.Fire(CloseSessionAsync(session), "closing a server connection", tellUser: false);
                     var loginFailure = (Archipelago.MultiClient.Net.LoginFailure)result;
                     string errs = string.Join(", ", loginFailure.Errors);
                     // Only a refusal (wrong slot, game, version, password) stops automatic reconnects; a server that
@@ -2873,7 +2873,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         }
         catch (System.Exception ex)
         {
-            AP_Atlas.Core.Async.Fire(CloseSession(session), "closing a server connection", tellUser: false);
+            AP_Atlas.Core.Async.Fire(CloseSessionAsync(session), "closing a server connection", tellUser: false);
             Callable.From(() =>
             {
                 _statusLabel.Text = "Status: Connection Error:\n" + ex.Message;

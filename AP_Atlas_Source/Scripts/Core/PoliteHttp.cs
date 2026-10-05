@@ -438,7 +438,7 @@ namespace AP_Atlas.Core
             using var buffer = new MemoryStream();
             var chunk = new byte[81920];
             int read;
-            while ((read = await stream.ReadAsync(chunk, ct).ConfigureAwait(false)) > 0) buffer.Write(chunk, 0, read);
+            while ((read = await stream.ReadAsync(chunk, ct).ConfigureAwait(false)) > 0) await buffer.WriteAsync(chunk.AsMemory(0, read), ct).ConfigureAwait(false);
             return Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length);
         }
 

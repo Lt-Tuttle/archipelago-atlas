@@ -317,9 +317,9 @@ namespace AP_Atlas.Core.EngineSetup
         /// it moved aside. Engines using the install are stopped first. Returns how many changes were undone.
         /// </summary>
         public static Task<int> RemoveAtlasFilesAsync(EngineInstall install, Action<string> log, CancellationToken ct) =>
-            Exclusive(async () =>
+            ExclusiveAsync(async () =>
             {
-                await StopEnginesUsing(install.Root, log, ct);
+                await StopEnginesUsingAsync(install.Root, log, ct);
                 int undone = 0;
                 foreach (var c in ChangesIn(install.Root).AsEnumerable().Reverse())
                 {
@@ -555,7 +555,7 @@ namespace AP_Atlas.Core.EngineSetup
 
         public static bool SetupRunning => SetupLock.CurrentCount == 0;
 
-        internal static async Task<T> Exclusive<T>(Func<Task<T>> body, CancellationToken ct)
+        internal static async Task<T> ExclusiveAsync<T>(Func<Task<T>> body, CancellationToken ct)
         {
             await SetupLock.WaitAsync(ct);
             try { return await body(); }
@@ -568,7 +568,7 @@ namespace AP_Atlas.Core.EngineSetup
         }
 
         /// <summary>Stops everything running from this engine (slots pause and resume afterwards) so files can be replaced.</summary>
-        private static async Task StopEnginesUsing(string root, Action<string> log, CancellationToken ct)
+        private static async Task StopEnginesUsingAsync(string root, Action<string> log, CancellationToken ct)
         {
             if (ProcessJob.RunningUnder(root) == 0) return;
             log("Pausing logic for the slots using this engine while it changes…");
@@ -704,7 +704,7 @@ namespace AP_Atlas.Core.EngineSetup
         /// swapped in; if the check fails afterwards, the previous working engine is restored.
         /// </summary>
         public static Task<bool> SetUpAsync(EngineInstall install, Action<string> log, Action<float> progress, CancellationToken ct) =>
-            Exclusive(async () =>
+            ExclusiveAsync(async () =>
             {
                 try
                 {
@@ -713,10 +713,10 @@ namespace AP_Atlas.Core.EngineSetup
                     bool Needs(EngineStepId id) => steps.Any(s => s.Id == id && s.State != EngineStepState.Ok);
                     if (install.Mode == EngineMode.Portable)
                     {
-                        if (Needs(EngineStepId.Runtime)) await InstallRuntimeCore(log, progress, ct);
-                        if (Needs(EngineStepId.Archipelago)) await InstallArchipelagoCore(log, progress, ct);
+                        if (Needs(EngineStepId.Runtime)) await InstallRuntimeCoreAsync(log, progress, ct);
+                        if (Needs(EngineStepId.Archipelago)) await InstallArchipelagoCoreAsync(log, progress, ct);
                         steps = Steps(install);
-                        if (Needs(EngineStepId.Packages)) await InstallPackagesCore(log, ct);
+                        if (Needs(EngineStepId.Packages)) await InstallPackagesCoreAsync(log, ct);
                     }
                     else if (!install.CanLaunch)
                     {
@@ -724,12 +724,12 @@ namespace AP_Atlas.Core.EngineSetup
                         return false;
                     }
                     steps = Steps(install);
-                    if (steps.First(s => s.Id == EngineStepId.Tracker).State == EngineStepState.Missing) await InstallTrackerCore(install, log, progress, ct);
+                    if (steps.First(s => s.Id == EngineStepId.Tracker).State == EngineStepState.Missing) await InstallTrackerCoreAsync(install, log, progress, ct);
                     InstallBridge(install, log);
-                    bool ok = await CheckCommitOrRollBack(install, log, ct);
+                    bool ok = await CheckCommitOrRollBackAsync(install, log, ct);
                     // Worlds that couldn't load for want of their own packages: install those, then verify again.
-                    if (ok && install.Mode == EngineMode.Portable && await InstallWorldPackagesCore(install, log, ct, force: false))
-                        ok = await CheckCommitOrRollBack(install, log, ct);
+                    if (ok && install.Mode == EngineMode.Portable && await InstallWorldPackagesCoreAsync(install, log, ct, force: false))
+                        ok = await CheckCommitOrRollBackAsync(install, log, ct);
                     return ok;
                 }
                 catch (OperationCanceledException)
@@ -754,26 +754,26 @@ namespace AP_Atlas.Core.EngineSetup
 
         /// <summary>Runs one step (from the setup window), then verifies the engine the same way setup does.</summary>
         public static Task<bool> RunStepAsync(EngineInstall install, EngineStepId step, Action<string> log, Action<float> progress, CancellationToken ct) =>
-            Exclusive(async () =>
+            ExclusiveAsync(async () =>
             {
                 try
                 {
                     RecoverInterruptedUpdate();
                     switch (step)
                     {
-                        case EngineStepId.Runtime: await InstallRuntimeCore(log, progress, ct); break;
-                        case EngineStepId.Archipelago: await InstallArchipelagoCore(log, progress, ct); break;
+                        case EngineStepId.Runtime: await InstallRuntimeCoreAsync(log, progress, ct); break;
+                        case EngineStepId.Archipelago: await InstallArchipelagoCoreAsync(log, progress, ct); break;
                         case EngineStepId.Packages:
-                            if (State.PackagesSignature != PackagesSignature()) await InstallPackagesCore(log, ct);
+                            if (State.PackagesSignature != PackagesSignature()) await InstallPackagesCoreAsync(log, ct);
                             if (install.Mode == EngineMode.Portable && LastCheck(install) == null) await RunCheckAsync(install, log, ct);
-                            await InstallWorldPackagesCore(install, log, ct, force: true);
+                            await InstallWorldPackagesCoreAsync(install, log, ct, force: true);
                             break;
-                        case EngineStepId.Tracker: await InstallTrackerCore(install, log, progress, ct); break;
+                        case EngineStepId.Tracker: await InstallTrackerCoreAsync(install, log, progress, ct); break;
                         case EngineStepId.Bridge: InstallBridge(install, log); break;
                     }
                     if (step != EngineStepId.Check && !install.CanLaunch) return true; // more steps to go before a check makes sense
                     InstallBridge(install, log);
-                    return await CheckCommitOrRollBack(install, log, ct);
+                    return await CheckCommitOrRollBackAsync(install, log, ct);
                 }
                 catch (OperationCanceledException)
                 {
@@ -795,7 +795,7 @@ namespace AP_Atlas.Core.EngineSetup
                 }
             }, ct);
 
-        private static async Task<bool> CheckCommitOrRollBack(EngineInstall install, Action<string> log, CancellationToken ct)
+        private static async Task<bool> CheckCommitOrRollBackAsync(EngineInstall install, Action<string> log, CancellationToken ct)
         {
             if (!install.CanLaunch || !install.HasTracker) return false;
             var check = await RunCheckAsync(install, log, ct);
@@ -812,7 +812,7 @@ namespace AP_Atlas.Core.EngineSetup
             return false;
         }
 
-        private static async Task InstallRuntimeCore(Action<string> log, Action<float> progress, CancellationToken ct)
+        private static async Task InstallRuntimeCoreAsync(Action<string> log, Action<float> progress, CancellationToken ct)
         {
             EnsureFreeSpace(EngineDir);
             log($"Downloading Python {PythonVersion} from python.org…");
@@ -821,10 +821,10 @@ namespace AP_Atlas.Core.EngineSetup
             log("Verified. Unpacking…");
             string staging = PythonDir + ".new";
             DeleteDir(staging);
-            ZipFile.ExtractToDirectory(zip, staging);
+            await ZipFile.ExtractToDirectoryAsync(zip, staging, ct);
             // site-packages for pip; Archipelago's own folder is added by atlas_run.py at start. Paths are relative,
             // so the folder still works after it's moved into place.
-            File.WriteAllText(Path.Combine(staging, PythonPth), "python312.zip\n.\nLib\\site-packages\nimport site\n");
+            await File.WriteAllTextAsync(Path.Combine(staging, PythonPth), "python312.zip\n.\nLib\\site-packages\nimport site\n", ct);
             EngineDownloader.TryDelete(zip);
 
             log($"Downloading pip {PipVersion} from PyPI…");
@@ -832,7 +832,7 @@ namespace AP_Atlas.Core.EngineSetup
             await EngineDownloader.DownloadAsync(PipWheelUrl, pipWheel, PipWheelSha256, null, ct);
             log("Verified. Installing pip…");
             string stagedExe = Path.Combine(staging, "python.exe");
-            ZipFile.ExtractToDirectory(pipWheel, Path.Combine(staging, "Lib", "site-packages"), overwriteFiles: true);
+            await ZipFile.ExtractToDirectoryAsync(pipWheel, Path.Combine(staging, "Lib", "site-packages"), overwriteFiles: true, ct);
             int code = await RunAsync(stagedExe, new[] { "-m", "pip", "install", "--no-index", "--no-deps", "--force-reinstall", "--no-warn-script-location", "--disable-pip-version-check", pipWheel },
                 staging, log, ct, TimeSpan.FromMinutes(5));
             EngineDownloader.TryDelete(pipWheel);
@@ -840,7 +840,7 @@ namespace AP_Atlas.Core.EngineSetup
             if (await RunAsync(stagedExe, new[] { "-c", "import pip, ssl, sqlite3; print('ok')" }, staging, log, ct, TimeSpan.FromMinutes(1)) != 0)
                 throw new Exception("The new Python runtime doesn't work on this PC (see the log above).");
 
-            await StopEnginesUsing(ArchipelagoDir, log, ct);
+            await StopEnginesUsingAsync(ArchipelagoDir, log, ct);
             RememberStateBeforeUpdate();
             SwapIn(staging, PythonDir);
             State.Python = PythonVersion;
@@ -849,7 +849,7 @@ namespace AP_Atlas.Core.EngineSetup
             log($"Python {PythonVersion} ready.");
         }
 
-        private static async Task InstallArchipelagoCore(Action<string> log, Action<float> progress, CancellationToken ct)
+        private static async Task InstallArchipelagoCoreAsync(Action<string> log, Action<float> progress, CancellationToken ct)
         {
             EnsureFreeSpace(EngineDir);
             log($"Downloading Archipelago {ArchipelagoVersion} from GitHub…");
@@ -858,7 +858,7 @@ namespace AP_Atlas.Core.EngineSetup
             log("Verified. Unpacking…");
             string staging = ArchipelagoDir + ".new";
             DeleteDir(staging);
-            ZipFile.ExtractToDirectory(zip, staging);
+            await ZipFile.ExtractToDirectoryAsync(zip, staging, ct);
             // The archive holds one top folder (Archipelago-0.6.7/).
             var tops = Directory.GetDirectories(staging);
             if (tops.Length != 1 || !File.Exists(Path.Combine(tops[0], "Utils.py")))
@@ -881,7 +881,7 @@ namespace AP_Atlas.Core.EngineSetup
             Directory.CreateDirectory(Path.Combine(inner, "Players"));
             EngineDownloader.TryDelete(zip);
 
-            await StopEnginesUsing(ArchipelagoDir, log, ct);
+            await StopEnginesUsingAsync(ArchipelagoDir, log, ct);
             RememberStateBeforeUpdate();
             SwapIn(inner, ArchipelagoDir);
             DeleteDir(staging);
@@ -916,11 +916,11 @@ namespace AP_Atlas.Core.EngineSetup
         private static string PackagesSignature() =>
             Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(FilteredRequirements())))[..16];
 
-        private static async Task InstallPackagesCore(Action<string> log, CancellationToken ct)
+        private static async Task InstallPackagesCoreAsync(Action<string> log, CancellationToken ct)
         {
             if (!File.Exists(PythonExe)) throw new Exception("Install the Python runtime first.");
             EnsureFreeSpace(EngineDir);
-            await StopEnginesUsing(ArchipelagoDir, log, ct);
+            await StopEnginesUsingAsync(ArchipelagoDir, log, ct);
             // pip changes the runtime in place and can't undo a half-finished install: keep a copy to roll back to.
             string previous = PythonDir + ".previous";
             if (!Directory.Exists(previous))
@@ -936,7 +936,7 @@ namespace AP_Atlas.Core.EngineSetup
                 throw new Exception($"Atlas's package list was made for different requirements than this Archipelago's, so nothing was installed. Update Atlas, or report this (expected {locked}, found {PackagesSignature()}).");
             log("Installing Archipelago's Python packages from PyPI (each file checked against Atlas's list of SHA-256 hashes)…");
             string req = Path.Combine(EngineDir, "requirements-atlas.lock.txt");
-            File.WriteAllText(req, lockText);
+            await File.WriteAllTextAsync(req, lockText, ct);
             int code = await RunAsync(PythonExe, new[] { "-m", "pip", "install", "--require-hashes", "--no-deps", "--only-binary=:all:", "-r", req, "--disable-pip-version-check", "--no-warn-script-location", "--retries", "5", "--timeout", "60" },
                 PythonDir, log, ct, TimeSpan.FromMinutes(15));
             if (code != 0) throw new Exception("Some packages couldn't be installed (see the log above).");
@@ -1039,12 +1039,12 @@ namespace AP_Atlas.Core.EngineSetup
         /// Installs the declared packages of worlds that failed to load, one world at a time (one failure can't block
         /// the rest), with the runtime copied first so a bad install rolls back. Returns true if anything was installed.
         /// </summary>
-        private static async Task<bool> InstallWorldPackagesCore(EngineInstall install, Action<string> log, CancellationToken ct, bool force)
+        private static async Task<bool> InstallWorldPackagesCoreAsync(EngineInstall install, Action<string> log, CancellationToken ct, bool force)
         {
             var targets = InstallableWorldPackages(install, includeTried: force);
             if (targets.Count == 0) return false;
             EnsureFreeSpace(EngineDir);
-            await StopEnginesUsing(ArchipelagoDir, log, ct);
+            await StopEnginesUsingAsync(ArchipelagoDir, log, ct);
             string previous = PythonDir + ".previous";
             if (!Directory.Exists(previous))
             {
@@ -1058,7 +1058,7 @@ namespace AP_Atlas.Core.EngineSetup
             {
                 log($"Installing the packages {world} declares…");
                 string file = Path.Combine(EngineDir, $"requirements-{world}.txt");
-                File.WriteAllText(file, SafeWorldRequirements(requirements, log));
+                await File.WriteAllTextAsync(file, SafeWorldRequirements(requirements, log), ct);
                 int code = await RunAsync(PythonExe, new[] { "-m", "pip", "install", "-r", file, "--prefer-binary", "--disable-pip-version-check", "--no-warn-script-location", "--retries", "5", "--timeout", "60" },
                     PythonDir, log, ct, TimeSpan.FromMinutes(10));
                 State.WorldPackagesTried[world] = Signature(requirements);
@@ -1079,14 +1079,14 @@ namespace AP_Atlas.Core.EngineSetup
         }
 
         /// <summary>Installs the tested Universal Tracker. Other copies are moved to the engine's backups folder (they'd conflict), and put back if anything fails.</summary>
-        private static async Task InstallTrackerCore(EngineInstall install, Action<string> log, Action<float> progress, CancellationToken ct)
+        private static async Task InstallTrackerCoreAsync(EngineInstall install, Action<string> log, Action<float> progress, CancellationToken ct)
         {
             string worlds = install.WorldsDir ?? throw new Exception("The engine has no worlds folder.");
             RequireWriteConsent(install);
             log($"Downloading Universal Tracker {TrackerVersion} from GitHub…");
             string temp = Path.Combine(DownloadsDir, "tracker.apworld");
             await EngineDownloader.DownloadAsync(TrackerUrl, temp, TrackerSha256, Report(progress), ct);
-            await StopEnginesUsing(install.Root, log, ct);
+            await StopEnginesUsingAsync(install.Root, log, ct);
             var moved = new List<(string From, string To)>();
             try
             {
@@ -1284,12 +1284,12 @@ namespace AP_Atlas.Core.EngineSetup
 
         /// <summary>Adds an apworld to the engine (exclusively, pausing engines if a file they use is replaced), then health-checks it.</summary>
         public static Task<bool> InstallApworldAsync(EngineInstall install, string sourceFile, Action<string> log, CancellationToken ct) =>
-            Exclusive(async () =>
+            ExclusiveAsync(async () =>
             {
                 try
                 {
                     string target = Path.Combine(install.WorldsDir ?? throw new Exception("The engine has no worlds folder."), Path.GetFileName(sourceFile));
-                    if (File.Exists(target)) await StopEnginesUsing(install.Root, log, ct);
+                    if (File.Exists(target)) await StopEnginesUsingAsync(install.Root, log, ct);
                     InstallApworld(install, sourceFile, log);
                     var check = await RunCheckAsync(install, log, ct);
                     return check.Passed;
@@ -1379,7 +1379,7 @@ namespace AP_Atlas.Core.EngineSetup
             try
             {
                 await exited.Task.WaitAsync(timeoutCts.Token);
-                process.WaitForExit(); // flush the output events
+                await process.WaitForExitAsync(timeoutCts.Token); // flush the output events (bounded, like the run)
                 return process.ExitCode;
             }
             catch (OperationCanceledException)
