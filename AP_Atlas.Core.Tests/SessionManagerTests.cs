@@ -4,8 +4,11 @@ using AP_Atlas.Core.Testing;
 
 namespace AP_Atlas.Core.Tests;
 
-/// <summary>Connecting, time limits, refusals, drops, careful reconnects and closing, against the fake server.</summary>
-public sealed class SessionManagerTests : IDisposable
+/// <summary>
+/// Connecting, time limits, refusals, drops, careful reconnects and closing, against the fake server. The room's text
+/// (one text connection per multiworld team) is in SessionManagerTests.RoomText.cs.
+/// </summary>
+public sealed partial class SessionManagerTests : IDisposable
 {
     private const string Checksum = "0123456789abcdef0123456789abcdef01234567";
     private readonly TempFolder _dir = new();
@@ -91,9 +94,9 @@ public sealed class SessionManagerTests : IDisposable
         var slot = (await Connect(manager, Login(server))).Slot!;
         await WaitFor(() => slot.EarlyMessageCount > 0, "the join message, which arrives just after the login");
 
-        var early = slot.TakeEarlyMessages();
+        var early = slot.ReceiveMessages(_ => { });
         Assert.Contains(early, m => m.ToString().Contains("Tester (Team #1) tracking Test Game has joined."));
-        Assert.Empty(slot.TakeEarlyMessages()); // handed over once
+        Assert.Empty(slot.ReceiveMessages(_ => { })); // handed over once
         await manager.CloseAllAsync(TimeSpan.FromSeconds(5));
     }
 

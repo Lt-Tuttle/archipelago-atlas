@@ -9,7 +9,6 @@ using Archipelago.MultiClient.Net;
 using Archipelago.MultiClient.Net.Enums;
 using Archipelago.MultiClient.Net.MessageLog.Messages;
 using Archipelago.MultiClient.Net.Models;
-using Archipelago.MultiClient.Net.Packets;
 using Godot;
 using Color = Godot.Color;
 using Logger = AP_Atlas.Core.Logger;
@@ -1720,7 +1719,7 @@ namespace AP_Atlas.UI
             };
             dialog.Confirmed += () =>
             {
-                Async.Fire(s.Socket.SendPacketAsync(new SayPacket { Text = command }), "sending your hint request");
+                Async.Fire(slot.Model.SayAsync(command), "sending your hint request");
                 _host.Toast("Requested: " + command, Colors.Gray);
                 dialog.QueueFree();
             };

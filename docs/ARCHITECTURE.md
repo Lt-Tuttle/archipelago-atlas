@@ -32,7 +32,7 @@ MainTrackerWindow (the shell)
   - The Sphere Tracker parser, models and tables (`Spheres/`).
   - `EngineDownloader` (`Engine/`).
   - `Connections/`:
-    - `SessionManager`: every connection to an Archipelago server (connecting one at a time, the login time limit, drops, careful reconnects, closing).
+    - `SessionManager`: every connection to an Archipelago server (connecting one at a time, the login time limit, drops, careful reconnects, closing), and the room's text: one connection per multiworld team receives it and passes each line to every slot of the team (`SessionManager.Text.cs`).
     - `AtlasSessions`: the only place sessions are made; each keeps the games' names in `DataPackageStore` (the data folder, below).
   - `Testing/FakeArchipelagoServer` (internal): a fake Archipelago server on the test computer, for the unit tests and the UI test. Atlas never starts it otherwise.
   - `Testing/FakeCheeseServer` (internal): a stand-in for the Cheese Tracker site on the test computer, for the self-test and the UI test. The real site is never contacted.
@@ -101,6 +101,12 @@ Atlas reads or writes outside this folder only with the user's permission. Nothi
   - A drop is noticed from the socket's close, or by a check twice a second (a server that died sends none).
   - Reconnects wait 15 s, 30 s, 1, 2, 5 and 10 minutes (±20%), then stop; a refusal stops them at once.
   - Closing Atlas sends every session a close frame. Session events arrive on network threads and move to the main thread with `Ui.Defer(owner, …)`, which skips the work if its owner (a slot, window or tab) was closed meanwhile, and logs a failure.
+  - **The room's text:** per multiworld team, one connection (its text connection) receives it; the others log in with NoText, so the server sends them none.
+    - The text connection's room lines (items found, chat, joins, goals) go to every slot of its team, in order. A line meant for one connection (a command's answer, a hint's line, the tutorial) stays with that connection's slot.
+    - A command switches its slot's connection to text first, so the answer arrives. A slot without text shows its new hints from its hint list (`SlotModel`).
+    - When the text connection ends, another of the team's connections takes over, preferring one that receives text already: the server tells the whole room about every tag change.
+    - A slot logging in without text gets the room's lines from while it logged in.
+    - A line may reach a slot through another slot's connection, so its "active player" flags are that connection's. Who "you" are is decided by slot and team (`SlotModel.IsThisSlot`).
 - **Web sites** (Cheese Tracker, spheretracker.de, GitHub, PyPI, python.org): only through `PoliteHttp`:
   - One request at a time per site, at least a second apart.
   - Backoff of 1, 2, 5, 10, then 30 minutes; `Retry-After` is honoured.
@@ -121,7 +127,7 @@ Atlas reads or writes outside this folder only with the user's permission. Nothi
 | `AtlasEngine` | Reading the Windows registry, and the install search. The search only runs after the user agrees, from the Engine window's Find button. |
 | nowhere | `UseShellExecute = true`. |
 | `AtlasSessions` | Creating an Archipelago session. |
-| `SessionManager` | Connecting one. |
+| `SessionManager` | Connecting one. Sending chat or commands, and changing a connection's tags. |
 | `AtlasEngine`, `EngineInstall` (and the self-test) | Starting a program. |
 
 Downloads that become code are pinned:
@@ -141,7 +147,7 @@ These are known structural debts, scheduled before the new shell is built:
 - **Large classes:** `MainTrackerWindow` and `SlotTrackerControl` are split into partial files by job, and connections moved into `SessionManager`. Slot state has moved out of the UI node into `SlotModel` (the session's events, chat, hints, goal, logic, race mode and exclusions), and the services read the model. The map pack and its scripts stay with the views that show them. The window lists its slots itself (`_slots`), not by where their panels are.
 - **Re-parenting:** the Cheese and Sphere tabs and Properties follow their events through `TreeSubscriptions` (made on entering the tree, removed on leaving it), so they can be moved (docking, pop-outs); the UI test proves it. A slot's views are pushed their updates by the slot, so they can move too, and the slot's own panel ends only through `EndSlot()` (the slot replaced or deleted, or the panel freed with the window), never by leaving the tree.
 - **Tools** are one list (`Tool`); the new shell will build its activity bar, menus and panels from it.
-- **Coalesced refreshes:** done. One refresh per frame, hidden views skipped (`ViewRefresh`), and the text client draws a slice of lines per frame. The UI test's scale scenario measures a 1,000-player room with 20 slots connected. What's left above the 100 ms target is garbage collection from 20 connections each decoding the room's text.
+- **Coalesced refreshes:** done. One refresh per frame, hidden views skipped (`ViewRefresh`), and the text client draws a slice of lines per frame. The UI test's scale scenario measures a 1,000-player room with 20 slots connected; with one text connection per multiworld, its worst frame during bursts is under the 100 ms target on the development PC.
 - **One engine process per multiworld** instead of per slot.
 
-Done in Phase 1 so far: the Godot-free `AP_Atlas.Core` library with unit tests, `SessionManager`, `TreeSubscriptions`, the tool list, `SlotModel` with the slot's logic (services read it), the fake logic engine, and the UI test.
+Done in Phase 1 so far: the Godot-free `AP_Atlas.Core` library with unit tests, `SessionManager`, `TreeSubscriptions`, the tool list, `SlotModel` with the slot's logic (services read it), the fake logic engine, the UI test, and one text connection per multiworld.

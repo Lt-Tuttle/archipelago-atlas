@@ -7,7 +7,6 @@ using Archipelago.MultiClient.Net;
 using Archipelago.MultiClient.Net.Enums;
 using Archipelago.MultiClient.Net.Models;
 using Color = Godot.Color;
-using Archipelago.MultiClient.Net.Packets;
 using AP_Atlas.Core;
 using AP_Atlas.Core.PopTracker;
 
@@ -87,6 +86,9 @@ namespace AP_Atlas.UI
 
         /// <summary>Race mode hides in-logic information for this slot. Set by the owner.</summary>
         public Func<bool> LogicHidden { get; set; }
+
+        /// <summary>Sends a command as the slot (through its model, so the server's answer reaches its text client).</summary>
+        public Func<string, System.Threading.Tasks.Task> Say { get; set; }
 
         private int MySlot => _session?.ConnectionInfo?.Slot ?? -1;
 
@@ -758,7 +760,7 @@ namespace AP_Atlas.UI
                 return;
             }
             string command = (IsLocationMode ? "!hint_location " : "!hint ") + name;
-            AP_Atlas.Core.Async.Fire(_session.Socket.SendPacketAsync(new SayPacket { Text = command }), "sending your hint request");
+            AP_Atlas.Core.Async.Fire(Say(command), "sending your hint request");
             _requestInput.Text = "";
             _suggestions.Visible = false;
             SetFeedback($"Sent \"{command}\". The server's reply appears in Chat; new hints show up here automatically.", Colors.Gray);

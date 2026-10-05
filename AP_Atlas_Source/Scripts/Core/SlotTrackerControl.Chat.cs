@@ -6,7 +6,6 @@ using Archipelago.MultiClient.Net;
 using Archipelago.MultiClient.Net.Enums;
 using Archipelago.MultiClient.Net.Helpers;
 using Archipelago.MultiClient.Net.MessageLog.Messages;
-using Archipelago.MultiClient.Net.Packets;
 using Archipelago.MultiClient.Net.Models;
 using System.Linq;
 using System.Threading.Tasks;
@@ -111,7 +110,9 @@ public partial class SlotTrackerControl : MarginContainer
         {
             if (entry.Sequence <= _announcedSequence) continue;
             _announcedSequence = entry.Sequence;
-            if (!entry.IsSystemMessage && !entry.Early) AnnounceSpecialItem(entry.APMessage);
+            if (entry.IsSystemMessage || entry.Early) continue;
+            if (entry.Hint != null) AnnounceSpecialHint(entry.Hint);
+            else AnnounceSpecialItem(entry.APMessage);
         }
         _chatRefresh?.Request();
     }
@@ -135,6 +136,11 @@ public partial class SlotTrackerControl : MarginContainer
             if (entry.IsSystemMessage)
             {
                 if (_filterSystem == null || _filterSystem.ButtonPressed) ShowSystemLine(entry.SystemMessage);
+                continue;
+            }
+            if (entry.Hint != null)
+            {
+                if (_filterHints == null || _filterHints.ButtonPressed) AppendHintToChat(entry.Hint);
                 continue;
             }
             if (!ShouldFilterMessage(entry.APMessage)) AppendMessageToChat(entry.APMessage);
@@ -210,59 +216,107 @@ public partial class SlotTrackerControl : MarginContainer
 
     private void AppendMessageToChat(LogMessage msg)
     {
-        string text = "";
+        var text = new System.Text.StringBuilder();
         foreach (var part in msg.Parts)
         {
-            string color = "white";
-            string link = null;
-            string prefix = "";
-            string partText = (part.Text ?? "").Replace("[", "[lb]");
-
-            if (part is Archipelago.MultiClient.Net.MessageLog.Parts.ItemMessagePart itemPart)
+            text.Append(part switch
             {
-                if (itemPart.Flags.HasFlag(ItemFlags.Advancement)) color = "plum";
-                else if (itemPart.Flags.HasFlag(ItemFlags.NeverExclude)) color = "slateblue";
-                else if (itemPart.Flags.HasFlag(ItemFlags.Trap)) color = "salmon";
-                else color = "cyan";
-                link = $"I|{itemPart.Player}|{itemPart.ItemId}";
-                // Special items (per game) stand out wherever they're mentioned.
-                string itemGame = Session.Players.GetPlayerInfo(itemPart.Player)?.Game;
-                if (AP_Atlas.Core.Annotations.IsSpecialItem(itemGame, part.Text))
-                {
-                    prefix = $"[color=#{AP_Atlas.Core.Annotations.SpecialColor.ToHtml(false)}]◆[/color]";
-                    partText = $"[bgcolor=#{AP_Atlas.Core.Annotations.SpecialBg.ToHtml(false)}]{partText}[/bgcolor]";
-                }
-                if (itemPart.Player == PlayerSlot)
-                {
-                    int flag = AP_Atlas.Core.Annotations.GetFlag(AnnotationKey, AP_Atlas.Core.Annotations.ItemKey(itemPart.ItemId));
-                    if (flag > 0) prefix = $"[color=#{AP_Atlas.Core.Annotations.FlagColor(flag).ToHtml(false)}]●[/color]" + prefix;
-                }
-            }
-            else if (part is Archipelago.MultiClient.Net.MessageLog.Parts.LocationMessagePart locPart)
-            {
-                color = "green";
-                link = $"L|{locPart.Player}|{locPart.LocationId}";
-                if (locPart.Player == PlayerSlot)
-                {
-                    int flag = AP_Atlas.Core.Annotations.GetFlag(AnnotationKey, AP_Atlas.Core.Annotations.LocationKey(locPart.LocationId));
-                    if (flag > 0) prefix = $"[color=#{AP_Atlas.Core.Annotations.FlagColor(flag).ToHtml(false)}]●[/color]";
-                }
-            }
-            else if (part is Archipelago.MultiClient.Net.MessageLog.Parts.PlayerMessagePart playerPart)
-            {
-                color = playerPart.IsActivePlayer ? "magenta" : "yellow";
-                link = $"P|{playerPart.SlotId}";
-            }
-            else
-            {
-                string colorName = part.Color.ToString().ToLower();
-                if (colorName != "none" && colorName != "") { color = colorName; }
-            }
-
-            string colored = $"{prefix}[color={color}]{partText}[/color]";
-            text += link == null ? colored : $"[url={link}]{colored}[/url]";
+                Archipelago.MultiClient.Net.MessageLog.Parts.ItemMessagePart item => ItemBBCode(item.Player, item.ItemId, item.Text, item.Flags),
+                Archipelago.MultiClient.Net.MessageLog.Parts.LocationMessagePart location => LocationBBCode(location.Player, location.LocationId, location.Text),
+                Archipelago.MultiClient.Net.MessageLog.Parts.PlayerMessagePart player => PlayerBBCode(player.SlotId, player.Text),
+                // A colour the server set (a hint's status, an entrance); a background colour isn't the text's.
+                _ => TextBBCode(part.Text, part.IsBackgroundColor ? null : part.PaletteColor)
+            });
         }
+        AppendChatLine(text.ToString());
+    }
 
+    /// <summary>A hint shown from the slot's hint list, worded and coloured as the server's hint lines are.</summary>
+    private void AppendHintToChat(Hint hint)
+    {
+        string receiverGame = Session.Players.GetPlayerInfo(hint.ReceivingPlayer)?.Game;
+        string finderGame = Session.Players.GetPlayerInfo(hint.FindingPlayer)?.Game;
+        var text = new System.Text.StringBuilder()
+            .Append(TextBBCode("[Hint]: ", null))
+            .Append(PlayerBBCode(hint.ReceivingPlayer, PlayerAlias(hint.ReceivingPlayer)))
+            .Append(TextBBCode("'s ", null))
+            .Append(ItemBBCode(hint.ReceivingPlayer, hint.ItemId, Session.Items.GetItemName(hint.ItemId, receiverGame) ?? $"Item: {hint.ItemId}", hint.ItemFlags))
+            .Append(TextBBCode(" is at ", null))
+            .Append(LocationBBCode(hint.FindingPlayer, hint.LocationId, Session.Locations.GetLocationNameFromId(hint.LocationId, finderGame) ?? $"Location: {hint.LocationId}"))
+            .Append(TextBBCode(" in ", null))
+            .Append(PlayerBBCode(hint.FindingPlayer, PlayerAlias(hint.FindingPlayer)));
+        if (string.IsNullOrEmpty(hint.Entrance)) text.Append(TextBBCode("'s World", null));
+        else text.Append(TextBBCode("'s World at ", null)).Append(TextBBCode(hint.Entrance, Archipelago.MultiClient.Net.Colors.PaletteColor.Blue));
+        text.Append(TextBBCode(". ", null)).Append(TextBBCode(HintStatusText(hint.Status), Archipelago.MultiClient.Net.Colors.ColorUtils.GetColor(hint.Status)));
+        AppendChatLine(text.ToString());
+    }
+
+    /// <summary>A hint's status as the server words it.</summary>
+    private static string HintStatusText(HintStatus status) => status switch
+    {
+        HintStatus.Found => "(found)",
+        HintStatus.Unspecified => "(unspecified)",
+        HintStatus.NoPriority => "(no priority)",
+        HintStatus.Avoid => "(avoid)",
+        HintStatus.Priority => "(priority)",
+        _ => "(unknown)"
+    };
+
+    /// <summary>A player's name as the server shows it (their alias).</summary>
+    private string PlayerAlias(int slot)
+    {
+        string alias = Session.Players.GetPlayerAlias(slot);
+        return string.IsNullOrEmpty(alias) ? $"Slot: {slot}" : alias;
+    }
+
+    private static string EscapeBBCode(string text) => (text ?? "").Replace("[", "[lb]");
+
+    /// <summary>Text in the colour the server gave it (white when none).</summary>
+    private static string TextBBCode(string text, Archipelago.MultiClient.Net.Colors.PaletteColor? color) =>
+        $"[color={color?.ToString().ToLowerInvariant() ?? "white"}]{EscapeBBCode(text)}[/color]";
+
+    /// <summary>
+    /// A player's name, linked to them. This slot's own name stands out; it's decided here, by slot number, because a
+    /// line may have come through another slot's connection. (Lines naming players are their team's alone.)
+    /// </summary>
+    private string PlayerBBCode(int slot, string name) =>
+        $"[url=P|{slot}][color={(slot == PlayerSlot ? "magenta" : "yellow")}]{EscapeBBCode(name)}[/color][/url]";
+
+    /// <summary>An item's name, coloured by kind, marked when special or flagged, and linked to it.</summary>
+    private string ItemBBCode(int player, long itemId, string name, ItemFlags flags)
+    {
+        string color = flags.HasFlag(ItemFlags.Advancement) ? "plum" : flags.HasFlag(ItemFlags.NeverExclude) ? "slateblue" : flags.HasFlag(ItemFlags.Trap) ? "salmon" : "cyan";
+        string prefix = "", text = EscapeBBCode(name);
+        // Special items (per game) stand out wherever they're mentioned.
+        string itemGame = Session.Players.GetPlayerInfo(player)?.Game;
+        if (AP_Atlas.Core.Annotations.IsSpecialItem(itemGame, name))
+        {
+            prefix = $"[color=#{AP_Atlas.Core.Annotations.SpecialColor.ToHtml(false)}]◆[/color]";
+            text = $"[bgcolor=#{AP_Atlas.Core.Annotations.SpecialBg.ToHtml(false)}]{text}[/bgcolor]";
+        }
+        if (player == PlayerSlot)
+        {
+            int flag = AP_Atlas.Core.Annotations.GetFlag(AnnotationKey, AP_Atlas.Core.Annotations.ItemKey(itemId));
+            if (flag > 0) prefix = $"[color=#{AP_Atlas.Core.Annotations.FlagColor(flag).ToHtml(false)}]●[/color]" + prefix;
+        }
+        return $"[url=I|{player}|{itemId}]{prefix}[color={color}]{text}[/color][/url]";
+    }
+
+    /// <summary>A location's name, marked when this slot flagged it, and linked to it.</summary>
+    private string LocationBBCode(int player, long locationId, string name)
+    {
+        string prefix = "";
+        if (player == PlayerSlot)
+        {
+            int flag = AP_Atlas.Core.Annotations.GetFlag(AnnotationKey, AP_Atlas.Core.Annotations.LocationKey(locationId));
+            if (flag > 0) prefix = $"[color=#{AP_Atlas.Core.Annotations.FlagColor(flag).ToHtml(false)}]●[/color]";
+        }
+        return $"[url=L|{player}|{locationId}]{prefix}[color=green]{EscapeBBCode(name)}[/color][/url]";
+    }
+
+    /// <summary>Adds a line (BBCode with links) to the text client.</summary>
+    private void AppendChatLine(string text)
+    {
         var panel = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         var style = new StyleBoxFlat
         {
@@ -337,14 +391,30 @@ public partial class SlotTrackerControl : MarginContainer
         string location = send.Item.LocationDisplayName ?? send.Item.LocationName ?? "a location";
         string text = msg is HintItemSendLogMessage
             ? $"◆ Hinted: {receiver}'s {itemName} is at {location} ({sender}'s world)"
-            : send.IsReceiverTheActivePlayer
+            : Model.IsThisSlot(send.Receiver)
                 ? $"◆ You received {itemName} from {sender}"
                 : $"◆ {sender} found {receiver}'s {itemName}";
+        ToastSpecialOnce($"{send.Item.LocationId}|{send.Sender?.Slot}|{msg.GetType().Name}", text);
+    }
 
+    /// <summary>Toasts a new hint shown from the hint list, when its item is special.</summary>
+    private void AnnounceSpecialHint(Hint hint)
+    {
+        string game = Session.Players.GetPlayerInfo(hint.ReceivingPlayer)?.Game;
+        string itemName = Session.Items.GetItemName(hint.ItemId, game);
+        if (!AP_Atlas.Core.Annotations.IsSpecialItem(game, itemName)) return;
+        string finderGame = Session.Players.GetPlayerInfo(hint.FindingPlayer)?.Game;
+        string location = Session.Locations.GetLocationNameFromId(hint.LocationId, finderGame) ?? "a location";
+        // Keyed as a hint's line is, so the same hint isn't toasted again by a slot that got its line.
+        ToastSpecialOnce($"{hint.LocationId}|{hint.FindingPlayer}|{nameof(HintItemSendLogMessage)}",
+            $"◆ Hinted: {PlayerAlias(hint.ReceivingPlayer)}'s {itemName} is at {location} ({PlayerAlias(hint.FindingPlayer)}'s world)");
+    }
+
+    private void ToastSpecialOnce(string key, string text)
+    {
         var now = DateTime.Now;
         foreach (var stale in _recentSpecialToasts.Where(kv => (now - kv.Value).TotalSeconds > 10).Select(kv => kv.Key).ToList())
             _recentSpecialToasts.Remove(stale);
-        string key = $"{send.Item.LocationId}|{send.Sender?.Slot}|{msg.GetType().Name}";
         if (_recentSpecialToasts.ContainsKey(key)) return;
         _recentSpecialToasts[key] = now;
         ShowToast?.Invoke(text, AP_Atlas.Core.Annotations.SpecialColor);
@@ -367,6 +437,6 @@ public partial class SlotTrackerControl : MarginContainer
         if (Session == null || !Session.Socket.Connected) return;
 
         _chatInput.Text = "";
-        AP_Atlas.Core.Async.Fire(Session.Socket.SendPacketAsync(new SayPacket { Text = text }), "sending your chat message");
+        AP_Atlas.Core.Async.Fire(Model.SayAsync(text), "sending your chat message");
     }
 }

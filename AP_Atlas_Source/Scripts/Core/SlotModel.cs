@@ -37,12 +37,22 @@ namespace AP_Atlas.Core
         Race = 256,
     }
 
-    /// <summary>One line of a slot's text client: a server message, or one of Atlas's own (BBCode).</summary>
+    /// <summary>One line of a slot's text client: a server message, a new hint, or one of Atlas's own (BBCode).</summary>
+    /// <remarks>
+    /// A server message may have reached the slot through another slot's connection (its multiworld's text connection),
+    /// so its "active player" flags are that connection's: ask the slot's model who it is (<see cref="SlotModel.IsThisSlot"/>).
+    /// </remarks>
     public sealed class ChatEntry
     {
         public LogMessage? APMessage { get; init; }
         public string? SystemMessage { get; init; }
         public bool IsSystemMessage => SystemMessage != null;
+
+        /// <summary>
+        /// A new hint for a slot whose connection doesn't receive text, shown from its hint list: the server sends a hint's
+        /// line only to connections that receive text.
+        /// </summary>
+        public Hint? Hint { get; init; }
 
         /// <summary>Counts up from 1 for each slot, so a view knows which lines it has shown.</summary>
         public long Sequence { get; init; }
@@ -67,6 +77,7 @@ namespace AP_Atlas.Core
         public const int ChatLimit = 1000;
 
         private readonly object _queueLock = new();
+        private readonly ConnectedSlot _connected;
         private readonly Action<string> _log;
         private readonly List<LogMessage> _incoming = new();
         private Hint[]? _incomingHints;
@@ -77,6 +88,8 @@ namespace AP_Atlas.Core
         private readonly List<ChatEntry> _chat = new();
         private long _nextSequence = 1;
         private readonly HashSet<long> _hintedLocations = new();
+        // The hints (finder, location) the slot had: null until the server first sends its list.
+        private HashSet<(int Finder, long Location)>? _knownHints;
         private bool _goalStatusAsked;
 
         /// <param name="settings">Atlas's settings (which engine logic runs on, the slot's linked YAML).</param>
@@ -84,26 +97,20 @@ namespace AP_Atlas.Core
         public SlotModel(ConnectedSlot connected, AppSettings settings, Action<string> log)
         {
             _log = log;
+            _connected = connected;
             Slot = connected.Slot;
             Session = connected.Session;
             SlotData = connected.Login.SlotData ?? new Dictionary<string, object>();
             DataChecksums = connected.DataChecksums;
             AddSystemMessage($"[color=lime]Connected to {Game} as {SlotName}![/color]");
 
-            // Session hooks (network threads). From here on the model hears every message itself.
-            Session.MessageLog.OnMessageReceived += OnMessage;
+            // Session hooks (network threads).
             Session.Socket.SocketClosed += OnSocketClosed;
             Session.Items.ItemReceived += OnItemReceived;
             Session.Locations.CheckedLocationsUpdated += OnChecked;
-            // What the server sent before this model existed, then what it heard itself (the same message can be in both).
-            var early = connected.TakeEarlyMessages();
-            lock (_queueLock)
-            {
-                var heard = _incoming.ToList();
-                _incoming.Clear();
-                foreach (var message in early) AddEntry(new ChatEntry { APMessage = message, Sequence = _nextSequence++, Early = true });
-                _incoming.AddRange(heard.Where(message => !early.Contains(message)));
-            }
+            // The text client's lines: those that arrived before this model existed, then each as it arrives.
+            foreach (var message in connected.ReceiveMessages(OnMessage))
+                AddEntry(new ChatEntry { APMessage = message, Sequence = _nextSequence++, Early = true });
             Schedule(SlotChange.Messages);
             // The slot's hints (as finder or receiver), now and on every change.
             Session.Hints.TrackHints(OnHints, true);
@@ -147,6 +154,15 @@ namespace AP_Atlas.Core
 
         /// <summary>The server says this slot reached its goal (its goal message, or a status check).</summary>
         public bool GoalCompleted { get; private set; }
+
+        /// <summary>Whether a player (from a message, a hint) is this slot.</summary>
+        public bool IsThisSlot(PlayerInfo? player) => player != null && player.Slot == PlayerSlot && player.Team == Team;
+
+        /// <summary>Whether this slot's own connection receives text (see <see cref="ConnectedSlot.ReceivesText"/>).</summary>
+        public bool ReceivesText => _connected.ReceivesText;
+
+        /// <summary>Says something in the room as this slot: chat, or a command whose answer shows in its text client.</summary>
+        public Task SayAsync(string text) => _connected.SayAsync(text);
 
         /// <summary>The slot has ended (replaced, closed or deleted): it hears nothing more, and its engine is stopped.</summary>
         public bool Ended => _disposed;
@@ -436,7 +452,11 @@ namespace AP_Atlas.Core
 
         private void OnMessage(LogMessage message)
         {
-            lock (_queueLock) _incoming.Add(message);
+            lock (_queueLock)
+            {
+                if (_disposed) return;
+                _incoming.Add(message);
+            }
             Schedule(SlotChange.Messages);
         }
 
@@ -501,7 +521,7 @@ namespace AP_Atlas.Core
             foreach (var message in messages)
             {
                 AddEntry(new ChatEntry { APMessage = message, Sequence = _nextSequence++ });
-                if (message is GoalLogMessage goal && goal.IsActivePlayer) goalReached = true;
+                if (message is GoalLogMessage goal && IsThisSlot(goal.Player)) goalReached = true;
                 if (message is HintItemSendLogMessage hint)
                 {
                     foreach (var part in hint.Parts.OfType<LocationMessagePart>()) _hintedLocations.Add(part.LocationId);
@@ -510,6 +530,18 @@ namespace AP_Atlas.Core
             }
             if (hints != null)
             {
+                // New hints, when the slot's connection doesn't receive text: the server sent their lines only to
+                // connections that do, so the text client shows them from the list. The first list is what the slot
+                // already had.
+                if (_knownHints != null && !_connected.ReceivesText)
+                    foreach (var hint in hints)
+                    {
+                        if (_knownHints.Contains((hint.FindingPlayer, hint.LocationId))) continue;
+                        AddEntry(new ChatEntry { Hint = hint, Sequence = _nextSequence++ });
+                        change |= SlotChange.Messages;
+                    }
+                _knownHints ??= new HashSet<(int, long)>();
+                foreach (var hint in hints) _knownHints.Add((hint.FindingPlayer, hint.LocationId));
                 CurrentHints = hints;
                 int me = PlayerSlot;
                 foreach (var h in hints)
@@ -550,7 +582,7 @@ namespace AP_Atlas.Core
                 _disposed = true;
                 _incoming.Clear();
             }
-            Session.MessageLog.OnMessageReceived -= OnMessage;
+            _connected.StopReceivingMessages();
             Session.Socket.SocketClosed -= OnSocketClosed;
             Session.Items.ItemReceived -= OnItemReceived;
             Session.Locations.CheckedLocationsUpdated -= OnChecked;

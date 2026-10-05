@@ -83,6 +83,8 @@ public partial class MainTrackerWindow
             EveryToolShowsItsViewAsync);
         await ScenarioAsync("Bursts: 40 items and 40 chat lines arriving together reach the slot once each, as one update of the window (not 80)",
             BurstIsOneUpdateAsync);
+        await ScenarioAsync("Room text: one connection per multiworld receives the room's text and every slot's text client shows each line once, named from that slot's view; a command typed into a quiet slot gets its answer; new hints show in the slots they concern; when the text slot leaves, another takes over",
+            RoomTextReachesEverySlotAsync);
         await ScenarioAsync("Moving a slot's panel: out of the window and docked elsewhere, the slot keeps its connection, views and updates, and shows what arrived meanwhile",
             SlotPanelMovesWholeAsync);
         await ScenarioAsync("Race rooms: a room the server calls a race restricts its slots (no \"why\" answers), and the Sphere Tracker hides that multiworld's spheres",
@@ -91,7 +93,7 @@ public partial class MainTrackerWindow
             LogicFollowsTheSlotAsync);
         await ScenarioAsync("Cheese Tracker: its suggestion for a connected slot follows the slot's logic (unblocked, then go mode), says nothing while race mode hides logic, and changes nothing by itself",
             CheeseFollowsTheSlotAsync);
-        await ScenarioAsync("Scale: in a 1,000-player room with 20 slots connected, bursts of items, item lines and hints never hold up a frame for 250 ms (target 100 ms), nor does connecting a slot for 300 ms; the logs keep their last lines",
+        await ScenarioAsync("Scale: in a 1,000-player room with 20 slots connected (one receiving the room's text), bursts of items, item lines and hints never hold up a frame for 150 ms (target 100 ms), nor does connecting a slot for 300 ms; the logs keep their last lines",
             ScaleStaysResponsiveAsync);
         await _sessions.CloseAllAsync(TimeSpan.FromSeconds(3));
         GD.Print($"UITEST DONE: {passed} passed, {failed} failed, {skipped} skipped");
@@ -355,6 +357,93 @@ public partial class MainTrackerWindow
         {
             DeleteProfile(profile);
         }
+    }
+
+    private async Task RoomTextReachesEverySlotAsync()
+    {
+        await using var server = new FakeArchipelagoServer();
+        server.Games["Test Game"] = new FakeGame("0123456789abcdef0123456789abcdef01234567",
+            new Dictionary<string, long> { ["Sword"] = 1000 }, new Dictionary<string, long> { ["Cave Chest"] = 2000 });
+        server.Slots.Clear();
+        server.Slots.AddRange(new[] { "Tester", "Second", "Third" });
+        var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.AddRange(server.Slots);
+        _profiles.Add(profile);
+        try
+        {
+            foreach (string name in profile.Slots) await OnConnectSlotPressedAsync(name, profile);
+            var slots = new List<SlotTrackerControl>();
+            foreach (string name in profile.Slots) slots.Add(await UiTestWaitForAsync(() => SlotView(profile.Id, name), $"{name}'s view"));
+            var (tester, second, third) = (slots[0], slots[1], slots[2]);
+            UiTestExpect(server.TextClients == 1, $"{server.TextClients} connections receive the room's text, not 1");
+            UiTestExpect(tester.Model.ReceivesText && !second.Model.ReceivesText && !third.Model.ReceivesText, "the first slot isn't the only one receiving the room's text");
+            int Lines(SlotTrackerControl slot, string text) => slot.ChatHistory.Count(e => e.APMessage?.ToString().Contains(text) == true);
+            // Each slot's join line reached it (Second's and Third's through Tester's connection).
+            foreach (var slot in slots)
+                await UiTestWaitForAsync(() => Lines(slot, $"{slot.SlotName} (Team #1) tracking Test Game has joined.") == 1 ? slot : null, $"{slot.SlotName}'s join line in its text client");
+
+            // A room line, once in every slot, its players named from each slot's own view: in Third's, Third stands out.
+            await server.BroadcastAsync(FakeArchipelagoServer.ItemSend(2, 3, 1000, 2000));
+            await UiTestWaitForAsync(() => slots.All(s => Lines(s, "Second sent Sword to Third (Cave Chest)") == 1) ? slots : null, "the item line in every slot's text client");
+            ShowTextClient(third);
+            await UiTestWaitForAsync(() => PanelShows(third, "[color=magenta]Third[/color]") && PanelShows(third, "[color=yellow]Second[/color]") ? third : null,
+                "Third's own name to stand out in its text client");
+            // A goal line counts for the slot whose goal it is, not the slot whose connection heard it.
+            await server.BroadcastAsync(server.Goal(3));
+            await UiTestWaitForAsync(() => third.Model.GoalCompleted ? third : null, "Third to reach its goal");
+            await UiTestWaitAsync(0.3);
+            UiTestExpect(!tester.Model.GoalCompleted && !second.Model.GoalCompleted, "another slot's goal line counted as this slot's");
+
+            // New hints. Tester's world holds Third's Sword: Tester (with text) gets the hint's line; Third (without) shows
+            // it from its hint list, worded and coloured as the server's line; Second isn't concerned.
+            int HintLines(SlotTrackerControl slot) => slot.ChatHistory.Count(e => e.Hint != null || e.APMessage is Archipelago.MultiClient.Net.MessageLog.Messages.HintItemSendLogMessage);
+            await server.AddHintsAsync(FakeArchipelagoServer.Hint(finder: 1, receiver: 3, location: 2000, item: 1000, status: 30));
+            await UiTestWaitForAsync(() => HintLines(tester) == 1 && HintLines(third) == 1 ? slots : null, "the hint in Tester's and Third's text clients");
+            UiTestExpect(third.ChatHistory.Count(e => e.Hint != null) == 1 && tester.ChatHistory.Count(e => e.Hint != null) == 0, "the hint wasn't shown from the hint list in Third alone");
+            await UiTestWaitForAsync(() => PanelShowsText(third, "[Hint]: Third's Sword is at Cave Chest in Tester's World. (priority)") &&
+                PanelShows(third, "[color=plum](priority)[/color]") ? third : null, "the hint, worded and coloured as the server's lines, in Third's text client");
+            // The server's own line has its status coloured too.
+            ShowTextClient(tester);
+            await UiTestWaitForAsync(() => PanelShows(tester, "[color=plum](priority)[/color]") ? tester : null, "the hint's status in its colour in Tester's text client");
+
+            // A command typed into a quiet slot's text client: its connection gets text first, so the answer shows there, only.
+            var input = third.FindChildren("*", "LineEdit", true, false).OfType<LineEdit>().Single(l => l.PlaceholderText.StartsWith("Type a command"));
+            input.Text = "!hint Sword";
+            input.EmitSignal(LineEdit.SignalName.TextSubmitted, input.Text);
+            await UiTestWaitForAsync(() => Lines(third, "Command received: !hint Sword") == 1 ? third : null, "the command's answer in Third's text client");
+            UiTestExpect(server.TagChanges == 1 && third.Model.ReceivesText, $"Third's text wasn't switched on, once ({server.TagChanges} tag changes)");
+            await UiTestWaitForAsync(() => slots.All(s => Lines(s, "Third: !hint Sword") == 1) ? slots : null, "the command, as chat, in every slot's text client");
+            UiTestExpect(Lines(tester, "Command received") == 0 && Lines(second, "Command received") == 0, "the command's answer reached other slots");
+            // Third receives text now: its next new hint comes as the server's line, shown once.
+            await server.AddHintsAsync(FakeArchipelagoServer.Hint(finder: 3, receiver: 3, location: 2000, item: 1000));
+            await UiTestWaitForAsync(() => HintLines(third) == 2 ? third : null, "Third's own new hint in its text client");
+            await UiTestWaitAsync(0.3);
+            UiTestExpect(third.ChatHistory.Count(e => e.Hint != null) == 1 && HintLines(third) == 2, "Third, which receives text now, showed its new hint twice");
+            UiTestExpect(HintLines(tester) == 1 && HintLines(second) == 0, "a hint reached a slot it doesn't concern");
+
+            // The text slot disconnects. Third, which receives text already, takes over (not Second, before it in order), so
+            // the room is told nothing more.
+            DisconnectSlot(profile.Id, "Tester");
+            await UiTestWaitForAsync(() => !_sessions.IsLoggedIn(new SlotId(profile.Id, "Tester")) ? this : null, "Tester to disconnect");
+            await server.BroadcastAsync(server.Chat("after Tester left"));
+            await UiTestWaitForAsync(() => Lines(second, "after Tester left") == 1 && Lines(third, "after Tester left") == 1 ? slots : null, "the room's lines to keep reaching the other slots");
+            UiTestExpect(server.TextClients == 1 && server.TagChanges == 1 && !second.Model.ReceivesText,
+                $"after Tester left, {server.TextClients} connections receive text, tags changed {server.TagChanges} times, and Second receives text: {second.Model.ReceivesText}");
+        }
+        finally
+        {
+            DeleteProfile(profile);
+        }
+    }
+
+    /// <summary>Shows a slot's text client in the bottom pane, as clicking its card on the Chat tab does.</summary>
+    private void ShowTextClient(SlotTrackerControl slot)
+    {
+        _bottomTabs.CurrentTab = 0;
+        _currentTerminalTab = 0;
+        _currentSelectedSlot = slot;
+        RefreshContextViews();
     }
 
     private async Task SlotPanelMovesWholeAsync()
@@ -711,13 +800,14 @@ public partial class MainTrackerWindow
             await UiTestWaitAsync(1.0);
             double connecting = AP_Atlas.Core.HitchMonitor.WorstFrameMs;
             string connectingReport = AP_Atlas.Core.HitchMonitor.WorstFrameReport;
+            UiTestExpect(server.TextClients == 1, $"{server.TextClients} of the {connected} connections receive the room's text, not 1");
             // The multiworld was already in the sidebar: its cards update in place as slots connect.
             int sidebarRebuilds = AP_Atlas.Core.HitchMonitor.Step("Rebuild SLOTS sidebar").Runs;
             int sphereRedraws = AP_Atlas.Core.HitchMonitor.Step("Sphere Tracker tab: refresh").Runs;
             GD.Print($"UITEST INFO Scale: connecting {connected - 1} more slots, the worst frame took {connecting:0} ms");
 
             // What a busy room sends, three times over: every connected slot gets 20 progression items, 100 item lines
-            // between players across the room, and its 50 hints.
+            // between players across the room, and 50 new hints (each at its own location, so none repeats).
             AP_Atlas.Core.HitchMonitor.ResetWorst();
             var random = new Random(1);
             int received = 0;
@@ -729,12 +819,9 @@ public partial class MainTrackerWindow
                 received += 20;
                 await server.BroadcastAsync(Enumerable.Range(0, 100).Select(_ => FakeArchipelagoServer.ItemSend(random.Next(1, roomSize + 1), random.Next(1, roomSize + 1),
                     1000 + random.Next(100), 2000 + random.Next(locations))).ToArray());
-                for (int slot = 1; slot <= connected; slot++)
-                {
-                    var hints = new JArray(Enumerable.Range(0, 50).Select(_ =>
-                        FakeArchipelagoServer.Hint(random.Next(1, roomSize + 1), slot, 2000 + random.Next(locations), 1000 + random.Next(100))));
-                    await server.SetAsync($"_read_hints_0_{slot}", hints);
-                }
+                int first = round * 50;
+                await server.AddHintsAsync(Enumerable.Range(1, connected).SelectMany(slot => Enumerable.Range(first, 50).Select(i =>
+                    FakeArchipelagoServer.Hint(random.Next(connected + 1, roomSize + 1), slot, 2000 + i, 1000 + random.Next(100)))).ToArray());
                 int expected = received;
                 await UiTestWaitForAsync(() => slots.All(s => s.Session.Items.AllItemsReceived.Count == expected) ? slots : null, "a burst's items", seconds: 60);
                 await UiTestWaitAsync(0.5);
@@ -742,6 +829,14 @@ public partial class MainTrackerWindow
             await UiTestWaitForAsync(() => slots.All(s => s.LogicSettled) ? slots : null, "logic to catch up", seconds: 120);
             await UiTestWaitAsync(1.0);
             double worst = AP_Atlas.Core.HitchMonitor.WorstFrameMs;
+            // Every slot shows the 300 item lines once, and its 150 hints once: the text slot as the server's lines, the
+            // others from their hint lists.
+            foreach (var slot in slots)
+            {
+                int itemLines = slot.ChatHistory.Count(e => e.APMessage is Archipelago.MultiClient.Net.MessageLog.Messages.ItemSendLogMessage and not Archipelago.MultiClient.Net.MessageLog.Messages.HintItemSendLogMessage);
+                int hintLines = slot.ChatHistory.Count(e => e.Hint != null || e.APMessage is Archipelago.MultiClient.Net.MessageLog.Messages.HintItemSendLogMessage);
+                UiTestExpect(itemLines == 300 && hintLines == 150, $"{slot.SlotName}'s text client has {itemLines} item lines (not 300) and {hintLines} hints (not 150)");
+            }
             var chatLines = AP_Atlas.Core.HitchMonitor.Step("Text client lines");
             var hintRefreshes = AP_Atlas.Core.HitchMonitor.Step("Hints refresh");
             var memory = GC.GetGCMemoryInfo();
@@ -749,10 +844,12 @@ public partial class MainTrackerWindow
                      $".NET heap {memory.HeapSizeBytes / 1048576.0:0} MB, committed {memory.TotalCommittedBytes / 1048576.0:0} MB, process {System.Environment.WorkingSet / 1048576.0:0} MB, " +
                      $"GC paused {GC.GetTotalPauseDuration().TotalMilliseconds:0} ms in all; {Performance.GetMonitor(Performance.Monitor.ObjectNodeCount):0} nodes, " +
                      $"{Performance.GetMonitor(Performance.Monitor.ObjectOrphanNodeCount):0} orphaned, {Performance.GetMonitor(Performance.Monitor.ObjectCount):0} objects; generations " +
-                     string.Join("/", memory.GenerationInfo.ToArray().Select(g => $"{g.SizeAfterBytes / 1048576.0:0}")) + " MB");
-            // The target is 100 ms. What's left above it is .NET's garbage collection: each of the 20 connections receives,
-            // and decodes, every line the room sends. Until fewer connections receive them, this guards against getting worse.
-            UiTestExpect(worst < 250, $"a frame took {worst:0} ms during the bursts (the guard is 250 ms): {AP_Atlas.Core.HitchMonitor.WorstFrameReport}");
+                     string.Join("/", memory.GenerationInfo.ToArray().Select(g => $"{g.SizeAfterBytes / 1048576.0:0}")) + " MB. The worst frame: " +
+                     AP_Atlas.Core.HitchMonitor.WorstFrameReport.ReplaceLineEndings(" | "));
+            // The target is 100 ms. On the development PC the worst frame takes about 90 to 100 ms (about 130 ms while each of
+            // the 20 connections received, and decoded, the room's text). CI's machines are slower, so the guard leaves them
+            // room; that one connection receives the text is checked above.
+            UiTestExpect(worst < 150, $"a frame took {worst:0} ms during the bursts (the guard is 150 ms): {AP_Atlas.Core.HitchMonitor.WorstFrameReport}");
             // Connecting is a click with a spinner, not play: guarded at 300 ms against things getting worse. Building a slot's
             // views only when first shown (with the new shell) is what brings it under 100 ms.
             UiTestExpect(connecting < 300, $"a frame took {connecting:0} ms while slots connected (the guard is 300 ms): {connectingReport}");
@@ -810,9 +907,13 @@ public partial class MainTrackerWindow
     /// <summary>Thrown by a scenario that can't run here (it reports SKIP instead of PASS or FAIL).</summary>
     private sealed class UiTestSkip(string reason) : Exception(reason);
 
-    /// <summary>Whether a panel's rendered text (its labels) shows this text.</summary>
+    /// <summary>Whether a panel's labels hold this text (BBCode included).</summary>
     private static bool PanelShows(Node panel, string text) =>
         panel.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().Any(label => label.Text.Contains(text));
+
+    /// <summary>Whether a panel's labels show this text, as read on screen (BBCode applied).</summary>
+    private static bool PanelShowsText(Node panel, string text) =>
+        panel.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().Any(label => label.GetParsedText().Contains(text));
 
     /// <summary>The one view showing in the content area, or null if none or several are.</summary>
     private Control? ShownContent()

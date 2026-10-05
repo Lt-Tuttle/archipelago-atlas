@@ -169,6 +169,7 @@ public partial class SlotTrackerControl : MarginContainer
             (slot, loc) => ResolveOtherSlotLogic?.Invoke(slot, loc),
             (msg, color) => ShowToast?.Invoke(msg, color));
         _hintTracker.LogicHidden = () => LogicHidden;
+        _hintTracker.Say = text => Model.SayAsync(text);
         _hintTracker.HintPicked += (hint, part) =>
         {
             string receiverGame = Session.Players.GetPlayerInfo(hint.ReceivingPlayer)?.Game;

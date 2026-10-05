@@ -36,35 +36,64 @@ namespace AP_Atlas.Core.Connections
     /// <summary>What a connection attempt came to. <see cref="Slot"/> is set when it connected.</summary>
     public sealed record ConnectResult(ConnectOutcome Outcome, string Message, ConnectedSlot? Slot = null);
 
-    /// <summary>A slot that logged in, with what the server sent before the slot's window existed.</summary>
+    /// <summary>A slot that logged in: its connection, and its text client's lines (kept until its window takes them over).</summary>
     public sealed class ConnectedSlot
     {
-        private readonly EarlyMessages _early;
+        private readonly SessionManager _manager;
+        private readonly SlotInbox _inbox;
 
-        internal ConnectedSlot(SlotId slot, ArchipelagoSession session, LoginSuccessful login, IReadOnlyDictionary<string, string> dataChecksums, EarlyMessages early)
+        internal ConnectedSlot(SessionManager manager, SlotId slot, ArchipelagoSession session, LoginSuccessful login,
+            IReadOnlyDictionary<string, string> dataChecksums, SlotInbox inbox)
         {
+            _manager = manager;
             Slot = slot;
             Session = session;
             Login = login;
             DataChecksums = dataChecksums;
-            _early = early;
+            _inbox = inbox;
         }
 
         public SlotId Slot { get; }
         public ArchipelagoSession Session { get; }
         public LoginSuccessful Login { get; }
 
+        /// <summary>The slot's team in its multiworld (teams count from 0).</summary>
+        public int Team => Login.Team;
+
         /// <summary>Each game's data checksum from the server's room info, sent before the login.</summary>
         public IReadOnlyDictionary<string, string> DataChecksums { get; }
 
         /// <summary>
-        /// The chat and server messages that arrived before the slot's window took over, in order. Call once, after the
-        /// window has subscribed to the session's messages: from then on only the window receives them.
+        /// Hands the slot's text client lines over to <paramref name="receive"/>: returns those that arrived before, in
+        /// order, and passes on each later one as it arrives (on network threads). The room's lines come from the
+        /// multiworld's text connection (<see cref="SessionManager"/>); lines meant for this slot alone come from its own
+        /// connection. Call once.
         /// </summary>
-        public IReadOnlyList<LogMessage> TakeEarlyMessages() => _early.Take();
+        public IReadOnlyList<LogMessage> ReceiveMessages(Action<LogMessage> receive) => _inbox.TakeOver(receive);
 
-        /// <summary>How many messages are being kept (for tests).</summary>
-        internal int EarlyMessageCount => _early.Count;
+        /// <summary>Stops passing lines on (the slot ended). Safe to call more than once.</summary>
+        public void StopReceivingMessages() => _inbox.Close();
+
+        /// <summary>
+        /// Whether the slot's own connection receives text: it's its multiworld team's text connection, or a command was
+        /// sent from it. When it doesn't, lines the server sends to the slot alone (a new hint's line) don't arrive; the
+        /// slot's hint list still does.
+        /// </summary>
+        public bool ReceivesText => _manager.ReceivesText(Session);
+
+        /// <summary>
+        /// Says something in the room as this slot: chat, or a command (starting with "!"). A command's answer goes only
+        /// to the connection that sent it, and only if it receives text, so a slot that doesn't is switched on first
+        /// (the room is told its tags changed).
+        /// </summary>
+        public Task SayAsync(string text) => _manager.SayAsync(Session, text);
+
+        internal void Deliver(LogMessage message) => _inbox.Deliver(message);
+
+        internal void Preload(IReadOnlyCollection<LogMessage> messages) => _inbox.Preload(messages);
+
+        /// <summary>How many lines are being kept until the window takes over (for tests).</summary>
+        internal int EarlyMessageCount => _inbox.Count;
     }
 
     /// <summary>Tuning for <see cref="SessionManager"/>; the tests shorten the waits.</summary>
@@ -100,11 +129,13 @@ namespace AP_Atlas.Core.Connections
     /// <see cref="CheckForDrops"/>) is reconnected after the waits in <see cref="SessionManagerOptions.ReconnectDelays"/>,
     /// if <see cref="AutoReconnect"/> is on. A refusal stops it, and so does running out of tries.</item>
     /// <item>Closing Atlas closes every session, including ones still connecting, with a proper close frame.</item>
+    /// <item>Only one connection per multiworld team receives the room's text; the others log in with NoText, and each
+    /// slot's text client still gets every line (see SessionManager.Text.cs).</item>
     /// </list>
     /// Events are raised on network and timer threads, never while the manager's lock is held: the window hands them
     /// to the main thread.
     /// </remarks>
-    public sealed class SessionManager
+    public sealed partial class SessionManager
     {
         private readonly DataPackageStore _store;
         private readonly SessionManagerOptions _options;
@@ -113,7 +144,7 @@ namespace AP_Atlas.Core.Connections
         // Every session Atlas opened and hasn't closed, including ones still connecting or logging in.
         private readonly HashSet<ArchipelagoSession> _open = new();
         // Sessions that finished logging in, and their slot. Only these count as dropped when their socket closes.
-        private readonly Dictionary<ArchipelagoSession, SlotId> _loggedIn = new();
+        private readonly Dictionary<ArchipelagoSession, ConnectedSlot> _loggedIn = new();
         // What each slot logged in with, for reconnecting.
         private readonly Dictionary<SlotId, SlotLogin> _logins = new();
         private readonly Dictionary<SlotId, PendingReconnect> _reconnects = new();
@@ -160,7 +191,7 @@ namespace AP_Atlas.Core.Connections
         /// <summary>Whether the slot has a logged-in session whose socket is still open.</summary>
         public bool IsLoggedIn(SlotId slot)
         {
-            lock (_lock) return _loggedIn.Any(entry => entry.Value == slot && IsOpen(entry.Key));
+            lock (_lock) return _loggedIn.Any(entry => entry.Value.Slot == slot && IsOpen(entry.Key));
         }
 
         /// <summary>Whether an automatic reconnect is waiting or under way for the slot.</summary>
@@ -188,7 +219,7 @@ namespace AP_Atlas.Core.Connections
             lock (_lock)
             {
                 _logins.Remove(slot);
-                sessions = _loggedIn.Where(entry => entry.Value == slot).Select(entry => entry.Key).ToList();
+                sessions = _loggedIn.Where(entry => entry.Value.Slot == slot).Select(entry => entry.Key).ToList();
             }
             return Task.WhenAll(sessions.Select(CloseAsync));
         }
@@ -202,7 +233,8 @@ namespace AP_Atlas.Core.Connections
             {
                 _forgottenProfiles.Add(profileId);
                 foreach (var slot in _logins.Keys.Where(s => s.ProfileId == profileId).ToList()) _logins.Remove(slot);
-                sessions = _loggedIn.Where(entry => entry.Value.ProfileId == profileId).Select(entry => entry.Key).ToList();
+                foreach (var slot in _teams.Keys.Where(s => s.ProfileId == profileId).ToList()) _teams.Remove(slot);
+                sessions = _loggedIn.Where(entry => entry.Value.Slot.ProfileId == profileId).Select(entry => entry.Key).ToList();
             }
             return Task.WhenAll(sessions.Select(CloseAsync));
         }
@@ -222,6 +254,7 @@ namespace AP_Atlas.Core.Connections
         public void CheckForDrops()
         {
             List<SlotId> dropped;
+            var switchOn = new List<ConnectedSlot>();
             lock (_lock)
             {
                 if (_closing) return;
@@ -231,8 +264,11 @@ namespace AP_Atlas.Core.Connections
                     _loggedIn.Remove(session);
                     _open.Remove(session);
                 }
-                dropped = gone.Select(entry => entry.Value).ToList();
+                foreach (var (session, _) in gone)
+                    if (EndText(session) is { } next) switchOn.Add(next);
+                dropped = gone.Select(entry => entry.Value.Slot).ToList();
             }
+            SwitchOnText(switchOn);
             foreach (var slot in dropped) OnDropped(slot, "no close from the server");
         }
 
@@ -266,19 +302,30 @@ namespace AP_Atlas.Core.Connections
             catch (OperationCanceledException) { return new ConnectResult(ConnectOutcome.Cancelled, "Cancelled."); }
             try
             {
+                bool text;
                 lock (_lock)
                 {
                     if (_closing) return new ConnectResult(ConnectOutcome.Cancelled, "Atlas is closing.");
                     if (_forgottenProfiles.Contains(login.Slot.ProfileId)) return new ConnectResult(ConnectOutcome.Cancelled, "Its multiworld was deleted.");
+                    text = WantsText(login.Slot);
+                    // A slot logging in without text gets the room's lines that arrive meanwhile (its own join among them).
+                    if (!text) _replays[login.Slot.ProfileId] = new List<(int, LogMessage)>();
                 }
-                ArchipelagoSession session;
-                try { session = AtlasSessions.Create(login.Server, _store); }
-                catch (Exception ex) when (ex is NotSupportedException or ArgumentException or FormatException)
+                try
                 {
-                    return new ConnectResult(ConnectOutcome.Failed, ex.Message);
+                    ArchipelagoSession session;
+                    try { session = AtlasSessions.Create(login.Server, _store); }
+                    catch (Exception ex) when (ex is NotSupportedException or ArgumentException or FormatException)
+                    {
+                        return new ConnectResult(ConnectOutcome.Failed, ex.Message);
+                    }
+                    lock (_lock) _open.Add(session);
+                    return await LogInAsync(session, login, text, ct).ConfigureAwait(false);
                 }
-                lock (_lock) _open.Add(session);
-                return await LogInAsync(session, login, ct).ConfigureAwait(false);
+                finally
+                {
+                    if (!text) lock (_lock) _replays.Remove(login.Slot.ProfileId);
+                }
             }
             finally
             {
@@ -286,9 +333,11 @@ namespace AP_Atlas.Core.Connections
             }
         }
 
-        private async Task<ConnectResult> LogInAsync(ArchipelagoSession session, SlotLogin login, CancellationToken ct)
+        private async Task<ConnectResult> LogInAsync(ArchipelagoSession session, SlotLogin login, bool text, CancellationToken ct)
         {
-            var early = new EarlyMessages(session);
+            // The connection's lines, from the start: each goes where it belongs as it arrives (OnText).
+            var inbox = new SlotInbox();
+            session.MessageLog.OnMessageReceived += message => OnText(session, inbox, message);
             // The room info, sent before the login, carries each game's data checksum.
             var checksums = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             void OnPacket(ArchipelagoPacketBase packet)
@@ -300,14 +349,14 @@ namespace AP_Atlas.Core.Connections
             session.Socket.ErrorReceived += (_, message) => Raise(() => SocketError?.Invoke(login.Slot, message), "reporting a socket error");
             session.Socket.SocketClosed += reason => OnSocketClosed(session, reason);
 
-            var attempt = TryLogInAsync(session, login);
+            var attempt = TryLogInAsync(session, login, text);
             using var giveUp = CancellationTokenSource.CreateLinkedTokenSource(ct);
             var first = await Task.WhenAny(attempt, Task.Delay(_options.LoginTimeout, giveUp.Token)).ConfigureAwait(false);
             await giveUp.CancelAsync().ConfigureAwait(false); // ends the delay if the login won
             session.Socket.PacketReceived -= OnPacket;
             if (first != attempt)
             {
-                early.Take();
+                inbox.Close();
                 await CloseAsync(session).ConfigureAwait(false);
                 // The login may still finish after Atlas gave up on it: close it then too, so it isn't left open on the server.
                 Async.Fire(CloseWhenDoneAsync(attempt, session), "closing a connection that finished after it timed out", tellUser: false);
@@ -319,7 +368,11 @@ namespace AP_Atlas.Core.Connections
             var result = await attempt.ConfigureAwait(false);
             if (result is LoginSuccessful success)
             {
+                Dictionary<string, string> snapshot;
+                lock (checksums) snapshot = new Dictionary<string, string>(checksums, StringComparer.OrdinalIgnoreCase);
+                var connected = new ConnectedSlot(this, login.Slot, session, success, snapshot, inbox);
                 List<ArchipelagoSession>? previous = null;
+                var switchOn = new List<ConnectedSlot>();
                 string why = "Atlas is closing.";
                 lock (_lock)
                 {
@@ -327,26 +380,26 @@ namespace AP_Atlas.Core.Connections
                     else if (!_closing && _open.Contains(session))
                     {
                         // Forget the slot's earlier session before closing it, so its closing isn't taken for a drop.
-                        previous = _loggedIn.Where(entry => entry.Value == login.Slot).Select(entry => entry.Key).ToList();
+                        previous = _loggedIn.Where(entry => entry.Value.Slot == login.Slot).Select(entry => entry.Key).ToList();
+                        _loggedIn[session] = connected;
                         foreach (var old in previous) _loggedIn.Remove(old);
-                        _loggedIn[session] = login.Slot;
                         _logins[login.Slot] = login;
+                        switchOn = StartText(session, connected, text, previous);
                     }
                 }
                 if (previous != null)
                 {
+                    SwitchOnText(switchOn);
                     foreach (var old in previous) Async.Fire(CloseAsync(old), "closing a slot's previous connection", tellUser: false);
-                    Dictionary<string, string> snapshot;
-                    lock (checksums) snapshot = new Dictionary<string, string>(checksums, StringComparer.OrdinalIgnoreCase);
-                    return new ConnectResult(ConnectOutcome.Connected, "Connected.", new ConnectedSlot(login.Slot, session, success, snapshot, early));
+                    return new ConnectResult(ConnectOutcome.Connected, "Connected.", connected);
                 }
                 // Atlas started closing (or closed this session, or its multiworld was deleted) while it logged in.
-                early.Take();
+                inbox.Close();
                 await CloseAsync(session).ConfigureAwait(false);
                 return new ConnectResult(ConnectOutcome.Cancelled, why);
             }
 
-            early.Take();
+            inbox.Close();
             await CloseAsync(session).ConfigureAwait(false);
             var failure = (LoginFailure)result;
             string errors = string.Join(", ", failure.Errors ?? Array.Empty<string>());
@@ -355,15 +408,17 @@ namespace AP_Atlas.Core.Connections
             return new ConnectResult(refused ? ConnectOutcome.Refused : ConnectOutcome.Unreachable, errors.Length > 0 ? errors : "The connection failed.");
         }
 
-        /// <summary>Connects the socket and logs in; a connection that can't be made becomes a failed login.</summary>
-        private static async Task<LoginResult> TryLogInAsync(ArchipelagoSession session, SlotLogin login)
+        /// <summary>
+        /// Connects the socket and logs in, with or without the room's text; a connection that can't be made becomes a
+        /// failed login.
+        /// </summary>
+        private static async Task<LoginResult> TryLogInAsync(ArchipelagoSession session, SlotLogin login, bool text)
         {
             try
             {
                 await session.ConnectAsync().ConfigureAwait(false);
                 return await session.LoginAsync("", login.Slot.SlotName, ItemsHandlingFlags.AllItems, new Version(0, 5, 0),
-                    // "Tracker": the server treats it like TextOnly (can't send checks) and announces Atlas as "tracking".
-                    new[] { "Tracker" }, null, string.IsNullOrEmpty(login.Password) ? null : login.Password, true).ConfigureAwait(false);
+                    text ? TextTags : QuietTags, null, string.IsNullOrEmpty(login.Password) ? null : login.Password, true).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -391,11 +446,14 @@ namespace AP_Atlas.Core.Connections
         /// </summary>
         private async Task CloseAsync(ArchipelagoSession session)
         {
+            ConnectedSlot? switchOn;
             lock (_lock)
             {
                 _loggedIn.Remove(session);
+                switchOn = EndText(session);
                 if (!_open.Remove(session)) return;
             }
+            if (switchOn != null) SwitchOnText(new[] { switchOn });
             try
             {
                 var closing = session.Socket.DisconnectAsync();
@@ -410,14 +468,16 @@ namespace AP_Atlas.Core.Connections
 
         private void OnSocketClosed(ArchipelagoSession session, string reason)
         {
-            SlotId slot;
+            ConnectedSlot? slot, switchOn;
             lock (_lock)
             {
                 // Atlas forgets a session before closing it on purpose, so one still logged in here dropped by itself.
                 if (!_loggedIn.Remove(session, out slot)) return;
                 _open.Remove(session);
+                switchOn = EndText(session);
             }
-            OnDropped(slot, string.IsNullOrWhiteSpace(reason) ? "the server closed the connection" : reason);
+            if (switchOn != null) SwitchOnText(new[] { switchOn });
+            OnDropped(slot.Slot, string.IsNullOrWhiteSpace(reason) ? "the server closed the connection" : reason);
         }
 
         private void OnDropped(SlotId slot, string reason)
@@ -542,40 +602,4 @@ namespace AP_Atlas.Core.Connections
         }
     }
 
-    /// <summary>Keeps the messages a session receives until the slot's window takes over.</summary>
-    internal sealed class EarlyMessages
-    {
-        private readonly ArchipelagoSession _session;
-        private readonly List<LogMessage> _messages = new();
-        private bool _taken;
-
-        public EarlyMessages(ArchipelagoSession session)
-        {
-            _session = session;
-            session.MessageLog.OnMessageReceived += OnMessage;
-        }
-
-        private void OnMessage(LogMessage message)
-        {
-            lock (_messages)
-                if (!_taken) _messages.Add(message);
-        }
-
-        public int Count
-        {
-            get { lock (_messages) return _messages.Count; }
-        }
-
-        /// <summary>Stops keeping messages and returns those kept. Later calls return nothing.</summary>
-        public IReadOnlyList<LogMessage> Take()
-        {
-            _session.MessageLog.OnMessageReceived -= OnMessage;
-            lock (_messages)
-            {
-                if (_taken) return Array.Empty<LogMessage>();
-                _taken = true;
-                return _messages.ToList();
-            }
-        }
-    }
 }

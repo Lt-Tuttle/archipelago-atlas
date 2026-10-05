@@ -21,6 +21,8 @@
         keep its temporary files and caches in Atlas's folder, and the self-test.
       - Running the engine on a Python other than the portable engine's own (AtlasEngine.TestPython): only the UI test,
         for its fake engine.
+      - Sending chat or commands, or changing a connection's tags: only SessionManager, which keeps one connection per
+        multiworld team receiving the room's text, and switches a slot's text on before its command (so the answer arrives).
     It also checks that every script in the Godot project has its .uid file (Godot makes one per script; it's committed
     with the script, or every fresh copy of the project gets new ones). CI runs this before Godot's import, so it checks
     what was committed.
@@ -47,7 +49,9 @@ $rules = @(
     @{ Name = 'Starting a program outside the engine''s launch points'; CaseSensitive = $true
        Pattern = 'new\s+(System\.Diagnostics\.)?ProcessStartInfo\b|(?<![\w.])(System\.Diagnostics\.)?Process\.Start\s*\(|\bOS\.(Execute|ExecuteWithPipe|CreateProcess|CreateInstance)\s*\('
        Allowed = @('AP_Atlas_Source\Scripts\Core\Engine\AtlasEngine.cs', 'AP_Atlas_Source\Scripts\Core\Engine\EngineInstall.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.cs') },
-    @{ Name = 'Running the engine on another Python'; Pattern = '\bTestPython\s*=(?!=)'; Allowed = @('AP_Atlas_Source\Scripts\MainTrackerWindow.UiTest.cs') }
+    @{ Name = 'Running the engine on another Python'; Pattern = '\bTestPython\s*=(?!=)'; Allowed = @('AP_Atlas_Source\Scripts\MainTrackerWindow.UiTest.cs') },
+    @{ Name = 'Sending chat or changing a connection''s tags outside SessionManager'; Pattern = 'new\s+(SayPacket|ConnectUpdatePacket)\b|\.UpdateConnectionOptions\s*\('
+       Allowed = @('AP_Atlas.Core\Connections\SessionManager.Text.cs') }
 )
 
 $files = $roots | ForEach-Object { Get-ChildItem -Path $_ -Recurse -Filter '*.cs' -File } |
