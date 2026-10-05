@@ -58,6 +58,8 @@ public partial class MainTrackerWindow
         await UiTestWaitAsync(1.0); // the window settles, as on a first run
         await ScenarioAsync("Connecting: a slot logs in through the window and gets its view; a dropped connection comes back by itself with a new view; disconnecting closes it for good",
             ConnectingThroughTheWindowAsync);
+        await ScenarioAsync("Moving views: the Cheese and Sphere tabs and Properties keep following their events when moved to another parent (docking, pop-outs), and stop while out of the window",
+            ViewsKeepTheirEventsWhenMovedAsync);
         await _sessions.CloseAllAsync(TimeSpan.FromSeconds(3));
         GD.Print($"UITEST DONE: {passed} passed, {failed} failed");
         GetTree().Quit(failed == 0 ? 0 : 1);
@@ -101,6 +103,89 @@ public partial class MainTrackerWindow
             await _sessions.ForgetProfileAsync(profile.Id);
             _profiles.Remove(profile);
         }
+    }
+
+    private async Task ViewsKeepTheirEventsWhenMovedAsync()
+    {
+        // Who listens to the events these views follow, counted from the events themselves.
+        var events = new (string Name, Func<int> Listeners)[]
+        {
+            ("Cheese Tracker changes", () => UiTestListeners(typeof(AP_Atlas.Core.CheeseTracker.CheeseTrackerService), _cheese, "Changed")),
+            ("Cheese Tracker links", () => UiTestListeners(typeof(AP_Atlas.Core.CheeseTracker.CheeseTrackerService), _cheese, "LinkChanged")),
+            ("Sphere Tracker changes", () => UiTestListeners(typeof(AP_Atlas.Core.Spheres.SphereService), _spheres, "Changed")),
+            ("race mode changes", () => UiTestListeners(typeof(AP_Atlas.Core.RaceRules), null, "Changed")),
+            ("Properties requests", () => UiTestListeners(typeof(AP_Atlas.Core.Inspector), null, "Requested")),
+            ("notes and flags changes", () => UiTestListeners(typeof(AP_Atlas.Core.Annotations), null, "Changed")),
+        };
+        int[] Counts() => events.Select(e => e.Listeners()).ToArray();
+        void ExpectCounts(int[] expected, string when)
+        {
+            var now = Counts();
+            for (int i = 0; i < events.Length; i++)
+                UiTestExpect(now[i] == expected[i], $"{events[i].Name} have {now[i]} listeners {when}, expected {expected[i]}");
+        }
+
+        var elsewhere = new VBoxContainer { Name = "UiTestElsewhere" };
+        AddChild(elsewhere);
+        var profile = new MultiworldProfile { Name = "UI test" };
+        _profiles.Add(profile);
+        try
+        {
+            var before = Counts();
+            UiTestExpect(UiTestListeners(typeof(AP_Atlas.Core.Inspector), null, "Requested") == 1, "Properties isn't the one listener for requests");
+            // Each view and the events it follows: while it's out of the window, exactly those lose one listener.
+            var views = new (Control View, string[] Follows)[]
+            {
+                (_cheeseTab, new[] { "Cheese Tracker changes", "Cheese Tracker links" }),
+                (_sphereTab, new[] { "Sphere Tracker changes", "race mode changes" }),
+                (_propertiesPanel, new[] { "Properties requests", "notes and flags changes" }),
+            };
+            foreach (var (view, follows) in views)
+            {
+                var home = view.GetParent();
+                int place = view.GetIndex();
+                home.RemoveChild(view);
+                ExpectCounts(before.Select((count, i) => follows.Contains(events[i].Name) ? count - 1 : count).ToArray(), $"while {view.Name} is out of the window");
+                elsewhere.AddChild(view);
+                ExpectCounts(before, $"after {view.Name} moved");
+                elsewhere.RemoveChild(view);
+                home.AddChild(view);
+                home.MoveChild(view, place);
+                ExpectCounts(before, $"after {view.Name} moved back");
+            }
+
+            // And it really answers: Properties, moved away, still shows what's asked for.
+            var panelHome = _propertiesPanel.GetParent();
+            int panelPlace = _propertiesPanel.GetIndex();
+            panelHome.RemoveChild(_propertiesPanel);
+            elsewhere.AddChild(_propertiesPanel);
+            try
+            {
+                var target = AP_Atlas.Core.InspectTarget.ForProfile(profile.Id);
+                AP_Atlas.Core.Inspector.Inspect(target);
+                await UiTestWaitAsync(0.1);
+                UiTestExpect(_propertiesPanel.Current?.Key == target.Key, "Properties didn't follow a request after it was moved");
+            }
+            finally
+            {
+                elsewhere.RemoveChild(_propertiesPanel);
+                panelHome.AddChild(_propertiesPanel);
+                panelHome.MoveChild(_propertiesPanel, panelPlace);
+            }
+        }
+        finally
+        {
+            _profiles.Remove(profile);
+            elsewhere.QueueFree();
+        }
+    }
+
+    /// <summary>How many handlers an event has, read from the event's own field (an instance event, or a static one when <paramref name="owner"/> is null).</summary>
+    private static int UiTestListeners(Type type, object? owner, string eventName)
+    {
+        var flags = System.Reflection.BindingFlags.NonPublic | (owner == null ? System.Reflection.BindingFlags.Static : System.Reflection.BindingFlags.Instance);
+        var field = type.GetField(eventName, flags) ?? throw new InvalidOperationException($"{type.Name}.{eventName} isn't an event Atlas can count");
+        return (field.GetValue(owner) as Delegate)?.GetInvocationList().Length ?? 0;
     }
 
     private SlotTrackerControl? SlotView(string profileId, string slotName) =>

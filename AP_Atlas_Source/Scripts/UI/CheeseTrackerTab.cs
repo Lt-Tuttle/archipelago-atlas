@@ -130,15 +130,14 @@ namespace AP_Atlas.UI
             };
             AddChild(minute);
 
-            _cheese.Changed += QueueRefresh;
-            _cheese.LinkChanged += _ => QueueRefresh();
+            // Made while the tab is in the window, again after it's moved (docking, pop-outs), and removed while it isn't.
+            AddChild(new TreeSubscriptions()
+                .On(() => _cheese.Changed += QueueRefresh, () => _cheese.Changed -= QueueRefresh)
+                .On(() => _cheese.LinkChanged += OnLinkChanged, () => _cheese.LinkChanged -= OnLinkChanged));
             Refresh();
         }
 
-        public override void _ExitTree()
-        {
-            _cheese.Changed -= QueueRefresh;
-        }
+        private void OnLinkChanged(string profileId) => QueueRefresh();
 
         /// <summary>The tab was just shown: read what it shows if that's due, and draw it.</summary>
         public void OnShown()

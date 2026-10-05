@@ -67,6 +67,7 @@ New code that doesn't need Godot belongs in `AP_Atlas.Core`, with tests. The vis
   | Secrets | `Secrets` |
   | Work nobody awaits (button handlers, background checks) | `Async.Fire(task, "what it's doing")`, never `async void` or `_ = …` |
   | Updating the window from another thread, or later | `Ui.Defer(owner, …)`, never `Callable.From(…).CallDeferred()` |
+  | A view following an event | A `TreeSubscriptions` child (`AddChild(new TreeSubscriptions().On(subscribe, unsubscribe))`), never `+=` in `_Ready`: it follows the view in and out of the window, so the view can be moved |
 
   The guard rails enforce the riskiest of these in CI.
 - **Null checks:**
@@ -77,7 +78,7 @@ New code that doesn't need Godot belongs in `AP_Atlas.Core`, with tests. The vis
 - **Tests:** every new protection gets a check in `Scripts/Core/SelfTest*.cs` or `AP_Atlas.Core.Tests`, and tests never touch real data. Connection tests use `FakeArchipelagoServer`, never a real server. What the window does with them gets a scenario in `MainTrackerWindow.UiTest.cs`.
 - **Nothing outside Atlas's folder:** the self-test and the visual check fail if a run writes anything to the user's folders or the temp folder (the footprint check). Godot's log and shader cache stay off in `project.godot`.
 - **Updating Archipelago.MultiClient.Net:** `AtlasSessions` relies on the library's internal data cache. The unit tests check that, and that the library reaches nothing else on the PC. If they fail, look at what changed before using the new version.
-- **Godot's `.uid` files:** Godot makes one next to each script (`Foo.cs.uid`). Commit it with the script.
+- **Godot's `.uid` files:** Godot makes one next to each script (`Foo.cs.uid`) when it opens or imports the project. Commit it with the script; the guard rails check.
 - **Third-party code, data or art:**
   - Use only things under a license compatible with MIT (MIT, BSD, Apache-2.0, OFL for fonts, and so on), and credit them in [CREDITS.md](CREDITS.md). Anything that ships in Atlas also goes in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
   - Never copy GPL or AGPL code (PopTracker, Cheese Tracker) into Atlas.

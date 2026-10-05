@@ -51,6 +51,8 @@ Development toward the first public beta, 0.1.0.
   - Unit tests read the whole connection library and fail if it can reach files, folders, the registry or other programs anywhere except its data cache, which Atlas replaces. A library update that reaches further can't ship unnoticed.
   - A fake Archipelago server for tests, on the test computer only.
   - A UI test (`ATLAS_UITEST`): Atlas builds its window and drives it the way a user would, against the fake server: connecting a slot, a dropped connection coming back, disconnecting. `run_selftest.ps1` runs it after the self-test, and CI runs that.
+  - Views are ready to be moved (for docking and pop-outs): the Cheese Tracker and Sphere Tracker tabs and Properties follow their events whenever they're in the window, including after a move, and never while out of it. Before, a move would have stopped them updating, because they subscribed only once. The UI test moves each one and counts the events' listeners.
+  - The guard rails check that every script has its Godot `.uid` file committed.
 - **Settings → Privacy & permissions:** everything you've allowed Atlas to do without asking, and every apworld source you trust, each with a way to take it back.
 
 ### Changed

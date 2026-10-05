@@ -99,15 +99,11 @@ namespace AP_Atlas.UI
                 Refresh();
             };
             AddChild(minute);
-            _spheres.Changed += QueueRefresh;
-            RaceRules.Changed += OnRaceRulesChanged;
+            // Made while the tab is in the window, again after it's moved (docking, pop-outs), and removed while it isn't.
+            AddChild(new TreeSubscriptions()
+                .On(() => _spheres.Changed += QueueRefresh, () => _spheres.Changed -= QueueRefresh)
+                .On(() => RaceRules.Changed += OnRaceRulesChanged, () => RaceRules.Changed -= OnRaceRulesChanged));
             Refresh();
-        }
-
-        public override void _ExitTree()
-        {
-            _spheres.Changed -= QueueRefresh;
-            RaceRules.Changed -= OnRaceRulesChanged;
         }
 
         private void OnRaceRulesChanged()

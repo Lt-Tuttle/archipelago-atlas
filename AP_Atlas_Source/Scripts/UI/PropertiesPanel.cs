@@ -101,15 +101,11 @@ namespace AP_Atlas.UI
             _refreshTimer.Timeout += () => { if (_refreshPending) Render(keepScroll: true); };
             AddChild(_refreshTimer);
 
-            Inspector.Requested += Inspect;
-            Annotations.Changed += QueueRefresh;
+            // Made while the panel is in the window, again after it's moved (docking, pop-outs), and removed while it isn't.
+            AddChild(new TreeSubscriptions()
+                .On(() => Inspector.Requested += Inspect, () => Inspector.Requested -= Inspect)
+                .On(() => Annotations.Changed += QueueRefresh, () => Annotations.Changed -= QueueRefresh));
             Render(keepScroll: false);
-        }
-
-        public override void _ExitTree()
-        {
-            Inspector.Requested -= Inspect;
-            Annotations.Changed -= QueueRefresh;
         }
 
         private Button NavButton(string text, string tooltip, Action onPressed)

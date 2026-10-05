@@ -19,6 +19,9 @@
         reconnects politely (the self-test may create one it never connects).
       - Starting a program: only the engine's launch points (EngineInstall.StartInfo, AtlasEngine.SetupStartInfo), which
         keep its temporary files and caches in Atlas's folder, and the self-test.
+    It also checks that every script in the Godot project has its .uid file (Godot makes one per script; it's committed
+    with the script, or every fresh copy of the project gets new ones). CI runs this before Godot's import, so it checks
+    what was committed.
     Run it from anywhere; CI runs it on every push. Exit code 0 means every rule holds.
 #>
 $ErrorActionPreference = 'Stop'
@@ -71,6 +74,16 @@ if ($optedOut -gt $nullableOptOutLimit) {
 }
 elseif ($optedOut -lt $nullableOptOutLimit) {
     Write-Host "Nullable checks: $optedOut classes still opted out; lower the limit in check_guards.ps1 to $optedOut." -ForegroundColor Yellow
+}
+
+# Godot's .uid files: one per script, committed with it.
+$godotScripts = Get-ChildItem -Path (Join-Path $repo 'AP_Atlas_Source\Scripts') -Recurse -Filter '*.cs' -File |
+    Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' }
+foreach ($script in $godotScripts) {
+    if (Test-Path -LiteralPath ($script.FullName + '.uid')) { continue }
+    $relative = $script.FullName.Substring($repo.Length).TrimStart('\', '/')
+    Write-Host "GUARD: $relative has no .uid file. Run the project once in Godot (or with --import) and commit the .uid with the script." -ForegroundColor Red
+    $broken++
 }
 
 if ($broken -gt 0) {
