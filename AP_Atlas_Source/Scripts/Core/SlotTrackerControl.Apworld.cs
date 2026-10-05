@@ -496,7 +496,7 @@ public partial class SlotTrackerControl : MarginContainer
     {
         if (_mapTracker != null && Session != null)
         {
-            _mapTracker.UpdateLogicColors(_knownReachableLocations, Session.Locations.AllLocationsChecked, _knownHintedLocations);
+            _mapTracker.UpdateLogicColors(_knownReachableLocations, Session.Locations.AllLocationsChecked, Model.HintedLocations);
         }
         _hintTracker?.Refresh();
         StateChanged?.Invoke();

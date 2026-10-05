@@ -1,0 +1,364 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using AP_Atlas.Core.Connections;
+using Archipelago.MultiClient.Net;
+using Archipelago.MultiClient.Net.Enums;
+using Archipelago.MultiClient.Net.Helpers;
+using Archipelago.MultiClient.Net.MessageLog.Messages;
+using Archipelago.MultiClient.Net.MessageLog.Parts;
+using Archipelago.MultiClient.Net.Models;
+
+namespace AP_Atlas.Core
+{
+    /// <summary>What changed in a slot since its views last heard; several at once when they arrive together.</summary>
+    [Flags]
+    public enum SlotChange
+    {
+        None = 0,
+        /// <summary>Items were received.</summary>
+        Items = 1,
+        /// <summary>Locations were checked.</summary>
+        Checks = 2,
+        /// <summary>The slot's hints changed, or a hint message named a location.</summary>
+        Hints = 4,
+        /// <summary>New lines in the text client (server messages, or Atlas's own).</summary>
+        Messages = 8,
+        /// <summary>The slot reached its goal.</summary>
+        Goal = 16,
+        /// <summary>The connection dropped.</summary>
+        Connection = 32,
+    }
+
+    /// <summary>One line of a slot's text client: a server message, or one of Atlas's own (BBCode).</summary>
+    public sealed class ChatEntry
+    {
+        public LogMessage? APMessage { get; init; }
+        public string? SystemMessage { get; init; }
+        public bool IsSystemMessage => SystemMessage != null;
+
+        /// <summary>Counts up from 1 for each slot, so a view knows which lines it has shown.</summary>
+        public long Sequence { get; init; }
+
+        /// <summary>A server message from before the slot's views existed (shown, but not announced again).</summary>
+        public bool Early { get; init; }
+    }
+
+    /// <summary>
+    /// One connected slot, apart from its views: the session and who the slot is, the session's events, and what follows
+    /// directly from them (the text client's lines, hints, the goal), plus the questions Atlas asks the server about it.
+    /// It hears every event even while no view of it is in the window, and tells its views at most once per frame what
+    /// changed: a burst of 300 items is one refresh, not 300.
+    /// </summary>
+    /// <remarks>
+    /// Session events arrive on network threads; they're queued and applied on the main thread when the change is raised.
+    /// Everything else here is read and changed on the main thread only.
+    /// </remarks>
+    public sealed class SlotModel : IDisposable
+    {
+        /// <summary>How many text client lines are kept.</summary>
+        public const int ChatLimit = 1000;
+
+        private readonly object _queueLock = new();
+        private readonly List<LogMessage> _incoming = new();
+        private Hint[]? _incomingHints;
+        private string? _closedReason;
+        private SlotChange _pending;
+        private bool _flushScheduled, _disposed;
+
+        private readonly List<ChatEntry> _chat = new();
+        private long _nextSequence = 1;
+        private readonly HashSet<long> _hintedLocations = new();
+        private bool _goalStatusAsked;
+
+        public SlotModel(ConnectedSlot connected)
+        {
+            Slot = connected.Slot;
+            Session = connected.Session;
+            SlotData = connected.Login.SlotData ?? new Dictionary<string, object>();
+            DataChecksums = connected.DataChecksums;
+            AddSystemMessage($"[color=lime]Connected to {Game} as {SlotName}![/color]");
+
+            // Session hooks (network threads). From here on the model hears every message itself.
+            Session.MessageLog.OnMessageReceived += OnMessage;
+            Session.Socket.SocketClosed += OnSocketClosed;
+            Session.Items.ItemReceived += OnItemReceived;
+            Session.Locations.CheckedLocationsUpdated += OnChecked;
+            // What the server sent before this model existed, then what it heard itself (the same message can be in both).
+            var early = connected.TakeEarlyMessages();
+            lock (_queueLock)
+            {
+                var heard = _incoming.ToList();
+                _incoming.Clear();
+                foreach (var message in early) AddEntry(new ChatEntry { APMessage = message, Sequence = _nextSequence++, Early = true });
+                _incoming.AddRange(heard.Where(message => !early.Contains(message)));
+            }
+            Schedule(SlotChange.Messages);
+            // The slot's hints (as finder or receiver), now and on every change.
+            Session.Hints.TrackHints(OnHints, true);
+        }
+
+        public SlotId Slot { get; }
+        public ArchipelagoSession Session { get; }
+        public string ProfileId => Slot.ProfileId;
+        public string SlotName => Slot.SlotName;
+
+        /// <summary>The options the server sent with the login.</summary>
+        public Dictionary<string, object> SlotData { get; }
+
+        /// <summary>Each game's data checksum from the server's room info.</summary>
+        public IReadOnlyDictionary<string, string> DataChecksums { get; }
+
+        public string Game => Session.ConnectionInfo?.Game ?? "";
+        public int PlayerSlot => Session.ConnectionInfo?.Slot ?? -1;
+        public int Team => Session.ConnectionInfo?.Team ?? -1;
+
+        /// <summary>The text client's lines, oldest first (the last <see cref="ChatLimit"/>).</summary>
+        public IReadOnlyList<ChatEntry> Chat => _chat;
+
+        /// <summary>The hints this slot is in (as finder or receiver), as the server last sent them.</summary>
+        public Hint[] CurrentHints { get; private set; } = Array.Empty<Hint>();
+
+        /// <summary>Unfound hinted locations in this slot's world (they color the map).</summary>
+        public IReadOnlySet<long> HintedLocations => _hintedLocations;
+
+        /// <summary>The server says this slot reached its goal (its goal message, or a status check).</summary>
+        public bool GoalCompleted { get; private set; }
+
+        /// <summary>
+        /// What changed, raised on the main thread at most once per frame (more often only if events keep arriving while
+        /// it's raised). Never raised after <see cref="Dispose"/>.
+        /// </summary>
+        public event Action<SlotChange>? Changed;
+
+        /// <summary>Adds one of Atlas's own lines (BBCode) to the text client.</summary>
+        public void AddSystemMessage(string bbcode)
+        {
+            if (_disposed) return;
+            AddEntry(new ChatEntry { SystemMessage = bbcode, Sequence = _nextSequence++ });
+            Schedule(SlotChange.Messages);
+        }
+
+        /// <summary>Asks the server, once per connection, whether this slot already reached its goal.</summary>
+        public void EnsureGoalStatus()
+        {
+            if (_goalStatusAsked || _disposed) return;
+            _goalStatusAsked = true;
+            Async.Then(ClientStatusAsync(PlayerSlot), status =>
+            {
+                if (status == ArchipelagoClientState.ClientGoal) Schedule(SlotChange.Goal, goalReached: true);
+            }, "asking the server whether a slot reached its goal");
+        }
+
+        // =====================================================================
+        // Questions for the server (cached, so each is asked once)
+        // =====================================================================
+
+        private readonly Dictionary<long, Task<ScoutedItemInfo?>> _scoutCache = new();
+        private readonly Dictionary<string, Task<Dictionary<string, string[]>?>> _itemGroupCache = new();
+        private readonly Dictionary<string, Task<Dictionary<string, string[]>?>> _locationGroupCache = new();
+        private readonly Dictionary<int, (DateTime At, Task<ArchipelagoClientState?> Task)> _statusCache = new();
+
+        private bool Connected => !_disposed && Session.Socket.Connected;
+
+        /// <summary>What a checked location held. Only for checked locations, so it never spoils anything.</summary>
+        public Task<ScoutedItemInfo?> ScoutCheckedLocationAsync(long locationId)
+        {
+            if (!Connected || !Session.Locations.AllLocationsChecked.Contains(locationId)) return Task.FromResult<ScoutedItemInfo?>(null);
+            if (!_scoutCache.TryGetValue(locationId, out var task))
+            {
+                task = ScoutOneAsync(locationId);
+                _scoutCache[locationId] = task;
+            }
+            return task;
+        }
+
+        private async Task<ScoutedItemInfo?> ScoutOneAsync(long locationId)
+        {
+            try
+            {
+                var result = await Session.Locations.ScoutLocationsAsync(HintCreationPolicy.None, locationId);
+                return result != null && result.TryGetValue(locationId, out var info) ? info : null;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                Logger.LogDebug($"[{SlotName}] Scout of location {locationId} failed: {ex.Message}");
+                // Asked again next time; called on the main thread (the await continues there).
+                _scoutCache.Remove(locationId);
+                return null;
+            }
+        }
+
+        /// <summary>The server's item name groups for a game (fetched once per game per connection).</summary>
+        public Task<Dictionary<string, string[]>?> ItemGroupsAsync(string game) =>
+            CachedGroupsAsync(_itemGroupCache, game, g => Session.DataStorage.GetItemNameGroupsAsync(g));
+
+        /// <summary>The server's location name groups for a game (fetched once per game per connection).</summary>
+        public Task<Dictionary<string, string[]>?> LocationGroupsAsync(string game) =>
+            CachedGroupsAsync(_locationGroupCache, game, g => Session.DataStorage.GetLocationNameGroupsAsync(g));
+
+        private Task<Dictionary<string, string[]>?> CachedGroupsAsync(Dictionary<string, Task<Dictionary<string, string[]>?>> cache, string game,
+            Func<string, Task<Dictionary<string, string[]>>> fetch)
+        {
+            if (string.IsNullOrEmpty(game) || !Connected) return Task.FromResult<Dictionary<string, string[]>?>(null);
+            if (!cache.TryGetValue(game, out var task))
+            {
+                task = FetchGroupsAsync(() => fetch(game));
+                cache[game] = task;
+            }
+            return task;
+        }
+
+        private async Task<Dictionary<string, string[]>?> FetchGroupsAsync(Func<Task<Dictionary<string, string[]>>> fetch)
+        {
+            try { return await fetch(); }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                Logger.LogDebug($"[{SlotName}] Name groups couldn't be read: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>A player's client status (connected / playing / goal), refreshed at most every 30 seconds.</summary>
+        public Task<ArchipelagoClientState?> ClientStatusAsync(int player)
+        {
+            if (!Connected) return Task.FromResult<ArchipelagoClientState?>(null);
+            if (_statusCache.TryGetValue(player, out var cached) && (DateTime.Now - cached.At).TotalSeconds < 30) return cached.Task;
+            var task = FetchStatusAsync(player);
+            _statusCache[player] = (DateTime.Now, task);
+            return task;
+        }
+
+        private async Task<ArchipelagoClientState?> FetchStatusAsync(int player)
+        {
+            try { return await Session.DataStorage.GetClientStatusAsync(player, Team); }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                Logger.LogDebug($"[{SlotName}] Status of player {player} couldn't be read: {ex.Message}");
+                return null;
+            }
+        }
+
+        // =====================================================================
+        // Session events (network threads): queued, then applied once per frame
+        // =====================================================================
+
+        private void OnMessage(LogMessage message)
+        {
+            lock (_queueLock) _incoming.Add(message);
+            Schedule(SlotChange.Messages);
+        }
+
+        private void OnItemReceived(ReceivedItemsHelper helper) => Schedule(SlotChange.Items);
+
+        private void OnChecked(System.Collections.ObjectModel.ReadOnlyCollection<long> newlyChecked) => Schedule(SlotChange.Checks);
+
+        private void OnHints(Hint[] hints)
+        {
+            lock (_queueLock) _incomingHints = hints ?? Array.Empty<Hint>();
+            Schedule(SlotChange.Hints);
+        }
+
+        private void OnSocketClosed(string reason)
+        {
+            lock (_queueLock) _closedReason = string.IsNullOrWhiteSpace(reason) ? "the connection closed" : reason;
+            Schedule(SlotChange.Connection | SlotChange.Messages);
+        }
+
+        private bool _goalReachedPending;
+
+        private void Schedule(SlotChange change, bool goalReached = false)
+        {
+            lock (_queueLock)
+            {
+                if (_disposed) return;
+                _pending |= change;
+                if (goalReached) _goalReachedPending = true;
+                if (_flushScheduled) return;
+                _flushScheduled = true;
+            }
+            AP_Atlas.UI.Ui.Defer(null, Flush, $"updating {SlotName}");
+        }
+
+        /// <summary>Applies what arrived since the last frame and tells the views once (main thread).</summary>
+        private void Flush()
+        {
+            SlotChange change;
+            List<LogMessage> messages;
+            Hint[]? hints;
+            string? closed;
+            bool goalReached;
+            lock (_queueLock)
+            {
+                _flushScheduled = false;
+                if (_disposed) return;
+                change = _pending;
+                _pending = SlotChange.None;
+                messages = _incoming.ToList();
+                _incoming.Clear();
+                hints = _incomingHints;
+                _incomingHints = null;
+                closed = _closedReason;
+                _closedReason = null;
+                goalReached = _goalReachedPending;
+                _goalReachedPending = false;
+            }
+            foreach (var message in messages)
+            {
+                AddEntry(new ChatEntry { APMessage = message, Sequence = _nextSequence++ });
+                if (message is GoalLogMessage goal && goal.IsActivePlayer) goalReached = true;
+                if (message is HintItemSendLogMessage hint)
+                {
+                    foreach (var part in hint.Parts.OfType<LocationMessagePart>()) _hintedLocations.Add(part.LocationId);
+                    change |= SlotChange.Hints;
+                }
+            }
+            if (hints != null)
+            {
+                CurrentHints = hints;
+                int me = PlayerSlot;
+                foreach (var h in hints)
+                    if (h.FindingPlayer == me && !h.Found) _hintedLocations.Add(h.LocationId);
+            }
+            if (closed != null) AddEntry(new ChatEntry { SystemMessage = $"[color=red]Connection lost: {closed}[/color]", Sequence = _nextSequence++ });
+            if (goalReached && !GoalCompleted)
+            {
+                GoalCompleted = true;
+                change |= SlotChange.Goal;
+            }
+            if (change == SlotChange.None) return;
+            try { Changed?.Invoke(change); }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                // A failing view mustn't stop the next frame's updates.
+                Async.Report(ex, $"updating {SlotName}'s views", tellUser: false);
+            }
+        }
+
+        private void AddEntry(ChatEntry entry)
+        {
+            _chat.Add(entry);
+            if (_chat.Count > ChatLimit) _chat.RemoveRange(0, _chat.Count - ChatLimit);
+        }
+
+        /// <summary>
+        /// Stops listening to the session (the slot was replaced, closed or deleted). Pending changes are dropped and
+        /// nothing is raised afterwards. Safe to call more than once.
+        /// </summary>
+        public void Dispose()
+        {
+            lock (_queueLock)
+            {
+                if (_disposed) return;
+                _disposed = true;
+                _incoming.Clear();
+            }
+            Session.MessageLog.OnMessageReceived -= OnMessage;
+            Session.Socket.SocketClosed -= OnSocketClosed;
+            Session.Items.ItemReceived -= OnItemReceived;
+            Session.Locations.CheckedLocationsUpdated -= OnChecked;
+            Changed = null;
+        }
+    }
+}

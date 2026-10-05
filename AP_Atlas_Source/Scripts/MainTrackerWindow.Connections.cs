@@ -316,11 +316,12 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         profile.SavedStats[slotName].GameName = session.ConnectionInfo.Game;
         profile.SavedStats[slotName].SlotNumber = session.ConnectionInfo.Slot;
         DataManager.SaveProfiles(_profiles);
-        var slotTracker = new SlotTrackerControl(session, profile.Id, slotName, _appSettings, connected.Login.SlotData,
+        // The model takes the session's events from here on (and the messages that arrived before it).
+        var model = new AP_Atlas.Core.SlotModel(connected);
+        var slotTracker = new SlotTrackerControl(model, _appSettings,
             (msg) => { if (_globalStatusLabel != null) _globalStatusLabel.Text = msg; },
             (msg) => { LogToDebug(msg, slotName); }
         );
-        slotTracker.ServerDataChecksums = connected.DataChecksums;
         slotTracker.ResolveOtherSlotLogic = (slot, loc) => ResolveSlotLogic(slotTracker, slot, loc);
         slotTracker.ShowToast = ShowToast;
         slotTracker.ShowActionToast = ShowToast;
@@ -334,9 +335,6 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         };
         _terminalStage.AddChild(slotTracker);
         PreMountSlotViews(slotTracker);
-        // The slot's chat now receives the session's messages; hand it what arrived before.
-        var early = connected.TakeEarlyMessages();
-        if (early.Count > 0) slotTracker.InjectEarlyMessages(early);
         _connectingSlots.Remove(SlotKey(profile.Id, slotName));
         UpdateSidebar();
         _currentSelectedSlot = slotTracker; RefreshContextViews();

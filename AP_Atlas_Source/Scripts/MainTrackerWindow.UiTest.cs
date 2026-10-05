@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using AP_Atlas.Core.Connections;
 using AP_Atlas.Core.Testing;
 using Godot;
+using Newtonsoft.Json.Linq;
 
 /// <summary>
 /// The UI test, for testing only. Set ATLAS_UITEST=1 and ATLAS_DATA_DIR=&lt;an empty scratch folder&gt;, then start Atlas
@@ -62,6 +63,8 @@ public partial class MainTrackerWindow
             ViewsKeepTheirEventsWhenMovedAsync);
         await ScenarioAsync("Tools: every tool's tab shows its own view, and each slot tool the connected slot's view (or asks for a slot when none is connected)",
             EveryToolShowsItsViewAsync);
+        await ScenarioAsync("Bursts: 40 items and 40 chat lines arriving together reach the slot once each, as one update of the window (not 80)",
+            BurstIsOneUpdateAsync);
         await _sessions.CloseAllAsync(TimeSpan.FromSeconds(3));
         GD.Print($"UITEST DONE: {passed} passed, {failed} failed");
         GetTree().Quit(failed == 0 ? 0 : 1);
@@ -244,6 +247,54 @@ public partial class MainTrackerWindow
         finally
         {
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
+            DeleteProfile(profile);
+        }
+    }
+
+    private async Task BurstIsOneUpdateAsync()
+    {
+        await using var server = new FakeArchipelagoServer();
+        server.Games["Test Game"] = new FakeGame("0123456789abcdef0123456789abcdef01234567",
+            new Dictionary<string, long> { ["Sword"] = 1000 }, new Dictionary<string, long> { ["Cave Chest"] = 2000 });
+        var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Tester");
+        _profiles.Add(profile);
+        try
+        {
+            await OnConnectSlotPressedAsync("Tester", profile);
+            var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
+            // The room's join message arrives just after the login: the model hands it to the chat.
+            await UiTestWaitForAsync(() => slot.ChatHistory.Any(e => e.APMessage?.ToString().Contains("has joined") == true) ? slot : null,
+                "the join message in the slot's chat");
+            await UiTestWaitAsync(0.3); // the connection's own updates settle
+
+            int updates = 0;
+            void Counted() => updates++;
+            slot.StateChanged += Counted;
+            try
+            {
+                long before = slot.ChatHistory.Count == 0 ? 0 : slot.ChatHistory[^1].Sequence;
+                var burst = new List<JObject> { FakeArchipelagoServer.ReceivedItems(0, Enumerable.Range(0, 40).Select(i => 1000L + i)) };
+                burst.AddRange(Enumerable.Range(1, 40).Select(i => server.Chat($"burst line {i}")));
+                await server.BroadcastAsync(burst.ToArray());
+
+                int BurstLines() => slot.ChatHistory.Count(e => e.Sequence > before && e.APMessage?.ToString().Contains("burst line") == true);
+                await UiTestWaitForAsync(() => slot.Session.Items.AllItemsReceived.Count == 40 && BurstLines() == 40 ? slot : null, "the burst to arrive");
+                await UiTestWaitAsync(0.3);
+                UiTestExpect(updates >= 1, "the burst never reached the window");
+                UiTestExpect(updates <= 3, $"40 items and 40 lines arriving together caused {updates} updates of the window");
+                var lines = slot.ChatHistory.Where(e => e.Sequence > before && e.APMessage?.ToString().Contains("burst line") == true)
+                    .Select(e => e.APMessage!.ToString()).ToList();
+                UiTestExpect(lines.Distinct().Count() == 40 && lines.Count == 40, "a burst line is missing or shown twice");
+            }
+            finally
+            {
+                slot.StateChanged -= Counted;
+            }
+        }
+        finally
+        {
             DeleteProfile(profile);
         }
     }

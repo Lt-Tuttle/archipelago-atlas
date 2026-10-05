@@ -51,8 +51,8 @@ public partial class SlotTrackerControl : MarginContainer
     // Game names (the server's data package) and the pack's index
     // =====================================================================
 
-    /// <summary>Each game's data checksum from the server's RoomInfo (set by MainTrackerWindow at connect).</summary>
-    public IReadOnlyDictionary<string, string> ServerDataChecksums { get; set; }
+    /// <summary>Each game's data checksum from the server's RoomInfo.</summary>
+    public IReadOnlyDictionary<string, string> ServerDataChecksums => Model.DataChecksums;
 
     public string ServerChecksumFor(string game) =>
         game != null && ServerDataChecksums != null && ServerDataChecksums.TryGetValue(game, out var c) && !string.IsNullOrEmpty(c) ? c : null;

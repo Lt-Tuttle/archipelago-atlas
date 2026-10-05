@@ -13,14 +13,17 @@ using System.Threading.Tasks;
 using Color = Godot.Color;
 
 /// <summary>
-/// Per-slot controller. Owns the Archipelago session, the logic engine and every per-slot view.
+/// Per-slot controller. Its <see cref="AP_Atlas.Core.SlotModel"/> owns the session and its events; this owns the logic
+/// engine and every per-slot view, and updates them when the model reports changes (once per frame).
 /// The node itself renders only the Text Client (mounted in the bottom terminal pane);
 /// the other views are exposed as properties and mounted into the top content pane by MainTrackerWindow.
 /// </summary>
 public partial class SlotTrackerControl : MarginContainer
 {
-    public ArchipelagoSession Session { get; private set; }
-    public string ProfileId { get; private set; }
+    /// <summary>The slot itself: its session and the session's events, the chat, hints and goal.</summary>
+    public AP_Atlas.Core.SlotModel Model { get; }
+    public ArchipelagoSession Session => Model.Session;
+    public string ProfileId => Model.ProfileId;
     public string SlotName => _slotName;
     public bool IsFullyLoaded { get; private set; } = false;
     public int TotalLocationsCount => Session?.Locations?.AllLocations?.Count ?? 0;
@@ -51,24 +54,10 @@ public partial class SlotTrackerControl : MarginContainer
     public bool? GoalInLogic { get; private set; }
 
     /// <summary>The server says this slot reached its goal (its goal message, or a status check after connecting).</summary>
-    public bool GoalCompleted { get; private set; }
-    private bool _goalStatusAsked;
+    public bool GoalCompleted => Model.GoalCompleted;
 
     /// <summary>Asks the server, once per connection, whether this slot already reached its goal.</summary>
-    public void EnsureGoalStatus()
-    {
-        if (_goalStatusAsked || Session == null) return;
-        _goalStatusAsked = true;
-        AP_Atlas.Core.Async.Then(ClientStatusAsync(PlayerSlot), status =>
-        {
-            if (status == ArchipelagoClientState.ClientGoal)
-                AP_Atlas.UI.Ui.Defer(this, () =>
-                {
-                    GoalCompleted = true;
-                    RaiseStateChanged();
-                });
-        }, "asking the server whether this slot reached its goal");
-    }
+    public void EnsureGoalStatus() => Model.EnsureGoalStatus();
 
     /// <summary>Logic is running and finished evaluating every item received (not starting or rebuilding).</summary>
     public bool LogicSettled => _engineRunning && _startingLogicDone && !_logicBusy && !_logicDirty && EngineProblem == null;
@@ -110,7 +99,6 @@ public partial class SlotTrackerControl : MarginContainer
     private readonly List<long> _chronologicalInventory = new List<long>();
     private readonly List<(string ItemName, List<long> UnlockedLocs)> _progressionLog = new();
     private readonly HashSet<long> _knownReachableLocations = new HashSet<long>();
-    private readonly HashSet<long> _knownHintedLocations = new HashSet<long>();
 
     // --- Logic Tracker view ---
     private Label _engineStatusLabel;
@@ -140,26 +128,17 @@ public partial class SlotTrackerControl : MarginContainer
     private Button _filterFiller;
     private Button _filterTrap;
 
-    public class ChatEntry
-    {
-        public LogMessage APMessage { get; set; }
-        public string SystemMessage { get; set; }
-        public bool IsSystemMessage => SystemMessage != null;
-    }
-
-    private List<ChatEntry> _chatHistory = new();
     private bool _nextChatAltBg = false;
 
-    public SlotTrackerControl(ArchipelagoSession session, string profileId, string slotName, AppSettings appSettings, Dictionary<string, object> slotData, Action<string> updateGlobalStatus, Action<string> appendDebugLog)
+    public SlotTrackerControl(AP_Atlas.Core.SlotModel model, AppSettings appSettings, Action<string> updateGlobalStatus, Action<string> appendDebugLog)
     {
-        ProfileId = profileId;
-        Session = session;
-        _slotName = slotName;
+        Model = model;
+        _slotName = model.SlotName;
         _appSettings = appSettings;
         _updateGlobalStatus = updateGlobalStatus;
-        _slotData = slotData;
+        _slotData = model.SlotData;
         _appendDebugLog = appendDebugLog;
-        Name = slotName;
+        Name = _slotName;
     }
 
     public override void _Ready()
@@ -258,16 +237,9 @@ public partial class SlotTrackerControl : MarginContainer
         _specialSignature = string.Join("|", AP_Atlas.Core.Annotations.SpecialItemNames(Game).OrderBy(n => n));
         _exclusionSignature = ExclusionSignature();
 
-        AppendSystemMessage($"[color=lime]Connected to {Session.ConnectionInfo.Game} as {_slotName}![/color]");
-
-        // Session hooks. All of these fire on network threads, so every handler marshals to the main thread.
-        Session.MessageLog.OnMessageReceived += OnAPMessageReceived;
-        Session.Socket.SocketClosed += OnSocketClosed;
-        Session.Items.ItemReceived += OnItemReceived;
-        Session.Locations.CheckedLocationsUpdated += OnCheckedLocationsUpdated;
         AP_Atlas.Core.ThemeColors.AccentChanged += OnAccentChanged;
-        // Streams this slot's hints (as finder or receiver) now and on every change.
-        Session.Hints.TrackHints(OnHintsUpdated, true);
+        // The model hears the session (items, checks, hints, messages) and reports here once per frame.
+        Model.Changed += OnModelChanged;
 
         AP_Atlas.UI.Ui.Defer(this, LoadMapPack);
         AP_Atlas.UI.Ui.Defer(this, InitializeLogicEngine);
@@ -288,45 +260,26 @@ public partial class SlotTrackerControl : MarginContainer
     }
 
     // =====================================================================
-    // Session event handlers (network thread -> main thread)
+    // The model's changes (main thread, at most once per frame)
     // =====================================================================
 
-    private void OnItemReceived(ReceivedItemsHelper helper)
+    /// <summary>Updates the views for everything that changed since the last frame, then tells the window once.</summary>
+    private void OnModelChanged(AP_Atlas.Core.SlotChange change)
     {
-        AP_Atlas.UI.Ui.Defer(this, () =>
+        if (!GodotObject.IsInstanceValid(this)) return;
+        bool items = change.HasFlag(AP_Atlas.Core.SlotChange.Items);
+        bool checks = change.HasFlag(AP_Atlas.Core.SlotChange.Checks);
+        if (items)
         {
             UpdateItemHistoryUI();
             FeedNewItemsToScripts();
             UpdateKeyItemsUI();
-            QueueLogicRefresh();
-            RaiseStateChanged();
-        });
-    }
-
-    private void OnCheckedLocationsUpdated(System.Collections.ObjectModel.ReadOnlyCollection<long> newCheckedLocations)
-    {
-        AP_Atlas.UI.Ui.Defer(this, () =>
-        {
-            FeedNewChecksToScripts();
-            QueueLogicRefresh();
-            RaiseStateChanged();
-        });
-    }
-
-    private void OnHintsUpdated(Archipelago.MultiClient.Net.Models.Hint[] hints)
-    {
-        AP_Atlas.UI.Ui.Defer(this, () =>
-        {
-            CurrentHints = hints ?? Array.Empty<Archipelago.MultiClient.Net.Models.Hint>();
-            int me = Session.ConnectionInfo.Slot;
-            foreach (var h in hints)
-            {
-                // Unfound hints for items in this world drive the "hinted" colors on the map.
-                if (h.FindingPlayer == me && !h.Found) _knownHintedLocations.Add(h.LocationId);
-            }
-            _hintTracker?.SetHints(hints);
-            RaiseStateChanged();
-        });
+        }
+        if (checks) FeedNewChecksToScripts();
+        if (items || checks) QueueLogicRefresh();
+        if (change.HasFlag(AP_Atlas.Core.SlotChange.Hints)) _hintTracker?.SetHints(Model.CurrentHints);
+        if (change.HasFlag(AP_Atlas.Core.SlotChange.Messages)) ShowNewChatLines();
+        RaiseStateChanged();
     }
 
     /// <summary>Whether this slot's logic engine considers the location reachable; null while the engine isn't running or logic is hidden.</summary>
@@ -345,14 +298,14 @@ public partial class SlotTrackerControl : MarginContainer
     public LogicEngineManager LogicEngine => _logicEngine;
     public bool EngineRunning => _engineRunning;
     public AP_Atlas.Core.PopTracker.LoadedPack Pack { get; private set; }
-    public Archipelago.MultiClient.Net.Models.Hint[] CurrentHints { get; private set; } = Array.Empty<Archipelago.MultiClient.Net.Models.Hint>();
-    public IReadOnlyList<ChatEntry> ChatHistory => _chatHistory;
+    public Archipelago.MultiClient.Net.Models.Hint[] CurrentHints => Model.CurrentHints;
+    public IReadOnlyList<AP_Atlas.Core.ChatEntry> ChatHistory => Model.Chat;
     public string AnnotationKey => AP_Atlas.Core.Annotations.SlotKey(ProfileId, _slotName);
     public string Game => Session?.ConnectionInfo?.Game ?? "";
     public int PlayerSlot => Session?.ConnectionInfo?.Slot ?? -1;
     public int Team => Session?.ConnectionInfo?.Team ?? -1;
     public bool IsLocationReachable(long id) => !LogicHidden && _knownReachableLocations.Contains(id);
-    public bool IsLocationHinted(long id) => _knownHintedLocations.Contains(id);
+    public bool IsLocationHinted(long id) => Model.HintedLocations.Contains(id);
     public bool IsExcludedLocation(long id) => IsExcluded(id);
     public bool IsGlitchedLocation(long id) => !LogicHidden && _logicEngine?.LastGlitchedLocations?.Contains(id) == true;
     public int ReachableCount => _knownReachableLocations.Count;
@@ -474,83 +427,16 @@ public partial class SlotTrackerControl : MarginContainer
         return task;
     }
 
-    private readonly Dictionary<long, System.Threading.Tasks.Task<ScoutedItemInfo>> _scoutCache = new();
-
     /// <summary>What a checked location held. Only for checked locations, so it never spoils anything.</summary>
-    public System.Threading.Tasks.Task<ScoutedItemInfo> ScoutCheckedLocationAsync(long locationId)
-    {
-        if (Session == null || !Session.Socket.Connected || !Session.Locations.AllLocationsChecked.Contains(locationId))
-            return System.Threading.Tasks.Task.FromResult<ScoutedItemInfo>(null);
-        if (!_scoutCache.TryGetValue(locationId, out var task))
-        {
-            task = ScoutOneAsync(locationId);
-            _scoutCache[locationId] = task;
-        }
-        return task;
-    }
-
-    private async System.Threading.Tasks.Task<ScoutedItemInfo> ScoutOneAsync(long locationId)
-    {
-        try
-        {
-            var result = await Session.Locations.ScoutLocationsAsync(HintCreationPolicy.None, locationId);
-            return result != null && result.TryGetValue(locationId, out var info) ? info : null;
-        }
-        catch (Exception ex)
-        {
-            AppendDebugLog($"Scout of location {locationId} failed: {ex.Message}");
-            _scoutCache.Remove(locationId);
-            return null;
-        }
-    }
-
-    private readonly Dictionary<string, System.Threading.Tasks.Task<Dictionary<string, string[]>>> _itemGroupCache = new();
-    private readonly Dictionary<string, System.Threading.Tasks.Task<Dictionary<string, string[]>>> _locationGroupCache = new();
+    public System.Threading.Tasks.Task<ScoutedItemInfo> ScoutCheckedLocationAsync(long locationId) => Model.ScoutCheckedLocationAsync(locationId);
 
     /// <summary>The server's item name groups for a game (fetched once per game per connection).</summary>
-    public System.Threading.Tasks.Task<Dictionary<string, string[]>> ItemGroupsAsync(string game) =>
-        CachedGroupsAsync(_itemGroupCache, game, g => Session.DataStorage.GetItemNameGroupsAsync(g));
+    public System.Threading.Tasks.Task<Dictionary<string, string[]>> ItemGroupsAsync(string game) => Model.ItemGroupsAsync(game);
 
-    public System.Threading.Tasks.Task<Dictionary<string, string[]>> LocationGroupsAsync(string game) =>
-        CachedGroupsAsync(_locationGroupCache, game, g => Session.DataStorage.GetLocationNameGroupsAsync(g));
-
-    private System.Threading.Tasks.Task<Dictionary<string, string[]>> CachedGroupsAsync(
-        Dictionary<string, System.Threading.Tasks.Task<Dictionary<string, string[]>>> cache, string game,
-        Func<string, System.Threading.Tasks.Task<Dictionary<string, string[]>>> fetch)
-    {
-        if (string.IsNullOrEmpty(game) || Session == null || !Session.Socket.Connected)
-            return System.Threading.Tasks.Task.FromResult<Dictionary<string, string[]>>(null);
-        if (!cache.TryGetValue(game, out var task))
-        {
-            task = SafeFetchAsync(() => fetch(game));
-            cache[game] = task;
-        }
-        return task;
-    }
-
-    private static async System.Threading.Tasks.Task<T> SafeFetchAsync<T>(Func<System.Threading.Tasks.Task<T>> fetch) where T : class
-    {
-        try { return await fetch(); }
-        catch { return null; }
-    }
-
-    private readonly Dictionary<int, (DateTime At, System.Threading.Tasks.Task<ArchipelagoClientState?> Task)> _statusCache = new();
+    public System.Threading.Tasks.Task<Dictionary<string, string[]>> LocationGroupsAsync(string game) => Model.LocationGroupsAsync(game);
 
     /// <summary>A player's client status (connected / playing / goal), refreshed at most every 30 seconds.</summary>
-    public System.Threading.Tasks.Task<ArchipelagoClientState?> ClientStatusAsync(int player)
-    {
-        if (Session == null || !Session.Socket.Connected) return System.Threading.Tasks.Task.FromResult<ArchipelagoClientState?>(null);
-        if (_statusCache.TryGetValue(player, out var cached) && (DateTime.Now - cached.At).TotalSeconds < 30) return cached.Task;
-        var task = FetchStatusAsync(player);
-        _statusCache[player] = (DateTime.Now, task);
-        return task;
-    }
-
-    private async System.Threading.Tasks.Task<ArchipelagoClientState?> FetchStatusAsync(int player)
-    {
-        try { return await Session.DataStorage.GetClientStatusAsync(player, Team); }
-        catch { return null; }
-    }
+    public System.Threading.Tasks.Task<ArchipelagoClientState?> ClientStatusAsync(int player) => Model.ClientStatusAsync(player);
 
     // --- Markers (flags, notes, special) ---
 
@@ -695,14 +581,10 @@ public partial class SlotTrackerControl : MarginContainer
         AP_Atlas.Core.Annotations.Changed -= OnAnnotationsChanged;
         AP_Atlas.Core.RaceRules.Changed -= OnRaceRulesChanged;
         AP_Atlas.Core.PopTracker.PackFixes.Changed -= OnPackFixesChanged;
-        if (Session != null)
-        {
-            Session.Socket.PacketReceived -= OnDataPackagePacket;
-            Session.MessageLog.OnMessageReceived -= OnAPMessageReceived;
-            Session.Socket.SocketClosed -= OnSocketClosed;
-            Session.Items.ItemReceived -= OnItemReceived;
-            Session.Locations.CheckedLocationsUpdated -= OnCheckedLocationsUpdated;
-        }
+        Session.Socket.PacketReceived -= OnDataPackagePacket;
+        Model.Changed -= OnModelChanged;
+        // Leaving the tree still ends the slot (until its views can move on their own): the model stops listening.
+        Model.Dispose();
         _logicEngine?.StopEngine();
         _hintTracker?.Detach();
 

@@ -148,7 +148,7 @@ namespace AP_Atlas.UI
 
         private HashSet<long> _reachableLocs = new HashSet<long>();
         private HashSet<long> _checkedLocs = new HashSet<long>();
-        private HashSet<long> _hintedLocs = new HashSet<long>();
+        private IReadOnlySet<long> _hintedLocs = new HashSet<long>();
 
         private VBoxContainer _mapListContainer;
         private OptionButton _sortDropdown;
@@ -350,7 +350,7 @@ namespace AP_Atlas.UI
             _session = session;
             RefreshMapListCounters();
         }
-        public void UpdateLogicColors(System.Collections.Generic.HashSet<long> reachableLocs, System.Collections.ObjectModel.ReadOnlyCollection<long> checkedLocs, System.Collections.Generic.HashSet<long> hintedLocs)
+        public void UpdateLogicColors(System.Collections.Generic.HashSet<long> reachableLocs, System.Collections.ObjectModel.ReadOnlyCollection<long> checkedLocs, System.Collections.Generic.IReadOnlySet<long> hintedLocs)
         {
             if (reachableLocs != null) _reachableLocs = reachableLocs;
             if (checkedLocs != null) _checkedLocs = new System.Collections.Generic.HashSet<long>(checkedLocs);

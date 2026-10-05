@@ -53,6 +53,7 @@ Development toward the first public beta, 0.1.0.
   - A UI test (`ATLAS_UITEST`): Atlas builds its window and drives it the way a user would, against the fake server: connecting a slot, a dropped connection coming back, disconnecting. `run_selftest.ps1` runs it after the self-test, and CI runs that.
   - Views are ready to be moved (for docking and pop-outs): the Cheese Tracker and Sphere Tracker tabs and Properties follow their events whenever they're in the window, including after a move, and never while out of it. Before, a move would have stopped them updating, because they subscribed only once. The UI test moves each one and counts the events' listeners.
   - The guard rails check that every script has its Godot `.uid` file committed.
+  - The UI test also sends a burst of 40 items and 40 chat lines: each reaches the slot once, as one update of the window.
   - One list of Atlas's tools (`Tool`), in tab order, each with its id, title and scope (the whole app, a multiworld or one slot). The tabs, the "Show in…" links in Properties and the visual check use it instead of tab numbers, and the UI test checks every tool's tab shows the right view.
 - **Settings → Privacy & permissions:** everything you've allowed Atlas to do without asking, and every apworld source you trust, each with a way to take it back.
 
@@ -67,6 +68,7 @@ Development toward the first public beta, 0.1.0.
   - Closing Atlas closes every connection properly.
   - Its tests run against a fake Archipelago server: time limits, refusals, servers that are down, drops, the last try, and closing.
 - The automatic reconnect setting now says "about 20 minutes", which is how long its tries take. It said 30.
+- **Fewer redraws:** a slot now updates its views once per frame, however much arrives. A burst of items or messages (a release, a big catch-up after reconnecting) is one update, not one per item.
 - **Saving:** dragging a splitter or moving a map no longer writes your settings to disk on every mouse movement. They're saved once you stop, and when Atlas closes.
 - **Renderer:** Atlas now draws with Godot's Compatibility renderer (OpenGL 3.3, with a Direct3D fallback built into Godot), which runs on more graphics cards. On the test PC it starts about a quarter faster and uses about a third less video memory, and every screen looks the same.
 - **Atlas asks before going outside its folder:**

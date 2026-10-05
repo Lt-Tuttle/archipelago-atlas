@@ -30,6 +30,8 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
     private readonly CancellationTokenSource _stop = new();
     private readonly List<Task> _serving = new();
     private readonly List<TcpClient> _connected = new();
+    // Open websockets, each with a lock: a socket can't send two messages at once (a reply and a broadcast).
+    private readonly List<(WebSocket Socket, SemaphoreSlim Sending)> _sockets = new();
     private readonly List<JObject> _received = new();
     private readonly List<(TimeSpan At, string What)> _timeline = new();
     private readonly Stopwatch _clock = Stopwatch.StartNew();
@@ -136,9 +138,11 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
                 var stream = client.GetStream();
                 if (!await HandshakeAsync(stream, RefuseConnections, _stop.Token)) return;
                 using var socket = WebSocket.CreateFromStream(stream, new WebSocketCreationOptions { IsServer = true, KeepAliveInterval = TimeSpan.Zero });
+                using var sending = new SemaphoreSlim(1, 1);
+                lock (_sockets) _sockets.Add((socket, sending));
                 var buffer = new byte[64 * 1024];
                 using var message = new MemoryStream();
-                if (!Silent) await SendAsync(socket, new JArray(RoomInfo()));
+                if (!Silent) await SendAsync(socket, sending, new JArray(RoomInfo()));
                 while (socket.State == WebSocketState.Open)
                 {
                     var result = await socket.ReceiveAsync(buffer, _stop.Token);
@@ -156,7 +160,7 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
                     {
                         lock (_received) _received.Add(packet);
                         var reply = await AnswerAsync(packet);
-                        if (reply != null) await SendAsync(socket, reply);
+                        if (reply != null) await SendAsync(socket, sending, reply);
                     }
                 }
             }
@@ -164,6 +168,7 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
             finally
             {
                 lock (_connected) _connected.Remove(client);
+                lock (_sockets) _sockets.RemoveAll(entry => entry.Socket.State != WebSocketState.Open);
                 Interlocked.Increment(ref _ended);
             }
         }
@@ -197,8 +202,43 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
         return true;
     }
 
-    private static Task SendAsync(WebSocket socket, JArray packets) =>
-        socket.SendAsync(Encoding.UTF8.GetBytes(packets.ToString(Newtonsoft.Json.Formatting.None)), WebSocketMessageType.Text, true, CancellationToken.None);
+    private static async Task SendAsync(WebSocket socket, SemaphoreSlim sending, JArray packets)
+    {
+        await sending.WaitAsync();
+        try { await socket.SendAsync(Encoding.UTF8.GetBytes(packets.ToString(Newtonsoft.Json.Formatting.None)), WebSocketMessageType.Text, true, CancellationToken.None); }
+        finally { sending.Release(); }
+    }
+
+    /// <summary>Sends packets, as one message, to every connected client (as a server does when items arrive or someone talks).</summary>
+    public async Task BroadcastAsync(params JObject[] packets)
+    {
+        List<(WebSocket Socket, SemaphoreSlim Sending)> sockets;
+        lock (_sockets) sockets = _sockets.Where(entry => entry.Socket.State == WebSocketState.Open).ToList();
+        foreach (var (socket, sending) in sockets)
+        {
+            try { await SendAsync(socket, sending, new JArray(packets)); }
+            catch (Exception ex) when (ex is WebSocketException or ObjectDisposedException or IOException) { } // that client just left
+        }
+    }
+
+    /// <summary>A ReceivedItems packet: the slot gets these items (item ids, from location 0, sent by player 0, as filler).</summary>
+    public static JObject ReceivedItems(int index, IEnumerable<long> items) => new()
+    {
+        ["cmd"] = "ReceivedItems",
+        ["index"] = index,
+        ["items"] = new JArray(items.Select(item => new JObject { ["item"] = item, ["location"] = 0, ["player"] = 0, ["flags"] = 0, ["class"] = "NetworkItem" }))
+    };
+
+    /// <summary>A chat line from slot 1, as the server relays it.</summary>
+    public JObject Chat(string message) => new()
+    {
+        ["cmd"] = "PrintJSON",
+        ["type"] = "Chat",
+        ["team"] = 0,
+        ["slot"] = 1,
+        ["message"] = message,
+        ["data"] = new JArray(new JObject { ["text"] = $"{Slots[0]}: {message}" })
+    };
 
     private void Note(string what)
     {

@@ -94,25 +94,29 @@ public partial class SlotTrackerControl : MarginContainer
         inputHbox.AddChild(sendBtn);
     }
 
-    private void OnSocketClosed(string reason)
+    /// <summary>The newest text client line shown (the model numbers its lines).</summary>
+    private long _shownSequence;
+
+    /// <summary>Shows the model's lines this view hasn't shown yet; announces new special items (not early ones).</summary>
+    private void ShowNewChatLines()
     {
-        AP_Atlas.UI.Ui.Defer(this, () =>
+        foreach (var entry in Model.Chat)
         {
-            AppendSystemMessage($"[color=red]Connection lost: {reason}[/color]");
-            RaiseStateChanged();
-        });
+            if (entry.Sequence <= _shownSequence) continue;
+            _shownSequence = entry.Sequence;
+            if (entry.IsSystemMessage)
+            {
+                if (_filterSystem == null || _filterSystem.ButtonPressed) ShowSystemLine(entry.SystemMessage);
+                continue;
+            }
+            if (!ShouldFilterMessage(entry.APMessage)) AppendMessageToChat(entry.APMessage);
+            if (!entry.Early) AnnounceSpecialItem(entry.APMessage);
+        }
     }
 
-    private void AppendSystemMessage(string bbcodeText, bool isReplay = false)
+    /// <summary>Renders one of Atlas's own lines (BBCode).</summary>
+    private void ShowSystemLine(string bbcodeText)
     {
-        if (!isReplay)
-        {
-            _chatHistory.Add(new ChatEntry { SystemMessage = bbcodeText });
-            if (_chatHistory.Count > 1000) _chatHistory.RemoveAt(0);
-        }
-
-        if (_filterSystem != null && !_filterSystem.ButtonPressed && !isReplay) return;
-
         var panel = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         var style = new StyleBoxFlat
         {
@@ -149,59 +153,17 @@ public partial class SlotTrackerControl : MarginContainer
         ScrollChatToBottom();
     }
 
-    public void InjectEarlyMessages(IEnumerable<LogMessage> msgs)
-    {
-        // Only a real reconnect has server messages from before; Atlas's own "Connected to…" line doesn't count.
-        if (_chatHistory.Any(e => !e.IsSystemMessage)) { AppendSystemMessage("[color=gray]--- Reconnected ---[/color]"); }
-
-        foreach (var msg in msgs)
-        {
-            _chatHistory.Add(new ChatEntry { APMessage = msg });
-            if (_chatHistory.Count > 1000) _chatHistory.RemoveAt(0);
-            AP_Atlas.UI.Ui.Defer(this, () => ProcessSingleMessage(msg));
-        }
-    }
-
-    private void OnAPMessageReceived(LogMessage msg)
-    {
-        AP_Atlas.UI.Ui.Defer(this, () =>
-        {
-            _chatHistory.Add(new ChatEntry { APMessage = msg });
-            if (_chatHistory.Count > 1000) _chatHistory.RemoveAt(0);
-            if (msg is GoalLogMessage goal && goal.IsActivePlayer && !GoalCompleted)
-            {
-                GoalCompleted = true;
-                RaiseStateChanged();
-            }
-            ProcessSingleMessage(msg);
-            AnnounceSpecialItem(msg);
-        });
-    }
-
-    private void ProcessSingleMessage(LogMessage msg)
-    {
-        if (msg is HintItemSendLogMessage hintMsg)
-        {
-            var parts = hintMsg.Parts.OfType<Archipelago.MultiClient.Net.MessageLog.Parts.LocationMessagePart>();
-            foreach (var part in parts)
-            {
-                _knownHintedLocations.Add(part.LocationId);
-            }
-            RaiseStateChanged();
-        }
-        if (ShouldFilterMessage(msg)) return;
-        AppendMessageToChat(msg);
-    }
-
+    /// <summary>Draws every line again (a filter changed).</summary>
     private void RedrawChat()
     {
         foreach (Node child in _chatVBox.GetChildren()) child.QueueFree();
         _nextChatAltBg = false;
-        foreach (var entry in _chatHistory)
+        foreach (var entry in Model.Chat)
         {
+            _shownSequence = entry.Sequence;
             if (entry.IsSystemMessage)
             {
-                if (_filterSystem == null || _filterSystem.ButtonPressed) AppendSystemMessage(entry.SystemMessage, true);
+                if (_filterSystem == null || _filterSystem.ButtonPressed) ShowSystemLine(entry.SystemMessage);
             }
             else
             {
