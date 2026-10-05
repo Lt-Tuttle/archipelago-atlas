@@ -58,7 +58,7 @@ namespace AP_Atlas.UI
                                "  2. Under API key, press the ↻ button to generate a key, then copy it.\n" +
                                "  3. Paste it here and press Save key.", Colors.LightGray));
             var open = new Button { Text = "Open Cheese Tracker's settings ↗", SizeFlagsHorizontal = SizeFlags.ShrinkBegin };
-            open.Pressed += () => OS.ShellOpen(_cheese.Site + "/settings");
+            open.Pressed += () => AP_Atlas.Core.ExternalLinks.OpenWeb(_cheese.Site + "/settings");
             page.AddChild(open);
             var keyRow = new HBoxContainer();
             keyRow.AddThemeConstantOverride("separation", 6);

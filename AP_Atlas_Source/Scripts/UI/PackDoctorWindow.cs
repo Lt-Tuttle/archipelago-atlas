@@ -336,21 +336,48 @@ namespace AP_Atlas.UI
             dialog.PopupCentered(new Vector2I(900, 600));
         }
 
-        /// <summary>Extracts an image from the pack to a temp file and opens it, so the user can re-save it.</summary>
-        private void OpenPackImage(string relativePath)
+        private static readonly string[] ImageExtensions = { ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tga", ".svg" };
+
+        /// <summary>
+        /// Saves a copy of an image from the pack where the user chooses, so they can re-save it as PNG in an image editor.
+        /// Only image files, and Atlas never opens the copy itself (a pack could name anything an "image").
+        /// </summary>
+        private void SavePackImage(string relativePath)
         {
-            try
+            string ext = Path.GetExtension(relativePath ?? "").ToLowerInvariant();
+            if (!ImageExtensions.Contains(ext))
             {
-                using var zip = System.IO.Compression.ZipFile.OpenRead(_original.SourcePath);
-                var entry = zip.Entries.FirstOrDefault(e => e.FullName.EndsWith(relativePath.TrimStart('/'), StringComparison.OrdinalIgnoreCase));
-                if (entry == null) { SetStatus("That image isn't in the pack."); return; }
-                string tmp = Path.Combine(Path.GetTempPath(), "atlas_" + Path.GetFileName(entry.FullName));
-                using (var src = entry.Open())
-                using (var dst = File.Create(tmp)) src.CopyTo(dst);
-                OS.ShellOpen(tmp);
-                SetStatus($"Opened {Path.GetFileName(tmp)}. Re-save it as PNG, then use \"Replace background…\".");
+                SetStatus("The pack's map background isn't an image file, so Atlas won't save it.");
+                return;
             }
-            catch (Exception ex) { SetStatus("Couldn't open the image: " + ex.Message); }
+            var dialog = new FileDialog
+            {
+                FileMode = FileDialog.FileModeEnum.SaveFile,
+                Access = FileDialog.AccessEnum.Filesystem,
+                Filters = new[] { $"*{ext} ; Image" },
+                UseNativeDialog = true,
+                Title = "Save a copy of the pack's image",
+                CurrentFile = Path.GetFileName(relativePath)
+            };
+            dialog.FileSelected += path =>
+            {
+                dialog.QueueFree();
+                try
+                {
+                    if (!ImageExtensions.Contains(Path.GetExtension(path).ToLowerInvariant())) path += ext;
+                    using var zip = System.IO.Compression.ZipFile.OpenRead(_original.SourcePath);
+                    var entry = zip.Entries.FirstOrDefault(e => e.FullName.EndsWith(relativePath.TrimStart('/'), StringComparison.OrdinalIgnoreCase));
+                    if (entry == null) { SetStatus("That image isn't in the pack."); return; }
+                    if (entry.Length > 64L * 1024 * 1024) { SetStatus("That image is larger than 64 MB, so Atlas won't copy it."); return; }
+                    using (var src = entry.Open())
+                    using (var dst = File.Create(path)) src.CopyTo(dst);
+                    SetStatus($"Saved {Path.GetFileName(path)}. Re-save it as PNG in an image editor, then use \"Replace background…\".");
+                }
+                catch (Exception ex) { SetStatus("Couldn't save the image: " + ex.Message); }
+            };
+            dialog.Canceled += () => dialog.QueueFree();
+            AddChild(dialog);
+            dialog.PopupCentered(new Vector2I(900, 600));
         }
 
         // =====================================================================
@@ -558,7 +585,7 @@ namespace AP_Atlas.UI
             {
                 actions.AddChild(Btn("Replace background…", "Use an image file for this map", () => ReplaceMapImage(what)));
                 if (_original.Maps.TryGetValue(what, out var map) && !string.IsNullOrEmpty(map.MapBg))
-                    actions.AddChild(Btn("Open original image", "Open the pack's image so you can re-save it as PNG", () => OpenPackImage(map.MapBg)));
+                    actions.AddChild(Btn("Save original image…", "Save a copy of the pack's image where you choose, to re-save it as PNG", () => SavePackImage(map.MapBg)));
             }
             if (f.Actions.HasFlag(FindingActions.ResetFixes) && f.RelatedSubjects.Count > 0)
             {
@@ -614,7 +641,7 @@ namespace AP_Atlas.UI
             box.AddChild(Note("Your fixes are stored beside the pack (never inside it) and applied when it loads. " +
                               "If the pack's author later changes the same thing, their version wins and your fix is set aside below, ready to restore."));
             var top = new HBoxContainer();
-            top.AddChild(Btn("Open fixes folder", "Show where fixes are saved", () => { Directory.CreateDirectory(PackFixes.Dir); OS.ShellOpen(PackFixes.Dir); }));
+            top.AddChild(Btn("Open fixes folder", "Show where fixes are saved", () => { Directory.CreateDirectory(PackFixes.Dir); ExternalLinks.OpenFolder(PackFixes.Dir); }));
             top.AddChild(Btn("Reset everything…", "Remove all your fixes for this pack", () => Confirm("Remove every fix for this pack?", () => PackFixes.Reset(_key)), f.Count > 0 || f.Ignored.Count > 0));
             box.AddChild(top);
 
@@ -694,7 +721,7 @@ namespace AP_Atlas.UI
             var row = new HBoxContainer();
             row.AddChild(Btn("Copy", "Copy the report", () => { DisplayServer.ClipboardSet(edit.Text); SetStatus("Report copied."); }));
             string issues = IssuesUrl(_original.Manifest?.VersionsUrl);
-            if (issues != null) row.AddChild(Btn("Open the pack's issue page", issues, () => OS.ShellOpen(issues)));
+            if (issues != null) row.AddChild(Btn("Open the pack's issue page", issues, () => ExternalLinks.OpenWeb(issues)));
             box.AddChild(row);
             return box;
         }

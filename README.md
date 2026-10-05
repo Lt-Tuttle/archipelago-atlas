@@ -37,4 +37,10 @@ Atlas's own code is released under the [MIT License](LICENSE). It builds on the 
 - [Hydra Text Client](https://github.com/SWCreeperKing/HydraTextClient_Rewrite).
 - The Google Sans and Google Sans Code fonts (SIL Open Font License).
 
-Full credits and third-party licenses will be listed in `CREDITS.md` and `THIRD_PARTY_NOTICES.md`.
+Full credits, with every author, official link and license, are in [CREDITS.md](CREDITS.md). The license texts of everything built into Atlas are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## For contributors
+- [CONTRIBUTING.md](CONTRIBUTING.md): building, testing, and the rules every change follows.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how Atlas is put together.
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+- [SECURITY.md](SECURITY.md): how to report security problems privately.

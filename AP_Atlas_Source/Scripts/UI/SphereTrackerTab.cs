@@ -446,7 +446,7 @@ namespace AP_Atlas.UI
             _subtitle.Text = string.Join(" · ", parts);
             foreach (Node child in _headerButtons.GetChildren()) child.QueueFree();
             _headerButtons.AddChild(HeaderButton("Refresh", "Read the host's room again now (at most once a minute)", () => RefreshShown(tryNow: false), !room.Busy));
-            _headerButtons.AddChild(HeaderButton("Open ↗", "Open the host's room in your browser", () => OS.ShellOpen(room.Url)));
+            _headerButtons.AddChild(HeaderButton("Open ↗", "Open the host's room in your browser", () => AP_Atlas.Core.ExternalLinks.OpenWeb(room.Url)));
             _headerButtons.AddChild(HeaderButton("Settings", "The host's room for each multiworld", () => ShowView(SettingsView)));
             MainTrackerWindow.SetFontSizeRecursive(_headerButtons, _settings.ContentFontSize);
             _problemRow.Visible = room.Problem != null;
@@ -602,7 +602,7 @@ namespace AP_Atlas.UI
                 if (linked)
                 {
                     row.AddChild(SmallButton("Unlink", "Stop using this room", () => { _spheres.UnlinkSphereSite(p.Id); _settingsSignature = null; _sidebarSignature = null; }));
-                    row.AddChild(SmallButton("Open ↗", "Open the host's room in your browser", () => OS.ShellOpen(p.SphereTrackerUrl)));
+                    row.AddChild(SmallButton("Open ↗", "Open the host's room in your browser", () => AP_Atlas.Core.ExternalLinks.OpenWeb(p.SphereTrackerUrl)));
                 }
                 _settingsBox.AddChild(row);
             }

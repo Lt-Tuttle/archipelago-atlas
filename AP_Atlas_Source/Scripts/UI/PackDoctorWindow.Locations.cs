@@ -226,7 +226,7 @@ namespace AP_Atlas.UI
                     (id, name) => { _placeLocation = (id, name); RenderCurrentTab(); })));
             bar.AddChild(Btn("Replace background…", "Use an image file for this map", () => ReplaceMapImage(_editorMapId)));
             if (!string.IsNullOrEmpty(_original.Maps.TryGetValue(_editorMapId, out var om) ? om.MapBg : null))
-                bar.AddChild(Btn("Open original image", "Open the pack's image (e.g. to re-save it as PNG)", () => OpenPackImage(om.MapBg)));
+                bar.AddChild(Btn("Save original image…", "Save a copy of the pack's image where you choose (e.g. to re-save it as PNG)", () => SavePackImage(om.MapBg)));
             var mapFix = PackFixes.Get(_key).MapImages.FirstOrDefault(m => m.MapId == _editorMapId);
             if (mapFix != null) bar.AddChild(Btn("Reset background", "Use the pack's image again", () => PackFixes.Reset(_key, "maps", mapFix.Subject)));
             root.AddChild(bar);

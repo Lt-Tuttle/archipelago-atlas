@@ -110,7 +110,12 @@ namespace AP_Atlas.Core.EngineSetup
         private const string PythonUrl = "https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip";
         private const string PythonSha256 = "4acbed6dd1c744b0376e3b1cf57ce906f9dc9e95e68824584c8099a63025a3c3";
         private const string PythonPth = "python312._pth";
-        private const string GetPipUrl = "https://bootstrap.pypa.io/get-pip.py";
+
+        // pip, pinned: one wheel from PyPI, checked against its published SHA-256. A wheel is the installed files, so it's
+        // unpacked into the runtime and then reinstalls itself from the same file: nothing unpinned is downloaded or run.
+        public const string PipVersion = "26.2.1";
+        private const string PipWheelUrl = "https://files.pythonhosted.org/packages/f3/6e/1736e5b4ae2b778ef2f81c47d797de9f891d4d8acb047a24ca37a60294dd/pip-26.2.1-py3-none-any.whl";
+        private const string PipWheelSha256 = "71138adf1f4ca900cdb7d289c21b7494329f2332b6d85f0e1c42108c0384ed3e";
 
         public const string ArchipelagoVersion = "0.6.7";
         private const string ArchipelagoUrl = "https://github.com/ArchipelagoMW/Archipelago/archive/refs/tags/0.6.7.zip";
@@ -187,14 +192,22 @@ namespace AP_Atlas.Core.EngineSetup
             if (!install.CanLaunch)
                 return install.Mode == EngineMode.Portable ? "The Atlas Engine isn't set up yet." : "Archipelago wasn't found at the chosen folder.";
             if (!install.HasTracker) return "The Universal Tracker isn't installed in the engine.";
+            if (install.Mode == EngineMode.Existing && !MayWriteTo(install) && install.WorldsDir != null && !BridgeIsCurrent(install))
+                return "Atlas needs your OK before it adds its bridge to your Archipelago install (Atlas Engine → Allow…).";
             return null;
         }
+
+        /// <summary>The Archipelago folder the user chose for Atlas (empty when none). Atlas never searches for one by itself.</summary>
+        public static string ConfiguredInstallPath => _settings?.ArchipelagoInstallationPath ?? "";
 
         // =====================================================================
         // Existing Archipelago installs
         // =====================================================================
 
-        /// <summary>Archipelago installs on this PC: the usual folders plus wherever its installer registered itself.</summary>
+        /// <summary>
+        /// Archipelago installs on this PC: the usual folders plus wherever its installer registered itself. This searches
+        /// the PC, so it's only called after the user agreed (<see cref="Permissions.FindArchipelago"/>); never at startup.
+        /// </summary>
         public static List<string> FindArchipelagoInstalls()
         {
             var candidates = new List<string>();
@@ -250,6 +263,117 @@ namespace AP_Atlas.Core.EngineSetup
         }
 
         // =====================================================================
+        // Changes to the user's own Archipelago install: only with their OK, and recorded so they can be undone
+        // =====================================================================
+
+        public class InstallChange
+        {
+            public string Root { get; set; }
+            /// <summary>"added": a file Atlas put there. "moved": a file of theirs Atlas moved aside (Path → MovedTo).</summary>
+            public string Kind { get; set; }
+            public string Path { get; set; }
+            public string MovedTo { get; set; }
+            public DateTime When { get; set; } = DateTime.Now;
+        }
+
+        private static string ChangesPath => Path.Combine(EngineDir, "install_changes.json");
+        private static List<InstallChange> _changes;
+        private static List<InstallChange> Changes => _changes ??= SafeFile.ReadJson(ChangesPath, () => new List<InstallChange>());
+
+        /// <summary>Whether Atlas may write into an engine's folders: its own portable engine always; the user's install only with their OK.</summary>
+        public static bool MayWriteTo(EngineInstall install) =>
+            install.Mode == EngineMode.Portable || Permissions.IsAllowed(_settings, Permissions.WriteArchipelago, install.Root);
+
+        private static void RequireWriteConsent(EngineInstall install)
+        {
+            if (!MayWriteTo(install))
+                throw new InvalidOperationException("Atlas needs your OK before it adds files to your Archipelago install (Atlas Engine → My Archipelago install → Allow…).");
+        }
+
+        private static void RecordChange(EngineInstall install, string kind, string path, string movedTo = null)
+        {
+            if (install.Mode != EngineMode.Existing) return;
+            lock (Changes)
+            {
+                if (kind == "added" && Changes.Any(c => c.Kind == "added" && SamePath(c.Path, path))) return;
+                Changes.Add(new InstallChange { Root = install.Root, Kind = kind, Path = path, MovedTo = movedTo });
+                try { SafeFile.WriteJson(ChangesPath, Changes); }
+                catch (Exception ex) { Logger.LogWarning("Couldn't record a change to your Archipelago install: " + ex.Message); }
+            }
+        }
+
+        /// <summary>What Atlas changed in an install (files it added, files it moved aside), for "Remove Atlas's files".</summary>
+        public static List<InstallChange> ChangesIn(string root)
+        {
+            lock (Changes) return Changes.Where(c => SamePath(c.Root, root)).ToList();
+        }
+
+        /// <summary>Atlas's bridge in an install's world folders (also from before changes were recorded).</summary>
+        public static List<string> AtlasFilesIn(EngineInstall install) =>
+            install.WorldFolders().Select(d => Path.Combine(d, "UltimateBridge.apworld")).Where(File.Exists).ToList();
+
+        /// <summary>
+        /// Undoes Atlas's changes to the user's install: removes the files it added (and its bridge), and puts back files
+        /// it moved aside. Engines using the install are stopped first. Returns how many changes were undone.
+        /// </summary>
+        public static Task<int> RemoveAtlasFilesAsync(EngineInstall install, Action<string> log, CancellationToken ct) =>
+            Exclusive(async () =>
+            {
+                await StopEnginesUsing(install.Root, log, ct);
+                int undone = 0;
+                foreach (var c in ChangesIn(install.Root).AsEnumerable().Reverse())
+                {
+                    try
+                    {
+                        if (c.Kind == "added" && File.Exists(c.Path))
+                        {
+                            File.Delete(c.Path);
+                            undone++;
+                            log($"Removed {c.Path}");
+                        }
+                        else if (c.Kind == "moved" && File.Exists(c.MovedTo) && !File.Exists(c.Path))
+                        {
+                            File.Move(c.MovedTo, c.Path);
+                            undone++;
+                            log($"Put back {c.Path}");
+                        }
+                    }
+                    catch (Exception ex) { log($"Couldn't undo the change to {c.Path}: {ex.Message}"); }
+                }
+                foreach (var bridge in AtlasFilesIn(install))
+                {
+                    try
+                    {
+                        File.Delete(bridge);
+                        undone++;
+                        log($"Removed {bridge}");
+                    }
+                    catch (Exception ex) { log($"Couldn't remove {bridge}: {ex.Message}"); }
+                }
+                string loose = install.WorldsDir != null ? Path.Combine(install.WorldsDir, "UltimateBridge") : null;
+                if (loose != null && Directory.Exists(loose))
+                {
+                    try { Directory.Delete(loose, true); undone++; }
+                    catch (Exception ex) { log($"Couldn't remove {loose}: {ex.Message}"); }
+                }
+                lock (Changes)
+                {
+                    Changes.RemoveAll(c => SamePath(c.Root, install.Root));
+                    try { SafeFile.WriteJson(ChangesPath, Changes); }
+                    catch (Exception ex) { Logger.LogWarning("Couldn't update the record of install changes: " + ex.Message); }
+                }
+                log(undone == 0 ? "Atlas had no files in that install." : $"Undid {undone} change(s): your Archipelago install no longer has anything from Atlas.");
+                NotifyChanged();
+                return undone;
+            }, ct);
+
+        private static bool SamePath(string a, string b)
+        {
+            try { return string.Equals(Path.GetFullPath(a ?? "").TrimEnd('\\', '/'), Path.GetFullPath(b ?? "").TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase); }
+            catch { return false; }
+        }
+
+        // =====================================================================
         // Status
         // =====================================================================
 
@@ -296,7 +420,7 @@ namespace AP_Atlas.Core.EngineSetup
                     Id = EngineStepId.Runtime,
                     Title = "Python runtime",
                     State = python ? EngineStepState.Ok : EngineStepState.Missing,
-                    Detail = python ? $"Python {State.Python ?? PythonVersion} (portable, {Size(PythonDir)})" : $"Python {PythonVersion} for Windows, about 11 MB from python.org",
+                    Detail = python ? $"Python {State.Python ?? PythonVersion} (portable, {Size(PythonDir)})" : $"Python {PythonVersion} for Windows (about 11 MB from python.org) and pip {PipVersion} (from PyPI), both hash-checked",
                     Action = python ? null : "Download"
                 });
                 bool ap = File.Exists(Path.Combine(ArchipelagoDir, "Utils.py"));
@@ -318,7 +442,7 @@ namespace AP_Atlas.Core.EngineSetup
                     State = packages && worldPackages.Count == 0 ? EngineStepState.Ok : (State.PackagesSignature != null && ap) || worldPackages.Count > 0 ? EngineStepState.Warning : EngineStepState.Missing,
                     Detail = packages && worldPackages.Count > 0 ? $"{worldPackages.Count} world(s) need their own packages: {string.Join(", ", worldPackages.Select(w => w.World))}"
                         : packages ? "Archipelago's packages (no desktop GUI)"
-                        : State.PackagesSignature != null && ap ? "Archipelago's requirements changed; update the packages" : "Archipelago's packages from PyPI, about 20 MB",
+                        : State.PackagesSignature != null && ap ? "Archipelago's requirements changed; update the packages" : "Archipelago's packages from PyPI, about 20 MB, each checked against Atlas's list of hashes",
                     Action = packages && worldPackages.Count == 0 ? null : ap && python ? "Install" : null
                 });
             }
@@ -703,12 +827,15 @@ namespace AP_Atlas.Core.EngineSetup
             File.WriteAllText(Path.Combine(staging, PythonPth), "python312.zip\n.\nLib\\site-packages\nimport site\n");
             EngineDownloader.TryDelete(zip);
 
-            log("Installing pip…");
-            string getPip = Path.Combine(DownloadsDir, "get-pip.py");
-            await EngineDownloader.DownloadAsync(GetPipUrl, getPip, null, null, ct);
+            log($"Downloading pip {PipVersion} from PyPI…");
+            string pipWheel = Path.Combine(DownloadsDir, Path.GetFileName(new Uri(PipWheelUrl).AbsolutePath));
+            await EngineDownloader.DownloadAsync(PipWheelUrl, pipWheel, PipWheelSha256, null, ct);
+            log("Verified. Installing pip…");
             string stagedExe = Path.Combine(staging, "python.exe");
-            int code = await RunAsync(stagedExe, new[] { getPip, "--no-warn-script-location", "--disable-pip-version-check" }, staging, log, ct, TimeSpan.FromMinutes(5));
-            EngineDownloader.TryDelete(getPip);
+            ZipFile.ExtractToDirectory(pipWheel, Path.Combine(staging, "Lib", "site-packages"), overwriteFiles: true);
+            int code = await RunAsync(stagedExe, new[] { "-m", "pip", "install", "--no-index", "--no-deps", "--force-reinstall", "--no-warn-script-location", "--disable-pip-version-check", pipWheel },
+                staging, log, ct, TimeSpan.FromMinutes(5));
+            EngineDownloader.TryDelete(pipWheel);
             if (code != 0) throw new Exception("pip couldn't be installed (see the log above).");
             if (await RunAsync(stagedExe, new[] { "-c", "import pip, ssl, sqlite3; print('ok')" }, staging, log, ct, TimeSpan.FromMinutes(1)) != 0)
                 throw new Exception("The new Python runtime doesn't work on this PC (see the log above).");
@@ -802,10 +929,15 @@ namespace AP_Atlas.Core.EngineSetup
                 RememberStateBeforeUpdate();
                 CopyDir(PythonDir, previous);
             }
-            log("Installing Archipelago's Python packages from PyPI…");
-            string req = Path.Combine(EngineDir, "requirements-atlas.txt");
-            File.WriteAllText(req, FilteredRequirements());
-            int code = await RunAsync(PythonExe, new[] { "-m", "pip", "install", "-r", req, "--prefer-binary", "--disable-pip-version-check", "--no-warn-script-location", "--retries", "5", "--timeout", "60" },
+            // Exactly the packages (and files) in Atlas's lock, built for this Archipelago version: pip refuses anything else.
+            string lockText = ReadResource("AtlasEngine.engine_packages.lock");
+            string locked = Regex.Match(lockText, @"requirements-signature:\s*([0-9A-Fa-f]+)").Groups[1].Value;
+            if (!string.Equals(locked, PackagesSignature(), StringComparison.OrdinalIgnoreCase))
+                throw new Exception($"Atlas's package list was made for different requirements than this Archipelago's, so nothing was installed. Update Atlas, or report this (expected {locked}, found {PackagesSignature()}).");
+            log("Installing Archipelago's Python packages from PyPI (each file checked against Atlas's list of SHA-256 hashes)…");
+            string req = Path.Combine(EngineDir, "requirements-atlas.lock.txt");
+            File.WriteAllText(req, lockText);
+            int code = await RunAsync(PythonExe, new[] { "-m", "pip", "install", "--require-hashes", "--no-deps", "--only-binary=:all:", "-r", req, "--disable-pip-version-check", "--no-warn-script-location", "--retries", "5", "--timeout", "60" },
                 PythonDir, log, ct, TimeSpan.FromMinutes(15));
             if (code != 0) throw new Exception("Some packages couldn't be installed (see the log above).");
             State.PackagesSignature = PackagesSignature();
@@ -855,15 +987,31 @@ namespace AP_Atlas.Core.EngineSetup
             Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(text ?? "")))[..16];
 
         /// <summary>
-        /// Makes a requirements file installable without git: "name @ git+https://github.com/owner/repo@ref" becomes
-        /// GitHub's source archive for that exact ref. Other git sources are dropped (reported) when git isn't present.
+        /// Makes a world's own requirements safe to hand to pip: only package requirements stay. pip options (an extra
+        /// package index, "-r"/"-e", install options) and local files are dropped and reported, so a world can't point pip
+        /// anywhere else. "name @ git+https://github.com/owner/repo@ref" becomes GitHub's source archive for that exact
+        /// ref; other git sources are dropped (reported) because git isn't present.
         /// </summary>
-        private static string WithoutGit(string requirements, Action<string> log)
+        internal static string SafeWorldRequirements(string requirements, Action<string> log)
         {
             var output = new List<string>();
-            foreach (var line in requirements.Replace("\r\n", "\n").Split('\n'))
+            foreach (var raw in (requirements ?? "").Replace("\r\n", "\n").Split('\n'))
             {
-                var m = Regex.Match(line, @"^\s*([A-Za-z0-9_.\-]+)\s*@\s*git\+https://github\.com/([^@\s#]+?)(?:\.git)?@([^\s#]+)");
+                string line = raw.Split('#')[0].Trim();
+                if (line.Length == 0) continue;
+                if (line.StartsWith("-"))
+                {
+                    log("  Skipped (a pip option, not a package): " + line);
+                    continue;
+                }
+                // Options after a requirement ("pkg==1.0 --hash=…", "--config-settings=…") are dropped; the requirement stays.
+                var options = Regex.Match(line, @"\s+--?[A-Za-z]");
+                if (options.Success)
+                {
+                    log("  Dropped pip options from: " + line);
+                    line = line.Substring(0, options.Index).Trim();
+                }
+                var m = Regex.Match(line, @"^([A-Za-z0-9_.\-]+)\s*@\s*git\+https://github\.com/([^@\s#]+?)(?:\.git)?@([^\s#]+)");
                 if (m.Success)
                 {
                     output.Add($"{m.Groups[1].Value} @ https://github.com/{m.Groups[2].Value}/archive/{m.Groups[3].Value}.zip");
@@ -871,7 +1019,15 @@ namespace AP_Atlas.Core.EngineSetup
                 }
                 if (line.Contains("git+"))
                 {
-                    log("  Skipped (needs git): " + line.Trim());
+                    log("  Skipped (needs git): " + line);
+                    continue;
+                }
+                // Only a package name (with extras, a version and markers), or a direct https link to a package.
+                bool direct = Regex.IsMatch(line, @"^[A-Za-z0-9_.\-]+(\[[^\]]*\])?\s*@\s*https://", RegexOptions.IgnoreCase);
+                bool named = Regex.IsMatch(line, @"^[A-Za-z0-9_.\-]+(\[[^\]]*\])?\s*([<>=!~;].*)?$");
+                if (!direct && (!named || line.Contains("://") || line.Contains(" --")))
+                {
+                    log("  Skipped (not a plain package requirement): " + line);
                     continue;
                 }
                 output.Add(line);
@@ -902,7 +1058,7 @@ namespace AP_Atlas.Core.EngineSetup
             {
                 log($"Installing the packages {world} declares…");
                 string file = Path.Combine(EngineDir, $"requirements-{world}.txt");
-                File.WriteAllText(file, WithoutGit(requirements, log));
+                File.WriteAllText(file, SafeWorldRequirements(requirements, log));
                 int code = await RunAsync(PythonExe, new[] { "-m", "pip", "install", "-r", file, "--prefer-binary", "--disable-pip-version-check", "--no-warn-script-location", "--retries", "5", "--timeout", "60" },
                     PythonDir, log, ct, TimeSpan.FromMinutes(10));
                 State.WorldPackagesTried[world] = Signature(requirements);
@@ -926,6 +1082,7 @@ namespace AP_Atlas.Core.EngineSetup
         private static async Task InstallTrackerCore(EngineInstall install, Action<string> log, Action<float> progress, CancellationToken ct)
         {
             string worlds = install.WorldsDir ?? throw new Exception("The engine has no worlds folder.");
+            RequireWriteConsent(install);
             log($"Downloading Universal Tracker {TrackerVersion} from GitHub…");
             string temp = Path.Combine(DownloadsDir, "tracker.apworld");
             await EngineDownloader.DownloadAsync(TrackerUrl, temp, TrackerSha256, Report(progress), ct);
@@ -943,6 +1100,8 @@ namespace AP_Atlas.Core.EngineSetup
                 }
                 Directory.CreateDirectory(worlds);
                 File.Move(temp, Path.Combine(worlds, "tracker.apworld"), true);
+                foreach (var (from, to) in moved) RecordChange(install, "moved", from, to);
+                RecordChange(install, "added", Path.Combine(worlds, "tracker.apworld"));
             }
             catch
             {
@@ -982,6 +1141,11 @@ namespace AP_Atlas.Core.EngineSetup
         {
             string worlds = install.WorldsDir;
             if (worlds == null) return;
+            if (!MayWriteTo(install))
+            {
+                if (!BridgeIsCurrent(install)) log?.Invoke("Atlas needs your OK before it adds its bridge to your Archipelago install (Atlas Engine → Allow…).");
+                return;
+            }
             try
             {
                 Directory.CreateDirectory(worlds);
@@ -1001,6 +1165,7 @@ namespace AP_Atlas.Core.EngineSetup
                     writer.Write(script);
                 }
                 File.Move(temp, apworld, true);
+                RecordChange(install, "added", apworld);
                 log?.Invoke("Atlas bridge installed.");
             }
             catch (Exception ex)
@@ -1138,6 +1303,7 @@ namespace AP_Atlas.Core.EngineSetup
         private static string InstallApworld(EngineInstall install, string sourceFile, Action<string> log)
         {
             string worlds = install.WorldsDir ?? throw new Exception("The engine has no worlds folder.");
+            RequireWriteConsent(install);
             Directory.CreateDirectory(worlds);
             string target = Path.Combine(worlds, Path.GetFileName(sourceFile));
             if (string.Equals(Path.GetFullPath(target), Path.GetFullPath(sourceFile), StringComparison.OrdinalIgnoreCase)) return target;
@@ -1150,16 +1316,21 @@ namespace AP_Atlas.Core.EngineSetup
                     if (string.Equals(Path.GetFileName(other), Path.GetFileName(target), StringComparison.OrdinalIgnoreCase)) continue;
                     if (!string.Equals(GameOfApworld(other), game, StringComparison.OrdinalIgnoreCase)) continue;
                     Directory.CreateDirectory(BackupsDir);
-                    File.Move(other, Path.Combine(BackupsDir, $"{DateTime.Now:yyyyMMdd-HHmmss}_{Path.GetFileName(other)}"));
+                    string aside = Path.Combine(BackupsDir, $"{DateTime.Now:yyyyMMdd-HHmmss}_{Path.GetFileName(other)}");
+                    File.Move(other, aside);
+                    RecordChange(install, "moved", other, aside);
                     log?.Invoke($"Moved the other {game} apworld ({Path.GetFileName(other)}) to the engine's backups folder.");
                 }
             }
             if (File.Exists(target))
             {
                 Directory.CreateDirectory(BackupsDir);
-                File.Move(target, Path.Combine(BackupsDir, $"{DateTime.Now:yyyyMMdd-HHmmss}_{Path.GetFileName(target)}"));
+                string aside = Path.Combine(BackupsDir, $"{DateTime.Now:yyyyMMdd-HHmmss}_{Path.GetFileName(target)}");
+                File.Move(target, aside);
+                RecordChange(install, "moved", target, aside);
             }
             File.Copy(sourceFile, target);
+            RecordChange(install, "added", target);
             log?.Invoke($"Installed {Path.GetFileName(sourceFile)} ({GameOfApworld(target) ?? "unknown game"}).");
             NotifyChanged();
             return target;

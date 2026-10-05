@@ -1,23 +1,21 @@
 using System;
 using System.IO;
-using System.Net.Http;
 using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace AP_Atlas.Core.EngineSetup
 {
-    /// <summary>Downloads for the engine setup: progress, hash check, a few retries with backoff, atomic finish.</summary>
+    /// <summary>
+    /// Downloads for the engine setup, through <see cref="PoliteHttp"/> like every other request: progress, a hash check,
+    /// size and time limits, and an atomic finish. A failure is reported plainly instead of being retried at once; a site
+    /// that failed is left alone for a while, and the message says when Atlas tries again.
+    /// </summary>
     public static class EngineDownloader
     {
-        private static readonly HttpClient Http = CreateClient();
-
-        private static HttpClient CreateClient()
-        {
-            var client = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
-            client.DefaultRequestHeaders.UserAgent.ParseAdd(AP_Atlas.Core.AtlasVersion.UserAgent);
-            return client;
-        }
+        /// <summary>Largest file the engine setup downloads (Archipelago's source archive is the biggest, well under this).</summary>
+        private const long MaxDownloadBytes = 512L * 1024 * 1024;
+        private static readonly TimeSpan DownloadTimeout = TimeSpan.FromMinutes(30);
 
         /// <summary>
         /// Downloads url to destPath. When expectedSha256 is given the file must match it or nothing is kept.
@@ -25,61 +23,22 @@ namespace AP_Atlas.Core.EngineSetup
         /// </summary>
         public static async Task<string> DownloadAsync(string url, string destPath, string expectedSha256, Action<long, long> progress, CancellationToken ct)
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(destPath));
-            string part = destPath + ".part";
-            Exception last = null;
-            for (int attempt = 0; attempt < 3; attempt++)
-            {
-                if (attempt > 0) await Task.Delay(TimeSpan.FromSeconds(attempt == 1 ? 2 : 6), ct);
-                try
-                {
-                    using var response = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
-                    if ((int)response.StatusCode == 404) throw new FileNotFoundException($"Not found: {url}");
-                    response.EnsureSuccessStatusCode();
-                    long total = response.Content.Headers.ContentLength ?? -1;
-                    using (var source = await response.Content.ReadAsStreamAsync(ct))
-                    using (var target = new FileStream(part, FileMode.Create, FileAccess.Write, FileShare.None))
-                    {
-                        var buffer = new byte[81920];
-                        long done = 0;
-                        int read;
-                        var lastReport = DateTime.MinValue;
-                        while ((read = await source.ReadAsync(buffer, ct)) > 0)
-                        {
-                            await target.WriteAsync(buffer.AsMemory(0, read), ct);
-                            done += read;
-                            if ((DateTime.Now - lastReport).TotalMilliseconds > 150)
-                            {
-                                lastReport = DateTime.Now;
-                                progress?.Invoke(done, total);
-                            }
-                        }
-                        progress?.Invoke(done, total);
-                    }
-                    string hash = Sha256Of(part);
-                    if (!string.IsNullOrEmpty(expectedSha256) && !hash.Equals(expectedSha256, StringComparison.OrdinalIgnoreCase))
-                    {
-                        TryDelete(part);
-                        // Not a network blip: retrying won't change what the server sends.
-                        throw new InvalidDataException($"The download from {new Uri(url).Host} isn't the expected file (SHA-256 {hash[..12]}…, expected {expectedSha256[..12]}…). Nothing was installed.");
-                    }
-                    File.Move(part, destPath, true);
-                    return hash;
-                }
-                catch (Exception ex) when (ex is HttpRequestException || ex is IOException && ex is not FileNotFoundException || ex is TaskCanceledException && !ct.IsCancellationRequested)
-                {
-                    last = ex;
-                    TryDelete(part);
-                }
-            }
-            throw new IOException($"Couldn't download {url}: {last?.Message}", last);
+            string host = Uri.TryCreate(url, UriKind.Absolute, out var u) ? u.Host : url;
+            var r = await PoliteHttp.DownloadAsync(url, host, destPath, expectedSha256, MaxDownloadBytes, DownloadTimeout, progress, ct).ConfigureAwait(false);
+            if (r.Ok) return r.Text;
+            if (r.Outcome == WebOutcome.NotFound) throw new FileNotFoundException($"Not found: {url}");
+            // A file that isn't the expected one isn't a network blip: say so plainly.
+            if (r.Outcome == WebOutcome.BadResponse && r.Message != null && r.Message.Contains("isn't the expected file")) throw new InvalidDataException(r.Message);
+            throw new IOException($"Couldn't download {url}: {r.Message}");
         }
 
+        /// <summary>Reads a small text file (up to 8 MB) from an https URL.</summary>
         public static async Task<string> GetStringAsync(string url, CancellationToken ct)
         {
-            using var response = await Http.GetAsync(url, ct);
-            response.EnsureSuccessStatusCode();
-            return await response.Content.ReadAsStringAsync(ct);
+            string host = Uri.TryCreate(url, UriKind.Absolute, out var u) ? u.Host : url;
+            var r = await PoliteHttp.GetAsync(url, host, accept: "application/json, text/plain, */*", maxBytes: 8 * 1024 * 1024, ct: ct).ConfigureAwait(false);
+            if (!r.Ok) throw new IOException(r.Message ?? $"Couldn't read {url}.");
+            return r.Text;
         }
 
         public static string Sha256Of(string path)

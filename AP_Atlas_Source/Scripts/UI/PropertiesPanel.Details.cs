@@ -1341,8 +1341,8 @@ namespace AP_Atlas.UI
             SetHeader("Map pack", title, Colored(m?.GameName ?? "", Colors.LightGray), users.Count > 0 ? Good : Colors.Gray, users.Count > 0 ? "In use" : "Installed");
 
             BeginActions();
-            if (File.Exists(path)) AddAction("Open folder", "Show the pack file in Explorer", () => OS.ShellOpen(Path.GetDirectoryName(path)));
-            if (!string.IsNullOrEmpty(m?.VersionsUrl)) AddAction("Versions page", m.VersionsUrl, () => OS.ShellOpen(m.VersionsUrl));
+            if (File.Exists(path)) AddAction("Open folder", "Show the pack file in Explorer", () => AP_Atlas.Core.ExternalLinks.OpenFolder(Path.GetDirectoryName(path)));
+            if (!string.IsNullOrEmpty(m?.VersionsUrl)) AddAction("Versions page", m.VersionsUrl, () => AP_Atlas.Core.ExternalLinks.OpenWeb(m.VersionsUrl));
             AddAction("Map Packs", "Open the Map Packs tab", () => _host.ShowGlobalTab(1));
             if (File.Exists(path)) AddAction("Pack Doctor…", "Check this pack against the game and fix problems locally", () => _host.OpenPackDoctor(path));
             EndActions();
@@ -1352,7 +1352,7 @@ namespace AP_Atlas.UI
             PlainRow("Game", m?.GameName);
             PlainRow("Version", m?.GetActualVersion());
             PlainRow("Author", m?.Author);
-            if (!string.IsNullOrEmpty(m?.VersionsUrl)) Row("Versions URL", Link(m.VersionsUrl, () => OS.ShellOpen(m.VersionsUrl)));
+            if (!string.IsNullOrEmpty(m?.VersionsUrl)) Row("Versions URL", Link(m.VersionsUrl, () => AP_Atlas.Core.ExternalLinks.OpenWeb(m.VersionsUrl)));
             if (pack != null)
             {
                 PlainRow("Maps", pack.Maps.Count.ToString());

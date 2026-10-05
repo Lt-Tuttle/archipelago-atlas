@@ -117,7 +117,7 @@ namespace AP_Atlas.UI
             else if (view.Ownership == CheeseOwnership.You)
                 SectionButton(buttons, "Disclaim…", "Release your claim on this slot",
                     () => CheeseDialogs.ConfirmDisclaim(this, slotName, () => RunCheese(cheese.DisclaimAsync(profileId, slotName), $"Released {slotName}")), canEdit);
-            SectionButton(buttons, "Open ↗", "Open the tracker on Cheese Tracker", () => OS.ShellOpen(room.Link));
+            SectionButton(buttons, "Open ↗", "Open the tracker on Cheese Tracker", () => AP_Atlas.Core.ExternalLinks.OpenWeb(room.Link));
             SectionButton(buttons, "In the tab", "Show the whole room in the Cheese Tracker tab", () => _host.ShowCheeseTab(profileId));
             SectionButton(buttons, "Refresh", "Read the tracker again now", () => RunCheese(cheese.RefreshAsync(profileId)), !room.Busy);
 
@@ -180,7 +180,7 @@ namespace AP_Atlas.UI
                 return;
             }
             var t = room.Tracker;
-            Row("Tracker", Link(string.IsNullOrWhiteSpace(t?.Title) ? room.Link : t.Title, () => OS.ShellOpen(room.Link)));
+            Row("Tracker", Link(string.IsNullOrWhiteSpace(t?.Title) ? room.Link : t.Title, () => AP_Atlas.Core.ExternalLinks.OpenWeb(room.Link)));
             if (!string.IsNullOrEmpty(t?.OwnerName)) PlainRow("Organizer", t.OwnerName);
             Row("Read", Colored(room.Busy ? "Reading…" : CtTime.Ago(room.FetchedUtc), Muted),
                 "Atlas reads the tracker every 10 minutes while one of its slots is connected, and again right before each change");
@@ -235,7 +235,7 @@ namespace AP_Atlas.UI
             if (room != null)
             {
                 SectionButton(buttons, "Refresh", "Read the tracker again now", () => RunCheese(_host.Cheese.RefreshAsync(profile.Id)), !room.Busy);
-                SectionButton(buttons, "Open ↗", "Open the tracker on Cheese Tracker", () => OS.ShellOpen(room.Link));
+                SectionButton(buttons, "Open ↗", "Open the tracker on Cheese Tracker", () => AP_Atlas.Core.ExternalLinks.OpenWeb(room.Link));
                 SectionButton(buttons, "In the tab", "Show this tracker in the Cheese Tracker tab, with filters and sorting", () => _host.ShowCheeseTab(profile.Id));
             }
             SectionButton(buttons, "Change link…", "Link this multiworld to a different Cheese Tracker page", () => ShowCheeseLinkDialog(profile));

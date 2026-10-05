@@ -173,7 +173,7 @@ namespace AP_Atlas.UI
             folder.Pressed += () =>
             {
                 string dir = AtlasEngine.Current.Mode == EngineMode.Portable ? AtlasEngine.EngineDir : AtlasEngine.Current.Root;
-                if (Directory.Exists(dir)) OS.ShellOpen(dir);
+                AP_Atlas.Core.ExternalLinks.OpenFolder(dir);
             };
             footer.AddChild(folder);
             var close = new Button { Text = "Close" };
@@ -255,30 +255,113 @@ namespace AP_Atlas.UI
                 Text = "My Archipelago install" + (string.IsNullOrEmpty(path) ? "" : ": " + path) + (install.Mode == EngineMode.Existing ? "  ← in use" : ""),
                 ButtonGroup = group,
                 ButtonPressed = install.Mode == EngineMode.Existing,
-                TooltipText = "Use the Archipelago you installed. Atlas adds its bridge apworld to its custom_worlds folder.",
+                TooltipText = "Use the Archipelago you installed. With your OK, Atlas adds its bridge apworld to its worlds folder (and can remove it again).",
                 Disabled = _busy
             };
             Readable(existing);
             existing.Toggled += on =>
             {
                 if (!on || AtlasEngine.Current.Mode == EngineMode.Existing) return;
-                if (EngineInstall.Existing(_settings.ArchipelagoInstallationPath).CanLaunch) AtlasEngine.SetMode(EngineMode.Existing);
+                if (EngineInstall.Existing(_settings.ArchipelagoInstallationPath).CanLaunch) SwitchToExisting(_settings.ArchipelagoInstallationPath);
                 else PickInstallFolder();
             };
             existingRow.AddChild(existing);
             var change = new Button { Text = "Choose folder…", Disabled = _busy };
             change.Pressed += PickInstallFolder;
             existingRow.AddChild(change);
-            var find = new Button { Text = "Find", TooltipText = "Look for Archipelago in the usual places and where its installer registered it", Disabled = _busy };
-            find.Pressed += () =>
-            {
-                var found = AtlasEngine.FindArchipelagoInstalls();
-                if (found.Count == 0) { Log("No Archipelago install found. Use Choose folder…, or the portable engine."); return; }
-                Log("Found Archipelago at: " + string.Join(", ", found));
-                AtlasEngine.UseExistingInstall(found[0]);
-            };
+            var find = new Button { Text = "Find…", TooltipText = "Look for Archipelago in the usual places on this PC (Atlas asks first)", Disabled = _busy };
+            find.Pressed += FindInstall;
             existingRow.AddChild(find);
             _modeBox.AddChild(existingRow);
+
+            // What Atlas may do in that install, and a way to undo it.
+            if (!string.IsNullOrEmpty(path) && EngineInstall.Existing(path).CanLaunch)
+            {
+                var target = EngineInstall.Existing(path);
+                bool allowed = AtlasEngine.MayWriteTo(target);
+                bool hasFiles = AtlasEngine.ChangesIn(path).Count > 0 || AtlasEngine.AtlasFilesIn(target).Count > 0;
+                var consentRow = new HBoxContainer();
+                consentRow.AddThemeConstantOverride("separation", 8);
+                consentRow.AddChild(Note(allowed
+                    ? "Atlas may add and update its files in this install."
+                    : "Atlas adds nothing to this install without your OK.", 28));
+                if (!allowed)
+                {
+                    var allow = new Button { Text = "Allow…", TooltipText = "See exactly what Atlas adds to this install, then decide", Disabled = _busy };
+                    allow.Pressed += () => SwitchToExisting(path);
+                    consentRow.AddChild(allow);
+                }
+                if (hasFiles)
+                {
+                    var remove = new Button { Text = "Remove Atlas's files", TooltipText = "Undo everything Atlas added to or moved in this install", Disabled = _busy };
+                    remove.Pressed += () => RemoveAtlasFiles(target);
+                    consentRow.AddChild(remove);
+                }
+                _modeBox.AddChild(consentRow);
+            }
+        }
+
+        /// <summary>Switches to the user's install, after they've agreed to what Atlas adds there (asked once, or each time).</summary>
+        private void SwitchToExisting(string path)
+        {
+            var target = EngineInstall.Existing(path);
+            if (!target.CanLaunch)
+            {
+                Log($"{path} doesn't contain ArchipelagoLauncher.exe; choose the folder Archipelago is installed in.");
+                Render();
+                return;
+            }
+            string worlds = target.WorldsDir ?? Path.Combine(path, "custom_worlds");
+            PermissionDialog.Ask(this, _settings, AP_Atlas.Core.Permissions.WriteArchipelago, path,
+                $"Install: {path}\nAtlas adds: {Path.Combine(worlds, "UltimateBridge.apworld")}", allowed =>
+                {
+                    if (!IsInstanceValid(this)) return;
+                    if (!allowed)
+                    {
+                        Log("Kept the current engine: Atlas doesn't add files to that install without your OK.");
+                        Render();
+                        return;
+                    }
+                    Log("Using the Archipelago install at " + path);
+                    AtlasEngine.UseExistingInstall(path);
+                });
+        }
+
+        /// <summary>Looks for Archipelago in the usual places, after the user agrees (it searches this PC).</summary>
+        private void FindInstall()
+        {
+            PermissionDialog.Ask(this, _settings, AP_Atlas.Core.Permissions.FindArchipelago, null, null, allowed =>
+            {
+                if (!allowed || !IsInstanceValid(this)) return;
+                var found = AtlasEngine.FindArchipelagoInstalls();
+                if (found.Count == 0)
+                {
+                    Log("No Archipelago install found. Use Choose folder…, or the portable engine.");
+                    return;
+                }
+                Log("Found Archipelago at: " + string.Join(", ", found));
+                SwitchToExisting(found[0]);
+            });
+        }
+
+        private void RemoveAtlasFiles(EngineInstall install)
+        {
+            var changes = AtlasEngine.ChangesIn(install.Root);
+            var files = changes.Where(c => c.Kind == "added").Select(c => c.Path).Concat(AtlasEngine.AtlasFilesIn(install)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            var moved = changes.Where(c => c.Kind == "moved").ToList();
+            string text = "Undo everything Atlas changed in " + install.Root + "?\n\n" +
+                          (files.Count > 0 ? "Removes:\n" + string.Join("\n", files.Select(f => "  •  " + f)) + "\n" : "") +
+                          (moved.Count > 0 ? "Puts back:\n" + string.Join("\n", moved.Select(m => "  •  " + m.Path)) + "\n" : "") +
+                          "\nLogic can't run on this install until you allow Atlas again (or use the portable engine).";
+            Confirm(text, () =>
+            {
+                string root = install.Root;
+                RunOperation("Removing Atlas's files", async (log, _, ct) =>
+                {
+                    await AtlasEngine.RemoveAtlasFilesAsync(install, log, ct);
+                    Callable.From(() => AP_Atlas.Core.Permissions.SetAlways(_settings, AP_Atlas.Core.Permissions.WriteArchipelago, root, false)).CallDeferred();
+                });
+            });
         }
 
         private void RenderSteps(EngineInstall install)
@@ -550,29 +633,22 @@ namespace AP_Atlas.UI
         {
             var source = ApworldSources.Find(game);
             if (source == null) return;
+            if (seedChecksum != null)
+            {
+                FindSeedVersion(game, seedChecksum, slot);
+                return;
+            }
             var newest = source.Versions.LastOrDefault();
             string where = source.Repo != null ? "github.com/" + source.Repo : newest != null ? ApworldSources.SourceKey(newest.Url) : "?";
             void Go()
             {
                 var install = AtlasEngine.Current;
-                RunOperation(seedChecksum != null ? $"Finding {game}'s version for the seed" : $"Downloading {game}", async (log, _, ct) =>
+                RunOperation($"Downloading {game}", async (log, _, ct) =>
                 {
-                    string file;
-                    if (seedChecksum != null)
-                    {
-                        var repos = await ApworldSources.ReposForAsync(_settings, install, game, log, ct);
-                        var (version, match) = await ApworldSources.FindMatchingAsync(install, game, seedChecksum, repos.Select(r => r.Repo), log, ct);
-                        if (match == null) return;
-                        log($"Installing {game} {version.Version}…");
-                        file = match;
-                    }
-                    else
-                    {
-                        var versions = await ApworldSources.VersionsAsync(source, ct);
-                        var latest = versions.FirstOrDefault() ?? throw new Exception("No versions are listed.");
-                        file = await ApworldSources.DownloadAsync(source, latest, log, ct);
-                        log($"Installing {game} {latest.Version}…");
-                    }
+                    var versions = await ApworldSources.VersionsAsync(source, ct);
+                    var latest = versions.FirstOrDefault() ?? throw new Exception("No versions are listed.");
+                    string file = await ApworldSources.DownloadAsync(source, latest, log, ct);
+                    log($"Installing {game} {latest.Version}…");
                     bool ok = await AtlasEngine.InstallApworldAsync(install, file, log, ct);
                     if (ok && slot != null) Callable.From(() => { if (IsInstanceValid(slot)) slot.RetryLogicEngine(); }).CallDeferred();
                 });
@@ -596,6 +672,68 @@ namespace AP_Atlas.UI
                 if (trust.ButtonPressed && newest != null) ApworldSources.Approve(_settings, newest.Url);
                 dialog.QueueFree();
                 Go();
+            };
+            dialog.Canceled += () => dialog.QueueFree();
+            AddChild(dialog);
+            dialog.PopupCentered();
+        }
+
+        /// <summary>
+        /// Finds where a game's apworld versions are published (reads GitHub release lists; nothing is downloaded), then names
+        /// every source, with why it's included, and asks before trying them for the seed's version.
+        /// </summary>
+        private void FindSeedVersion(string game, string seedChecksum, SlotTrackerControl slot)
+        {
+            var install = AtlasEngine.Current;
+            RunOperation($"Finding where {game} versions are published", async (log, _, ct) =>
+            {
+                var repos = await ApworldSources.ReposForAsync(_settings, install, game, log, ct);
+                Callable.From(() => { if (IsInstanceValid(this)) ConfirmSeedSearch(game, seedChecksum, slot, repos); }).CallDeferred();
+            });
+        }
+
+        private void ConfirmSeedSearch(string game, string seedChecksum, SlotTrackerControl slot, List<ApworldSources.ApworldRepo> repos)
+        {
+            if (repos.Count == 0)
+            {
+                Log($"Atlas doesn't know where {game} versions are published. Add the project's GitHub link, or choose the apworld file the seed's host used.");
+                return;
+            }
+            void Go(List<ApworldSources.ApworldRepo> chosen)
+            {
+                var install = AtlasEngine.Current;
+                RunOperation($"Finding {game}'s version for the seed", async (log, _, ct) =>
+                {
+                    var (version, match) = await ApworldSources.FindMatchingAsync(install, game, seedChecksum, chosen.Select(r => r.Repo), log, ct);
+                    if (match == null) return;
+                    log($"Installing {game} {version.Version}…");
+                    bool ok = await AtlasEngine.InstallApworldAsync(install, match, log, ct);
+                    if (ok && slot != null) Callable.From(() => { if (IsInstanceValid(slot)) slot.RetryLogicEngine(); }).CallDeferred();
+                });
+            }
+            if (repos.All(r => r.Approved))
+            {
+                Go(repos);
+                return;
+            }
+            var dialog = new ConfirmationDialog
+            {
+                Title = "Find the seed's apworld version",
+                DialogText = $"Look for the {game} apworld this seed was made with?\n\nAtlas will try versions published in:\n" +
+                             string.Join("\n", repos.Select(r => $"  •  {r.Display}: {r.Reason}{(r.Approved ? " (trusted)" : "")}")) +
+                             "\n\nEach file is checked against its published SHA-256 when one exists. Apworlds are programs that run inside the engine: " +
+                             "only continue if you trust every source listed.",
+                DialogAutowrap = true,
+                MinSize = new Vector2I(600, 0),
+                OkButtonText = "Look and install"
+            };
+            var trust = new CheckBox { Text = "Trust these from now on", ButtonPressed = false };
+            dialog.AddChild(trust);
+            dialog.Confirmed += () =>
+            {
+                if (trust.ButtonPressed) foreach (var r in repos.Where(r => !r.Approved)) ApworldSources.ApproveRepo(_settings, r.Repo);
+                dialog.QueueFree();
+                Go(repos);
             };
             dialog.Canceled += () => dialog.QueueFree();
             AddChild(dialog);
@@ -667,8 +805,7 @@ namespace AP_Atlas.UI
                     Render();
                     return;
                 }
-                Log("Using the Archipelago install at " + dir);
-                AtlasEngine.UseExistingInstall(dir);
+                SwitchToExisting(dir);
             };
             dialog.Canceled += () => { dialog.QueueFree(); Render(); };
             GetTree().Root.AddChild(dialog);
@@ -718,13 +855,18 @@ namespace AP_Atlas.UI
             });
         }
 
-        /// <summary>Finds apworlds in the user's Archipelago installs, by game, for "Copy from my install".</summary>
+        /// <summary>
+        /// Finds apworlds in the Archipelago install the user chose, by game, for "Copy from my install". Only that folder:
+        /// Atlas never searches the PC for installs by itself.
+        /// </summary>
         private void ScanLocalApworlds()
         {
+            string chosen = _settings.ArchipelagoInstallationPath;
             Task.Run(() =>
             {
                 var map = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-                foreach (var root in AtlasEngine.FindArchipelagoInstalls())
+                var roots = !string.IsNullOrWhiteSpace(chosen) && File.Exists(Path.Combine(chosen, "ArchipelagoLauncher.exe")) ? new[] { chosen } : Array.Empty<string>();
+                foreach (var root in roots)
                 {
                     foreach (var dir in new[] { Path.Combine(root, "custom_worlds"), Path.Combine(root, "lib", "worlds") })
                     {

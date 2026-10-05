@@ -176,17 +176,28 @@ namespace AP_Atlas.Core.EngineSetup
             public bool Prerelease;
         }
 
-        private static readonly Dictionary<string, List<ReleaseAsset>> _repoAssets = new(StringComparer.OrdinalIgnoreCase);
+        /// <summary>A repository's published .apworld files; <see cref="Problem"/> is set when GitHub couldn't be asked (nothing is known then).</summary>
+        private sealed class RepoListing
+        {
+            public readonly List<ReleaseAsset> Assets = new();
+            public string Problem;
+        }
 
-        /// <summary>Every .apworld a repository published in its GitHub releases (one API call per repository per session).</summary>
-        private static async Task<List<ReleaseAsset>> RepoAssetsAsync(string repo, CancellationToken ct)
+        private static readonly Dictionary<string, RepoListing> _repoAssets = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Every .apworld a repository published in its GitHub releases (one API call per repository per session). Only a real
+        /// answer is kept: a rate limit or a network failure is reported, never remembered as "no apworlds".
+        /// </summary>
+        private static async Task<RepoListing> RepoAssetsAsync(string repo, CancellationToken ct)
         {
             lock (_repoAssets) if (_repoAssets.TryGetValue(repo, out var known)) return known;
-            var assets = new List<ReleaseAsset>();
-            try
+            var listing = new RepoListing();
+            var assets = listing.Assets;
+            var answer = await GitHubApi.GetAsync($"/repos/{repo}/releases?per_page=50", ct);
+            if (answer.Ok && answer.Json is JArray releases)
             {
-                string json = await EngineDownloader.GetStringAsync($"https://api.github.com/repos/{repo}/releases?per_page=50", ct);
-                foreach (var release in JArray.Parse(json))
+                foreach (var release in releases)
                 {
                     if (release["draft"]?.Value<bool>() == true) continue;
                     foreach (var asset in release["assets"] as JArray ?? new JArray())
@@ -205,16 +216,21 @@ namespace AP_Atlas.Core.EngineSetup
                     }
                 }
             }
-            catch (OperationCanceledException) { throw; }
-            catch (Exception ex) { Logger.LogWarning($"Couldn't list {repo}'s releases: {ex.Message}"); }
-            lock (_repoAssets) _repoAssets[repo] = assets;
-            return assets;
+            else if (!answer.NotFound)
+            {
+                listing.Problem = answer.Ok ? "GitHub's answer wasn't a list of releases." : answer.Message;
+                Logger.LogWarning($"Couldn't list {repo}'s releases: {listing.Problem}");
+            }
+            if (listing.Problem == null) lock (_repoAssets) _repoAssets[repo] = listing;
+            return listing;
         }
 
         /// <summary>A repository's versions of one apworld (by file name; a release with a single .apworld counts too).</summary>
-        private static async Task<List<ApworldVersion>> RepoVersionsAsync(string repo, string apworldName, CancellationToken ct)
+        private static async Task<List<ApworldVersion>> RepoVersionsAsync(string repo, string apworldName, CancellationToken ct, List<string> problems = null)
         {
-            var assets = await RepoAssetsAsync(repo, ct);
+            var listing = await RepoAssetsAsync(repo, ct);
+            if (listing.Problem != null) problems?.Add($"github.com/{repo}: {listing.Problem}");
+            var assets = listing.Assets;
             var versions = new List<ApworldVersion>();
             foreach (var group in assets.GroupBy(a => a.Tag))
             {
@@ -304,9 +320,13 @@ namespace AP_Atlas.Core.EngineSetup
                     if (Provenance.TryGetValue(h, out var record) && (record.Repo != null || (DateTime.Now - record.Checked).TotalDays < 7))
                         return (record.Repo, record.Tag);
 
+            // Set when any lookup couldn't be done: then "not found" isn't known, so it isn't remembered.
+            bool incomplete = false;
             async Task<(string, string)> Check(string repo)
             {
-                var hit = (await RepoAssetsAsync(repo, ct)).FirstOrDefault(a => a.Sha256 != null && hashes.Contains(a.Sha256));
+                var listing = await RepoAssetsAsync(repo, ct);
+                if (listing.Problem != null) incomplete = true;
+                var hit = listing.Assets.FirstOrDefault(a => a.Sha256 != null && hashes.Contains(a.Sha256));
                 return hit != null ? (repo, hit.Tag) : (null, null);
             }
 
@@ -323,18 +343,19 @@ namespace AP_Atlas.Core.EngineSetup
                 var candidates = new List<string>();
                 async Task Search(string query, Func<JToken, bool> keep)
                 {
-                    try
+                    var answer = await GitHubApi.GetAsync($"/search/repositories?q={Uri.EscapeDataString(query)}&per_page=20", ct);
+                    if (!answer.Ok)
                     {
-                        string json = await EngineDownloader.GetStringAsync($"https://api.github.com/search/repositories?q={Uri.EscapeDataString(query)}&per_page=20", ct);
-                        foreach (var item in JObject.Parse(json)["items"] as JArray ?? new JArray())
-                        {
-                            string name = item["full_name"]?.ToString();
-                            if (name != null && keep(item) && !known.Contains(name, StringComparer.OrdinalIgnoreCase) && !candidates.Contains(name, StringComparer.OrdinalIgnoreCase))
-                                candidates.Add(name);
-                        }
+                        incomplete = true;
+                        Logger.LogWarning($"GitHub search for {game} apworlds didn't work: {answer.Message}");
+                        return;
                     }
-                    catch (OperationCanceledException) { throw; }
-                    catch (Exception ex) { Logger.LogWarning($"GitHub search for {game} apworlds failed: {ex.Message}"); }
+                    foreach (var item in answer.Json?["items"] as JArray ?? new JArray())
+                    {
+                        string name = item["full_name"]?.ToString();
+                        if (name != null && keep(item) && !known.Contains(name, StringComparer.OrdinalIgnoreCase) && !candidates.Contains(name, StringComparer.OrdinalIgnoreCase))
+                            candidates.Add(name);
+                    }
                 }
                 // Repositories about the game (precise), then ones named exactly like a known project (forks, re-uploads).
                 await Search($"\"{game}\" archipelago in:name,description", _ => true);
@@ -346,11 +367,17 @@ namespace AP_Atlas.Core.EngineSetup
                     if (found.Repo != null) break;
                 }
             }
-            lock (Provenance)
+            // A find is kept; "not found" only when every lookup really happened (not after a rate limit or a failure).
+            if (found.Repo != null || !incomplete)
             {
-                foreach (var h in hashes) Provenance[h] = new ProvenanceRecord { Repo = found.Repo, Tag = found.Tag, Checked = DateTime.Now };
-                try { SafeFile.WriteJson(ProvenancePath, Provenance); } catch { }
+                lock (Provenance)
+                {
+                    foreach (var h in hashes) Provenance[h] = new ProvenanceRecord { Repo = found.Repo, Tag = found.Tag, Checked = DateTime.Now };
+                    try { SafeFile.WriteJson(ProvenancePath, Provenance); }
+                    catch (Exception ex) { Logger.LogWarning("Couldn't save where installed apworlds came from: " + ex.Message); }
+                }
             }
+            else log?.Invoke("GitHub couldn't be fully checked just now, so Atlas will look again next time.");
             if (found.Repo != null) log?.Invoke($"Your installed {game} apworld is {found.Tag} from github.com/{found.Repo}.");
             return found;
         }
@@ -389,8 +416,9 @@ namespace AP_Atlas.Core.EngineSetup
             string repo = ParseRepo(link);
             if (repo == null) return (null, "that isn't a GitHub repository link (e.g. https://github.com/owner/project/releases)");
             lock (_repoAssets) _repoAssets.Remove(repo);
-            var assets = await RepoAssetsAsync(repo, ct);
-            if (assets.Count == 0) return (null, $"github.com/{repo} has no .apworld files in its releases");
+            var listing = await RepoAssetsAsync(repo, ct);
+            if (listing.Problem != null) return (null, $"GitHub couldn't be checked just now ({listing.Problem.TrimEnd('.')}); try again later");
+            if (listing.Assets.Count == 0) return (null, $"github.com/{repo} has no .apworld files in its releases");
             settings.ExtraApworldRepos ??= new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
             if (!settings.ExtraApworldRepos.TryGetValue(game, out var list)) settings.ExtraApworldRepos[game] = list = new List<string>();
             if (!list.Contains(repo, StringComparer.OrdinalIgnoreCase)) list.Add(repo);
@@ -408,14 +436,14 @@ namespace AP_Atlas.Core.EngineSetup
         /// in the given order), including the community index's versions for its repository. The same file published
         /// twice (same SHA-256) appears once.
         /// </summary>
-        public static async Task<List<ApworldVersion>> VersionsAsync(string game, IEnumerable<string> repos, string apworldName, CancellationToken ct)
+        public static async Task<List<ApworldVersion>> VersionsAsync(string game, IEnumerable<string> repos, string apworldName, CancellationToken ct, List<string> problems = null)
         {
             var source = Find(game);
             apworldName ??= source?.Apworld;
             var result = new List<ApworldVersion>();
             foreach (var repo in repos.Distinct(StringComparer.OrdinalIgnoreCase))
             {
-                var versions = await RepoVersionsAsync(repo, apworldName, ct);
+                var versions = await RepoVersionsAsync(repo, apworldName, ct, problems);
                 if (source != null && string.Equals(source.Repo, repo, StringComparison.OrdinalIgnoreCase))
                     foreach (var v in source.Versions)
                         if (!versions.Any(x => x.Url == v.Url || (x.Sha256 != null && v.Sha256 != null && x.Sha256.Equals(v.Sha256, StringComparison.OrdinalIgnoreCase))))
@@ -522,7 +550,9 @@ namespace AP_Atlas.Core.EngineSetup
                 }
                 var repoList = repos.ToList();
                 string apworldName = Find(game)?.Apworld ?? InstalledCopies(install, game).Select(c => Path.GetFileNameWithoutExtension(c.File)).FirstOrDefault();
-                var versions = await VersionsAsync(game, repoList, apworldName, ct);
+                var problems = new List<string>();
+                var versions = await VersionsAsync(game, repoList, apworldName, ct, problems);
+                foreach (var p in problems) log?.Invoke("  Couldn't read the releases of " + p);
                 var installedHashes = new HashSet<string>(InstalledCopies(install, game).Select(c => c.Sha256), StringComparer.OrdinalIgnoreCase);
                 versions = versions.Where(v => v.Sha256 == null || !installedHashes.Contains(v.Sha256)).ToList();
                 log?.Invoke($"Looking for the {game} apworld the seed was made with among {versions.Count} version(s) in {string.Join(", ", repoList.Select(r => "github.com/" + r))}…");
@@ -551,7 +581,9 @@ namespace AP_Atlas.Core.EngineSetup
                     log?.Invoke($"  {label}: data {Short(checksum)}{(match ? " ✔ matches the seed" : "")}");
                     if (match) return (version, file);
                 }
-                log?.Invoke($"None of the versions tried matches the seed's data ({Short(seedChecksum)}). The seed may use an unreleased or unlisted build: ask its host for the apworld, or add the project it came from.");
+                log?.Invoke(problems.Count > 0 && versions.Count == 0
+                    ? "GitHub couldn't be checked just now, so Atlas couldn't look for the seed's version. It will try again later."
+                    : $"None of the versions tried matches the seed's data ({Short(seedChecksum)}). The seed may use an unreleased or unlisted build: ask its host for the apworld, or add the project it came from.");
                 return ((ApworldVersion)null, (string)null);
             }, ct);
 

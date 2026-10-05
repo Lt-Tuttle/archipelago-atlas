@@ -119,9 +119,14 @@ namespace AP_Atlas.Core.EngineSetup
 
         public static IReadOnlyList<SeedVerification> All { get { lock (Store) return Store.ToList(); } }
 
-        /// <summary>Where generated seeds usually are: the output folders of the Archipelago installs.</summary>
-        public static string DefaultSeedFolder() =>
-            AtlasEngine.FindArchipelagoInstalls().Select(p => Path.Combine(p, "output")).FirstOrDefault(Directory.Exists);
+        /// <summary>Where generated seeds usually are: the output folder of the Archipelago install the user chose (Atlas doesn't search).</summary>
+        public static string DefaultSeedFolder()
+        {
+            string root = AtlasEngine.ConfiguredInstallPath;
+            if (string.IsNullOrWhiteSpace(root)) return null;
+            string output = Path.Combine(root, "output");
+            return Directory.Exists(output) ? output : null;
+        }
 
         /// <summary>Runs the seed test for every player in a seed (.zip from Archipelago's output folder, or .archipelago).</summary>
         public static Task<SeedTestReport> VerifyAsync(EngineInstall install, string seedPath, Action<string> log, CancellationToken ct) =>

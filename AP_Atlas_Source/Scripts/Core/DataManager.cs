@@ -1,4 +1,5 @@
 using System.IO;
+using System.Linq;
 using Godot;
 using Newtonsoft.Json;
 using System.Collections.Generic;
@@ -28,6 +29,10 @@ public class AppSettings
     public string EngineMode { get; set; } = "";
     /// <summary>Slot key ("profileId|slotName") → the player YAML the user linked to that slot.</summary>
     public Dictionary<string, string> SlotYamlPaths { get; set; } = new Dictionary<string, string>();
+    /// <summary>The folder the YAML picker last took a file from (it opens there next time). Atlas never searches for YAMLs.</summary>
+    public string LastYamlFolder { get; set; } = "";
+    /// <summary>What the user chose "Always allow" for (see Permissions): "kind" or "kind|scope".</summary>
+    public List<string> PermissionsAllowed { get; set; } = new List<string>();
 
     // Layout State
     public int MainSplitOffset { get; set; } = 300;
@@ -116,7 +121,47 @@ public class MultiworldProfile
     public string Id { get; set; } = System.Guid.NewGuid().ToString();
     public string Name { get; set; } = "New Multiworld";
     public string ServerUrl { get; set; } = "archipelago.gg:38281";
-    public string Password { get; set; } = "";
+
+    /// <summary>The room password, in memory only: profiles.json keeps it encrypted for this Windows account (PasswordProtected).</summary>
+    [JsonIgnore] public string Password { get; set; } = "";
+
+    /// <summary>
+    /// The room password encrypted with Windows' data protection for this account (never plain text). One that can't be
+    /// decrypted here (another account or PC) is kept as it was, so it isn't lost if the folder moves back.
+    /// </summary>
+    [JsonProperty("PasswordProtected")]
+    public string PasswordProtected
+    {
+        get => string.IsNullOrEmpty(Password) ? _unreadablePassword ?? "" : AP_Atlas.Core.Secrets.Protect(Password, AP_Atlas.Core.Secrets.RoomPassword) ?? "";
+        set
+        {
+            _unreadablePassword = null;
+            if (string.IsNullOrEmpty(value)) return;
+            string plain = AP_Atlas.Core.Secrets.Unprotect(value, AP_Atlas.Core.Secrets.RoomPassword);
+            if (plain != null) Password = plain;
+            else _unreadablePassword = value;
+        }
+    }
+
+    private string _unreadablePassword;
+
+    /// <summary>A saved password couldn't be decrypted on this PC or Windows account: it has to be entered again.</summary>
+    [JsonIgnore] public bool PasswordUnreadable => _unreadablePassword != null && string.IsNullOrEmpty(Password);
+
+    /// <summary>Older files kept the password in plain text: it's read once, then saved encrypted.</summary>
+    [JsonProperty("Password")]
+    private string LegacyPassword
+    {
+        set
+        {
+            if (string.IsNullOrEmpty(value) || !string.IsNullOrEmpty(Password)) return;
+            Password = value;
+            HadPlainTextPassword = true;
+        }
+    }
+
+    /// <summary>This profile was read with its password in plain text (it's encrypted on the next save).</summary>
+    [JsonIgnore] public bool HadPlainTextPassword { get; private set; }
     public List<string> Slots { get; set; } = new List<string>();
     public List<string> ActiveSlots { get; set; } = new List<string>();
     public Dictionary<string, SlotStats> SavedStats { get; set; } = new Dictionary<string, SlotStats>();
@@ -191,6 +236,8 @@ public static class DataManager
         settings.MapCameras ??= new Dictionary<string, MapCameraSave>();
         settings.CollapsedPropertySections ??= new List<string>();
         settings.SlotYamlPaths ??= new Dictionary<string, string>();
+        settings.LastYamlFolder ??= "";
+        settings.PermissionsAllowed ??= new List<string>();
         settings.EngineMode ??= "";
         settings.ArchipelagoInstallationPath ??= "";
         settings.ApworldSourcesUrl ??= "";
@@ -245,7 +292,36 @@ public static class DataManager
             profile.SphereTrackerUrl ??= "";
         }
 
+        // Passwords from an older plain-text file: save encrypted now, twice, so the .bak copy is encrypted too.
+        if (list.Any(p => p.HadPlainTextPassword))
+        {
+            SaveProfiles(list);
+            SaveProfiles(list);
+            AP_Atlas.Core.Logger.LogInfo("Room passwords are now saved encrypted for this Windows account.");
+        }
         return list;
+    }
+
+    /// <summary>
+    /// Damaged copies of profiles.json that Atlas set aside (".corrupt-…") which still hold a room password in plain
+    /// text (from before passwords were encrypted). The user is offered to delete them.
+    /// </summary>
+    public static List<string> PlainTextPasswordCopies()
+    {
+        var found = new List<string>();
+        try
+        {
+            foreach (var file in Directory.GetFiles(GetDataDirectory(), "profiles.json.corrupt-*"))
+            {
+                try
+                {
+                    if (System.Text.RegularExpressions.Regex.IsMatch(File.ReadAllText(file), "\"Password\"\\s*:\\s*\"[^\"]")) found.Add(file);
+                }
+                catch { }
+            }
+        }
+        catch { }
+        return found;
     }
 
     public static void SaveProfiles(List<MultiworldProfile> profiles) => Save(Path.Combine(GetDataDirectory(), "profiles.json"), profiles);

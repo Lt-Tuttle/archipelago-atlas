@@ -4,6 +4,7 @@ using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -27,32 +28,43 @@ namespace AP_Atlas.Core
         /// <summary>The answer was larger than the caller reads; Atlas stopped reading it.</summary>
         TooLarge,
         /// <summary>Atlas is leaving the site alone after a failure; nothing was sent.</summary>
-        Waiting
+        Waiting,
+        /// <summary>304: the copy Atlas already has is still current (a conditional request).</summary>
+        NotModified
     }
 
     public sealed class WebResponse
     {
         public WebOutcome Outcome { get; init; }
         public int Status { get; init; }
+        /// <summary>The answer as text; for a download, the file's SHA-256 (lower-case hex).</summary>
         public string Text { get; init; }
         /// <summary>What the caller's reader made of the answer (<see cref="PoliteHttp.GetParsedAsync"/>).</summary>
         public object Value { get; init; }
         /// <summary>How much of the answer was read (after decompression).</summary>
         public long Bytes { get; init; }
         public string Message { get; init; }
+        /// <summary>The answer's headers (names in lower case), when the site answered at all.</summary>
+        public IReadOnlyDictionary<string, string> Headers { get; init; } = EmptyHeaders;
         public bool Ok => Outcome == WebOutcome.Ok;
+
+        internal static readonly IReadOnlyDictionary<string, string> EmptyHeaders = new Dictionary<string, string>();
+
+        public string Header(string name) => Headers != null && Headers.TryGetValue(name.ToLowerInvariant(), out var v) ? v : null;
     }
 
     /// <summary>
-    /// Web requests made with care for the volunteer-run sites Atlas reads (Cheese Tracker, Archipelago's web host): one
-    /// request at a time per site, at least a second apart, and after a failure the site is left alone for a growing while
-    /// (1, 2, 5, 10, then 30 minutes, or longer if it asks). Answers are compressed in transit, have a size limit and a
-    /// time limit that covers reading them whole, and redirects aren't followed (so a key is never sent anywhere but the
-    /// site it was given for).
+    /// Every web request Atlas makes goes through here, with care for the volunteer-run sites it reads (Cheese Tracker,
+    /// Archipelago's web host, GitHub, PyPI): one request at a time per site, at least a second apart, and after a
+    /// failure the site is left alone for a growing while (1, 2, 5, 10, then 30 minutes, or longer if it asks). Answers
+    /// are compressed in transit, have a size limit and a time limit that covers reading them whole. Redirects aren't
+    /// followed (so a key is never sent anywhere but the site it was given for), except for downloads, which follow a
+    /// few https redirects without any key.
     /// </summary>
     public static class PoliteHttp
     {
         private const int MaxResponseBytes = 32 * 1024 * 1024;
+        private const int MaxRedirects = 5;
         private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(30);
         private static readonly HttpClient Http = CreateHttp();
 
@@ -103,6 +115,14 @@ namespace AP_Atlas.Core
             return x != null && string.Equals(x, y, StringComparison.OrdinalIgnoreCase);
         }
 
+        /// <summary>A full URL split into its site (as <see cref="NormalizeSite"/>) and the path with query; null site when Atlas can't use it.</summary>
+        public static (string Site, string PathAndQuery) Split(string url)
+        {
+            string site = NormalizeSite(url);
+            if (site == null || !Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri)) return (null, null);
+            return (site, uri.PathAndQuery);
+        }
+
         private static SiteState StateOf(string site)
         {
             lock (Sites)
@@ -139,7 +159,15 @@ namespace AP_Atlas.Core
         /// </summary>
         public static Task<WebResponse> SendAsync(string site, string siteName, HttpMethod method, string path, HttpContent content = null,
             IDictionary<string, string> headers = null, string bearer = null, string accept = "application/json", CancellationToken ct = default) =>
-            SendCoreAsync(site, siteName, method, path, content, headers, bearer, accept, DefaultTimeout, MaxResponseBytes, null, ct);
+            SendCoreAsync(site, siteName, method, path, content, headers, bearer, accept, DefaultTimeout, MaxResponseBytes, null, null, null, false, ct);
+
+        /// <summary>Reads a full https URL as text (no key is ever sent; redirects aren't followed).</summary>
+        public static Task<WebResponse> GetAsync(string url, string siteName, string accept = "application/json", IDictionary<string, string> headers = null,
+            long maxBytes = MaxResponseBytes, TimeSpan? timeout = null, CancellationToken ct = default)
+        {
+            var (site, path) = Split(url);
+            return SendCoreAsync(site, siteName, HttpMethod.Get, path ?? "/", null, headers, null, accept, timeout ?? DefaultTimeout, maxBytes, null, null, null, false, ct);
+        }
 
         /// <summary>
         /// Reads a page that may be large: its text goes to <paramref name="parse"/> (on a worker thread) as it arrives, so it's
@@ -148,11 +176,66 @@ namespace AP_Atlas.Core
         /// </summary>
         public static Task<WebResponse> GetParsedAsync(string site, string siteName, string path, Func<TextReader, object> parse, long maxBytes,
             TimeSpan timeout, string accept = "text/html", CancellationToken ct = default) =>
-            SendCoreAsync(site, siteName, HttpMethod.Get, path, null, null, null, accept, timeout, maxBytes, parse, ct);
+            SendCoreAsync(site, siteName, HttpMethod.Get, path, null, null, null, accept, timeout, maxBytes, parse, null, null, false, ct);
+
+        /// <summary>
+        /// Downloads a file to <paramref name="destPath"/>: streamed to "destPath.part" and moved into place only when complete
+        /// (and, with <paramref name="expectedSha256"/>, only when it is exactly that file). Follows up to five https redirects
+        /// (GitHub serves release files from another host). The answer's <see cref="WebResponse.Text"/> is the file's SHA-256.
+        /// <paramref name="progress"/> gets (bytes so far, total or -1).
+        /// </summary>
+        public static async Task<WebResponse> DownloadAsync(string url, string siteName, string destPath, string expectedSha256, long maxBytes, TimeSpan timeout,
+            Action<long, long> progress = null, CancellationToken ct = default)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(destPath)));
+            string part = destPath + ".part";
+            string current = url;
+            for (int hop = 0; hop <= MaxRedirects; hop++)
+            {
+                var (site, path) = Split(current);
+                var r = await SendCoreAsync(site, hop == 0 ? siteName : $"{siteName} (via {site})", HttpMethod.Get, path ?? "/", null, null, null, "*/*",
+                    timeout, maxBytes, null, part, progress, allowRedirect: true, ct).ConfigureAwait(false);
+                if (r.Outcome == WebOutcome.Rejected && r.Status >= 300 && r.Status < 400 && r.Header("location") is string location)
+                {
+                    if (!Uri.TryCreate(new Uri(current), location, out var next) || NormalizeSite(next.AbsoluteUri) == null)
+                        return Fail(WebOutcome.Rejected, r.Status, $"{siteName} redirected the download to an address Atlas won't use ({location}).");
+                    current = next.AbsoluteUri;
+                    continue;
+                }
+                if (!r.Ok)
+                {
+                    TryDelete(part);
+                    return r;
+                }
+                if (!string.IsNullOrEmpty(expectedSha256) && !string.Equals(r.Text, expectedSha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    TryDelete(part);
+                    string host = Uri.TryCreate(url, UriKind.Absolute, out var u) ? u.Host : siteName;
+                    return Fail(WebOutcome.BadResponse, r.Status,
+                        $"The download from {host} isn't the expected file (SHA-256 {Short(r.Text)}…, expected {Short(expectedSha256)}…). Nothing was kept.");
+                }
+                try { File.Move(part, destPath, true); }
+                catch (Exception ex)
+                {
+                    TryDelete(part);
+                    return Fail(WebOutcome.BadResponse, r.Status, $"The download couldn't be saved ({ex.Message}).");
+                }
+                return r;
+            }
+            TryDelete(part);
+            return Fail(WebOutcome.Rejected, 0, $"{siteName} redirected the download too many times.");
+        }
+
+        private static string Short(string hash) => string.IsNullOrEmpty(hash) ? "?" : hash.Substring(0, Math.Min(12, hash.Length));
+
+        internal static void TryDelete(string path)
+        {
+            try { if (File.Exists(path)) File.Delete(path); } catch { }
+        }
 
         private static async Task<WebResponse> SendCoreAsync(string site, string siteName, HttpMethod method, string path, HttpContent content,
             IDictionary<string, string> headers, string bearer, string accept, TimeSpan timeout, long maxBytes, Func<TextReader, object> parse,
-            CancellationToken ct)
+            string toFile, Action<long, long> progress, bool allowRedirect, CancellationToken ct)
         {
             if (site == null) return Fail(WebOutcome.Rejected, 0, $"That isn't an address Atlas can use for {siteName} (it must be https).");
             var state = StateOf(site);
@@ -165,8 +248,8 @@ namespace AP_Atlas.Core
                 if (gap > TimeSpan.Zero) await Task.Delay(gap, ct).ConfigureAwait(false);
                 state.LastRequest = DateTime.UtcNow;
 
-                using var request = new HttpRequestMessage(method, site + "/" + path.TrimStart('/'));
-                // A key goes to this site and nowhere else (redirects aren't followed).
+                using var request = new HttpRequestMessage(method, site + "/" + (path ?? "").TrimStart('/'));
+                // A key goes to this site and nowhere else (redirects aren't followed with it).
                 if (bearer != null) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearer);
                 if (!string.IsNullOrEmpty(accept)) request.Headers.Accept.ParseAdd(accept);
                 if (headers != null)
@@ -196,16 +279,19 @@ namespace AP_Atlas.Core
                 using (response)
                 {
                     int code = (int)response.StatusCode;
+                    var answerHeaders = HeadersOf(response);
                     if (code == 429 || code >= 500)
                     {
                         string reason = code == 429 ? $"{siteName} asked Atlas to slow down" : $"{siteName} had a problem (HTTP {code})";
                         StartWaiting(state, RetryAfter(response), reason);
-                        return Fail(code == 429 ? WebOutcome.RateLimited : WebOutcome.ServerError, code, reason + ".");
+                        return Fail(code == 429 ? WebOutcome.RateLimited : WebOutcome.ServerError, code, reason + ".", answerHeaders);
                     }
                     // Anything else means the site is up: no waiting.
                     state.Failures = 0;
                     state.WaitUntil = DateTime.MinValue;
-                    if (code >= 300 && code < 400) return Fail(WebOutcome.Rejected, code, $"{siteName} redirected the request (HTTP {code}).");
+                    if (code == 304) return new WebResponse { Outcome = WebOutcome.NotModified, Status = code, Headers = answerHeaders };
+                    if (code >= 300 && code < 400)
+                        return Fail(WebOutcome.Rejected, code, allowRedirect ? $"{siteName} moved the file (HTTP {code})." : $"{siteName} redirected the request (HTTP {code}).", answerHeaders);
                     if (code < 200 || code >= 300)
                     {
                         var outcome = code switch
@@ -216,10 +302,11 @@ namespace AP_Atlas.Core
                             412 => WebOutcome.Precondition,
                             _ => WebOutcome.Rejected
                         };
-                        return Fail(outcome, code, $"{siteName} refused the request (HTTP {code}).");
+                        return Fail(outcome, code, $"{siteName} refused the request (HTTP {code}).", answerHeaders);
                     }
                     string tooLarge = $"{siteName}'s answer is larger than {maxBytes / (1024 * 1024)} MB, more than Atlas reads.";
-                    if (response.Content.Headers.ContentLength > maxBytes) return Fail(WebOutcome.TooLarge, code, tooLarge);
+                    long? declared = response.Content.Headers.ContentLength;
+                    if (declared > maxBytes) return Fail(WebOutcome.TooLarge, code, tooLarge, answerHeaders);
                     Stream stream = null;
                     // A stalled answer is cut off at the time limit (a blocked read only ends when its stream closes).
                     using var stall = limit.Token.Register(() =>
@@ -231,17 +318,22 @@ namespace AP_Atlas.Core
                     {
                         stream = await response.Content.ReadAsStreamAsync(limit.Token).ConfigureAwait(false);
                         var limited = new LimitedStream(stream, maxBytes);
+                        if (toFile != null)
+                        {
+                            string sha = await CopyToFileAsync(limited, toFile, declared ?? -1, progress, limit.Token).ConfigureAwait(false);
+                            return new WebResponse { Outcome = WebOutcome.Ok, Status = code, Text = sha, Bytes = limited.BytesRead, Headers = answerHeaders };
+                        }
                         if (parse == null)
                         {
                             string text = await ReadAllAsync(limited, limit.Token).ConfigureAwait(false);
-                            return new WebResponse { Outcome = WebOutcome.Ok, Status = code, Text = text, Bytes = limited.BytesRead };
+                            return new WebResponse { Outcome = WebOutcome.Ok, Status = code, Text = text, Bytes = limited.BytesRead, Headers = answerHeaders };
                         }
                         object value = await Task.Run(() =>
                         {
                             using var reader = new StreamReader(limited, Encoding.UTF8, true, 1 << 16, leaveOpen: true);
                             return parse(reader);
                         }).ConfigureAwait(false);
-                        return new WebResponse { Outcome = WebOutcome.Ok, Status = code, Value = value, Bytes = limited.BytesRead };
+                        return new WebResponse { Outcome = WebOutcome.Ok, Status = code, Value = value, Bytes = limited.BytesRead, Headers = answerHeaders };
                     }
                     catch (Exception) when (ct.IsCancellationRequested)
                     {
@@ -249,17 +341,17 @@ namespace AP_Atlas.Core
                     }
                     catch (TooLargeException)
                     {
-                        return Fail(WebOutcome.TooLarge, code, tooLarge);
+                        return Fail(WebOutcome.TooLarge, code, tooLarge, answerHeaders);
                     }
                     catch (Exception) when (limit.IsCancellationRequested)
                     {
                         string reason = $"{siteName} was too slow (its answer took over {Describe(timeout)})";
                         StartWaiting(state, null, reason);
-                        return Fail(WebOutcome.Unreachable, code, reason + ".");
+                        return Fail(WebOutcome.Unreachable, code, reason + ".", answerHeaders);
                     }
                     catch (Exception ex)
                     {
-                        return Fail(WebOutcome.BadResponse, code, $"{siteName}'s answer couldn't be read ({ex.GetBaseException().Message}).");
+                        return Fail(WebOutcome.BadResponse, code, $"{siteName}'s answer couldn't be read ({ex.GetBaseException().Message}).", answerHeaders);
                     }
                 }
             }
@@ -269,11 +361,45 @@ namespace AP_Atlas.Core
             }
         }
 
+        private static async Task<string> CopyToFileAsync(Stream source, string path, long total, Action<long, long> progress, CancellationToken ct)
+        {
+            using var sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+            using (var target = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                var buffer = new byte[81920];
+                long done = 0;
+                int read;
+                var lastReport = DateTime.MinValue;
+                while ((read = await source.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+                {
+                    await target.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
+                    sha.AppendData(buffer, 0, read);
+                    done += read;
+                    if (progress != null && (DateTime.UtcNow - lastReport).TotalMilliseconds > 150)
+                    {
+                        lastReport = DateTime.UtcNow;
+                        progress(done, total);
+                    }
+                }
+                progress?.Invoke(done, total);
+                await target.FlushAsync(ct).ConfigureAwait(false);
+            }
+            return Convert.ToHexString(sha.GetHashAndReset()).ToLowerInvariant();
+        }
+
+        private static IReadOnlyDictionary<string, string> HeadersOf(HttpResponseMessage response)
+        {
+            var all = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var h in response.Headers) all[h.Key.ToLowerInvariant()] = string.Join(", ", h.Value);
+            foreach (var h in response.Content.Headers) all[h.Key.ToLowerInvariant()] = string.Join(", ", h.Value);
+            return all;
+        }
+
         private static string Describe(TimeSpan t) =>
             t.TotalSeconds < 120 ? $"{(int)t.TotalSeconds} seconds" : $"{(int)t.TotalMinutes} minutes";
 
-        private static WebResponse Fail(WebOutcome outcome, int status, string message) =>
-            new WebResponse { Outcome = outcome, Status = status, Message = message };
+        private static WebResponse Fail(WebOutcome outcome, int status, string message, IReadOnlyDictionary<string, string> headers = null) =>
+            new WebResponse { Outcome = outcome, Status = status, Message = message, Headers = headers ?? WebResponse.EmptyHeaders };
 
         private static void StartWaiting(SiteState site, TimeSpan? asked, string reason)
         {
@@ -283,6 +409,20 @@ namespace AP_Atlas.Core
             site.WaitUntil = DateTime.UtcNow + wait;
             site.WaitReason = reason;
             Logger.LogWarning($"{reason}; Atlas leaves it alone until {site.WaitUntil.ToLocalTime():HH:mm}.");
+        }
+
+        /// <summary>Makes Atlas leave a site alone until a time it named in its own way (e.g. GitHub's rate-limit reset).</summary>
+        internal static void WaitUntil(string site, DateTime untilUtc, string reason)
+        {
+            site = NormalizeSite(site);
+            if (site == null) return;
+            var s = StateOf(site);
+            var cap = DateTime.UtcNow + TimeSpan.FromHours(6);
+            if (untilUtc > cap) untilUtc = cap;
+            if (untilUtc <= s.WaitUntil) return;
+            s.WaitUntil = untilUtc;
+            s.WaitReason = reason;
+            Logger.LogWarning($"{reason}; Atlas leaves it alone until {untilUtc.ToLocalTime():HH:mm}.");
         }
 
         private static TimeSpan? RetryAfter(HttpResponseMessage response)

@@ -53,29 +53,6 @@ namespace AP_Atlas.Core
             return result;
         }
 
-        /// <summary>YAMLs in the Archipelago install's Players folder that give exclusions to this slot.</summary>
-        public static List<Result> FindInPlayersFolder(string installPath, string game, string slotName)
-        {
-            var found = new List<Result>();
-            if (string.IsNullOrEmpty(installPath)) return found;
-            string players = Path.Combine(installPath, "Players");
-            if (!Directory.Exists(players)) return found;
-            IEnumerable<string> files;
-            try
-            {
-                // Top level only: Players/Templates holds every game's defaults, not anyone's options.
-                files = Directory.GetFiles(players, "*.yaml").Concat(Directory.GetFiles(players, "*.yml"));
-            }
-            catch { return found; }
-            foreach (var file in files)
-            {
-                var r = Read(file, game, slotName);
-                // Only files naming this slot: a lone same-game YAML may be someone else's.
-                if (r.Error == null && r.Names.Count > 0 && NameMatches(r.PlayerName, slotName)) found.Add(r);
-            }
-            return found;
-        }
-
         /// <summary>Whether a YAML name (which may hold {player} / {number} placeholders) can produce this slot name.</summary>
         public static bool NameMatches(string yamlName, string slotName)
         {

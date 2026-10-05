@@ -420,18 +420,22 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         const int AutoFixApworldId = 2;
         settingsMenu.AddCheckItem("Use each seed's apworld version automatically", AutoFixApworldId);
         settingsMenu.SetItemChecked(settingsMenu.GetItemIndex(AutoFixApworldId), _appSettings.AutoFixApworldVersions);
-        settingsMenu.SetItemTooltip(settingsMenu.GetItemIndex(AutoFixApworldId), "When a seed was made with another version of a game's apworld, Atlas finds that version and uses it for that slot.\nIt downloads only from sources you've trusted, and never changes your Archipelago install.");
+        settingsMenu.SetItemTooltip(settingsMenu.GetItemIndex(AutoFixApworldId), "When a seed was made with another version of a game's apworld, Atlas finds that version and uses it for that slot.\nIt asks before looking things up on GitHub, downloads only from sources you've trusted, and never changes your Archipelago install.");
         const int CheeseId = 3;
         settingsMenu.AddItem("Cheese Tracker…", CheeseId);
         settingsMenu.SetItemTooltip(settingsMenu.GetItemIndex(CheeseId), "Your Cheese Tracker API key, and what Atlas does with Cheese Tracker");
         const int SpheresId = 4;
         settingsMenu.AddItem("Sphere Tracker…", SpheresId);
         settingsMenu.SetItemTooltip(settingsMenu.GetItemIndex(SpheresId), "The spheretracker.de room each multiworld's host shared");
+        const int PrivacyId = 5;
+        settingsMenu.AddItem("Privacy & permissions…", PrivacyId);
+        settingsMenu.SetItemTooltip(settingsMenu.GetItemIndex(PrivacyId), "What you've allowed Atlas to do without asking, and the apworld sources you trust");
         settingsMenu.IdPressed += (id) =>
         {
             if (id == 0) OpenEngineSetup();
             else if (id == CheeseId) OpenCheeseSettings();
             else if (id == SpheresId) ShowSphereTab(AP_Atlas.UI.SphereTrackerTab.SettingsView);
+            else if (id == PrivacyId) OpenPrivacy();
             else if (id == AutoReconnectId)
             {
                 _appSettings.AutoReconnect = !_appSettings.AutoReconnect;
@@ -666,7 +670,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _midLeftVBox.AddChild(_sphereTab.SidebarContent);
         BuildConnectionTab();
         BuildLandingPage();
-        AutoDetectArchipelagoPath();
+        ReportEngineAtStartup();
+        OfferToDeletePlainTextPasswordCopies();
         var statusTimer = new Godot.Timer { WaitTime = 0.5f, Autostart = true };
         statusTimer.Timeout += UpdateSlotStatuses;
         AddChild(statusTimer);
@@ -921,6 +926,35 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     }
 
     /// <summary>Opens the Atlas Engine setup window.</summary>
+    /// <summary>Settings → Privacy &amp; permissions: what the user allowed Atlas to do without asking, and trusted sources.</summary>
+    private void OpenPrivacy()
+    {
+        var window = new AP_Atlas.UI.PrivacyWindow(_appSettings, _appSettings.ContentFontSize);
+        AddChild(window);
+        window.PopupCentered();
+    }
+
+    /// <summary>
+    /// Older damaged copies of profiles.json (set aside as ".corrupt-…") can still hold room passwords in plain text from
+    /// before they were encrypted: offers once per session to delete them.
+    /// </summary>
+    private void OfferToDeletePlainTextPasswordCopies()
+    {
+        var copies = DataManager.PlainTextPasswordCopies();
+        if (copies.Count == 0) return;
+        Callable.From(() => ShowToast($"{copies.Count} old damaged cop{(copies.Count == 1 ? "y" : "ies")} of your profiles still hold room passwords in plain text. Delete {(copies.Count == 1 ? "it" : "them")}?",
+            Godot.Colors.Orange, "Delete", () =>
+            {
+                int deleted = 0;
+                foreach (var file in copies)
+                {
+                    try { System.IO.File.Delete(file); deleted++; }
+                    catch (System.Exception ex) { AP_Atlas.Core.Logger.LogWarning($"Couldn't delete {System.IO.Path.GetFileName(file)}: {ex.Message}"); }
+                }
+                LogToSystem($"Deleted {deleted} old damaged cop{(deleted == 1 ? "y" : "ies")} of profiles.json that held plain-text passwords.");
+            })).CallDeferred();
+    }
+
     public void OpenEngineSetup()
     {
         AP_Atlas.UI.AtlasEngineWindow.Open(this, _appSettings,
@@ -930,18 +964,12 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             _appSettings.ContentFontSize);
     }
 
-    private void AutoDetectArchipelagoPath()
+    /// <summary>
+    /// Says at startup whether logic can run. Atlas never searches the PC for an Archipelago install by itself: the user
+    /// chooses one, or presses Find in Atlas Engine (which asks first).
+    /// </summary>
+    private void ReportEngineAtStartup()
     {
-        if (string.IsNullOrEmpty(_appSettings.ArchipelagoInstallationPath) || !System.IO.File.Exists(System.IO.Path.Combine(_appSettings.ArchipelagoInstallationPath, "ArchipelagoLauncher.exe")))
-        {
-            string found = AP_Atlas.Core.EngineSetup.AtlasEngine.FindArchipelagoInstalls().FirstOrDefault();
-            if (found != null && found != _appSettings.ArchipelagoInstallationPath)
-            {
-                _appSettings.ArchipelagoInstallationPath = found;
-                DataManager.SaveSettings(_appSettings);
-                LogToSystem("[color=green]Found Archipelago at:[/color] " + found);
-            }
-        }
         var engine = AP_Atlas.Core.EngineSetup.AtlasEngine.Current;
         string problem = AP_Atlas.Core.EngineSetup.AtlasEngine.ProblemWith(engine);
         if (problem == null)
@@ -950,7 +978,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             return;
         }
         LogToSystem($"[color=orange]Logic engine: {problem}[/color] Settings → Atlas Engine sets it up.");
-        Callable.From(() => ShowToast("Logic needs the Atlas Engine. Atlas can set it up for you (about 50 MB, no installer).", Godot.Colors.Orange, "Set up", OpenEngineSetup)).CallDeferred();
+        Callable.From(() => ShowToast("Logic needs the Atlas Engine. Atlas can set it up for you: about 55 MB to download (160 MB on disk), no installer.", Godot.Colors.Orange, "Set up", OpenEngineSetup)).CallDeferred();
     }
 
     private void ShowToast(string message, Godot.Color color) => ShowToast(message, color, null, null);

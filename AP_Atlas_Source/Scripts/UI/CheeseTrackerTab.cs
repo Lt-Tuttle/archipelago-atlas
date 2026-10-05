@@ -622,7 +622,7 @@ namespace AP_Atlas.UI
                 if (rebuildButtons)
                 {
                     _headerButtons.AddChild(HeaderButton("Refresh", "Read the tracker again now", () => CheeseDialogs.Run(this, _cheese.RefreshAsync(profile.Id), _toast, null, QueueRefresh), room?.Busy != true));
-                    if (room != null) _headerButtons.AddChild(HeaderButton("Open ↗", "Open this tracker on Cheese Tracker", () => OS.ShellOpen(room.Link)));
+                    if (room != null) _headerButtons.AddChild(HeaderButton("Open ↗", "Open this tracker on Cheese Tracker", () => AP_Atlas.Core.ExternalLinks.OpenWeb(room.Link)));
                     _headerButtons.AddChild(HeaderButton("Change link…", "Link this multiworld to a different tracker", () => CheeseDialogs.Link(this, _cheese, profile, _toast, Refresh)));
                 }
             }
@@ -995,8 +995,8 @@ namespace AP_Atlas.UI
             }
             if (row.SlotName != null) Add("Show in Properties", () => Inspector.Inspect(InspectTarget.ForSlot(row.ProfileId, row.SlotName)));
             var room = _cheese.RoomView(row.ProfileId);
-            if (room != null) Add("Open on Cheese Tracker ↗", () => OS.ShellOpen(room.Link));
-            if (!string.IsNullOrEmpty(row.Tracker?.UpstreamUrl)) Add("Open on the Archipelago tracker ↗", () => OS.ShellOpen($"{row.Tracker.UpstreamUrl.TrimEnd('/')}/0/{g.Position}"));
+            if (room != null) Add("Open on Cheese Tracker ↗", () => AP_Atlas.Core.ExternalLinks.OpenWeb(room.Link));
+            if (!string.IsNullOrEmpty(row.Tracker?.UpstreamUrl)) Add("Open on the Archipelago tracker ↗", () => AP_Atlas.Core.ExternalLinks.OpenWeb($"{row.Tracker.UpstreamUrl.TrimEnd('/')}/0/{g.Position}"));
             Add("Copy name", () => DisplayServer.ClipboardSet(g.Name));
             menu.IdPressed += id =>
             {

@@ -10,17 +10,11 @@
   </PropertyGroup>
   
   <ItemGroup>
-    <!-- Archipelago.MultiClient.Net 6.7.1, the lib/net6.0 build from its NuGet package: only that build enables
+    <!-- Archipelago.MultiClient.Net: for net8.0 NuGet picks the package's lib/net6.0 build, the only one that enables
          websocket compression (the netstandard2.0 build can't), which the Archipelago server asks clients to use. -->
-    <Reference Include="Archipelago.MultiClient.Net">
-      <HintPath>Lib\Archipelago.MultiClient.Net.dll</HintPath>
-    </Reference>
-      <Reference Include="Newtonsoft.Json">
-      <HintPath>Lib\Newtonsoft.Json.dll</HintPath>
-    </Reference>
-  </ItemGroup>
-  
-  <ItemGroup>
+    <PackageReference Include="Archipelago.MultiClient.Net" Version="6.7.1" />
+    <!-- 13.0.1 and later limit JSON nesting to 64 levels by default, so deeply nested input can't overflow the stack. -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="MoonSharp" Version="2.0.0" />
   </ItemGroup>
   <ItemGroup>
@@ -28,6 +22,8 @@
     <EmbeddedResource Include="Scripts/Core/Engine/Python/atlas_bridge.py" LogicalName="AtlasEngine.atlas_bridge.py" />
     <EmbeddedResource Include="Scripts/Core/Engine/Python/atlas_run.py" LogicalName="AtlasEngine.atlas_run.py" />
     <EmbeddedResource Include="Scripts/Core/Engine/Data/apworld_sources.json" LogicalName="AtlasEngine.apworld_sources.json" />
+    <!-- Archipelago's Python packages, exact versions and file hashes (Tools/build_engine_lock.py). -->
+    <EmbeddedResource Include="Scripts/Core/Engine/Data/engine_packages.lock.txt" LogicalName="AtlasEngine.engine_packages.lock" />
   </ItemGroup>
 </Project>
 

@@ -473,6 +473,28 @@ public partial class SlotTrackerControl : MarginContainer
             RetryLogicEngine();
             return;
         }
+        // Looking on GitHub contacts a site: automatically only once the user allowed it; a button press asks.
+        if (!AP_Atlas.Core.Permissions.IsAllowed(_appSettings, AP_Atlas.Core.Permissions.GitHubLookups))
+        {
+            if (!interactive)
+            {
+                _apworldFixStatus = "Press \"Fix automatically\" to look up the seed's version on GitHub.";
+                SyncAccuracyBanner();
+                return;
+            }
+            AP_Atlas.UI.PermissionDialog.Ask(GetTree().Root, _appSettings, AP_Atlas.Core.Permissions.GitHubLookups, null,
+                $"For {_slotName}: Atlas looks for the {game} apworld this seed was made with.", allowed =>
+                {
+                    if (!GodotObject.IsInstanceValid(this)) return;
+                    if (allowed) FixApworldVersion(interactive: true);
+                    else
+                    {
+                        _apworldFixStatus = "Not looked up: Atlas didn't contact GitHub.";
+                        SyncAccuracyBanner();
+                    }
+                });
+            return;
+        }
 
         // Where are this game's versions published? (Reads release lists only; nothing is downloaded.)
         _apworldFixRunning = true;
@@ -798,11 +820,15 @@ public partial class SlotTrackerControl : MarginContainer
             UseNativeDialog = true,
             Title = $"YAML for {_slotName} ({Game})"
         };
-        string players = AP_Atlas.Core.EngineSetup.AtlasEngine.FindArchipelagoInstalls().Select(p => System.IO.Path.Combine(p, "Players")).FirstOrDefault(System.IO.Directory.Exists);
-        if (players != null) dialog.CurrentDir = players;
+        // Start where the user last picked a YAML (or their chosen install's Players folder). Atlas never searches for YAMLs.
+        string linkedFolder = LinkedYamlSetting != null ? System.IO.Path.GetDirectoryName(LinkedYamlSetting) : null;
+        string chosenPlayers = string.IsNullOrWhiteSpace(_appSettings.ArchipelagoInstallationPath) ? null : System.IO.Path.Combine(_appSettings.ArchipelagoInstallationPath, "Players");
+        string start = new[] { _appSettings.LastYamlFolder, linkedFolder, chosenPlayers }.FirstOrDefault(d => !string.IsNullOrWhiteSpace(d) && System.IO.Directory.Exists(d));
+        if (start != null) dialog.CurrentDir = start;
         dialog.FileSelected += path =>
         {
             dialog.QueueFree();
+            _appSettings.LastYamlFolder = System.IO.Path.GetDirectoryName(path) ?? "";
             var check = AP_Atlas.Core.YamlExclusions.Read(path, Game, _slotName);
             if (check.Error != null && !check.Error.StartsWith("Several"))
             {
@@ -1482,15 +1508,19 @@ public partial class SlotTrackerControl : MarginContainer
         return (toExclude.Count, ids.Count, unknown);
     }
 
-    /// <summary>Shown when a YAML for this slot is found in the Archipelago Players folder (once per distinct list).</summary>
+    /// <summary>Shown when the YAML linked to this slot lists excluded locations (once per distinct list).</summary>
     public Action<string, Color, string, Action> ShowActionToast { get; set; }
 
+    /// <summary>
+    /// Offers the excluded locations of the YAML the user linked to this slot. Atlas reads only that file: it never looks
+    /// through folders for YAMLs.
+    /// </summary>
     private async void OfferYamlExclusionsAsync()
     {
-        string install = _appSettings.ArchipelagoInstallationPath, game = Game, slot = _slotName;
-        var found = await System.Threading.Tasks.Task.Run(() => AP_Atlas.Core.YamlExclusions.FindInPlayersFolder(install, game, slot));
-        if (!GodotObject.IsInstanceValid(this) || Session == null || found.Count == 0) return;
-        var yaml = found[0];
+        string path = LinkedYamlPath, game = Game, slot = _slotName;
+        if (path == null) return;
+        var yaml = await System.Threading.Tasks.Task.Run(() => AP_Atlas.Core.YamlExclusions.Read(path, game, slot));
+        if (!GodotObject.IsInstanceValid(this) || Session == null || yaml.Error != null || yaml.Names.Count == 0) return;
         string signature = System.IO.Path.GetFileName(yaml.File) + "|" + string.Join("|", yaml.Names.OrderBy(n => n));
         if (!AP_Atlas.Core.Annotations.FirstOfferOfYamlExclusions(AnnotationKey, signature)) return;
         string file = System.IO.Path.GetFileName(yaml.File);
