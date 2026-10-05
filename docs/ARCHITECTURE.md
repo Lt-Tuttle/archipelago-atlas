@@ -67,7 +67,7 @@ Atlas reads or writes outside this folder only with the user's permission.
 
 ## How things talk to each other
 
-- **Archipelago servers:** websockets through MultiClient.Net, compressed. Reconnects are capped and backed off, and stop when the server refuses. Session events arrive on network threads and move to the main thread with `CallDeferred`.
+- **Archipelago servers:** websockets through MultiClient.Net, compressed. Reconnects are capped and backed off, and stop when the server refuses. Session events arrive on network threads and move to the main thread with `Ui.Defer(owner, …)`, which skips the work if its owner (a slot, window or tab) was closed meanwhile, and logs a failure.
 - **Web sites** (Cheese Tracker, spheretracker.de, GitHub, PyPI, python.org): only through `PoliteHttp`:
   - One request at a time per site, at least a second apart.
   - Backoff of 1, 2, 5, 10, then 30 minutes; `Retry-After` is honoured.

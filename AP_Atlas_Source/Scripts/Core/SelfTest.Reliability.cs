@@ -175,6 +175,37 @@ namespace AP_Atlas.Core
             }
         }
 
+        /// <summary>
+        /// Ui.Defer runs work on the main thread later, but not for an owner freed meanwhile (a closed slot or window); work
+        /// with no owner always runs; a failure is logged instead of being lost.
+        /// </summary>
+        private static async Task DeferredWorkRespectsItsOwner()
+        {
+            var errors = new List<string>();
+            void OnLog(string line, string level) { if (level == "ERROR") lock (errors) errors.Add(line); }
+            Logger.OnLogMessage += OnLog;
+            var alive = new Godot.Node();
+            var freed = new Godot.Node();
+            try
+            {
+                int ranForFreed = 0, ranForAlive = 0, ranWithoutOwner = 0;
+                AP_Atlas.UI.Ui.Defer(freed, () => ranForFreed++);
+                freed.Free();
+                AP_Atlas.UI.Ui.Defer(alive, () => ranForAlive++);
+                AP_Atlas.UI.Ui.Defer(null, () => ranWithoutOwner++);
+                AP_Atlas.UI.Ui.Defer(alive, () => throw new InvalidOperationException("deferred failure"), "testing a deferred failure");
+                await Task.Delay(200);
+                Expect(ranForFreed == 0, "work for a freed owner must not run");
+                Expect(ranForAlive == 1 && ranWithoutOwner == 1, $"work for a live owner, and without one, runs once each (ran {ranForAlive} and {ranWithoutOwner})");
+                lock (errors) Expect(errors.Any(e => e.Contains("testing a deferred failure") && e.Contains("deferred failure")), "a failure is logged with what was being done");
+            }
+            finally
+            {
+                Logger.OnLogMessage -= OnLog;
+                alive.Free();
+            }
+        }
+
         /// <summary>SafeFile.Delete removes the backup and any temp file too, so a deleted file doesn't come back on the next read.</summary>
         private static void DeletedFilesStayDeleted()
         {

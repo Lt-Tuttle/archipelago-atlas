@@ -112,12 +112,12 @@ namespace AP_Atlas.Core
                 if (item != null) onPick(item, tree.GetColumnAtPosition((Godot.Vector2I)position));
             };
             // item_selected fires before item_mouse_selected; defer so a mouse pick in the same frame wins.
-            tree.ItemSelected += () => Godot.Callable.From(() =>
+            tree.ItemSelected += () => AP_Atlas.UI.Ui.Defer(tree, () =>
             {
                 if (Godot.Engine.GetProcessFrames() == lastMouseFrame) return;
                 var item = tree.GetSelected();
                 if (item != null) onPick(item, -1);
-            }).CallDeferred();
+            });
         }
     }
 

@@ -502,7 +502,7 @@ namespace AP_Atlas.UI
                 _onlySlot.Visible = false;
                 return;
             }
-            if (bar != null) Callable.From(() => { if (IsInstanceValid(bar)) bar.Value = scroll; }).CallDeferred();
+            if (bar != null) Ui.Defer(bar, () => bar.Value = scroll);
             var table = tables[Math.Clamp(_tablePicker.GetItemId(Math.Max(0, _tablePicker.Selected)), 0, tables.Count - 1)];
             int slotColumn = SphereTable.ColumnOf(table, "Finder");
             if (slotColumn < 0) slotColumn = SphereTable.ColumnOf(table, "Slot");

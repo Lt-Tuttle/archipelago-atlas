@@ -212,7 +212,7 @@ namespace AP_Atlas.UI
             QueueFree();
         }
 
-        private void OnEngineChanged() => Callable.From(() => { if (IsInstanceValid(this)) Render(); }).CallDeferred();
+        private void OnEngineChanged() => Ui.Defer(this, () => Render());
 
         // =====================================================================
         // Rendering
@@ -360,7 +360,7 @@ namespace AP_Atlas.UI
                 RunOperation("Removing Atlas's files", async (log, _, ct) =>
                 {
                     await AtlasEngine.RemoveAtlasFilesAsync(install, log, ct);
-                    Callable.From(() => AP_Atlas.Core.Permissions.SetAlways(_settings, AP_Atlas.Core.Permissions.WriteArchipelago, root, false)).CallDeferred();
+                    Ui.Defer(null, () => AP_Atlas.Core.Permissions.SetAlways(_settings, AP_Atlas.Core.Permissions.WriteArchipelago, root, false), "taking back the permission to change your Archipelago install");
                 });
             });
         }
@@ -651,7 +651,7 @@ namespace AP_Atlas.UI
                     string file = await ApworldSources.DownloadAsync(source, latest, log, ct);
                     log($"Installing {game} {latest.Version}…");
                     bool ok = await AtlasEngine.InstallApworldAsync(install, file, log, ct);
-                    if (ok && slot != null) Callable.From(() => { if (IsInstanceValid(slot)) slot.RetryLogicEngine(); }).CallDeferred();
+                    if (ok && slot != null) Ui.Defer(slot, () => slot.RetryLogicEngine());
                 });
             }
             if (newest != null && ApworldSources.IsApproved(_settings, newest.Url)) { Go(); return; }
@@ -689,7 +689,7 @@ namespace AP_Atlas.UI
             RunOperation($"Finding where {game} versions are published", async (log, _, ct) =>
             {
                 var repos = await ApworldSources.ReposForAsync(_settings, install, game, log, ct);
-                Callable.From(() => { if (IsInstanceValid(this)) ConfirmSeedSearch(game, seedChecksum, slot, repos); }).CallDeferred();
+                Ui.Defer(this, () => ConfirmSeedSearch(game, seedChecksum, slot, repos));
             });
         }
 
@@ -709,7 +709,7 @@ namespace AP_Atlas.UI
                     if (match == null) return;
                     log($"Installing {game} {version.Version}…");
                     bool ok = await AtlasEngine.InstallApworldAsync(install, match, log, ct);
-                    if (ok && slot != null) Callable.From(() => { if (IsInstanceValid(slot)) slot.RetryLogicEngine(); }).CallDeferred();
+                    if (ok && slot != null) Ui.Defer(slot, () => slot.RetryLogicEngine());
                 });
             }
             if (repos.All(r => r.Approved))
@@ -830,21 +830,19 @@ namespace AP_Atlas.UI
             _progress.Value = 0;
             SetStatus(name + "…", Colors.LightGray);
             Render();
-            void log(string line) => Callable.From(() => { if (IsInstanceValid(this)) Log(line); }).CallDeferred();
-            void progress(float f) => Callable.From(() =>
+            void log(string line) => Ui.Defer(this, () => Log(line));
+            void progress(float f) => Ui.Defer(this, () =>
             {
-                if (!IsInstanceValid(this)) return;
                 _progress.Value = f < 0 ? 0 : f;
-            }).CallDeferred();
+            });
             Async.Fire(Task.Run(async () =>
             {
                 string failure = null;
                 try { await operation(log, progress, ct); }
                 catch (OperationCanceledException) { failure = "Cancelled."; }
                 catch (Exception ex) { failure = ex.Message; Logger.LogWarning("[Atlas Engine] " + ex); }
-                Callable.From(() =>
+                Ui.Defer(this, () =>
                 {
-                    if (!IsInstanceValid(this)) return;
                     _busy = false;
                     _cancel.Disabled = true;
                     _progress.Visible = false;
@@ -852,7 +850,7 @@ namespace AP_Atlas.UI
                     Render();
                     if (failure != null) SetStatus(name + " stopped: " + failure, Bad);
                     ScanLocalApworlds();
-                }).CallDeferred();
+                });
             }), $"running \"{name}\"", tellUser: false);
         }
 
@@ -881,13 +879,12 @@ namespace AP_Atlas.UI
                         }
                     }
                 }
-                Callable.From(() =>
+                Ui.Defer(this, () =>
                 {
-                    if (!IsInstanceValid(this)) return;
                     _localApworlds = map;
                     RenderGames(AtlasEngine.Current);
                     MainTrackerWindow.SetFontSizeRecursive(_gamesBox, _fontSize);
-                }).CallDeferred();
+                });
             }), "looking for apworlds in your Archipelago install");
         }
 

@@ -260,7 +260,7 @@ namespace AP_Atlas.UI
                 old.QueueFree();
             }
             _scroll.AddChild(_content);
-            if (scrollY > 0) Callable.From(() => { if (IsInstanceValid(_scroll)) _scroll.ScrollVertical = scrollY; }).CallDeferred();
+            if (scrollY > 0) Ui.Defer(_scroll, () => _scroll.ScrollVertical = scrollY);
         }
 
         private void OnEditorFocusExited()

@@ -266,18 +266,18 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     }
 
     // Slot cards show special-item progress, so redraw them when special marks change.
-    private void OnAnnotationsChanged() => Callable.From(UpdateSidebar).CallDeferred();
+    private void OnAnnotationsChanged() => AP_Atlas.UI.Ui.Defer(this, UpdateSidebar);
 
     private void OnLogMessageReceived(string msg, string level)
     {
         // Log lines can arrive from other threads while Atlas is closing, after the consoles are freed.
         if (_consoleOutput != null)
         {
-            Callable.From(() => { if (GodotObject.IsInstanceValid(_consoleOutput)) _consoleOutput.AppendText(msg); }).CallDeferred();
+            AP_Atlas.UI.Ui.DeferQuiet(_consoleOutput, () => _consoleOutput.AppendText(msg));
         }
         if (_debugLogConsole != null)
         {
-            Callable.From(() => { if (GodotObject.IsInstanceValid(_debugLogConsole)) _debugLogConsole.AppendText(msg); }).CallDeferred();
+            AP_Atlas.UI.Ui.DeferQuiet(_debugLogConsole, () => _debugLogConsole.AppendText(msg));
         }
     }
 
@@ -697,7 +697,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _uiReady = true;
         foreach (var (msg, color) in _pendingNotices) ShowToast(msg, color);
         _pendingNotices.Clear();
-        if (VisualCheckRequested) Callable.From(RunVisualCheck).CallDeferred();
+        if (VisualCheckRequested) AP_Atlas.UI.Ui.Defer(this, RunVisualCheck);
     }
 
     /// <summary>Reliability self-test mode (ATLAS_SELFTEST=1): runs the checks and exits with their result.</summary>
@@ -717,12 +717,11 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
 
     private void Notice(string message, Godot.Color color)
     {
-        Callable.From(() =>
+        AP_Atlas.UI.Ui.Defer(this, () =>
         {
-            if (!IsInstanceValid(this)) return;
             if (_uiReady) ShowToast(message, color);
             else _pendingNotices.Add((message, color));
-        }).CallDeferred();
+        });
     }
 
     private void OnFileRecovered(string path, string what) =>
@@ -974,7 +973,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     {
         var copies = DataManager.PlainTextPasswordCopies();
         if (copies.Count == 0) return;
-        Callable.From(() => ShowToast($"{copies.Count} old damaged cop{(copies.Count == 1 ? "y" : "ies")} of your profiles still hold room passwords in plain text. Delete {(copies.Count == 1 ? "it" : "them")}?",
+        AP_Atlas.UI.Ui.Defer(this, () => ShowToast($"{copies.Count} old damaged cop{(copies.Count == 1 ? "y" : "ies")} of your profiles still hold room passwords in plain text. Delete {(copies.Count == 1 ? "it" : "them")}?",
             Godot.Colors.Orange, "Delete", () =>
             {
                 int deleted = 0;
@@ -984,7 +983,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                     catch (System.Exception ex) { AP_Atlas.Core.Logger.LogWarning($"Couldn't delete {System.IO.Path.GetFileName(file)}: {ex.Message}"); }
                 }
                 LogToSystem($"Deleted {deleted} old damaged cop{(deleted == 1 ? "y" : "ies")} of profiles.json that held plain-text passwords.");
-            })).CallDeferred();
+            }));
     }
 
     public void OpenEngineSetup()
@@ -1010,7 +1009,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             return;
         }
         LogToSystem($"[color=orange]Logic engine: {problem}[/color] Settings → Atlas Engine sets it up.");
-        Callable.From(() => ShowToast("Logic needs the Atlas Engine. Atlas can set it up for you: about 55 MB to download (160 MB on disk), no installer.", Godot.Colors.Orange, "Set up", OpenEngineSetup)).CallDeferred();
+        AP_Atlas.UI.Ui.Defer(this, () => ShowToast("Logic needs the Atlas Engine. Atlas can set it up for you: about 55 MB to download (160 MB on disk), no installer.", Godot.Colors.Orange, "Set up", OpenEngineSetup));
     }
 
     private void ShowToast(string message, Godot.Color color) => ShowToast(message, color, null, null);
@@ -1288,7 +1287,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         string time = AP_Atlas.Core.Logger.DisplayClock().ToString("HH:mm:ss");
         string prefix = string.IsNullOrEmpty(slotName) ? "[color=gray]" : $"[color=orange][{slotName}][/color] [color=gray]";
         string formatted = $"{prefix}[{time}][/color] {msg}\n";
-        if (_debugLogConsole != null) Callable.From(() => _debugLogConsole.AppendText(formatted)).CallDeferred();
+        if (_debugLogConsole != null) AP_Atlas.UI.Ui.DeferQuiet(_debugLogConsole, () => _debugLogConsole.AppendText(formatted));
     }
 
     private void MarkDirty()
@@ -2242,7 +2241,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             }
         }
         DataManager.SaveProfiles(_profiles);
-        Callable.From(UpdateSidebar).CallDeferred();
+        AP_Atlas.UI.Ui.Defer(this, UpdateSidebar);
     }
 
     /// <summary>A slot card's Cheese Tracker badge: the slot's status there, or a suggestion from Atlas's logic that's ready.</summary>
@@ -2579,7 +2578,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
 
     private void ShowConnectingOverlay(string message)
     {
-        Callable.From(() =>
+        AP_Atlas.UI.Ui.Defer(this, () =>
         {
             if (_connectingOverlay == null)
             {
@@ -2607,19 +2606,19 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             _nameInput.Editable = false;
             _passwordInput.Editable = false;
             if (_connectAllBtn != null) _connectAllBtn.Disabled = true;
-        }).CallDeferred();
+        });
     }
 
     private void HideConnectingOverlay()
     {
-        Callable.From(() =>
+        AP_Atlas.UI.Ui.Defer(this, () =>
         {
             if (_connectingOverlay != null) _connectingOverlay.Visible = false;
             _serverInput.Editable = true;
             _nameInput.Editable = true;
             _passwordInput.Editable = true;
             if (_connectAllBtn != null) _connectAllBtn.Disabled = false;
-        }).CallDeferred();
+        });
     }
 
     private void OnConnectAllPressed() => AP_Atlas.Core.Async.Fire(OnConnectAllPressedAsync(), "connecting the multiworld's slots");
@@ -2714,7 +2713,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 LogToSystem("[color=red]Socket Error (" + slotName + "):[/color] " + msg);
                 if (_globalStatusLabel != null)
                 {
-                    Callable.From(() => { if (GodotObject.IsInstanceValid(_globalStatusLabel)) _globalStatusLabel.Text = "Socket Error: " + msg; }).CallDeferred();
+                    AP_Atlas.UI.Ui.Defer(_globalStatusLabel, () => _globalStatusLabel.Text = "Socket Error: " + msg);
                 }
             };
             session.Socket.SocketClosed += (reason) =>
@@ -2722,7 +2721,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 LogToSystem("[color=yellow]Socket Closed (" + slotName + "):[/color] " + reason);
                 if (_globalStatusLabel != null)
                 {
-                    Callable.From(() => { if (GodotObject.IsInstanceValid(_globalStatusLabel)) _globalStatusLabel.Text = "Disconnected: " + reason; }).CallDeferred();
+                    AP_Atlas.UI.Ui.Defer(_globalStatusLabel, () => _globalStatusLabel.Text = "Disconnected: " + reason);
                 }
                 // Atlas forgets a session before closing it on purpose, so one still tracked here dropped by itself.
                 bool dropped;
@@ -2731,7 +2730,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                     dropped = _loggedInSessions.Remove(session) && _openSessions.Remove(session);
                     _sessionOwners.Remove(session);
                 }
-                if (dropped && !_shuttingDown) Callable.From(() => OnSessionDropped(profile, slotName)).CallDeferred();
+                if (dropped && !_shuttingDown) AP_Atlas.UI.Ui.Defer(this, () => OnSessionDropped(profile, slotName));
             };
             var connectTask = Task.Run(() => session.TryConnectAndLogin(
                 "",
@@ -2763,7 +2762,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                         AP_Atlas.Core.Async.Fire(CloseSessionAsync(session), "closing a server connection", tellUser: false);
                     }
                 }, TaskScheduler.Default), "closing a connection that finished after it timed out", tellUser: false);
-                Callable.From(() =>
+                AP_Atlas.UI.Ui.Defer(this, () =>
                 {
                     _statusLabel.Text = "Status: Connection Timeout";
                     _statusLabel.AddThemeColorOverride("font_color", Colors.Red);
@@ -2771,11 +2770,11 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                     LogToSystem("[color=red]Connection timed out for " + slotName + " after 10 seconds.[/color]");
                     _connectingSlots.Remove(SlotKey(profile.Id, slotName));
                     UpdateSidebar();
-                }).CallDeferred();
+                });
                 return false;
             }
             var result = await connectTask;
-            Callable.From(() =>
+            AP_Atlas.UI.Ui.Defer(this, () =>
             {
                 if (_shuttingDown)
                 {
@@ -2871,12 +2870,12 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                     _connectingSlots.Remove(SlotKey(profile.Id, slotName));
                     UpdateSidebar();
                 }
-            }).CallDeferred();
+            });
         }
         catch (System.Exception ex)
         {
             AP_Atlas.Core.Async.Fire(CloseSessionAsync(session), "closing a server connection", tellUser: false);
-            Callable.From(() =>
+            AP_Atlas.UI.Ui.Defer(this, () =>
             {
                 _statusLabel.Text = "Status: Connection Error:\n" + ex.Message;
                 _statusLabel.AddThemeColorOverride("font_color", Colors.Red);
@@ -2884,7 +2883,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 LogToSystem("[color=red]Exception during connection:[/color] " + ex.Message);
                 _connectingSlots.Remove(SlotKey(profile.Id, slotName));
                 UpdateSidebar();
-            }).CallDeferred();
+            });
         }
         return true;
     }

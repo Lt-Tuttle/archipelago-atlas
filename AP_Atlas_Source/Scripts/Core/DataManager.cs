@@ -258,7 +258,7 @@ public static class DataManager
         if (Engine.GetMainLoop() is not SceneTree tree) { SaveSettings(settings); return; }
         if (OS.GetThreadCallerId() != OS.GetMainThreadId())
         {
-            Callable.From(() => SaveSettingsSoon(settings)).CallDeferred();
+            AP_Atlas.UI.Ui.Defer(null, () => SaveSettingsSoon(settings), "saving settings");
             return;
         }
         _settingsToSave = settings;

@@ -56,6 +56,7 @@ CI runs the build, formatting, guard rails and self-test on every push and pull 
   | Anything outside Atlas's folder, or a new site | `Permissions` with `PermissionDialog` |
   | Secrets | `Secrets` |
   | Work nobody awaits (button handlers, background checks) | `Async.Fire(task, "what it's doing")`, never `async void` or `_ = …` |
+  | Updating the window from another thread, or later | `Ui.Defer(owner, …)`, never `Callable.From(…).CallDeferred()` |
 
   The guard rails enforce the riskiest of these in CI.
 - **Async code:** the build runs Microsoft's async analyzers. An unobserved task, `async void`, a blocking wait on unfinished work, or `ContinueWith` without a `TaskScheduler` stops the build. Methods that return a task end in `Async`.

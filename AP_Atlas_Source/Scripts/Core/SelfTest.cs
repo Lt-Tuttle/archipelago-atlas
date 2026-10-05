@@ -104,6 +104,7 @@ namespace AP_Atlas.Core
             Test("SafeFile: a deleted file stays deleted (its backup goes with it)", DeletedFilesStayDeleted);
             await TestAsync("Settings: a burst of changes is written once; closing or an immediate save writes a pending one", SettingsBurstsAreSavedOnce);
             await TestAsync("Profiles another program held at load aren't saved over, and the user is told", HeldProfilesAreNotSavedOver);
+            await TestAsync("Window updates handed to the main thread skip a closed owner, and a failure is logged", DeferredWorkRespectsItsOwner);
 
             string ap = System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_AP");
             if (!string.IsNullOrWhiteSpace(ap))

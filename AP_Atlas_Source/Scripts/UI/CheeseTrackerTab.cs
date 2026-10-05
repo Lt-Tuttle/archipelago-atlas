@@ -806,7 +806,7 @@ namespace AP_Atlas.UI
                     _renderedKeys = keys;
                     if (reselect != null) reselect.Select(0);
                     var bar = ScrollBar();
-                    if (bar != null) Callable.From(() => { if (IsInstanceValid(bar)) bar.Value = scroll; }).CallDeferred();
+                    if (bar != null) Ui.Defer(bar, () => bar.Value = scroll);
                 }
             }
             finally
@@ -1136,10 +1136,10 @@ namespace AP_Atlas.UI
             toggles.AddThemeConstantOverride("h_separation", 4);
             var received = new Button { Text = "In this world", ToggleMode = true, ButtonPressed = !_sentHints, FocusMode = FocusModeEnum.None, TooltipText = "Items in this slot's world that other slots need (what Cheese Tracker calls received hints)" };
             var sent = new Button { Text = "For this slot", ToggleMode = true, ButtonPressed = _sentHints, FocusMode = FocusModeEnum.None, TooltipText = "This slot's items, in other worlds (sent hints)" };
-            received.Pressed += () => { _sentHints = false; Callable.From(RenderDetails).CallDeferred(); };
-            sent.Pressed += () => { _sentHints = true; Callable.From(RenderDetails).CallDeferred(); };
+            received.Pressed += () => { _sentHints = false; Ui.Defer(this, RenderDetails); };
+            sent.Pressed += () => { _sentHints = true; Ui.Defer(this, RenderDetails); };
             var found = new Button { Text = "Include found and useless", ToggleMode = true, ButtonPressed = _includeFoundHints, FocusMode = FocusModeEnum.None };
-            found.Toggled += on => { _includeFoundHints = on; Callable.From(RenderDetails).CallDeferred(); };
+            found.Toggled += on => { _includeFoundHints = on; Ui.Defer(this, RenderDetails); };
             toggles.AddChild(received);
             toggles.AddChild(sent);
             toggles.AddChild(found);

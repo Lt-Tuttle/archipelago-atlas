@@ -236,7 +236,7 @@ namespace AP_Atlas.UI
             _requestInput.TextChanged += _ => UpdateSuggestions();
             _requestInput.TextSubmitted += _ => SubmitHintRequest();
             _requestInput.GuiInput += OnRequestInputGuiInput;
-            _requestInput.FocusExited += () => Callable.From(() => { if (!_requestInput.HasFocus()) _suggestions.Visible = false; }).CallDeferred();
+            _requestInput.FocusExited += () => Ui.Defer(this, () => { if (!_requestInput.HasFocus()) _suggestions.Visible = false; });
             requestRow.AddChild(_requestInput);
 
             _requestButton = new Button { Text = "Hint", CustomMinimumSize = new Vector2(80, 0) };
@@ -563,7 +563,7 @@ namespace AP_Atlas.UI
             {
                 _suppressPick = true;
                 reselect.Select(0);
-                Callable.From(() => _suppressPick = false).CallDeferred(); // after TreePicks' deferred handler
+                Ui.Defer(this, () => _suppressPick = false); // after TreePicks' deferred handler
                 if (_revealKey != null) _tree.ScrollToItem(reselect, true);
             }
             _revealKey = null;

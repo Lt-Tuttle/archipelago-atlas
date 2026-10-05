@@ -61,12 +61,11 @@ public partial class SlotTrackerControl : MarginContainer
         AP_Atlas.Core.Async.Then(ClientStatusAsync(PlayerSlot), status =>
         {
             if (status == ArchipelagoClientState.ClientGoal)
-                Callable.From(() =>
+                AP_Atlas.UI.Ui.Defer(this, () =>
                 {
-                    if (!GodotObject.IsInstanceValid(this)) return;
                     GoalCompleted = true;
                     RaiseStateChanged();
-                }).CallDeferred();
+                });
         }, "asking the server whether this slot reached its goal");
     }
 
@@ -170,10 +169,10 @@ public partial class SlotTrackerControl : MarginContainer
         AddThemeConstantOverride("margin_bottom", 10);
 
         _logicEngine = new LogicEngineManager(AP_Atlas.Core.EngineSetup.AtlasEngine.Resolve(_appSettings), AppendDebugLog);
-        _logicEngine.EngineExited += code => Callable.From(() =>
+        _logicEngine.EngineExited += code => AP_Atlas.UI.Ui.Defer(this, () =>
         {
-            if (GodotObject.IsInstanceValid(this) && _engineRunning) HandleEngineFailure($"the engine process exited with code {code}");
-        }).CallDeferred();
+            if (_engineRunning) HandleEngineFailure($"the engine process exited with code {code}");
+        });
         AP_Atlas.Core.EngineSetup.AtlasEngine.Changed += OnEngineChanged;
         AP_Atlas.Core.EngineSetup.AtlasEngine.PauseRequested += OnEnginePauseRequested;
 
@@ -252,9 +251,9 @@ public partial class SlotTrackerControl : MarginContainer
         AP_Atlas.Core.PopTracker.PackFixes.Changed += OnPackFixesChanged;
         // Keep this slot's options for offline use (setting indicators, the Pack Doctor).
         DataManager.SaveSlotData(ProfileId, _slotName, Game, _slotData);
-        Callable.From(DetectRaceMode).CallDeferred();
-        Callable.From(RequestGameNames).CallDeferred();
-        Callable.From(OfferYamlExclusions).CallDeferred();
+        AP_Atlas.UI.Ui.Defer(this, DetectRaceMode);
+        AP_Atlas.UI.Ui.Defer(this, RequestGameNames);
+        AP_Atlas.UI.Ui.Defer(this, OfferYamlExclusions);
         _specialSignature = string.Join("|", AP_Atlas.Core.Annotations.SpecialItemNames(Game).OrderBy(n => n));
         _exclusionSignature = ExclusionSignature();
 
@@ -269,9 +268,9 @@ public partial class SlotTrackerControl : MarginContainer
         // Streams this slot's hints (as finder or receiver) now and on every change.
         Session.Hints.TrackHints(OnHintsUpdated, true);
 
-        Callable.From(LoadMapPack).CallDeferred();
-        Callable.From(InitializeLogicEngine).CallDeferred();
-        Callable.From(RefreshAllViews).CallDeferred();
+        AP_Atlas.UI.Ui.Defer(this, LoadMapPack);
+        AP_Atlas.UI.Ui.Defer(this, InitializeLogicEngine);
+        AP_Atlas.UI.Ui.Defer(this, RefreshAllViews);
     }
 
     public void AppendDebugLog(string msg)
@@ -293,31 +292,30 @@ public partial class SlotTrackerControl : MarginContainer
 
     private void OnItemReceived(ReceivedItemsHelper helper)
     {
-        Callable.From(() =>
+        AP_Atlas.UI.Ui.Defer(this, () =>
         {
             UpdateItemHistoryUI();
             FeedNewItemsToScripts();
             UpdateKeyItemsUI();
             QueueLogicRefresh();
             RaiseStateChanged();
-        }).CallDeferred();
+        });
     }
 
     private void OnCheckedLocationsUpdated(System.Collections.ObjectModel.ReadOnlyCollection<long> newCheckedLocations)
     {
-        Callable.From(() =>
+        AP_Atlas.UI.Ui.Defer(this, () =>
         {
             FeedNewChecksToScripts();
             QueueLogicRefresh();
             RaiseStateChanged();
-        }).CallDeferred();
+        });
     }
 
     private void OnHintsUpdated(Archipelago.MultiClient.Net.Models.Hint[] hints)
     {
-        Callable.From(() =>
+        AP_Atlas.UI.Ui.Defer(this, () =>
         {
-            if (!GodotObject.IsInstanceValid(this)) return;
             CurrentHints = hints ?? Array.Empty<Archipelago.MultiClient.Net.Models.Hint>();
             int me = Session.ConnectionInfo.Slot;
             foreach (var h in hints)
@@ -327,7 +325,7 @@ public partial class SlotTrackerControl : MarginContainer
             }
             _hintTracker?.SetHints(hints);
             RaiseStateChanged();
-        }).CallDeferred();
+        });
     }
 
     /// <summary>Whether this slot's logic engine considers the location reachable; null while the engine isn't running or logic is hidden.</summary>
@@ -582,12 +580,12 @@ public partial class SlotTrackerControl : MarginContainer
             {
                 AppendDebugLog(line);
                 string trimmed = line.Trim();
-                Callable.From(() =>
+                AP_Atlas.UI.Ui.Defer(this, () =>
                 {
-                    if (!GodotObject.IsInstanceValid(this) || !_apworldFixRunning) return;
+                    if (!_apworldFixRunning) return;
                     _apworldFixStatus = $"Looking for the seed's version… {trimmed}";
                     SyncAccuracyBanner();
-                }).CallDeferred();
+                });
             }, System.Threading.CancellationToken.None));
         }
         catch (Exception ex) { failure = ex.Message; }
@@ -880,9 +878,9 @@ public partial class SlotTrackerControl : MarginContainer
         var install = _logicEngine?.Install;
         if (install == null || !string.Equals(System.IO.Path.GetFullPath(install.Root ?? "").TrimEnd('\\'), System.IO.Path.GetFullPath(root ?? "").TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)) return;
         _logicEngine.StopEngine();
-        Callable.From(() =>
+        AP_Atlas.UI.Ui.Defer(this, () =>
         {
-            if (!GodotObject.IsInstanceValid(this) || Session == null) return;
+            if (Session == null) return;
             bool wasActive = _engineRunning || _engineBooting;
             _engineRunning = false;
             ResetLogicState();
@@ -893,15 +891,15 @@ public partial class SlotTrackerControl : MarginContainer
                 SyncLogicViews();
                 RaiseStateChanged();
             }
-        }).CallDeferred();
+        });
     }
 
     /// <summary>Setup finished or changed: a slot that was waiting on the engine tries again.</summary>
-    private void OnEngineChanged() => Callable.From(() =>
+    private void OnEngineChanged() => AP_Atlas.UI.Ui.Defer(this, () =>
     {
-        if (!GodotObject.IsInstanceValid(this) || Session == null || _engineRunning || _engineBooting || EngineProblem == null) return;
+        if (Session == null || _engineRunning || _engineBooting || EngineProblem == null) return;
         if (EngineProblem.Code is "no_engine" or "world_missing" or "no_response" or "crashed" or "error" or "paused") InitializeLogicEngine();
-    }).CallDeferred();
+    });
 
     private void OnRaceRulesChanged()
     {
@@ -1006,14 +1004,14 @@ public partial class SlotTrackerControl : MarginContainer
             Items = new Dictionary<string, long>(data.ItemLookup),
             Locations = new Dictionary<string, long>(data.LocationLookup ?? new Dictionary<string, long>())
         };
-        Callable.From(() =>
+        AP_Atlas.UI.Ui.Defer(null, () =>
         {
             AP_Atlas.Core.PopTracker.GameNames.Store(table);
             if (!GodotObject.IsInstanceValid(this)) return;
             RebuildPackIndex();
             // The server's names are the most accurate; re-check the pack against them.
             if (Pack != null) AP_Atlas.Core.Async.Fire(AP_Atlas.Core.PopTracker.PackDoctorService.CheckAsync(Pack), "checking a map pack");
-        }).CallDeferred();
+        });
     }
 
     /// <summary>The pairing of the loaded pack with this slot's locations and items.</summary>
@@ -1071,7 +1069,7 @@ public partial class SlotTrackerControl : MarginContainer
         {
             try { work(); }
             catch (Exception ex) { AP_Atlas.Core.Logger.LogWarning($"[{_slotName}] Pack script: {ex.Message}"); }
-            if (onMainThread != null) Callable.From(() => { if (GodotObject.IsInstanceValid(this)) onMainThread(); }).CallDeferred();
+            if (onMainThread != null) AP_Atlas.UI.Ui.Defer(this, () => onMainThread());
         }, System.Threading.Tasks.TaskScheduler.Default);
     }
 
@@ -2285,11 +2283,11 @@ public partial class SlotTrackerControl : MarginContainer
 
     private void OnSocketClosed(string reason)
     {
-        Callable.From(() =>
+        AP_Atlas.UI.Ui.Defer(this, () =>
         {
             AppendSystemMessage($"[color=red]Connection lost: {reason}[/color]");
             RaiseStateChanged();
-        }).CallDeferred();
+        });
     }
 
     private void AppendSystemMessage(string bbcodeText, bool isReplay = false)
@@ -2347,13 +2345,13 @@ public partial class SlotTrackerControl : MarginContainer
         {
             _chatHistory.Add(new ChatEntry { APMessage = msg });
             if (_chatHistory.Count > 1000) _chatHistory.RemoveAt(0);
-            Callable.From(() => ProcessSingleMessage(msg)).CallDeferred();
+            AP_Atlas.UI.Ui.Defer(this, () => ProcessSingleMessage(msg));
         }
     }
 
     private void OnAPMessageReceived(LogMessage msg)
     {
-        Callable.From(() =>
+        AP_Atlas.UI.Ui.Defer(this, () =>
         {
             _chatHistory.Add(new ChatEntry { APMessage = msg });
             if (_chatHistory.Count > 1000) _chatHistory.RemoveAt(0);
@@ -2364,7 +2362,7 @@ public partial class SlotTrackerControl : MarginContainer
             }
             ProcessSingleMessage(msg);
             AnnounceSpecialItem(msg);
-        }).CallDeferred();
+        });
     }
 
     private void ProcessSingleMessage(LogMessage msg)

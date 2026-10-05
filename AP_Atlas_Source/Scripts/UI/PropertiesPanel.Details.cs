@@ -443,11 +443,11 @@ namespace AP_Atlas.UI
             }), list =>
             {
                 list ??= new List<PackScriptHost.SettingInfo>();
-                Callable.From(() =>
+                Ui.Defer(this, () =>
                 {
                     _offlineSettings[key] = (saved.Saved, list);
                     current(() => Render(keepScroll: true));
-                }).CallDeferred();
+                });
             }, $"reading {saved.Game}'s saved options with its map pack");
         }
 
@@ -677,13 +677,13 @@ namespace AP_Atlas.UI
                 var current = StillCurrent();
                 Async.Then(owner.ScoutCheckedLocationAsync(t.LocationId), info =>
                 {
-                    Callable.From(() => current(() =>
+                    Ui.Defer(this, () => current(() =>
                     {
                         if (!IsInstanceValid(placeholder)) return;
                         placeholder.Text = info == null
                             ? Colored("Couldn't look this up.", Muted)
                             : $"{ItemLink(view, info.Player?.Slot ?? -1, info.ItemId, info.Flags)} for {PlayerLink(view, info.Player?.Slot ?? -1)}";
-                    })).CallDeferred();
+                    }));
                 }, "looking up what was at a checked location");
             }
             else
@@ -758,7 +758,7 @@ namespace AP_Atlas.UI
 
             Async.Then(owner.ExplainLocationAsync(locationId), ex =>
             {
-                Callable.From(() => current(() =>
+                Ui.Defer(this, () => current(() =>
                 {
                     if (!IsInstanceValid(container)) return;
                     // Build into the container as if it were the current section.
@@ -805,7 +805,7 @@ namespace AP_Atlas.UI
                         _currentSectionBody = saved;
                         MainTrackerWindow.SetFontSizeRecursive(container, fontSize);
                     }
-                })).CallDeferred();
+                }));
             }, "asking the logic engine about a location");
         }
 
@@ -861,14 +861,14 @@ namespace AP_Atlas.UI
             var task = isItem ? view.ItemGroupsAsync(game) : view.LocationGroupsAsync(game);
             Async.Then(task, groups =>
             {
-                Callable.From(() => current(() =>
+                Ui.Defer(this, () => current(() =>
                 {
                     if (!IsInstanceValid(placeholder)) return;
                     var mine = groups?.Where(g => g.Value != null && g.Value.Contains(name) && g.Key != "Everywhere" && g.Key != "Everything").Select(g => g.Key).OrderBy(k => k).ToList();
                     placeholder.Text = groups == null ? Colored("Not available.", Muted)
                         : mine.Count == 0 ? Colored("Not in any named group.", Muted)
                         : Colored(string.Join(", ", mine), Colors.LightGray);
-                })).CallDeferred();
+                }));
             }, "reading the game's item and location groups");
         }
 
@@ -1063,7 +1063,7 @@ namespace AP_Atlas.UI
             var current = StillCurrent();
             Async.Then(view.ClientStatusAsync(p), st =>
             {
-                Callable.From(() => current(() =>
+                Ui.Defer(this, () => current(() =>
                 {
                     if (!IsInstanceValid(statusText)) return;
                     statusText.Text = st switch
@@ -1075,7 +1075,7 @@ namespace AP_Atlas.UI
                         ArchipelagoClientState.ClientUnknown => Colored("Not connected / unknown", Muted),
                         _ => Colored("Unavailable", Muted)
                     };
-                })).CallDeferred();
+                }));
             }, "asking the server for a player's status");
 
             if (!isYou)
@@ -1328,7 +1328,7 @@ namespace AP_Atlas.UI
                 {
                     try { PopTrackerPackLoader.InspectZipPack(path); }
                     catch (Exception ex) { Logger.LogWarning($"Couldn't read the map pack {Path.GetFileName(path)}: {ex.Message}"); }
-                }).ContinueWith(_ => Callable.From(() => current(() => Render(keepScroll: true))).CallDeferred(), System.Threading.Tasks.TaskScheduler.Default), "reading a map pack", tellUser: false);
+                }).ContinueWith(_ => Ui.Defer(this, () => current(() => Render(keepScroll: true))), System.Threading.Tasks.TaskScheduler.Default), "reading a map pack", tellUser: false);
                 return;
             }
             LoadedPack pack = null;

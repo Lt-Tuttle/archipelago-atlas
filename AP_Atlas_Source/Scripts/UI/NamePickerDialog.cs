@@ -48,7 +48,7 @@ namespace AP_Atlas.UI
             Confirmed += () => { var sel = _list.GetSelectedItems(); if (sel.Length > 0) Choose(sel[0]); };
             Canceled += QueueFree;
             Fill();
-            Callable.From(() => _search.GrabFocus()).CallDeferred();
+            Ui.Defer(this, () => _search.GrabFocus());
         }
 
         private void Fill()

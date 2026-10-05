@@ -10,6 +10,8 @@
       - Searching the PC for Archipelago: only from the Atlas Engine window's Find button, after the user agrees.
       - Letting Windows run a program by file type (UseShellExecute = true): nowhere.
       - "async void" methods, whose failures vanish: nowhere (start the work with Async.Fire instead).
+      - Handing work to the main thread with Callable.From(...).CallDeferred(): only in Ui.Defer, which skips work whose
+        owner was freed and logs a failure.
       - Throwing away a call's result ("_ = SomethingAsync()"), which hides a failed task: only in the self-test's fake servers (and Async.cs, which describes the rule).
     Run it from anywhere; CI runs it on every push. Exit code 0 means every rule holds.
 #>
@@ -23,6 +25,7 @@ $rules = @(
     @{ Name = 'Searching the PC for Archipelago'; Pattern = 'FindArchipelagoInstalls\s*\('; Allowed = @('Core\Engine\AtlasEngine.cs', 'UI\AtlasEngineWindow.cs') },
     @{ Name = 'Letting Windows run a program by file type'; Pattern = 'UseShellExecute\s*=\s*true'; Allowed = @() },
     @{ Name = 'An async void method (use Async.Fire)'; Pattern = '\basync\s+void\b'; Allowed = @('Core\Async.cs') },
+    @{ Name = 'Handing work to the main thread without Ui.Defer'; Pattern = '\)\.CallDeferred\(\)'; Allowed = @('UI\Ui.cs') },
     @{ Name = 'Throwing away a call''s result (use Async.Fire for tasks)'; Pattern = '(?<!var\s)(?<![\w.])_\s*=\s*[^;=>]*\('; Allowed = @('Core\Async.cs', 'Core\SelfTest.Cheese.cs', 'Core\SelfTest.Spheres.cs') }
 )
 

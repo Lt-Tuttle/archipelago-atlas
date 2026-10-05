@@ -8,7 +8,8 @@ namespace AP_Atlas.Core
     {
         private static string _logFilePath;
         private static readonly object _fileLock = new object();
-        public static Action<string, string> OnLogMessage;
+        /// <summary>A line for the window's logs (BBCode, level). Raised on whichever thread logged it.</summary>
+        public static event Action<string, string> OnLogMessage;
 
         /// <summary>The time shown on log lines in Atlas's window. The visual check fixes it, so its pictures don't change with the clock.</summary>
         public static Func<DateTime> DisplayClock { get; set; } = () => DateTime.Now;

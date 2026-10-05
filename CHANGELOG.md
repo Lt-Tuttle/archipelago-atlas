@@ -82,6 +82,7 @@ Development toward the first public beta, 0.1.0.
 - **Files held by another program:**
   - If an antivirus or sync tool (OneDrive, Dropbox) was reading your settings or profiles at the moment Atlas read them, Atlas took the file for damaged and put its older backup in its place. Your latest changes were lost.
   - Now Atlas reads the file again until it's free. If it stays held, Atlas carries on without it, says so, and won't save over it.
+- **Closing a slot or window while it was busy:** updates that arrived afterwards (from the server, the engine or a download) could fail against the closed view. They're now skipped, and any other failure in a window update is logged.
 - **Closing Atlas** now saves your multiworlds as well, so what changed during the session (slot stats, links) is kept.
 - **Notes, flags, exclusions and Pack Doctor fixes:** a save that fails is now shown to you, not only logged.
 - **Deleted data came back:** deleting a slot's saved data, or unlinking Cheese Tracker, left a backup that the next read restored. Deleting now removes the backup too.
