@@ -82,7 +82,7 @@ namespace AP_Atlas.Core
             };
             // Each request has its own time limit, covering the whole answer (HttpClient's own only lasts until the headers).
             var client = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("AP-Atlas/1.0 (Archipelago tracker)");
+            client.DefaultRequestHeaders.UserAgent.ParseAdd(AtlasVersion.UserAgent);
             return client;
         }
 

@@ -1,0 +1,17 @@
+version: 2
+updates:
+  - package-ecosystem: nuget
+    directory: /AP_Atlas_Source
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    ignore:
+      # These must match the Godot editor version; Godot is upgraded on purpose, with testing.
+      - dependency-name: Godot.NET.Sdk
+      - dependency-name: GodotSharp
+      - dependency-name: GodotSharpEditor
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

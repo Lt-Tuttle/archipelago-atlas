@@ -5,6 +5,8 @@
     <TargetFramework Condition=" $(GodotTargetPlatform) == 'ios' ">net8.0-ios</TargetFramework>
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <LangVersion>12</LangVersion>
+    <!-- The one place Atlas's version is set (SemVer). Tools/bump_version.ps1 changes it; the build adds the commit. -->
+    <Version>0.1.0-beta.1</Version>
   </PropertyGroup>
   
   <ItemGroup>

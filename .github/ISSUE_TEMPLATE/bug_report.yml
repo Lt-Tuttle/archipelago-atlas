@@ -1,0 +1,48 @@
+name: Bug report
+description: Something in Atlas doesn't work the way it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. **Please don't include passwords, API keys or private room links.**
+  - type: input
+    id: version
+    attributes:
+      label: Atlas version
+      description: It's in the window title, for example "The Archipelago Atlas 0.1.0-beta.1".
+      placeholder: 0.1.0-beta.1
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Connect to ...
+        2. Open the ... tab
+        3. ...
+  - type: input
+    id: games
+    attributes:
+      label: Game(s) involved
+      placeholder: e.g. Dark Souls III, A Link to the Past
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: |
+        The log is in Atlas's folder under PortableData\logs\atlas_log.txt. Attach it, or paste the part around the problem.
+        Please check it for anything private before posting.
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 24H2

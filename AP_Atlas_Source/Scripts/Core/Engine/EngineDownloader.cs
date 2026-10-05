@@ -15,7 +15,7 @@ namespace AP_Atlas.Core.EngineSetup
         private static HttpClient CreateClient()
         {
             var client = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("AP-Atlas-EngineSetup/1.0");
+            client.DefaultRequestHeaders.UserAgent.ParseAdd(AP_Atlas.Core.AtlasVersion.UserAgent);
             return client;
         }
 

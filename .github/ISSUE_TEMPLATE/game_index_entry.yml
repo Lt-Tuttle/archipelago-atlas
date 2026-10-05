@@ -1,0 +1,59 @@
+name: Game index entry
+description: Suggest a game (or fix one) for the Atlas Game Index, the list Atlas uses to set games up.
+labels: [game-index]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The Atlas Game Index lists community games: where their apworld and map packs come from, and who made them.
+        Only link official pages and releases from each project's own authors.
+  - type: input
+    id: game
+    attributes:
+      label: Game name
+      description: Exactly as Archipelago spells it.
+    validations:
+      required: true
+  - type: input
+    id: apworld
+    attributes:
+      label: Apworld releases
+      description: The apworld's official GitHub releases page.
+      placeholder: https://github.com/<owner>/<repo>/releases
+    validations:
+      required: true
+  - type: textarea
+    id: packs
+    attributes:
+      label: PopTracker map packs
+      description: One per line, with author and licence if you know them.
+  - type: input
+    id: guide
+    attributes:
+      label: Setup guide
+  - type: input
+    id: discord
+    attributes:
+      label: Discord thread
+  - type: input
+    id: authors
+    attributes:
+      label: Authors
+  - type: input
+    id: licence
+    attributes:
+      label: Licence
+      placeholder: e.g. MIT
+  - type: dropdown
+    id: adult
+    attributes:
+      label: Adult content (18+)?
+      options:
+        - "No"
+        - "Yes"
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else

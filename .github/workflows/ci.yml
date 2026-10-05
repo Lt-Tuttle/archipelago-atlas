@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.github/ISSUE_TEMPLATE/**'
+  pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.github/ISSUE_TEMPLATE/**'
+  workflow_dispatch:
+
+# A newer push to the same branch cancels the run still going (saves Actions minutes).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  # Godot must match the version in AP_Atlas.csproj's Sdk. The hash is from Godot's published SHA512-SUMS.txt.
+  GODOT_VERSION: 4.3-stable
+  GODOT_SHA512: 6fc1c187d7047d6b0a89e5e4495a63eb70a88209b7f283048f3b3d84d64047bc3addd7cfcb9a67a74441faea19dd8c465456b917cd9c3fc07f2131ee832e6e1e
+
+jobs:
+  build-and-test:
+    name: Build and self-test (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build
+        working-directory: AP_Atlas_Source
+        run: dotnet build AP_Atlas.sln -nologo
+
+      - name: Check formatting
+        working-directory: AP_Atlas_Source
+        run: dotnet format whitespace AP_Atlas.csproj --verify-no-changes
+
+      - name: Cache Godot
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/godot
+          key: godot-${{ env.GODOT_VERSION }}-mono-win64
+
+      - name: Download Godot (hash-checked)
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP 'godot.zip'
+          $url = "https://github.com/godotengine/godot-builds/releases/download/$($env:GODOT_VERSION)/Godot_v$($env:GODOT_VERSION)_mono_win64.zip"
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA512).Hash.ToLowerInvariant()
+          if ($hash -ne $env:GODOT_SHA512) { throw "The Godot download doesn't match its published hash (got $hash)." }
+          Expand-Archive -LiteralPath $zip -DestinationPath (Join-Path $env:RUNNER_TEMP 'godot')
+
+      - name: Locate Godot
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem (Join-Path $env:RUNNER_TEMP 'godot') -Recurse -Filter '*_console.exe' | Select-Object -First 1
+          if (-not $exe) { throw 'Godot console executable not found.' }
+          "ATLAS_GODOT=$($exe.FullName)" >> $env:GITHUB_ENV
+
+      - name: Import project resources
+        shell: pwsh
+        timeout-minutes: 10
+        run: |
+          & $env:ATLAS_GODOT --headless --path AP_Atlas_Source --import
+          # The editor's exit code after importing isn't meaningful; the self-test below is the real check.
+          exit 0
+
+      - name: Self-test
+        shell: pwsh
+        run: ./AP_Atlas_Source/Tools/run_selftest.ps1 -NoBuild -ScratchRoot $env:RUNNER_TEMP
+
+      - name: Keep the self-test output when it fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: selftest-output
+          path: ${{ runner.temp }}/atlas-selftest-*/
+          retention-days: 7
+          if-no-files-found: ignore

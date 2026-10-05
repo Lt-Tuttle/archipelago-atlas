@@ -1,0 +1,30 @@
+name: Feature request
+description: An idea that would make Atlas better.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The situation or problem, in your own words.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea
+      description: How you imagine Atlas could help.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What do you do today instead?
+      description: Other tools or workarounds you use.
+  - type: checkboxes
+    id: principles
+    attributes:
+      label: Atlas's principles
+      description: Atlas stays light on Archipelago's servers and asks before touching anything outside its own folder.
+      options:
+        - label: My idea doesn't need extra requests to Archipelago's servers, or I've explained why they're worth it.

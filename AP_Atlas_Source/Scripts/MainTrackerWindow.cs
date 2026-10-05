@@ -293,7 +293,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         GetTree().AutoAcceptQuit = false;
         AP_Atlas.Core.Logger.OnLogMessage += OnLogMessageReceived;
         AP_Atlas.Core.Annotations.Changed += OnAnnotationsChanged;
-        AP_Atlas.Core.Logger.LogInfo("AP Atlas UI Initialized.");
+        AP_Atlas.Core.Logger.LogInfo($"The Archipelago Atlas {AP_Atlas.Core.AtlasVersion.Full} started.");
+        GetWindow().Title = "The Archipelago Atlas " + AP_Atlas.Core.AtlasVersion.Display;
         _appSettings = DataManager.LoadSettings();
         AP_Atlas.Core.ThemeColors.SetAccent(_appSettings.ThemeAccentColor);
         AP_Atlas.Core.RaceRules.Initialize(_appSettings);

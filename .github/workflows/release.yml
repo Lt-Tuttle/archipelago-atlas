@@ -1,0 +1,111 @@
+name: Release
+
+# Pushing a tag like v0.1.0-beta.1 builds, tests and publishes that version.
+# Tools/bump_version.ps1 sets the version and prints the tag commands.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  GODOT_VERSION: 4.3-stable
+  GODOT_SHA512: 6fc1c187d7047d6b0a89e5e4495a63eb70a88209b7f283048f3b3d84d64047bc3addd7cfcb9a67a74441faea19dd8c465456b917cd9c3fc07f2131ee832e6e1e
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: The tag must match the project version
+        shell: pwsh
+        run: |
+          $tag = '${{ github.ref_name }}'.TrimStart('v')
+          [xml]$proj = Get-Content -Raw AP_Atlas_Source/AP_Atlas.csproj
+          $version = @($proj.Project.PropertyGroup | ForEach-Object { $_.Version } | Where-Object { $_ })[0]
+          if ($version -ne $tag) { throw "Tag v$tag doesn't match <Version>$version</Version> in AP_Atlas.csproj." }
+          "ATLAS_VERSION=$version" >> $env:GITHUB_ENV
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build
+        working-directory: AP_Atlas_Source
+        run: dotnet build AP_Atlas.sln -nologo
+
+      - name: Cache Godot
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/godot
+          key: godot-${{ env.GODOT_VERSION }}-mono-win64
+
+      - name: Download Godot (hash-checked)
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP 'godot.zip'
+          $url = "https://github.com/godotengine/godot-builds/releases/download/$($env:GODOT_VERSION)/Godot_v$($env:GODOT_VERSION)_mono_win64.zip"
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA512).Hash.ToLowerInvariant()
+          if ($hash -ne $env:GODOT_SHA512) { throw "The Godot download doesn't match its published hash (got $hash)." }
+          Expand-Archive -LiteralPath $zip -DestinationPath (Join-Path $env:RUNNER_TEMP 'godot')
+
+      - name: Locate Godot
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem (Join-Path $env:RUNNER_TEMP 'godot') -Recurse -Filter '*_console.exe' | Select-Object -First 1
+          if (-not $exe) { throw 'Godot console executable not found.' }
+          "ATLAS_GODOT=$($exe.FullName)" >> $env:GITHUB_ENV
+
+      - name: Import project resources
+        shell: pwsh
+        timeout-minutes: 10
+        run: |
+          & $env:ATLAS_GODOT --headless --path AP_Atlas_Source --import
+          exit 0
+
+      - name: Self-test (a release never ships with a failing check)
+        shell: pwsh
+        run: ./AP_Atlas_Source/Tools/run_selftest.ps1 -NoBuild -ScratchRoot $env:RUNNER_TEMP
+
+      - name: Package
+        shell: pwsh
+        run: |
+          if (-not (Test-Path AP_Atlas_Source/export_presets.cfg) -or -not (Test-Path AP_Atlas_Source/Tools/build_release.ps1)) {
+            Write-Host '::error::Release packaging is not set up yet. It arrives with the Windows export preset and Tools/build_release.ps1 (roadmap Phase 3).'
+            exit 1
+          }
+          ./AP_Atlas_Source/Tools/build_release.ps1 -Version $env:ATLAS_VERSION -OutDir dist
+
+      - name: Release notes from the changelog
+        shell: pwsh
+        run: |
+          $lines = @(Get-Content CHANGELOG.md)
+          $heading = "## [$($env:ATLAS_VERSION)]"
+          $start = -1
+          for ($i = 0; $i -lt $lines.Count; $i++) { if ($lines[$i].StartsWith($heading)) { $start = $i; break } }
+          if ($start -lt 0) { throw "CHANGELOG.md has no section for $($env:ATLAS_VERSION)." }
+          $notes = New-Object System.Collections.Generic.List[string]
+          for ($i = $start + 1; $i -lt $lines.Count -and -not $lines[$i].StartsWith('## ['); $i++) { $notes.Add($lines[$i]) }
+          Set-Content -Path release-notes.md -Value (($notes -join "`n").Trim()) -Encoding UTF8
+
+      - name: Publish the GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ghArgs = @("v$($env:ATLAS_VERSION)", '--title', "The Archipelago Atlas $($env:ATLAS_VERSION)", '--notes-file', 'release-notes.md')
+          if ($env:ATLAS_VERSION -match '-') { $ghArgs += '--prerelease' }
+          $ghArgs += @(Get-ChildItem dist -File | ForEach-Object { $_.FullName })
+          gh release create @ghArgs
