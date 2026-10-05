@@ -1,0 +1,17 @@
+# Text files are stored with LF and checked out with CRLF on every platform
+# (matches .editorconfig, which uses CRLF; .cs files must be CRLF).
+* text=auto eol=crlf
+
+# Binary files: never convert or diff as text.
+*.png      binary
+*.jpg      binary
+*.jpeg     binary
+*.ico      binary
+*.aseprite binary
+*.ttf      binary
+*.otf      binary
+*.dll      binary
+*.zip      binary
+*.apworld  binary
+*.pck      binary
+*.exe      binary
