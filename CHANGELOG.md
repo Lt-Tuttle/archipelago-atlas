@@ -62,9 +62,9 @@ Development toward the first public beta, 0.1.0.
   - The fake Archipelago server answers the data storage reads Atlas makes (race mode, client status, hints). The UI test has a race room: its slots give no "why" answers, and the Sphere Tracker hides that multiworld's spheres. It also turns on race mode's "hide all logic" and checks every view of logic hides, and comes back.
   - A scale scenario in the UI test: a 1,000-player room with 20 slots connected, then three bursts of items, item lines and hints.
     - It checks that hidden views do no work, that the text client draws a slice of lines per frame, and that connecting slots doesn't rebuild the sidebar.
-    - Its frames are guarded at 150 ms for the bursts (the target, 100 ms, is met on the development PC; CI's machines are slower) and 300 ms for connecting.
+    - Its frames are guarded at 150 ms for the bursts (the target is 100 ms; the worst frame is 85 to 105 ms) and 300 ms for connecting.
     - It also checks that one connection receives the room's text, and that every slot shows each item line, and each of its hints, once.
-  - Hitch reports (frames over 100 ms, in the log) now give each step's runs, time and memory per frame, total the same step across slots, and say how long garbage collection paused the program.
+  - Hitch reports (frames over 100 ms, in the log) now give each step's runs, time and memory per frame, total the same step across slots, and say how long garbage collection paused the program. A step's time leaves out those pauses, so a collection another thread set off isn't blamed on whatever step was running.
   - The fake Archipelago server sends item lines, and data storage changes only to the clients that asked for them (SetNotify), as a real server does.
   - The fake Archipelago server also handles text as a real server does:
     - No text for a connection that logged in with NoText, and a line to the whole room when a connection's tags change.
@@ -95,14 +95,14 @@ Development toward the first public beta, 0.1.0.
   - Its tests run against a fake Archipelago server: time limits, refusals, servers that are down, drops, the last try, and closing.
 - The automatic reconnect setting now says "about 20 minutes", which is how long its tries take. It said 30.
 - **Fewer redraws:** a slot now updates its views once per frame, however much arrives. A burst of items or messages (a release, a big catch-up after reconnecting) is one update, not one per item.
-- **Big rooms stay responsive.** In a test room of 1,000 players with 20 slots connected, a burst of items, item lines and hints froze Atlas for up to 2.7 seconds. Now the longest pause is under 100 ms on the development PC:
+- **Big rooms stay responsive.** In a test room of 1,000 players with 20 slots connected, a burst of items, item lines and hints froze Atlas for up to 2.7 seconds. Now the longest pause is about 100 ms (85 to 105 ms on the development PC and on CI):
   - Tools and slots that aren't showing skip their updates, and catch up when you show them.
   - The text client draws a flood of lines (a release) a little per frame.
   - One slot's update no longer redraws every other slot's hints.
   - The slots sidebar updates its cards in place, instead of rebuilding them all whenever a slot connects or drops.
   - Connecting a slot pauses the window about half as long (100 to 150 ms in that room, from 250 to 400 ms).
   - Only one connection per multiworld receives the room's text (next item).
-- **One connection per multiworld receives the room's text.** An Archipelago server sends every connection every line of the room (each item found, each chat line). With 20 slots of one multiworld connected, Atlas received, and decoded, each line 20 times. Now one slot's connection receives the room's lines; the others connect with Archipelago's NoText option, and the server sends them none. In the test room, the longest pause during bursts went from about 130 ms to under 100 ms, and Atlas's memory use halved.
+- **One connection per multiworld receives the room's text.** An Archipelago server sends every connection every line of the room (each item found, each chat line). With 20 slots of one multiworld connected, Atlas received, and decoded, each line 20 times. Now one slot's connection receives the room's lines; the others connect with Archipelago's NoText option, and the server sends them none. In the test room, the longest pause during bursts went from about 130 ms to about 100 ms, and Atlas's memory use halved.
   - Every slot's text client still shows every line once, in order, its own join included.
   - When you send a command from a slot (like `!hint`), that slot's connection is switched to receive text first, so the answer shows in its text client. The server tells the room whenever a connection's tags change, so Atlas does this only when needed.
   - A slot that doesn't receive text shows its new hints from its hint list, worded and coloured like the server's hint lines.

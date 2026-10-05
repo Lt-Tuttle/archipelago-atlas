@@ -11,6 +11,9 @@ namespace AP_Atlas.Core
     /// Lightweight main-thread profiler for explaining UI hitches.
     /// Wrap potentially slow UI work in <c>using (PerfMonitor.Measure("label")) { ... }</c>; a
     /// <see cref="HitchMonitor"/> node then reports long frames together with the scopes that ran in them.
+    /// A scope's time leaves out .NET garbage collection pauses that happened during it (whichever thread's allocation
+    /// set them off): the report lists those on their own line, so they're neither blamed on the step that happened to
+    /// be running nor counted twice.
     /// </summary>
     public static class PerfMonitor
     {
@@ -18,18 +21,21 @@ namespace AP_Atlas.Core
         {
             private readonly Total _total;
             private readonly long _start, _allocated;
+            private readonly TimeSpan _paused;
 
             internal Scope(Total total)
             {
                 _total = total;
                 _allocated = GC.GetAllocatedBytesForCurrentThread();
+                _paused = GC.GetTotalPauseDuration();
                 _start = Stopwatch.GetTimestamp();
             }
 
             public void Dispose()
             {
                 double ms = (Stopwatch.GetTimestamp() - _start) * 1000.0 / Stopwatch.Frequency;
-                Record(_total, ms, GC.GetAllocatedBytesForCurrentThread() - _allocated);
+                ms -= (GC.GetTotalPauseDuration() - _paused).TotalMilliseconds;
+                Record(_total, Math.Max(0, ms), GC.GetAllocatedBytesForCurrentThread() - _allocated);
             }
         }
 
@@ -153,11 +159,15 @@ namespace AP_Atlas.Core
             _steps.Clear();
         }
 
-        // Since ResetWorst: each kind of step (a label without its slot), how many times it ran, and the most of one frame it took.
-        private static readonly Dictionary<string, (int Runs, double WorstFrameMs)> _steps = new();
+        // Since ResetWorst: each kind of step (a label without its slot), how many times it ran, the most of one frame it
+        // took, and the most times it ran in one frame.
+        private static readonly Dictionary<string, (int Runs, double WorstFrameMs, int MostRunsInFrame)> _steps = new();
 
-        /// <summary>How many times a kind of step ran since <see cref="ResetWorst"/>, and the most of one frame it took.</summary>
-        public static (int Runs, double WorstFrameMs) Step(string kind) => _steps.TryGetValue(kind, out var step) ? step : (0, 0);
+        /// <summary>
+        /// How many times a kind of step ran since <see cref="ResetWorst"/>, the most of one frame it took (garbage collection
+        /// pauses left out), and the most times it ran in one frame.
+        /// </summary>
+        public static (int Runs, double WorstFrameMs, int MostRunsInFrame) Step(string kind) => _steps.TryGetValue(kind, out var step) ? step : (0, 0, 0);
 
         public override void _Process(double delta)
         {
@@ -168,8 +178,8 @@ namespace AP_Atlas.Core
             var drained = PerfMonitor.DrainFrameScopes();
             foreach (var kind in drained.GroupBy(s => PerfMonitor.KindOf(s.Label)))
             {
-                var (runs, worstMs) = Step(kind.Key);
-                _steps[kind.Key] = (runs + kind.Sum(s => s.Count), Math.Max(worstMs, kind.Sum(s => s.Ms)));
+                var (runs, worstMs, mostRuns) = Step(kind.Key);
+                _steps[kind.Key] = (runs + kind.Sum(s => s.Count), Math.Max(worstMs, kind.Sum(s => s.Ms)), Math.Max(mostRuns, kind.Sum(s => s.Count)));
             }
             // The same step in both frames counts as one, with its times and runs added.
             var scopes = _previousScopes.Concat(drained).GroupBy(s => s.Label)

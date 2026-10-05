@@ -841,14 +841,15 @@ public partial class MainTrackerWindow
             var hintRefreshes = AP_Atlas.Core.HitchMonitor.Step("Hints refresh");
             var memory = GC.GetGCMemoryInfo();
             GD.Print($"UITEST INFO Scale: {connected} slots in a {roomSize}-player room; the bursts took {stopwatch.Elapsed.TotalSeconds:0.0} s; the worst frame took {worst:0} ms; " +
+                     $"text client lines took at most {chatLines.WorstFrameMs:0} ms of a frame ({chatLines.Runs} runs, at most {chatLines.MostRunsInFrame} in a frame); " +
                      $".NET heap {memory.HeapSizeBytes / 1048576.0:0} MB, committed {memory.TotalCommittedBytes / 1048576.0:0} MB, process {System.Environment.WorkingSet / 1048576.0:0} MB, " +
                      $"GC paused {GC.GetTotalPauseDuration().TotalMilliseconds:0} ms in all; {Performance.GetMonitor(Performance.Monitor.ObjectNodeCount):0} nodes, " +
                      $"{Performance.GetMonitor(Performance.Monitor.ObjectOrphanNodeCount):0} orphaned, {Performance.GetMonitor(Performance.Monitor.ObjectCount):0} objects; generations " +
                      string.Join("/", memory.GenerationInfo.ToArray().Select(g => $"{g.SizeAfterBytes / 1048576.0:0}")) + " MB. The worst frame: " +
                      AP_Atlas.Core.HitchMonitor.WorstFrameReport.ReplaceLineEndings(" | "));
-            // The target is 100 ms. On the development PC the worst frame takes about 90 to 100 ms (about 130 ms while each of
-            // the 20 connections received, and decoded, the room's text). CI's machines are slower, so the guard leaves them
-            // room; that one connection receives the text is checked above.
+            // The target is 100 ms. The worst frame takes about 85 to 105 ms, on the development PC and on CI (about 130 ms
+            // while each of the 20 connections received, and decoded, the room's text). The guard leaves room for slower
+            // machines; that one connection receives the text is checked above.
             UiTestExpect(worst < 150, $"a frame took {worst:0} ms during the bursts (the guard is 150 ms): {AP_Atlas.Core.HitchMonitor.WorstFrameReport}");
             // Connecting is a click with a spinner, not play: guarded at 300 ms against things getting worse. Building a slot's
             // views only when first shown (with the new shell) is what brings it under 100 ms.
@@ -858,7 +859,8 @@ public partial class MainTrackerWindow
             // Only what shows does work: the hints views aren't showing, and only the selected slot's text client draws, a
             // slice of lines per frame.
             UiTestExpect(hintRefreshes.Runs == 0, $"hints views that weren't showing refreshed {hintRefreshes.Runs} times");
-            UiTestExpect(chatLines.Runs > 0 && chatLines.WorstFrameMs < 25, $"drawing text client lines took {chatLines.WorstFrameMs:0} ms of one frame ({chatLines.Runs} runs)");
+            UiTestExpect(chatLines.Runs > 0 && chatLines.WorstFrameMs < 25,
+                $"drawing text client lines took {chatLines.WorstFrameMs:0} ms of one frame ({chatLines.Runs} runs, at most {chatLines.MostRunsInFrame} in a frame)");
             // The log views keep their last lines (the log file keeps everything).
             for (int i = 0; i < AP_Atlas.UI.LogPane.Lines + 500; i++) AP_Atlas.Core.Logger.LogInfo($"UI test line {i}");
             await UiTestWaitAsync(0.2);

@@ -110,6 +110,7 @@ namespace AP_Atlas.Core
             await TestAsync("Settings: a burst of changes is written once; closing or an immediate save writes a pending one", SettingsBurstsAreSavedOnce);
             await TestAsync("Profiles another program held at load aren't saved over, and the user is told", HeldProfilesAreNotSavedOver);
             await TestAsync("Window updates handed to the main thread skip a closed owner, and a failure is logged", DeferredWorkRespectsItsOwner);
+            Test("Hitch reports: a measured step's time leaves out garbage collection pauses (listed on their own)", StepTimesLeaveOutCollections);
             await TestAsync("Pack Doctor: an analysis reads its own snapshot, never the fixes as they change", PackDoctorReadsASnapshot);
             await TestAsync("Settings saved from a background thread are written on the main thread, and the log says so", OffThreadSavesMoveToTheMainThread);
 

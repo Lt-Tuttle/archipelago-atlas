@@ -207,6 +207,40 @@ namespace AP_Atlas.Core
         }
 
         /// <summary>
+        /// A measured step's time leaves out garbage collection pauses during it: a collection another thread set off isn't
+        /// blamed on the step that happened to be running, and isn't counted twice (the hitch report lists pauses on their
+        /// own line).
+        /// </summary>
+        private static void StepTimesLeaveOutCollections()
+        {
+            // The self-test runs before the window's hitch monitor records the main thread.
+            int mainThread = PerfMonitor.MainThreadId;
+            PerfMonitor.MainThreadId = Environment.CurrentManagedThreadId;
+            try
+            {
+                PerfMonitor.DrainFrameScopes();
+                // Live objects for the collector to move, so its pauses are long enough to tell apart.
+                var kept = Enumerable.Range(0, 200_000).Select(_ => new byte[64]).ToList();
+                var pausedBefore = GC.GetTotalPauseDuration();
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                using (PerfMonitor.Measure("Self-test: collecting"))
+                {
+                    for (int i = 0; i < 3; i++) GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
+                }
+                double elapsedMs = watch.Elapsed.TotalMilliseconds;
+                double pausedMs = (GC.GetTotalPauseDuration() - pausedBefore).TotalMilliseconds;
+                GC.KeepAlive(kept);
+                var step = PerfMonitor.DrainFrameScopes().Single(s => s.Label == "Self-test: collecting");
+                Expect(pausedMs >= 1, $"the collections paused the program for only {pausedMs:0.0} ms, too little to tell apart");
+                Expect(step.Ms <= elapsedMs - pausedMs + 1, $"the step took {step.Ms:0.0} ms of {elapsedMs:0.0}, {pausedMs:0.0} of them collecting: the pauses were counted in");
+            }
+            finally
+            {
+                PerfMonitor.MainThreadId = mainThread;
+            }
+        }
+
+        /// <summary>
         /// The Pack Doctor analyses a snapshot taken on the main thread: a fix edited while an analysis runs doesn't change
         /// it under the analysis, and the next snapshot sees the edit. The pack's own mapping is linked as usual.
         /// </summary>
