@@ -32,6 +32,8 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
     private readonly List<TcpClient> _connected = new();
     // Open websockets, each with a lock: a socket can't send two messages at once (a reply and a broadcast).
     private readonly List<(WebSocket Socket, SemaphoreSlim Sending)> _sockets = new();
+    // The data storage keys each client asked to be told about (SetNotify).
+    private readonly Dictionary<WebSocket, HashSet<string>> _notify = new();
     private readonly List<JObject> _received = new();
     private readonly List<(TimeSpan At, string What)> _timeline = new();
     private readonly Stopwatch _clock = Stopwatch.StartNew();
@@ -165,6 +167,14 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
                     foreach (var packet in packets)
                     {
                         lock (_received) _received.Add(packet);
+                        if ((string?)packet["cmd"] == "SetNotify")
+                        {
+                            lock (_notify)
+                            {
+                                if (!_notify.TryGetValue(socket, out var keys)) _notify[socket] = keys = new HashSet<string>();
+                                keys.UnionWith(packet["keys"]?.ToObject<string[]>() ?? Array.Empty<string>());
+                            }
+                        }
                         var reply = await AnswerAsync(packet);
                         if (reply != null) await SendAsync(socket, sending, reply);
                     }
@@ -175,6 +185,7 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
             {
                 lock (_connected) _connected.Remove(client);
                 lock (_sockets) _sockets.RemoveAll(entry => entry.Socket.State != WebSocketState.Open);
+                lock (_notify) foreach (var gone in _notify.Keys.Where(s => s.State != WebSocketState.Open).ToList()) _notify.Remove(gone);
                 Interlocked.Increment(ref _ended);
             }
         }
@@ -208,10 +219,13 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
         return true;
     }
 
-    private static async Task SendAsync(WebSocket socket, SemaphoreSlim sending, JArray packets)
+    private static Task SendAsync(WebSocket socket, SemaphoreSlim sending, JArray packets) =>
+        SendAsync(socket, sending, Encoding.UTF8.GetBytes(packets.ToString(Newtonsoft.Json.Formatting.None)));
+
+    private static async Task SendAsync(WebSocket socket, SemaphoreSlim sending, byte[] message)
     {
         await sending.WaitAsync();
-        try { await socket.SendAsync(Encoding.UTF8.GetBytes(packets.ToString(Newtonsoft.Json.Formatting.None)), WebSocketMessageType.Text, true, CancellationToken.None); }
+        try { await socket.SendAsync(message, WebSocketMessageType.Text, true, CancellationToken.None); }
         finally { sending.Release(); }
     }
 
@@ -220,9 +234,31 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
     {
         List<(WebSocket Socket, SemaphoreSlim Sending)> sockets;
         lock (_sockets) sockets = _sockets.Where(entry => entry.Socket.State == WebSocketState.Open).ToList();
+        // Written once for everyone: the fake runs inside the program it tests, so its own work must stay small.
+        byte[] message = Encoding.UTF8.GetBytes(new JArray(packets).ToString(Newtonsoft.Json.Formatting.None));
         foreach (var (socket, sending) in sockets)
         {
-            try { await SendAsync(socket, sending, new JArray(packets)); }
+            try { await SendAsync(socket, sending, message); }
+            catch (Exception ex) when (ex is WebSocketException or ObjectDisposedException or IOException) { } // that client just left
+        }
+    }
+
+    /// <summary>
+    /// Changes a data storage value and tells the clients that asked to be told about that key (SetNotify), as a real
+    /// server does: a slot's hints, say, reach only that slot's clients.
+    /// </summary>
+    public async Task SetAsync(string key, JToken value)
+    {
+        lock (DataStorage) DataStorage[key] = value.DeepClone();
+        List<(WebSocket Socket, SemaphoreSlim Sending)> listeners;
+        lock (_sockets)
+        {
+            lock (_notify)
+                listeners = _sockets.Where(entry => entry.Socket.State == WebSocketState.Open && _notify.TryGetValue(entry.Socket, out var keys) && keys.Contains(key)).ToList();
+        }
+        foreach (var (socket, sending) in listeners)
+        {
+            try { await SendAsync(socket, sending, new JArray(SetReply(key, value))); }
             catch (Exception ex) when (ex is WebSocketException or ObjectDisposedException or IOException) { } // that client just left
         }
     }
@@ -236,6 +272,51 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
         ["cmd"] = "ReceivedItems",
         ["index"] = index,
         ["items"] = new JArray(items.Select(item => new JObject { ["item"] = item, ["location"] = 0, ["player"] = 0, ["flags"] = flags, ["class"] = "NetworkItem" }))
+    };
+
+    /// <summary>
+    /// A PrintJSON ItemSend line, as the server relays one: <paramref name="finder"/> found <paramref name="item"/> for
+    /// <paramref name="receiver"/> at <paramref name="location"/> (slot numbers; item and location ids).
+    /// </summary>
+    public static JObject ItemSend(int finder, int receiver, long item, long location, int flags = 1) => new()
+    {
+        ["cmd"] = "PrintJSON",
+        ["type"] = "ItemSend",
+        ["receiving"] = receiver,
+        ["item"] = new JObject { ["item"] = item, ["location"] = location, ["player"] = finder, ["flags"] = flags, ["class"] = "NetworkItem" },
+        ["data"] = new JArray(
+            new JObject { ["type"] = "player_id", ["text"] = finder.ToString() },
+            new JObject { ["text"] = " sent " },
+            new JObject { ["type"] = "item_id", ["text"] = item.ToString(), ["player"] = receiver, ["flags"] = flags },
+            new JObject { ["text"] = " to " },
+            new JObject { ["type"] = "player_id", ["text"] = receiver.ToString() },
+            new JObject { ["text"] = " (" },
+            new JObject { ["type"] = "location_id", ["text"] = location.ToString(), ["player"] = finder },
+            new JObject { ["text"] = ")" })
+    };
+
+    /// <summary>A SetReply: a data storage value changed (sent to clients that asked to be told, as for a slot's hints).</summary>
+    public static JObject SetReply(string key, JToken value) => new()
+    {
+        ["cmd"] = "SetReply",
+        ["key"] = key,
+        ["value"] = value,
+        ["original_value"] = JValue.CreateNull(),
+        ["slot"] = 0
+    };
+
+    /// <summary>A hint, as the server keeps it in a slot's hint list (`_read_hints_{team}_{slot}`).</summary>
+    public static JObject Hint(int finder, int receiver, long location, long item, bool found = false, int flags = 1) => new()
+    {
+        ["receiving_player"] = receiver,
+        ["finding_player"] = finder,
+        ["location"] = location,
+        ["item"] = item,
+        ["found"] = found,
+        ["entrance"] = "",
+        ["item_flags"] = flags,
+        ["status"] = found ? 40 : 0, // Archipelago's HintStatus: found, or unspecified
+        ["class"] = "Hint"
     };
 
     /// <summary>A RoomUpdate packet: the slot has checked these locations (as when its player checks them in the game).</summary>

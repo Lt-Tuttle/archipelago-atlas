@@ -422,6 +422,7 @@ public partial class SlotTrackerControl : MarginContainer
 
     private void RaiseStateChanged()
     {
+        using var __perf = AP_Atlas.Core.PerfMonitor.Measure($"[{_slotName}] Map colors, hints and listeners");
         if (_mapTracker != null && Session != null)
         {
             _mapTracker.UpdateLogicColors(Model.Logic.Reachable, Session.Locations.AllLocationsChecked, Model.HintedLocations);

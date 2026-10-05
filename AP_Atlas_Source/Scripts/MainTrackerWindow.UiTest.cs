@@ -44,8 +44,16 @@ public partial class MainTrackerWindow
     private async Task RunUiTestAsync()
     {
         int passed = 0, failed = 0, skipped = 0;
+        // For working on one scenario: ATLAS_UITEST_ONLY=<part of its name> runs only the scenarios that match.
+        string? only = System.Environment.GetEnvironmentVariable("ATLAS_UITEST_ONLY");
         async Task ScenarioAsync(string name, Func<Task> body)
         {
+            if (!string.IsNullOrEmpty(only) && !name.Contains(only, StringComparison.OrdinalIgnoreCase))
+            {
+                skipped++;
+                GD.Print($"UITEST SKIP {name}: not chosen (ATLAS_UITEST_ONLY)");
+                return;
+            }
             try
             {
                 await body();
@@ -81,6 +89,8 @@ public partial class MainTrackerWindow
             LogicFollowsTheSlotAsync);
         await ScenarioAsync("Cheese Tracker: its suggestion for a connected slot follows the slot's logic (unblocked, then go mode), says nothing while race mode hides logic, and changes nothing by itself",
             CheeseFollowsTheSlotAsync);
+        await ScenarioAsync("Scale: in a 1,000-player room with 20 slots connected, bursts of items, item lines and hints never hold up a frame for 250 ms (target 100 ms), nor does connecting a slot for 300 ms; the logs keep their last lines",
+            ScaleStaysResponsiveAsync);
         await _sessions.CloseAllAsync(TimeSpan.FromSeconds(3));
         GD.Print($"UITEST DONE: {passed} passed, {failed} failed, {skipped} skipped");
         GetTree().Quit(failed == 0 ? 0 : 1);
@@ -118,6 +128,13 @@ public partial class MainTrackerWindow
             await UiTestWaitForAsync(() => server.ClosesReceived >= 1 && !_sessions.IsLoggedIn(slot) ? this : null, "the session to close");
             await UiTestWaitAsync(1.0);
             UiTestExpect(server.Count("Connect") == 2 && !_sessions.IsReconnecting(slot), "the slot reconnected after it was disconnected");
+
+            // The sidebar card's Connect button (the card is kept through connecting and disconnecting) connects it again.
+            var connectButton = _activeSessionsList.FindChildren("ConnectBtn", "Button", true, false).OfType<Button>()
+                .SingleOrDefault(b => b.GetMeta("profile_id").AsString() == profile.Id);
+            UiTestExpect(connectButton != null, "the slot has no Connect button in the sidebar");
+            connectButton!.EmitSignal(BaseButton.SignalName.Pressed);
+            await UiTestWaitForAsync(() => _sessions.IsLoggedIn(slot) && server.Count("Connect") == 3 ? this : null, "the sidebar's Connect button to connect the slot again");
         }
         finally
         {
@@ -335,13 +352,15 @@ public partial class MainTrackerWindow
             var home = slot.GetParent();
             int place = slot.GetIndex();
 
-            // Out of the window: a burst arrives meanwhile.
+            // Out of the window: a burst arrives meanwhile. The slot takes it; the panel draws it once it shows again.
             home.RemoveChild(slot);
             await server.BroadcastAsync(FakeArchipelagoServer.ReceivedItems(0, new long[] { 1000, 1000, 1000 }), server.Chat("while the panel was moved"));
-            await UiTestWaitForAsync(() => slot.Session.Items.AllItemsReceived.Count == 3 && PanelShows(slot, "while the panel was moved") ? slot : null,
-                "the burst to reach the panel while it was out of the window");
+            await UiTestWaitForAsync(() => slot.Session.Items.AllItemsReceived.Count == 3 &&
+                slot.ChatHistory.Any(e => e.APMessage?.ToString().Contains("while the panel was moved") == true) ? slot : null,
+                "the burst to reach the slot while its panel was out of the window");
             // Docked somewhere else.
             elsewhere.AddChild(slot);
+            await UiTestWaitForAsync(() => PanelShows(slot, "while the panel was moved") ? slot : null, "the docked panel to show what arrived while it was out of the window");
             await UiTestWaitAsync(0.1);
             UiTestExpect(!slot.Ended && _sessions.IsLoggedIn(slotId), "moving the panel ended the slot or its connection");
             UiTestExpect(views.All(v => v != null && IsInstanceValid(v) && !v.IsQueuedForDeletion()), "moving the panel freed the slot's views");
@@ -452,6 +471,7 @@ public partial class MainTrackerWindow
         {
             await OnConnectSlotPressedAsync("Tester", profile);
             var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
+            ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.LogicTracker);
             await UiTestWaitForAsync(() => slot.LogicSettled ? slot : null, "the slot's logic to start");
             var init = engine.Requests("init").Single();
             UiTestExpect((string?)init["game"] == "Test Game" && (string?)init["player_name"] == "Tester" && (int?)init["slot"] == 1,
@@ -555,6 +575,7 @@ public partial class MainTrackerWindow
         {
             AP_Atlas.Core.RaceRules.SetHideAllLogic(false);
             AP_Atlas.Core.RaceRules.SetMode(AP_Atlas.Core.RaceModeSetting.FollowServer);
+            ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.Connections);
             DeleteProfile(profile);
             AtlasEngine.TestPython = null;
         }
@@ -622,6 +643,114 @@ public partial class MainTrackerWindow
         }
     }
 
+    private async Task ScaleStaysResponsiveAsync()
+    {
+        const int roomSize = 1000, connected = 20, locations = 300;
+        const string checksum = "5ca1e5ca1e5ca1e5ca1e5ca1e5ca1e5ca1e5ca1e";
+        string python = UiTestPython();
+        // The game every slot plays: 300 locations, a sixth open from the start and the rest each behind one of 50
+        // progression items; 50 filler items besides.
+        var engine = new FakeLogicEngine(AtlasEngine.ArchipelagoDir);
+        var items = Enumerable.Range(0, 100).Select(i => new FakeItem(1000 + i, $"Item {i}", i < 50 ? 1 : 0)).ToList();
+        engine.Pool.AddRange(items);
+        engine.Locations.AddRange(Enumerable.Range(0, locations).Select(i =>
+            i % 6 == 0 ? new FakeLocation(2000 + i, $"Location {i}") : new FakeLocation(2000 + i, $"Location {i}", 1000 + i % 50)));
+        engine.Goal = Enumerable.Range(0, 50).Select(i => 1000L + i).ToArray();
+        engine.DataChecksum = checksum;
+        engine.Apply();
+        AtlasEngine.TestPython = python;
+        AtlasEngine.InstallBridge(EngineInstall.Portable());
+
+        await using var server = new FakeArchipelagoServer();
+        server.Slots.Clear();
+        server.Slots.AddRange(Enumerable.Range(1, roomSize).Select(i => $"Player{i:0000}"));
+        server.SlotGame = "Scale Game";
+        server.Games["Scale Game"] = new FakeGame(checksum, items.ToDictionary(i => i.Name, i => i.Id),
+            Enumerable.Range(0, locations).ToDictionary(i => $"Location {i}", i => 2000L + i));
+        var profile = new MultiworldProfile { Name = "UI test (scale)", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.AddRange(server.Slots.Take(connected));
+        _profiles.Add(profile);
+        try
+        {
+            // Connecting the 20 slots, one after another, with their engines starting. The first pays one-time costs (code
+            // compiled on first use), so the rest are measured.
+            await OnConnectSlotPressedAsync(profile.Slots[0], profile);
+            await UiTestWaitForAsync(() => SlotView(profile.Id, profile.Slots[0]) is { LogicSettled: true } first ? first : null, "the first slot's logic to start", seconds: 60);
+            await UiTestWaitAsync(0.5);
+            AP_Atlas.Core.HitchMonitor.ResetWorst();
+            foreach (string name in profile.Slots.Skip(1)) await OnConnectSlotPressedAsync(name, profile);
+            var slots = new List<SlotTrackerControl>();
+            foreach (string name in profile.Slots) slots.Add(await UiTestWaitForAsync(() => SlotView(profile.Id, name), $"{name}'s view"));
+            await UiTestWaitForAsync(() => slots.All(s => s.LogicSettled) ? slots : null, "every slot's logic to start", seconds: 120);
+            await UiTestWaitAsync(1.0);
+            double connecting = AP_Atlas.Core.HitchMonitor.WorstFrameMs;
+            string connectingReport = AP_Atlas.Core.HitchMonitor.WorstFrameReport;
+            // The multiworld was already in the sidebar: its cards update in place as slots connect.
+            int sidebarRebuilds = AP_Atlas.Core.HitchMonitor.Step("Rebuild SLOTS sidebar").Runs;
+            int sphereRedraws = AP_Atlas.Core.HitchMonitor.Step("Sphere Tracker tab: refresh").Runs;
+            GD.Print($"UITEST INFO Scale: connecting {connected - 1} more slots, the worst frame took {connecting:0} ms");
+
+            // What a busy room sends, three times over: every connected slot gets 20 progression items, 100 item lines
+            // between players across the room, and its 50 hints.
+            AP_Atlas.Core.HitchMonitor.ResetWorst();
+            var random = new Random(1);
+            int received = 0;
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            for (int round = 0; round < 3; round++)
+            {
+                int from = received;
+                await server.BroadcastAsync(FakeArchipelagoServer.ReceivedItems(from, Enumerable.Range(0, 20).Select(i => 1000L + (from + i) % 50), flags: 1));
+                received += 20;
+                await server.BroadcastAsync(Enumerable.Range(0, 100).Select(_ => FakeArchipelagoServer.ItemSend(random.Next(1, roomSize + 1), random.Next(1, roomSize + 1),
+                    1000 + random.Next(100), 2000 + random.Next(locations))).ToArray());
+                for (int slot = 1; slot <= connected; slot++)
+                {
+                    var hints = new JArray(Enumerable.Range(0, 50).Select(_ =>
+                        FakeArchipelagoServer.Hint(random.Next(1, roomSize + 1), slot, 2000 + random.Next(locations), 1000 + random.Next(100))));
+                    await server.SetAsync($"_read_hints_0_{slot}", hints);
+                }
+                int expected = received;
+                await UiTestWaitForAsync(() => slots.All(s => s.Session.Items.AllItemsReceived.Count == expected) ? slots : null, "a burst's items", seconds: 60);
+                await UiTestWaitAsync(0.5);
+            }
+            await UiTestWaitForAsync(() => slots.All(s => s.LogicSettled) ? slots : null, "logic to catch up", seconds: 120);
+            await UiTestWaitAsync(1.0);
+            double worst = AP_Atlas.Core.HitchMonitor.WorstFrameMs;
+            var chatLines = AP_Atlas.Core.HitchMonitor.Step("Text client lines");
+            var hintRefreshes = AP_Atlas.Core.HitchMonitor.Step("Hints refresh");
+            var memory = GC.GetGCMemoryInfo();
+            GD.Print($"UITEST INFO Scale: {connected} slots in a {roomSize}-player room; the bursts took {stopwatch.Elapsed.TotalSeconds:0.0} s; the worst frame took {worst:0} ms; " +
+                     $".NET heap {memory.HeapSizeBytes / 1048576.0:0} MB, committed {memory.TotalCommittedBytes / 1048576.0:0} MB, process {System.Environment.WorkingSet / 1048576.0:0} MB, " +
+                     $"GC paused {GC.GetTotalPauseDuration().TotalMilliseconds:0} ms in all; {Performance.GetMonitor(Performance.Monitor.ObjectNodeCount):0} nodes, " +
+                     $"{Performance.GetMonitor(Performance.Monitor.ObjectOrphanNodeCount):0} orphaned, {Performance.GetMonitor(Performance.Monitor.ObjectCount):0} objects; generations " +
+                     string.Join("/", memory.GenerationInfo.ToArray().Select(g => $"{g.SizeAfterBytes / 1048576.0:0}")) + " MB");
+            // The target is 100 ms. What's left above it is .NET's garbage collection: each of the 20 connections receives,
+            // and decodes, every line the room sends. Until fewer connections receive them, this guards against getting worse.
+            UiTestExpect(worst < 250, $"a frame took {worst:0} ms during the bursts (the guard is 250 ms): {AP_Atlas.Core.HitchMonitor.WorstFrameReport}");
+            // Connecting is a click with a spinner, not play: guarded at 300 ms against things getting worse. Building a slot's
+            // views only when first shown (with the new shell) is what brings it under 100 ms.
+            UiTestExpect(connecting < 300, $"a frame took {connecting:0} ms while slots connected (the guard is 300 ms): {connectingReport}");
+            UiTestExpect(sidebarRebuilds == 0, $"the sidebar was rebuilt {sidebarRebuilds} times while slots connected");
+            UiTestExpect(sphereRedraws == 0, $"the Sphere Tracker tab, not showing, redrew {sphereRedraws} times while slots connected");
+            // Only what shows does work: the hints views aren't showing, and only the selected slot's text client draws, a
+            // slice of lines per frame.
+            UiTestExpect(hintRefreshes.Runs == 0, $"hints views that weren't showing refreshed {hintRefreshes.Runs} times");
+            UiTestExpect(chatLines.Runs > 0 && chatLines.WorstFrameMs < 25, $"drawing text client lines took {chatLines.WorstFrameMs:0} ms of one frame ({chatLines.Runs} runs)");
+            // The log views keep their last lines (the log file keeps everything).
+            for (int i = 0; i < AP_Atlas.UI.LogPane.Lines + 500; i++) AP_Atlas.Core.Logger.LogInfo($"UI test line {i}");
+            await UiTestWaitAsync(0.2);
+            UiTestExpect(_consoleOutput.GetParagraphCount() <= AP_Atlas.UI.LogPane.Lines + 200 && _debugLogConsole.GetParagraphCount() <= AP_Atlas.UI.LogPane.Lines + 200,
+                $"the logs keep {_consoleOutput.GetParagraphCount()} and {_debugLogConsole.GetParagraphCount()} lines");
+            UiTestExpect(_debugLogConsole.GetParsedText().Contains($"UI test line {AP_Atlas.UI.LogPane.Lines + 499}"), "the debug log lost its newest line");
+        }
+        finally
+        {
+            DeleteProfile(profile);
+            AtlasEngine.TestPython = null;
+        }
+    }
+
     /// <summary>Checks what the slot reports as in logic, its goal, and how many checks it has left in logic.</summary>
     private static void ExpectLogic(SlotTrackerControl slot, string when, long[] inLogic, long[] outOfLogic, bool goal, int active)
     {
@@ -671,14 +800,14 @@ public partial class MainTrackerWindow
         ActiveSlotNodes().OfType<SlotTrackerControl>()
             .FirstOrDefault(s => IsInstanceValid(s) && !s.IsQueuedForDeletion() && s.ProfileId == profileId && s.SlotName == slotName);
 
-    /// <summary>Waits (letting the window run) until <paramref name="find"/> returns something, for up to 20 seconds.</summary>
-    private async Task<T> UiTestWaitForAsync<T>(Func<T?> find, string what) where T : class
+    /// <summary>Waits (letting the window run) until <paramref name="find"/> returns something, for up to 20 seconds (or <paramref name="seconds"/>).</summary>
+    private async Task<T> UiTestWaitForAsync<T>(Func<T?> find, string what, double seconds = 20) where T : class
     {
         var waited = System.Diagnostics.Stopwatch.StartNew();
         while (true)
         {
             if (find() is { } found) return found;
-            if (waited.Elapsed > TimeSpan.FromSeconds(20)) throw new TimeoutException("timed out waiting for " + what);
+            if (waited.Elapsed > TimeSpan.FromSeconds(seconds)) throw new TimeoutException("timed out waiting for " + what);
             await UiTestWaitAsync(0.05);
         }
     }

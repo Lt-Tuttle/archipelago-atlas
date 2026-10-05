@@ -116,6 +116,7 @@ public partial class SlotTrackerControl : MarginContainer
 
     public override void _Ready()
     {
+        using var __perf = AP_Atlas.Core.PerfMonitor.Measure($"[{_slotName}] Building its views");
         AddThemeConstantOverride("margin_left", 10);
         AddThemeConstantOverride("margin_top", 10);
         AddThemeConstantOverride("margin_right", 10);
@@ -152,6 +153,16 @@ public partial class SlotTrackerControl : MarginContainer
         BuildLogicTrackerView();
         BuildItemHistoryView();
         BuildTextClientTab();
+        // Each view refreshes only while it shows (at most once a frame); a hidden one catches up when it's shown.
+        _logicRefresh = new AP_Atlas.UI.ViewRefresh(_logicView, () =>
+        {
+            bool full = _logicFullPending;
+            _logicFullPending = false;
+            RenderLogicTreeNow(full);
+        }, $"drawing {_slotName}'s Logic Tracker");
+        _historyRefresh = new AP_Atlas.UI.ViewRefresh(_historyView, RenderItemHistory, $"drawing {_slotName}'s Item History");
+        _keyItemsRefresh = new AP_Atlas.UI.ViewRefresh(_progressionTracker, _progressionTracker.UpdateFromSession, $"drawing {_slotName}'s Key Items");
+        _chatRefresh = new AP_Atlas.UI.ViewRefresh(this, ShowNewChatLinesNow, $"drawing {_slotName}'s text client");
 
         _hintTracker = new AP_Atlas.UI.HintTrackerControl();
         _hintTracker.Initialize(Session, _slotName, IsLocationInLogic,
@@ -242,7 +253,7 @@ public partial class SlotTrackerControl : MarginContainer
         if (change.HasFlag(AP_Atlas.Core.SlotChange.Logic)) ShowLogic();
         else if (change.HasFlag(AP_Atlas.Core.SlotChange.Race)) SyncLogicViews();
         if (change.HasFlag(AP_Atlas.Core.SlotChange.Hints)) _hintTracker?.SetHints(Model.CurrentHints);
-        if (change.HasFlag(AP_Atlas.Core.SlotChange.Messages)) ShowNewChatLines();
+        if (change.HasFlag(AP_Atlas.Core.SlotChange.Messages)) OnNewChatLines();
         RaiseStateChanged();
     }
 
@@ -423,16 +434,19 @@ public partial class SlotTrackerControl : MarginContainer
 
     public void RevealLogicRow(long locationId)
     {
+        _logicRefresh?.Flush();
         if (_logicTree == null || !_logicRows.TryGetValue(locationId, out var row)) return;
         if (!row.Visible && _logicFlaggedOnly != null) _logicFlaggedOnly.ButtonPressed = false;
         row.Select(1);
         _logicTree.ScrollToItem(row, true);
     }
 
-    public bool HasLogicRow(long locationId) => _logicRows.ContainsKey(locationId);
+    /// <summary>Whether the Logic Tracker lists the location (from the slot's logic, so it's right while the view is hidden too).</summary>
+    public bool HasLogicRow(long locationId) => Model.UnlockStepOf(locationId) != null;
 
     public void RevealHistory(AP_Atlas.Core.InspectTarget target)
     {
+        _historyRefresh?.Flush();
         if (_itemHistoryTree == null) return;
         if (target.ReceiptIndex >= 0)
         {
@@ -480,7 +494,11 @@ public partial class SlotTrackerControl : MarginContainer
 
     public bool IsOnMap(long locationId) => _mapTracker?.HasLocation(locationId) ?? false;
 
-    public void RevealKeyItem(string itemName) => _progressionTracker?.RevealItem(itemName);
+    public void RevealKeyItem(string itemName)
+    {
+        _keyItemsRefresh?.Flush();
+        _progressionTracker?.RevealItem(itemName);
+    }
 
     private void OnAccentChanged()
     {

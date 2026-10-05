@@ -278,8 +278,12 @@ namespace AP_Atlas.UI
             if (notify && newHints.Count > 0) AnnounceNewHints(newHints);
         }
 
-        /// <summary>Recomputes logic/points (e.g. after items or checks change) and redraws.</summary>
-        public void Refresh()
+        private ViewRefresh _refresh;
+
+        /// <summary>Recomputes logic/points (e.g. after items or checks change) and redraws: now if the view shows, else when it does.</summary>
+        public void Refresh() => (_refresh ??= new ViewRefresh(this, RefreshNow, "refreshing the hints")).Request();
+
+        private void RefreshNow()
         {
             using var __perf = AP_Atlas.Core.PerfMonitor.Measure($"[{_slotName}] Hints refresh");
             RebuildRows();
@@ -294,6 +298,7 @@ namespace AP_Atlas.UI
         /// <summary>Selects and scrolls to a hint, loosening filters that would hide it.</summary>
         public void Reveal(int findingPlayer, long locationId)
         {
+            _refresh?.Flush();
             string key = findingPlayer + ":" + locationId;
             if (!_rowsByKey.TryGetValue(key, out var row)) return;
             if (row.Hint.Found) _btnShowFound.ButtonPressed = true;
@@ -308,6 +313,7 @@ namespace AP_Atlas.UI
         /// <summary>Filters the table to hints mentioning a player.</summary>
         public void FilterByText(string text)
         {
+            _refresh?.Flush();
             _searchBox.Text = text ?? "";
             Render();
         }

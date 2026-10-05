@@ -98,20 +98,48 @@ public partial class SlotTrackerControl : MarginContainer
     private long _shownSequence;
 
     /// <summary>Shows the model's lines this view hasn't shown yet; announces new special items (not early ones).</summary>
-    private void ShowNewChatLines()
+    private AP_Atlas.UI.ViewRefresh _chatRefresh;
+    private long _announcedSequence;
+
+    /// <summary>A frame's share of drawing lines; the rest continue next frame, so a flood (a release) never holds one up.</summary>
+    private static readonly long ChatSliceTicks = System.Diagnostics.Stopwatch.Frequency * 6 / 1000;
+
+    /// <summary>New lines in the model: special items are announced at once (whichever slot is showing); the lines are drawn when the panel shows.</summary>
+    private void OnNewChatLines()
     {
         foreach (var entry in Model.Chat)
         {
+            if (entry.Sequence <= _announcedSequence) continue;
+            _announcedSequence = entry.Sequence;
+            if (!entry.IsSystemMessage && !entry.Early) AnnounceSpecialItem(entry.APMessage);
+        }
+        _chatRefresh?.Request();
+    }
+
+    /// <summary>Draws the lines not shown yet, for about 6 ms; the rest continue next frame.</summary>
+    private void ShowNewChatLinesNow()
+    {
+        using var __perf = AP_Atlas.Core.PerfMonitor.Measure($"[{_slotName}] Text client lines");
+        long until = System.Diagnostics.Stopwatch.GetTimestamp() + ChatSliceTicks;
+        bool drew = false;
+        foreach (var entry in Model.Chat)
+        {
             if (entry.Sequence <= _shownSequence) continue;
+            if (drew && System.Diagnostics.Stopwatch.GetTimestamp() > until)
+            {
+                _chatRefresh.ContinueNextFrame();
+                break;
+            }
             _shownSequence = entry.Sequence;
+            drew = true;
             if (entry.IsSystemMessage)
             {
                 if (_filterSystem == null || _filterSystem.ButtonPressed) ShowSystemLine(entry.SystemMessage);
                 continue;
             }
             if (!ShouldFilterMessage(entry.APMessage)) AppendMessageToChat(entry.APMessage);
-            if (!entry.Early) AnnounceSpecialItem(entry.APMessage);
         }
+        if (drew) ScrollChatToBottom();
     }
 
     /// <summary>Renders one of Atlas's own lines (BBCode).</summary>
@@ -149,30 +177,15 @@ public partial class SlotTrackerControl : MarginContainer
         {
             _chatVBox.GetChild(0).QueueFree();
         }
-
-        ScrollChatToBottom();
     }
 
-    /// <summary>Draws every line again (a filter changed).</summary>
+    /// <summary>Draws every line again (a filter changed), a slice per frame like new lines.</summary>
     private void RedrawChat()
     {
         foreach (Node child in _chatVBox.GetChildren()) child.QueueFree();
         _nextChatAltBg = false;
-        foreach (var entry in Model.Chat)
-        {
-            _shownSequence = entry.Sequence;
-            if (entry.IsSystemMessage)
-            {
-                if (_filterSystem == null || _filterSystem.ButtonPressed) ShowSystemLine(entry.SystemMessage);
-            }
-            else
-            {
-                if (!ShouldFilterMessage(entry.APMessage))
-                {
-                    AppendMessageToChat(entry.APMessage);
-                }
-            }
-        }
+        _shownSequence = 0;
+        _chatRefresh?.Request();
     }
 
     private bool ShouldFilterMessage(LogMessage msg)
@@ -286,8 +299,6 @@ public partial class SlotTrackerControl : MarginContainer
         {
             _chatVBox.GetChild(0).QueueFree();
         }
-
-        ScrollChatToBottom();
     }
 
     /// <summary>Chat names are links: "I|player|itemId", "L|player|locationId", "P|player".</summary>

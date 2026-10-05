@@ -355,6 +355,13 @@ namespace AP_Atlas.UI
             if (reachableLocs != null) _reachableLocs = reachableLocs;
             if (checkedLocs != null) _checkedLocs = new System.Collections.Generic.HashSet<long>(checkedLocs);
             if (hintedLocs != null) _hintedLocs = hintedLocs;
+            (_colorsRefresh ??= new ViewRefresh(this, RedrawColors, "redrawing the map's colors")).Request();
+        }
+
+        private ViewRefresh _colorsRefresh;
+
+        private void RedrawColors()
+        {
             RefreshMapListCounters();
             if (!string.IsNullOrEmpty(_currentMapId)) RenderLocations();
         }

@@ -379,6 +379,7 @@ namespace AP_Atlas.Core
                 var reachable = await Engine.GetReachableLocationsAsync(inventory, missing);
                 if (run != _run) return false;
                 if (reachable == null) throw new LogicEngineFailure(Engine.LastQueryFailure);
+                using var __perf = PerfMonitor.Measure($"[{_model.SlotName}] Logic step");
                 _inventory.Add(item.ItemId);
                 _evaluated = i + 1;
                 var opened = new List<long>();

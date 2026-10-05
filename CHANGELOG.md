@@ -60,6 +60,11 @@ Development toward the first public beta, 0.1.0.
   - So are its race mode and exclusions, and logic as the slot shows it (race mode and exclusions applied). The Cheese Tracker and Sphere Tracker read a slot itself (its model), never its panel.
   - The window keeps track of its slots wherever their panels are, instead of looking in the one pane they start in. The UI test docks a slot's panel elsewhere and checks the window and its services still have the slot.
   - The fake Archipelago server answers the data storage reads Atlas makes (race mode, client status, hints). The UI test has a race room: its slots give no "why" answers, and the Sphere Tracker hides that multiworld's spheres. It also turns on race mode's "hide all logic" and checks every view of logic hides, and comes back.
+  - A scale scenario in the UI test: a 1,000-player room with 20 slots connected, then three bursts of items, item lines and hints.
+    - It checks that hidden views do no work, that the text client draws a slice of lines per frame, and that connecting slots doesn't rebuild the sidebar.
+    - Its frames are guarded at 250 ms for the bursts and 300 ms for connecting. The 100 ms target for bursts needs fewer connections receiving the room's text: each of the 20 decodes every line, and .NET's garbage collection then pauses the program.
+  - Hitch reports (frames over 100 ms, in the log) now give each step's runs, time and memory per frame, total the same step across slots, and say how long garbage collection paused the program.
+  - The fake Archipelago server sends item lines, and data storage changes only to the clients that asked for them (SetNotify), as a real server does.
   - The fake Cheese Tracker site is now shared test code (`FakeCheeseServer`). The UI test runs Cheese Tracker against a connected slot for the first time:
     - The suggestion follows the slot's logic: unblocked, then go mode.
     - It suggests nothing while race mode hides logic.
@@ -80,6 +85,13 @@ Development toward the first public beta, 0.1.0.
   - Its tests run against a fake Archipelago server: time limits, refusals, servers that are down, drops, the last try, and closing.
 - The automatic reconnect setting now says "about 20 minutes", which is how long its tries take. It said 30.
 - **Fewer redraws:** a slot now updates its views once per frame, however much arrives. A burst of items or messages (a release, a big catch-up after reconnecting) is one update, not one per item.
+- **Big rooms stay responsive.** In a test room of 1,000 players with 20 slots connected, a burst of items, item lines and hints froze Atlas for up to 2.7 seconds. Now the longest pause is about 50 to 150 ms:
+  - Tools and slots that aren't showing skip their updates, and catch up when you show them.
+  - The text client draws a flood of lines (a release) a little per frame.
+  - One slot's update no longer redraws every other slot's hints.
+  - The slots sidebar updates its cards in place, instead of rebuilding them all whenever a slot connects or drops.
+  - Connecting a slot pauses the window about half as long (100 to 150 ms in that room, from 250 to 400 ms).
+- **Logs:** the System Log and Debug Log keep their last 2,000 lines (the log file keeps everything), and add new lines once per frame, all together.
 - **Saving:** dragging a splitter or moving a map no longer writes your settings to disk on every mouse movement. They're saved once you stop, and when Atlas closes.
 - **Renderer:** Atlas now draws with Godot's Compatibility renderer (OpenGL 3.3, with a Direct3D fallback built into Godot), which runs on more graphics cards. On the test PC it starts about a quarter faster and uses about a third less video memory, and every screen looks the same.
 - **Atlas asks before going outside its folder:**

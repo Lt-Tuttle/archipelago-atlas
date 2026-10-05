@@ -11,15 +11,9 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
 {
     private void OnLogMessageReceived(string msg, string level)
     {
-        // Log lines can arrive from other threads while Atlas is closing, after the consoles are freed.
-        if (_consoleOutput != null)
-        {
-            AP_Atlas.UI.Ui.DeferQuiet(_consoleOutput, () => _consoleOutput.AppendText(msg));
-        }
-        if (_debugLogConsole != null)
-        {
-            AP_Atlas.UI.Ui.DeferQuiet(_debugLogConsole, () => _debugLogConsole.AppendText(msg));
-        }
+        // Log lines can arrive from other threads (and while Atlas is closing, after the views are freed: then they're dropped).
+        _systemLog?.Append(msg);
+        _debugLog?.Append(msg);
     }
     private bool _uiReady;
     private readonly List<(string, Godot.Color)> _pendingNotices = new List<(string, Godot.Color)>();
@@ -161,7 +155,6 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         AP_Atlas.Core.Logger.LogDebug(string.IsNullOrEmpty(slotName) ? msg : $"[{slotName}] {msg}");
         string time = AP_Atlas.Core.Logger.DisplayClock().ToString("HH:mm:ss");
         string prefix = string.IsNullOrEmpty(slotName) ? "[color=gray]" : $"[color=orange][{slotName}][/color] [color=gray]";
-        string formatted = $"{prefix}[{time}][/color] {msg}\n";
-        if (_debugLogConsole != null) AP_Atlas.UI.Ui.DeferQuiet(_debugLogConsole, () => _debugLogConsole.AppendText(formatted));
+        _debugLog?.Append($"{prefix}[{time}][/color] {msg}\n");
     }
 }

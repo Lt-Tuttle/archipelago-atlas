@@ -161,7 +161,8 @@ namespace AP_Atlas.UI
             {
                 _view = view;
                 _settings.SphereTabView = view;
-                DataManager.SaveSettings(_settings);
+                // A view preference: saved with the next burst of settings (every slot that connects is followed).
+                DataManager.SaveSettingsSoon(_settings);
             }
             _sidebarSignature = null;
             WatchShown();
@@ -359,8 +360,12 @@ namespace AP_Atlas.UI
         // Pages
         // =====================================================================
 
-        /// <summary>Redraws the tab (keeps the table's scroll, search and sort).</summary>
-        public void Refresh()
+        private ViewRefresh _redraw;
+
+        /// <summary>Redraws the tab (keeps the table's scroll, search and sort): now if it shows, else when it does.</summary>
+        public void Refresh() => (_redraw ??= new ViewRefresh(this, RefreshNow, "redrawing the Sphere Tracker tab")).Request();
+
+        private void RefreshNow()
         {
             if (_trackerPage == null) return;
             using var __perf = PerfMonitor.Measure("Sphere Tracker tab: refresh");

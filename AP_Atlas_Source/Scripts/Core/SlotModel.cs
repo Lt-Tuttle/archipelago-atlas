@@ -477,6 +477,7 @@ namespace AP_Atlas.Core
         /// <summary>Applies what arrived since the last frame and tells the views once (main thread).</summary>
         private void Flush()
         {
+            using var __perf = PerfMonitor.Measure($"[{SlotName}] Slot update");
             SlotChange change;
             List<LogMessage> messages;
             Hint[]? hints;

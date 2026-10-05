@@ -81,11 +81,54 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             }
         }
     }
+    private string _sidebarLayout;
+
+    /// <summary>
+    /// What the sidebar's cards are made of: the multiworlds, their slots, which have a special-items column, and the look.
+    /// Not their state, nor a slot's game (both are updated in place).
+    /// </summary>
+    private string SidebarLayout()
+    {
+        var layout = new System.Text.StringBuilder();
+        layout.Append(_appSettings.ScaleSidebar).Append('|').Append(AP_Atlas.Core.ThemeColors.Accent.ToHtml()).Append('|');
+        foreach (var profile in _profiles)
+        {
+            layout.Append(profile.Id).Append('\u0001').Append(profile.Name).Append('\u0002');
+            foreach (var slotName in profile.Slots)
+            {
+                layout.Append(slotName).Append('\u0001')
+                    .Append(AP_Atlas.Core.Annotations.SpecialItemNames(CardGame(profile, slotName)).Any() ? '1' : '0').Append('\u0002');
+            }
+            layout.Append('\u0003');
+        }
+        return layout.ToString();
+    }
+
+    /// <summary>A slot's game, from its connection or as saved from the last one.</summary>
+    private string CardGame(MultiworldProfile profile, string slotName)
+    {
+        var live = ActiveSlotNodes().OfType<SlotTrackerControl>().FirstOrDefault(s => s.ProfileId == profile.Id && s.SlotName == slotName);
+        if (!string.IsNullOrEmpty(live?.Session?.ConnectionInfo?.Game)) return live.Session.ConnectionInfo.Game;
+        return profile.SavedStats != null && profile.SavedStats.TryGetValue(slotName, out var stats) ? stats.GameName ?? "" : "";
+    }
+
+    /// <summary>
+    /// Brings the SLOTS sidebar up to date. Its cards are rebuilt only when the multiworlds, their slots or the look
+    /// changed; a slot connecting, dropping or changing just updates its card in place (rebuilding every card took
+    /// about 50 ms with 20 slots, on each connect).
+    /// </summary>
     private void UpdateSidebar()
     {
-        using var __perf = AP_Atlas.Core.PerfMonitor.Measure("Rebuild SLOTS sidebar");
-
         if (_activeSessionsList == null) return;
+        string layout = SidebarLayout();
+        if (layout == _sidebarLayout && _activeSessionsList.GetChildCount() > 0)
+        {
+            UpdateSlotStatuses();
+            UpdateSidebarHighlighting();
+            return;
+        }
+        _sidebarLayout = layout;
+        using var __perf = AP_Atlas.Core.PerfMonitor.Measure("Rebuild SLOTS sidebar");
         foreach (Node child in _activeSessionsList.GetChildren())
         {
             child.QueueFree();
@@ -207,7 +250,12 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 else connectBtn.Modulate = Godot.Colors.LimeGreen;
                 connectBtn.Pressed += () =>
                 {
-                    if (!isConnecting && !isConnected) OnConnectSlotPressed(slotName, profile);
+                    // The card outlives the state it was built in: check now.
+                    var current = ProfileById(capturedProfileId);
+                    if (current == null || _connectingSlots.Contains(SlotKey(capturedProfileId, capturedSlotName))) return;
+                    var live = ActiveSlotNodes().OfType<SlotTrackerControl>().FirstOrDefault(s => s.ProfileId == capturedProfileId && s.SlotName == capturedSlotName);
+                    if (live?.Session?.Socket.Connected == true) return;
+                    OnConnectSlotPressed(capturedSlotName, current);
                 };
                 row.AddChild(connectBtn);
                 var disconnectBtn = new Button
@@ -279,9 +327,10 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 var statsHBox = new HBoxContainer { Name = "StatsHBox", SizeFlagsHorizontal = SizeFlags.ExpandFill, Alignment = BoxContainer.AlignmentMode.Center };
                 statsHBox.AddThemeConstantOverride("separation", 2);
                 statsContainer.AddChild(statsHBox);
-                void AddKpiCol(string title, string val, Godot.Color valColor)
+                void AddKpiCol(string title, string val, Godot.Color valColor, string name = null)
                 {
                     var col = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+                    if (name != null) col.Name = name;
                     col.AddThemeConstantOverride("separation", 0);
                     var lblTitle = new Label { Text = title, HorizontalAlignment = HorizontalAlignment.Center };
                     lblTitle.SetMeta("font_size_ratio", 0.55);
@@ -305,11 +354,11 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 {
                     var (specialGot, specialTotal) = session.SpecialItemProgress();
                     if (specialTotal > 0)
-                        AddKpiCol("◆", $"{specialGot}/{specialTotal}", specialGot >= specialTotal ? Colors.LimeGreen : AP_Atlas.Core.Annotations.SpecialColor);
+                        AddKpiCol("◆", $"{specialGot}/{specialTotal}", specialGot >= specialTotal ? Colors.LimeGreen : AP_Atlas.Core.Annotations.SpecialColor, "SpecialKpi");
                 }
                 else if (AP_Atlas.Core.Annotations.SpecialItemNames(gameName).Any())
                 {
-                    AddKpiCol("◆", AP_Atlas.Core.Annotations.SpecialItemNames(gameName).Count().ToString(), Colors.DimGray);
+                    AddKpiCol("◆", AP_Atlas.Core.Annotations.SpecialItemNames(gameName).Count().ToString(), Colors.DimGray, "SpecialKpi");
                 }
                 cardVBox.AddChild(statsContainer);
                 var footerHBox = new HBoxContainer { Name = "FooterHBox", SizeFlagsHorizontal = SizeFlags.ExpandFill };
@@ -323,6 +372,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 statusFooter.AddThemeFontSizeOverride("font_size", 8);
                 var gameNameFooter = new Label
                 {
+                    Name = "GameName",
                     Text = gameName,
                     HorizontalAlignment = HorizontalAlignment.Right,
                     SizeFlagsHorizontal = SizeFlags.ExpandFill
@@ -509,6 +559,18 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                                         }
                                     }
                                 }
+                                var special = statsContainer?.GetNodeOrNull<HBoxContainer>("StatsHBox")?.GetNodeOrNull<VBoxContainer>("SpecialKpi")?.GetChildOrNull<Label>(1);
+                                if (special != null && isConnected && activeSlot != null)
+                                {
+                                    var (specialGot, specialTotal) = activeSlot.SpecialItemProgress();
+                                    if (specialTotal > 0)
+                                    {
+                                        special.Text = $"{specialGot}/{specialTotal}";
+                                        special.AddThemeColorOverride("font_color", specialGot >= specialTotal ? Colors.LimeGreen : AP_Atlas.Core.Annotations.SpecialColor);
+                                    }
+                                }
+                                var game = cardVBox.GetNodeOrNull<HBoxContainer>("FooterHBox")?.GetNodeOrNull<Label>("GameName");
+                                if (game != null && !string.IsNullOrEmpty(activeSlot?.Game)) game.Text = activeSlot.Game;
                                 var statusFooter = cardVBox.GetNodeOrNull<HBoxContainer>("FooterHBox")?.GetNodeOrNull<Label>("StatusFooter");
                                 if (statusFooter != null)
                                 {

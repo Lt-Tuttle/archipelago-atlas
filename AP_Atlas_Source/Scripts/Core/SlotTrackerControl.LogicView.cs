@@ -161,7 +161,17 @@ public partial class SlotTrackerControl : MarginContainer
     private readonly Dictionary<long, TreeItem> _logicRows = new Dictionary<long, TreeItem>();
     private readonly HashSet<long> _logicRowsShownChecked = new HashSet<long>();
 
+    private AP_Atlas.UI.ViewRefresh _logicRefresh;
+    private bool _logicFullPending;
+
+    /// <summary>Redraws the Logic Tracker (all of it with <paramref name="forceFull"/>): now if it shows, else when it does.</summary>
     private void RenderLogicTree(bool forceFull = false)
+    {
+        _logicFullPending |= forceFull;
+        _logicRefresh?.Request();
+    }
+
+    private void RenderLogicTreeNow(bool forceFull)
     {
         using var __perf = AP_Atlas.Core.PerfMonitor.Measure($"[{_slotName}] Logic Tracker refresh");
         if (_logicTree == null || Session == null) return;

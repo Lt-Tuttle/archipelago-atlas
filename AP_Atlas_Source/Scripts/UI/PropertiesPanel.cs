@@ -154,11 +154,20 @@ namespace AP_Atlas.UI
         private SlotTrackerControl _lastSelectedSlot;
 
         /// <summary>Called on every view refresh: the summary follows the selected slot; a specific selection stays.</summary>
+        private bool _selectionRenderQueued;
+
         public void OnSelectedSlotChanged(SlotTrackerControl selected)
         {
             if (selected == _lastSelectedSlot) return;
             _lastSelectedSlot = selected;
-            if (Current == null) Render(keepScroll: false);
+            if (Current != null || _selectionRenderQueued) return;
+            // Next frame: the window shows the newly selected slot first, then its summary here, each in a frame of its own.
+            _selectionRenderQueued = true;
+            Ui.NextFrame(this, () =>
+            {
+                _selectionRenderQueued = false;
+                if (Current == null) Render(keepScroll: false);
+            }, "showing the selected slot in Properties");
         }
 
         /// <summary>Live data changed somewhere; refresh soon, coalescing bursts.</summary>

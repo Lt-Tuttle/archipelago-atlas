@@ -73,10 +73,12 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _sysLogVBox = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
         _consoleOutput = new RichTextLabel { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, ScrollFollowing = true, SelectionEnabled = true, BbcodeEnabled = true };
         _sysLogVBox.AddChild(_consoleOutput);
+        _systemLog = new AP_Atlas.UI.LogPane(_consoleOutput);
         _terminalStage.AddChild(_sysLogVBox);
         _debugLogVBox = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
         _debugLogConsole = new RichTextLabel { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, ScrollFollowing = true, SelectionEnabled = true, BbcodeEnabled = true };
         _debugLogVBox.AddChild(_debugLogConsole);
+        _debugLog = new AP_Atlas.UI.LogPane(_debugLogConsole);
         _terminalStage.AddChild(_debugLogVBox);
         _bottomTabs.TabSelected += (long tab) =>
         {

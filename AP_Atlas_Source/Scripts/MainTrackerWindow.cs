@@ -32,6 +32,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     private Label _statusLabel;
     private Control _connectingOverlay;
     private RichTextLabel _consoleOutput;
+    private AP_Atlas.UI.LogPane _systemLog, _debugLog;
     private Label _globalStatusLabel;
     private HBoxContainer _menuHbox;
     private PanelContainer _globalStatusBar;

@@ -100,7 +100,7 @@ function Invoke-AtlasTest([string]$Slug, [string]$Title, [string]$Mode, [string]
     $psi.RedirectStandardError = $true
     $psi.CreateNoWindow = $true
     # Only the child process sees these, so nothing leaks into the caller's session.
-    foreach ($name in 'ATLAS_SELFTEST', 'ATLAS_UITEST', 'ATLAS_VISUALCHECK', 'ATLAS_SELFTEST_AP', 'ATLAS_UITEST_PYTHON') {
+    foreach ($name in 'ATLAS_SELFTEST', 'ATLAS_UITEST', 'ATLAS_VISUALCHECK', 'ATLAS_SELFTEST_AP', 'ATLAS_UITEST_PYTHON', 'ATLAS_UITEST_ONLY') {
         if ($psi.EnvironmentVariables.ContainsKey($name)) { $psi.EnvironmentVariables.Remove($name) }
     }
     $psi.EnvironmentVariables[$Mode] = '1'

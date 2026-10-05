@@ -316,8 +316,9 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         if (!profile.SavedStats.ContainsKey(slotName)) profile.SavedStats[slotName] = new SlotStats();
         profile.SavedStats[slotName].GameName = session.ConnectionInfo.Game;
         profile.SavedStats[slotName].SlotNumber = session.ConnectionInfo.Slot;
-        DataManager.SaveProfiles(_profiles);
+        using (AP_Atlas.Core.PerfMonitor.Measure("Save multiworlds")) DataManager.SaveProfiles(_profiles);
         // The model takes the session's events from here on (and the messages that arrived before it), and runs its logic.
+        using var __model = AP_Atlas.Core.PerfMonitor.Measure($"[{slotName}] Slot set up");
         var model = new AP_Atlas.Core.SlotModel(connected, _appSettings, msg =>
         {
             GD.Print(msg);
@@ -335,6 +336,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         // When this slot's logic moves, hints at its locations change for the other slots of the same multiworld.
         slotTracker.StateChanged += () =>
         {
+            using var __perf = AP_Atlas.Core.PerfMonitor.Measure("Other slots' hints refresh");
             foreach (var sibling in SiblingSlots(slotTracker)) sibling.RefreshHints();
             _propertiesPanel?.QueueRefresh();
         };
@@ -349,6 +351,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         var timer = GetTree().CreateTimer(0.1);
         timer.Timeout += () =>
         {
+            using var __perf = AP_Atlas.Core.PerfMonitor.Measure($"[{slotName}] Text client font size");
             if (GodotObject.IsInstanceValid(slotTracker)) SetFontSizeRecursive(slotTracker, _appSettings.ConsoleFontSize);
         };
     }

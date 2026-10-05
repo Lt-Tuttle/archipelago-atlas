@@ -185,7 +185,12 @@ public partial class SlotTrackerControl : MarginContainer
         ["Trap"] = true
     };
 
-    private void UpdateItemHistoryUI()
+    private AP_Atlas.UI.ViewRefresh _historyRefresh, _keyItemsRefresh;
+
+    /// <summary>Redraws Item History: now if it shows, else when it does.</summary>
+    private void UpdateItemHistoryUI() => _historyRefresh?.Request();
+
+    private void RenderItemHistory()
     {
         using var __perf = AP_Atlas.Core.PerfMonitor.Measure($"[{_slotName}] Item History refresh");
         if (_itemHistoryTree == null || _uncollectedTree == null || Session == null) return;
@@ -430,8 +435,6 @@ public partial class SlotTrackerControl : MarginContainer
         }
     }
 
-    private void UpdateKeyItemsUI()
-    {
-        _progressionTracker?.UpdateFromSession();
-    }
+    /// <summary>Redraws Key Items: now if it shows, else when it does.</summary>
+    private void UpdateKeyItemsUI() => _keyItemsRefresh?.Request();
 }

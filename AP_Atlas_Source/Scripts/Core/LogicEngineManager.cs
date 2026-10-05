@@ -459,6 +459,7 @@ public class LogicEngineManager
             }
 
             JObject response;
+            using var __perf = AP_Atlas.Core.PerfMonitor.Measure("Logic engine answers (reading)");
             try { response = JObject.Parse(line); }
             catch (Exception)
             {
