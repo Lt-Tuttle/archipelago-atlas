@@ -73,13 +73,16 @@ namespace AP_Atlas.Core.PopTracker
             var imgMis = Godot.Image.CreateEmpty(16, 16, false, Godot.Image.Format.Rgba8);
             imgCol.Fill(Colors.Transparent);
             imgMis.Fill(Colors.Transparent);
-            for (int x = 0; x < 16; x++) for (int y = 0; y < 16; y++)
+            for (int x = 0; x < 16; x++)
+            {
+                for (int y = 0; y < 16; y++)
                 {
                     float dist = (x - 7.5f) * (x - 7.5f) + (y - 7.5f) * (y - 7.5f);
                     if (dist <= 30) imgCol.SetPixel(x, y, Colors.LimeGreen);
                     if (dist <= 30) imgMis.SetPixel(x, y, Colors.DarkGray);
                     else if (dist <= 40) imgMis.SetPixel(x, y, Colors.DimGray); // Outline for missing
                 }
+            }
             _texCollected = ImageTexture.CreateFromImage(imgCol);
             _texMissing = ImageTexture.CreateFromImage(imgMis);
 
