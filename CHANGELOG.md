@@ -76,6 +76,11 @@ Development toward the first public beta, 0.1.0.
 - **Deeply nested JSON** is refused instead of overflowing the stack (Newtonsoft.Json 13).
 
 ### Fixed
+- **No silent failures in background work:**
+  - Every check, download and connection Atlas runs in the background now reports a failure instead of losing it. The log says what was being done, and you're told in plain words (at most once every 10 minutes for the same work).
+  - Before, 28 such tasks could fail without a trace.
+  - Reading a map pack, or a slot's saved options, now logs why it failed instead of showing nothing.
+- **Apworld fixes:** choosing an apworld file that couldn't be copied (a full disk, say) left that slot's apworld fixer stuck until you reconnected.
 - **Memory:** an unused, hidden menu was created at startup and kept for the whole session. Godot now reports nothing left over when Atlas closes.
 - **Window icon:** Atlas's Windows icon setting was in the wrong section, so Godot ignored it and used the PNG.
 - **Running from source:** Godot no longer imports the files in Atlas's data folder (it had left 160 `.import` files there).

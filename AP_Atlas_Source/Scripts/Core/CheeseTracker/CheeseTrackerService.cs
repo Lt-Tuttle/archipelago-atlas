@@ -284,7 +284,7 @@ namespace AP_Atlas.Core.CheeseTracker
             var room = RoomOf(profile);
             if (room == null) return;
             _watchedUntil[profileId] = DateTime.UtcNow + TimeSpan.FromMinutes(3);
-            if (Due(room)) _ = FetchAsync(profile, room);
+            if (Due(room)) AP_Atlas.Core.Async.Fire(FetchAsync(profile, room), "reading Cheese Tracker");
         }
 
         private static bool Due(Room room) =>
@@ -907,8 +907,8 @@ namespace AP_Atlas.Core.CheeseTracker
                     bool active = connected.Any(s => s.ProfileId == profile.Id) || (_watchedUntil.TryGetValue(profile.Id, out var until) && until > now);
                     var room = active ? RoomOf(profile) : null;
                     if (room == null) continue;
-                    _ = VerifyKeyAsync();
-                    if (Due(room)) _ = FetchAsync(profile, room);
+                    AP_Atlas.Core.Async.Fire(VerifyKeyAsync(), "checking your Cheese Tracker API key");
+                    if (Due(room)) AP_Atlas.Core.Async.Fire(FetchAsync(profile, room), "reading Cheese Tracker");
                 }
                 foreach (var slot in connected) EvaluateSlot(slot, now);
             }
@@ -978,7 +978,7 @@ namespace AP_Atlas.Core.CheeseTracker
                 PauseAuto(key, slot.SlotName, blocker);
                 return;
             }
-            if (blocker == null) _ = ApplyAutomaticallyAsync(slot, advice);
+            if (blocker == null) AP_Atlas.Core.Async.Fire(ApplyAutomaticallyAsync(slot, advice), "updating your slot on Cheese Tracker");
         }
 
         private async Task ApplyAutomaticallyAsync(SlotTrackerControl slot, CheeseAdvice advice)

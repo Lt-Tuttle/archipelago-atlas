@@ -34,7 +34,7 @@ namespace AP_Atlas.Core.PopTracker
                 // Re-check after edits so findings and coverage stay current (no prompt for the user's own edits).
                 var pack = Reports.TryGetValue(key, out var r) ? r.Pack : null;
                 var original = pack == null ? null : FindOriginal(pack.SourcePath);
-                if (original != null) _ = CheckAsync(original, prompt: false);
+                if (original != null) AP_Atlas.Core.Async.Fire(CheckAsync(original, prompt: false), "checking a map pack");
             };
         }
 

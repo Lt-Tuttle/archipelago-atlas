@@ -102,7 +102,7 @@ namespace AP_Atlas.UI
             _undoButton.Pressed += () => { if (PackFixes.Undo(_key)) SetStatus("Undone."); };
             footer.AddChild(_undoButton);
             var recheck = new Button { Text = "Re-check", TooltipText = "Run every check again (also re-reads names from your Archipelago install)" };
-            recheck.Pressed += () => { SetStatus("Checking…"); _ = PackDoctorService.CheckAsync(_original, prompt: false, refreshLocalNames: true); };
+            recheck.Pressed += () => { SetStatus("Checking…"); AP_Atlas.Core.Async.Fire(PackDoctorService.CheckAsync(_original, prompt: false, refreshLocalNames: true), "checking the map pack"); };
             footer.AddChild(recheck);
             var done = new Button { Text = "Done", TooltipText = "Close. You won't be prompted about this pack version again." };
             done.Pressed += () => { PackDoctorService.MarkReviewed(_original); QueueFree(); };
@@ -126,7 +126,7 @@ namespace AP_Atlas.UI
             if (_report == null)
             {
                 SetStatus("Checking the pack…");
-                _ = PackDoctorService.CheckAsync(_original, prompt: false);
+                AP_Atlas.Core.Async.Fire(PackDoctorService.CheckAsync(_original, prompt: false), "checking the map pack");
             }
             RenderCurrentTab();
         }

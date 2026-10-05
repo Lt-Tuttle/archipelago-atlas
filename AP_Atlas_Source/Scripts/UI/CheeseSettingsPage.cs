@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using AP_Atlas.Core;
 using AP_Atlas.Core.CheeseTracker;
 using Godot;
@@ -220,7 +221,9 @@ namespace AP_Atlas.UI
             MainTrackerWindow.SetFontSizeRecursive(_autoBox, _settings.ContentFontSize);
         }
 
-        private async void SaveKey()
+        private void SaveKey() => AP_Atlas.Core.Async.Fire(SaveKeyAsync(), "saving your Cheese Tracker API key");
+
+        private async Task SaveKeyAsync()
         {
             string key = _keyInput.Text;
             if (string.IsNullOrWhiteSpace(key)) return;

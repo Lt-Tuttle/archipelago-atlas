@@ -9,6 +9,8 @@
       - Reading the Windows registry: only AtlasEngine's install search, which runs only after the user agrees.
       - Searching the PC for Archipelago: only from the Atlas Engine window's Find button, after the user agrees.
       - Letting Windows run a program by file type (UseShellExecute = true): nowhere.
+      - "async void" methods, whose failures vanish: nowhere (start the work with Async.Fire instead).
+      - Throwing away a call's result ("_ = SomethingAsync()"), which hides a failed task: only in the self-test's fake servers (and Async.cs, which describes the rule).
     Run it from anywhere; CI runs it on every push. Exit code 0 means every rule holds.
 #>
 $ErrorActionPreference = 'Stop'
@@ -19,7 +21,9 @@ $rules = @(
     @{ Name = 'Making web requests outside PoliteHttp'; Pattern = 'new\s+(System\.Net\.Http\.)?HttpClient\s*\(|WebClient\s*\(|HttpWebRequest'; Allowed = @('Core\PoliteHttp.cs') },
     @{ Name = 'Reading the Windows registry'; Pattern = 'Microsoft\.Win32\.Registry|RegistryKey'; Allowed = @('Core\Engine\AtlasEngine.cs') },
     @{ Name = 'Searching the PC for Archipelago'; Pattern = 'FindArchipelagoInstalls\s*\('; Allowed = @('Core\Engine\AtlasEngine.cs', 'UI\AtlasEngineWindow.cs') },
-    @{ Name = 'Letting Windows run a program by file type'; Pattern = 'UseShellExecute\s*=\s*true'; Allowed = @() }
+    @{ Name = 'Letting Windows run a program by file type'; Pattern = 'UseShellExecute\s*=\s*true'; Allowed = @() },
+    @{ Name = 'An async void method (use Async.Fire)'; Pattern = '\basync\s+void\b'; Allowed = @('Core\Async.cs') },
+    @{ Name = 'Throwing away a call''s result (use Async.Fire for tasks)'; Pattern = '(?<!var\s)(?<![\w.])_\s*=\s*[^;=>]*\('; Allowed = @('Core\Async.cs', 'Core\SelfTest.Cheese.cs', 'Core\SelfTest.Spheres.cs') }
 )
 
 $files = Get-ChildItem -Path $scripts -Recurse -Filter '*.cs' -File

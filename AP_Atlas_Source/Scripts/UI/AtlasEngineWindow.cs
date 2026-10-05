@@ -836,7 +836,7 @@ namespace AP_Atlas.UI
                 if (!IsInstanceValid(this)) return;
                 _progress.Value = f < 0 ? 0 : f;
             }).CallDeferred();
-            Task.Run(async () =>
+            Async.Fire(Task.Run(async () =>
             {
                 string failure = null;
                 try { await operation(log, progress, ct); }
@@ -853,7 +853,7 @@ namespace AP_Atlas.UI
                     if (failure != null) SetStatus(name + " stopped: " + failure, Bad);
                     ScanLocalApworlds();
                 }).CallDeferred();
-            });
+            }), $"running \"{name}\"", tellUser: false);
         }
 
         /// <summary>
@@ -863,7 +863,7 @@ namespace AP_Atlas.UI
         private void ScanLocalApworlds()
         {
             string chosen = _settings.ArchipelagoInstallationPath;
-            Task.Run(() =>
+            Async.Fire(Task.Run(() =>
             {
                 var map = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
                 var roots = !string.IsNullOrWhiteSpace(chosen) && File.Exists(Path.Combine(chosen, "ArchipelagoLauncher.exe")) ? new[] { chosen } : Array.Empty<string>();
@@ -888,7 +888,7 @@ namespace AP_Atlas.UI
                     RenderGames(AtlasEngine.Current);
                     MainTrackerWindow.SetFontSizeRecursive(_gamesBox, _fontSize);
                 }).CallDeferred();
-            });
+            }), "looking for apworlds in your Archipelago install");
         }
 
         // =====================================================================

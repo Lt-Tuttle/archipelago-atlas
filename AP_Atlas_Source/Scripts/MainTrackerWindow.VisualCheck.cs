@@ -42,7 +42,9 @@ public partial class MainTrackerWindow
         return true;
     }
 
-    private async void RunVisualCheck()
+    private void RunVisualCheck() => AP_Atlas.Core.Async.Fire(RunVisualCheckAsync(), "running the visual check", tellUser: false);
+
+    private async Task RunVisualCheckAsync()
     {
         int code = 3;
         try { code = await VisualCheckAsync(); }

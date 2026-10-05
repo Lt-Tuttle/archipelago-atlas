@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using AP_Atlas.Core;
 using AP_Atlas.Core.CheeseTracker;
 using AP_Atlas.Core.Spheres;
@@ -617,7 +618,9 @@ namespace AP_Atlas.UI
         }
 
         /// <summary>Reads the room once; links it at once if its creator runs the multiworld's Cheese Tracker, else asks.</summary>
-        private async void CheckAndLink(MultiworldProfile profile, string text)
+        private void CheckAndLink(MultiworldProfile profile, string text) => AP_Atlas.Core.Async.Fire(CheckAndLinkAsync(profile, text), "checking the spheretracker.de room");
+
+        private async Task CheckAndLinkAsync(MultiworldProfile profile, string text)
         {
             SphereRoomCheck check;
             try

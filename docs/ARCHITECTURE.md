@@ -27,7 +27,7 @@ MainTrackerWindow (the shell)
 |---|---|
 | `MainTrackerWindow.cs` | **The shell:**<br>• Menus, the tab strip, the slot cards, the explorer, the terminal (chat and logs), toasts, theme and fonts.<br>• The Connections editor, connecting and reconnecting.<br>• The race-mode UI. |
 | `Core/SlotTrackerControl.cs` | **Everything about one connected slot:**<br>• Its session events.<br>• Its logic engine, map pack and Lua script queue.<br>• The Logic Tracker, Item History and Chat views.<br>• Queries for Properties. |
-| `Core/` | **Infrastructure:**<br>• `DataManager` (settings and profiles), `SafeFile` (crash-safe saves), `Logger`, `CrashGuard`.<br>• `Annotations` (notes, flags, special items, exclusions), `RaceRules`, `ThemeColors`, `Inspect`.<br>• `YamlExclusions`, `AtlasVersion`. |
+| `Core/` | **Infrastructure:**<br>• `DataManager` (settings and profiles), `SafeFile` (crash-safe saves), `Logger`, `CrashGuard`, `Async` (work nobody awaits).<br>• `Annotations` (notes, flags, special items, exclusions), `RaceRules`, `ThemeColors`, `Inspect`.<br>• `YamlExclusions`, `AtlasVersion`. |
 | `Core/` (safety) | **Protections:**<br>• `PoliteHttp`: every web request.<br>• `GitHubApi`: GitHub's rules on top of it.<br>• `ExternalLinks`: the only way to open links and folders.<br>• `Permissions`: what the user allowed.<br>• `Secrets`: DPAPI encryption. |
 | `Core/Engine/` | **The Atlas Engine:**<br>• `AtlasEngine`: setup of the portable engine (Python, Archipelago, Universal Tracker, packages), health checks, rollback, and the user's own install with their consent.<br>• `EngineInstall`, `EngineDownloader`, `ProcessJob` (engine processes close with Atlas).<br>• `ApworldSources`: apworld versions, matched to each seed.<br>• `SeedVerifier`, `GameSweep`.<br>• `Python/`: the bridge (`atlas_bridge.py`) and the portable runner. |
 | `Core/PopTracker/` | **Map packs:**<br>• `PopTrackerPackLoader` reads pack zips.<br>• `PackScriptHost` runs pack Lua in a sandbox.<br>• `PackIndex`, `LuaMappingReader`, `GameNames`.<br>• The Pack Doctor (`PackDoctor`, `PackDoctorService`, `PackFixes`: local fixes with undo).<br>• Key Items (`ProgressionTrackerControl`). |
@@ -59,6 +59,7 @@ Atlas reads or writes outside this folder only with the user's permission.
 | `logs/` | `atlas_log.txt` (rotated) and crash reports. |
 
 - **Every save goes through `SafeFile`:** an atomic write, the previous version kept as `.bak`, and automatic recovery from damage. A damaged file is set aside as `.corrupt-<time>`.
+- **No failure goes unseen:** work nobody awaits (button handlers, background checks, closing connections) starts with `Async.Fire(task, "what it's doing")`. A failure is logged with that description and, unless the work is routine, shown to the user in plain words. There's no `async void` and no discarded task (`_ = …`): the guard rails reject both.
 
 ## How things talk to each other
 

@@ -55,6 +55,7 @@ CI runs the build, formatting, guard rails and self-test on every push and pull 
   | Opening links and folders | `ExternalLinks` |
   | Anything outside Atlas's folder, or a new site | `Permissions` with `PermissionDialog` |
   | Secrets | `Secrets` |
+  | Work nobody awaits (button handlers, background checks) | `Async.Fire(task, "what it's doing")`, never `async void` or `_ = …` |
 
   The guard rails enforce the riskiest of these in CI.
 - **Tests:** every new protection gets a check in `Scripts/Core/SelfTest*.cs`, and tests never touch real data.

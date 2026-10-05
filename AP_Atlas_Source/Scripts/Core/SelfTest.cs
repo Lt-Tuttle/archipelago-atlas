@@ -97,6 +97,7 @@ namespace AP_Atlas.Core
             await TestAsync("Your Archipelago install: nothing is added without your OK, and Remove Atlas's files undoes it", OwnInstallNeedsConsent);
             Test("Map packs: versions compare by number; only real PopTracker packs are installed", PackChecks);
             Test("Engine packages: Archipelago's are exact versions with hashes; a world's requirements can't point pip elsewhere", EnginePackagesArePinned);
+            await TestAsync("Unawaited work: a failure is reported with what was being done; cancelling isn't one; routine work is only logged", UnawaitedWorkIsReported);
 
             string ap = System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_AP");
             if (!string.IsNullOrWhiteSpace(ap))

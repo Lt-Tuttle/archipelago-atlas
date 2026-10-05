@@ -242,6 +242,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         if (!_subscribed) return;
         AP_Atlas.Core.SafeFile.Recovered -= OnFileRecovered;
         DataManager.SaveFailed -= OnSaveFailed;
+        AP_Atlas.Core.Async.Failed -= OnBackgroundWorkFailed;
         AP_Atlas.Core.Logger.OnLogMessage -= OnLogMessageReceived;
         AP_Atlas.Core.Annotations.Changed -= OnAnnotationsChanged;
         AP_Atlas.Core.PopTracker.PackDoctorService.ReviewSuggested -= OnPackReviewSuggested;
@@ -301,6 +302,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _subscribed = true;
         AP_Atlas.Core.SafeFile.Recovered += OnFileRecovered;
         DataManager.SaveFailed += OnSaveFailed;
+        AP_Atlas.Core.Async.Failed += OnBackgroundWorkFailed;
         GetTree().AutoAcceptQuit = false;
         AP_Atlas.Core.Logger.OnLogMessage += OnLogMessageReceived;
         AP_Atlas.Core.Annotations.Changed += OnAnnotationsChanged;
@@ -699,7 +701,9 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     }
 
     /// <summary>Reliability self-test mode (ATLAS_SELFTEST=1): runs the checks and exits with their result.</summary>
-    private async void RunSelfTest()
+    private void RunSelfTest() => AP_Atlas.Core.Async.Fire(RunSelfTestAsync(), "running the self-test", tellUser: false);
+
+    private async Task RunSelfTestAsync()
     {
         int code = 1;
         try { code = await AP_Atlas.Core.SelfTest.RunAsync(); }
@@ -733,6 +737,23 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             _lastSaveFailureToast[file] = System.DateTime.Now;
         }
         Notice($"Couldn't save {file}: {reason}. Check free disk space and folder permissions.", Godot.Colors.Salmon);
+    }
+
+    private readonly Dictionary<string, System.DateTime> _lastFailureNotice = new Dictionary<string, System.DateTime>();
+
+    /// <summary>
+    /// Work nobody awaited failed (any thread). Says so in plain words, at most once every 10 minutes for the same work
+    /// (a check that fails on every refresh would otherwise repeat); the details are in the System Log.
+    /// </summary>
+    private void OnBackgroundWorkFailed(string doing, System.Exception error)
+    {
+        lock (_lastFailureNotice)
+        {
+            var now = System.DateTime.UtcNow;
+            if (_lastFailureNotice.TryGetValue(doing, out var last) && now - last < System.TimeSpan.FromMinutes(10)) return;
+            _lastFailureNotice[doing] = now;
+        }
+        Notice($"Something went wrong while {doing}. Atlas carries on; the details are in the System Log.", Godot.Colors.Salmon);
     }
 
     private void SetupModernTheme()
@@ -1101,7 +1122,9 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
 
     private bool _shuttingDown = false;
 
-    private async void GracefulShutdown()
+    private void GracefulShutdown() => AP_Atlas.Core.Async.Fire(GracefulShutdownAsync(), "closing Atlas", tellUser: false);
+
+    private async Task GracefulShutdownAsync()
     {
         if (_shuttingDown) return;
         _shuttingDown = true;
@@ -1357,7 +1380,9 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     private bool IsSlotLive(string profileId, string slotName) =>
         ActiveSlotNodes().OfType<SlotTrackerControl>().Any(s => IsInstanceValid(s) && s.ProfileId == profileId && s.SlotName == slotName && s.Session?.Socket?.Connected == true);
 
-    private async void TryReconnect(MultiworldProfile profile, string slotName)
+    private void TryReconnect(MultiworldProfile profile, string slotName) => AP_Atlas.Core.Async.Fire(TryReconnectAsync(profile, slotName), $"reconnecting {slotName}");
+
+    private async Task TryReconnectAsync(MultiworldProfile profile, string slotName)
     {
         string key = SlotKey(profile.Id, slotName);
         if (_shuttingDown || !_reconnectAttempts.ContainsKey(key)) return; // cancelled: the user connected or disconnected
@@ -2211,7 +2236,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             if (n is SlotTrackerControl slot && slot.ProfileId == profileId && slot.SlotName == slotName)
             {
                 LogToSystem("[color=yellow]Disconnected slot: " + slotName + "[/color]");
-                _ = CloseSession(slot.Session);
+                AP_Atlas.Core.Async.Fire(CloseSession(slot.Session), "closing a server connection", tellUser: false);
             }
         }
         DataManager.SaveProfiles(_profiles);
@@ -2494,7 +2519,9 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         }
     }
 
-    private async void LinkCheeseFromEditor(MultiworldProfile profile, string text)
+    private void LinkCheeseFromEditor(MultiworldProfile profile, string text) => AP_Atlas.Core.Async.Fire(LinkCheeseFromEditorAsync(profile, text), "linking Cheese Tracker");
+
+    private async Task LinkCheeseFromEditorAsync(MultiworldProfile profile, string text)
     {
         string error = await _cheese.LinkAsync(profile.Id, text);
         if (!IsInstanceValid(this)) return;
@@ -2530,7 +2557,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                     if (n is SlotTrackerControl slot && slot.ProfileId == profileId)
                     {
                         if (_currentSelectedSlot == slot) _currentSelectedSlot = null;
-                        _ = CloseSession(slot.Session);
+                        AP_Atlas.Core.Async.Fire(CloseSession(slot.Session), "closing a server connection", tellUser: false);
                         slot.QueueFree();
                     }
                 }
@@ -2593,7 +2620,9 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         }).CallDeferred();
     }
 
-    private async void OnConnectAllPressed()
+    private void OnConnectAllPressed() => AP_Atlas.Core.Async.Fire(OnConnectAllPressedAsync(), "connecting the multiworld's slots");
+
+    private async Task OnConnectAllPressedAsync()
     {
         if (_isConnectingSlot || _selectedProfile == null || _selectedProfile.Slots.Count == 0) return;
         _isConnectingSlot = true;
@@ -2616,7 +2645,9 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         }
     }
 
-    private async void OnConnectSlotPressed(string slotName, MultiworldProfile profile)
+    private void OnConnectSlotPressed(string slotName, MultiworldProfile profile) => AP_Atlas.Core.Async.Fire(OnConnectSlotPressedAsync(slotName, profile), $"connecting {slotName}");
+
+    private async Task OnConnectSlotPressedAsync(string slotName, MultiworldProfile profile)
     {
         if (_isConnectingSlot) return;
         _reconnectAttempts.Remove(SlotKey(profile.Id, slotName)); // the user took over
@@ -2715,16 +2746,21 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             if (completedTask == timeoutTask)
             {
                 session.MessageLog.OnMessageReceived -= earlyHandler;
-                _ = CloseSession(session);
+                AP_Atlas.Core.Async.Fire(CloseSession(session), "closing a server connection", tellUser: false);
                 // The login may still finish after we gave up on it; close it then too so it isn't left open on the server.
-                _ = connectTask.ContinueWith(t =>
+                AP_Atlas.Core.Async.Fire(connectTask.ContinueWith(t =>
                 {
+                    if (t.IsFaulted)
+                    {
+                        AP_Atlas.Core.Logger.LogDebug($"A connection to {slotName} that had timed out failed afterwards: {t.Exception?.GetBaseException().Message}");
+                        return;
+                    }
                     if (t.Status == TaskStatus.RanToCompletion && t.Result.Successful)
                     {
                         TrackSession(session);
-                        _ = CloseSession(session);
+                        AP_Atlas.Core.Async.Fire(CloseSession(session), "closing a server connection", tellUser: false);
                     }
-                });
+                }), "closing a connection that finished after it timed out", tellUser: false);
                 Callable.From(() =>
                 {
                     _statusLabel.Text = "Status: Connection Timeout";
@@ -2743,7 +2779,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 {
                     // The app is closing; don't build a slot around this session, just close it.
                     session.MessageLog.OnMessageReceived -= earlyHandler;
-                    _ = CloseSession(session);
+                    AP_Atlas.Core.Async.Fire(CloseSession(session), "closing a server connection", tellUser: false);
                     return;
                 }
                 if (result.Successful)
@@ -2770,7 +2806,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                         if (n is SlotTrackerControl oldSlot && oldSlot.ProfileId == profile.Id && oldSlot.SlotName == slotName)
                         {
                             if (_currentSelectedSlot == oldSlot) _currentSelectedSlot = null;
-                            _ = CloseSession(oldSlot.Session);
+                            AP_Atlas.Core.Async.Fire(CloseSession(oldSlot.Session), "closing a server connection", tellUser: false);
                             oldSlot.QueueFree();
                         }
                     }
@@ -2816,7 +2852,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 else
                 {
                     session.MessageLog.OnMessageReceived -= earlyHandler;
-                    _ = CloseSession(session);
+                    AP_Atlas.Core.Async.Fire(CloseSession(session), "closing a server connection", tellUser: false);
                     var loginFailure = (Archipelago.MultiClient.Net.LoginFailure)result;
                     string errs = string.Join(", ", loginFailure.Errors);
                     // Only a refusal (wrong slot, game, version, password) stops automatic reconnects; a server that
@@ -2837,7 +2873,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         }
         catch (System.Exception ex)
         {
-            _ = CloseSession(session);
+            AP_Atlas.Core.Async.Fire(CloseSession(session), "closing a server connection", tellUser: false);
             Callable.From(() =>
             {
                 _statusLabel.Text = "Status: Connection Error:\n" + ex.Message;

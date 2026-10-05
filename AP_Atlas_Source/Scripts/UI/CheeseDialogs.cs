@@ -14,7 +14,9 @@ namespace AP_Atlas.UI
         private static readonly Color Bad = Colors.Salmon;
 
         /// <summary>Runs a change; a failure shows as a toast (and so does <paramref name="success"/>, if given).</summary>
-        public static async void Run(Node owner, Task<string> change, Action<string, Color> toast, string success = null, Action done = null)
+        public static void Run(Node owner, Task<string> change, Action<string, Color> toast, string success = null, Action done = null) => AP_Atlas.Core.Async.Fire(RunAsync(owner, change, toast, success, done), "updating Cheese Tracker");
+
+        private static async Task RunAsync(Node owner, Task<string> change, Action<string, Color> toast, string success = null, Action done = null)
         {
             string error;
             try
@@ -51,7 +53,7 @@ namespace AP_Atlas.UI
             box.AddChild(input);
             dialog.AddChild(box);
             dialog.RegisterTextEnter(input);
-            dialog.Confirmed += async () =>
+            dialog.Confirmed += () => Async.Fire(async () =>
             {
                 string text = input.Text;
                 dialog.QueueFree();
@@ -59,7 +61,7 @@ namespace AP_Atlas.UI
                 if (!GodotObject.IsInstanceValid(parent)) return;
                 toast(error ?? (string.IsNullOrWhiteSpace(text) ? $"Unlinked {profile.Name}" : $"Linked {profile.Name} to Cheese Tracker"), error == null ? Colors.Gray : Bad);
                 done?.Invoke();
-            };
+            }, "linking Cheese Tracker");
             dialog.Canceled += () => dialog.QueueFree();
             parent.AddChild(dialog);
             dialog.PopupCentered(new Vector2I(520, 180));
@@ -93,7 +95,9 @@ namespace AP_Atlas.UI
         }
 
         /// <summary>Looks for the multiworld on the user's Cheese Tracker dashboard and offers to link what it finds.</summary>
-        public static async void FindOnDashboard(Node parent, CheeseTrackerService cheese, MultiworldProfile profile, Action<string, Color> toast, Action done)
+        public static void FindOnDashboard(Node parent, CheeseTrackerService cheese, MultiworldProfile profile, Action<string, Color> toast, Action done) => AP_Atlas.Core.Async.Fire(FindOnDashboardAndOfferAsync(parent, cheese, profile, toast, done), "looking on your Cheese Tracker dashboard");
+
+        private static async Task FindOnDashboardAndOfferAsync(Node parent, CheeseTrackerService cheese, MultiworldProfile profile, Action<string, Color> toast, Action done)
         {
             toast("Looking on your Cheese Tracker dashboard…", Colors.Gray);
             var (link, title, error) = await cheese.FindOnDashboardAsync(profile.Id);

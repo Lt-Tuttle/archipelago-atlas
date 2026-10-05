@@ -8,6 +8,7 @@ using Archipelago.MultiClient.Net.MessageLog.Messages;
 using Archipelago.MultiClient.Net.Packets;
 using Archipelago.MultiClient.Net.Models;
 using System.Linq;
+using System.Threading.Tasks;
 using Color = Godot.Color;
 
 /// <summary>
@@ -251,9 +252,9 @@ public partial class SlotTrackerControl : MarginContainer
         AP_Atlas.Core.PopTracker.PackFixes.Changed += OnPackFixesChanged;
         // Keep this slot's options for offline use (setting indicators, the Pack Doctor).
         DataManager.SaveSlotData(ProfileId, _slotName, Game, _slotData);
-        Callable.From(DetectRaceModeAsync).CallDeferred();
+        Callable.From(DetectRaceMode).CallDeferred();
         Callable.From(RequestGameNames).CallDeferred();
-        Callable.From(OfferYamlExclusionsAsync).CallDeferred();
+        Callable.From(OfferYamlExclusions).CallDeferred();
         _specialSignature = string.Join("|", AP_Atlas.Core.Annotations.SpecialItemNames(Game).OrderBy(n => n));
         _exclusionSignature = ExclusionSignature();
 
@@ -268,7 +269,7 @@ public partial class SlotTrackerControl : MarginContainer
         // Streams this slot's hints (as finder or receiver) now and on every change.
         Session.Hints.TrackHints(OnHintsUpdated, true);
 
-        Callable.From(LoadMapPackAsync).CallDeferred();
+        Callable.From(LoadMapPack).CallDeferred();
         Callable.From(InitializeLogicEngine).CallDeferred();
         Callable.From(RefreshAllViews).CallDeferred();
     }
@@ -354,7 +355,9 @@ public partial class SlotTrackerControl : MarginContainer
 
     private bool _raceStateAnnounced;
 
-    private async void DetectRaceModeAsync()
+    private void DetectRaceMode() => AP_Atlas.Core.Async.Fire(DetectRaceModeAsync(), $"checking whether {_slotName}'s room is a race");
+
+    private async Task DetectRaceModeAsync()
     {
         try
         {
@@ -462,7 +465,9 @@ public partial class SlotTrackerControl : MarginContainer
     /// game's versions are published: the repository the installed copy came from (found by its SHA-256), the one in
     /// the community index, and any the user added. Without interaction it only downloads from trusted repositories.
     /// </summary>
-    public async void FixApworldVersion(bool interactive)
+    public void FixApworldVersion(bool interactive) => AP_Atlas.Core.Async.Fire(FixApworldVersionAsync(interactive), $"matching {_slotName}'s apworld to the seed");
+
+    private async Task FixApworldVersionAsync(bool interactive)
     {
         string game = Game, checksum = ServerChecksumFor(game);
         if (checksum == null || _apworldFixRunning || Session == null) return;
@@ -561,7 +566,9 @@ public partial class SlotTrackerControl : MarginContainer
         dialog.PopupCentered();
     }
 
-    private async void SearchSeedApworld(string game, string checksum, List<AP_Atlas.Core.EngineSetup.ApworldSources.ApworldRepo> repos, List<AP_Atlas.Core.EngineSetup.ApworldSources.ApworldRepo> notSearched)
+    private void SearchSeedApworld(string game, string checksum, List<AP_Atlas.Core.EngineSetup.ApworldSources.ApworldRepo> repos, List<AP_Atlas.Core.EngineSetup.ApworldSources.ApworldRepo> notSearched) => AP_Atlas.Core.Async.Fire(SearchSeedApworldAsync(game, checksum, repos, notSearched), $"looking for the {game} version this seed was made with");
+
+    private async Task SearchSeedApworldAsync(string game, string checksum, List<AP_Atlas.Core.EngineSetup.ApworldSources.ApworldRepo> repos, List<AP_Atlas.Core.EngineSetup.ApworldSources.ApworldRepo> notSearched)
     {
         _apworldFixRunning = true;
         _apworldFixStatus = $"Looking for the {game} version this seed was made with…";
@@ -620,7 +627,7 @@ public partial class SlotTrackerControl : MarginContainer
         var input = new LineEdit { PlaceholderText = "https://github.com/owner/project/releases" };
         dialog.AddChild(input);
         dialog.RegisterTextEnter(input);
-        dialog.Confirmed += async () =>
+        dialog.Confirmed += () => AP_Atlas.Core.Async.Fire(async () =>
         {
             string link = input.Text;
             dialog.QueueFree();
@@ -637,7 +644,7 @@ public partial class SlotTrackerControl : MarginContainer
             AppendDebugLog($"Added github.com/{repo} as a source of {game} apworlds.");
             _apworldFixAttempted.Remove(ServerChecksumFor(game) ?? "");
             FixApworldVersion(interactive: true);
-        };
+        }, $"adding a source of {game} apworlds");
         dialog.Canceled += () => dialog.QueueFree();
         GetTree().Root.AddChild(dialog);
         dialog.PopupCentered();
@@ -657,16 +664,19 @@ public partial class SlotTrackerControl : MarginContainer
             UseNativeDialog = true,
             Title = $"The {game} apworld this seed was made with"
         };
-        dialog.FileSelected += async path =>
+        dialog.FileSelected += path => AP_Atlas.Core.Async.Fire(async () =>
         {
             dialog.QueueFree();
             _apworldFixRunning = true;
             _apworldFixStatus = "Checking that file…";
             SyncAccuracyBanner();
             var install = _logicEngine.Install;
-            var (entry, problem) = await System.Threading.Tasks.Task.Run(() => AP_Atlas.Core.EngineSetup.ApworldSources.AddUserFileAsync(install, path, game, checksum, System.Threading.CancellationToken.None));
+            var check = System.Threading.Tasks.Task.Run(() => AP_Atlas.Core.EngineSetup.ApworldSources.AddUserFileAsync(install, path, game, checksum, System.Threading.CancellationToken.None));
+            // Copying the file can fail (a full disk): the fix must not stay "running" then.
+            try { await check; }
+            finally { _apworldFixRunning = false; }
+            var (entry, problem) = await check;
             if (!GodotObject.IsInstanceValid(this)) return;
-            _apworldFixRunning = false;
             if (entry != null)
             {
                 _apworldFixStatus = null;
@@ -677,7 +687,7 @@ public partial class SlotTrackerControl : MarginContainer
             }
             _apworldFixStatus = $"That file can't be used: {problem}.";
             SyncAccuracyBanner();
-        };
+        }, $"using the {game} apworld you chose");
         dialog.Canceled += () => dialog.QueueFree();
         GetTree().Root.AddChild(dialog);
         dialog.PopupCentered(new Vector2I(900, 600));
@@ -924,7 +934,9 @@ public partial class SlotTrackerControl : MarginContainer
     // Map pack
     // =====================================================================
 
-    private async void LoadMapPackAsync()
+    private void LoadMapPack() => AP_Atlas.Core.Async.Fire(LoadMapPackAsync(), $"loading {_slotName}'s map pack");
+
+    private async Task LoadMapPackAsync()
     {
         string game = Session?.ConnectionInfo?.Game;
         if (string.IsNullOrEmpty(game)) return;
@@ -941,7 +953,7 @@ public partial class SlotTrackerControl : MarginContainer
             StartPackScripts();
             AppendDebugLog($"[MapTracker] Loaded pack '{pack.Manifest?.Name}' for {game}.");
             // First use of a pack (or a new version): let the Pack Doctor check it in the background.
-            _ = AP_Atlas.Core.PopTracker.PackDoctorService.CheckAsync(pack);
+            AP_Atlas.Core.Async.Fire(AP_Atlas.Core.PopTracker.PackDoctorService.CheckAsync(pack), "checking a map pack");
             RaiseStateChanged();
         }
         else
@@ -976,7 +988,7 @@ public partial class SlotTrackerControl : MarginContainer
             return;
         }
         Session.Socket.PacketReceived += OnDataPackagePacket;
-        _ = Session.Socket.SendPacketAsync(new GetDataPackagePacket { Games = new[] { Game } });
+        AP_Atlas.Core.Async.Fire(Session.Socket.SendPacketAsync(new GetDataPackagePacket { Games = new[] { Game } }), "asking the server for game names", tellUser: false);
     }
 
     private void OnDataPackagePacket(ArchipelagoPacketBase packet)
@@ -1000,7 +1012,7 @@ public partial class SlotTrackerControl : MarginContainer
             if (!GodotObject.IsInstanceValid(this)) return;
             RebuildPackIndex();
             // The server's names are the most accurate; re-check the pack against them.
-            if (Pack != null) _ = AP_Atlas.Core.PopTracker.PackDoctorService.CheckAsync(Pack);
+            if (Pack != null) AP_Atlas.Core.Async.Fire(AP_Atlas.Core.PopTracker.PackDoctorService.CheckAsync(Pack), "checking a map pack");
         }).CallDeferred();
     }
 
@@ -1144,7 +1156,9 @@ public partial class SlotTrackerControl : MarginContainer
         if (Pack != null && AP_Atlas.Core.PopTracker.PackFixes.KeyFor(Pack) == packKey) RebuildPackIndex();
     }
 
-    private async void InitializeLogicEngine()
+    private void InitializeLogicEngine() => AP_Atlas.Core.Async.Fire(InitializeLogicEngineAsync(), $"starting logic for {_slotName}");
+
+    private async Task InitializeLogicEngineAsync()
     {
         if (_engineBooting || _engineRunning) return;
         if (AP_Atlas.Core.EngineSetup.AtlasEngine.SetupRunning)
@@ -1273,10 +1287,12 @@ public partial class SlotTrackerControl : MarginContainer
     {
         if (!_engineRunning) return;
         if (_logicBusy) { _logicDirty = true; return; }
-        UpdateLogicAsync();
+        UpdateLogic();
     }
 
-    private async void UpdateLogicAsync()
+    private void UpdateLogic() => AP_Atlas.Core.Async.Fire(UpdateLogicAsync(), $"updating logic for {_slotName}");
+
+    private async Task UpdateLogicAsync()
     {
         _logicBusy = true;
         try
@@ -1515,7 +1531,9 @@ public partial class SlotTrackerControl : MarginContainer
     /// Offers the excluded locations of the YAML the user linked to this slot. Atlas reads only that file: it never looks
     /// through folders for YAMLs.
     /// </summary>
-    private async void OfferYamlExclusionsAsync()
+    private void OfferYamlExclusions() => AP_Atlas.Core.Async.Fire(OfferYamlExclusionsAsync(), $"reading {_slotName}'s YAML");
+
+    private async Task OfferYamlExclusionsAsync()
     {
         string path = LinkedYamlPath, game = Game, slot = _slotName;
         if (path == null) return;
@@ -1525,11 +1543,11 @@ public partial class SlotTrackerControl : MarginContainer
         if (!AP_Atlas.Core.Annotations.FirstOfferOfYamlExclusions(AnnotationKey, signature)) return;
         string file = System.IO.Path.GetFileName(yaml.File);
         AppendDebugLog($"[Exclusions] {file} lists {yaml.Names.Count} excluded location(s) for {slot}.");
-        ShowActionToast?.Invoke($"{file} excludes {yaml.Names.Count} location(s) for {slot}. Apply them to the tracker?", Colors.Gray, "Apply", async () =>
+        ShowActionToast?.Invoke($"{file} excludes {yaml.Names.Count} location(s) for {slot}. Apply them to the tracker?", Colors.Gray, "Apply", () => AP_Atlas.Core.Async.Fire(async () =>
         {
             var (applied, listed, unknown) = await ApplyYamlExclusionsAsync(yaml.Names);
             ShowToast?.Invoke($"Excluded {applied} location(s) from {file}" + (unknown.Count > 0 ? $" ({unknown.Count} name(s) not found)" : ""), Colors.Gray);
-        });
+        }, $"applying {file}'s excluded locations"));
     }
 
     // =====================================================================
@@ -2548,7 +2566,9 @@ public partial class SlotTrackerControl : MarginContainer
         ShowToast?.Invoke(text, AP_Atlas.Core.Annotations.SpecialColor);
     }
 
-    private async void ScrollChatToBottom()
+    private void ScrollChatToBottom() => AP_Atlas.Core.Async.Fire(ScrollChatToBottomAsync(), "scrolling the chat", tellUser: false);
+
+    private async Task ScrollChatToBottomAsync()
     {
         if (!IsInsideTree()) return;
         await ToSignal(GetTree(), "process_frame");

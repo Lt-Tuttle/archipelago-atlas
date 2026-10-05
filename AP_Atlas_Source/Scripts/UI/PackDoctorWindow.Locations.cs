@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using AP_Atlas.Core;
 using AP_Atlas.Core.PopTracker;
 using Godot;
@@ -372,7 +373,9 @@ namespace AP_Atlas.UI
             return root;
         }
 
-        private async void SettleMapView(ScrollContainer scroll, bool center, float x, float y, Vector2 restore)
+        private void SettleMapView(ScrollContainer scroll, bool center, float x, float y, Vector2 restore) => AP_Atlas.Core.Async.Fire(SettleMapViewAsync(scroll, center, x, y, restore), "positioning the map", tellUser: false);
+
+        private async Task SettleMapViewAsync(ScrollContainer scroll, bool center, float x, float y, Vector2 restore)
         {
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             if (!IsInstanceValid(scroll) || _mapScroll != scroll) return;
@@ -424,7 +427,9 @@ namespace AP_Atlas.UI
         }
 
         /// <summary>Zooms keeping the map point under the mouse in place.</summary>
-        private async void ZoomAtMouse(float factor)
+        private void ZoomAtMouse(float factor) => AP_Atlas.Core.Async.Fire(ZoomAtMouseAsync(factor), "zooming the map", tellUser: false);
+
+        private async Task ZoomAtMouseAsync(float factor)
         {
             if (_mapScroll == null || !IsInstanceValid(_mapScroll)) return;
             var scroll = _mapScroll;
@@ -443,7 +448,9 @@ namespace AP_Atlas.UI
         }
 
         /// <summary>Zooms around the middle of the visible area (toolbar buttons).</summary>
-        private async void ZoomAtCenter(float factor)
+        private void ZoomAtCenter(float factor) => AP_Atlas.Core.Async.Fire(ZoomAtCenterAsync(factor), "zooming the map", tellUser: false);
+
+        private async Task ZoomAtCenterAsync(float factor)
         {
             if (_mapScroll == null || !IsInstanceValid(_mapScroll)) return;
             var scroll = _mapScroll;

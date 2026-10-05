@@ -751,7 +751,7 @@ namespace AP_Atlas.UI
                 return;
             }
             string command = (IsLocationMode ? "!hint_location " : "!hint ") + name;
-            _ = _session.Socket.SendPacketAsync(new SayPacket { Text = command });
+            AP_Atlas.Core.Async.Fire(_session.Socket.SendPacketAsync(new SayPacket { Text = command }), "sending your hint request");
             _requestInput.Text = "";
             _suggestions.Visible = false;
             SetFeedback($"Sent \"{command}\". The server's reply appears in Chat; new hints show up here automatically.", Colors.Gray);

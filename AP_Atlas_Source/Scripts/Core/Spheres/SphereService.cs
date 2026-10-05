@@ -256,7 +256,7 @@ namespace AP_Atlas.Core.Spheres
         public void Watch(string profileId)
         {
             var s = ShownSource(ProfileOf(profileId));
-            if (s != null && Due(s)) _ = FetchAsync(s, profileId);
+            if (s != null && Due(s)) AP_Atlas.Core.Async.Fire(FetchAsync(s, profileId), "reading spheretracker.de");
         }
 
         /// <summary>True when the room was read moments ago (Refresh would do nothing).</summary>

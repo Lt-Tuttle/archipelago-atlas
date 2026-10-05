@@ -196,7 +196,7 @@ namespace AP_Atlas.Core
             else
             {
                 txt += "[color=gray]Checking…[/color]\n";
-                _ = PackDoctorService.CheckAsync(pack, prompt: false);
+                AP_Atlas.Core.Async.Fire(PackDoctorService.CheckAsync(pack, prompt: false), "checking a map pack");
             }
             _ = activeSession; // the Doctor uses every name source, not just a connected session
 
@@ -322,7 +322,9 @@ namespace AP_Atlas.Core
                 "Open download page", () => AP_Atlas.Core.ExternalLinks.OpenWeb(update.DownloadUrl));
         }
 
-        private async void CheckSinglePackUpdate(string zipPath)
+        private void CheckSinglePackUpdate(string zipPath) => AP_Atlas.Core.Async.Fire(CheckSinglePackUpdateAsync(zipPath), "checking a map pack for updates");
+
+        private async Task CheckSinglePackUpdateAsync(string zipPath)
         {
             PopTrackerManifest manifest;
             try { manifest = ReadManifest(zipPath); }
@@ -358,7 +360,9 @@ namespace AP_Atlas.Core
         /// Rebuilds the pack list. Packs that haven't been parsed yet (each zip holds every map/item image)
         /// are read on a worker thread first so opening the tab doesn't freeze the UI.
         /// </summary>
-        private async void RefreshPackList()
+        private void RefreshPackList() => AP_Atlas.Core.Async.Fire(RefreshPackListAsync(), "reading your map packs");
+
+        private async Task RefreshPackListAsync()
         {
             if (_packListLoading) return;
             _packListLoading = true;
@@ -503,7 +507,7 @@ namespace AP_Atlas.Core
                 _seenPacks[file] = stamp;
                 if (!_firstScanDone || !isNewOrChanged) continue;
                 var pack = PopTrackerPackLoader.InspectZipPack(file, null);
-                if (pack != null) _ = PackDoctorService.CheckAsync(pack);
+                if (pack != null) AP_Atlas.Core.Async.Fire(PackDoctorService.CheckAsync(pack), "checking a map pack");
             }
             _firstScanDone = true;
         }
@@ -569,7 +573,9 @@ namespace AP_Atlas.Core
             return installed;
         }
 
-        private async void OnSearchPressed()
+        private void OnSearchPressed() => AP_Atlas.Core.Async.Fire(OnSearchPressedAsync(), "searching GitHub for map packs");
+
+        private async Task OnSearchPressedAsync()
         {
             var games = (_getActiveGamesFunc?.Invoke() ?? new HashSet<string>()).ToList();
             if (games.Count == 0)
@@ -705,7 +711,9 @@ namespace AP_Atlas.Core
         }
 
         /// <summary>Looks up the project's latest release, then shows exactly what would be downloaded and asks.</summary>
-        private async void InstallFromRepo(string game, string repo)
+        private void InstallFromRepo(string game, string repo) => AP_Atlas.Core.Async.Fire(InstallFromRepoAsync(game, repo), $"looking up {repo}'s latest release");
+
+        private async Task InstallFromRepoAsync(string game, string repo)
         {
             GitHubApi.Result release;
             _showOverlayAction();
@@ -744,7 +752,9 @@ namespace AP_Atlas.Core
             AP_Atlas.UI.Dialogs.Confirm(this, "Install a map pack", text, "Download and install", () => DownloadPack(downloadUrl, file, where));
         }
 
-        private async void DownloadPack(string url, string fileName, string where)
+        private void DownloadPack(string url, string fileName, string where) => AP_Atlas.Core.Async.Fire(DownloadPackAsync(url, fileName, where), "downloading a map pack");
+
+        private async Task DownloadPackAsync(string url, string fileName, string where)
         {
             string packsDir = System.IO.Path.Combine(DataManager.GetDataDirectory(), "packs");
             Directory.CreateDirectory(packsDir);
@@ -797,7 +807,9 @@ namespace AP_Atlas.Core
             }
         }
 
-        private async void OnCheckUpdatesPressed()
+        private void OnCheckUpdatesPressed() => AP_Atlas.Core.Async.Fire(OnCheckUpdatesPressedAsync(), "checking map packs for updates");
+
+        private async Task OnCheckUpdatesPressedAsync()
         {
             var updates = new List<PackUpdate>();
             var problems = new List<string>();

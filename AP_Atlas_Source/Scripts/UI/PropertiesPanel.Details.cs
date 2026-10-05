@@ -431,7 +431,7 @@ namespace AP_Atlas.UI
             Section("Seed settings");
             AddHint("Reading this slot's saved options with the map pack…");
             var current = StillCurrent();
-            System.Threading.Tasks.Task.Run(() =>
+            Async.Fire(System.Threading.Tasks.Task.Run(() =>
             {
                 var pack = PopTrackerPackLoader.LoadPackForGame(saved.Game, null);
                 var host = pack == null ? null : PackScriptHost.Load(pack);
@@ -442,13 +442,14 @@ namespace AP_Atlas.UI
                 return host.Settings(codes);
             }).ContinueWith(task =>
             {
+                if (task.IsFaulted) Logger.LogWarning($"Couldn't read {saved.Game}'s saved options with its map pack: {task.Exception?.GetBaseException().Message}");
                 var list = task.IsCompletedSuccessfully ? task.Result : new List<PackScriptHost.SettingInfo>();
                 Callable.From(() =>
                 {
                     _offlineSettings[key] = (saved.Saved, list);
                     current(() => Render(keepScroll: true));
                 }).CallDeferred();
-            });
+            }), "showing a slot's saved options", tellUser: false);
         }
 
         private void BuildSeedSettings(List<PackScriptHost.SettingInfo> settings, bool scriptsRan, Newtonsoft.Json.Linq.JToken slotData, bool live, DateTime? savedAt = null)
@@ -1328,10 +1329,11 @@ namespace AP_Atlas.UI
             {
                 SetHeader("Map pack", Path.GetFileNameWithoutExtension(path), Colored("Reading the pack…", Muted), Colors.Gray, "");
                 var current = StillCurrent();
-                System.Threading.Tasks.Task.Run(() =>
+                Async.Fire(System.Threading.Tasks.Task.Run(() =>
                 {
-                    try { PopTrackerPackLoader.InspectZipPack(path); } catch { }
-                }).ContinueWith(_ => Callable.From(() => current(() => Render(keepScroll: true))).CallDeferred());
+                    try { PopTrackerPackLoader.InspectZipPack(path); }
+                    catch (Exception ex) { Logger.LogWarning($"Couldn't read the map pack {Path.GetFileName(path)}: {ex.Message}"); }
+                }).ContinueWith(_ => Callable.From(() => current(() => Render(keepScroll: true))).CallDeferred()), "reading a map pack", tellUser: false);
                 return;
             }
             LoadedPack pack = null;
@@ -1635,7 +1637,7 @@ namespace AP_Atlas.UI
                 Title = $"Exclusions for {slot.SlotName}: choose your {slot.Game} YAML"
             };
             if (System.IO.Directory.Exists(players)) dialog.CurrentDir = players;
-            dialog.FileSelected += async path =>
+            dialog.FileSelected += path => Async.Fire(async () =>
             {
                 dialog.QueueFree();
                 var yaml = YamlExclusions.Read(path, slot.Game, slot.SlotName);
@@ -1650,7 +1652,7 @@ namespace AP_Atlas.UI
                     Logger.LogWarning($"[{slot.SlotName}] exclude_locations names not found in {slot.Game}: {string.Join(", ", unknown)}");
                 }
                 _host.Toast(msg, applied > 0 ? Good : Colors.Gray);
-            };
+            }, $"applying excluded locations from {System.IO.Path.GetFileName(path)}");
             dialog.Canceled += () => dialog.QueueFree();
             GetTree().Root.AddChild(dialog);
             dialog.PopupCentered(new Vector2I(900, 600));
