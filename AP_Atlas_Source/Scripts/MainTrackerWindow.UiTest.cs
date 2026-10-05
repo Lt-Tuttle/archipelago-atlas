@@ -75,6 +75,8 @@ public partial class MainTrackerWindow
         await UiTestWaitAsync(1.0); // the window settles, as on a first run
         await ScenarioAsync("Connecting: a slot logs in through the window and gets its view; a dropped connection comes back by itself with a new view; disconnecting closes it for good",
             ConnectingThroughTheWindowAsync);
+        await ScenarioAsync("Deleting a multiworld while one of its slots connects: the connection is closed, and no slot is left for it",
+            DeletingWhileConnectingLeavesNothingAsync);
         await ScenarioAsync("Moving views: the Cheese and Sphere tabs and Properties keep following their events when moved to another parent (docking, pop-outs), and stop while out of the window",
             ViewsKeepTheirEventsWhenMovedAsync);
         await ScenarioAsync("Tools: every tool's tab shows its own view, and each slot tool the connected slot's view (or asks for a slot when none is connected)",
@@ -134,12 +136,35 @@ public partial class MainTrackerWindow
                 .SingleOrDefault(b => b.GetMeta("profile_id").AsString() == profile.Id);
             UiTestExpect(connectButton != null, "the slot has no Connect button in the sidebar");
             connectButton!.EmitSignal(BaseButton.SignalName.Pressed);
-            await UiTestWaitForAsync(() => _sessions.IsLoggedIn(slot) && server.Count("Connect") == 3 ? this : null, "the sidebar's Connect button to connect the slot again");
+            await UiTestWaitForAsync(() => _sessions.IsLoggedIn(slot) && server.Count("Connect") == 3 && SlotView(profile.Id, "Tester") is { } third && third != second ? this : null,
+                "the sidebar's Connect button to connect the slot again");
         }
         finally
         {
             DeleteProfile(profile);
         }
+    }
+
+    private async Task DeletingWhileConnectingLeavesNothingAsync()
+    {
+        await using var server = new FakeArchipelagoServer();
+        server.Games["Test Game"] = new FakeGame("0123456789abcdef0123456789abcdef01234567",
+            new Dictionary<string, long> { ["Sword"] = 1000 }, new Dictionary<string, long> { ["Cave Chest"] = 2000 });
+        server.LoginDelay = TimeSpan.FromSeconds(0.5);
+        var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Tester");
+        _profiles.Add(profile);
+        var slot = new SlotId(profile.Id, "Tester");
+        // Connect, and delete the multiworld while the server is still answering the login.
+        var connecting = OnConnectSlotPressedAsync("Tester", profile);
+        await UiTestWaitForAsync(() => server.Count("Connect") == 1 ? this : null, "the login to reach the server");
+        DeleteProfile(profile);
+        await connecting;
+        await UiTestWaitForAsync(() => server.ClosesReceived >= 1 ? this : null, "the finished login to be closed");
+        await UiTestWaitAsync(0.3);
+        UiTestExpect(SlotView(profile.Id, "Tester") == null, "a slot was built for the deleted multiworld");
+        UiTestExpect(!_sessions.IsLoggedIn(slot), "the deleted multiworld's slot stayed connected");
     }
 
     private async Task ViewsKeepTheirEventsWhenMovedAsync()

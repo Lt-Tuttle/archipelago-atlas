@@ -303,6 +303,28 @@ public sealed class SessionManagerTests : IDisposable
     }
 
     [Fact]
+    public async Task Deleting_a_multiworld_while_its_slot_logs_in_closes_that_login()
+    {
+        await using var server = Server();
+        server.LoginDelay = TimeSpan.FromSeconds(0.5);
+        var manager = Manager();
+        var login = Login(server);
+
+        var connecting = Connect(manager, login);
+        await WaitFor(() => server.Count("Connect") == 1, "the login to reach the server");
+        await manager.ForgetProfileAsync("p1");
+        var result = await connecting;
+
+        Assert.Equal(ConnectOutcome.Cancelled, result.Outcome);
+        Assert.Null(result.Slot);
+        Assert.False(manager.IsLoggedIn(login.Slot));
+        await WaitFor(() => server.ClosesReceived == 1, "the finished login to be closed on the server");
+        // And the deleted multiworld's slots don't connect again.
+        Assert.Equal(ConnectOutcome.Cancelled, (await Connect(manager, login)).Outcome);
+        await manager.CloseAllAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
     public async Task Connections_are_made_one_at_a_time()
     {
         await using var server = Server("One", "Two", "Three");

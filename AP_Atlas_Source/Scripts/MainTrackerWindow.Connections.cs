@@ -259,7 +259,9 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
 
     private void ShowConnectResult(MultiworldProfile profile, string slotName, ConnectResult result)
     {
-        if (result.Outcome == ConnectOutcome.Connected && !_shuttingDown)
+        // Never a slot for a multiworld that was deleted while it connected: that connection is just closed.
+        bool deleted = ProfileById(profile.Id) == null;
+        if (result.Outcome == ConnectOutcome.Connected && !_shuttingDown && !deleted)
         {
             BuildSlotTracker(profile, result.Slot);
             return;
@@ -267,7 +269,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         if (result.Slot != null) AP_Atlas.Core.Async.Fire(_sessions.DisconnectAsync(result.Slot.Slot), "closing a server connection", tellUser: false);
         _connectingSlots.Remove(SlotKey(profile.Id, slotName));
         UpdateSidebar();
-        if (_shuttingDown || result.Outcome == ConnectOutcome.Cancelled) return;
+        if (_shuttingDown || deleted || result.Outcome == ConnectOutcome.Cancelled) return;
         _statusLabel.AddThemeColorOverride("font_color", Colors.Red);
         switch (result.Outcome)
         {

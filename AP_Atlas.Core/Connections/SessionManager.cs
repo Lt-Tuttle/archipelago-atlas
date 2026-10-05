@@ -118,6 +118,8 @@ namespace AP_Atlas.Core.Connections
         private readonly Dictionary<SlotId, SlotLogin> _logins = new();
         private readonly Dictionary<SlotId, PendingReconnect> _reconnects = new();
         private bool _closing;
+        // Multiworlds that were deleted: a login for one of their slots that's still under way is closed when it finishes.
+        private readonly HashSet<string> _forgottenProfiles = new();
         private volatile bool _autoReconnect = true;
 
         public SessionManager(DataPackageStore store, SessionManagerOptions? options = null)
@@ -198,6 +200,7 @@ namespace AP_Atlas.Core.Connections
             List<ArchipelagoSession> sessions;
             lock (_lock)
             {
+                _forgottenProfiles.Add(profileId);
                 foreach (var slot in _logins.Keys.Where(s => s.ProfileId == profileId).ToList()) _logins.Remove(slot);
                 sessions = _loggedIn.Where(entry => entry.Value.ProfileId == profileId).Select(entry => entry.Key).ToList();
             }
@@ -264,7 +267,10 @@ namespace AP_Atlas.Core.Connections
             try
             {
                 lock (_lock)
+                {
                     if (_closing) return new ConnectResult(ConnectOutcome.Cancelled, "Atlas is closing.");
+                    if (_forgottenProfiles.Contains(login.Slot.ProfileId)) return new ConnectResult(ConnectOutcome.Cancelled, "Its multiworld was deleted.");
+                }
                 ArchipelagoSession session;
                 try { session = AtlasSessions.Create(login.Server, _store); }
                 catch (Exception ex) when (ex is NotSupportedException or ArgumentException or FormatException)
@@ -314,9 +320,11 @@ namespace AP_Atlas.Core.Connections
             if (result is LoginSuccessful success)
             {
                 List<ArchipelagoSession>? previous = null;
+                string why = "Atlas is closing.";
                 lock (_lock)
                 {
-                    if (!_closing && _open.Contains(session))
+                    if (_forgottenProfiles.Contains(login.Slot.ProfileId)) why = "Its multiworld was deleted while it logged in.";
+                    else if (!_closing && _open.Contains(session))
                     {
                         // Forget the slot's earlier session before closing it, so its closing isn't taken for a drop.
                         previous = _loggedIn.Where(entry => entry.Value == login.Slot).Select(entry => entry.Key).ToList();
@@ -332,10 +340,10 @@ namespace AP_Atlas.Core.Connections
                     lock (checksums) snapshot = new Dictionary<string, string>(checksums, StringComparer.OrdinalIgnoreCase);
                     return new ConnectResult(ConnectOutcome.Connected, "Connected.", new ConnectedSlot(login.Slot, session, success, snapshot, early));
                 }
-                // Atlas started closing (or closed this session) while it logged in.
+                // Atlas started closing (or closed this session, or its multiworld was deleted) while it logged in.
                 early.Take();
                 await CloseAsync(session).ConfigureAwait(false);
-                return new ConnectResult(ConnectOutcome.Cancelled, "Atlas is closing.");
+                return new ConnectResult(ConnectOutcome.Cancelled, why);
             }
 
             early.Take();

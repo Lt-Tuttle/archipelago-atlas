@@ -126,6 +126,7 @@ Development toward the first public beta, 0.1.0.
   - **Godot** kept a log, with a copy of every line Atlas logs, and a shader cache in `%APPDATA%\Godot\app_userdata\The Archipelago Atlas`. Both are off, and Godot's own errors and warnings now go to Atlas's log. Godot still creates that folder, empty, when it starts; it has no setting to stop that.
   - **The Atlas Engine** put its temporary files, Archipelago's cache and pip's downloads in `%TEMP%` and `%LocalAppData%`. They now stay in the engine's folder. pip also ignores your own pip settings now, so they can't change what Atlas installs.
 - **Deleting a multiworld** while one of its slots was waiting to reconnect could bring that slot back, for a multiworld that no longer existed. Deleting now calls off its reconnects.
+- **Deleting a multiworld** while one of its slots was still logging in left that slot connected and shown, for a multiworld that no longer existed. The login is now closed when it finishes.
 - **Deleting a multiworld** whose slot was showing in a tool now shows "Select a connected slot" there, instead of an empty area.
 - **A log file that can't be written** (its folder deleted while Atlas runs, a full disk) is now reported once, not on every line, and logging carries on when it can.
 - **Files held by another program:**
