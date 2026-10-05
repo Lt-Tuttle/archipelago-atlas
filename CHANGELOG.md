@@ -52,6 +52,7 @@ Development toward the first public beta, 0.1.0.
   - A fake Archipelago server for tests, on the test computer only.
   - A UI test (`ATLAS_UITEST`): Atlas builds its window and drives it the way a user would, against the fake server: connecting a slot, a dropped connection coming back, disconnecting. `run_selftest.ps1` runs it after the self-test, and CI runs that.
   - Views are ready to be moved (for docking and pop-outs): the Cheese Tracker and Sphere Tracker tabs and Properties follow their events whenever they're in the window, including after a move, and never while out of it. Before, a move would have stopped them updating, because they subscribed only once. The UI test moves each one and counts the events' listeners.
+  - So is a slot's own panel (its text client): it ends only when the slot is replaced or deleted, not when it leaves the window, so moving it keeps its engine, views and connection. The UI test moves it while items and messages arrive.
   - The guard rails check that every script has its Godot `.uid` file committed.
   - The UI test also sends a burst of 40 items and 40 chat lines: each reaches the slot once, as one update of the window.
   - One list of Atlas's tools (`Tool`), in tab order, each with its id, title and scope (the whole app, a multiworld or one slot). The tabs, the "Show in…" links in Properties and the visual check use it instead of tab numbers, and the UI test checks every tool's tab shows the right view.

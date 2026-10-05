@@ -573,8 +573,20 @@ public partial class SlotTrackerControl : MarginContainer
         UpdateKeyItemsUI();
     }
 
-    public override void _ExitTree()
+    private bool _ended;
+
+    /// <summary>Whether the slot has ended (replaced, deleted, or freed with the window).</summary>
+    public bool Ended => _ended;
+
+    /// <summary>
+    /// Ends the slot: it stops listening (to its model, Atlas's shared events and the engine), stops its logic engine,
+    /// closes its model and frees its views. The window calls it when the slot is replaced or deleted. Leaving the tree
+    /// doesn't end it, so the panel can be moved (docking, pop-outs) without losing its engine, views or events.
+    /// </summary>
+    public void EndSlot()
     {
+        if (_ended) return;
+        _ended = true;
         AP_Atlas.Core.EngineSetup.AtlasEngine.Changed -= OnEngineChanged;
         AP_Atlas.Core.EngineSetup.AtlasEngine.PauseRequested -= OnEnginePauseRequested;
         AP_Atlas.Core.ThemeColors.AccentChanged -= OnAccentChanged;
@@ -583,7 +595,6 @@ public partial class SlotTrackerControl : MarginContainer
         AP_Atlas.Core.PopTracker.PackFixes.Changed -= OnPackFixesChanged;
         Session.Socket.PacketReceived -= OnDataPackagePacket;
         Model.Changed -= OnModelChanged;
-        // Leaving the tree still ends the slot (until its views can move on their own): the model stops listening.
         Model.Dispose();
         _logicEngine?.StopEngine();
         _hintTracker?.Detach();
@@ -594,5 +605,12 @@ public partial class SlotTrackerControl : MarginContainer
         {
             if (view != null && GodotObject.IsInstanceValid(view)) view.QueueFree();
         }
+    }
+
+    public override void _Notification(int what)
+    {
+        // Freed without being ended (with the window as Atlas closes): end it now, so nothing calls back into a freed panel
+        // and its engine stops.
+        if (what == NotificationPredelete) EndSlot();
     }
 }

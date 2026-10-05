@@ -65,6 +65,8 @@ public partial class MainTrackerWindow
             EveryToolShowsItsViewAsync);
         await ScenarioAsync("Bursts: 40 items and 40 chat lines arriving together reach the slot once each, as one update of the window (not 80)",
             BurstIsOneUpdateAsync);
+        await ScenarioAsync("Moving a slot's panel: out of the window and docked elsewhere, the slot keeps its connection, views and updates, and shows what arrived meanwhile",
+            SlotPanelMovesWholeAsync);
         await _sessions.CloseAllAsync(TimeSpan.FromSeconds(3));
         GD.Print($"UITEST DONE: {passed} passed, {failed} failed");
         GetTree().Quit(failed == 0 ? 0 : 1);
@@ -298,6 +300,56 @@ public partial class MainTrackerWindow
             DeleteProfile(profile);
         }
     }
+
+    private async Task SlotPanelMovesWholeAsync()
+    {
+        await using var server = new FakeArchipelagoServer();
+        server.Games["Test Game"] = new FakeGame("0123456789abcdef0123456789abcdef01234567",
+            new Dictionary<string, long> { ["Sword"] = 1000 }, new Dictionary<string, long> { ["Cave Chest"] = 2000 });
+        var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Tester");
+        _profiles.Add(profile);
+        var elsewhere = new VBoxContainer { Name = "UiTestDock" };
+        AddChild(elsewhere);
+        try
+        {
+            await OnConnectSlotPressedAsync("Tester", profile);
+            var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
+            var slotId = new SlotId(profile.Id, "Tester");
+            var views = new Control[] { slot.MapTracker, slot.ProgressionTracker, slot.LogicTrackerView, slot.ItemHistoryView, slot.HintsView };
+            var home = slot.GetParent();
+            int place = slot.GetIndex();
+
+            // Out of the window: a burst arrives meanwhile.
+            home.RemoveChild(slot);
+            await server.BroadcastAsync(FakeArchipelagoServer.ReceivedItems(0, new long[] { 1000, 1000, 1000 }), server.Chat("while the panel was moved"));
+            await UiTestWaitForAsync(() => slot.Session.Items.AllItemsReceived.Count == 3 && PanelShows(slot, "while the panel was moved") ? slot : null,
+                "the burst to reach the panel while it was out of the window");
+            // Docked somewhere else.
+            elsewhere.AddChild(slot);
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(!slot.Ended && _sessions.IsLoggedIn(slotId), "moving the panel ended the slot or its connection");
+            UiTestExpect(views.All(v => v != null && IsInstanceValid(v) && !v.IsQueuedForDeletion()), "moving the panel freed the slot's views");
+            // It keeps updating where it is now, and after going back.
+            await server.BroadcastAsync(server.Chat("after the move"));
+            await UiTestWaitForAsync(() => PanelShows(slot, "after the move") ? slot : null, "the moved panel to keep updating");
+            elsewhere.RemoveChild(slot);
+            home.AddChild(slot);
+            home.MoveChild(slot, place);
+            await server.BroadcastAsync(server.Chat("back home"));
+            await UiTestWaitForAsync(() => PanelShows(slot, "back home") ? slot : null, "the panel to keep updating after moving back");
+        }
+        finally
+        {
+            elsewhere.QueueFree();
+            DeleteProfile(profile);
+        }
+    }
+
+    /// <summary>Whether a panel's rendered text (its labels) shows this text.</summary>
+    private static bool PanelShows(Node panel, string text) =>
+        panel.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().Any(label => label.Text.Contains(text));
 
     /// <summary>The one view showing in the content area, or null if none or several are.</summary>
     private Control? ShownContent()

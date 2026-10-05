@@ -136,7 +136,7 @@ Downloads that become code are pinned:
 
 These are known structural debts, scheduled before the new shell is built:
 - **Large classes:** `MainTrackerWindow` and `SlotTrackerControl` are split into partial files by job, and connections moved into `SessionManager`. Slot state is moving out of the UI node into `SlotModel`: the session's events, chat, hints and goal have moved; the logic engine and the map pack follow, then the services read the model.
-- **Re-parenting:** the Cheese and Sphere tabs and Properties follow their events through `TreeSubscriptions` (made on entering the tree, removed on leaving it), so they can be moved (docking, pop-outs); the UI test proves it. The slot's own views follow once their state moves into `SlotModel`, which will own the session's events (today the slot's node stops its engine when it leaves the tree).
+- **Re-parenting:** the Cheese and Sphere tabs and Properties follow their events through `TreeSubscriptions` (made on entering the tree, removed on leaving it), so they can be moved (docking, pop-outs); the UI test proves it. A slot's views are pushed their updates by the slot, so they can move too, and the slot's own panel ends only through `EndSlot()` (the slot replaced or deleted, or the panel freed with the window), never by leaving the tree.
 - **Tools** are one list (`Tool`); the new shell will build its activity bar, menus and panels from it.
 - **Coalesced refreshes:** one refresh per frame, with hidden views skipped.
 - **One engine process per multiworld** instead of per slot.

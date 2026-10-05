@@ -309,6 +309,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             {
                 // Its session was closed by the session manager when the new one logged in.
                 if (_currentSelectedSlot == oldSlot) _currentSelectedSlot = null;
+                oldSlot.EndSlot();
                 oldSlot.QueueFree();
             }
         }

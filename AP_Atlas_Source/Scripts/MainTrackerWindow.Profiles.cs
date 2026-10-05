@@ -332,6 +332,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             if (n is SlotTrackerControl slot && slot.ProfileId == profileId)
             {
                 if (_currentSelectedSlot == slot) _currentSelectedSlot = null;
+                slot.EndSlot();
                 slot.QueueFree();
             }
         }
