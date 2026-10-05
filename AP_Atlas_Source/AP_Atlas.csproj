@@ -1,16 +1,15 @@
-<Project Sdk="Godot.NET.Sdk/4.3.0">
+<Project Sdk="Godot.NET.Sdk/4.7.2">
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
-    <TargetFramework Condition=" $(GodotTargetPlatform) == 'android' ">net8.0-android</TargetFramework>
-    <TargetFramework Condition=" $(GodotTargetPlatform) == 'ios' ">net8.0-ios</TargetFramework>
+    <!-- Godot 4.7.2 (must match the editor and export templates). Windows only. -->
+    <TargetFramework>net10.0</TargetFramework>
     <EnableDynamicLoading>true</EnableDynamicLoading>
-    <LangVersion>12</LangVersion>
+    <LangVersion>14</LangVersion>
     <!-- The one place Atlas's version is set (SemVer). Tools/bump_version.ps1 changes it; the build adds the commit. -->
     <Version>0.1.0-beta.1</Version>
   </PropertyGroup>
   
   <ItemGroup>
-    <!-- Archipelago.MultiClient.Net: for net8.0 NuGet picks the package's lib/net6.0 build, the only one that enables
+    <!-- Archipelago.MultiClient.Net: for net10.0 NuGet picks the package's lib/net6.0 build, the only one that enables
          websocket compression (the netstandard2.0 build can't), which the Archipelago server asks clients to use. -->
     <PackageReference Include="Archipelago.MultiClient.Net" Version="6.7.1" />
     <!-- 13.0.1 and later limit JSON nesting to 64 levels by default, so deeply nested input can't overflow the stack. -->

@@ -10,6 +10,9 @@ namespace AP_Atlas.Core
         private static readonly object _fileLock = new object();
         public static Action<string, string> OnLogMessage;
 
+        /// <summary>The time shown on log lines in Atlas's window. The visual check fixes it, so its pictures don't change with the clock.</summary>
+        public static Func<DateTime> DisplayClock { get; set; } = () => DateTime.Now;
+
         static Logger()
         {
             // A failure here would make every later log call throw (a broken type initializer), so nothing may escape.
@@ -60,19 +63,19 @@ namespace AP_Atlas.Core
         public static void LogInfo(string message)
         {
             WriteLog("INFO", message);
-            OnLogMessage?.Invoke($"[color=gray][{DateTime.Now:HH:mm:ss}][/color] {message}\n", "INFO");
+            OnLogMessage?.Invoke($"[color=gray][{DisplayClock():HH:mm:ss}][/color] {message}\n", "INFO");
         }
 
         public static void LogWarning(string message)
         {
             WriteLog("WARN", message);
-            OnLogMessage?.Invoke($"[color=gray][{DateTime.Now:HH:mm:ss}][/color] [color=yellow]WARN: {message}[/color]\n", "WARN");
+            OnLogMessage?.Invoke($"[color=gray][{DisplayClock():HH:mm:ss}][/color] [color=yellow]WARN: {message}[/color]\n", "WARN");
         }
 
         public static void LogError(string message)
         {
             WriteLog("ERROR", message);
-            OnLogMessage?.Invoke($"[color=gray][{DateTime.Now:HH:mm:ss}][/color] [color=red]ERROR: {message}[/color]\n", "ERROR");
+            OnLogMessage?.Invoke($"[color=gray][{DisplayClock():HH:mm:ss}][/color] [color=red]ERROR: {message}[/color]\n", "ERROR");
         }
 
         public static void LogDebug(string message)

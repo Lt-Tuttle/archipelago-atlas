@@ -8,6 +8,7 @@ using AP_Atlas.Core;
 using AP_Atlas.Core.EngineSetup;
 using Godot;
 using Color = Godot.Color;
+using Logger = AP_Atlas.Core.Logger;
 
 namespace AP_Atlas.UI
 {

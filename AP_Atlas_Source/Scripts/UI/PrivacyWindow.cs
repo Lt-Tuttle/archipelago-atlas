@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using AP_Atlas.Core;
 using Godot;
+using Logger = AP_Atlas.Core.Logger;
 
 namespace AP_Atlas.UI
 {

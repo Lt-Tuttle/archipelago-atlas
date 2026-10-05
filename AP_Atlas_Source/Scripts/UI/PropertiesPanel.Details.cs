@@ -11,6 +11,7 @@ using Archipelago.MultiClient.Net.Models;
 using Archipelago.MultiClient.Net.Packets;
 using Godot;
 using Color = Godot.Color;
+using Logger = AP_Atlas.Core.Logger;
 
 namespace AP_Atlas.UI
 {

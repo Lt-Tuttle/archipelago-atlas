@@ -10,10 +10,12 @@ config_version=5
 
 [application]
 config/icon="res://Assets/Graphics/icon.png"
+config/windows_native_icon="res://Assets/Graphics/icon.ico"
 
 config/name="The Archipelago Atlas"
 run/main_scene="res://Scenes/Main_Window.tscn"
-config/features=PackedStringArray("4.3", "C#", "Forward Plus")
+config/features=PackedStringArray("4.7", "C#", "GL Compatibility")
+run/low_processor_mode=true
 
 [dotnet]
 
@@ -25,4 +27,7 @@ project/assembly_name="AP_Atlas"
 window/size/viewport_width=1152
 window/size/viewport_height=648
 
-config/windows_native_icon="res://Assets/Graphics/icon.ico"
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"

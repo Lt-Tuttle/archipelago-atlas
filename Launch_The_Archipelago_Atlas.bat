@@ -1,11 +1,11 @@
 @echo off
 setlocal
 set "SCRIPT_DIR=%~dp0"
-set "GODOT=%SCRIPT_DIR%Godot_Engine\Godot_v4.3-stable_mono_win64\Godot_v4.3-stable_mono_win64.exe"
+set "GODOT=%SCRIPT_DIR%Godot_Engine\Godot_v4.7.2-stable_mono_win64\Godot_v4.7.2-stable_mono_win64.exe"
 cd /d "%SCRIPT_DIR%AP_Atlas_Source"
 
-rem Build the C# scripts first. "dotnet build" is preferred: Godot 4.3's own "--build-solutions --quit"
-rem segfaults on exit whenever it actually recompiles, which prints a crash in this window.
+rem Build the C# scripts first. "dotnet build" is preferred: it shows any errors here, and Godot 4.3's own
+rem "--build-solutions --quit" crashed on exit whenever it recompiled. Godot's build is only the fallback.
 where dotnet >nul 2>nul
 if %errorlevel%==0 (
     echo Building AP Atlas...

@@ -39,7 +39,7 @@ $ErrorActionPreference = 'Stop'
 $project = Split-Path -Parent $PSScriptRoot
 
 if (-not $Godot) {
-    $Godot = Join-Path (Split-Path -Parent $project) 'Godot_Engine\Godot_v4.3-stable_mono_win64\Godot_v4.3-stable_mono_win64_console.exe'
+    $Godot = Join-Path (Split-Path -Parent $project) 'Godot_Engine\Godot_v4.7.2-stable_mono_win64\Godot_v4.7.2-stable_mono_win64_console.exe'
 }
 if (-not (Test-Path -LiteralPath $Godot)) {
     Write-Host "Godot not found at '$Godot'. Pass -Godot <path> or set ATLAS_GODOT." -ForegroundColor Red

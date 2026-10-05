@@ -232,8 +232,16 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         return headerBox;
     }
 
+    // Set when _Ready subscribes to the shared services, so _ExitTree undoes exactly what _Ready did.
+    private bool _subscribed;
+
     public override void _ExitTree()
     {
+        // A self-test or a refused test run never subscribed. Touching the services here would start them, and the
+        // logger would create its folder in a data folder the run had refused.
+        if (!_subscribed) return;
+        AP_Atlas.Core.SafeFile.Recovered -= OnFileRecovered;
+        DataManager.SaveFailed -= OnSaveFailed;
         AP_Atlas.Core.Logger.OnLogMessage -= OnLogMessageReceived;
         AP_Atlas.Core.Annotations.Changed -= OnAnnotationsChanged;
         AP_Atlas.Core.PopTracker.PackDoctorService.ReviewSuggested -= OnPackReviewSuggested;
@@ -280,6 +288,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             RunSelfTest();
             return;
         }
+        // The visual check (testing only) refuses a real data folder before anything in it is read or written.
+        if (VisualCheckRequested && !VisualCheckAllowed()) return;
         if (!AP_Atlas.Core.CrashGuard.TryAcquireInstance())
         {
             OS.Alert("The Archipelago Atlas is already running from this folder.\n\nOnly one copy can use the same data at a time, " +
@@ -288,6 +298,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             return;
         }
         // Damaged-file recoveries and failed saves are shown as toasts once the UI exists.
+        _subscribed = true;
         AP_Atlas.Core.SafeFile.Recovered += OnFileRecovered;
         DataManager.SaveFailed += OnSaveFailed;
         GetTree().AutoAcceptQuit = false;
@@ -494,7 +505,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         var appWorkspaceHBox = new HBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
         appWorkspaceHBox.AddThemeConstantOverride("separation", 8);
         interiorMargin.AddChild(appWorkspaceHBox);
-        _mainSplit = new HSplitContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, SplitOffset = _appSettings.MainSplitOffset };
+        _mainSplit = new HSplitContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, SplitOffsets = new[] { _appSettings.MainSplitOffset } };
         _mainSplit.Dragged += (offset) => { _appSettings.MainSplitOffset = (int)offset; DataManager.SaveSettings(_appSettings); };
         _mainSplit.AddThemeConstantOverride("separation", 8);
         interiorMargin.AddChild(_mainSplit);
@@ -514,7 +525,6 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             () => _appSettings.SlotsFontSize,
             (newSize) => { _appSettings.SlotsFontSize = newSize; ApplyUIScale(); DataManager.SaveSettings(_appSettings); }
         );
-        var sidebar = new MenuButton { Text = "...", Flat = true, FocusMode = FocusModeEnum.None };
         sidebarVBox.AddChild(_sidebarHeaderBox);
         var sessionScroll = new ScrollContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
         sidebarVBox.AddChild(sessionScroll);
@@ -524,13 +534,13 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         // Layout: [slots] | [tabs over (explorer | content) over terminal] | [properties].
         // The explorer lives inside the content area, so showing or hiding it only resizes the content stage:
         // the tabs and terminal never move, and the tab bar's menu sits at the content's top-right corner.
-        var centerRightSplit = new HSplitContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, SplitOffset = _appSettings.SplitCenterRightOffset };
+        var centerRightSplit = new HSplitContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, SplitOffsets = new[] { _appSettings.SplitCenterRightOffset } };
         centerRightSplit.Dragged += (offset) => { _appSettings.SplitCenterRightOffset = (int)offset; DataManager.SaveSettings(_appSettings); };
         centerRightSplit.AddThemeConstantOverride("separation", 8);
         _mainSplit.AddChild(centerRightSplit);
         var rightColumn = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
         centerRightSplit.AddChild(rightColumn);
-        var rightOfSidebarSplit = new HSplitContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, SplitOffset = _appSettings.SplitRightSidebarOffset };
+        var rightOfSidebarSplit = new HSplitContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, SplitOffsets = new[] { _appSettings.SplitRightSidebarOffset } };
         rightOfSidebarSplit.Dragged += (offset) => { _appSettings.SplitRightSidebarOffset = (int)offset; DataManager.SaveSettings(_appSettings); };
         rightOfSidebarSplit.AddThemeConstantOverride("separation", 8);
         // --- 3. MID LEFT EXPLORER SIDEBAR ---
@@ -579,7 +589,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         );
         globalTabHBox.AddChild(contentMenuBtn);
         rightColumn.AddChild(globalTabHBox);
-        _contentSplit = new VSplitContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, SplitOffset = _appSettings.SplitContentOffset };
+        _contentSplit = new VSplitContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, SplitOffsets = new[] { _appSettings.SplitContentOffset } };
         _contentSplit.Dragged += (offset) => { _appSettings.SplitContentOffset = (int)offset; DataManager.SaveSettings(_appSettings); };
         _contentSplit.AddThemeConstantOverride("separation", 8);
         rightColumn.AddChild(_contentSplit);
@@ -685,6 +695,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _uiReady = true;
         foreach (var (msg, color) in _pendingNotices) ShowToast(msg, color);
         _pendingNotices.Clear();
+        if (VisualCheckRequested) Callable.From(RunVisualCheck).CallDeferred();
     }
 
     /// <summary>Reliability self-test mode (ATLAS_SELFTEST=1): runs the checks and exits with their result.</summary>
@@ -820,8 +831,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         var btnPressed = new StyleBoxFlat { BgColor = accentColor, CornerRadiusTopLeft = 4, CornerRadiusTopRight = 4, CornerRadiusBottomLeft = 4, CornerRadiusBottomRight = 4, ContentMarginLeft = 10, ContentMarginRight = 10, ContentMarginTop = 5, ContentMarginBottom = 5 };
         theme.SetStylebox("pressed", "Button", btnPressed);
         theme.SetStylebox("hover_pressed", "Button", btnPressed);
-        // Every state needs the same content margins: Godot 4.3 measures a button with its current stylebox and does
-        // not re-measure on Disabled changes, so a button created disabled with Godot's thinner default clipped its text.
+        // Every state needs the same content margins: Godot 4.3 measured a button with its current stylebox and didn't
+        // re-measure on Disabled changes, so a button created disabled with Godot's thinner default clipped its text.
         var btnDisabled = new StyleBoxFlat { BgColor = new Godot.Color("#2d2d30"), CornerRadiusTopLeft = 4, CornerRadiusTopRight = 4, CornerRadiusBottomLeft = 4, CornerRadiusBottomRight = 4, ContentMarginLeft = 10, ContentMarginRight = 10, ContentMarginTop = 5, ContentMarginBottom = 5 };
         theme.SetStylebox("disabled", "Button", btnDisabled);
         theme.SetColor("font_disabled_color", "Button", new Godot.Color(1, 1, 1, 0.35f));
@@ -1249,7 +1260,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     {
         // Slot debug lines (engine starts, failures) go to the log file too, for diagnosing problems after the fact.
         AP_Atlas.Core.Logger.LogDebug(string.IsNullOrEmpty(slotName) ? msg : $"[{slotName}] {msg}");
-        string time = System.DateTime.Now.ToString("HH:mm:ss");
+        string time = AP_Atlas.Core.Logger.DisplayClock().ToString("HH:mm:ss");
         string prefix = string.IsNullOrEmpty(slotName) ? "[color=gray]" : $"[color=orange][{slotName}][/color] [color=gray]";
         string formatted = $"{prefix}[{time}][/color] {msg}\n";
         if (_debugLogConsole != null) Callable.From(() => _debugLogConsole.AppendText(formatted)).CallDeferred();

@@ -13,8 +13,8 @@ env:
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
-  GODOT_VERSION: 4.3-stable
-  GODOT_SHA512: 6fc1c187d7047d6b0a89e5e4495a63eb70a88209b7f283048f3b3d84d64047bc3addd7cfcb9a67a74441faea19dd8c465456b917cd9c3fc07f2131ee832e6e1e
+  GODOT_VERSION: 4.7.2-stable
+  GODOT_SHA512: 79229fd112b0c9cbeab82363a4ef7be18ea70f1caf86bf912789335b136fbe7e01db0053a33461438c5da1c680c17bbb10040bd09bedc51221cd4423d0367757
 
 jobs:
   release:
@@ -37,7 +37,7 @@ jobs:
       - name: Set up .NET
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '8.0.x'
+          global-json-file: global.json
 
       - name: Build
         working-directory: AP_Atlas_Source

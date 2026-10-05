@@ -25,21 +25,37 @@ namespace AP_Atlas.Core
         private static readonly List<string> _results = new List<string>();
         private static int _failures, _passes;
 
-        public static async Task<int> RunAsync()
+        /// <summary>
+        /// Why the data folder isn't safe for a test run, or null when it is. Tests need ATLAS_DATA_DIR set to an empty scratch
+        /// folder, so they never touch real data; only Atlas's logs, and files whose names start with ownFilesPrefix, may be there.
+        /// </summary>
+        public static string ScratchFolderProblem(string ownFilesPrefix)
         {
             string dataDir = DataManager.GetDataDirectory();
             string requested = System.Environment.GetEnvironmentVariable("ATLAS_DATA_DIR");
             if (string.IsNullOrWhiteSpace(requested) || !string.Equals(Path.GetFullPath(requested), dataDir, StringComparison.OrdinalIgnoreCase))
-            {
-                GD.PrintErr("SELFTEST REFUSED: set ATLAS_DATA_DIR to an empty scratch folder; the self-test never runs on real data.");
-                return 2;
-            }
+                return "set ATLAS_DATA_DIR to an empty scratch folder; tests never run on real data.";
             Directory.CreateDirectory(dataDir);
-            if (Directory.EnumerateFileSystemEntries(dataDir).Any(e => !Path.GetFileName(e).Equals("logs", StringComparison.OrdinalIgnoreCase) && !Path.GetFileName(e).StartsWith("selftest")))
+            bool OwnOrLogs(string entry)
             {
-                GD.PrintErr("SELFTEST REFUSED: ATLAS_DATA_DIR must be empty (it looks like it holds real data).");
+                string name = Path.GetFileName(entry);
+                return name.Equals("logs", StringComparison.OrdinalIgnoreCase)
+                    || (ownFilesPrefix != null && name.StartsWith(ownFilesPrefix, StringComparison.OrdinalIgnoreCase));
+            }
+            if (!Directory.EnumerateFileSystemEntries(dataDir).All(OwnOrLogs))
+                return "ATLAS_DATA_DIR must be empty (it looks like it holds real data).";
+            return null;
+        }
+
+        public static async Task<int> RunAsync()
+        {
+            string problem = ScratchFolderProblem("selftest");
+            if (problem != null)
+            {
+                GD.PrintErr("SELFTEST REFUSED: " + problem);
                 return 2;
             }
+            string dataDir = DataManager.GetDataDirectory();
 
             Print($"Atlas self-test in {dataDir}");
             Test("SafeFile keeps the previous version as .bak", SafeFileKeepsBackup);

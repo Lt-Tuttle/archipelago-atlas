@@ -280,7 +280,7 @@ namespace AP_Atlas.UI
             _countLabel.AddThemeColorOverride("font_color", Muted);
             toolbar.AddChild(_countLabel);
 
-            var split = new VSplitContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, SplitOffset = _settings.CheeseTableSplitOffset };
+            var split = new VSplitContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, SplitOffsets = new[] { _settings.CheeseTableSplitOffset } };
             split.Dragged += offset =>
             {
                 _settings.CheeseTableSplitOffset = (int)offset;

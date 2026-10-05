@@ -211,7 +211,18 @@ public static class DataManager
         if (_dataDir != null) return _dataDir;
         string overridden = System.Environment.GetEnvironmentVariable("ATLAS_DATA_DIR");
         if (!string.IsNullOrWhiteSpace(overridden)) _dataDir = Path.GetFullPath(overridden);
-        else if (OS.HasFeature("editor")) _dataDir = ProjectSettings.GlobalizePath("res://PortableData");
+        else if (OS.HasFeature("editor"))
+        {
+            _dataDir = ProjectSettings.GlobalizePath("res://PortableData");
+            // Run from source, the data folder sits inside the Godot project: .gdignore keeps Godot from importing what's in it.
+            // (Logger finds its folder through here, so a failure goes straight to Godot's output.)
+            try
+            {
+                string ignore = Path.Combine(_dataDir, ".gdignore");
+                if (!File.Exists(ignore)) AP_Atlas.Core.SafeFile.WriteAllText(ignore, "");
+            }
+            catch (System.Exception ex) { GD.PrintErr("Couldn't mark the data folder for Godot to skip: " + ex.Message); }
+        }
         else _dataDir = Path.Combine(Path.GetDirectoryName(OS.GetExecutablePath()), "PortableData");
         return _dataDir;
     }

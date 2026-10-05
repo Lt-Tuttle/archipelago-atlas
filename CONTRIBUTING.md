@@ -29,8 +29,8 @@ There's also the no-cheating rule: anything spoiler-adjacent (like sphere data) 
 
 You need:
 - Windows 10 or 11.
-- The .NET 8 SDK.
-- Godot 4.3 (.NET build) in `Godot_Engine/Godot_v4.3-stable_mono_win64/` next to the repository, or set `ATLAS_GODOT` to its `_console.exe`.
+- The .NET 10 SDK: 10.0.401 or a later 10.0.4xx patch (`global.json` pins it, so local formatting matches CI's).
+- Godot 4.7.2 (.NET build) unzipped into `Godot_Engine/Godot_v4.7.2-stable_mono_win64/` in the repository folder (git ignores it), or set `ATLAS_GODOT` to its `_console.exe`.
 
 | What | How |
 |---|---|
@@ -39,12 +39,13 @@ You need:
 | Self-test | `AP_Atlas_Source/Tools/run_selftest.ps1` (builds, then tests in a new, empty scratch folder; never your real data) |
 | Guard rails | `AP_Atlas_Source/Tools/check_guards.ps1` |
 | Formatting | `dotnet format whitespace AP_Atlas_Source/AP_Atlas.csproj` (C# files use CRLF line endings) |
+| Visual check | `AP_Atlas_Source/Tools/run_visualcheck.ps1 [-Baseline <folder>]` (pictures of the main screens, as a new user sees them; with `-Baseline`, a `.diff.png` marks every changed pixel) |
 
-CI runs all of these on every push and pull request.
+CI runs the build, formatting, guard rails and self-test on every push and pull request. The visual check needs a graphics card, so run it yourself before and after any change to how Atlas looks, and compare on the same PC.
 
 ## Writing code
 
-- **Language and UI:** C# 12 on .NET 8. The UI is built in code from Godot Controls. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains how Atlas fits together.
+- **Language and UI:** C# 14 on .NET 10. The UI is built in code from Godot Controls. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains how Atlas fits together.
 - **Use the shared building blocks; don't work around them:**
 
   | For | Use |
@@ -57,6 +58,7 @@ CI runs all of these on every push and pull request.
 
   The guard rails enforce the riskiest of these in CI.
 - **Tests:** every new protection gets a check in `Scripts/Core/SelfTest*.cs`, and tests never touch real data.
+- **Godot's `.uid` files:** Godot makes one next to each script (`Foo.cs.uid`). Commit it with the script.
 - **Third-party code, data or art:**
   - Use only things under a license compatible with MIT (MIT, BSD, Apache-2.0, OFL for fonts, and so on), and credit them in [CREDITS.md](CREDITS.md). Anything that ships in Atlas also goes in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
   - Never copy GPL or AGPL code (PopTracker, Cheese Tracker) into Atlas.

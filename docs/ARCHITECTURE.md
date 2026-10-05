@@ -4,7 +4,7 @@ This is a map of the code as it is today, for anyone starting to work on Atlas. 
 
 ## The big picture
 
-- **Platform:** Atlas is a Godot 4.3 (.NET) desktop app written in C# 12 on .NET 8.
+- **Platform:** Atlas is a Godot 4.7.2 (.NET) desktop app written in C# 14 on .NET 10. It runs in low-processor mode (Godot draws only when something on screen changes) on Godot's Compatibility renderer: OpenGL 3.3, with Godot's built-in Direct3D fallback (ANGLE). That renderer was chosen by measurement: against Forward+ and Mobile it started fastest and used the least memory, and every screen looked the same.
 - **UI:** built in code from Godot Controls; there are almost no scene files.
 - **Archipelago connections:** one `ArchipelagoSession` per slot, from Archipelago.MultiClient.Net.
 - **Logic:** comes from the **Atlas Engine**, a Python process that runs Archipelago and the Universal Tracker.
@@ -35,6 +35,7 @@ MainTrackerWindow (the shell)
 | `Core/Spheres/` | **Sphere Tracker:** reads the host's spheretracker.de room (parser, tables, service). |
 | `UI/` | **Windows and views:**<br>• Properties, Hints, Map Tracker, the Cheese and Sphere tabs.<br>• The Pack Doctor and Atlas Engine windows.<br>• Privacy, the permission dialog, shared dialogs, the tab strip. |
 | `Core/SelfTest*.cs` | **The self-test:** run with `Tools/run_selftest.ps1`. |
+| `MainTrackerWindow.VisualCheck.cs` | **The visual check:** pictures of the main screens, compared with an earlier run; run with `Tools/run_visualcheck.ps1`. |
 
 ## Where data lives
 

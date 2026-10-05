@@ -6,8 +6,8 @@ The Archipelago Atlas exists thanks to the projects and people below. Each entry
 
 | Component | Made by | Official releases | License |
 |---|---|---|---|
-| Godot Engine 4.3 | Juan Linietsky, Ariel Manzur and the Godot contributors | https://godotengine.org/download | MIT |
-| .NET 8 runtime | Microsoft and the .NET Foundation contributors | https://dotnet.microsoft.com/download | MIT |
+| Godot Engine 4.7.2 | Juan Linietsky, Ariel Manzur and the Godot contributors | https://godotengine.org/download | MIT |
+| .NET 10 runtime | Microsoft and the .NET Foundation contributors | https://dotnet.microsoft.com/download | MIT |
 | Archipelago.MultiClient.Net 6.7.1 | Hussein Farran, Jarno Westhof and contributors | https://github.com/ArchipelagoMW/Archipelago.MultiClient.Net/releases | MIT |
 | Newtonsoft.Json 13.0.4 | James Newton-King | https://github.com/JamesNK/Newtonsoft.Json/releases | MIT |
 | MoonSharp 2.0.0 | Marco Mastropaolo (parts from KopiLua) | https://github.com/moonsharp-devs/moonsharp/releases | BSD 3-Clause |
