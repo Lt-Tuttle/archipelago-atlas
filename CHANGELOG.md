@@ -56,6 +56,9 @@ Development toward the first public beta, 0.1.0.
   - The guard rails check that every script has its Godot `.uid` file committed.
   - The UI test also sends a burst of 40 items and 40 chat lines: each reaches the slot once, as one update of the window.
   - One list of Atlas's tools (`Tool`), in tab order, each with its id, title and scope (the whole app, a multiworld or one slot). The tabs, the "Show in…" links in Properties and the visual check use it instead of tab numbers, and the UI test checks every tool's tab shows the right view.
+  - A slot's logic (its engine, and what's in logic item by item) is now part of the slot's model (`SlotLogic`), apart from its views, so it keeps running wherever its panel is.
+  - A fake logic engine for tests (`FakeLogicEngine`): Atlas starts it through its real engine runner, and it answers from simple rules (which items each location needs). It can also crash, answer late or send a stale answer on purpose. The UI test runs a slot's logic on it: items and checks arriving, an item the server sends without flags, a crash and the restart, an engine update, and Restart logic. Its own unit tests check it answers as the real engine does.
+  - CI runs the tests on Python 3.12, the version the portable engine uses, and fails a UI test run that skipped a scenario.
 - **Settings → Privacy & permissions:** everything you've allowed Atlas to do without asking, and every apworld source you trust, each with a way to take it back.
 
 ### Changed
@@ -129,3 +132,6 @@ Development toward the first public beta, 0.1.0.
 - **Running from source:** Godot no longer imports the files in Atlas's data folder (it had left 160 `.import` files there).
 - **GitHub failures:** a rate-limited or failed GitHub check was cached as "no apworlds" or "not found" (for up to 7 days). Now only real answers are kept.
 - **Map pack updates:** the update check missed updates published in PopTracker's versions format.
+- **One engine crash counted twice:** a crash shows both as a failed answer and as the engine's process ending, and each could count as a failure. Logic then restarted after 10 seconds instead of 2, and two crashes could pause it (it pauses after four failures in ten minutes). Each crash now counts once.
+- **Restart logic** waited for the engine's current answer first, up to two minutes if the engine had stopped answering. It now restarts at once, and an answer from the old engine is ignored.
+- **Deleting a multiworld** that had never used the Cheese Tracker or the Sphere Tracker froze the window for about a second and logged two warnings: deleting a file whose folder doesn't exist was taken for a file another program was using, and retried. There's simply nothing to delete.

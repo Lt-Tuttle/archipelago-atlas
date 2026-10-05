@@ -141,7 +141,7 @@ public partial class SlotTrackerControl : MarginContainer
         // The game's full item table (server data package, else the local install), then what this slot has seen.
         var table = AP_Atlas.Core.PopTracker.GameNames.Best(Game);
         if (table != null) foreach (var kv in table.ItemsById()) itemNames[kv.Key] = kv.Value;
-        foreach (var p in _logicEngine?.LastItemPool ?? new List<WorldItemInfo>()) if (p.Id != 0 && p.Name != null) itemNames[p.Id] = p.Name;
+        foreach (var p in Model.Logic.Engine.LastItemPool ?? new List<WorldItemInfo>()) if (p.Id != 0 && p.Name != null) itemNames[p.Id] = p.Name;
         foreach (var i in Session.Items.AllItemsReceived) if (i.ItemName != null) itemNames[i.ItemId] = i.ItemName;
         foreach (var id in Pack.ItemMapping.Keys)
         {

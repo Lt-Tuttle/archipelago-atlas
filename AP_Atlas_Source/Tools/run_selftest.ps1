@@ -6,13 +6,15 @@
 .DESCRIPTION
     The self-test checks Atlas's protections one by one. The UI test then builds Atlas's window and drives it the way
     a user would (connecting a slot, a dropped connection, disconnecting) against a fake Archipelago server on this
-    computer. Neither touches real data: each refuses a data folder that isn't empty, and this script always makes
-    fresh ones under the system temp folder. Godot's output goes to files next to (never inside) those folders. Both
-    runs also get empty stand-ins for the user's folders and the temp folder, and fail if anything is written to them
-    (see footprint.ps1).
+    computer, and runs a slot's logic on a fake logic engine, with the Python on the PATH (without one, that scenario
+    is skipped; in CI, a skipped scenario fails the run). Neither touches real data: each refuses a data folder that
+    isn't empty, and this script always makes fresh ones under the system temp folder. Godot's output goes to files
+    next to (never inside) those folders. Both runs also get empty stand-ins for the user's folders and the temp
+    folder, and fail if anything is written to them (see footprint.ps1).
 
     Exit code: 0 everything passed; the self-test's own code if it failed (1 a check failed, 3 timed out, 4 didn't
-    finish); 6 the UI test failed; 5 both passed but something was written outside Atlas's folder.
+    finish); 6 the UI test failed (or, in CI, skipped a scenario); 5 both passed but something was written outside
+    Atlas's folder.
 
 .PARAMETER Godot
     The Godot .NET console executable. Defaults to $env:ATLAS_GODOT, then the workspace's Godot_Engine folder.
@@ -67,9 +69,23 @@ if (-not $NoBuild) {
     }
 }
 
+# The UI test's fake logic engine runs on a Python. Atlas never looks for one itself: this names the one on the PATH,
+# if it runs (the Windows Store's "python" alias exists even when Python isn't installed).
+$python = $null
+$onPath = Get-Command python -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($onPath) {
+    try {
+        $found = "$(& $onPath.Source -c 'import sys; print(sys.executable)' 2>$null)".Trim()
+        if ($LASTEXITCODE -eq 0 -and $found -and (Test-Path -LiteralPath $found)) { $python = $found }
+    }
+    catch { }
+}
+if (-not $python) { Write-Host 'No Python on the PATH: the UI test skips its logic scenario.' -ForegroundColor Yellow }
+
 $scratch = Join-Path $ScratchRoot ('atlas-selftest-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
 New-Item -ItemType Directory -Path $scratch -Force | Out-Null
 $outside = $null
+$skipped = 0
 
 # Runs Atlas headless in one test mode against its own new, empty data folder, shows its result lines and returns
 # its exit code.
@@ -84,12 +100,13 @@ function Invoke-AtlasTest([string]$Slug, [string]$Title, [string]$Mode, [string]
     $psi.RedirectStandardError = $true
     $psi.CreateNoWindow = $true
     # Only the child process sees these, so nothing leaks into the caller's session.
-    foreach ($name in 'ATLAS_SELFTEST', 'ATLAS_UITEST', 'ATLAS_VISUALCHECK', 'ATLAS_SELFTEST_AP') {
+    foreach ($name in 'ATLAS_SELFTEST', 'ATLAS_UITEST', 'ATLAS_VISUALCHECK', 'ATLAS_SELFTEST_AP', 'ATLAS_UITEST_PYTHON') {
         if ($psi.EnvironmentVariables.ContainsKey($name)) { $psi.EnvironmentVariables.Remove($name) }
     }
     $psi.EnvironmentVariables[$Mode] = '1'
     $psi.EnvironmentVariables['ATLAS_DATA_DIR'] = $data
     if ($ArchipelagoDir -and $Mode -eq 'ATLAS_SELFTEST') { $psi.EnvironmentVariables['ATLAS_SELFTEST_AP'] = $ArchipelagoDir }
+    if ($python -and $Mode -eq 'ATLAS_UITEST') { $psi.EnvironmentVariables['ATLAS_UITEST_PYTHON'] = $python }
     # Both runs share the stand-ins, so one footprint check covers them.
     $script:outside = Set-StandInUserFolders $psi $scratch
 
@@ -114,8 +131,10 @@ function Invoke-AtlasTest([string]$Slug, [string]$Title, [string]$Mode, [string]
     foreach ($line in $results) {
         if ($line -match "^$Prefix (FAIL|REFUSED|CRASHED)") { Write-Host $line -ForegroundColor Red }
         elseif ($line -match "^$Prefix PASS") { Write-Host $line -ForegroundColor Green }
+        elseif ($line -match "^$Prefix SKIP") { Write-Host $line -ForegroundColor Yellow }
         else { Write-Host $line }
     }
+    $script:skipped += @($results | Where-Object { $_ -match "^$Prefix SKIP" }).Count
     if (-not ($results | Where-Object { $_ -match "^$Prefix DONE" })) {
         Write-Host "The $Title did not finish. Last lines of output:" -ForegroundColor Yellow
         $lines | Select-Object -Last 40 | ForEach-Object { Write-Host "  $_" }
@@ -127,6 +146,11 @@ function Invoke-AtlasTest([string]$Slug, [string]$Title, [string]$Mode, [string]
 $code = Invoke-AtlasTest 'selftest' 'self-test' 'ATLAS_SELFTEST' 'SELFTEST'
 $uiCode = Invoke-AtlasTest 'uitest' 'UI test' 'ATLAS_UITEST' 'UITEST'
 if ($code -eq 0 -and $uiCode -ne 0) { $code = 6 }
+# CI has everything every scenario needs, so a skipped one means something is missing there.
+if ($env:CI -eq 'true' -and $skipped -gt 0 -and $code -eq 0) {
+    Write-Host "CI must run every scenario, and $skipped were skipped." -ForegroundColor Red
+    $code = 6
+}
 if ((Test-Footprint $outside) -gt 0 -and $code -eq 0) { $code = 5 }
 
 if ($Keep -or $code -ne 0) {

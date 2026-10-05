@@ -150,8 +150,10 @@ public partial class SlotTrackerControl : MarginContainer
     }
 
     // Incremental render state. Godot's Tree re-shapes the text of every new cell (~0.05 ms each), so a full
-    // Clear()+rebuild of a few thousand cells costs hundreds of milliseconds. Steps are only ever appended and
-    // rows only change color, so after the first build we append and recolor in place.
+    // Clear()+rebuild of a few thousand cells costs hundreds of milliseconds. Within one engine run steps are only ever
+    // appended and rows only change color, so after the first build we append and recolor in place; a new run (a
+    // restart) rebuilds.
+    private int _logicRenderedRun = -1;
     private int _logicRenderedSteps = 0;
     private int _logicOrderCount = 1;
     private int _logicSectionIndex = 1;
@@ -164,10 +166,12 @@ public partial class SlotTrackerControl : MarginContainer
         using var __perf = AP_Atlas.Core.PerfMonitor.Measure($"[{_slotName}] Logic Tracker refresh");
         if (_logicTree == null || Session == null) return;
 
-        bool full = forceFull || _logicTree.GetRoot() == null || _logicRenderedSteps > _progressionLog.Count ||
-                    (_logicPlaceholder != null && _progressionLog.Count > 0);
+        var steps = Model.Logic.Steps;
+        bool full = forceFull || _logicTree.GetRoot() == null || _logicRenderedRun != Model.Logic.Run || _logicRenderedSteps > steps.Count ||
+                    (_logicPlaceholder != null && steps.Count > 0);
         if (full)
         {
+            _logicRenderedRun = Model.Logic.Run;
             _logicTree.Clear();
             _logicTree.CreateItem();
             _logicRows.Clear();
@@ -179,10 +183,10 @@ public partial class SlotTrackerControl : MarginContainer
         }
         var root = _logicTree.GetRoot();
 
-        if (_progressionLog.Count == 0)
+        if (steps.Count == 0)
         {
             _logicPlaceholder ??= _logicTree.CreateItem(root);
-            _logicPlaceholder.SetText(1, _engineRunning ? "No reachable checks found yet." : "Waiting for Logic Engine...");
+            _logicPlaceholder.SetText(1, Model.Logic.Running ? "No reachable checks found yet." : "Waiting for Logic Engine...");
             _logicPlaceholder.SetCustomColor(1, Colors.Gray);
             return;
         }
@@ -191,12 +195,12 @@ public partial class SlotTrackerControl : MarginContainer
         var dividerBg = new Godot.Color("#252836");
         var dividerFg = AP_Atlas.Core.ThemeColors.Accent;
 
-        for (; _logicRenderedSteps < _progressionLog.Count; _logicRenderedSteps++)
+        for (; _logicRenderedSteps < steps.Count; _logicRenderedSteps++)
         {
-            var step = _progressionLog[_logicRenderedSteps];
-            var shown = ShownLocs(step.UnlockedLocs);
+            var step = steps[_logicRenderedSteps];
+            var shown = ShownLocs(step.Locations);
             if (shown.Count == 0) continue;
-            bool isBase = step.ItemName == "Starting Logic";
+            bool isBase = step.IsStart;
 
             var divider = _logicTree.CreateItem(root);
             divider.SetText(0, isBase ? "● Base" : $"● Step {_logicSectionIndex}");

@@ -27,15 +27,6 @@ public partial class SlotTrackerControl : MarginContainer
     private string _apworldFixStatus;
     private bool _apworldFixRunning;
     private readonly HashSet<string> _apworldFixAttempted = new HashSet<string>();
-    private readonly HashSet<string> _apworldOverrideFailed = new HashSet<string>();
-
-    /// <summary>Atlas's cached copy of the seed's apworld version for this slot, if it has one (used in place of the installed copy).</summary>
-    private string SeedApworldFile()
-    {
-        string checksum = ServerChecksumFor(Game);
-        if (checksum == null || _apworldOverrideFailed.Contains(checksum)) return null;
-        return AP_Atlas.Core.EngineSetup.ApworldSources.CachedFor(Game, checksum)?.File;
-    }
 
     /// <summary>
     /// Gets the apworld version this seed was made with and restarts logic on it, for this slot only (the installed
@@ -50,7 +41,7 @@ public partial class SlotTrackerControl : MarginContainer
         string game = Game, checksum = ServerChecksumFor(game);
         if (checksum == null || _apworldFixRunning || Session == null) return;
         _apworldFixAttempted.Add(checksum);
-        if (AP_Atlas.Core.EngineSetup.ApworldSources.CachedFor(game, checksum) != null && !_apworldOverrideFailed.Contains(checksum))
+        if (AP_Atlas.Core.EngineSetup.ApworldSources.CachedFor(game, checksum) != null && !Model.Logic.SeedApworldFailed(checksum))
         {
             AppendDebugLog($"Atlas already has the {game} apworld this seed was made with; restarting logic on it.");
             RetryLogicEngine();
@@ -83,7 +74,7 @@ public partial class SlotTrackerControl : MarginContainer
         _apworldFixRunning = true;
         _apworldFixStatus = $"Finding where {game} versions are published…";
         SyncAccuracyBanner();
-        var install = _logicEngine.Install;
+        var install = Model.Logic.Engine.Install;
         List<AP_Atlas.Core.EngineSetup.ApworldSources.ApworldRepo> repos;
         try
         {
@@ -151,7 +142,7 @@ public partial class SlotTrackerControl : MarginContainer
         _apworldFixRunning = true;
         _apworldFixStatus = $"Looking for the {game} version this seed was made with…";
         SyncAccuracyBanner();
-        var install = _logicEngine.Install;
+        var install = Model.Logic.Engine.Install;
         (AP_Atlas.Core.EngineSetup.ApworldVersion Version, string File) found = (null, null);
         string failure = null;
         try
@@ -250,7 +241,7 @@ public partial class SlotTrackerControl : MarginContainer
             _apworldFixRunning = true;
             _apworldFixStatus = "Checking that file…";
             SyncAccuracyBanner();
-            var install = _logicEngine.Install;
+            var install = Model.Logic.Engine.Install;
             var check = System.Threading.Tasks.Task.Run(() => AP_Atlas.Core.EngineSetup.ApworldSources.AddUserFileAsync(install, path, game, checksum, System.Threading.CancellationToken.None));
             // Copying the file can fail (a full disk): the fix must not stay "running" then.
             try { await check; }
@@ -260,7 +251,7 @@ public partial class SlotTrackerControl : MarginContainer
             if (entry != null)
             {
                 _apworldFixStatus = null;
-                _apworldOverrideFailed.Remove(checksum);
+                Model.Logic.RetrySeedApworld(checksum);
                 ShowToast?.Invoke($"{_slotName}: using your {game} apworld, which matches this seed.", Colors.LimeGreen);
                 RetryLogicEngine();
                 return;
@@ -277,8 +268,8 @@ public partial class SlotTrackerControl : MarginContainer
     {
         if (!GodotObject.IsInstanceValid(this)) return;
         SyncAccuracyBanner();
-        bool problem = !LogicHidden && !_engineRunning && EngineProblem != null;
-        if (_mapTracker != null) _mapTracker.LogicHidden = LogicHidden || !_engineRunning;
+        bool problem = !LogicHidden && !Model.Logic.Running && EngineProblem != null;
+        if (_mapTracker != null) _mapTracker.LogicHidden = LogicHidden || !Model.Logic.Running;
         if (_logicTree != null) _logicTree.Visible = !LogicHidden && !problem;
         if (_logicFlaggedOnly != null) _logicFlaggedOnly.Visible = !LogicHidden && !problem;
         if (_logicNotice == null) return;
@@ -342,49 +333,35 @@ public partial class SlotTrackerControl : MarginContainer
         }
     }
 
-    private static string ProblemStatus(EngineStartError e) => e.Code switch
-    {
-        "no_engine" => "Not Set Up",
-        "world_missing" => "Game Not Installed",
-        "yaml_needed" => "YAML Needed",
-        "generation_failed" => "World Rebuild Failed",
-        "ut_disabled" => "Disabled By Game",
-        "no_response" => "No Response",
-        "crashed" => "Engine Crashed",
-        _ => "Engine Error"
-    };
-
     // --- Engine state for the setup window and Properties ---
 
     /// <summary>Why logic isn't running for this slot (null while it runs or starts).</summary>
-    public EngineStartError EngineProblem { get; private set; }
+    public EngineStartError EngineProblem => Model.Logic.Problem;
 
-    public bool EngineBooting => _engineBooting;
+    public bool EngineBooting => Model.Logic.Booting;
 
     /// <summary>How the engine rebuilt this slot's world: which YAML (or none) and whether its locations match the server's.</summary>
-    public Newtonsoft.Json.Linq.JObject EngineYamlInfo => _engineRunning ? _logicEngine?.LastYamlInfo : null;
+    public Newtonsoft.Json.Linq.JObject EngineYamlInfo => Model.Logic.Running ? Model.Logic.Engine.LastYamlInfo : null;
 
-    public Newtonsoft.Json.Linq.JObject EngineVersions => _logicEngine?.LastVersions;
+    public Newtonsoft.Json.Linq.JObject EngineVersions => Model.Logic.Engine.LastVersions;
 
     /// <summary>
     /// Whether the installed apworld's data matches the seed's (checksums of names, ids and groups; null when either
     /// side didn't report one). It can't see rule-only changes, which the location check and seed tests cover.
     /// </summary>
-    public bool? ApworldMatchesSeed { get; private set; }
+    public bool? ApworldMatchesSeed => Model.Logic.ApworldMatchesSeed;
 
-    public string InstalledWorldVersion => _engineRunning ? _logicEngine?.LastWorldVersion : null;
+    public string InstalledWorldVersion => Model.Logic.Running ? Model.Logic.Engine.LastWorldVersion : null;
 
     /// <summary>True when this slot runs on Atlas's cached copy of the seed's apworld version instead of the installed one.</summary>
-    public bool UsingSeedApworld => _engineRunning && _logicEngine?.LastApworldOverride?["used"]?.Type == Newtonsoft.Json.Linq.JTokenType.Boolean && (bool)_logicEngine.LastApworldOverride["used"];
+    public bool UsingSeedApworld => Model.Logic.Running && Model.Logic.Engine.LastApworldOverride?["used"]?.Type == Newtonsoft.Json.Linq.JTokenType.Boolean &&
+        (bool)Model.Logic.Engine.LastApworldOverride["used"];
 
     /// <summary>Opens the Atlas Engine setup window (set by MainTrackerWindow).</summary>
     public Action OpenEngineSetup { get; set; }
 
-    private bool _engineBooting;
-
     /// <summary>The player YAML linked to this slot, if the file still exists.</summary>
-    public string LinkedYamlPath =>
-        _appSettings.SlotYamlPaths != null && _appSettings.SlotYamlPaths.TryGetValue(AnnotationKey, out var p) && System.IO.File.Exists(p) ? p : null;
+    public string LinkedYamlPath => Model.Logic.LinkedYamlPath;
 
     /// <summary>The linked YAML as stored (even if the file has since moved).</summary>
     public string LinkedYamlSetting =>
@@ -433,55 +410,12 @@ public partial class SlotTrackerControl : MarginContainer
         dialog.PopupCentered(new Vector2I(900, 600));
     }
 
-    /// <summary>Starts this slot's logic engine again (after setup, a new YAML, or a failure).</summary>
+    /// <summary>Starts this slot's logic engine again from scratch (after setup, a new YAML or apworld, or a failure).</summary>
     public void RetryLogicEngine()
     {
-        if (!GodotObject.IsInstanceValid(this) || Session == null || _engineBooting) return;
-        if (_logicBusy)
-        {
-            // Let the running evaluation finish first, so it can't append steps from the old engine.
-            GetTree().CreateTimer(0.5).Timeout += RetryLogicEngine;
-            return;
-        }
-        if (_engineRunning)
-        {
-            _logicEngine.StopEngine();
-            _engineRunning = false;
-        }
-        ResetLogicState();
-        _recentEngineFailures.Clear(); // the user asked: give it a fresh set of automatic restarts
-        InitializeLogicEngine();
+        if (!GodotObject.IsInstanceValid(this) || Session == null) return;
+        Model.Logic.Restart();
     }
-
-    /// <summary>The engine this slot uses is about to be updated: stop logic now; it resumes when the update is done.</summary>
-    private void OnEnginePauseRequested(string root)
-    {
-        // Stop the process right away (any thread): setup waits for it to exit before replacing files.
-        var install = _logicEngine?.Install;
-        if (install == null || !string.Equals(System.IO.Path.GetFullPath(install.Root ?? "").TrimEnd('\\'), System.IO.Path.GetFullPath(root ?? "").TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)) return;
-        _logicEngine.StopEngine();
-        AP_Atlas.UI.Ui.Defer(this, () =>
-        {
-            if (Session == null) return;
-            bool wasActive = _engineRunning || _engineBooting;
-            _engineRunning = false;
-            ResetLogicState();
-            if (wasActive || EngineProblem != null)
-            {
-                EngineProblem = new EngineStartError { Code = "paused", Message = "Logic is paused while the Atlas Engine is updated. It resumes by itself when the update finishes." };
-                SetStatus("Paused (engine update)");
-                SyncLogicViews();
-                RaiseStateChanged();
-            }
-        });
-    }
-
-    /// <summary>Setup finished or changed: a slot that was waiting on the engine tries again.</summary>
-    private void OnEngineChanged() => AP_Atlas.UI.Ui.Defer(this, () =>
-    {
-        if (Session == null || _engineRunning || _engineBooting || EngineProblem == null) return;
-        if (EngineProblem.Code is "no_engine" or "world_missing" or "no_response" or "crashed" or "error" or "paused") InitializeLogicEngine();
-    });
 
     private void OnRaceRulesChanged()
     {
@@ -496,7 +430,7 @@ public partial class SlotTrackerControl : MarginContainer
     {
         if (_mapTracker != null && Session != null)
         {
-            _mapTracker.UpdateLogicColors(_knownReachableLocations, Session.Locations.AllLocationsChecked, Model.HintedLocations);
+            _mapTracker.UpdateLogicColors(Model.Logic.Reachable, Session.Locations.AllLocationsChecked, Model.HintedLocations);
         }
         _hintTracker?.Refresh();
         StateChanged?.Invoke();

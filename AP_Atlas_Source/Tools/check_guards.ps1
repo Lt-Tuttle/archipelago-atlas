@@ -19,6 +19,8 @@
         reconnects politely (the self-test may create one it never connects).
       - Starting a program: only the engine's launch points (EngineInstall.StartInfo, AtlasEngine.SetupStartInfo), which
         keep its temporary files and caches in Atlas's folder, and the self-test.
+      - Running the engine on a Python other than the portable engine's own (AtlasEngine.TestPython): only the UI test,
+        for its fake engine.
     It also checks that every script in the Godot project has its .uid file (Godot makes one per script; it's committed
     with the script, or every fresh copy of the project gets new ones). CI runs this before Godot's import, so it checks
     what was committed.
@@ -44,7 +46,8 @@ $rules = @(
     # Case-sensitive, so starting an engine process made at a launch point (process.Start()) isn't mistaken for one.
     @{ Name = 'Starting a program outside the engine''s launch points'; CaseSensitive = $true
        Pattern = 'new\s+(System\.Diagnostics\.)?ProcessStartInfo\b|(?<![\w.])(System\.Diagnostics\.)?Process\.Start\s*\(|\bOS\.(Execute|ExecuteWithPipe|CreateProcess|CreateInstance)\s*\('
-       Allowed = @('AP_Atlas_Source\Scripts\Core\Engine\AtlasEngine.cs', 'AP_Atlas_Source\Scripts\Core\Engine\EngineInstall.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.cs') }
+       Allowed = @('AP_Atlas_Source\Scripts\Core\Engine\AtlasEngine.cs', 'AP_Atlas_Source\Scripts\Core\Engine\EngineInstall.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.cs') },
+    @{ Name = 'Running the engine on another Python'; Pattern = '\bTestPython\s*=(?!=)'; Allowed = @('AP_Atlas_Source\Scripts\MainTrackerWindow.UiTest.cs') }
 )
 
 $files = $roots | ForEach-Object { Get-ChildItem -Path $_ -Recurse -Filter '*.cs' -File } |

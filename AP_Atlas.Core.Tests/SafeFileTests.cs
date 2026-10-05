@@ -113,4 +113,18 @@ public class SafeFileTests
         Assert.Equal(-1, SafeFile.ReadJson(path, () => new Sample { Version = -1 }).Version);
         SafeFile.Delete(path); // already gone: fine
     }
+
+    [Fact]
+    public void Deleting_a_file_whose_folder_is_missing_is_nothing_to_do()
+    {
+        using var dir = new TempFolder();
+        string path = Path.Combine(dir.Path, "never-made", "cache.json");
+        var time = System.Diagnostics.Stopwatch.StartNew();
+
+        SafeFile.Delete(path); // as when a multiworld that never used a cache is deleted
+
+        // At once: a missing folder isn't a file another program holds, so there's nothing to wait for.
+        Assert.True(time.ElapsedMilliseconds < 400, $"deleting took {time.ElapsedMilliseconds} ms");
+        Assert.False(Directory.Exists(Path.Combine(dir.Path, "never-made")));
+    }
 }

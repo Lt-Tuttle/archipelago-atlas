@@ -13,8 +13,8 @@ using System.Threading.Tasks;
 using Color = Godot.Color;
 
 /// <summary>
-/// Per-slot controller. Its <see cref="AP_Atlas.Core.SlotModel"/> owns the session and its events; this owns the logic
-/// engine and every per-slot view, and updates them when the model reports changes (once per frame).
+/// Per-slot controller. Its <see cref="AP_Atlas.Core.SlotModel"/> owns the session, its events and the slot's logic; this
+/// owns every per-slot view, and updates them when the model reports changes (once per frame).
 /// The node itself renders only the Text Client (mounted in the bottom terminal pane);
 /// the other views are exposed as properties and mounted into the top content pane by MainTrackerWindow.
 /// </summary>
@@ -25,18 +25,18 @@ public partial class SlotTrackerControl : MarginContainer
     public ArchipelagoSession Session => Model.Session;
     public string ProfileId => Model.ProfileId;
     public string SlotName => _slotName;
-    public bool IsFullyLoaded { get; private set; } = false;
+    public bool IsFullyLoaded => Model.Logic.Loaded;
     public int TotalLocationsCount => Session?.Locations?.AllLocations?.Count ?? 0;
     public int CheckedLocationsCount => Session?.Locations?.AllLocationsChecked?.Count ?? 0;
     public int ActiveLogicCount
     {
         get
         {
-            if (_knownReachableLocations == null || Session == null || LogicHidden) return 0;
+            if (Session == null || LogicHidden) return 0;
             // Polled every 0.5s by the sidebar; AllLocationsChecked is a list, so hash it once per call.
             var checkedLocs = new HashSet<long>(Session.Locations.AllLocationsChecked);
             int count = 0;
-            foreach (var loc in _knownReachableLocations)
+            foreach (var loc in Model.Logic.Reachable)
             {
                 if (!checkedLocs.Contains(loc) && !IsExcluded(loc))
                 {
@@ -51,7 +51,7 @@ public partial class SlotTrackerControl : MarginContainer
     public event Action StateChanged;
 
     /// <summary>Whether this slot's goal can be completed with what it has now (go mode). Null: not known.</summary>
-    public bool? GoalInLogic { get; private set; }
+    public bool? GoalInLogic => Model.Logic.GoalInLogic;
 
     /// <summary>The server says this slot reached its goal (its goal message, or a status check after connecting).</summary>
     public bool GoalCompleted => Model.GoalCompleted;
@@ -60,7 +60,7 @@ public partial class SlotTrackerControl : MarginContainer
     public void EnsureGoalStatus() => Model.EnsureGoalStatus();
 
     /// <summary>Logic is running and finished evaluating every item received (not starting or rebuilding).</summary>
-    public bool LogicSettled => _engineRunning && _startingLogicDone && !_logicBusy && !_logicDirty && EngineProblem == null;
+    public bool LogicSettled => Model.Logic.Settled;
 
     // --- Per-slot views (mounted by MainTrackerWindow) ---
     public AP_Atlas.UI.MapTrackerControl MapTracker => _mapTracker;
@@ -89,16 +89,6 @@ public partial class SlotTrackerControl : MarginContainer
     private Dictionary<string, object> _slotData;
     private Action<string> _updateGlobalStatus;
     private Action<string> _appendDebugLog;
-
-    // --- Logic state ---
-    private LogicEngineManager _logicEngine;
-    private bool _engineRunning = false;
-    private bool _logicBusy = false;
-    private bool _logicDirty = false;
-    private int _lastEvaluatedItemCount = 0;
-    private readonly List<long> _chronologicalInventory = new List<long>();
-    private readonly List<(string ItemName, List<long> UnlockedLocs)> _progressionLog = new();
-    private readonly HashSet<long> _knownReachableLocations = new HashSet<long>();
 
     // --- Logic Tracker view ---
     private Label _engineStatusLabel;
@@ -148,16 +138,8 @@ public partial class SlotTrackerControl : MarginContainer
         AddThemeConstantOverride("margin_right", 10);
         AddThemeConstantOverride("margin_bottom", 10);
 
-        _logicEngine = new LogicEngineManager(AP_Atlas.Core.EngineSetup.AtlasEngine.Resolve(_appSettings), AppendDebugLog);
-        _logicEngine.EngineExited += code => AP_Atlas.UI.Ui.Defer(this, () =>
-        {
-            if (_engineRunning) HandleEngineFailure($"the engine process exited with code {code}");
-        });
-        AP_Atlas.Core.EngineSetup.AtlasEngine.Changed += OnEngineChanged;
-        AP_Atlas.Core.EngineSetup.AtlasEngine.PauseRequested += OnEnginePauseRequested;
-
         _progressionTracker = new AP_Atlas.Core.PopTracker.ProgressionTrackerControl();
-        _progressionTracker.Initialize(Session, _logicEngine, ProfileId, _slotName, _appSettings, AppendDebugLog);
+        _progressionTracker.Initialize(Session, Model.Logic.Engine, ProfileId, _slotName, _appSettings, AppendDebugLog);
 
         _progressionTracker.ItemPicked += name => Inspect(ItemTargetByName(name));
         _progressionTracker.ScriptState = ScriptStateOf;
@@ -238,11 +220,10 @@ public partial class SlotTrackerControl : MarginContainer
         _exclusionSignature = ExclusionSignature();
 
         AP_Atlas.Core.ThemeColors.AccentChanged += OnAccentChanged;
-        // The model hears the session (items, checks, hints, messages) and reports here once per frame.
+        // The model hears the session (items, checks, hints, messages) and runs logic, and reports here once per frame.
         Model.Changed += OnModelChanged;
 
         AP_Atlas.UI.Ui.Defer(this, LoadMapPack);
-        AP_Atlas.UI.Ui.Defer(this, InitializeLogicEngine);
         AP_Atlas.UI.Ui.Defer(this, RefreshAllViews);
     }
 
@@ -276,7 +257,8 @@ public partial class SlotTrackerControl : MarginContainer
             UpdateKeyItemsUI();
         }
         if (checks) FeedNewChecksToScripts();
-        if (items || checks) QueueLogicRefresh();
+        if (change.HasFlag(AP_Atlas.Core.SlotChange.EngineStarted)) OnEngineStarted();
+        if (change.HasFlag(AP_Atlas.Core.SlotChange.Logic)) ShowLogic();
         if (change.HasFlag(AP_Atlas.Core.SlotChange.Hints)) _hintTracker?.SetHints(Model.CurrentHints);
         if (change.HasFlag(AP_Atlas.Core.SlotChange.Messages)) ShowNewChatLines();
         RaiseStateChanged();
@@ -285,8 +267,8 @@ public partial class SlotTrackerControl : MarginContainer
     /// <summary>Whether this slot's logic engine considers the location reachable; null while the engine isn't running or logic is hidden.</summary>
     public bool? IsLocationInLogic(long locationId)
     {
-        if (!_engineRunning || LogicHidden) return null;
-        return _knownReachableLocations.Contains(locationId);
+        if (!Model.Logic.Running || LogicHidden) return null;
+        return Model.Logic.Reachable.Contains(locationId);
     }
 
     // =====================================================================
@@ -295,8 +277,8 @@ public partial class SlotTrackerControl : MarginContainer
 
     private Button _filterItemsMarked;
 
-    public LogicEngineManager LogicEngine => _logicEngine;
-    public bool EngineRunning => _engineRunning;
+    public LogicEngineManager LogicEngine => Model.Logic.Engine;
+    public bool EngineRunning => Model.Logic.Running;
     public AP_Atlas.Core.PopTracker.LoadedPack Pack { get; private set; }
     public Archipelago.MultiClient.Net.Models.Hint[] CurrentHints => Model.CurrentHints;
     public IReadOnlyList<AP_Atlas.Core.ChatEntry> ChatHistory => Model.Chat;
@@ -304,11 +286,11 @@ public partial class SlotTrackerControl : MarginContainer
     public string Game => Session?.ConnectionInfo?.Game ?? "";
     public int PlayerSlot => Session?.ConnectionInfo?.Slot ?? -1;
     public int Team => Session?.ConnectionInfo?.Team ?? -1;
-    public bool IsLocationReachable(long id) => !LogicHidden && _knownReachableLocations.Contains(id);
+    public bool IsLocationReachable(long id) => !LogicHidden && Model.Logic.Reachable.Contains(id);
     public bool IsLocationHinted(long id) => Model.HintedLocations.Contains(id);
     public bool IsExcludedLocation(long id) => IsExcluded(id);
-    public bool IsGlitchedLocation(long id) => !LogicHidden && _logicEngine?.LastGlitchedLocations?.Contains(id) == true;
-    public int ReachableCount => _knownReachableLocations.Count;
+    public bool IsGlitchedLocation(long id) => !LogicHidden && Model.Logic.IsGlitched(id);
+    public int ReachableCount => Model.Logic.Reachable.Count;
     public string MapPackName => Pack?.Manifest?.Name;
 
     // --- Targets (identities for the Properties panel) ---
@@ -341,7 +323,7 @@ public partial class SlotTrackerControl : MarginContainer
     public long FindItemId(string itemName)
     {
         if (string.IsNullOrEmpty(itemName)) return 0;
-        var pooled = _logicEngine?.LastItemPool?.FirstOrDefault(p => string.Equals(p.Name, itemName, StringComparison.OrdinalIgnoreCase));
+        var pooled = Model.Logic.Engine.LastItemPool?.FirstOrDefault(p => string.Equals(p.Name, itemName, StringComparison.OrdinalIgnoreCase));
         if (pooled != null) return pooled.Id;
         var received = Session?.Items?.AllItemsReceived?.FirstOrDefault(i => string.Equals(i.ItemName, itemName, StringComparison.OrdinalIgnoreCase));
         if (received != null) return received.ItemId;
@@ -366,11 +348,11 @@ public partial class SlotTrackerControl : MarginContainer
     {
         if (LogicHidden) return null;
         int step = 0, order = 0;
-        foreach (var entry in _progressionLog)
+        foreach (var entry in Model.Logic.Steps)
         {
-            var shown = ShownLocs(entry.UnlockedLocs);
+            var shown = ShownLocs(entry.Locations);
             if (shown.Count == 0) continue;
-            bool isBase = entry.ItemName == "Starting Logic";
+            bool isBase = entry.IsStart;
             if (!isBase) step++;
             foreach (var loc in shown)
             {
@@ -387,10 +369,10 @@ public partial class SlotTrackerControl : MarginContainer
         var result = new List<(int, int)>();
         if (LogicHidden) return result;
         int step = 0;
-        foreach (var entry in _progressionLog)
+        foreach (var entry in Model.Logic.Steps)
         {
-            if (entry.ItemName == "Starting Logic") continue;
-            int shown = ShownLocs(entry.UnlockedLocs).Count;
+            if (entry.IsStart) continue;
+            int shown = ShownLocs(entry.Locations).Count;
             if (shown == 0) continue;
             step++;
             if (string.Equals(entry.ItemName, itemName, StringComparison.OrdinalIgnoreCase)) result.Add((step, shown));
@@ -398,33 +380,20 @@ public partial class SlotTrackerControl : MarginContainer
         return result;
     }
 
-    public int LogicStepCount => _progressionLog.Count(e => e.ItemName != "Starting Logic" && ShownLocs(e.UnlockedLocs).Count > 0);
+    public int LogicStepCount => Model.Logic.Steps.Count(e => !e.IsStart && ShownLocs(e.Locations).Count > 0);
 
     /// <summary>The checks of a logic step that aren't excluded (by the seed or by you).</summary>
-    private List<long> ShownLocs(List<long> locs) =>
+    private List<long> ShownLocs(IReadOnlyList<long> locs) =>
         locs == null ? new List<long>() : locs.Where(l => !IsExcluded(l)).ToList();
 
     // --- Cached lookups (one bridge or server request per question) ---
 
-    private readonly Dictionary<long, System.Threading.Tasks.Task<LogicExplanation>> _explainCache = new();
-    private int _explainCacheItemCount = -1;
-
-    /// <summary>The engine's "why" for a location, cached until this slot's items change.</summary>
+    /// <summary>The engine's "why" for a location, cached until this slot's items change. Null in race mode or while logic isn't running.</summary>
     public System.Threading.Tasks.Task<LogicExplanation> ExplainLocationAsync(long locationId)
     {
         // Race mode: never ask the engine why.
-        if (!_engineRunning || _logicEngine == null || RaceRestricted) return System.Threading.Tasks.Task.FromResult<LogicExplanation>(null);
-        if (_explainCacheItemCount != _lastEvaluatedItemCount || _logicBusy)
-        {
-            _explainCache.Clear();
-            _explainCacheItemCount = _lastEvaluatedItemCount;
-        }
-        if (!_explainCache.TryGetValue(locationId, out var task))
-        {
-            task = _logicEngine.ExplainLocationAsync(locationId);
-            _explainCache[locationId] = task;
-        }
-        return task;
+        if (RaceRestricted) return System.Threading.Tasks.Task.FromResult<LogicExplanation>(null);
+        return Model.Logic.ExplainAsync(locationId);
     }
 
     /// <summary>What a checked location held. Only for checked locations, so it never spoils anything.</summary>
@@ -579,16 +548,14 @@ public partial class SlotTrackerControl : MarginContainer
     public bool Ended => _ended;
 
     /// <summary>
-    /// Ends the slot: it stops listening (to its model, Atlas's shared events and the engine), stops its logic engine,
-    /// closes its model and frees its views. The window calls it when the slot is replaced or deleted. Leaving the tree
-    /// doesn't end it, so the panel can be moved (docking, pop-outs) without losing its engine, views or events.
+    /// Ends the slot: it stops listening (to its model and Atlas's shared events), closes its model (which stops the
+    /// slot's logic engine) and frees its views. The window calls it when the slot is replaced or deleted. Leaving the
+    /// tree doesn't end it, so the panel can be moved (docking, pop-outs) without losing its engine, views or events.
     /// </summary>
     public void EndSlot()
     {
         if (_ended) return;
         _ended = true;
-        AP_Atlas.Core.EngineSetup.AtlasEngine.Changed -= OnEngineChanged;
-        AP_Atlas.Core.EngineSetup.AtlasEngine.PauseRequested -= OnEnginePauseRequested;
         AP_Atlas.Core.ThemeColors.AccentChanged -= OnAccentChanged;
         AP_Atlas.Core.Annotations.Changed -= OnAnnotationsChanged;
         AP_Atlas.Core.RaceRules.Changed -= OnRaceRulesChanged;
@@ -596,7 +563,6 @@ public partial class SlotTrackerControl : MarginContainer
         Session.Socket.PacketReceived -= OnDataPackagePacket;
         Model.Changed -= OnModelChanged;
         Model.Dispose();
-        _logicEngine?.StopEngine();
         _hintTracker?.Detach();
 
         // The per-slot views live in the shared content pane (or nowhere), not under this node,

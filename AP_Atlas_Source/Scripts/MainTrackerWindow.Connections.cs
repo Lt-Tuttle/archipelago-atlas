@@ -317,8 +317,12 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         profile.SavedStats[slotName].GameName = session.ConnectionInfo.Game;
         profile.SavedStats[slotName].SlotNumber = session.ConnectionInfo.Slot;
         DataManager.SaveProfiles(_profiles);
-        // The model takes the session's events from here on (and the messages that arrived before it).
-        var model = new AP_Atlas.Core.SlotModel(connected);
+        // The model takes the session's events from here on (and the messages that arrived before it), and runs its logic.
+        var model = new AP_Atlas.Core.SlotModel(connected, _appSettings, msg =>
+        {
+            GD.Print(msg);
+            LogToDebug(msg, slotName);
+        });
         var slotTracker = new SlotTrackerControl(model, _appSettings,
             (msg) => { if (_globalStatusLabel != null) _globalStatusLabel.Text = msg; },
             (msg) => { LogToDebug(msg, slotName); }

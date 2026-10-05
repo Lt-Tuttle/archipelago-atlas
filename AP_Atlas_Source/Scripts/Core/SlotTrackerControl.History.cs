@@ -192,7 +192,7 @@ public partial class SlotTrackerControl : MarginContainer
 
         string search = _itemSearchBox?.Text?.Trim() ?? "";
         int sortMode = _optHistorySort?.Selected ?? 0;
-        var fullPool = _logicEngine?.LastItemPool;
+        var fullPool = Model.Logic.Engine.LastItemPool;
         int poolCount = fullPool?.Count ?? 0;
         var allItems = Session.Items.AllItemsReceived;
 
@@ -271,7 +271,7 @@ public partial class SlotTrackerControl : MarginContainer
             _uncollectedRows.Clear();
             _uncollectedShownQty.Clear();
             _uncollectedGroups.Clear();
-            _uncollectedHeaderLabel.Text = _engineRunning ? "Not Yet Collected (0 items)" : "Not Yet Collected (Waiting for Logic Engine...)";
+            _uncollectedHeaderLabel.Text = Model.Logic.Running ? "Not Yet Collected (0 items)" : "Not Yet Collected (Waiting for Logic Engine...)";
             return;
         }
 

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using AP_Atlas.Core.Connections;
+using AP_Atlas.Core.EngineSetup;
 using AP_Atlas.Core.Testing;
 using Godot;
 using Newtonsoft.Json.Linq;
@@ -10,9 +11,10 @@ using Newtonsoft.Json.Linq;
 /// <summary>
 /// The UI test, for testing only. Set ATLAS_UITEST=1 and ATLAS_DATA_DIR=&lt;an empty scratch folder&gt;, then start Atlas
 /// (headless is fine). Atlas builds its window as on a first run, then drives it the way a user would, against a fake
-/// Archipelago server on this computer, and prints "UITEST PASS/FAIL" lines. Exit code: 0 everything passed, 1 something
-/// failed, 2 refused (the data folder isn't an empty scratch folder). Tools/run_selftest.ps1 runs it after the self-test,
-/// and CI runs that.
+/// Archipelago server on this computer, and prints "UITEST PASS/FAIL/SKIP" lines. Logic runs on a fake engine
+/// (FakeLogicEngine) with the Python named in ATLAS_UITEST_PYTHON; without one, that scenario is skipped. Exit code: 0
+/// nothing failed, 1 something failed, 2 refused (the data folder isn't an empty scratch folder).
+/// Tools/run_selftest.ps1 runs it after the self-test (passing the Python on the PATH), and CI runs that.
 /// </summary>
 public partial class MainTrackerWindow
 {
@@ -40,7 +42,7 @@ public partial class MainTrackerWindow
 
     private async Task RunUiTestAsync()
     {
-        int passed = 0, failed = 0;
+        int passed = 0, failed = 0, skipped = 0;
         async Task ScenarioAsync(string name, Func<Task> body)
         {
             try
@@ -48,6 +50,11 @@ public partial class MainTrackerWindow
                 await body();
                 passed++;
                 GD.Print("UITEST PASS " + name);
+            }
+            catch (UiTestSkip skip)
+            {
+                skipped++;
+                GD.Print($"UITEST SKIP {name}: {skip.Message}");
             }
             catch (Exception ex)
             {
@@ -67,8 +74,10 @@ public partial class MainTrackerWindow
             BurstIsOneUpdateAsync);
         await ScenarioAsync("Moving a slot's panel: out of the window and docked elsewhere, the slot keeps its connection, views and updates, and shows what arrived meanwhile",
             SlotPanelMovesWholeAsync);
+        await ScenarioAsync("Logic: the slot's logic follows its items and checks step by step; after an engine crash, an engine update or a restart it's rebuilt from scratch on a new engine",
+            LogicFollowsTheSlotAsync);
         await _sessions.CloseAllAsync(TimeSpan.FromSeconds(3));
-        GD.Print($"UITEST DONE: {passed} passed, {failed} failed");
+        GD.Print($"UITEST DONE: {passed} passed, {failed} failed, {skipped} skipped");
         GetTree().Quit(failed == 0 ? 0 : 1);
     }
 
@@ -346,6 +355,168 @@ public partial class MainTrackerWindow
             DeleteProfile(profile);
         }
     }
+
+    private async Task LogicFollowsTheSlotAsync()
+    {
+        string? python = System.Environment.GetEnvironmentVariable("ATLAS_UITEST_PYTHON");
+        if (string.IsNullOrWhiteSpace(python) || !System.IO.File.Exists(python))
+            throw new UiTestSkip("no Python to run the fake logic engine on (Tools/run_selftest.ps1 passes the one on the PATH in ATLAS_UITEST_PYTHON)");
+        // This game's names differ from the other scenarios' "Test Game", so its data package has its own checksum (as on
+        // a real server), or Atlas would rightly use the names it stored for that checksum.
+        const string checksum = "5eed5eed5eed5eed5eed5eed5eed5eed5eed5eed";
+
+        // The fake engine stands where the portable engine goes, as setup leaves it (the runner and the bridge), and runs
+        // on that Python. Its world: a chest open from the start, a door behind the Sword, a tower behind the Sword and the
+        // Shield, a vault behind the Gem. The goal needs the Sword and the Shield. The engine crashes once on the Gem.
+        var engine = new FakeLogicEngine(AtlasEngine.ArchipelagoDir);
+        engine.Pool.AddRange(new[] { new FakeItem(1000, "Sword", 1), new FakeItem(1001, "Shield", 1), new FakeItem(1002, "Rupee", 0), new FakeItem(1099, "Gem", 1) });
+        engine.Locations.AddRange(new[]
+        {
+            new FakeLocation(2000, "Cave Chest"), new FakeLocation(2001, "Locked Door", 1000), new FakeLocation(2002, "Tower Top", 1000, 1001),
+            new FakeLocation(2003, "Gem Vault", 1099)
+        });
+        engine.Goal = new long[] { 1000, 1001 };
+        engine.DataChecksum = checksum;
+        engine.CrashOnItem = 1099;
+        engine.Apply();
+        AtlasEngine.TestPython = python;
+        AtlasEngine.InstallBridge(EngineInstall.Portable());
+
+        await using var server = new FakeArchipelagoServer();
+        server.Games["Test Game"] = new FakeGame(checksum,
+            new Dictionary<string, long> { ["Sword"] = 1000, ["Shield"] = 1001, ["Rupee"] = 1002, ["Gem"] = 1099 },
+            new Dictionary<string, long> { ["Cave Chest"] = 2000, ["Locked Door"] = 2001, ["Tower Top"] = 2002, ["Gem Vault"] = 2003 });
+        var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Tester");
+        _profiles.Add(profile);
+        try
+        {
+            await OnConnectSlotPressedAsync("Tester", profile);
+            var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
+            await UiTestWaitForAsync(() => slot.LogicSettled ? slot : null, "the slot's logic to start");
+            var init = engine.Requests("init").Single();
+            UiTestExpect((string?)init["game"] == "Test Game" && (string?)init["player_name"] == "Tester" && (int?)init["slot"] == 1,
+                $"the engine was started for the wrong slot: {init}");
+            UiTestExpect(Ids(init["all_locations"]).SequenceEqual(new long[] { 2000, 2001, 2002, 2003 }), $"the engine was given the wrong locations: {init["all_locations"]}");
+            UiTestExpect((string?)init["expected_checksum"] == checksum, "the engine wasn't told the seed's data checksum");
+            UiTestExpect(slot.ApworldMatchesSeed == true && slot.EngineProblem == null, "the engine's world doesn't match the seed's");
+
+            // Nothing received yet: only the chest.
+            ExpectLogic(slot, "with nothing received", inLogic: new long[] { 2000 }, outOfLogic: new long[] { 2001, 2002, 2003 }, goal: false, active: 1);
+            await ExpectTreeAsync(slot, "with nothing received", "── Base Logic (Starting Reachable) ──", "Cave Chest");
+
+            // The Sword, which the server marks as progression: one step, opening the door.
+            await server.BroadcastAsync(FakeArchipelagoServer.ReceivedItems(0, new long[] { 1000 }, flags: 1));
+            await UiTestWaitForAsync(() => slot.LogicSettled && slot.IsLocationInLogic(2001) == true ? slot : null, "the Sword to open the door");
+            ExpectLogic(slot, "with the Sword", inLogic: new long[] { 2000, 2001 }, outOfLogic: new long[] { 2002, 2003 }, goal: false, active: 2);
+            UiTestExpect(slot.UnlockStepOf(2001) == (1, 2, "Sword"), $"the door's step is {slot.UnlockStepOf(2001)}, not step 1 (the 2nd check) by the Sword");
+            UiTestExpect(Ids(engine.Requests("update")[^1]["items"]).SequenceEqual(new long[] { 1000 }), "the engine wasn't asked about the Sword");
+
+            // The Shield, sent without flags (as the server's /send does): still progression, because the world says so.
+            await server.BroadcastAsync(FakeArchipelagoServer.ReceivedItems(1, new long[] { 1001 }));
+            await UiTestWaitForAsync(() => slot.LogicSettled && slot.IsLocationInLogic(2002) == true ? slot : null, "the Shield to open the tower");
+            ExpectLogic(slot, "with the Sword and the Shield", inLogic: new long[] { 2000, 2001, 2002 }, outOfLogic: new long[] { 2003 }, goal: true, active: 3);
+            UiTestExpect(slot.UnlockStepOf(2002) == (2, 3, "Shield") && slot.LogicStepCount == 2, $"the tower's step is {slot.UnlockStepOf(2002)} of {slot.LogicStepCount}");
+            await ExpectTreeAsync(slot, "with the Sword and the Shield", "── Base Logic (Starting Reachable) ──", "Cave Chest", "── Unlocked by: Sword (1 checks) ──", "Locked Door",
+                "── Unlocked by: Shield (1 checks) ──", "Tower Top");
+
+            // Filler changes nothing about logic, so the engine isn't asked.
+            int asked = engine.Requests("update").Count;
+            await server.BroadcastAsync(FakeArchipelagoServer.ReceivedItems(2, new long[] { 1002 }));
+            await UiTestWaitForAsync(() => slot.Session.Items.AllItemsReceived.Count == 3 ? slot : null, "the Rupee to arrive");
+            await UiTestWaitAsync(0.3);
+            UiTestExpect(engine.Requests("update").Count == asked && slot.LogicSettled, "the engine was asked about filler");
+
+            // A check done in the game: it's no longer counted as one to do.
+            await server.BroadcastAsync(FakeArchipelagoServer.LocationsChecked(2000));
+            await UiTestWaitForAsync(() => slot.ActiveLogicCount == 2 ? slot : null, "the checked chest to leave the count");
+
+            // The engine crashes on the Gem. Nothing half-done is kept: logic is unknown until a new engine has rebuilt it
+            // from scratch, which starts after 2 seconds (the first of its restarts).
+            await server.BroadcastAsync(FakeArchipelagoServer.ReceivedItems(3, new long[] { 1099 }, flags: 1));
+            await UiTestWaitForAsync(() => slot.EngineProblem?.Code == "restarting" ? slot : null, "the crash to be noticed");
+            var sinceCrash = System.Diagnostics.Stopwatch.StartNew();
+            // A crash shows twice (the failed request, the ended process), but counts once: the first restart is after
+            // 2 s. Counted twice, it would be the second restart's 10 s.
+            await UiTestWaitAsync(1.0);
+            UiTestExpect(engine.Crashes == 1, $"the engine crashed {engine.Crashes} times, not once");
+            string restarting = slot.EngineProblem?.Message ?? "";
+            UiTestExpect(restarting.Contains("in 2 s"), $"one crash wasn't counted once: {restarting}");
+            UiTestExpect(slot.IsLocationInLogic(2001) == null && slot.LogicStepCount == 0, "logic from the crashed engine was kept");
+            await UiTestWaitForAsync(() => slot.LogicSettled && engine.Starts == 2 ? slot : null, "logic to be rebuilt on a new engine");
+            UiTestExpect(sinceCrash.Elapsed < TimeSpan.FromSeconds(6),
+                $"the new engine took {sinceCrash.Elapsed.TotalSeconds:0.0} s to start after one crash, not about 2 s (as if it had crashed twice)");
+            ExpectLogic(slot, "after the restart", inLogic: new long[] { 2001, 2002, 2003 }, outOfLogic: Array.Empty<long>(), goal: true, active: 3);
+            // The new engine was asked about everything again, from the start and in the order it arrived.
+            var journal = engine.Journal();
+            var restarted = journal.Last(entry => (string?)entry["event"] == "start");
+            var rebuilt = journal.SkipWhile(entry => entry != restarted).Select(entry => entry["request"]).OfType<JObject>().ToList();
+            UiTestExpect(rebuilt.Count > 0 && (string?)rebuilt[0]["action"] == "init", "the new engine wasn't started for the slot first");
+            var asks = rebuilt.Where(r => (string?)r["action"] == "update").Select(r => string.Join(",", Ids(r["items"]))).ToList();
+            UiTestExpect(asks.SequenceEqual(new[] { "", "1000", "1000,1001", "1000,1001,1099" }), $"the new engine was asked about [{string.Join("] [", asks)}]");
+            UiTestExpect(slot.UnlockStepOf(2003) == (3, 3, "Gem") && slot.EngineProblem == null, $"the vault's step is {slot.UnlockStepOf(2003)}");
+
+            // An engine update, as setup runs one: it pauses the slots using the engine, changes its files, then lets
+            // them resume. Logic is unknown while paused, and rebuilt on a new engine afterwards.
+            var update = AtlasEngine.ExclusiveAsync(async () =>
+            {
+                await AtlasEngine.StopEnginesUsingAsync(engine.Root, _ => { }, System.Threading.CancellationToken.None);
+                await Task.Delay(TimeSpan.FromSeconds(1)); // the update itself
+                return true;
+            }, System.Threading.CancellationToken.None);
+            await UiTestWaitForAsync(() => slot.EngineProblem?.Code == "paused" ? slot : null, "logic to pause for the engine update");
+            UiTestExpect(!slot.EngineRunning && slot.IsLocationInLogic(2001) == null, "logic kept running while the engine was updated");
+            UiTestExpect(await update, "the engine update didn't finish");
+            await UiTestWaitForAsync(() => slot.LogicSettled && engine.Starts == 3 ? slot : null, "logic to resume after the engine update");
+            ExpectLogic(slot, "after the engine update", inLogic: new long[] { 2001, 2002, 2003 }, outOfLogic: Array.Empty<long>(), goal: true, active: 3);
+
+            // Restart logic (the button): a new engine, and the same logic.
+            slot.RetryLogicEngine();
+            await UiTestWaitForAsync(() => slot.LogicSettled && engine.Starts == 4 ? slot : null, "logic to restart");
+            ExpectLogic(slot, "after restarting logic", inLogic: new long[] { 2001, 2002, 2003 }, outOfLogic: Array.Empty<long>(), goal: true, active: 3);
+            UiTestExpect(engine.Crashes == 1 && slot.EngineProblem == null, "the engine failed again");
+        }
+        finally
+        {
+            DeleteProfile(profile);
+            AtlasEngine.TestPython = null;
+        }
+    }
+
+    /// <summary>Checks what the slot reports as in logic, its goal, and how many checks it has left in logic.</summary>
+    private static void ExpectLogic(SlotTrackerControl slot, string when, long[] inLogic, long[] outOfLogic, bool goal, int active)
+    {
+        foreach (long id in inLogic) UiTestExpect(slot.IsLocationInLogic(id) == true, $"location {id} isn't in logic {when}");
+        foreach (long id in outOfLogic) UiTestExpect(slot.IsLocationInLogic(id) == false, $"location {id} is in logic {when}");
+        UiTestExpect(slot.GoalInLogic == goal, $"the goal is {(slot.GoalInLogic?.ToString() ?? "unknown")} {when}, not {goal}");
+        UiTestExpect(slot.ActiveLogicCount == active, $"{slot.ActiveLogicCount} checks are left in logic {when}, not {active}");
+    }
+
+    /// <summary>Waits for the Logic Tracker to show these rows (the location column), top to bottom.</summary>
+    private async Task ExpectTreeAsync(SlotTrackerControl slot, string when, params string[] rows)
+    {
+        var tree = slot.LogicTrackerView.FindChildren("*", "Tree", true, false).OfType<Tree>().Single();
+        List<string> Shown()
+        {
+            var shown = new List<string>();
+            for (var row = tree.GetRoot()?.GetFirstChild(); row != null; row = row.GetNext()) shown.Add(row.GetText(1));
+            return shown;
+        }
+        try
+        {
+            await UiTestWaitForAsync(() => Shown().SequenceEqual(rows) ? tree : null, "the Logic Tracker's rows");
+        }
+        catch (TimeoutException)
+        {
+            throw new InvalidOperationException($"the Logic Tracker shows [{string.Join(" | ", Shown())}] {when}");
+        }
+    }
+
+    private static long[] Ids(JToken? list) => list?.Select(id => (long)id).ToArray() ?? Array.Empty<long>();
+
+    /// <summary>Thrown by a scenario that can't run here (it reports SKIP instead of PASS or FAIL).</summary>
+    private sealed class UiTestSkip(string reason) : Exception(reason);
 
     /// <summary>Whether a panel's rendered text (its labels) shows this text.</summary>
     private static bool PanelShows(Node panel, string text) =>

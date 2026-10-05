@@ -146,6 +146,14 @@ namespace AP_Atlas.Core.EngineSetup
         /// <summary>Stands in for %LocalAppData% and %AppData% in engine processes (Archipelago's cache, pip's cache).</summary>
         public static string UserDir => Path.Combine(EngineDir, "user");
 
+        /// <summary>
+        /// For the UI test only: a Python already on this computer that runs the engine's components in place of the
+        /// portable engine's own, so the test can run its fake engine (AP_Atlas.Core.Testing.FakeLogicEngine). Null
+        /// otherwise. Setup never uses it, so nothing is ever installed into that Python. Only the UI test sets it (a
+        /// guard rail checks).
+        /// </summary>
+        internal static string TestPython { get; set; }
+
         private static AppSettings _settings;
 
         /// <summary>Raised (on any thread) when the engine's setup or mode changed.</summary>
@@ -573,7 +581,7 @@ namespace AP_Atlas.Core.EngineSetup
         }
 
         /// <summary>Stops everything running from this engine (slots pause and resume afterwards) so files can be replaced.</summary>
-        private static async Task StopEnginesUsingAsync(string root, Action<string> log, CancellationToken ct)
+        internal static async Task StopEnginesUsingAsync(string root, Action<string> log, CancellationToken ct)
         {
             if (ProcessJob.RunningUnder(root) == 0) return;
             log("Pausing logic for the slots using this engine while it changes…");

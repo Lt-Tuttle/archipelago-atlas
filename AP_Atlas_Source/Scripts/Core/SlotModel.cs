@@ -29,6 +29,10 @@ namespace AP_Atlas.Core
         Goal = 16,
         /// <summary>The connection dropped.</summary>
         Connection = 32,
+        /// <summary>Logic changed: its results, its engine's state, or why it isn't running.</summary>
+        Logic = 64,
+        /// <summary>A logic engine finished starting: its item pool and world are new.</summary>
+        EngineStarted = 128,
     }
 
     /// <summary>One line of a slot's text client: a server message, or one of Atlas's own (BBCode).</summary>
@@ -47,9 +51,9 @@ namespace AP_Atlas.Core
 
     /// <summary>
     /// One connected slot, apart from its views: the session and who the slot is, the session's events, and what follows
-    /// directly from them (the text client's lines, hints, the goal), plus the questions Atlas asks the server about it.
-    /// It hears every event even while no view of it is in the window, and tells its views at most once per frame what
-    /// changed: a burst of 300 items is one refresh, not 300.
+    /// from them (the text client's lines, hints, the goal, and its logic, <see cref="Logic"/>), plus the questions Atlas
+    /// asks the server about it. It hears every event even while no view of it is in the window, and tells its views at
+    /// most once per frame what changed: a burst of 300 items is one refresh, not 300.
     /// </summary>
     /// <remarks>
     /// Session events arrive on network threads; they're queued and applied on the main thread when the change is raised.
@@ -72,7 +76,9 @@ namespace AP_Atlas.Core
         private readonly HashSet<long> _hintedLocations = new();
         private bool _goalStatusAsked;
 
-        public SlotModel(ConnectedSlot connected)
+        /// <param name="settings">Atlas's settings (which engine logic runs on, the slot's linked YAML).</param>
+        /// <param name="log">The slot's debug log.</param>
+        public SlotModel(ConnectedSlot connected, AppSettings settings, Action<string> log)
         {
             Slot = connected.Slot;
             Session = connected.Session;
@@ -97,6 +103,12 @@ namespace AP_Atlas.Core
             Schedule(SlotChange.Messages);
             // The slot's hints (as finder or receiver), now and on every change.
             Session.Hints.TrackHints(OnHints, true);
+            // Logic starts once the slot is set up (its views, if any, hear how it goes).
+            Logic = new SlotLogic(this, settings, log);
+            AP_Atlas.UI.Ui.Defer(null, () =>
+            {
+                if (!_disposed) Logic.Start();
+            }, $"starting logic for {SlotName}");
         }
 
         public SlotId Slot { get; }
@@ -109,6 +121,9 @@ namespace AP_Atlas.Core
 
         /// <summary>Each game's data checksum from the server's room info.</summary>
         public IReadOnlyDictionary<string, string> DataChecksums { get; }
+
+        /// <summary>The slot's logic: its engine and what's in logic, step by step.</summary>
+        public SlotLogic Logic { get; }
 
         public string Game => Session.ConnectionInfo?.Game ?? "";
         public int PlayerSlot => Session.ConnectionInfo?.Slot ?? -1;
@@ -268,6 +283,9 @@ namespace AP_Atlas.Core
 
         private bool _goalReachedPending;
 
+        /// <summary>A part of the model (its logic) changed: the views hear it with everything else this frame.</summary>
+        internal void Report(SlotChange change) => Schedule(change);
+
         private void Schedule(SlotChange change, bool goalReached = false)
         {
             lock (_queueLock)
@@ -327,6 +345,8 @@ namespace AP_Atlas.Core
                 GoalCompleted = true;
                 change |= SlotChange.Goal;
             }
+            // New items or checks: logic works out what they changed (bursts coalesce into one run).
+            if ((change & (SlotChange.Items | SlotChange.Checks)) != 0) Logic.Refresh();
             if (change == SlotChange.None) return;
             try { Changed?.Invoke(change); }
             catch (Exception ex) when (ex is not OutOfMemoryException)
@@ -343,8 +363,8 @@ namespace AP_Atlas.Core
         }
 
         /// <summary>
-        /// Stops listening to the session (the slot was replaced, closed or deleted). Pending changes are dropped and
-        /// nothing is raised afterwards. Safe to call more than once.
+        /// Stops listening to the session and stops the slot's logic engine (the slot was replaced, closed or deleted).
+        /// Pending changes are dropped and nothing is raised afterwards. Safe to call more than once.
         /// </summary>
         public void Dispose()
         {
@@ -358,6 +378,7 @@ namespace AP_Atlas.Core
             Session.Socket.SocketClosed -= OnSocketClosed;
             Session.Items.ItemReceived -= OnItemReceived;
             Session.Locations.CheckedLocationsUpdated -= OnChecked;
+            Logic.Dispose();
             Changed = null;
         }
     }

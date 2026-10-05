@@ -31,6 +31,7 @@ You need:
 - Windows 10 or 11.
 - The .NET 10 SDK: 10.0.401 or a later 10.0.4xx patch (`global.json` pins it, so local formatting matches CI's).
 - Godot 4.7.2 (.NET build) unzipped into `Godot_Engine/Godot_v4.7.2-stable_mono_win64/` in the repository folder (git ignores it), or set `ATLAS_GODOT` to its `_console.exe`.
+- Python 3 on the PATH, for the tests that run the engine's runner and the fake logic engine. Without it those tests are skipped; CI always runs them (on Python 3.12).
 
 | What | How |
 |---|---|
@@ -75,7 +76,7 @@ New code that doesn't need Godot belongs in `AP_Atlas.Core`, with tests. The vis
   - Files that start with `#nullable disable` predate the checks. When you rework one, annotate it and remove that line, then lower the limit in `Tools/check_guards.ps1`.
   - The guard rails stop the number of such files from growing.
 - **Async code:** the build runs Microsoft's async analyzers. An unobserved task, `async void`, a blocking wait on unfinished work, or `ContinueWith` without a `TaskScheduler` stops the build. Methods that return a task end in `Async`.
-- **Tests:** every new protection gets a check in `Scripts/Core/SelfTest*.cs` or `AP_Atlas.Core.Tests`, and tests never touch real data. Connection tests use `FakeArchipelagoServer`, never a real server. What the window does with them gets a scenario in `MainTrackerWindow.UiTest.cs`.
+- **Tests:** every new protection gets a check in `Scripts/Core/SelfTest*.cs` or `AP_Atlas.Core.Tests`, and tests never touch real data. Connection tests use `FakeArchipelagoServer`, never a real server, and the UI test runs logic on `FakeLogicEngine`. What the window does with them gets a scenario in `MainTrackerWindow.UiTest.cs`. A test's expected results are written out in the test, never read from the code it checks.
 - **Nothing outside Atlas's folder:** the self-test and the visual check fail if a run writes anything to the user's folders or the temp folder (the footprint check). Godot's log and shader cache stay off in `project.godot`.
 - **Updating Archipelago.MultiClient.Net:** `AtlasSessions` relies on the library's internal data cache. The unit tests check that, and that the library reaches nothing else on the PC. If they fail, look at what changed before using the new version.
 - **Godot's `.uid` files:** Godot makes one next to each script (`Foo.cs.uid`) when it opens or imports the project. Commit it with the script; the guard rails check.

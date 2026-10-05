@@ -66,7 +66,7 @@ public partial class SlotTrackerControl : MarginContainer
         }
         else if (!restricted) _raceStateAnnounced = false;
 
-        _explainCache.Clear();
+        Model.Logic.ForgetExplanations();
         SyncLogicViews();
         RaiseStateChanged();
     }
@@ -84,12 +84,12 @@ public partial class SlotTrackerControl : MarginContainer
     {
         get
         {
-            if (!_engineRunning) return null;
+            if (!Model.Logic.Running) return null;
             if (ApworldMatchesSeed == false)
                 return $"Logic may be off: this seed was made with a different version of the {Game} apworld than the one installed" +
                        (InstalledWorldVersion != null ? $" ({InstalledWorldVersion})" : "") + "." +
                        (_apworldFixStatus != null ? " " + _apworldFixStatus : "");
-            var info = _logicEngine?.LastYamlInfo;
+            var info = Model.Logic.Engine.LastYamlInfo;
             if (info?["match"]?.Type == Newtonsoft.Json.Linq.JTokenType.Boolean && !(bool)info["match"])
                 return $"Logic is approximate: your world was rebuilt, but it doesn't match the seed ({info["missing"]} locations missing, {info["extra"]} extra). " +
                        "Usually the game keeps some options out of the server's data. Link the YAML used to generate the seed for exact logic.";

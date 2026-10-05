@@ -221,12 +221,22 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
         }
     }
 
-    /// <summary>A ReceivedItems packet: the slot gets these items (item ids, from location 0, sent by player 0, as filler).</summary>
-    public static JObject ReceivedItems(int index, IEnumerable<long> items) => new()
+    /// <summary>
+    /// A ReceivedItems packet: the slot gets these items (item ids, from location 0, sent by player 0), with these item
+    /// flags (1 progression, 2 useful, 4 trap; 0 is filler, and also what an item sent with the server's /send has).
+    /// </summary>
+    public static JObject ReceivedItems(int index, IEnumerable<long> items, int flags = 0) => new()
     {
         ["cmd"] = "ReceivedItems",
         ["index"] = index,
-        ["items"] = new JArray(items.Select(item => new JObject { ["item"] = item, ["location"] = 0, ["player"] = 0, ["flags"] = 0, ["class"] = "NetworkItem" }))
+        ["items"] = new JArray(items.Select(item => new JObject { ["item"] = item, ["location"] = 0, ["player"] = 0, ["flags"] = flags, ["class"] = "NetworkItem" }))
+    };
+
+    /// <summary>A RoomUpdate packet: the slot has checked these locations (as when its player checks them in the game).</summary>
+    public static JObject LocationsChecked(params long[] locations) => new()
+    {
+        ["cmd"] = "RoomUpdate",
+        ["checked_locations"] = new JArray(locations)
     };
 
     /// <summary>A chat line from slot 1, as the server relays it.</summary>

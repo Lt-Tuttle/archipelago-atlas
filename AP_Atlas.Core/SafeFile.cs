@@ -79,17 +79,22 @@ namespace AP_Atlas.Core
 
         /// <summary>
         /// Deletes a file Atlas saved, together with its backup and any temp file an interrupted save left, so it can't
-        /// come back from the backup on the next read. Retries briefly while another program holds a file; throws if it
-        /// still can't be deleted (the file itself is then intact).
+        /// come back from the backup on the next read. A file that isn't there (or whose folder isn't) is nothing to do.
+        /// Retries briefly while another program holds a file; throws if it still can't be deleted (the file itself is
+        /// then intact).
         /// </summary>
         public static void Delete(string path)
         {
             lock (LockFor(path))
             {
-                // The backup goes first: if the file itself then can't be deleted, it's still whole.
-                Retry(() => File.Delete(path + ".tmp"));
-                Retry(() => File.Delete(path + ".bak"));
-                Retry(() => File.Delete(path));
+                // Without its folder there's nothing to delete (File.Delete would call the missing folder an error).
+                if (Directory.Exists(Path.GetDirectoryName(Path.GetFullPath(path))))
+                {
+                    // The backup goes first: if the file itself then can't be deleted, it's still whole.
+                    Retry(() => File.Delete(path + ".tmp"));
+                    Retry(() => File.Delete(path + ".bak"));
+                    Retry(() => File.Delete(path));
+                }
                 _unreadable.TryRemove(Path.GetFullPath(path), out _);
             }
         }
@@ -198,8 +203,9 @@ namespace AP_Atlas.Core
                     action();
                     return;
                 }
-                catch (IOException) when (attempt < 4)
+                catch (IOException ex) when (attempt < 4 && ex is not (FileNotFoundException or DirectoryNotFoundException))
                 {
+                    // Held by another program: wait a moment. (Something missing won't appear by waiting.)
                     Thread.Sleep(50 * (attempt + 1));
                 }
                 catch (UnauthorizedAccessException) when (attempt < 4)

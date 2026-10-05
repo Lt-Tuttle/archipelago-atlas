@@ -11,9 +11,10 @@ This is a map of the code as it is today, for anyone starting to work on Atlas. 
 
 ```
 MainTrackerWindow (the shell)
- ├─ SlotTrackerControl  × one per connected slot
- │   ├─ ArchipelagoSession            (MultiClient.Net: items, checks, hints, chat)
- │   ├─ LogicEngineManager → Python    (atlas_bridge.py: "what's in logic, and why")
+ ├─ SlotTrackerControl  × one per connected slot (its panel and views)
+ │   ├─ SlotModel                      (the slot apart from its views)
+ │   │   ├─ ArchipelagoSession         (MultiClient.Net: items, checks, hints, chat)
+ │   │   └─ SlotLogic → LogicEngineManager → Python   (atlas_bridge.py: "what's in logic, and why")
  │   ├─ map pack context              (PopTracker pack + Lua scripts in MoonSharp)
  │   └─ views: Logic Tracker, Item History, Chat
  ├─ views: Map Tracker, Key Items, Hints, Cheese Tracker, Sphere Tracker, Map Packs, Connections
@@ -34,6 +35,7 @@ MainTrackerWindow (the shell)
     - `SessionManager`: every connection to an Archipelago server (connecting one at a time, the login time limit, drops, careful reconnects, closing).
     - `AtlasSessions`: the only place sessions are made; each keeps the games' names in `DataPackageStore` (the data folder, below).
   - `Testing/FakeArchipelagoServer` (internal): a fake Archipelago server on the test computer, for the unit tests and the UI test. Atlas never starts it otherwise.
+  - `Testing/FakeLogicEngine` (internal) and `fake_engine.py`: a fake logic engine in a stand-in Archipelago folder, answering the engine's requests from simple rules, for the unit tests and the UI test. Atlas never sets one up otherwise; the UI test runs it on a Python already on the computer (`AtlasEngine.TestPython`, which only the UI test sets).
 - **`AP_Atlas.Core.Tests/`**: its xUnit tests.
 - **`AP_Atlas_Source/`**: the Godot app, below. It starts the library's `Logger`: Godot's output for echoes, and the data folder's `logs/` once that folder has been checked.
 
@@ -43,7 +45,7 @@ MainTrackerWindow (the shell)
 |---|---|
 | `MainTrackerWindow*.cs` | **The shell**, in partial files:<br>• `MainTrackerWindow.cs`: the fields, startup (`_Ready`), shutdown and the Properties host.<br>• `.Layout`: the panels, theme and fonts.<br>• `.Notices`: toasts, failure notices and the logs.<br>• `.Connections`: connecting, careful reconnects and open sessions.<br>• `.Profiles`: the multiworld editor.<br>• `.Sidebar`: the slot cards.<br>• `.Views`: the tabs, explorer, content stage and terminal.<br>• `.Windows`: the Pack Doctor, Cheese, Sphere, Privacy, engine and race-mode windows. |
 | `Core/SlotTrackerControl*.cs` | **Everything about one connected slot**, in partial files:<br>• `SlotTrackerControl.cs`: startup, its session events and the queries Properties uses.<br>• `.Race`: race mode.<br>• `.Apworld`: matching the seed's apworld version.<br>• `.MapPack`: the pack, game names, its index and the pack's scripts.<br>• `.Logic`: the logic engine.<br>• `.LogicView`, `.History`, `.Chat`: its views. |
-| `Core/` | **Infrastructure:**<br>• `DataManager` (settings and profiles), `CrashGuard`, `GodotLog` (Godot's own errors and warnings, into Atlas's log).<br>• `SlotModel`: one connected slot apart from its views: the session and its events, the text client's lines, hints and goal, and the questions Atlas asks the server about it. It tells its views at most once per frame what changed.<br>• `Annotations` (notes, flags, special items, exclusions), `RaceRules`, `ThemeColors`, `Inspect`.<br>• `ExternalLinks`: the only way to open links and folders.<br>• `Permissions`: what the user allowed. |
+| `Core/` | **Infrastructure:**<br>• `DataManager` (settings and profiles), `CrashGuard`, `GodotLog` (Godot's own errors and warnings, into Atlas's log).<br>• `SlotModel`: one connected slot apart from its views: the session and its events, the text client's lines, hints and goal, its logic (`SlotLogic`), and the questions Atlas asks the server about it. It tells its views at most once per frame what changed.<br>• `SlotLogic`: the slot's logic engine (started, restarted after a failure, paused while the engine is updated) and what's in logic, worked out item by item. Each engine run is numbered, so an answer or a failure from an engine since stopped is ignored.<br>• `Annotations` (notes, flags, special items, exclusions), `RaceRules`, `ThemeColors`, `Inspect`.<br>• `ExternalLinks`: the only way to open links and folders.<br>• `Permissions`: what the user allowed. |
 | `Core/Engine/` | **The Atlas Engine:**<br>• `AtlasEngine`: setup of the portable engine (Python, Archipelago, Universal Tracker, packages), health checks, rollback, and the user's own install with their consent.<br>• `EngineInstall`, `ProcessJob` (engine processes close with Atlas).<br>• `ApworldSources`: apworld versions, matched to each seed.<br>• `SeedVerifier`, `GameSweep`.<br>• `Python/`: the bridge (`atlas_bridge.py`) and the portable runner. |
 | `Core/PopTracker/` | **Map packs:**<br>• `PopTrackerPackLoader` reads pack zips.<br>• `PackScriptHost` runs pack Lua in a sandbox.<br>• `PackIndex`, `LuaMappingReader`, `GameNames`.<br>• The Pack Doctor (`PackDoctor`, `PackDoctorService`, `PackFixes`: local fixes with undo).<br>• Key Items (`ProgressionTrackerControl`). |
 | `Core/CheeseTracker/` | **Cheese Tracker:** the service: rooms and linking, opt-in automation (the client and rules are in `AP_Atlas.Core`). |
@@ -51,7 +53,7 @@ MainTrackerWindow (the shell)
 | `UI/` | **Windows and views:**<br>• Properties, Hints, Map Tracker, the Cheese and Sphere tabs.<br>• The Pack Doctor and Atlas Engine windows.<br>• Privacy, the permission dialog, shared dialogs, the tab strip.<br>• `TreeSubscriptions`: a view's event subscriptions, made while it's in the window (also after a move) and removed while it isn't.<br>• `Tool`: every tool (id, title, scope: the app, a multiworld or a slot), in tab order; a slot tool names the slot's view of it. |
 | `Core/SelfTest*.cs` | **The self-test:** run with `Tools/run_selftest.ps1`. |
 | `MainTrackerWindow.VisualCheck.cs` | **The visual check:** pictures of the main screens, compared with an earlier run; run with `Tools/run_visualcheck.ps1`. |
-| `MainTrackerWindow.UiTest.cs` | **The UI test:** drives the window the way a user would, against the fake Archipelago server (connecting, a dropped connection, disconnecting); `Tools/run_selftest.ps1` runs it after the self-test. |
+| `MainTrackerWindow.UiTest.cs` | **The UI test:** drives the window the way a user would, against the fake Archipelago server (connecting, a dropped connection, disconnecting), and runs a slot's logic on the fake logic engine (items and checks, a crash, an engine update, a restart); `Tools/run_selftest.ps1` runs it after the self-test. |
 
 ## Where data lives
 
@@ -135,10 +137,10 @@ Downloads that become code are pinned:
 ## Planned restructuring (roadmap Phase 1)
 
 These are known structural debts, scheduled before the new shell is built:
-- **Large classes:** `MainTrackerWindow` and `SlotTrackerControl` are split into partial files by job, and connections moved into `SessionManager`. Slot state is moving out of the UI node into `SlotModel`: the session's events, chat, hints and goal have moved; the logic engine and the map pack follow, then the services read the model.
+- **Large classes:** `MainTrackerWindow` and `SlotTrackerControl` are split into partial files by job, and connections moved into `SessionManager`. Slot state is moving out of the UI node into `SlotModel`: the session's events, chat, hints, goal and logic have moved; the map pack follows, then the services read the model.
 - **Re-parenting:** the Cheese and Sphere tabs and Properties follow their events through `TreeSubscriptions` (made on entering the tree, removed on leaving it), so they can be moved (docking, pop-outs); the UI test proves it. A slot's views are pushed their updates by the slot, so they can move too, and the slot's own panel ends only through `EndSlot()` (the slot replaced or deleted, or the panel freed with the window), never by leaving the tree.
 - **Tools** are one list (`Tool`); the new shell will build its activity bar, menus and panels from it.
 - **Coalesced refreshes:** one refresh per frame, with hidden views skipped.
 - **One engine process per multiworld** instead of per slot.
 
-Done in Phase 1 so far: the Godot-free `AP_Atlas.Core` library with unit tests, `SessionManager`, `TreeSubscriptions`, the tool list, and the UI test.
+Done in Phase 1 so far: the Godot-free `AP_Atlas.Core` library with unit tests, `SessionManager`, `TreeSubscriptions`, the tool list, `SlotModel` with the slot's logic, the fake logic engine, and the UI test.

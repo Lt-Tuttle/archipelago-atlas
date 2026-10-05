@@ -36,10 +36,13 @@ namespace AP_Atlas.Core.EngineSetup
 
         public string Describe() => Mode == EngineMode.Portable ? "Atlas portable engine" : $"Archipelago install at {Root}";
 
+        /// <summary>The Python that runs the portable engine's components: its own, or the UI test's stand-in (<see cref="AtlasEngine.TestPython"/>).</summary>
+        private static string ComponentPython => AtlasEngine.TestPython ?? AtlasEngine.PythonExe;
+
         /// <summary>Whether the engine's program files are present (it can start, though a tracker may still be missing).</summary>
         public bool CanLaunch =>
             Mode == EngineMode.Portable
-                ? File.Exists(AtlasEngine.PythonExe) && File.Exists(Path.Combine(Root, "Utils.py")) && File.Exists(AtlasEngine.RunnerPath)
+                ? File.Exists(ComponentPython) && File.Exists(Path.Combine(Root, "Utils.py")) && File.Exists(AtlasEngine.RunnerPath)
                 : !string.IsNullOrEmpty(Root) && File.Exists(Path.Combine(Root, "ArchipelagoLauncher.exe"));
 
         /// <summary>Where Atlas installs apworlds (the bridge, the tracker, games). Never created outside a real install.</summary>
@@ -99,7 +102,7 @@ namespace AP_Atlas.Core.EngineSetup
             if (Mode == EngineMode.Portable)
             {
                 // -u: unbuffered; -X utf8: UTF-8 pipes whatever the system code page is.
-                info = new ProcessStartInfo { FileName = AtlasEngine.PythonExe, WorkingDirectory = Root };
+                info = new ProcessStartInfo { FileName = ComponentPython, WorkingDirectory = Root };
                 foreach (var arg in new[] { "-u", "-X", "utf8", AtlasEngine.RunnerPath, Root, component }) info.ArgumentList.Add(arg);
             }
             else

@@ -50,6 +50,12 @@ jobs:
         with:
           global-json-file: global.json
 
+      # The tests run the engine's runner and the fake logic engine on the Python the portable engine uses (3.12).
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
       - name: Build
         working-directory: AP_Atlas_Source
         run: dotnet build AP_Atlas.sln -nologo

@@ -313,7 +313,7 @@ public class EngineRunnerTests
     public async Task Archipelagos_cache_and_temporary_files_stay_in_the_engine_folder()
     {
         var ct = TestContext.Current.CancellationToken;
-        string? python = await PythonAsync(ct);
+        string? python = await TestEnvironment.PythonAsync(ct);
         if (python == null)
         {
             Assert.Skip("Python isn't installed here (CI runs this test).");
@@ -326,7 +326,7 @@ public class EngineRunnerTests
         string outside = Path.Combine(dir.Path, "outside");
         Directory.CreateDirectory(Path.Combine(outside, "Temp"));
         Directory.CreateDirectory(Path.Combine(archipelago, "worlds"));
-        File.Copy(RepoFile("AP_Atlas_Source", "Scripts", "Core", "Engine", "Python", "atlas_run.py"), Path.Combine(engine, "atlas_run.py"));
+        File.Copy(TestEnvironment.RepoFile("AP_Atlas_Source", "Scripts", "Core", "Engine", "Python", "atlas_run.py"), Path.Combine(engine, "atlas_run.py"));
         // Something asks for the temp folder before the runner sets it up, and Python keeps that first answer.
         File.WriteAllText(Path.Combine(archipelago, "ModuleUpdate.py"), """
             import tempfile
@@ -374,34 +374,5 @@ public class EngineRunnerTests
             Assert.StartsWith(engine + Path.DirectorySeparatorChar, (string?)paths[name]);
         Assert.Empty(Directory.GetFiles(outside, "*", SearchOption.AllDirectories));
         Assert.Equal(new[] { Path.Combine(outside, "Temp") }, Directory.GetDirectories(outside, "*", SearchOption.AllDirectories));
-    }
-
-    /// <summary>A Python on this computer that runs, or null (the Windows Store alias exists even without Python).</summary>
-    private static async Task<string?> PythonAsync(CancellationToken ct)
-    {
-        try
-        {
-            var info = new ProcessStartInfo("python") { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
-            foreach (string arg in new[] { "-c", "import sys; print(sys.executable)" }) info.ArgumentList.Add(arg);
-            using var process = Process.Start(info);
-            if (process == null) return null;
-            string path = (await process.StandardOutput.ReadToEndAsync(ct)).Trim();
-            await process.WaitForExitAsync(ct).WaitAsync(TimeSpan.FromSeconds(30), ct);
-            return process.ExitCode == 0 && File.Exists(path) ? path : null;
-        }
-        catch (System.ComponentModel.Win32Exception)
-        {
-            return null; // no python on the PATH
-        }
-    }
-
-    private static string RepoFile(params string[] parts)
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-        {
-            string candidate = Path.Combine(new[] { dir.FullName }.Concat(parts).ToArray());
-            if (File.Exists(candidate)) return candidate;
-        }
-        throw new FileNotFoundException("Couldn't find " + Path.Combine(parts) + " above the test folder.");
     }
 }
