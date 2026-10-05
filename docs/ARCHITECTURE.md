@@ -25,8 +25,8 @@ MainTrackerWindow (the shell)
 
 | Folder | What's there |
 |---|---|
-| `MainTrackerWindow.cs` | **The shell:**<br>• Menus, the tab strip, the slot cards, the explorer, the terminal (chat and logs), toasts, theme and fonts.<br>• The Connections editor, connecting and reconnecting.<br>• The race-mode UI. |
-| `Core/SlotTrackerControl.cs` | **Everything about one connected slot:**<br>• Its session events.<br>• Its logic engine, map pack and Lua script queue.<br>• The Logic Tracker, Item History and Chat views.<br>• Queries for Properties. |
+| `MainTrackerWindow*.cs` | **The shell**, in partial files:<br>• `MainTrackerWindow.cs`: the fields, startup (`_Ready`), shutdown and the Properties host.<br>• `.Layout`: the panels, theme and fonts.<br>• `.Notices`: toasts, failure notices and the logs.<br>• `.Connections`: connecting, careful reconnects and open sessions.<br>• `.Profiles`: the multiworld editor.<br>• `.Sidebar`: the slot cards.<br>• `.Views`: the tabs, explorer, content stage and terminal.<br>• `.Windows`: the Pack Doctor, Cheese, Sphere, Privacy, engine and race-mode windows. |
+| `Core/SlotTrackerControl*.cs` | **Everything about one connected slot**, in partial files:<br>• `SlotTrackerControl.cs`: startup, its session events and the queries Properties uses.<br>• `.Race`: race mode.<br>• `.Apworld`: matching the seed's apworld version.<br>• `.MapPack`: the pack, game names, its index and the pack's scripts.<br>• `.Logic`: the logic engine.<br>• `.LogicView`, `.History`, `.Chat`: its views. |
 | `Core/` | **Infrastructure:**<br>• `DataManager` (settings and profiles), `SafeFile` (crash-safe saves), `Logger`, `CrashGuard`, `Async` (work nobody awaits).<br>• `Annotations` (notes, flags, special items, exclusions), `RaceRules`, `ThemeColors`, `Inspect`.<br>• `YamlExclusions`, `AtlasVersion`. |
 | `Core/` (safety) | **Protections:**<br>• `PoliteHttp`: every web request.<br>• `GitHubApi`: GitHub's rules on top of it.<br>• `ExternalLinks`: the only way to open links and folders.<br>• `Permissions`: what the user allowed.<br>• `Secrets`: DPAPI encryption. |
 | `Core/Engine/` | **The Atlas Engine:**<br>• `AtlasEngine`: setup of the portable engine (Python, Archipelago, Universal Tracker, packages), health checks, rollback, and the user's own install with their consent.<br>• `EngineInstall`, `EngineDownloader`, `ProcessJob` (engine processes close with Atlas).<br>• `ApworldSources`: apworld versions, matched to each seed.<br>• `SeedVerifier`, `GameSweep`.<br>• `Python/`: the bridge (`atlas_bridge.py`) and the portable runner. |
@@ -107,7 +107,7 @@ Downloads that become code are pinned:
 ## Planned restructuring (roadmap Phase 1)
 
 These are known structural debts, scheduled before the new shell is built:
-- **Large classes:** `MainTrackerWindow` (about 3000 lines) and `SlotTrackerControl` (about 2900 lines) will be split. Slot state moves out of the UI node into a `SlotModel`, and connections into a `SessionManager`.
+- **Large classes:** `MainTrackerWindow` and `SlotTrackerControl` are split into partial files by job. Next, slot state moves out of the UI node into a `SlotModel`, and connections into a `SessionManager`.
 - **Re-parenting:** views will subscribe in `_EnterTree` and unsubscribe in `_ExitTree`, so they can be re-parented (docking, pop-outs).
 - **Coalesced refreshes:** one refresh per frame, with hidden views skipped.
 - **A Godot-free `AP_Atlas.Core` library** with unit tests.
