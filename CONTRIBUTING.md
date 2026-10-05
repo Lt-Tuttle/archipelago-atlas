@@ -36,7 +36,7 @@ You need:
 |---|---|
 | Build | `dotnet build AP_Atlas_Source/AP_Atlas.sln` |
 | Run | `Launch_The_Archipelago_Atlas.bat` |
-| Self-test | `AP_Atlas_Source/Tools/run_selftest.ps1` (builds, then tests in a new, empty scratch folder; never your real data). Set `ATLAS_SELFTEST_SETUP=1` to also set up the portable engine from nothing (about 55 MB of downloads), after changing engine setup |
+| Self-test and UI test | `AP_Atlas_Source/Tools/run_selftest.ps1` (builds, then runs the self-test and the UI test, each in a new, empty scratch folder; never your real data). Set `ATLAS_SELFTEST_SETUP=1` to also set up the portable engine from nothing (about 55 MB of downloads), after changing engine setup |
 | Guard rails | `AP_Atlas_Source/Tools/check_guards.ps1` |
 | Unit tests | `dotnet test --solution AP_Atlas_Source/AP_Atlas.sln` (`AP_Atlas.Core.Tests`: fast, no Godot) |
 | Formatting | `dotnet format whitespace AP_Atlas_Source/AP_Atlas.sln` (C# files use CRLF line endings) |
@@ -62,7 +62,7 @@ New code that doesn't need Godot belongs in `AP_Atlas.Core`, with tests. The vis
   | Web requests | `PoliteHttp` (`GitHubApi` for GitHub) |
   | Opening links and folders | `ExternalLinks` |
   | Anything outside Atlas's folder, or a new site | `Permissions` with `PermissionDialog` |
-  | Connecting to an Archipelago server | `AtlasSessions.Create` (keeps the games' names in Atlas's folder) |
+  | Connecting to an Archipelago server | `SessionManager` (one connection at a time, time limits, careful reconnects; its sessions keep the games' names in Atlas's folder) |
   | Starting a program | `EngineInstall.StartInfo` or `AtlasEngine.SetupStartInfo` (keep its temporary files and caches in Atlas's folder) |
   | Secrets | `Secrets` |
   | Work nobody awaits (button handlers, background checks) | `Async.Fire(task, "what it's doing")`, never `async void` or `_ = …` |
@@ -74,7 +74,7 @@ New code that doesn't need Godot belongs in `AP_Atlas.Core`, with tests. The vis
   - Files that start with `#nullable disable` predate the checks. When you rework one, annotate it and remove that line, then lower the limit in `Tools/check_guards.ps1`.
   - The guard rails stop the number of such files from growing.
 - **Async code:** the build runs Microsoft's async analyzers. An unobserved task, `async void`, a blocking wait on unfinished work, or `ContinueWith` without a `TaskScheduler` stops the build. Methods that return a task end in `Async`.
-- **Tests:** every new protection gets a check in `Scripts/Core/SelfTest*.cs` or `AP_Atlas.Core.Tests`, and tests never touch real data. Connection tests use `FakeArchipelagoServer`, never a real server.
+- **Tests:** every new protection gets a check in `Scripts/Core/SelfTest*.cs` or `AP_Atlas.Core.Tests`, and tests never touch real data. Connection tests use `FakeArchipelagoServer`, never a real server. What the window does with them gets a scenario in `MainTrackerWindow.UiTest.cs`.
 - **Nothing outside Atlas's folder:** the self-test and the visual check fail if a run writes anything to the user's folders or the temp folder (the footprint check). Godot's log and shader cache stay off in `project.godot`.
 - **Updating Archipelago.MultiClient.Net:** `AtlasSessions` relies on the library's internal data cache. The unit tests check that, and that the library reaches nothing else on the PC. If they fail, look at what changed before using the new version.
 - **Godot's `.uid` files:** Godot makes one next to each script (`Foo.cs.uid`). Commit it with the script.

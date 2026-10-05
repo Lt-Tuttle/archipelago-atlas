@@ -370,7 +370,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     private void UpdateSlotStatuses()
     {
         using var __perf = AP_Atlas.Core.PerfMonitor.Measure("Update slot status lights");
-        CheckForDroppedSessions();
+        _sessions?.CheckForDrops();
 
         _spinnerIndex = (_spinnerIndex + 1) % _spinnerFrames.Length;
         // Also update sidebar buttons directly

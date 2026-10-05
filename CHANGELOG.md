@@ -50,12 +50,20 @@ Development toward the first public beta, 0.1.0.
   - A footprint check: the self-test and the visual check give Atlas empty stand-ins for your user folders and temp folder, and fail if anything is written to them. CI runs it on every push.
   - Unit tests read the whole connection library and fail if it can reach files, folders, the registry or other programs anywhere except its data cache, which Atlas replaces. A library update that reaches further can't ship unnoticed.
   - A fake Archipelago server for tests, on the test computer only.
+  - A UI test (`ATLAS_UITEST`): Atlas builds its window and drives it the way a user would, against the fake server: connecting a slot, a dropped connection coming back, disconnecting. `run_selftest.ps1` runs it after the self-test, and CI runs that.
 - **Settings → Privacy & permissions:** everything you've allowed Atlas to do without asking, and every apworld source you trust, each with a way to take it back.
 
 ### Changed
 - **Platform:** Atlas now runs on Godot 4.7.2 and .NET 10 (it was on Godot 4.3 and .NET 8, whose support ends in November 2026). Every screen was compared before and after, pixel by pixel.
 - **Lighter at rest:** Atlas redraws only when something on screen changes, so it uses next to no CPU or graphics card while you're not using it.
 - **Fewer requests to the server:** a slot now takes its game's names from what the connection has already stored, instead of asking the server for them a second time.
+- **Connections** are now one tested part of Atlas (`SessionManager`), with the same rules as before:
+  - One connection at a time, also while an automatic reconnect is running (before, the two could overlap).
+  - A login has 10 seconds; a late one is closed, so nothing is left open on the server.
+  - Reconnects wait 15 s, 30 s, 1, 2, 5 and 10 minutes (±20%), then stop. A refusal stops them at once.
+  - Closing Atlas closes every connection properly.
+  - Its tests run against a fake Archipelago server: time limits, refusals, servers that are down, drops, the last try, and closing.
+- The automatic reconnect setting now says "about 20 minutes", which is how long its tries take. It said 30.
 - **Saving:** dragging a splitter or moving a map no longer writes your settings to disk on every mouse movement. They're saved once you stop, and when Atlas closes.
 - **Renderer:** Atlas now draws with Godot's Compatibility renderer (OpenGL 3.3, with a Direct3D fallback built into Godot), which runs on more graphics cards. On the test PC it starts about a quarter faster and uses about a third less video memory, and every screen looks the same.
 - **Atlas asks before going outside its folder:**
@@ -89,6 +97,8 @@ Development toward the first public beta, 0.1.0.
   - **The connection library** kept every game's names (data packages) in Archipelago's shared cache, `%LocalAppData%\Archipelago\Cache`, and read and wrote it on every connection. Atlas now keeps them in its own folder (`datapackage_cache`). A server still sends each game's names only once per version, and versions unused for three months are removed.
   - **Godot** kept a log, with a copy of every line Atlas logs, and a shader cache in `%APPDATA%\Godot\app_userdata\The Archipelago Atlas`. Both are off, and Godot's own errors and warnings now go to Atlas's log. Godot still creates that folder, empty, when it starts; it has no setting to stop that.
   - **The Atlas Engine** put its temporary files, Archipelago's cache and pip's downloads in `%TEMP%` and `%LocalAppData%`. They now stay in the engine's folder. pip also ignores your own pip settings now, so they can't change what Atlas installs.
+- **Deleting a multiworld** while one of its slots was waiting to reconnect could bring that slot back, for a multiworld that no longer existed. Deleting now calls off its reconnects.
+- **A log file that can't be written** (its folder deleted while Atlas runs, a full disk) is now reported once, not on every line, and logging carries on when it can.
 - **Files held by another program:**
   - If an antivirus or sync tool (OneDrive, Dropbox) was reading your settings or profiles at the moment Atlas read them, Atlas took the file for damaged and put its older backup in its place. Your latest changes were lost.
   - Now Atlas reads the file again until it's free. If it stays held, Atlas carries on without it, says so, and won't save over it.

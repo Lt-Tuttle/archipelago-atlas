@@ -4,9 +4,13 @@ using Godot;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using Archipelago.MultiClient.Net;
+using AP_Atlas.Core.Connections;
 
-/// <summary>Connections: connecting slots, careful reconnects, tracking open sessions, and closing them when Atlas closes.</summary>
+/// <summary>
+/// Connections, as the window shows them: connecting slots (one at a time, with the overlay), building a slot's view once
+/// it has logged in, and reporting drops and reconnects. The connections themselves (time limits, drops, careful
+/// reconnects, closing) are AP_Atlas.Core's SessionManager.
+/// </summary>
 public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
 {
     private bool _shuttingDown = false;
@@ -31,17 +35,13 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             DataManager.SaveProfiles(_profiles);
             if (_globalStatusLabel != null) _globalStatusLabel.Text = "Disconnecting sessions...";
             LogToSystem("[color=yellow]Shutting down... Disconnecting active slots...[/color]");
-            // Close every session we opened (connected slots and any still connecting) with a proper close frame,
-            // so the server drops them immediately instead of waiting for a timeout.
-            ArchipelagoSession[] sessions;
-            lock (_openSessions) sessions = _openSessions.ToArray();
-            var disconnectTasks = sessions.Select(CloseSessionAsync).ToList();
-            if (disconnectTasks.Count > 0)
+            // Close every session (connected slots and any still connecting) with a proper close frame, so the server
+            // drops them at once instead of waiting for a timeout.
+            if (_sessions != null)
             {
-                var all = Task.WhenAll(disconnectTasks);
-                await Task.WhenAny(all, Task.Delay(3000));
-                if (all.IsCompleted) LogToSystem($"[color=yellow]Closed {disconnectTasks.Count} server connection(s).[/color]");
-                else AP_Atlas.Core.Logger.LogWarning("Some server connections did not confirm closing within 3 seconds; the OS closes them as the app exits.");
+                var (count, inTime) = await _sessions.CloseAllAsync(TimeSpan.FromSeconds(3));
+                if (count > 0 && inTime) LogToSystem($"[color=yellow]Closed {count} server connection(s).[/color]");
+                else if (count > 0) AP_Atlas.Core.Logger.LogWarning("Some server connections did not confirm closing within 3 seconds; the OS closes them as the app exits.");
             }
         }
         catch (Exception ex)
@@ -56,148 +56,83 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     /// <summary>Slots with a login in flight, keyed by SlotKey(profileId, slotName).</summary>
     private System.Collections.Generic.HashSet<string> _connectingSlots = new System.Collections.Generic.HashSet<string>();
     private static string SlotKey(string profileId, string slotName) => profileId + "|" + slotName;
-    // Every session this app has opened and not yet closed, including ones still connecting or logging in,
-    // so shutdown can close all of them (not just the slots that made it into the UI).
-    private readonly HashSet<ArchipelagoSession> _openSessions = new HashSet<ArchipelagoSession>();
-    /// <summary>Sessions that finished logging in (only those are reconnected when they drop). Guarded by _openSessions.</summary>
-    private readonly HashSet<ArchipelagoSession> _loggedInSessions = new HashSet<ArchipelagoSession>();
-    private readonly Dictionary<ArchipelagoSession, (MultiworldProfile Profile, string SlotName)> _sessionOwners = new Dictionary<ArchipelagoSession, (MultiworldProfile, string)>();
-    /// <summary>
-    /// Catches connections that died without a "socket closed" event (a server that crashed or lost power only
-    /// produces a socket error): every half second, a logged-in session that's no longer connected counts as dropped.
-    /// </summary>
-    private void CheckForDroppedSessions()
+    /// <summary>Every connection to an Archipelago server: connecting, drops, careful reconnects and closing.</summary>
+    private SessionManager _sessions;
+
+    /// <summary>Starts the connections and shows what they report (once, from _Ready, after the settings load).</summary>
+    private void StartSessions()
+    {
+        _sessions = new SessionManager(DataManager.DataPackages, UiTestRequested ? UiTestSessions : null) { AutoReconnect = _appSettings.AutoReconnect };
+        _sessions.Dropped += (slot, reason) => AP_Atlas.UI.Ui.Defer(this, () => OnSessionDropped(slot, reason));
+        _sessions.ReconnectScheduled += (slot, attempt, tries, wait) => AP_Atlas.UI.Ui.Defer(this, () => OnReconnectScheduled(slot, attempt, tries, wait));
+        _sessions.Reconnected += connected => AP_Atlas.UI.Ui.Defer(this, () => OnReconnected(connected));
+        _sessions.ReconnectStopped += (slot, refusal) => AP_Atlas.UI.Ui.Defer(this, () => OnReconnectStopped(slot, refusal));
+        _sessions.SocketError += (slot, message) => AP_Atlas.UI.Ui.Defer(this, () =>
+        {
+            LogToSystem("[color=red]Socket Error (" + slot.SlotName + "):[/color] " + message);
+            if (_globalStatusLabel != null) _globalStatusLabel.Text = "Socket Error: " + message;
+        });
+    }
+
+    private MultiworldProfile ProfileById(string profileId) => _profiles?.FirstOrDefault(p => p.Id == profileId);
+
+    private void OnSessionDropped(SlotId slot, string reason)
     {
         if (_shuttingDown) return;
-        List<(MultiworldProfile, string)> dropped = null;
-        lock (_openSessions)
-        {
-            foreach (var session in _loggedInSessions.ToList())
-            {
-                bool connected;
-                try { connected = session.Socket.Connected; } catch { connected = false; }
-                if (connected) continue;
-                _loggedInSessions.Remove(session);
-                _openSessions.Remove(session);
-                if (_sessionOwners.Remove(session, out var owner)) (dropped ??= new()).Add(owner);
-            }
-        }
-        if (dropped == null) return;
-        foreach (var (profile, slotName) in dropped)
-        {
-            LogToSystem($"[color=yellow]Connection to {slotName} is gone (no close from the server).[/color]");
-            OnSessionDropped(profile, slotName);
-        }
+        LogToSystem($"[color=yellow]Connection to {slot.SlotName} dropped ({reason}).[/color]");
+        if (_globalStatusLabel != null) _globalStatusLabel.Text = "Disconnected: " + slot.SlotName;
+        UpdateSidebar();
+        if (_sessions.AutoReconnect) return;
+        var profile = ProfileById(slot.ProfileId);
+        if (profile != null) ShowToast($"Connection to {slot.SlotName} was lost.", Godot.Colors.Orange, "Reconnect", () => OnConnectSlotPressed(slot.SlotName, profile));
     }
-    private readonly Dictionary<string, int> _reconnectAttempts = new Dictionary<string, int>();
-    private readonly Dictionary<string, string> _lastLoginErrors = new Dictionary<string, string>();
-    /// <summary>
-    /// Waits between reconnect tries, about 30 minutes in all. Deliberately short and slow: a connection attempt wakes a
-    /// sleeping archipelago.gg room, so Atlas must never keep a closed room busy with endless retries.
-    /// </summary>
-    private static readonly int[] ReconnectDelaysSeconds = { 15, 30, 60, 120, 300, 600 };
-    private void OnSessionDropped(MultiworldProfile profile, string slotName)
+
+    private void OnReconnectScheduled(SlotId slot, int attempt, int tries, TimeSpan wait)
     {
         if (_shuttingDown) return;
-        if (!_appSettings.AutoReconnect)
+        LogToSystem($"[color=orange]Reconnecting {slot.SlotName} in {wait.TotalSeconds:0} s[/color] (try {attempt} of {tries}).");
+        if (attempt == 1) ShowToast($"Connection to {slot.SlotName} lost. Reconnecting automatically…", Godot.Colors.Orange);
+    }
+
+    private void OnReconnected(ConnectedSlot connected)
+    {
+        var profile = ProfileById(connected.Slot.ProfileId);
+        if (profile == null || _shuttingDown)
         {
-            ShowToast($"Connection to {slotName} was lost.", Godot.Colors.Orange, "Reconnect", () => OnConnectSlotPressed(slotName, profile));
+            // The multiworld was deleted (or Atlas is closing) while it reconnected.
+            AP_Atlas.Core.Async.Fire(_sessions.DisconnectAsync(connected.Slot), "closing a server connection", tellUser: false);
             return;
         }
-        ScheduleReconnect(profile, slotName);
+        BuildSlotTracker(profile, connected);
+        LogToSystem($"[color=lime]Reconnected {connected.Slot.SlotName}.[/color]");
+        ShowToast($"Reconnected {connected.Slot.SlotName}.", Godot.Colors.LimeGreen);
     }
-    private void ScheduleReconnect(MultiworldProfile profile, string slotName)
+
+    private void OnReconnectStopped(SlotId slot, string refusal)
     {
-        string key = SlotKey(profile.Id, slotName);
-        int attempt = _reconnectAttempts.TryGetValue(key, out var a) ? a : 0;
-        if (attempt >= ReconnectDelaysSeconds.Length)
+        if (_shuttingDown) return;
+        if (refusal != null)
         {
-            _reconnectAttempts.Remove(key);
-            LogToSystem($"[color=orange]Stopped trying to reconnect {slotName} after {attempt} tries over about 30 minutes.[/color] Reconnect it when the server is back.");
-            ShowToast($"{slotName} couldn't reconnect. The server may be down or the room closed.", Godot.Colors.Orange, "Try again", () => OnConnectSlotPressed(slotName, profile));
-            return;
+            // The server answered and refused (slot gone, wrong password, room changed): retrying won't help.
+            LogToSystem($"[color=red]Stopped reconnecting {slot.SlotName}: the server refused the login ({refusal}).[/color]");
+            ShowToast($"{slot.SlotName} can't reconnect: {refusal}", Godot.Colors.Salmon);
         }
-        _reconnectAttempts[key] = attempt + 1;
-        // ±20% jitter, so many trackers that lost the same server don't all come back in the same second.
-        double delay = ReconnectDelaysSeconds[attempt] * (0.8 + System.Random.Shared.NextDouble() * 0.4);
-        LogToSystem($"[color=orange]Connection to {slotName} lost.[/color] Reconnecting in {delay:0} s (try {attempt + 1} of {ReconnectDelaysSeconds.Length}).");
-        if (attempt == 0) ShowToast($"Connection to {slotName} lost. Reconnecting automatically…", Godot.Colors.Orange);
-        GetTree().CreateTimer(delay).Timeout += () => TryReconnect(profile, slotName);
-    }
-    private bool IsSlotLive(string profileId, string slotName) =>
-        ActiveSlotNodes().OfType<SlotTrackerControl>().Any(s => IsInstanceValid(s) && s.ProfileId == profileId && s.SlotName == slotName && s.Session?.Socket?.Connected == true);
-    private void TryReconnect(MultiworldProfile profile, string slotName) => AP_Atlas.Core.Async.Fire(TryReconnectAsync(profile, slotName), $"reconnecting {slotName}");
-    private async Task TryReconnectAsync(MultiworldProfile profile, string slotName)
-    {
-        string key = SlotKey(profile.Id, slotName);
-        if (_shuttingDown || !_reconnectAttempts.ContainsKey(key)) return; // cancelled: the user connected or disconnected
-        if (IsSlotLive(profile.Id, slotName)) { _reconnectAttempts.Remove(key); return; }
-        if (_isConnectingSlot || _connectingSlots.Contains(key))
+        else
         {
-            GetTree().CreateTimer(5).Timeout += () => TryReconnect(profile, slotName);
-            return;
+            LogToSystem($"[color=orange]Stopped trying to reconnect {slot.SlotName} after {_sessions.ReconnectTries} tries over about 20 minutes.[/color] Reconnect it when the server is back.");
+            var profile = ProfileById(slot.ProfileId);
+            if (profile != null)
+                ShowToast($"{slot.SlotName} couldn't reconnect. The server may be down or the room closed.", Godot.Colors.Orange, "Try again", () => OnConnectSlotPressed(slot.SlotName, profile));
         }
-        _lastLoginErrors.Remove(key);
-        try { await ConnectSlotInternalAsync(slotName, profile); }
-        catch (Exception ex) { AP_Atlas.Core.Logger.LogWarning($"Reconnect of {slotName} failed: {ex.Message}"); }
-        // The login result is applied on the main thread just after; look once it has been.
-        GetTree().CreateTimer(1.0).Timeout += () =>
-        {
-            if (_shuttingDown || !_reconnectAttempts.ContainsKey(key)) return;
-            if (IsSlotLive(profile.Id, slotName))
-            {
-                _reconnectAttempts.Remove(key);
-                LogToSystem($"[color=lime]Reconnected {slotName}.[/color]");
-                ShowToast($"Reconnected {slotName}.", Godot.Colors.LimeGreen);
-                return;
-            }
-            if (_lastLoginErrors.TryGetValue(key, out var errors))
-            {
-                // The server answered and refused (slot gone, wrong password, room changed): retrying won't help.
-                _reconnectAttempts.Remove(key);
-                LogToSystem($"[color=red]Stopped reconnecting {slotName}: the server refused the login ({errors}).[/color]");
-                ShowToast($"{slotName} can't reconnect: {errors}", Godot.Colors.Salmon);
-                return;
-            }
-            ScheduleReconnect(profile, slotName);
-        };
-    }
-    private void TrackSession(ArchipelagoSession session)
-    {
-        lock (_openSessions) _openSessions.Add(session);
-    }
-    /// <summary>Closes a session's socket with a normal close frame and forgets it. Safe to call more than once.</summary>
-    private Task CloseSessionAsync(ArchipelagoSession session)
-    {
-        if (session == null) return Task.CompletedTask;
-        lock (_openSessions)
-        {
-            _loggedInSessions.Remove(session);
-            _sessionOwners.Remove(session);
-            if (!_openSessions.Remove(session)) return Task.CompletedTask;
-        }
-        try
-        {
-            return session.Socket.DisconnectAsync() ?? Task.CompletedTask;
-        }
-        catch (Exception ex)
-        {
-            GD.PrintErr($"Error closing session: {ex.Message}");
-            return Task.CompletedTask;
-        }
+        UpdateSidebar();
     }
     private void DisconnectSlot(string profileId, string slotName)
     {
-        _reconnectAttempts.Remove(SlotKey(profileId, slotName)); // the user chose to disconnect: no automatic reconnect
+        // The user chose to disconnect: the session closes properly, and no automatic reconnect follows.
+        if (_sessions != null) AP_Atlas.Core.Async.Fire(_sessions.DisconnectAsync(new SlotId(profileId, slotName)), "closing a server connection", tellUser: false);
         if (_terminalStage == null) return;
-        foreach (Node n in ActiveSlotNodes())
-        {
-            if (n is SlotTrackerControl slot && slot.ProfileId == profileId && slot.SlotName == slotName)
-            {
-                LogToSystem("[color=yellow]Disconnected slot: " + slotName + "[/color]");
-                AP_Atlas.Core.Async.Fire(CloseSessionAsync(slot.Session), "closing a server connection", tellUser: false);
-            }
-        }
+        if (ActiveSlotNodes().OfType<SlotTrackerControl>().Any(slot => slot.ProfileId == profileId && slot.SlotName == slotName))
+            LogToSystem("[color=yellow]Disconnected slot: " + slotName + "[/color]");
         DataManager.SaveProfiles(_profiles);
         AP_Atlas.UI.Ui.Defer(this, UpdateSidebar);
     }
@@ -256,7 +191,6 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             foreach (var slotName in _selectedProfile.Slots)
             {
                 if (string.IsNullOrWhiteSpace(slotName)) continue;
-                _reconnectAttempts.Remove(SlotKey(_selectedProfile.Id, slotName));
                 ShowConnectingOverlay($"CONNECTING TO\n{slotName}...");
                 await ConnectSlotInternalAsync(slotName, _selectedProfile);
                 await ToSignal(GetTree().CreateTimer(1.5f), "timeout");
@@ -272,7 +206,6 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     private async Task OnConnectSlotPressedAsync(string slotName, MultiworldProfile profile)
     {
         if (_isConnectingSlot) return;
-        _reconnectAttempts.Remove(SlotKey(profile.Id, slotName)); // the user took over
         _isConnectingSlot = true;
         try
         {
@@ -287,7 +220,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     }
     private async System.Threading.Tasks.Task<bool> ConnectSlotInternalAsync(string slotName, MultiworldProfile profile)
     {
-        if (_shuttingDown) return false;
+        if (_shuttingDown || _sessions == null) return false;
         if (string.IsNullOrWhiteSpace(profile.ServerUrl))
         {
             _statusLabel.Text = "Status: Server URL cannot be empty";
@@ -308,198 +241,111 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         LogToSystem("[color=cyan]Attempting to connect to " + profile.ServerUrl + " as " + slotName + "...[/color]");
         _connectingSlots.Add(SlotKey(profile.Id, slotName));
         UpdateSidebar();
-        ArchipelagoSession session = null;
+        var login = new SlotLogin(new SlotId(profile.Id, slotName), profile.ServerUrl, string.IsNullOrEmpty(profile.Password) ? null : profile.Password);
+        ConnectResult result;
         try
         {
-            // Through Atlas's session factory, so the games' names are kept in Atlas's folder (see AtlasSessions).
-            session = AP_Atlas.Core.Connections.AtlasSessions.Create(profile.ServerUrl, DataManager.DataPackages);
-            TrackSession(session);
-            var earlyMessages = new List<Archipelago.MultiClient.Net.MessageLog.Messages.LogMessage>();
-            void earlyHandler(Archipelago.MultiClient.Net.MessageLog.Messages.LogMessage msg)
-            {
-                lock (earlyMessages) earlyMessages.Add(msg);
-            }
-            session.MessageLog.OnMessageReceived += earlyHandler;
-            // The server's RoomInfo (sent before login) carries each game's data checksum: kept so the slot can
-            // skip re-downloading names it already has, and compare its apworld version with the seed's.
-            var dataChecksums = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            void roomInfoHandler(Archipelago.MultiClient.Net.ArchipelagoPacketBase packet)
-            {
-                if (packet is Archipelago.MultiClient.Net.Packets.RoomInfoPacket info && info.DataPackageChecksums != null)
-                    lock (dataChecksums) foreach (var kv in info.DataPackageChecksums) dataChecksums[kv.Key] = kv.Value;
-            }
-            session.Socket.PacketReceived += roomInfoHandler;
-            session.Socket.ErrorReceived += (ex, msg) =>
-            {
-                LogToSystem("[color=red]Socket Error (" + slotName + "):[/color] " + msg);
-                if (_globalStatusLabel != null)
-                {
-                    AP_Atlas.UI.Ui.Defer(_globalStatusLabel, () => _globalStatusLabel.Text = "Socket Error: " + msg);
-                }
-            };
-            session.Socket.SocketClosed += (reason) =>
-            {
-                LogToSystem("[color=yellow]Socket Closed (" + slotName + "):[/color] " + reason);
-                if (_globalStatusLabel != null)
-                {
-                    AP_Atlas.UI.Ui.Defer(_globalStatusLabel, () => _globalStatusLabel.Text = "Disconnected: " + reason);
-                }
-                // Atlas forgets a session before closing it on purpose, so one still tracked here dropped by itself.
-                bool dropped;
-                lock (_openSessions)
-                {
-                    dropped = _loggedInSessions.Remove(session) && _openSessions.Remove(session);
-                    _sessionOwners.Remove(session);
-                }
-                if (dropped && !_shuttingDown) AP_Atlas.UI.Ui.Defer(this, () => OnSessionDropped(profile, slotName));
-            };
-            var connectTask = Task.Run(() => session.TryConnectAndLogin(
-                "",
-                slotName,
-                Archipelago.MultiClient.Net.Enums.ItemsHandlingFlags.AllItems,
-                new Version(0, 5, 0),
-                // "Tracker": the server treats it like TextOnly (can't send checks) and announces Atlas as "tracking".
-                new[] { "Tracker" },
-                null,
-                profile.Password == "" ? null : profile.Password
-            ));
-            var timeoutTask = Task.Delay(10000);
-            var completedTask = await Task.WhenAny(connectTask, timeoutTask);
-            if (completedTask == timeoutTask)
-            {
-                session.MessageLog.OnMessageReceived -= earlyHandler;
-                AP_Atlas.Core.Async.Fire(CloseSessionAsync(session), "closing a server connection", tellUser: false);
-                // The login may still finish after we gave up on it; close it then too so it isn't left open on the server.
-                AP_Atlas.Core.Async.Fire(connectTask.ContinueWith(t =>
-                {
-                    if (t.IsFaulted)
-                    {
-                        AP_Atlas.Core.Logger.LogDebug($"A connection to {slotName} that had timed out failed afterwards: {t.Exception?.GetBaseException().Message}");
-                        return;
-                    }
-                    if (t.Status == TaskStatus.RanToCompletion && t.Result.Successful)
-                    {
-                        TrackSession(session);
-                        AP_Atlas.Core.Async.Fire(CloseSessionAsync(session), "closing a server connection", tellUser: false);
-                    }
-                }, TaskScheduler.Default), "closing a connection that finished after it timed out", tellUser: false);
-                AP_Atlas.UI.Ui.Defer(this, () =>
-                {
-                    _statusLabel.Text = "Status: Connection Timeout";
-                    _statusLabel.AddThemeColorOverride("font_color", Colors.Red);
-                    if (_globalStatusLabel != null) _globalStatusLabel.Text = "Connection Timeout (" + slotName + ")";
-                    LogToSystem("[color=red]Connection timed out for " + slotName + " after 10 seconds.[/color]");
-                    _connectingSlots.Remove(SlotKey(profile.Id, slotName));
-                    UpdateSidebar();
-                });
-                return false;
-            }
-            var result = await connectTask;
-            AP_Atlas.UI.Ui.Defer(this, () =>
-            {
-                if (_shuttingDown)
-                {
-                    // The app is closing; don't build a slot around this session, just close it.
-                    session.MessageLog.OnMessageReceived -= earlyHandler;
-                    AP_Atlas.Core.Async.Fire(CloseSessionAsync(session), "closing a server connection", tellUser: false);
-                    return;
-                }
-                if (result.Successful)
-                {
-                    lock (_openSessions)
-                    {
-                        _loggedInSessions.Add(session);
-                        _sessionOwners[session] = (profile, slotName);
-                    }
-                    _lastLoginErrors.Remove(SlotKey(profile.Id, slotName));
-                    _statusLabel.Text = "Status: Connected successfully as " + slotName + "!";
-                    _statusLabel.AddThemeColorOverride("font_color", Colors.Green);
-                    if (_globalStatusLabel != null) _globalStatusLabel.Text = "Booting Engine for " + slotName + "...";
-                    LogToSystem("[color=lime]Successfully authenticated as " + slotName + ".[/color]");
-                    var slotData = (result as Archipelago.MultiClient.Net.LoginSuccessful)?.SlotData;
-                    foreach (Node n in ActiveSlotNodes())
-                    {
-                        if (n is SlotTrackerControl oldSlot && oldSlot.ProfileId == profile.Id && oldSlot.SlotName == slotName)
-                        {
-                            if (_currentSelectedSlot == oldSlot) _currentSelectedSlot = null;
-                            AP_Atlas.Core.Async.Fire(CloseSessionAsync(oldSlot.Session), "closing a server connection", tellUser: false);
-                            oldSlot.QueueFree();
-                        }
-                    }
-                    if (!profile.SavedStats.ContainsKey(slotName)) profile.SavedStats[slotName] = new SlotStats();
-                    profile.SavedStats[slotName].GameName = session.ConnectionInfo.Game;
-                    profile.SavedStats[slotName].SlotNumber = session.ConnectionInfo.Slot;
-                    DataManager.SaveProfiles(_profiles);
-                    var slotTracker = new SlotTrackerControl(session, profile.Id, slotName, _appSettings, slotData,
-                        (msg) => { if (_globalStatusLabel != null) _globalStatusLabel.Text = msg; },
-                        (msg) => { LogToDebug(msg, slotName); }
-                    );
-                    session.Socket.PacketReceived -= roomInfoHandler;
-                    lock (dataChecksums) slotTracker.ServerDataChecksums = new Dictionary<string, string>(dataChecksums, StringComparer.OrdinalIgnoreCase);
-                    slotTracker.ResolveOtherSlotLogic = (slot, loc) => ResolveSlotLogic(slotTracker, slot, loc);
-                    slotTracker.ShowToast = ShowToast;
-                    slotTracker.ShowActionToast = ShowToast;
-                    slotTracker.OpenEngineSetup = OpenEngineSetup;
-                    slotTracker.AccuracyChanged += () => _propertiesPanel?.QueueRefresh();
-                    // When this slot's logic moves, hints at its locations change for the other slots of the same multiworld.
-                    slotTracker.StateChanged += () =>
-                    {
-                        foreach (var sibling in SiblingSlots(slotTracker)) sibling.RefreshHints();
-                        _propertiesPanel?.QueueRefresh();
-                    };
-                    _terminalStage.AddChild(slotTracker);
-                    PreMountSlotViews(slotTracker);
-                    session.MessageLog.OnMessageReceived -= earlyHandler;
-                    lock (earlyMessages)
-                    {
-                        if (earlyMessages.Count > 0) slotTracker.InjectEarlyMessages(earlyMessages);
-                    }
-                    _connectingSlots.Remove(SlotKey(profile.Id, slotName));
-                    UpdateSidebar();
-                    _currentSelectedSlot = slotTracker; RefreshContextViews();
-                    _sphereTab?.FollowSlot(profile.Id, slotName);
-                    // Scale just the new slot's text client once its UI is built (not the whole window).
-                    var timer = GetTree().CreateTimer(0.1);
-                    timer.Timeout += () =>
-                    {
-                        if (GodotObject.IsInstanceValid(slotTracker)) SetFontSizeRecursive(slotTracker, _appSettings.ConsoleFontSize);
-                    };
-                }
-                else
-                {
-                    session.MessageLog.OnMessageReceived -= earlyHandler;
-                    AP_Atlas.Core.Async.Fire(CloseSessionAsync(session), "closing a server connection", tellUser: false);
-                    var loginFailure = (Archipelago.MultiClient.Net.LoginFailure)result;
-                    string errs = string.Join(", ", loginFailure.Errors);
-                    // Only a refusal (wrong slot, game, version, password) stops automatic reconnects; a server that
-                    // couldn't be reached just means try again later.
-                    var refusals = (loginFailure.ErrorCodes ?? System.Array.Empty<Archipelago.MultiClient.Net.Enums.ConnectionRefusedError>())
-                        .Where(c => c != Archipelago.MultiClient.Net.Enums.ConnectionRefusedError.UnknownError).ToList();
-                    if (refusals.Count > 0) _lastLoginErrors[SlotKey(profile.Id, slotName)] = errs;
-                    _statusLabel.Text = "Status: Failed to connect:\n" + errs;
-                    _statusLabel.AddThemeColorOverride("font_color", Colors.Red);
-                    if (_globalStatusLabel != null) _globalStatusLabel.Text = "Connection Failed (" + slotName + ")";
-                    LogToSystem(refusals.Count > 0
-                        ? "[color=red]The server refused the login for " + slotName + ":[/color] " + errs
-                        : "[color=orange]Couldn't reach the server for " + slotName + ":[/color] " + errs);
-                    _connectingSlots.Remove(SlotKey(profile.Id, slotName));
-                    UpdateSidebar();
-                }
-            });
+            result = await _sessions.ConnectAsync(login);
         }
-        catch (System.Exception ex)
+        catch (Exception ex)
         {
-            AP_Atlas.Core.Async.Fire(CloseSessionAsync(session), "closing a server connection", tellUser: false);
-            AP_Atlas.UI.Ui.Defer(this, () =>
-            {
-                _statusLabel.Text = "Status: Connection Error:\n" + ex.Message;
-                _statusLabel.AddThemeColorOverride("font_color", Colors.Red);
-                if (_globalStatusLabel != null) _globalStatusLabel.Text = "Connection Error";
-                LogToSystem("[color=red]Exception during connection:[/color] " + ex.Message);
-                _connectingSlots.Remove(SlotKey(profile.Id, slotName));
-                UpdateSidebar();
-            });
+            // SessionManager reports failures as results; anything else is a bug, shown like a failed connection.
+            AP_Atlas.Core.Logger.LogError($"Connecting {slotName} failed unexpectedly: {ex}");
+            result = new ConnectResult(ConnectOutcome.Failed, ex.Message);
         }
+        AP_Atlas.UI.Ui.Defer(this, () => ShowConnectResult(profile, slotName, result));
         return true;
+    }
+
+    private void ShowConnectResult(MultiworldProfile profile, string slotName, ConnectResult result)
+    {
+        if (result.Outcome == ConnectOutcome.Connected && !_shuttingDown)
+        {
+            BuildSlotTracker(profile, result.Slot);
+            return;
+        }
+        if (result.Slot != null) AP_Atlas.Core.Async.Fire(_sessions.DisconnectAsync(result.Slot.Slot), "closing a server connection", tellUser: false);
+        _connectingSlots.Remove(SlotKey(profile.Id, slotName));
+        UpdateSidebar();
+        if (_shuttingDown || result.Outcome == ConnectOutcome.Cancelled) return;
+        _statusLabel.AddThemeColorOverride("font_color", Colors.Red);
+        switch (result.Outcome)
+        {
+            case ConnectOutcome.TimedOut:
+                _statusLabel.Text = "Status: Connection Timeout";
+                if (_globalStatusLabel != null) _globalStatusLabel.Text = "Connection Timeout (" + slotName + ")";
+                LogToSystem("[color=red]Connection timed out for " + slotName + ":[/color] " + result.Message);
+                break;
+            case ConnectOutcome.Refused:
+                _statusLabel.Text = "Status: Failed to connect:\n" + result.Message;
+                if (_globalStatusLabel != null) _globalStatusLabel.Text = "Connection Failed (" + slotName + ")";
+                LogToSystem("[color=red]The server refused the login for " + slotName + ":[/color] " + result.Message);
+                break;
+            case ConnectOutcome.Unreachable:
+                _statusLabel.Text = "Status: Failed to connect:\n" + result.Message;
+                if (_globalStatusLabel != null) _globalStatusLabel.Text = "Connection Failed (" + slotName + ")";
+                LogToSystem("[color=orange]Couldn't reach the server for " + slotName + ":[/color] " + result.Message);
+                break;
+            default:
+                _statusLabel.Text = "Status: Connection Error:\n" + result.Message;
+                if (_globalStatusLabel != null) _globalStatusLabel.Text = "Connection Error";
+                LogToSystem("[color=red]Couldn't connect " + slotName + ":[/color] " + result.Message);
+                break;
+        }
+    }
+
+    /// <summary>Builds the view for a slot that logged in (or reconnected), replacing its earlier view.</summary>
+    private void BuildSlotTracker(MultiworldProfile profile, ConnectedSlot connected)
+    {
+        string slotName = connected.Slot.SlotName;
+        var session = connected.Session;
+        _statusLabel.Text = "Status: Connected successfully as " + slotName + "!";
+        _statusLabel.AddThemeColorOverride("font_color", Colors.Green);
+        if (_globalStatusLabel != null) _globalStatusLabel.Text = "Booting Engine for " + slotName + "...";
+        LogToSystem("[color=lime]Successfully authenticated as " + slotName + ".[/color]");
+        foreach (Node n in ActiveSlotNodes())
+        {
+            if (n is SlotTrackerControl oldSlot && oldSlot.ProfileId == profile.Id && oldSlot.SlotName == slotName)
+            {
+                // Its session was closed by the session manager when the new one logged in.
+                if (_currentSelectedSlot == oldSlot) _currentSelectedSlot = null;
+                oldSlot.QueueFree();
+            }
+        }
+        if (!profile.SavedStats.ContainsKey(slotName)) profile.SavedStats[slotName] = new SlotStats();
+        profile.SavedStats[slotName].GameName = session.ConnectionInfo.Game;
+        profile.SavedStats[slotName].SlotNumber = session.ConnectionInfo.Slot;
+        DataManager.SaveProfiles(_profiles);
+        var slotTracker = new SlotTrackerControl(session, profile.Id, slotName, _appSettings, connected.Login.SlotData,
+            (msg) => { if (_globalStatusLabel != null) _globalStatusLabel.Text = msg; },
+            (msg) => { LogToDebug(msg, slotName); }
+        );
+        slotTracker.ServerDataChecksums = connected.DataChecksums;
+        slotTracker.ResolveOtherSlotLogic = (slot, loc) => ResolveSlotLogic(slotTracker, slot, loc);
+        slotTracker.ShowToast = ShowToast;
+        slotTracker.ShowActionToast = ShowToast;
+        slotTracker.OpenEngineSetup = OpenEngineSetup;
+        slotTracker.AccuracyChanged += () => _propertiesPanel?.QueueRefresh();
+        // When this slot's logic moves, hints at its locations change for the other slots of the same multiworld.
+        slotTracker.StateChanged += () =>
+        {
+            foreach (var sibling in SiblingSlots(slotTracker)) sibling.RefreshHints();
+            _propertiesPanel?.QueueRefresh();
+        };
+        _terminalStage.AddChild(slotTracker);
+        PreMountSlotViews(slotTracker);
+        // The slot's chat now receives the session's messages; hand it what arrived before.
+        var early = connected.TakeEarlyMessages();
+        if (early.Count > 0) slotTracker.InjectEarlyMessages(early);
+        _connectingSlots.Remove(SlotKey(profile.Id, slotName));
+        UpdateSidebar();
+        _currentSelectedSlot = slotTracker; RefreshContextViews();
+        _sphereTab?.FollowSlot(profile.Id, slotName);
+        // Scale just the new slot's text client once its UI is built (not the whole window).
+        var timer = GetTree().CreateTimer(0.1);
+        timer.Timeout += () =>
+        {
+            if (GodotObject.IsInstanceValid(slotTracker)) SetFontSizeRecursive(slotTracker, _appSettings.ConsoleFontSize);
+        };
     }
 }

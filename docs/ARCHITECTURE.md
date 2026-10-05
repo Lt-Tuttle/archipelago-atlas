@@ -30,8 +30,11 @@ MainTrackerWindow (the shell)
   - The Cheese Tracker client, models, table rules, advisor and key store (`CheeseTracker/`).
   - The Sphere Tracker parser, models and tables (`Spheres/`).
   - `EngineDownloader` (`Engine/`).
-  - `AtlasSessions` and `DataPackageStore` (`Connections/`): every Archipelago session is made here, and keeps the games' names in the data folder (below).
-- **`AP_Atlas.Core.Tests/`**: its xUnit tests, with a fake Archipelago server (`FakeArchipelagoServer`, on the test computer only).
+  - `Connections/`:
+    - `SessionManager`: every connection to an Archipelago server (connecting one at a time, the login time limit, drops, careful reconnects, closing).
+    - `AtlasSessions`: the only place sessions are made; each keeps the games' names in `DataPackageStore` (the data folder, below).
+  - `Testing/FakeArchipelagoServer` (internal): a fake Archipelago server on the test computer, for the unit tests and the UI test. Atlas never starts it otherwise.
+- **`AP_Atlas.Core.Tests/`**: its xUnit tests.
 - **`AP_Atlas_Source/`**: the Godot app, below. It starts the library's `Logger`: Godot's output for echoes, and the data folder's `logs/` once that folder has been checked.
 
 ## Folders (`AP_Atlas_Source/Scripts`)
@@ -48,6 +51,7 @@ MainTrackerWindow (the shell)
 | `UI/` | **Windows and views:**<br>• Properties, Hints, Map Tracker, the Cheese and Sphere tabs.<br>• The Pack Doctor and Atlas Engine windows.<br>• Privacy, the permission dialog, shared dialogs, the tab strip. |
 | `Core/SelfTest*.cs` | **The self-test:** run with `Tools/run_selftest.ps1`. |
 | `MainTrackerWindow.VisualCheck.cs` | **The visual check:** pictures of the main screens, compared with an earlier run; run with `Tools/run_visualcheck.ps1`. |
+| `MainTrackerWindow.UiTest.cs` | **The UI test:** drives the window the way a user would, against the fake Archipelago server (connecting, a dropped connection, disconnecting); `Tools/run_selftest.ps1` runs it after the self-test. |
 
 ## Where data lives
 
@@ -89,7 +93,11 @@ Atlas reads or writes outside this folder only with the user's permission. Nothi
 
 ## How things talk to each other
 
-- **Archipelago servers:** websockets through MultiClient.Net, compressed. Reconnects are capped and backed off, and stop when the server refuses. Session events arrive on network threads and move to the main thread with `Ui.Defer(owner, …)`, which skips the work if its owner (a slot, window or tab) was closed meanwhile, and logs a failure.
+- **Archipelago servers:** websockets through MultiClient.Net, compressed, all through `SessionManager`:
+  - One connection at a time; a login has 10 seconds, and one that finishes later is closed.
+  - A drop is noticed from the socket's close, or by a check twice a second (a server that died sends none).
+  - Reconnects wait 15 s, 30 s, 1, 2, 5 and 10 minutes (±20%), then stop; a refusal stops them at once.
+  - Closing Atlas sends every session a close frame. Session events arrive on network threads and move to the main thread with `Ui.Defer(owner, …)`, which skips the work if its owner (a slot, window or tab) was closed meanwhile, and logs a failure.
 - **Web sites** (Cheese Tracker, spheretracker.de, GitHub, PyPI, python.org): only through `PoliteHttp`:
   - One request at a time per site, at least a second apart.
   - Backoff of 1, 2, 5, 10, then 30 minutes; `Retry-After` is honoured.
@@ -110,6 +118,7 @@ Atlas reads or writes outside this folder only with the user's permission. Nothi
 | `AtlasEngine` | Reading the Windows registry, and the install search. The search only runs after the user agrees, from the Engine window's Find button. |
 | nowhere | `UseShellExecute = true`. |
 | `AtlasSessions` | Creating an Archipelago session. |
+| `SessionManager` | Connecting one. |
 | `AtlasEngine`, `EngineInstall` (and the self-test) | Starting a program. |
 
 Downloads that become code are pinned:
@@ -120,13 +129,13 @@ Downloads that become code are pinned:
 ## Building, testing, releasing
 
 - **Building and testing:** see [CONTRIBUTING.md](../CONTRIBUTING.md).
-- **CI** (`.github/workflows/ci.yml`): guard rails → build → format check → unit tests → hash-checked Godot → import → self-test, with the footprint check.
+- **CI** (`.github/workflows/ci.yml`): guard rails → build → format check → unit tests → hash-checked Godot → import → self-test and UI test, with the footprint check.
 - **Releases** (`.github/workflows/release.yml`): run when a `v*` tag is pushed. The version is set once, in `Directory.Build.props`.
 
 ## Planned restructuring (roadmap Phase 1)
 
 These are known structural debts, scheduled before the new shell is built:
-- **Large classes:** `MainTrackerWindow` and `SlotTrackerControl` are split into partial files by job. Next, slot state moves out of the UI node into a `SlotModel`, and connections into a `SessionManager`.
+- **Large classes:** `MainTrackerWindow` and `SlotTrackerControl` are split into partial files by job, and connections moved into `SessionManager`. Next, slot state moves out of the UI node into a `SlotModel`.
 - **Re-parenting:** views will subscribe in `_EnterTree` and unsubscribe in `_ExitTree`, so they can be re-parented (docking, pop-outs).
 - **Coalesced refreshes:** one refresh per frame, with hidden views skipped.
 - **A Godot-free `AP_Atlas.Core` library** with unit tests.

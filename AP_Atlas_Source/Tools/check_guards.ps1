@@ -15,6 +15,8 @@
       - Throwing away a call's result ("_ = SomethingAsync()"), which hides a failed task: only in the self-test's fake servers (and Async.cs, which describes the rule).
       - Creating an Archipelago session: only AtlasSessions, which keeps the games' names in Atlas's folder (the
         connection library's own cache is in %LocalAppData%).
+      - Connecting a session: only SessionManager, which sets the time limit, closes everything when Atlas closes and
+        reconnects politely (the self-test may create one it never connects).
       - Starting a program: only the engine's launch points (EngineInstall.StartInfo, AtlasEngine.SetupStartInfo), which
         keep its temporary files and caches in Atlas's folder, and the self-test.
     Run it from anywhere; CI runs it on every push. Exit code 0 means every rule holds.
@@ -34,6 +36,8 @@ $rules = @(
     @{ Name = 'Handing work to the main thread without Ui.Defer'; Pattern = '\)\.CallDeferred\(\)'; Allowed = @('AP_Atlas_Source\Scripts\UI\Ui.cs') },
     @{ Name = 'Throwing away a call''s result (use Async.Fire for tasks)'; Pattern = '(?<!var\s)(?<![\w.])_\s*=\s*[^;=>]*\('; Allowed = @('AP_Atlas.Core\Async.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.Cheese.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.Spheres.cs') },
     @{ Name = 'Creating an Archipelago session outside AtlasSessions'; Pattern = 'ArchipelagoSessionFactory'; Allowed = @('AP_Atlas.Core\Connections\AtlasSessions.cs') },
+    @{ Name = 'Connecting a session outside SessionManager'; Pattern = 'AtlasSessions\.Create\s*\(|TryConnectAndLogin|\.LoginAsync\s*\(|Session\w*\.ConnectAsync\s*\(\s*\)'
+       Allowed = @('AP_Atlas.Core\Connections\SessionManager.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.Footprint.cs') },
     # Case-sensitive, so starting an engine process made at a launch point (process.Start()) isn't mistaken for one.
     @{ Name = 'Starting a program outside the engine''s launch points'; CaseSensitive = $true
        Pattern = 'new\s+(System\.Diagnostics\.)?ProcessStartInfo\b|(?<![\w.])(System\.Diagnostics\.)?Process\.Start\s*\(|\bOS\.(Execute|ExecuteWithPipe|CreateProcess|CreateInstance)\s*\('

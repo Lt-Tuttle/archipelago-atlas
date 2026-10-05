@@ -37,10 +37,47 @@ public class LoggerTests
         }
         finally
         {
+            Logger.StopUsingFolder(); // the folder is deleted next: later lines in this run aren't written anywhere
             Logger.Echo = oldEcho;
             Logger.EchoError = oldEchoError;
             Logger.OnLogMessage -= OnLine;
             Logger.DisplayClock = oldClock;
+        }
+    }
+
+    [Fact]
+    public void A_log_file_that_cant_be_written_is_reported_once_until_writing_works_again()
+    {
+        using var dir = new TempFolder();
+        string logs = Path.Combine(dir.Path, "logs");
+        var errors = new List<string>();
+        var oldEcho = Logger.Echo;
+        var oldEchoError = Logger.EchoError;
+        Logger.Echo = _ => { };
+        Logger.EchoError = line => { lock (errors) errors.Add(line); };
+        try
+        {
+            Logger.UseFolder(logs);
+            Directory.Delete(logs, recursive: true); // the folder disappears while Atlas runs
+
+            Logger.LogInfo("lost one");
+            Logger.LogInfo("lost two");
+            Logger.LogInfo("lost three");
+            lock (errors) Assert.Single(errors, e => e.StartsWith("Failed to write to log", StringComparison.Ordinal));
+
+            Directory.CreateDirectory(logs);
+            Logger.LogInfo("written again");
+            Assert.Contains("written again", File.ReadAllText(Path.Combine(logs, "atlas_log.txt")));
+
+            Directory.Delete(logs, recursive: true);
+            Logger.LogInfo("lost after that");
+            lock (errors) Assert.Equal(2, errors.Count(e => e.StartsWith("Failed to write to log", StringComparison.Ordinal)));
+        }
+        finally
+        {
+            Logger.StopUsingFolder();
+            Logger.Echo = oldEcho;
+            Logger.EchoError = oldEchoError;
         }
     }
 }

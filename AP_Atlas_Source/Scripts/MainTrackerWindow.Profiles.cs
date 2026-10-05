@@ -269,6 +269,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             _selectedProfile.Name = _nameInput.Text;
             _selectedProfile.ServerUrl = _serverInput.Text;
             _selectedProfile.Password = _passwordInput.Text;
+            // An automatic reconnect waiting for one of its slots uses the new address and password.
+            _sessions?.UpdateLogins(_selectedProfile.Id, _selectedProfile.ServerUrl, string.IsNullOrEmpty(_selectedProfile.Password) ? null : _selectedProfile.Password);
             DataManager.SaveProfiles(_profiles);
             _saveButton.Modulate = Colors.White;
             RefreshProfileList();
@@ -304,6 +306,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             confirmDialog.Confirmed += () =>
             {
                 var profileId = _selectedProfile.Id;
+                // Its connections close, and no automatic reconnect brings one back.
+                if (_sessions != null) AP_Atlas.Core.Async.Fire(_sessions.ForgetProfileAsync(profileId), "closing a deleted multiworld's connections", tellUser: false);
                 _cheese?.Unlink(profileId);
                 _spheres?.ForgetProfile(profileId);
                 _profiles.Remove(_selectedProfile);
@@ -313,7 +317,6 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                     if (n is SlotTrackerControl slot && slot.ProfileId == profileId)
                     {
                         if (_currentSelectedSlot == slot) _currentSelectedSlot = null;
-                        AP_Atlas.Core.Async.Fire(CloseSessionAsync(slot.Session), "closing a server connection", tellUser: false);
                         slot.QueueFree();
                     }
                 }

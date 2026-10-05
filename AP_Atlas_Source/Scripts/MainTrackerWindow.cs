@@ -95,6 +95,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         }
         // The visual check (testing only) refuses a real data folder before anything in it is read or written.
         if (VisualCheckRequested && !VisualCheckAllowed()) return;
+        // The UI test, too, refuses a real data folder before anything in it is read or written.
+        if (UiTestRequested && !UiTestAllowed()) return;
         if (!AP_Atlas.Core.CrashGuard.TryAcquireInstance())
         {
             OS.Alert("The Archipelago Atlas is already running from this folder.\n\nOnly one copy can use the same data at a time, " +
@@ -124,6 +126,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         AP_Atlas.Core.PopTracker.PackDoctorService.Initialize(_appSettings);
         AP_Atlas.Core.PopTracker.PackDoctorService.ReviewSuggested += OnPackReviewSuggested;
         _profiles = DataManager.LoadProfiles();
+        StartSessions();
         _cheese = new AP_Atlas.Core.CheeseTracker.CheeseTrackerService(_appSettings, () => _profiles,
             () => ActiveSlotNodes().OfType<SlotTrackerControl>(), () => DataManager.SaveProfiles(_profiles));
         AddChild(_cheese);
@@ -238,7 +241,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         const int AutoReconnectId = 1;
         settingsMenu.AddCheckItem("Reconnect dropped connections automatically", AutoReconnectId);
         settingsMenu.SetItemChecked(settingsMenu.GetItemIndex(AutoReconnectId), _appSettings.AutoReconnect);
-        settingsMenu.SetItemTooltip(settingsMenu.GetItemIndex(AutoReconnectId), "A few tries over about 30 minutes, then Atlas stops so it never keeps a closed room busy.");
+        settingsMenu.SetItemTooltip(settingsMenu.GetItemIndex(AutoReconnectId), "A few tries over about 20 minutes, then Atlas stops so it never keeps a closed room busy.");
         const int AutoFixApworldId = 2;
         settingsMenu.AddCheckItem("Use each seed's apworld version automatically", AutoFixApworldId);
         settingsMenu.SetItemChecked(settingsMenu.GetItemIndex(AutoFixApworldId), _appSettings.AutoFixApworldVersions);
@@ -263,7 +266,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 _appSettings.AutoReconnect = !_appSettings.AutoReconnect;
                 settingsMenu.SetItemChecked(settingsMenu.GetItemIndex(AutoReconnectId), _appSettings.AutoReconnect);
                 DataManager.SaveSettings(_appSettings);
-                if (!_appSettings.AutoReconnect) _reconnectAttempts.Clear();
+                _sessions.AutoReconnect = _appSettings.AutoReconnect; // turning it off calls off waiting reconnects
             }
             else if (id == AutoFixApworldId)
             {
@@ -507,6 +510,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         foreach (var (msg, color) in _pendingNotices) ShowToast(msg, color);
         _pendingNotices.Clear();
         if (VisualCheckRequested) AP_Atlas.UI.Ui.Defer(this, RunVisualCheck);
+        if (UiTestRequested) AP_Atlas.UI.Ui.Defer(this, RunUiTest);
     }
 
     /// <summary>Reliability self-test mode (ATLAS_SELFTEST=1): runs the checks and exits with their result.</summary>

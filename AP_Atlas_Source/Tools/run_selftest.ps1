@@ -1,13 +1,18 @@
 <#
 .SYNOPSIS
-    Builds The Archipelago Atlas and runs its self-test headless against a new, empty scratch data folder.
+    Builds The Archipelago Atlas and runs its self-test, then its UI test, headless against new, empty scratch data
+    folders.
 
 .DESCRIPTION
-    The self-test never touches real data: it refuses any data folder that isn't empty, and this script always
-    makes a fresh one under the system temp folder. Godot's output goes to a file next to (never inside) that
-    data folder. The run also gets empty stand-ins for the user's folders and the temp folder, and fails if anything
-    is written to them (see footprint.ps1). The script exits with the self-test's exit code (0 = all passed), or 5 if
-    the self-test passed but something was written outside Atlas's folder.
+    The self-test checks Atlas's protections one by one. The UI test then builds Atlas's window and drives it the way
+    a user would (connecting a slot, a dropped connection, disconnecting) against a fake Archipelago server on this
+    computer. Neither touches real data: each refuses a data folder that isn't empty, and this script always makes
+    fresh ones under the system temp folder. Godot's output goes to files next to (never inside) those folders. Both
+    runs also get empty stand-ins for the user's folders and the temp folder, and fail if anything is written to them
+    (see footprint.ps1).
+
+    Exit code: 0 everything passed; the self-test's own code if it failed (1 a check failed, 3 timed out, 4 didn't
+    finish); 6 the UI test failed; 5 both passed but something was written outside Atlas's folder.
 
 .PARAMETER Godot
     The Godot .NET console executable. Defaults to $env:ATLAS_GODOT, then the workspace's Godot_Engine folder.
@@ -19,7 +24,7 @@
     Skip "dotnet build" (CI builds in an earlier step).
 
 .PARAMETER Keep
-    Keep the scratch folder afterwards, to read selftest_results.txt and the full Godot output.
+    Keep the scratch folder afterwards, to read selftest_results.txt and the full Godot output of both runs.
 
 .PARAMETER TimeoutMinutes
     Stop the run if it takes longer than this (default 20).
@@ -63,57 +68,69 @@ if (-not $NoBuild) {
 }
 
 $scratch = Join-Path $ScratchRoot ('atlas-selftest-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
-$data = Join-Path $scratch 'data'
-New-Item -ItemType Directory -Path $data -Force | Out-Null
-$outputFile = Join-Path $scratch 'godot_output.txt'
+New-Item -ItemType Directory -Path $scratch -Force | Out-Null
+$outside = $null
 
-$psi = New-Object System.Diagnostics.ProcessStartInfo
-$psi.FileName = $Godot
-$psi.Arguments = "--headless --path `"$project`" res://Scenes/Main_Window.tscn"
-$psi.UseShellExecute = $false
-$psi.RedirectStandardOutput = $true
-$psi.RedirectStandardError = $true
-$psi.CreateNoWindow = $true
-# Only the child process sees these, so nothing leaks into the caller's session.
-$psi.EnvironmentVariables['ATLAS_SELFTEST'] = '1'
-$psi.EnvironmentVariables['ATLAS_DATA_DIR'] = $data
-if ($ArchipelagoDir) { $psi.EnvironmentVariables['ATLAS_SELFTEST_AP'] = $ArchipelagoDir }
-elseif ($psi.EnvironmentVariables.ContainsKey('ATLAS_SELFTEST_AP')) { $psi.EnvironmentVariables.Remove('ATLAS_SELFTEST_AP') }
-$outside = Set-StandInUserFolders $psi $scratch
+# Runs Atlas headless in one test mode against its own new, empty data folder, shows its result lines and returns
+# its exit code.
+function Invoke-AtlasTest([string]$Slug, [string]$Title, [string]$Mode, [string]$Prefix) {
+    $data = Join-Path $scratch "$Slug-data"
+    New-Item -ItemType Directory -Path $data -Force | Out-Null
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $Godot
+    $psi.Arguments = "--headless --path `"$project`" res://Scenes/Main_Window.tscn"
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.CreateNoWindow = $true
+    # Only the child process sees these, so nothing leaks into the caller's session.
+    foreach ($name in 'ATLAS_SELFTEST', 'ATLAS_UITEST', 'ATLAS_VISUALCHECK', 'ATLAS_SELFTEST_AP') {
+        if ($psi.EnvironmentVariables.ContainsKey($name)) { $psi.EnvironmentVariables.Remove($name) }
+    }
+    $psi.EnvironmentVariables[$Mode] = '1'
+    $psi.EnvironmentVariables['ATLAS_DATA_DIR'] = $data
+    if ($ArchipelagoDir -and $Mode -eq 'ATLAS_SELFTEST') { $psi.EnvironmentVariables['ATLAS_SELFTEST_AP'] = $ArchipelagoDir }
+    # Both runs share the stand-ins, so one footprint check covers them.
+    $script:outside = Set-StandInUserFolders $psi $scratch
 
-Write-Host "Running the self-test (data folder: $data)..."
-$proc = [System.Diagnostics.Process]::Start($psi)
-$stdout = $proc.StandardOutput.ReadToEndAsync()
-$stderr = $proc.StandardError.ReadToEndAsync()
-if (-not $proc.WaitForExit($TimeoutMinutes * 60 * 1000)) {
-    try { $proc.Kill() } catch { }
-    Write-Host "The self-test took longer than $TimeoutMinutes minutes and was stopped." -ForegroundColor Red
-    $code = 3
-}
-else {
-    $proc.WaitForExit()
-    $code = $proc.ExitCode
+    Write-Host "Running the $Title (data folder: $data)..."
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    $stdout = $proc.StandardOutput.ReadToEndAsync()
+    $stderr = $proc.StandardError.ReadToEndAsync()
+    if (-not $proc.WaitForExit($TimeoutMinutes * 60 * 1000)) {
+        try { $proc.Kill() } catch { }
+        Write-Host "The $Title took longer than $TimeoutMinutes minutes and was stopped." -ForegroundColor Red
+        $code = 3
+    }
+    else {
+        $proc.WaitForExit()
+        $code = $proc.ExitCode
+    }
+
+    $text = $stdout.Result + [Environment]::NewLine + $stderr.Result
+    Set-Content -LiteralPath (Join-Path $scratch "$Slug-output.txt") -Value $text -Encoding UTF8
+    $lines = $text -split "`r?`n"
+    $results = $lines | Where-Object { $_ -match "^$Prefix" }
+    foreach ($line in $results) {
+        if ($line -match "^$Prefix (FAIL|REFUSED|CRASHED)") { Write-Host $line -ForegroundColor Red }
+        elseif ($line -match "^$Prefix PASS") { Write-Host $line -ForegroundColor Green }
+        else { Write-Host $line }
+    }
+    if (-not ($results | Where-Object { $_ -match "^$Prefix DONE" })) {
+        Write-Host "The $Title did not finish. Last lines of output:" -ForegroundColor Yellow
+        $lines | Select-Object -Last 40 | ForEach-Object { Write-Host "  $_" }
+        if ($code -eq 0) { $code = 4 }
+    }
+    return $code
 }
 
-$text = $stdout.Result + [Environment]::NewLine + $stderr.Result
-Set-Content -LiteralPath $outputFile -Value $text -Encoding UTF8
-
-$lines = $text -split "`r?`n"
-$results = $lines | Where-Object { $_ -match '^SELFTEST' }
-foreach ($line in $results) {
-    if ($line -match '^SELFTEST (FAIL|REFUSED|CRASHED)') { Write-Host $line -ForegroundColor Red }
-    elseif ($line -match '^SELFTEST PASS') { Write-Host $line -ForegroundColor Green }
-    else { Write-Host $line }
-}
-if (-not ($results | Where-Object { $_ -match '^SELFTEST DONE' })) {
-    Write-Host 'The self-test did not finish. Last lines of output:' -ForegroundColor Yellow
-    $lines | Select-Object -Last 40 | ForEach-Object { Write-Host "  $_" }
-    if ($code -eq 0) { $code = 4 }
-}
+$code = Invoke-AtlasTest 'selftest' 'self-test' 'ATLAS_SELFTEST' 'SELFTEST'
+$uiCode = Invoke-AtlasTest 'uitest' 'UI test' 'ATLAS_UITEST' 'UITEST'
+if ($code -eq 0 -and $uiCode -ne 0) { $code = 6 }
 if ((Test-Footprint $outside) -gt 0 -and $code -eq 0) { $code = 5 }
 
 if ($Keep -or $code -ne 0) {
-    Write-Host "Full output: $outputFile"
+    Write-Host "Full output: $scratch"
 }
 else {
     Remove-Item -LiteralPath $scratch -Recurse -Force -ErrorAction SilentlyContinue

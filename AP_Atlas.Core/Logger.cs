@@ -8,6 +8,9 @@ namespace AP_Atlas.Core
     {
         private static string _logFilePath;
         private static readonly object _fileLock = new object();
+        // Set after a failed write, so a log file that can't be written (its folder deleted, a full disk) is reported
+        // once, not on every line; cleared when a write works again.
+        private static bool _fileFailing;
         /// <summary>A line for the window's logs (BBCode, level). Raised on whichever thread logged it.</summary>
         public static event Action<string, string> OnLogMessage;
 
@@ -66,7 +69,12 @@ namespace AP_Atlas.Core
         private static void AppendToFile(string line)
         {
             // Called from network and process threads as well as the main thread.
-            lock (_fileLock) if (_logFilePath != null) File.AppendAllText(_logFilePath, line + System.Environment.NewLine);
+            lock (_fileLock)
+            {
+                if (_logFilePath == null) return;
+                File.AppendAllText(_logFilePath, line + System.Environment.NewLine);
+                _fileFailing = false;
+            }
         }
 
         private static void WriteLog(string level, string message)
@@ -78,9 +86,25 @@ namespace AP_Atlas.Core
             }
             catch (Exception ex)
             {
-                EchoError("Failed to write to log: " + ex.Message);
+                bool first;
+                lock (_fileLock)
+                {
+                    first = !_fileFailing;
+                    _fileFailing = true;
+                }
+                if (first) EchoError("Failed to write to log: " + ex.Message + " (shown once until writing works again)");
             }
             Echo(logEntry);
+        }
+
+        /// <summary>Stops writing to the log file (a test's folder is about to be deleted). Lines are still echoed.</summary>
+        internal static void StopUsingFolder()
+        {
+            lock (_fileLock)
+            {
+                _logFilePath = null;
+                _fileFailing = false;
+            }
         }
 
         /// <summary>

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Reflection;
 using System.Reflection.Emit;
 using AP_Atlas.Core.Connections;
+using AP_Atlas.Core.Testing;
 using Archipelago.MultiClient.Net;
 using Archipelago.MultiClient.Net.Enums;
 using Archipelago.MultiClient.Net.Models;
