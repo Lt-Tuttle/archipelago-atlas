@@ -209,7 +209,10 @@ namespace AP_Atlas.UI
             _viewport.AddChild(_mapBackground);
             _nodesOverlay = new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
             _viewport.AddChild(_nodesOverlay);
-            _camera = new Camera2D { Zoom = new Vector2(1, 1), AnchorMode = Camera2D.AnchorModeEnum.DragCenter };
+            // The camera moves only when told (no smoothing), and follows its view's size by itself, so it needn't run every
+            // frame. Running, it sends its view to the renderer each frame, and Godot then redraws the whole window all the
+            // time: Atlas would never idle.
+            _camera = new Camera2D { Zoom = new Vector2(1, 1), AnchorMode = Camera2D.AnchorModeEnum.DragCenter, ProcessMode = ProcessModeEnum.Disabled };
             _viewport.AddChild(_camera);
             _viewportContainer.GuiInput += OnViewportGuiInput;
             _viewportContainer.Resized += () =>

@@ -542,9 +542,9 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                                             if (valPercent != null)
                                             {
                                                 valPercent.Text = $"{percent}%";
-                                                if (percent >= 100) valPercent.AddThemeColorOverride("font_color", Colors.LimeGreen);
-                                                else if (percent > 0) valPercent.AddThemeColorOverride("font_color", Colors.Cyan);
-                                                else valPercent.RemoveThemeColorOverride("font_color");
+                                                if (percent >= 100) SetFontColor(valPercent, Colors.LimeGreen);
+                                                else if (percent > 0) SetFontColor(valPercent, Colors.Cyan);
+                                                else SetFontColor(valPercent, null);
                                             }
                                         }
                                         if (availVBox != null)
@@ -553,8 +553,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                                             if (valAvail != null)
                                             {
                                                 valAvail.Text = logicHidden ? "—" : logic.ToString();
-                                                if (logic > 0 && !logicHidden) valAvail.AddThemeColorOverride("font_color", Colors.LimeGreen);
-                                                else valAvail.RemoveThemeColorOverride("font_color");
+                                                if (logic > 0 && !logicHidden) SetFontColor(valAvail, Colors.LimeGreen);
+                                                else SetFontColor(valAvail, null);
                                             }
                                         }
                                     }
@@ -566,7 +566,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                                     if (specialTotal > 0)
                                     {
                                         special.Text = $"{specialGot}/{specialTotal}";
-                                        special.AddThemeColorOverride("font_color", specialGot >= specialTotal ? Colors.LimeGreen : AP_Atlas.Core.Annotations.SpecialColor);
+                                        SetFontColor(special, specialGot >= specialTotal ? Colors.LimeGreen : AP_Atlas.Core.Annotations.SpecialColor);
                                     }
                                 }
                                 var game = cardVBox.GetNodeOrNull<HBoxContainer>("FooterHBox")?.GetNodeOrNull<Label>("GameName");
@@ -577,12 +577,12 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                                     if (isConnected)
                                     {
                                         statusFooter.Text = activeSlot != null && activeSlot.RaceRestricted ? "● Live · Race mode" : "● Live";
-                                        statusFooter.AddThemeColorOverride("font_color", Colors.LimeGreen);
+                                        SetFontColor(statusFooter, Colors.LimeGreen);
                                     }
                                     else if (isConnecting)
                                     {
                                         statusFooter.Text = "◌ Connecting...";
-                                        statusFooter.AddThemeColorOverride("font_color", Colors.Yellow);
+                                        SetFontColor(statusFooter, Colors.Yellow);
                                     }
                                     else
                                     {
@@ -594,7 +594,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                                         {
                                             statusFooter.Text = "Not connected yet";
                                         }
-                                        statusFooter.AddThemeColorOverride("font_color", Colors.DimGray);
+                                        SetFontColor(statusFooter, Colors.DimGray);
                                     }
                                 }
                                 UpdateCheeseBadge(cardVBox.GetNodeOrNull<HBoxContainer>("FooterHBox")?.GetNodeOrNull<Label>("CheeseBadge"), profileId, slotName);
@@ -656,5 +656,19 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Sets a label's font colour (null: the theme's) only when it changes. Setting an override redraws and re-lays out
+    /// the label even when it's the same colour, and the slot statuses refresh twice a second: Atlas wouldn't idle.
+    /// </summary>
+    private static void SetFontColor(Control label, Color? color)
+    {
+        if (color is { } wanted)
+        {
+            if (label.HasThemeColorOverride("font_color") && label.GetThemeColor("font_color") == wanted) return;
+            label.AddThemeColorOverride("font_color", wanted);
+        }
+        else if (label.HasThemeColorOverride("font_color")) label.RemoveThemeColorOverride("font_color");
     }
 }

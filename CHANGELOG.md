@@ -62,7 +62,7 @@ Development toward the first public beta, 0.1.0.
   - The fake Archipelago server answers the data storage reads Atlas makes (race mode, client status, hints). The UI test has a race room: its slots give no "why" answers, and the Sphere Tracker hides that multiworld's spheres. It also turns on race mode's "hide all logic" and checks every view of logic hides, and comes back.
   - A scale scenario in the UI test: a 1,000-player room with 20 slots connected, then three bursts of items, item lines and hints.
     - It checks that hidden views do no work, that the text client draws a slice of lines per frame, and that connecting slots doesn't rebuild the sidebar.
-    - Its frames are guarded at 150 ms for the bursts (the target is 100 ms; the worst frame is 85 to 105 ms) and 300 ms for connecting.
+    - Its frames are guarded at 150 ms for the bursts (the target is 100 ms; the worst frame is 80 to 140 ms) and 300 ms for connecting.
     - It also checks that one connection receives the room's text, and that every slot shows each item line, and each of its hints, once.
   - Hitch reports (frames over 100 ms, in the log) now give each step's runs, time and memory per frame, total the same step across slots, and say how long garbage collection paused the program. A step's time leaves out those pauses, so a collection another thread set off isn't blamed on whatever step was running.
   - The fake Archipelago server sends item lines, and data storage changes only to the clients that asked for them (SetNotify), as a real server does.
@@ -75,6 +75,7 @@ Development toward the first public beta, 0.1.0.
     - The UI test's room text scenario: three slots with one text connection, each line once in every slot and named from that slot's view, a command and its answer, hints with and without text, and the text slot leaving.
     - Unit tests against the fake server cover the same, plus teams and a slot logging in while the room talks.
   - A guard rail: chat, commands and tag changes go only through `SessionManager`.
+  - The UI test's "Idle" scenario: a connected slot's map camera doesn't run every frame (zooming, dragging and resizing still move the map), and its card isn't re-styled while nothing changes.
   - A test map pack (`FakeMapPack`, written as a real pack zip) and tests for map pack memory:
     - Self-test: reading a pack decodes nothing, uses share one decoding, and the right pack is freed when.
     - The Pack Doctor finds the same, and fixes keep the same stamps, whether or not a pack's images are decoded.
@@ -99,7 +100,7 @@ Development toward the first public beta, 0.1.0.
   - Its tests run against a fake Archipelago server: time limits, refusals, servers that are down, drops, the last try, and closing.
 - The automatic reconnect setting now says "about 20 minutes", which is how long its tries take. It said 30.
 - **Fewer redraws:** a slot now updates its views once per frame, however much arrives. A burst of items or messages (a release, a big catch-up after reconnecting) is one update, not one per item.
-- **Big rooms stay responsive.** In a test room of 1,000 players with 20 slots connected, a burst of items, item lines and hints froze Atlas for up to 2.7 seconds. Now the longest pause is about 100 ms (85 to 105 ms on the development PC and on CI):
+- **Big rooms stay responsive.** In a test room of 1,000 players with 20 slots connected, a burst of items, item lines and hints froze Atlas for up to 2.7 seconds. Now the longest pause is about 100 ms (80 to 140 ms on the development PC and on CI, depending on how many logic answers land in one frame):
   - Tools and slots that aren't showing skip their updates, and catch up when you show them.
   - The text client draws a flood of lines (a release) a little per frame.
   - One slot's update no longer redraws every other slot's hints.
@@ -170,6 +171,10 @@ Development toward the first public beta, 0.1.0.
   - Before, 28 such tasks could fail without a trace.
   - Reading a map pack, or a slot's saved options, now logs why it failed instead of showing nothing.
 - **Apworld fixes:** choosing an apworld file that couldn't be copied (a full disk, say) left that slot's apworld fixer stuck until you reconnected.
+- **Idle with a slot connected:** Atlas drew its whole window about 145 times a second whenever a slot was connected, even with nothing happening, so it kept using CPU and graphics card.
+  - The map's camera sent its view to the renderer every frame. It now moves only when told.
+  - The slot cards re-styled their unchanged labels twice a second.
+  - Idle with a slot connected, Atlas now draws nothing, as it already did with none.
 - **Text client colours:** parts of a server line with a colour of their own now show in it: a hint's status, such as "(found)" or "(priority)", and an entrance's name. They were all white, because Atlas wrote the name of the connection library's colour type where the colour belonged.
 - **Chat and hint requests:** a message or `!hint` request that couldn't be sent now says so, instead of looking sent.
 - **Engine setup:** unpacking Python and Archipelago can now be cancelled, and waiting for a finished engine step's output is bounded by the step's time limit.

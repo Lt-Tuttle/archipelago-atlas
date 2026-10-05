@@ -89,6 +89,8 @@ public partial class MainTrackerWindow
             SlotPanelMovesWholeAsync);
         await ScenarioAsync("Map packs: a slot's pack has its images while the slot is connected (its map shows them), the Pack Doctor's while its window is open; then they're freed once another pack is used",
             PackImagesFollowTheirUsersAsync);
+        await ScenarioAsync("Idle: a connected slot doesn't keep Atlas redrawing: its map's camera doesn't run every frame (zooming, dragging and resizing still move the map), and its card isn't re-styled while nothing changes",
+            ConnectedSlotLetsAtlasIdleAsync);
         await ScenarioAsync("Race rooms: a room the server calls a race restricts its slots (no \"why\" answers), and the Sphere Tracker hides that multiworld's spheres",
             RaceRoomRestrictsAsync);
         await ScenarioAsync("Logic: the slot's logic follows its items and checks step by step; after an engine crash, an engine update or a restart it's rebuilt from scratch on a new engine; race mode can hide it",
@@ -548,6 +550,74 @@ public partial class MainTrackerWindow
         }
     }
 
+    private async Task ConnectedSlotLetsAtlasIdleAsync()
+    {
+        string zip = System.IO.Path.Combine(AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory(), "uitest_idle_pack.zip");
+        FakeMapPack.Write(zip, "UI test pack", "Test Game");
+        await using var server = new FakeArchipelagoServer();
+        server.Games["Test Game"] = new FakeGame("0123456789abcdef0123456789abcdef01234567",
+            new Dictionary<string, long> { ["Sword"] = 1000 }, new Dictionary<string, long> { ["Cave Chest"] = 2000 });
+        var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Tester");
+        _profiles.Add(profile);
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        try
+        {
+            await OnConnectSlotPressedAsync("Tester", profile);
+            var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
+            ShowTextClient(slot);
+            host.ShowTool(AP_Atlas.UI.Tool.MapTracker);
+            await UiTestWaitForAsync(() => slot.MapTracker.FindChildren("*", "Sprite2D", true, false).OfType<Sprite2D>().FirstOrDefault(s => s.Texture != null), "the map on the Map Tracker");
+            // The map's camera doesn't run every frame (it would keep Godot redrawing the window all the time), yet the
+            // mouse wheel still zooms the map and dragging still moves it.
+            var camera = slot.MapTracker.FindChildren("*", "Camera2D", true, false).OfType<Camera2D>().Single();
+            var mapView = slot.MapTracker.FindChildren("*", "SubViewportContainer", true, false).OfType<SubViewportContainer>().Single();
+            var mapViewport = (SubViewport)camera.GetViewport();
+            UiTestExpect(!camera.CanProcess(), "the map's camera runs every frame, so Atlas never idles while a slot is connected");
+            // What the map shows follows the camera: centered on its position, at its zoom.
+            string? Follows()
+            {
+                var shown = mapViewport.CanvasTransform;
+                var expected = (Vector2)mapViewport.Size / 2 - camera.Position * camera.Zoom;
+                return Mathf.IsEqualApprox(shown.X.X, camera.Zoom.X) && shown.Origin.DistanceTo(expected) < 0.5f ? null : $"the map shows {shown} for a camera at {camera.Position}, zoom {camera.Zoom.X}";
+            }
+            await UiTestWaitAsync(0.3); // the view settles in its place
+            float zoomBefore = camera.Zoom.X;
+            mapView.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.WheelUp, Pressed = true });
+            UiTestExpect(Mathf.IsEqualApprox(camera.Zoom.X, zoomBefore * 1.1f) && Follows() == null, $"zooming in: {Follows()}");
+            var positionBefore = camera.Position;
+            mapView.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = new Vector2(100, 100) });
+            mapView.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseMotion { Position = new Vector2(130, 100) });
+            mapView.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = new Vector2(130, 100) });
+            await UiTestWaitAsync(0.1); // a moved node's new place reaches the camera at the frame's end
+            UiTestExpect(Mathf.IsEqualApprox(camera.Position.X, positionBefore.X - 30f / camera.Zoom.X, 0.01f) && Follows() == null, $"dragging 30 px: {Follows() ?? $"the camera moved from {positionBefore} to {camera.Position}"}");
+            mapViewport.Size += new Vector2I(40, 20);
+            UiTestExpect(Follows() == null, $"a new view size: {Follows()}");
+            // The slot's card refreshes its statuses twice a second; unchanged, its labels aren't re-styled (each restyle
+            // redraws the window, so Atlas would never idle).
+            int restyled = 0;
+            void Restyled() => restyled++;
+            var cardLabels = _activeSessionsList.FindChildren("*", "Label", true, false).OfType<Label>().ToList();
+            foreach (var label in cardLabels) label.ThemeChanged += Restyled;
+            try
+            {
+                await UiTestWaitAsync(1.6);
+            }
+            finally
+            {
+                foreach (var label in cardLabels) label.ThemeChanged -= Restyled;
+            }
+            UiTestExpect(cardLabels.Count > 0 && restyled == 0, $"the slot card's {cardLabels.Count} labels were re-styled {restyled} times while nothing changed");
+        }
+        finally
+        {
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+            DeleteProfile(profile);
+            AP_Atlas.Core.SafeFile.Delete(zip);
+        }
+    }
+
     private async Task RaceRoomRestrictsAsync()
     {
         await using var server = new FakeArchipelagoServer();
@@ -898,9 +968,9 @@ public partial class MainTrackerWindow
                      $"{Performance.GetMonitor(Performance.Monitor.ObjectOrphanNodeCount):0} orphaned, {Performance.GetMonitor(Performance.Monitor.ObjectCount):0} objects; generations " +
                      string.Join("/", memory.GenerationInfo.ToArray().Select(g => $"{g.SizeAfterBytes / 1048576.0:0}")) + " MB. The worst frame: " +
                      AP_Atlas.Core.HitchMonitor.WorstFrameReport.ReplaceLineEndings(" | "));
-            // The target is 100 ms. The worst frame takes about 85 to 105 ms, on the development PC and on CI (about 130 ms
-            // while each of the 20 connections received, and decoded, the room's text). The guard leaves room for slower
-            // machines; that one connection receives the text is checked above.
+            // The target is 100 ms. The worst frame takes about 80 to 140 ms, on the development PC and on CI, depending on
+            // how many logic answers land in one frame. The guard leaves room for slower machines; that one connection
+            // receives the room's text is checked above.
             UiTestExpect(worst < 150, $"a frame took {worst:0} ms during the bursts (the guard is 150 ms): {AP_Atlas.Core.HitchMonitor.WorstFrameReport}");
             // Connecting is a click with a spinner, not play: guarded at 300 ms against things getting worse. Building a slot's
             // views only when first shown (with the new shell) is what brings it under 100 ms.

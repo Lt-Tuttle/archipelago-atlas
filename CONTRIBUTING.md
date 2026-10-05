@@ -78,6 +78,10 @@ New code that doesn't need Godot belongs in `AP_Atlas.Core`, with tests. The vis
 - **Async code:** the build runs Microsoft's async analyzers. An unobserved task, `async void`, a blocking wait on unfinished work, or `ContinueWith` without a `TaskScheduler` stops the build. Methods that return a task end in `Async`.
 - **Tests:** every new protection gets a check in `Scripts/Core/SelfTest*.cs` or `AP_Atlas.Core.Tests`, and tests never touch real data. Connection tests use `FakeArchipelagoServer`, never a real server; Cheese Tracker tests use `FakeCheeseServer`, never the real site; and the UI test runs logic on `FakeLogicEngine`. What the window does with them gets a scenario in `MainTrackerWindow.UiTest.cs`. A test's expected results are written out in the test, never read from the code it checks.
 - **Nothing outside Atlas's folder:** the self-test and the visual check fail if a run writes anything to the user's folders or the temp folder (the footprint check). Godot's log and shader cache stay off in `project.godot`.
+- **Let the window idle:** Atlas runs in Godot's low-processor mode, which draws only when something on screen changes. Anything that changes the screen every frame keeps the whole window drawing, about 145 times a second. Watch for:
+  - a node that runs every frame and changes what's shown, such as a `Camera2D` left processing;
+  - a timer that re-applies the same value where setting it always redraws, such as `AddThemeColorOverride` with the same colour.
+  - Set such values only when they change. The UI test's "Idle" scenario checks a connected slot.
 - **Updating Archipelago.MultiClient.Net:** `AtlasSessions` relies on the library's internal data cache. The unit tests check that, and that the library reaches nothing else on the PC. If they fail, look at what changed before using the new version.
 - **Godot's `.uid` files:** Godot makes one next to each script (`Foo.cs.uid`) when it opens or imports the project. Commit it with the script; the guard rails check.
 - **Third-party code, data or art:**
