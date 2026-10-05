@@ -126,8 +126,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         AP_Atlas.Core.PopTracker.PackDoctorService.ReviewSuggested += OnPackReviewSuggested;
         _profiles = DataManager.LoadProfiles();
         StartSessions();
-        _cheese = new AP_Atlas.Core.CheeseTracker.CheeseTrackerService(_appSettings, () => _profiles,
-            () => ActiveSlotNodes().OfType<SlotTrackerControl>(), () => DataManager.SaveProfiles(_profiles));
+        // Services read the slots themselves (their models), never their panels.
+        _cheese = new AP_Atlas.Core.CheeseTracker.CheeseTrackerService(_appSettings, () => _profiles, SlotModels, () => DataManager.SaveProfiles(_profiles));
         AddChild(_cheese);
         _cheese.Notice += message => ShowToast(message, Colors.Orange);
         _cheese.Changed += () => _propertiesPanel?.QueueRefresh();
@@ -137,7 +137,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         };
         // Cheese Tracker knows each linked multiworld's Archipelago tracker and organizer: a host's sphere room must be for
         // that tracker, and is taken as the host's when its creator is that organizer.
-        _spheres = new AP_Atlas.Core.Spheres.SphereService(() => _profiles, () => ActiveSlotNodes().OfType<SlotTrackerControl>(),
+        _spheres = new AP_Atlas.Core.Spheres.SphereService(() => _profiles, SlotModels,
             () => DataManager.SaveProfiles(_profiles), p =>
             {
                 var tracker = _cheese?.RoomView(p.Id)?.Tracker;

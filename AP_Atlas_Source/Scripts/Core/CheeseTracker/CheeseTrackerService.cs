@@ -81,7 +81,7 @@ namespace AP_Atlas.Core.CheeseTracker
 
         private readonly AppSettings _settings;
         private readonly Func<IReadOnlyList<MultiworldProfile>> _profiles;
-        private readonly Func<IEnumerable<SlotTrackerControl>> _slots;
+        private readonly Func<IEnumerable<SlotModel>> _slots;
         private readonly Action _saveProfiles;
 
         private sealed class Room
@@ -108,7 +108,7 @@ namespace AP_Atlas.Core.CheeseTracker
         private string _apiKey;
         private bool _keyRejected;
 
-        public CheeseTrackerService(AppSettings settings, Func<IReadOnlyList<MultiworldProfile>> profiles, Func<IEnumerable<SlotTrackerControl>> slots, Action saveProfiles)
+        public CheeseTrackerService(AppSettings settings, Func<IReadOnlyList<MultiworldProfile>> profiles, Func<IEnumerable<SlotModel>> slots, Action saveProfiles)
         {
             Name = "CheeseTracker";
             _settings = settings;
@@ -462,8 +462,8 @@ namespace AP_Atlas.Core.CheeseTracker
         // Slots
         // =====================================================================
 
-        private SlotTrackerControl LiveSlot(string profileId, string slotName) =>
-            _slots().FirstOrDefault(s => IsInstanceValid(s) && s.ProfileId == profileId && s.SlotName == slotName && s.Session != null);
+        private SlotModel LiveSlot(string profileId, string slotName) =>
+            _slots().FirstOrDefault(s => !s.Ended && s.ProfileId == profileId && s.SlotName == slotName);
 
         private int SlotNumberOf(MultiworldProfile profile, string slotName)
         {
@@ -902,7 +902,7 @@ namespace AP_Atlas.Core.CheeseTracker
             try
             {
                 var now = DateTime.UtcNow;
-                var connected = _slots().Where(s => IsInstanceValid(s) && s.Session != null).ToList();
+                var connected = _slots().Where(s => !s.Ended).ToList();
                 foreach (var profile in _profiles())
                 {
                     if (string.IsNullOrWhiteSpace(profile.CheeseTrackerUrl)) continue;
@@ -920,14 +920,14 @@ namespace AP_Atlas.Core.CheeseTracker
             }
         }
 
-        private static SlotSnapshot SnapshotOf(SlotTrackerControl s)
+        private static SlotSnapshot SnapshotOf(SlotModel s)
         {
-            bool live = s.Session?.Socket?.Connected == true && s.IsFullyLoaded;
+            bool live = s.Session.Socket.Connected && s.Logic.Loaded;
             string untrusted =
                 s.LogicHidden ? "race mode hides logic" :
-                !s.EngineRunning ? "its logic engine isn't running" :
-                !s.LogicSettled ? "its logic is still being worked out" :
-                s.ApworldMatchesSeed == false ? "its apworld doesn't match the seed" :
+                !s.Logic.Running ? "its logic engine isn't running" :
+                !s.Logic.Settled ? "its logic is still being worked out" :
+                s.Logic.ApworldMatchesSeed == false ? "its apworld doesn't match the seed" :
                 s.LogicAccuracyWarning != null ? "its logic has an accuracy warning (Properties → Accuracy)" : null;
             return new SlotSnapshot
             {
@@ -935,7 +935,7 @@ namespace AP_Atlas.Core.CheeseTracker
                 Untrusted = untrusted,
                 InLogic = untrusted == null ? s.ActiveLogicCount : 0,
                 Remaining = s.TotalLocationsCount - s.CheckedLocationsCount,
-                GoalInLogic = s.GoalInLogic,
+                GoalInLogic = s.Logic.GoalInLogic,
                 GoalCompleted = s.GoalCompleted
             };
         }
@@ -944,14 +944,14 @@ namespace AP_Atlas.Core.CheeseTracker
         /// The suggestion for a connected slot worked out right now, for display (the tick's copy decides automation and
         /// the card badge). How long it has held still comes from the tick, so "confirming" reads the same in both.
         /// </summary>
-        private CheeseAdvice LiveAdvice(SlotTrackerControl slot, CtGame row)
+        private CheeseAdvice LiveAdvice(SlotModel slot, CtGame row)
         {
             var held = _stability.GetValueOrDefault(SlotKey(slot.ProfileId, slot.SlotName));
             var copy = new CheeseAdvisor.Stability { Status = held?.Status, SinceUtc = held?.SinceUtc ?? DateTime.UtcNow };
             return CheeseAdvisor.Advise(SnapshotOf(slot), row, copy, DateTime.UtcNow);
         }
 
-        private void EvaluateSlot(SlotTrackerControl slot, DateTime nowUtc)
+        private void EvaluateSlot(SlotModel slot, DateTime nowUtc)
         {
             var profile = ProfileOf(slot.ProfileId);
             var room = RoomOf(profile);
@@ -983,7 +983,7 @@ namespace AP_Atlas.Core.CheeseTracker
             if (blocker == null) AP_Atlas.Core.Async.Fire(ApplyAutomaticallyAsync(slot, advice), "updating your slot on Cheese Tracker");
         }
 
-        private async Task ApplyAutomaticallyAsync(SlotTrackerControl slot, CheeseAdvice advice)
+        private async Task ApplyAutomaticallyAsync(SlotModel slot, CheeseAdvice advice)
         {
             string key = SlotKey(slot.ProfileId, slot.SlotName), slotName = slot.SlotName, profileId = slot.ProfileId;
             if (!_autoPending.Add(key)) return;

@@ -26,26 +26,9 @@ public partial class SlotTrackerControl : MarginContainer
     public string ProfileId => Model.ProfileId;
     public string SlotName => _slotName;
     public bool IsFullyLoaded => Model.Logic.Loaded;
-    public int TotalLocationsCount => Session?.Locations?.AllLocations?.Count ?? 0;
-    public int CheckedLocationsCount => Session?.Locations?.AllLocationsChecked?.Count ?? 0;
-    public int ActiveLogicCount
-    {
-        get
-        {
-            if (Session == null || LogicHidden) return 0;
-            // Polled every 0.5s by the sidebar; AllLocationsChecked is a list, so hash it once per call.
-            var checkedLocs = new HashSet<long>(Session.Locations.AllLocationsChecked);
-            int count = 0;
-            foreach (var loc in Model.Logic.Reachable)
-            {
-                if (!checkedLocs.Contains(loc) && !IsExcluded(loc))
-                {
-                    count++;
-                }
-            }
-            return count;
-        }
-    }
+    public int TotalLocationsCount => Model.TotalLocationsCount;
+    public int CheckedLocationsCount => Model.CheckedLocationsCount;
+    public int ActiveLogicCount => Model.ActiveLogicCount;
 
     /// <summary>Raised on the main thread whenever items, checks, hints or logic change.</summary>
     public event Action StateChanged;
@@ -209,11 +192,9 @@ public partial class SlotTrackerControl : MarginContainer
             return (itemA?.Flag ?? 0, itemSpecial, !string.IsNullOrWhiteSpace(itemA?.Note), locA?.Flag ?? 0, locSpecial, !string.IsNullOrWhiteSpace(locA?.Note));
         };
         AP_Atlas.Core.Annotations.Changed += OnAnnotationsChanged;
-        AP_Atlas.Core.RaceRules.Changed += OnRaceRulesChanged;
         AP_Atlas.Core.PopTracker.PackFixes.Changed += OnPackFixesChanged;
         // Keep this slot's options for offline use (setting indicators, the Pack Doctor).
         DataManager.SaveSlotData(ProfileId, _slotName, Game, _slotData);
-        AP_Atlas.UI.Ui.Defer(this, DetectRaceMode);
         AP_Atlas.UI.Ui.Defer(this, RequestGameNames);
         AP_Atlas.UI.Ui.Defer(this, OfferYamlExclusions);
         _specialSignature = string.Join("|", AP_Atlas.Core.Annotations.SpecialItemNames(Game).OrderBy(n => n));
@@ -259,17 +240,14 @@ public partial class SlotTrackerControl : MarginContainer
         if (checks) FeedNewChecksToScripts();
         if (change.HasFlag(AP_Atlas.Core.SlotChange.EngineStarted)) OnEngineStarted();
         if (change.HasFlag(AP_Atlas.Core.SlotChange.Logic)) ShowLogic();
+        else if (change.HasFlag(AP_Atlas.Core.SlotChange.Race)) SyncLogicViews();
         if (change.HasFlag(AP_Atlas.Core.SlotChange.Hints)) _hintTracker?.SetHints(Model.CurrentHints);
         if (change.HasFlag(AP_Atlas.Core.SlotChange.Messages)) ShowNewChatLines();
         RaiseStateChanged();
     }
 
     /// <summary>Whether this slot's logic engine considers the location reachable; null while the engine isn't running or logic is hidden.</summary>
-    public bool? IsLocationInLogic(long locationId)
-    {
-        if (!Model.Logic.Running || LogicHidden) return null;
-        return Model.Logic.Reachable.Contains(locationId);
-    }
+    public bool? IsLocationInLogic(long locationId) => Model.IsLocationInLogic(locationId);
 
     // =====================================================================
     // Properties panel support
@@ -282,14 +260,14 @@ public partial class SlotTrackerControl : MarginContainer
     public AP_Atlas.Core.PopTracker.LoadedPack Pack { get; private set; }
     public Archipelago.MultiClient.Net.Models.Hint[] CurrentHints => Model.CurrentHints;
     public IReadOnlyList<AP_Atlas.Core.ChatEntry> ChatHistory => Model.Chat;
-    public string AnnotationKey => AP_Atlas.Core.Annotations.SlotKey(ProfileId, _slotName);
+    public string AnnotationKey => Model.AnnotationKey;
     public string Game => Session?.ConnectionInfo?.Game ?? "";
     public int PlayerSlot => Session?.ConnectionInfo?.Slot ?? -1;
     public int Team => Session?.ConnectionInfo?.Team ?? -1;
-    public bool IsLocationReachable(long id) => !LogicHidden && Model.Logic.Reachable.Contains(id);
+    public bool IsLocationReachable(long id) => Model.IsLocationReachable(id);
     public bool IsLocationHinted(long id) => Model.HintedLocations.Contains(id);
     public bool IsExcludedLocation(long id) => IsExcluded(id);
-    public bool IsGlitchedLocation(long id) => !LogicHidden && Model.Logic.IsGlitched(id);
+    public bool IsGlitchedLocation(long id) => Model.IsGlitchedLocation(id);
     public int ReachableCount => Model.Logic.Reachable.Count;
     public string MapPackName => Pack?.Manifest?.Name;
 
@@ -344,47 +322,15 @@ public partial class SlotTrackerControl : MarginContainer
     // --- Logic history ---
 
     /// <summary>When this slot's logic first reached a location: step number (0 = base logic), overall order and unlocking item.</summary>
-    public (int Step, int Order, string ItemName)? UnlockStepOf(long locationId)
-    {
-        if (LogicHidden) return null;
-        int step = 0, order = 0;
-        foreach (var entry in Model.Logic.Steps)
-        {
-            var shown = ShownLocs(entry.Locations);
-            if (shown.Count == 0) continue;
-            bool isBase = entry.IsStart;
-            if (!isBase) step++;
-            foreach (var loc in shown)
-            {
-                order++;
-                if (loc == locationId) return (isBase ? 0 : step, order, entry.ItemName);
-            }
-        }
-        return null;
-    }
+    public (int Step, int Order, string ItemName)? UnlockStepOf(long locationId) => Model.UnlockStepOf(locationId);
 
     /// <summary>Logic steps a received item opened, with how many checks each.</summary>
-    public List<(int Step, int Count)> StepsUnlockedBy(string itemName)
-    {
-        var result = new List<(int, int)>();
-        if (LogicHidden) return result;
-        int step = 0;
-        foreach (var entry in Model.Logic.Steps)
-        {
-            if (entry.IsStart) continue;
-            int shown = ShownLocs(entry.Locations).Count;
-            if (shown == 0) continue;
-            step++;
-            if (string.Equals(entry.ItemName, itemName, StringComparison.OrdinalIgnoreCase)) result.Add((step, shown));
-        }
-        return result;
-    }
+    public List<(int Step, int Count)> StepsUnlockedBy(string itemName) => Model.StepsUnlockedBy(itemName);
 
-    public int LogicStepCount => Model.Logic.Steps.Count(e => !e.IsStart && ShownLocs(e.Locations).Count > 0);
+    public int LogicStepCount => Model.LogicStepCount;
 
     /// <summary>The checks of a logic step that aren't excluded (by the seed or by you).</summary>
-    private List<long> ShownLocs(IReadOnlyList<long> locs) =>
-        locs == null ? new List<long>() : locs.Where(l => !IsExcluded(l)).ToList();
+    private List<long> ShownLocs(IReadOnlyList<long> locs) => Model.ShownLocations(locs);
 
     // --- Cached lookups (one bridge or server request per question) ---
 
@@ -558,7 +504,6 @@ public partial class SlotTrackerControl : MarginContainer
         _ended = true;
         AP_Atlas.Core.ThemeColors.AccentChanged -= OnAccentChanged;
         AP_Atlas.Core.Annotations.Changed -= OnAnnotationsChanged;
-        AP_Atlas.Core.RaceRules.Changed -= OnRaceRulesChanged;
         AP_Atlas.Core.PopTracker.PackFixes.Changed -= OnPackFixesChanged;
         Session.Socket.PacketReceived -= OnDataPackagePacket;
         Model.Changed -= OnModelChanged;

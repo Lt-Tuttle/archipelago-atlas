@@ -49,6 +49,12 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
     /// <summary>The room's games by name.</summary>
     public Dictionary<string, FakeGame> Games { get; } = new();
 
+    /// <summary>
+    /// The server's data storage, as clients read it with Get. Archipelago's read-only keys answer as on a fresh room when
+    /// not set here: no race mode, every client status unknown, no hints.
+    /// </summary>
+    public Dictionary<string, JToken> DataStorage { get; } = new();
+
     /// <summary>The slots that may log in (slot numbers follow this order), and the game they all play.</summary>
     public List<string> Slots { get; } = new() { "Tester" };
     public string SlotGame { get; set; } = "Test Game";
@@ -271,6 +277,14 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
                             ["checksum"] = game.Checksum
                         };
                 return new JArray(new JObject { ["cmd"] = "DataPackage", ["data"] = new JObject { ["games"] = games } });
+            case "Get":
+                var keys = packet["keys"]?.ToObject<string[]>() ?? Array.Empty<string>();
+                var values = new JObject();
+                foreach (string key in keys) values[key] = Stored(key);
+                var retrieved = new JObject { ["cmd"] = "Retrieved", ["keys"] = values };
+                // As a real server does: the request's other fields come back with the answer.
+                foreach (var field in packet.Properties().Where(f => f.Name is not ("cmd" or "keys"))) retrieved[field.Name] = field.Value.DeepClone();
+                return new JArray(retrieved);
             case "Connect":
                 string name = (string?)packet["name"] ?? "";
                 Note("Connect " + name);
@@ -292,6 +306,18 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
             default:
                 return null;
         }
+    }
+
+    private JToken Stored(string key)
+    {
+        lock (DataStorage)
+        {
+            if (DataStorage.TryGetValue(key, out var value)) return value.DeepClone();
+        }
+        if (key == "_read_race_mode") return 0;
+        if (key.StartsWith("_read_client_status_", StringComparison.Ordinal)) return 0;
+        if (key.StartsWith("_read_hints_", StringComparison.Ordinal)) return new JArray();
+        return JValue.CreateNull();
     }
 
     private JObject RoomInfo() => new()

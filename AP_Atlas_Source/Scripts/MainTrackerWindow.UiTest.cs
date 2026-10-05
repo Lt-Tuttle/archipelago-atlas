@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using AP_Atlas.Core.CheeseTracker;
 using AP_Atlas.Core.Connections;
 using AP_Atlas.Core.EngineSetup;
 using AP_Atlas.Core.Testing;
@@ -74,8 +75,12 @@ public partial class MainTrackerWindow
             BurstIsOneUpdateAsync);
         await ScenarioAsync("Moving a slot's panel: out of the window and docked elsewhere, the slot keeps its connection, views and updates, and shows what arrived meanwhile",
             SlotPanelMovesWholeAsync);
-        await ScenarioAsync("Logic: the slot's logic follows its items and checks step by step; after an engine crash, an engine update or a restart it's rebuilt from scratch on a new engine",
+        await ScenarioAsync("Race rooms: a room the server calls a race restricts its slots (no \"why\" answers), and the Sphere Tracker hides that multiworld's spheres",
+            RaceRoomRestrictsAsync);
+        await ScenarioAsync("Logic: the slot's logic follows its items and checks step by step; after an engine crash, an engine update or a restart it's rebuilt from scratch on a new engine; race mode can hide it",
             LogicFollowsTheSlotAsync);
+        await ScenarioAsync("Cheese Tracker: its suggestion for a connected slot follows the slot's logic (unblocked, then go mode), says nothing while race mode hides logic, and changes nothing by itself",
+            CheeseFollowsTheSlotAsync);
         await _sessions.CloseAllAsync(TimeSpan.FromSeconds(3));
         GD.Print($"UITEST DONE: {passed} passed, {failed} failed, {skipped} skipped");
         GetTree().Quit(failed == 0 ? 0 : 1);
@@ -340,6 +345,9 @@ public partial class MainTrackerWindow
             await UiTestWaitAsync(0.1);
             UiTestExpect(!slot.Ended && _sessions.IsLoggedIn(slotId), "moving the panel ended the slot or its connection");
             UiTestExpect(views.All(v => v != null && IsInstanceValid(v) && !v.IsQueuedForDeletion()), "moving the panel freed the slot's views");
+            // The window still counts it among its slots (the sidebar, the tools), and its services still read it.
+            UiTestExpect(SlotView(profile.Id, "Tester") == slot, "the window lost the slot while its panel was elsewhere");
+            UiTestExpect(SlotModels().Contains(slot.Model), "the services lost the slot while its panel was elsewhere");
             // It keeps updating where it is now, and after going back.
             await server.BroadcastAsync(server.Chat("after the move"));
             await UiTestWaitForAsync(() => PanelShows(slot, "after the move") ? slot : null, "the moved panel to keep updating");
@@ -356,18 +364,54 @@ public partial class MainTrackerWindow
         }
     }
 
-    private async Task LogicFollowsTheSlotAsync()
+    private async Task RaceRoomRestrictsAsync()
+    {
+        await using var server = new FakeArchipelagoServer();
+        server.Games["Test Game"] = new FakeGame("0123456789abcdef0123456789abcdef01234567",
+            new Dictionary<string, long> { ["Sword"] = 1000 }, new Dictionary<string, long> { ["Cave Chest"] = 2000 });
+        server.DataStorage["_read_race_mode"] = 1;
+        var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Tester");
+        _profiles.Add(profile);
+        try
+        {
+            UiTestExpect(_spheres.HiddenBecause(profile) == null, "spheres were hidden before anything said the room is a race");
+            await OnConnectSlotPressedAsync("Tester", profile);
+            var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
+            await UiTestWaitForAsync(() => slot.Model.RaceStateKnown ? slot : null, "the server to say whether the room is a race");
+            UiTestExpect(slot.IsRaceRoom && slot.RaceRestricted, "a race room didn't restrict its slot");
+            UiTestExpect(await slot.ExplainLocationAsync(2000) == null, "a race room's slot answered \"why\"");
+            // The Sphere Tracker reads it from the slot, and remembers it for the multiworld (while offline too).
+            UiTestExpect(_spheres.HiddenBecause(profile)?.Contains("race") == true, "the Sphere Tracker didn't hide a race room's spheres");
+            UiTestExpect(profile.RaceRoom == true, "the multiworld didn't remember that its room is a race");
+        }
+        finally
+        {
+            DeleteProfile(profile);
+        }
+    }
+
+    /// <summary>The Python the fake logic engine runs on (ATLAS_UITEST_PYTHON). Without one, the scenario is skipped.</summary>
+    private static string UiTestPython()
     {
         string? python = System.Environment.GetEnvironmentVariable("ATLAS_UITEST_PYTHON");
         if (string.IsNullOrWhiteSpace(python) || !System.IO.File.Exists(python))
             throw new UiTestSkip("no Python to run the fake logic engine on (Tools/run_selftest.ps1 passes the one on the PATH in ATLAS_UITEST_PYTHON)");
-        // This game's names differ from the other scenarios' "Test Game", so its data package has its own checksum (as on
-        // a real server), or Atlas would rightly use the names it stored for that checksum.
-        const string checksum = "5eed5eed5eed5eed5eed5eed5eed5eed5eed5eed";
+        return python;
+    }
 
-        // The fake engine stands where the portable engine goes, as setup leaves it (the runner and the bridge), and runs
-        // on that Python. Its world: a chest open from the start, a door behind the Sword, a tower behind the Sword and the
-        // Shield, a vault behind the Gem. The goal needs the Sword and the Shield. The engine crashes once on the Gem.
+    // The logic world's names differ from the other scenarios' "Test Game", so its data package has its own checksum (as
+    // on a real server), or Atlas would rightly use the names it stored for that checksum.
+    private const string LogicWorldChecksum = "5eed5eed5eed5eed5eed5eed5eed5eed5eed5eed";
+
+    /// <summary>
+    /// A fake engine where the portable engine goes, as setup leaves it (the runner and the bridge), run on that Python.
+    /// Its world: a chest open from the start, a door behind the Sword, a tower behind the Sword and the Shield, a vault
+    /// behind the Gem. The goal needs the Sword and the Shield.
+    /// </summary>
+    private static FakeLogicEngine StartFakeEngine(string python)
+    {
         var engine = new FakeLogicEngine(AtlasEngine.ArchipelagoDir);
         engine.Pool.AddRange(new[] { new FakeItem(1000, "Sword", 1), new FakeItem(1001, "Shield", 1), new FakeItem(1002, "Rupee", 0), new FakeItem(1099, "Gem", 1) });
         engine.Locations.AddRange(new[]
@@ -376,16 +420,30 @@ public partial class MainTrackerWindow
             new FakeLocation(2003, "Gem Vault", 1099)
         });
         engine.Goal = new long[] { 1000, 1001 };
-        engine.DataChecksum = checksum;
-        engine.CrashOnItem = 1099;
+        engine.DataChecksum = LogicWorldChecksum;
         engine.Apply();
         AtlasEngine.TestPython = python;
         AtlasEngine.InstallBridge(EngineInstall.Portable());
+        return engine;
+    }
 
-        await using var server = new FakeArchipelagoServer();
-        server.Games["Test Game"] = new FakeGame(checksum,
+    /// <summary>A fake server whose room has the fake engine's world (one slot, "Tester").</summary>
+    private static FakeArchipelagoServer LogicWorldServer()
+    {
+        var server = new FakeArchipelagoServer();
+        server.Games["Test Game"] = new FakeGame(LogicWorldChecksum,
             new Dictionary<string, long> { ["Sword"] = 1000, ["Shield"] = 1001, ["Rupee"] = 1002, ["Gem"] = 1099 },
             new Dictionary<string, long> { ["Cave Chest"] = 2000, ["Locked Door"] = 2001, ["Tower Top"] = 2002, ["Gem Vault"] = 2003 });
+        return server;
+    }
+
+    private async Task LogicFollowsTheSlotAsync()
+    {
+        const string checksum = LogicWorldChecksum;
+        var engine = StartFakeEngine(UiTestPython());
+        engine.CrashOnItem = 1099; // once
+        engine.Apply();
+        await using var server = LogicWorldServer();
         var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
         profile.Slots.Clear();
         profile.Slots.Add("Tester");
@@ -412,6 +470,10 @@ public partial class MainTrackerWindow
             ExpectLogic(slot, "with the Sword", inLogic: new long[] { 2000, 2001 }, outOfLogic: new long[] { 2002, 2003 }, goal: false, active: 2);
             UiTestExpect(slot.UnlockStepOf(2001) == (1, 2, "Sword"), $"the door's step is {slot.UnlockStepOf(2001)}, not step 1 (the 2nd check) by the Sword");
             UiTestExpect(Ids(engine.Requests("update")[^1]["items"]).SequenceEqual(new long[] { 1000 }), "the engine wasn't asked about the Sword");
+            // Why the tower isn't in logic: the engine names the one item it lacks.
+            var why = await slot.ExplainLocationAsync(2002);
+            UiTestExpect(why is { InLogic: false } && why.SingleUnlocks?.SequenceEqual(new[] { "Shield" }) == true,
+                $"the tower's \"why\" didn't name the Shield: {(why == null ? "no answer" : Newtonsoft.Json.JsonConvert.SerializeObject(why))}");
 
             // The Shield, sent without flags (as the server's /send does): still progression, because the world says so.
             await server.BroadcastAsync(FakeArchipelagoServer.ReceivedItems(1, new long[] { 1001 }));
@@ -476,10 +538,86 @@ public partial class MainTrackerWindow
             await UiTestWaitForAsync(() => slot.LogicSettled && engine.Starts == 4 ? slot : null, "logic to restart");
             ExpectLogic(slot, "after restarting logic", inLogic: new long[] { 2001, 2002, 2003 }, outOfLogic: Array.Empty<long>(), goal: true, active: 3);
             UiTestExpect(engine.Crashes == 1 && slot.EngineProblem == null, "the engine failed again");
+
+            // Race mode set to hide all logic: every view of it is hidden at once, and shown again when it's off.
+            AP_Atlas.Core.RaceRules.SetMode(AP_Atlas.Core.RaceModeSetting.AlwaysOn);
+            AP_Atlas.Core.RaceRules.SetHideAllLogic(true);
+            UiTestExpect(slot.IsLocationInLogic(2001) == null && slot.ActiveLogicCount == 0 && slot.UnlockStepOf(2001) == null && slot.LogicStepCount == 0,
+                "race mode didn't hide logic");
+            UiTestExpect(await slot.ExplainLocationAsync(2001) == null, "race mode answered \"why\"");
+            await UiTestWaitForAsync(() => !slot.LogicTrackerView.FindChildren("*", "Tree", true, false).OfType<Tree>().Single().Visible ? slot : null,
+                "the Logic Tracker to hide its list in race mode");
+            AP_Atlas.Core.RaceRules.SetHideAllLogic(false);
+            AP_Atlas.Core.RaceRules.SetMode(AP_Atlas.Core.RaceModeSetting.FollowServer);
+            ExpectLogic(slot, "with race mode off again", inLogic: new long[] { 2001, 2002, 2003 }, outOfLogic: Array.Empty<long>(), goal: true, active: 3);
         }
         finally
         {
+            AP_Atlas.Core.RaceRules.SetHideAllLogic(false);
+            AP_Atlas.Core.RaceRules.SetMode(AP_Atlas.Core.RaceModeSetting.FollowServer);
             DeleteProfile(profile);
+            AtlasEngine.TestPython = null;
+        }
+    }
+
+    private async Task CheeseFollowsTheSlotAsync()
+    {
+        StartFakeEngine(UiTestPython());
+        await using var server = LogicWorldServer();
+        // The multiworld's Cheese Tracker page: the slot is on it, marked BK.
+        using var site = new FakeCheeseServer(new CtTracker
+        {
+            Id = 1,
+            TrackerId = FakeCheeseServer.TrackerId,
+            Title = "UI test multiworld",
+            Games = new List<CtGame> { new CtGame { Id = 21, Position = 1, Name = "Tester", Game = "Test Game", Availability = "open", Progression = "bk" } },
+            Hints = new List<CtHint>()
+        });
+        var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Tester");
+        _profiles.Add(profile);
+        string? siteBefore = _appSettings.CheeseInstanceUrl;
+        var spacingBefore = CheeseClient.Spacing;
+        _appSettings.CheeseInstanceUrl = site.Site;
+        CheeseClient.Spacing = TimeSpan.Zero;
+        try
+        {
+            await OnConnectSlotPressedAsync("Tester", profile);
+            var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
+            await UiTestWaitForAsync(() => slot.LogicSettled ? slot : null, "the slot's logic to start");
+            UiTestExpect(await _cheese.LinkAsync(profile.Id, site.TrackerUrl) == null, "the multiworld couldn't be linked to its Cheese Tracker page");
+            string Describe(CheeseAdvice? a) => a == null ? "none" : $"{a.Status ?? "no status"} ({a.Reason ?? a.Quiet})";
+
+            // The chest is in logic: unblocked, suggested but not yet applied (good news must hold for a minute first).
+            var view = _cheese.SlotView(profile.Id, "Tester");
+            UiTestExpect(view?.Row?.Id == 21, "the slot wasn't matched to its row on Cheese Tracker");
+            UiTestExpect(view!.Advice is { Status: "unblocked", Reason: "1 check in logic", Ready: false }, $"the suggestion with one check in logic was {Describe(view.Advice)}");
+
+            // Race mode hiding logic: no suggestion at all.
+            AP_Atlas.Core.RaceRules.SetMode(AP_Atlas.Core.RaceModeSetting.AlwaysOn);
+            AP_Atlas.Core.RaceRules.SetHideAllLogic(true);
+            var hidden = _cheese.SlotView(profile.Id, "Tester")?.Advice;
+            UiTestExpect(hidden is { Status: null } && hidden.Quiet?.Contains("race mode hides logic") == true, $"the suggestion in race mode was {Describe(hidden)}");
+            AP_Atlas.Core.RaceRules.SetHideAllLogic(false);
+            AP_Atlas.Core.RaceRules.SetMode(AP_Atlas.Core.RaceModeSetting.FollowServer);
+
+            // The Sword and the Shield bring the goal into logic: go mode.
+            await server.BroadcastAsync(FakeArchipelagoServer.ReceivedItems(0, new long[] { 1000, 1001 }, flags: 1));
+            await UiTestWaitForAsync(() => slot.LogicSettled && slot.GoalInLogic == true ? slot : null, "the goal to come into logic");
+            var go = _cheese.SlotView(profile.Id, "Tester")?.Advice;
+            UiTestExpect(go is { Status: "go", Reason: "Your goal is in logic" }, $"the suggestion with the goal in logic was {Describe(go)}");
+
+            // Suggestions only: without automatic updates turned on, nothing on Cheese Tracker was changed.
+            UiTestExpect(site.Requests.All(request => request.Method == "GET"), "Atlas changed Cheese Tracker without being asked");
+        }
+        finally
+        {
+            AP_Atlas.Core.RaceRules.SetHideAllLogic(false);
+            AP_Atlas.Core.RaceRules.SetMode(AP_Atlas.Core.RaceModeSetting.FollowServer);
+            DeleteProfile(profile);
+            _appSettings.CheeseInstanceUrl = siteBefore;
+            CheeseClient.Spacing = spacingBefore;
             AtlasEngine.TestPython = null;
         }
     }

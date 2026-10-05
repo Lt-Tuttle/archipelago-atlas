@@ -47,19 +47,12 @@ public partial class SlotTrackerControl : MarginContainer
     }
 
     /// <summary>Excluded by your choice if you made one, else by the seed (as the logic engine reads its options).</summary>
-    private bool IsExcluded(long loc) =>
-        AP_Atlas.Core.Annotations.GetExclusionOverride(AnnotationKey, loc) ?? IsExcludedBySeed(loc);
+    private bool IsExcluded(long loc) => Model.IsExcluded(loc);
 
     public bool IsExcludedBySeed(long loc) => Model.Logic.ExcludedBySeed(loc);
 
     /// <summary>Why a location is excluded or included: "seed", "you", or null when it's a normal check.</summary>
-    public string ExclusionSource(long loc)
-    {
-        var mine = AP_Atlas.Core.Annotations.GetExclusionOverride(AnnotationKey, loc);
-        if (mine == true) return "you";
-        if (mine == false) return IsExcludedBySeed(loc) ? "included by you" : null;
-        return IsExcludedBySeed(loc) ? "seed" : null;
-    }
+    public string ExclusionSource(long loc) => Model.ExclusionSource(loc);
 
     /// <summary>
     /// Excludes the locations a player YAML lists (location names or location group names).

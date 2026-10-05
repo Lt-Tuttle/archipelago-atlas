@@ -97,7 +97,7 @@ namespace AP_Atlas.Core.Spheres
         public event Action Changed;
 
         private readonly Func<IReadOnlyList<MultiworldProfile>> _profiles;
-        private readonly Func<IEnumerable<SlotTrackerControl>> _slots;
+        private readonly Func<IEnumerable<SlotModel>> _slots;
         private readonly Action _saveProfiles;
         private readonly Func<MultiworldProfile, (string TrackerUrl, string Organizer)> _hostOf;
 
@@ -128,7 +128,7 @@ namespace AP_Atlas.Core.Spheres
         /// What Cheese Tracker knows of the multiworld: its Archipelago tracker link and its organizer (who runs the Cheese
         /// Tracker); nulls when it isn't linked.
         /// </param>
-        public SphereService(Func<IReadOnlyList<MultiworldProfile>> profiles, Func<IEnumerable<SlotTrackerControl>> slots, Action saveProfiles,
+        public SphereService(Func<IReadOnlyList<MultiworldProfile>> profiles, Func<IEnumerable<SlotModel>> slots, Action saveProfiles,
             Func<MultiworldProfile, (string TrackerUrl, string Organizer)> hostOf)
         {
             _profiles = profiles;
@@ -163,7 +163,7 @@ namespace AP_Atlas.Core.Spheres
         public string HiddenBecause(MultiworldProfile profile)
         {
             if (profile == null) return "That multiworld no longer exists.";
-            var live = _slots().FirstOrDefault(s => GodotObject.IsInstanceValid(s) && s.ProfileId == profile.Id && s.Session != null && s.RaceStateKnown);
+            var live = _slots().FirstOrDefault(s => !s.Ended && s.ProfileId == profile.Id && s.RaceStateKnown);
             if (live != null && profile.RaceRoom != live.IsRaceRoom)
             {
                 profile.RaceRoom = live.IsRaceRoom;

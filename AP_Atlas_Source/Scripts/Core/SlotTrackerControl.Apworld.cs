@@ -417,12 +417,6 @@ public partial class SlotTrackerControl : MarginContainer
         Model.Logic.Restart();
     }
 
-    private void OnRaceRulesChanged()
-    {
-        _raceStateAnnounced = false;
-        ApplyRaceRules();
-    }
-
     /// <summary>Re-evaluates the hint table (e.g. after another slot's logic changed).</summary>
     public void RefreshHints() => _hintTracker?.Refresh();
 

@@ -27,7 +27,7 @@ internal sealed class FakeLogicEngine
 {
     private readonly string _rules, _journal;
 
-    /// <summary>Lays out the stand-in Archipelago folder in <paramref name="root"/>, with empty rules.</summary>
+    /// <summary>Lays out the stand-in Archipelago folder in <paramref name="root"/>, with empty rules and an empty journal.</summary>
     public FakeLogicEngine(string root)
     {
         Root = Path.GetFullPath(root);
@@ -35,6 +35,7 @@ internal sealed class FakeLogicEngine
         _rules = Path.Combine(state, "rules.json");
         _journal = Path.Combine(state, "journal.jsonl");
         Directory.CreateDirectory(state);
+        File.Delete(_journal); // a new engine: nothing an earlier one did counts
         Directory.CreateDirectory(Path.Combine(Root, "worlds", "tracker"));
         // What atlas_run.py uses of Archipelago, and the Universal Tracker that Atlas checks is installed.
         Write("ModuleUpdate.py", "# Stands in for Archipelago's ModuleUpdate: the fake engine has nothing to install.\nupdate_ran = False\n");

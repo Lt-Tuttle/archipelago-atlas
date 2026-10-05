@@ -101,17 +101,21 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         SwapSidebar(_currentTool.ExplorerTitle, sidebar);
         SwapContentView(view);
     }
-    /// <summary>Slots are mounted in the terminal pane. This is the single place that enumerates them.</summary>
+    /// <summary>Every slot started here, in the order they connected, while it lives (wherever its panel is).</summary>
+    private readonly List<SlotTrackerControl> _slots = new();
+
+    /// <summary>
+    /// The live slots' panels, wherever they are: the terminal pane, or (with docking) another part of the window or a
+    /// pop-out. This is the single place that enumerates them.
+    /// </summary>
     private System.Collections.Generic.List<Node> ActiveSlotNodes()
     {
-        var result = new System.Collections.Generic.List<Node>();
-        if (_terminalStage == null) return result;
-        foreach (Node n in _terminalStage.GetChildren())
-        {
-            if (n is SlotTrackerControl && !n.IsQueuedForDeletion()) result.Add(n);
-        }
-        return result;
+        _slots.RemoveAll(slot => !GodotObject.IsInstanceValid(slot) || slot.Ended || slot.IsQueuedForDeletion());
+        return _slots.Cast<Node>().ToList();
     }
+
+    /// <summary>The live slots themselves (their models), for services, which never use a slot's panel.</summary>
+    private IEnumerable<AP_Atlas.Core.SlotModel> SlotModels() => ActiveSlotNodes().OfType<SlotTrackerControl>().Select(slot => slot.Model);
     /// <summary>Other connected slots in the same multiworld (same profile and team) as the given slot.</summary>
     private IEnumerable<SlotTrackerControl> SiblingSlots(SlotTrackerControl slot)
     {

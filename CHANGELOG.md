@@ -57,6 +57,13 @@ Development toward the first public beta, 0.1.0.
   - The UI test also sends a burst of 40 items and 40 chat lines: each reaches the slot once, as one update of the window.
   - One list of Atlas's tools (`Tool`), in tab order, each with its id, title and scope (the whole app, a multiworld or one slot). The tabs, the "Show in…" links in Properties and the visual check use it instead of tab numbers, and the UI test checks every tool's tab shows the right view.
   - A slot's logic (its engine, and what's in logic item by item) is now part of the slot's model (`SlotLogic`), apart from its views, so it keeps running wherever its panel is.
+  - So are its race mode and exclusions, and logic as the slot shows it (race mode and exclusions applied). The Cheese Tracker and Sphere Tracker read a slot itself (its model), never its panel.
+  - The window keeps track of its slots wherever their panels are, instead of looking in the one pane they start in. The UI test docks a slot's panel elsewhere and checks the window and its services still have the slot.
+  - The fake Archipelago server answers the data storage reads Atlas makes (race mode, client status, hints). The UI test has a race room: its slots give no "why" answers, and the Sphere Tracker hides that multiworld's spheres. It also turns on race mode's "hide all logic" and checks every view of logic hides, and comes back.
+  - The fake Cheese Tracker site is now shared test code (`FakeCheeseServer`). The UI test runs Cheese Tracker against a connected slot for the first time:
+    - The suggestion follows the slot's logic: unblocked, then go mode.
+    - It suggests nothing while race mode hides logic.
+    - It changes nothing on the site by itself.
   - A fake logic engine for tests (`FakeLogicEngine`): Atlas starts it through its real engine runner, and it answers from simple rules (which items each location needs). It can also crash, answer late or send a stale answer on purpose. The UI test runs a slot's logic on it: items and checks arriving, an item the server sends without flags, a crash and the restart, an engine update, and Restart logic. Its own unit tests check it answers as the real engine does.
   - CI runs the tests on Python 3.12, the version the portable engine uses, and fails a UI test run that skipped a scenario.
 - **Settings → Privacy & permissions:** everything you've allowed Atlas to do without asking, and every apworld source you trust, each with a way to take it back.

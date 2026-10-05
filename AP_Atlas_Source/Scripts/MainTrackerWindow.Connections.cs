@@ -338,6 +338,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             foreach (var sibling in SiblingSlots(slotTracker)) sibling.RefreshHints();
             _propertiesPanel?.QueueRefresh();
         };
+        _slots.Add(slotTracker);
         _terminalStage.AddChild(slotTracker);
         PreMountSlotViews(slotTracker);
         _connectingSlots.Remove(SlotKey(profile.Id, slotName));

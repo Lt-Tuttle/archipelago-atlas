@@ -33,6 +33,8 @@ namespace AP_Atlas.Core
         Logic = 64,
         /// <summary>A logic engine finished starting: its item pool and world are new.</summary>
         EngineStarted = 128,
+        /// <summary>Race mode changed for this slot: the server said whether the room is a race, or its settings changed.</summary>
+        Race = 256,
     }
 
     /// <summary>One line of a slot's text client: a server message, or one of Atlas's own (BBCode).</summary>
@@ -65,6 +67,7 @@ namespace AP_Atlas.Core
         public const int ChatLimit = 1000;
 
         private readonly object _queueLock = new();
+        private readonly Action<string> _log;
         private readonly List<LogMessage> _incoming = new();
         private Hint[]? _incomingHints;
         private string? _closedReason;
@@ -80,6 +83,7 @@ namespace AP_Atlas.Core
         /// <param name="log">The slot's debug log.</param>
         public SlotModel(ConnectedSlot connected, AppSettings settings, Action<string> log)
         {
+            _log = log;
             Slot = connected.Slot;
             Session = connected.Session;
             SlotData = connected.Login.SlotData ?? new Dictionary<string, object>();
@@ -103,12 +107,15 @@ namespace AP_Atlas.Core
             Schedule(SlotChange.Messages);
             // The slot's hints (as finder or receiver), now and on every change.
             Session.Hints.TrackHints(OnHints, true);
-            // Logic starts once the slot is set up (its views, if any, hear how it goes).
+            // Race mode's settings, and logic. Both start once the slot is set up (its views, if any, hear how it goes).
+            RaceRules.Changed += OnRaceRulesChanged;
             Logic = new SlotLogic(this, settings, log);
             AP_Atlas.UI.Ui.Defer(null, () =>
             {
-                if (!_disposed) Logic.Start();
-            }, $"starting logic for {SlotName}");
+                if (_disposed) return;
+                Async.Fire(DetectRaceModeAsync(), $"checking whether {SlotName}'s room is a race");
+                Logic.Start();
+            }, $"starting {SlotName}");
         }
 
         public SlotId Slot { get; }
@@ -141,6 +148,9 @@ namespace AP_Atlas.Core
         /// <summary>The server says this slot reached its goal (its goal message, or a status check).</summary>
         public bool GoalCompleted { get; private set; }
 
+        /// <summary>The slot has ended (replaced, closed or deleted): it hears nothing more, and its engine is stopped.</summary>
+        public bool Ended => _disposed;
+
         /// <summary>
         /// What changed, raised on the main thread at most once per frame (more often only if events keep arriving while
         /// it's raised). Never raised after <see cref="Dispose"/>.
@@ -164,6 +174,171 @@ namespace AP_Atlas.Core
             {
                 if (status == ArchipelagoClientState.ClientGoal) Schedule(SlotChange.Goal, goalReached: true);
             }, "asking the server whether a slot reached its goal");
+        }
+
+        // =====================================================================
+        // Race mode
+        // =====================================================================
+
+        /// <summary>The server reports this room as a race (false until it answers: <see cref="RaceStateKnown"/>).</summary>
+        public bool IsRaceRoom { get; private set; }
+
+        /// <summary>The server has answered whether this room is a race (<see cref="IsRaceRoom"/> is meaningful).</summary>
+        public bool RaceStateKnown { get; private set; }
+
+        /// <summary>Race restrictions apply: no "why" explanations from the logic engine.</summary>
+        public bool RaceRestricted => RaceRules.IsActive(IsRaceRoom);
+
+        /// <summary>Race restrictions hide all in-logic information for this slot.</summary>
+        public bool LogicHidden => RaceRules.HidesLogic(IsRaceRoom);
+
+        private bool _raceAnnounced;
+
+        private async Task DetectRaceModeAsync()
+        {
+            try
+            {
+                bool race = await Session.DataStorage.GetRaceModeAsync();
+                if (_disposed) return;
+                IsRaceRoom = race;
+                RaceStateKnown = true;
+                _log($"Race mode reported by the server: {race}");
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                _log("Could not read the room's race mode: " + ex.Message);
+            }
+            ApplyRaceRules();
+        }
+
+        /// <summary>Race mode's settings changed: it's announced again if it applies.</summary>
+        private void OnRaceRulesChanged()
+        {
+            _raceAnnounced = false;
+            ApplyRaceRules();
+        }
+
+        /// <summary>Applies race restrictions (after detection or a settings change), and says once that they apply.</summary>
+        private void ApplyRaceRules()
+        {
+            if (_disposed) return;
+            bool restricted = RaceRestricted;
+            if (restricted && !_raceAnnounced)
+            {
+                _raceAnnounced = true;
+                string what = LogicHidden ? "all logic information is hidden" : "logic explanations are disabled";
+                string why = IsRaceRoom ? "this room is in race mode" : "race mode is set to Always On";
+                Logger.LogInfo($"[color=orange][{SlotName}] Race mode: {what} ({why}).[/color]");
+            }
+            else if (!restricted) _raceAnnounced = false;
+            Logic.ForgetExplanations();
+            Schedule(SlotChange.Race);
+        }
+
+        // =====================================================================
+        // Exclusions, and logic as the slot shows it (race mode and exclusions applied)
+        // =====================================================================
+
+        /// <summary>The key this slot's notes, flags and exclusions are kept under.</summary>
+        public string AnnotationKey => Annotations.SlotKey(ProfileId, SlotName);
+
+        /// <summary>Excluded by your choice if you made one, else by the seed (as the logic engine reads its options).</summary>
+        public bool IsExcluded(long location) => Annotations.GetExclusionOverride(AnnotationKey, location) ?? Logic.ExcludedBySeed(location);
+
+        /// <summary>Why a location is excluded or included: "seed", "you", "included by you", or null when it's a normal check.</summary>
+        public string? ExclusionSource(long location)
+        {
+            var mine = Annotations.GetExclusionOverride(AnnotationKey, location);
+            if (mine == true) return "you";
+            if (mine == false) return Logic.ExcludedBySeed(location) ? "included by you" : null;
+            return Logic.ExcludedBySeed(location) ? "seed" : null;
+        }
+
+        public int TotalLocationsCount => Session.Locations.AllLocations.Count;
+        public int CheckedLocationsCount => Session.Locations.AllLocationsChecked.Count;
+
+        /// <summary>Whether logic reaches the location; null while logic isn't running or race mode hides it.</summary>
+        public bool? IsLocationInLogic(long location) => !Logic.Running || LogicHidden ? null : Logic.Reachable.Contains(location);
+
+        /// <summary>Whether logic has reached the location (false while race mode hides logic).</summary>
+        public bool IsLocationReachable(long location) => !LogicHidden && Logic.Reachable.Contains(location);
+
+        /// <summary>Whether the location is reachable only with glitches (false while race mode hides logic).</summary>
+        public bool IsGlitchedLocation(long location) => !LogicHidden && Logic.IsGlitched(location);
+
+        /// <summary>Checks in logic that aren't done or excluded (0 while race mode hides logic).</summary>
+        public int ActiveLogicCount
+        {
+            get
+            {
+                if (LogicHidden) return 0;
+                // Polled every 0.5 s by the sidebar; AllLocationsChecked is a list, so hash it once per call.
+                var checkedLocations = new HashSet<long>(Session.Locations.AllLocationsChecked);
+                int count = 0;
+                foreach (long location in Logic.Reachable)
+                    if (!checkedLocations.Contains(location) && !IsExcluded(location)) count++;
+                return count;
+            }
+        }
+
+        /// <summary>The checks of a logic step that aren't excluded (by the seed or by you).</summary>
+        public List<long> ShownLocations(IReadOnlyList<long>? locations) =>
+            locations == null ? new List<long>() : locations.Where(location => !IsExcluded(location)).ToList();
+
+        /// <summary>When logic first reached a location: step number (0 = open from the start), overall order and the item that opened it.</summary>
+        public (int Step, int Order, string ItemName)? UnlockStepOf(long locationId)
+        {
+            if (LogicHidden) return null;
+            int step = 0, order = 0;
+            foreach (var entry in Logic.Steps)
+            {
+                var shown = ShownLocations(entry.Locations);
+                if (shown.Count == 0) continue;
+                if (!entry.IsStart) step++;
+                foreach (long location in shown)
+                {
+                    order++;
+                    if (location == locationId) return (entry.IsStart ? 0 : step, order, entry.ItemName);
+                }
+            }
+            return null;
+        }
+
+        /// <summary>The logic steps a received item opened, with how many checks each.</summary>
+        public List<(int Step, int Count)> StepsUnlockedBy(string itemName)
+        {
+            var result = new List<(int, int)>();
+            if (LogicHidden) return result;
+            int step = 0;
+            foreach (var entry in Logic.Steps)
+            {
+                if (entry.IsStart) continue;
+                int shown = ShownLocations(entry.Locations).Count;
+                if (shown == 0) continue;
+                step++;
+                if (string.Equals(entry.ItemName, itemName, StringComparison.OrdinalIgnoreCase)) result.Add((step, shown));
+            }
+            return result;
+        }
+
+        /// <summary>How many logic steps opened at least one check that isn't excluded (0 while race mode hides logic).</summary>
+        public int LogicStepCount => LogicHidden ? 0 : Logic.Steps.Count(entry => !entry.IsStart && ShownLocations(entry.Locations).Count > 0);
+
+        /// <summary>Why this slot's logic is only approximate (null when it matches the seed as far as Atlas can check).</summary>
+        public string? LogicAccuracyWarning
+        {
+            get
+            {
+                if (!Logic.Running) return null;
+                if (Logic.ApworldMatchesSeed == false)
+                    return $"Logic may be off: this seed was made with a different version of the {Game} apworld than the one installed" +
+                           (Logic.Engine.LastWorldVersion != null ? $" ({Logic.Engine.LastWorldVersion})" : "") + ".";
+                var info = Logic.Engine.LastYamlInfo;
+                if (info?["match"]?.Type == Newtonsoft.Json.Linq.JTokenType.Boolean && !(bool)info["match"]!)
+                    return $"Logic is approximate: your world was rebuilt, but it doesn't match the seed ({info["missing"]} locations missing, {info["extra"]} extra). " +
+                           "Usually the game keeps some options out of the server's data. Link the YAML used to generate the seed for exact logic.";
+                return null;
+            }
         }
 
         // =====================================================================
@@ -378,6 +553,7 @@ namespace AP_Atlas.Core
             Session.Socket.SocketClosed -= OnSocketClosed;
             Session.Items.ItemReceived -= OnItemReceived;
             Session.Locations.CheckedLocationsUpdated -= OnChecked;
+            RaceRules.Changed -= OnRaceRulesChanged;
             Logic.Dispose();
             Changed = null;
         }

@@ -196,7 +196,7 @@ namespace AP_Atlas.Core
             var profiles = new List<MultiworldProfile> { profile };
             // What Cheese Tracker says about the multiworld: its Archipelago tracker and its organizer.
             string tracker = $"https://archipelago.gg/tracker/{TestTrackerId}", organizer = "hostperson";
-            SphereService New() => new SphereService(() => profiles, () => Enumerable.Empty<SlotTrackerControl>(), () => { }, p => (tracker, organizer));
+            SphereService New() => new SphereService(() => profiles, () => Enumerable.Empty<SlotModel>(), () => { }, p => (tracker, organizer));
             var spheres = New();
             RaceRules.Initialize(settings);
             try
@@ -325,7 +325,7 @@ namespace AP_Atlas.Core
             string path = $"/room/{TestTrackerId}/all";
             var profile = new MultiworldProfile { Name = "Big MW", Slots = new List<string> { "Me" }, SphereTrackerUrl = server.Site + path };
             var profiles = new List<MultiworldProfile> { profile };
-            var spheres = new SphereService(() => profiles, () => Enumerable.Empty<SlotTrackerControl>(), () => { }, p => (null, null));
+            var spheres = new SphereService(() => profiles, () => Enumerable.Empty<SlotModel>(), () => { }, p => (null, null));
             RaceRules.Initialize(new AppSettings());
             string page = SphereRoomPage(TestTrackerId, "HostPerson",
                 string.Concat(Enumerable.Range(0, 400).Select(i => $"<tr><td>{1 + i / 100}</td><td>Player{i}</td><td>Spot {i}</td><td>Clique</td></tr>")));
