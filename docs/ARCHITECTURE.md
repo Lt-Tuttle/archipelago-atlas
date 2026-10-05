@@ -48,7 +48,7 @@ MainTrackerWindow (the shell)
 | `Core/PopTracker/` | **Map packs:**<br>• `PopTrackerPackLoader` reads pack zips.<br>• `PackScriptHost` runs pack Lua in a sandbox.<br>• `PackIndex`, `LuaMappingReader`, `GameNames`.<br>• The Pack Doctor (`PackDoctor`, `PackDoctorService`, `PackFixes`: local fixes with undo).<br>• Key Items (`ProgressionTrackerControl`). |
 | `Core/CheeseTracker/` | **Cheese Tracker:** the service: rooms and linking, opt-in automation (the client and rules are in `AP_Atlas.Core`). |
 | `Core/Spheres/` | **Sphere Tracker:** the service that reads the host's spheretracker.de room (the parser and tables are in `AP_Atlas.Core`). |
-| `UI/` | **Windows and views:**<br>• Properties, Hints, Map Tracker, the Cheese and Sphere tabs.<br>• The Pack Doctor and Atlas Engine windows.<br>• Privacy, the permission dialog, shared dialogs, the tab strip.<br>• `TreeSubscriptions`: a view's event subscriptions, made while it's in the window (also after a move) and removed while it isn't. |
+| `UI/` | **Windows and views:**<br>• Properties, Hints, Map Tracker, the Cheese and Sphere tabs.<br>• The Pack Doctor and Atlas Engine windows.<br>• Privacy, the permission dialog, shared dialogs, the tab strip.<br>• `TreeSubscriptions`: a view's event subscriptions, made while it's in the window (also after a move) and removed while it isn't.<br>• `Tool`: every tool (id, title, scope: the app, a multiworld or a slot), in tab order; a slot tool names the slot's view of it. |
 | `Core/SelfTest*.cs` | **The self-test:** run with `Tools/run_selftest.ps1`. |
 | `MainTrackerWindow.VisualCheck.cs` | **The visual check:** pictures of the main screens, compared with an earlier run; run with `Tools/run_visualcheck.ps1`. |
 | `MainTrackerWindow.UiTest.cs` | **The UI test:** drives the window the way a user would, against the fake Archipelago server (connecting, a dropped connection, disconnecting); `Tools/run_selftest.ps1` runs it after the self-test. |
@@ -136,7 +136,9 @@ Downloads that become code are pinned:
 
 These are known structural debts, scheduled before the new shell is built:
 - **Large classes:** `MainTrackerWindow` and `SlotTrackerControl` are split into partial files by job, and connections moved into `SessionManager`. Next, slot state moves out of the UI node into a `SlotModel`.
-- **Re-parenting:** the Cheese and Sphere tabs and Properties follow their events through `TreeSubscriptions` (made on entering the tree, removed on leaving it), so they can be moved (docking, pop-outs); the UI test proves it. The slot's own views follow once their state moves into `SlotModel`, which will own the session's events.
+- **Re-parenting:** the Cheese and Sphere tabs and Properties follow their events through `TreeSubscriptions` (made on entering the tree, removed on leaving it), so they can be moved (docking, pop-outs); the UI test proves it. The slot's own views follow once their state moves into `SlotModel`, which will own the session's events (today the slot's node stops its engine when it leaves the tree).
+- **Tools** are one list (`Tool`); the new shell will build its activity bar, menus and panels from it.
 - **Coalesced refreshes:** one refresh per frame, with hidden views skipped.
-- **A Godot-free `AP_Atlas.Core` library** with unit tests.
 - **One engine process per multiworld** instead of per slot.
+
+Done in Phase 1 so far: the Godot-free `AP_Atlas.Core` library with unit tests, `SessionManager`, `TreeSubscriptions`, the tool list, and the UI test.

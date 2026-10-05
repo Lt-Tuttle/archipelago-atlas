@@ -66,14 +66,14 @@ public partial class MainTrackerWindow
         GetTree().Root.Size = VisualCheckWindowSize;
         await VisualCheckWaitAsync(1.5);
 
-        // Every tab as a new user first sees it.
-        for (int tab = 0; tab < _workspaceSwitcher.TabCount; tab++)
+        // Every tool's tab as a new user first sees it.
+        foreach (var tool in AP_Atlas.UI.Tool.All)
         {
-            host.ShowGlobalTab(tab);
+            host.ShowTool(tool);
             await VisualCheckWaitAsync(0.5);
-            await VisualCheckPictureAsync($"tab{tab + 1:00}_{VisualCheckSlug(_workspaceSwitcher.GetTabTitle(tab))}");
+            await VisualCheckPictureAsync($"tab{tool.Index + 1:00}_{VisualCheckSlug(tool.Title)}");
         }
-        host.ShowGlobalTab(0);
+        host.ShowTool(AP_Atlas.UI.Tool.Connections);
         await VisualCheckWaitAsync(0.3);
 
         // The engine window opens before anything is allowed, so it never goes online.

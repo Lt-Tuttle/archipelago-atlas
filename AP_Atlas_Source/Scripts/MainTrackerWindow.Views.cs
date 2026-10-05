@@ -85,8 +85,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _propertiesPanel?.OnSelectedSlotChanged(_currentSelectedSlot);
         UpdateSidebarHighlighting();
         RefreshTerminalView();
-        // Tabs 0 (Connections), 1 (Map Packs), Cheese Tracker and Sphere Tracker are global and handled by ChangeGlobalTab.
-        if (_currentGlobalTab < 2 || _currentGlobalTab == CheeseTabIndex || _currentGlobalTab == SphereTabIndex) return;
+        // Tools that aren't per slot show their own view (ShowTool).
+        if (_currentTool.Scope != AP_Atlas.UI.ToolScope.Slot) return;
         if (_currentSelectedSlot == null || !GodotObject.IsInstanceValid(_currentSelectedSlot))
         {
             _currentSelectedSlot = null;
@@ -94,19 +94,11 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             ShowNoSlotPlaceholder();
             return;
         }
-        Control view = null;
-        Control sidebar = null;
-        string sidebarTitle = "";
-        switch (_currentGlobalTab)
-        {
-            case 2: view = _currentSelectedSlot.MapTracker; sidebar = _currentSelectedSlot.MapTracker?.SidebarContent; sidebarTitle = "Maps"; break;
-            case 3: view = _currentSelectedSlot.ProgressionTracker; break;
-            case 4: view = _currentSelectedSlot.LogicTrackerView; break;
-            case 5: view = _currentSelectedSlot.ItemHistoryView; break;
-            case 6: view = _currentSelectedSlot.HintsView; break;
-        }
+        // The selected slot's view of the tool.
+        Control view = _currentTool.SlotView?.Invoke(_currentSelectedSlot);
+        Control sidebar = _currentTool.SlotExplorer?.Invoke(_currentSelectedSlot);
         MountInContentStage(view);
-        SwapSidebar(sidebarTitle, sidebar);
+        SwapSidebar(_currentTool.ExplorerTitle, sidebar);
         SwapContentView(view);
     }
     /// <summary>Slots are mounted in the terminal pane. This is the single place that enumerates them.</summary>
@@ -196,17 +188,23 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         }
         SwapContentView(_noSlotPlaceholder);
     }
-    private void ChangeGlobalTab(int tab)
-    {
-        string tabName = _workspaceSwitcher.GetTabTitle(tab);
-        AP_Atlas.Core.PerfMonitor.SetAction($"Switch to {tabName} tab");
-        using var _ = AP_Atlas.Core.PerfMonitor.Measure($"Switch to {tabName} tab");
+    /// <summary>A tab was picked in the tab bar.</summary>
+    private void ChangeGlobalTab(int tab) => ShowTool(AP_Atlas.UI.Tool.All[tab]);
 
-        _currentGlobalTab = tab;
-        if (tab == 0) { SwapSidebar("Connections", _connectionSidebarContent); SwapContentView(_connectionPanel); RefreshContextViews(); }
-        else if (tab == 1) { SwapSidebar("Packs", _packManagerPanel.SidebarContent); SwapContentView(_packManagerPanel); RefreshContextViews(); }
-        else if (tab == CheeseTabIndex) { SwapSidebar("Cheese Tracker", _cheeseTab.SidebarContent); SwapContentView(_cheeseTab); RefreshContextViews(); _cheeseTab.OnShown(); }
-        else if (tab == SphereTabIndex) { SwapSidebar("Sphere Tracker", _sphereTab.SidebarContent); SwapContentView(_sphereTab); RefreshContextViews(); _sphereTab.OnShown(); }
-        else RefreshContextViews(); // 2 Map Tracker, 3 Key Items, 4 Logic Tracker, 5 Item History, 6 Hints
+    /// <summary>Shows a tool: its own view, or for a slot tool the selected slot's view of it.</summary>
+    private void ShowTool(AP_Atlas.UI.Tool tool)
+    {
+        AP_Atlas.Core.PerfMonitor.SetAction($"Switch to {tool.Title} tab");
+        using var _ = AP_Atlas.Core.PerfMonitor.Measure($"Switch to {tool.Title} tab");
+
+        _currentTool = tool;
+        if (_toolViews.TryGetValue(tool, out var own))
+        {
+            SwapSidebar(own.ExplorerTitle, own.Explorer);
+            SwapContentView(own.View);
+            RefreshContextViews();
+            own.Shown?.Invoke();
+        }
+        else RefreshContextViews();
     }
 }

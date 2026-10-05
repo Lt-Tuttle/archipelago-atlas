@@ -21,8 +21,8 @@ namespace AP_Atlas.UI
         void SelectSlot(SlotTrackerControl slot);
         void ConnectSlot(string profileId, string slotName);
         void DisconnectSlot(string profileId, string slotName);
-        /// <summary>0 Connections, 1 Map Packs, 2 Map Tracker, 3 Key Items, 4 Logic Tracker, 5 Item History, 6 Hints, 7 Cheese Tracker.</summary>
-        void ShowGlobalTab(int tab);
+        /// <summary>Switches to a tool's tab (a slot tool shows the selected slot).</summary>
+        void ShowTool(Tool tool);
         void SelectProfile(string profileId);
         void Toast(string message, Color color);
         void OpenPackDoctor(string zipPath, string startTab = null);

@@ -296,33 +296,17 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     {
         if (_selectedProfile != null)
         {
+            var profile = _selectedProfile;
             var confirmDialog = new ConfirmationDialog
             {
                 Title = "Delete Profile",
-                DialogText = $"Are you sure you want to delete the profile '{_selectedProfile.Name}' and all its slots?",
+                DialogText = $"Are you sure you want to delete the profile '{profile.Name}' and all its slots?",
                 Transient = true,
                 Exclusive = true
             };
             confirmDialog.Confirmed += () =>
             {
-                var profileId = _selectedProfile.Id;
-                // Its connections close, and no automatic reconnect brings one back.
-                if (_sessions != null) AP_Atlas.Core.Async.Fire(_sessions.ForgetProfileAsync(profileId), "closing a deleted multiworld's connections", tellUser: false);
-                _cheese?.Unlink(profileId);
-                _spheres?.ForgetProfile(profileId);
-                _profiles.Remove(_selectedProfile);
-                DataManager.SaveProfiles(_profiles);
-                foreach (Node n in ActiveSlotNodes().ToList())
-                {
-                    if (n is SlotTrackerControl slot && slot.ProfileId == profileId)
-                    {
-                        if (_currentSelectedSlot == slot) _currentSelectedSlot = null;
-                        slot.QueueFree();
-                    }
-                }
-                RefreshProfileList();
-                SelectProfile(null);
-                UpdateSidebar();
+                DeleteProfile(profile);
                 ShowToast("Profile Deleted", Godot.Colors.Orange);
                 confirmDialog.QueueFree();
             };
@@ -330,5 +314,31 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             AddChild(confirmDialog);
             confirmDialog.PopupCentered();
         }
+    }
+    /// <summary>
+    /// Deletes a multiworld: its connections close (and no automatic reconnect brings one back), its Cheese Tracker link
+    /// and sphere room are forgotten, and its slots' views go.
+    /// </summary>
+    private void DeleteProfile(MultiworldProfile profile)
+    {
+        var profileId = profile.Id;
+        if (_sessions != null) AP_Atlas.Core.Async.Fire(_sessions.ForgetProfileAsync(profileId), "closing a deleted multiworld's connections", tellUser: false);
+        _cheese?.Unlink(profileId);
+        _spheres?.ForgetProfile(profileId);
+        _profiles.Remove(profile);
+        DataManager.SaveProfiles(_profiles);
+        foreach (Node n in ActiveSlotNodes().ToList())
+        {
+            if (n is SlotTrackerControl slot && slot.ProfileId == profileId)
+            {
+                if (_currentSelectedSlot == slot) _currentSelectedSlot = null;
+                slot.QueueFree();
+            }
+        }
+        RefreshProfileList();
+        if (_selectedProfile == profile) SelectProfile(null);
+        UpdateSidebar();
+        // A slot tool that showed one of its slots now asks for a slot instead of going blank.
+        RefreshContextViews();
     }
 }

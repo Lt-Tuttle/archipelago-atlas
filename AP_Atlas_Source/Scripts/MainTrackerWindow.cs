@@ -36,7 +36,10 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     private HBoxContainer _menuHbox;
     private PanelContainer _globalStatusBar;
     private AppSettings _appSettings;
-    private int _currentGlobalTab = 0;
+    /// <summary>The tool whose tab is showing.</summary>
+    private AP_Atlas.UI.Tool _currentTool = AP_Atlas.UI.Tool.Connections;
+    /// <summary>The views of the tools that aren't per slot: the view, its explorer content and title, and what to do when it's shown.</summary>
+    private Dictionary<AP_Atlas.UI.Tool, (Control View, Control Explorer, string ExplorerTitle, Action Shown)> _toolViews = new();
     private int _currentTerminalTab = 0;
     private AP_Atlas.UI.WrappingTabStrip _workspaceSwitcher;
     private PanelContainer _midLeftSidebar;
@@ -50,12 +53,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     private AP_Atlas.Core.CheeseTracker.CheeseTrackerService _cheese;
     private LineEdit _cheeseInput;
     private AP_Atlas.UI.CheeseTrackerTab _cheeseTab;
-    /// <summary>The Cheese Tracker tab's place in the tab bar (a global tab, like Connections and Map Packs).</summary>
-    private const int CheeseTabIndex = 7;
     private AP_Atlas.Core.Spheres.SphereService _spheres;
     private AP_Atlas.UI.SphereTrackerTab _sphereTab;
-    /// <summary>The Sphere Tracker tab's place in the tab bar (global, like the Cheese Tracker tab).</summary>
-    private const int SphereTabIndex = 8;
     private MultiworldProfile _selectedProfile = null;
     private VSplitContainer _contentSplit;
     private RichTextLabel _debugLogConsole;
@@ -384,15 +383,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         // Never scrolls: tabs tighten their padding when space runs short and wrap only as a last resort.
         _workspaceSwitcher = new AP_Atlas.UI.WrappingTabStrip { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         _workspaceSwitcher.ApplyStyle(12, AP_Atlas.Core.ThemeColors.Accent);
-        _workspaceSwitcher.AddTab("Connections");
-        _workspaceSwitcher.AddTab("Map Packs");
-        _workspaceSwitcher.AddTab("Map Tracker");
-        _workspaceSwitcher.AddTab("Key Items");
-        _workspaceSwitcher.AddTab("Logic Tracker");
-        _workspaceSwitcher.AddTab("Item History");
-        _workspaceSwitcher.AddTab("Hints");
-        _workspaceSwitcher.AddTab("Cheese Tracker");
-        _workspaceSwitcher.AddTab("Sphere Tracker");
+        foreach (var tool in AP_Atlas.UI.Tool.All) _workspaceSwitcher.AddTab(tool.Title);
         _workspaceSwitcher.TabSelected += ChangeGlobalTab;
         globalTabHBox.AddChild(_workspaceSwitcher);
         var contentMenuBtn = new Button { Text = "...", Flat = true, FocusMode = FocusModeEnum.None };
@@ -493,6 +484,13 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _sphereTab.SidebarContent.Visible = false;
         _midLeftVBox.AddChild(_sphereTab.SidebarContent);
         BuildConnectionTab();
+        _toolViews = new Dictionary<AP_Atlas.UI.Tool, (Control, Control, string, Action)>
+        {
+            [AP_Atlas.UI.Tool.Connections] = (_connectionPanel, _connectionSidebarContent, "Connections", null),
+            [AP_Atlas.UI.Tool.MapPacks] = (_packManagerPanel, _packManagerPanel.SidebarContent, "Packs", null),
+            [AP_Atlas.UI.Tool.CheeseTracker] = (_cheeseTab, _cheeseTab.SidebarContent, "Cheese Tracker", _cheeseTab.OnShown),
+            [AP_Atlas.UI.Tool.SphereTracker] = (_sphereTab, _sphereTab.SidebarContent, "Sphere Tracker", _sphereTab.OnShown),
+        };
         BuildLandingPage();
         ReportEngineAtStartup();
         OfferToDeletePlainTextPasswordCopies();
@@ -571,10 +569,10 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
 
     void AP_Atlas.UI.IPropertiesHost.DisconnectSlot(string profileId, string slotName) => DisconnectSlot(profileId, slotName);
 
-    void AP_Atlas.UI.IPropertiesHost.ShowGlobalTab(int tab)
+    void AP_Atlas.UI.IPropertiesHost.ShowTool(AP_Atlas.UI.Tool tool)
     {
-        if (_workspaceSwitcher.CurrentTab != tab) _workspaceSwitcher.CurrentTab = tab;
-        if (_currentGlobalTab != tab) ChangeGlobalTab(tab);
+        if (_workspaceSwitcher.CurrentTab != tool.Index) _workspaceSwitcher.CurrentTab = tool.Index;
+        if (_currentTool != tool) ShowTool(tool);
     }
 
     void AP_Atlas.UI.IPropertiesHost.SelectProfile(string profileId)

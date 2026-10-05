@@ -53,6 +53,7 @@ Development toward the first public beta, 0.1.0.
   - A UI test (`ATLAS_UITEST`): Atlas builds its window and drives it the way a user would, against the fake server: connecting a slot, a dropped connection coming back, disconnecting. `run_selftest.ps1` runs it after the self-test, and CI runs that.
   - Views are ready to be moved (for docking and pop-outs): the Cheese Tracker and Sphere Tracker tabs and Properties follow their events whenever they're in the window, including after a move, and never while out of it. Before, a move would have stopped them updating, because they subscribed only once. The UI test moves each one and counts the events' listeners.
   - The guard rails check that every script has its Godot `.uid` file committed.
+  - One list of Atlas's tools (`Tool`), in tab order, each with its id, title and scope (the whole app, a multiworld or one slot). The tabs, the "Show in…" links in Properties and the visual check use it instead of tab numbers, and the UI test checks every tool's tab shows the right view.
 - **Settings → Privacy & permissions:** everything you've allowed Atlas to do without asking, and every apworld source you trust, each with a way to take it back.
 
 ### Changed
@@ -100,6 +101,7 @@ Development toward the first public beta, 0.1.0.
   - **Godot** kept a log, with a copy of every line Atlas logs, and a shader cache in `%APPDATA%\Godot\app_userdata\The Archipelago Atlas`. Both are off, and Godot's own errors and warnings now go to Atlas's log. Godot still creates that folder, empty, when it starts; it has no setting to stop that.
   - **The Atlas Engine** put its temporary files, Archipelago's cache and pip's downloads in `%TEMP%` and `%LocalAppData%`. They now stay in the engine's folder. pip also ignores your own pip settings now, so they can't change what Atlas installs.
 - **Deleting a multiworld** while one of its slots was waiting to reconnect could bring that slot back, for a multiworld that no longer existed. Deleting now calls off its reconnects.
+- **Deleting a multiworld** whose slot was showing in a tool now shows "Select a connected slot" there, instead of an empty area.
 - **A log file that can't be written** (its folder deleted while Atlas runs, a full disk) is now reported once, not on every line, and logging carries on when it can.
 - **Files held by another program:**
   - If an antivirus or sync tool (OneDrive, Dropbox) was reading your settings or profiles at the moment Atlas read them, Atlas took the file for damaged and put its older backup in its place. Your latest changes were lost.

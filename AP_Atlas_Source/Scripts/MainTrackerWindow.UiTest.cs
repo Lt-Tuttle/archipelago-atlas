@@ -60,6 +60,8 @@ public partial class MainTrackerWindow
             ConnectingThroughTheWindowAsync);
         await ScenarioAsync("Moving views: the Cheese and Sphere tabs and Properties keep following their events when moved to another parent (docking, pop-outs), and stop while out of the window",
             ViewsKeepTheirEventsWhenMovedAsync);
+        await ScenarioAsync("Tools: every tool's tab shows its own view, and each slot tool the connected slot's view (or asks for a slot when none is connected)",
+            EveryToolShowsItsViewAsync);
         await _sessions.CloseAllAsync(TimeSpan.FromSeconds(3));
         GD.Print($"UITEST DONE: {passed} passed, {failed} failed");
         GetTree().Quit(failed == 0 ? 0 : 1);
@@ -100,8 +102,7 @@ public partial class MainTrackerWindow
         }
         finally
         {
-            await _sessions.ForgetProfileAsync(profile.Id);
-            _profiles.Remove(profile);
+            DeleteProfile(profile);
         }
     }
 
@@ -175,7 +176,7 @@ public partial class MainTrackerWindow
         }
         finally
         {
-            _profiles.Remove(profile);
+            DeleteProfile(profile);
             elsewhere.QueueFree();
         }
     }
@@ -186,6 +187,72 @@ public partial class MainTrackerWindow
         var flags = System.Reflection.BindingFlags.NonPublic | (owner == null ? System.Reflection.BindingFlags.Static : System.Reflection.BindingFlags.Instance);
         var field = type.GetField(eventName, flags) ?? throw new InvalidOperationException($"{type.Name}.{eventName} isn't an event Atlas can count");
         return (field.GetValue(owner) as Delegate)?.GetInvocationList().Length ?? 0;
+    }
+
+    private async Task EveryToolShowsItsViewAsync()
+    {
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        // What each tool must show, written out here (not read from the tool list), so a wrong entry there can't pass.
+        var ownViews = new Dictionary<AP_Atlas.UI.Tool, Control>
+        {
+            [AP_Atlas.UI.Tool.Connections] = _connectionPanel,
+            [AP_Atlas.UI.Tool.MapPacks] = _packManagerPanel,
+            [AP_Atlas.UI.Tool.CheeseTracker] = _cheeseTab,
+            [AP_Atlas.UI.Tool.SphereTracker] = _sphereTab,
+        };
+        var slotViews = new Dictionary<AP_Atlas.UI.Tool, Func<SlotTrackerControl, Control>>
+        {
+            [AP_Atlas.UI.Tool.MapTracker] = s => s.MapTracker,
+            [AP_Atlas.UI.Tool.KeyItems] = s => s.ProgressionTracker,
+            [AP_Atlas.UI.Tool.LogicTracker] = s => s.LogicTrackerView,
+            [AP_Atlas.UI.Tool.ItemHistory] = s => s.ItemHistoryView,
+            [AP_Atlas.UI.Tool.Hints] = s => s.HintsView,
+        };
+        UiTestExpect(ownViews.Count + slotViews.Count == AP_Atlas.UI.Tool.All.Count, "a tool is missing from this test's table");
+
+        // Atlas opens on its welcome page with Connections as the current tab, so start from another tab, as a user would.
+        host.ShowTool(AP_Atlas.UI.Tool.MapPacks);
+        // No slot connected: the tools that aren't per slot show their own view, and the slot tools ask for a slot.
+        foreach (var tool in AP_Atlas.UI.Tool.All)
+        {
+            host.ShowTool(tool);
+            await UiTestWaitAsync(0.05);
+            UiTestExpect(_workspaceSwitcher.CurrentTab == tool.Index, $"the tab bar isn't on {tool.Title}");
+            Control expected = ownViews.TryGetValue(tool, out var own) ? own : _noSlotPlaceholder;
+            UiTestExpect(ShownContent() == expected, $"{tool.Title} shows {ShownContent()?.Name ?? "nothing"} without a slot");
+        }
+
+        // A connected slot: each slot tool shows that slot's view of it.
+        await using var server = new FakeArchipelagoServer();
+        server.Games["Test Game"] = new FakeGame("0123456789abcdef0123456789abcdef01234567",
+            new Dictionary<string, long> { ["Sword"] = 1000 }, new Dictionary<string, long> { ["Cave Chest"] = 2000 });
+        var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Tester");
+        _profiles.Add(profile);
+        try
+        {
+            await OnConnectSlotPressedAsync("Tester", profile);
+            var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
+            foreach (var (tool, view) in slotViews)
+            {
+                host.ShowTool(tool);
+                await UiTestWaitAsync(0.05);
+                UiTestExpect(ShownContent() == view(slot), $"{tool.Title} doesn't show the connected slot's view");
+            }
+        }
+        finally
+        {
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+            DeleteProfile(profile);
+        }
+    }
+
+    /// <summary>The one view showing in the content area, or null if none or several are.</summary>
+    private Control? ShownContent()
+    {
+        var shown = _contentStage.GetChildren().OfType<Control>().Where(c => c.Visible).ToList();
+        return shown.Count == 1 ? shown[0] : null;
     }
 
     private SlotTrackerControl? SlotView(string profileId, string slotName) =>

@@ -30,13 +30,13 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     public void ShowCheeseTab(string view)
     {
         _cheeseTab.ShowView(view);
-        ((AP_Atlas.UI.IPropertiesHost)this).ShowGlobalTab(CheeseTabIndex);
+        ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.CheeseTracker);
     }
     /// <summary>Switches to the Sphere Tracker tab showing a slot (SphereTrackerTab.SlotView) or its Settings.</summary>
     public void ShowSphereTab(string view)
     {
         _sphereTab.ShowView(view);
-        ((AP_Atlas.UI.IPropertiesHost)this).ShowGlobalTab(SphereTabIndex);
+        ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.SphereTracker);
     }
     /// <summary>Opens the Atlas Engine setup window.</summary>
     /// <summary>Settings → Privacy &amp; permissions: what the user allowed Atlas to do without asking, and trusted sources.</summary>

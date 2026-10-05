@@ -148,11 +148,11 @@ namespace AP_Atlas.UI
             return LinkTo(name, ItemT(view, player, id, name, receipt), ClassOf(flags).Color);
         }
 
-        /// <summary>Makes a slot current and switches to a tab (used by Find/Show actions).</summary>
-        private void Go(SlotTrackerControl slot, int tab)
+        /// <summary>Makes a slot current and switches to one of its tools (used by Find/Show actions).</summary>
+        private void Go(SlotTrackerControl slot, Tool tool)
         {
             if (slot != null && slot != _host.SelectedSlot) _host.SelectSlot(slot);
-            _host.ShowGlobalTab(tab);
+            _host.ShowTool(tool);
         }
 
         private void NotConnected(string kind, string title)
@@ -271,11 +271,11 @@ namespace AP_Atlas.UI
             BeginActions();
             if (slot != _host.SelectedSlot) AddAction("Select slot", "Make this the selected slot", () => _host.SelectSlot(slot));
             if (live) AddAction("Disconnect", "Close this slot's connection", () => _host.DisconnectSlot(slot.ProfileId, slot.SlotName));
-            AddAction("Map", "Map Tracker", () => Go(slot, 2));
-            AddAction("Key Items", "Key Items", () => Go(slot, 3));
-            AddAction("Logic", "Logic Tracker", () => Go(slot, 4));
-            AddAction("History", "Item History", () => Go(slot, 5));
-            AddAction("Hints", "Hints", () => Go(slot, 6));
+            AddAction("Map", "Map Tracker", () => Go(slot, Tool.MapTracker));
+            AddAction("Key Items", "Key Items", () => Go(slot, Tool.KeyItems));
+            AddAction("Logic", "Logic Tracker", () => Go(slot, Tool.LogicTracker));
+            AddAction("History", "Item History", () => Go(slot, Tool.ItemHistory));
+            AddAction("Hints", "Hints", () => Go(slot, Tool.Hints));
             AddAction("Export specials…", $"Save {slot.Game}'s special items and locations to a file you can share", () => ExportSpecials(slot.Game));
             AddAction("Import specials…", "Load a shared special list", ImportSpecials);
             AddAction("Flag labels…", "Rename the five flag colors", ShowFlagLabelDialog);
@@ -347,8 +347,8 @@ namespace AP_Atlas.UI
             int me = slot.PlayerSlot;
             var openForMe = slot.CurrentHints.Where(h => !h.Found && h.ReceivingPlayer == me).ToList();
             var openInMine = slot.CurrentHints.Where(h => !h.Found && h.FindingPlayer == me).ToList();
-            Row("Open hints for you", Link(openForMe.Count.ToString(), () => Go(slot, 6)));
-            Row("Open hints in your world", Link(openInMine.Count.ToString(), () => Go(slot, 6)));
+            Row("Open hints for you", Link(openForMe.Count.ToString(), () => Go(slot, Tool.Hints)));
+            Row("Open hints in your world", Link(openInMine.Count.ToString(), () => Go(slot, Tool.Hints)));
             int inLogicForMe = openInMine.Count(h => slot.IsLocationReachable(h.LocationId));
             if (openInMine.Count > 0 && !slot.LogicHidden) PlainRow("…of those in logic", inLogicForMe.ToString(), inLogicForMe > 0 ? Good : Muted);
 
@@ -618,13 +618,13 @@ namespace AP_Atlas.UI
             // --- Quick actions ---
             BeginActions();
             if (owner != null && owner.IsOnMap(t.LocationId))
-                AddAction("Show on map", "Open the Map Tracker centered on this location", () => { Go(owner, 2); owner.RevealOnMap(t.LocationId); });
+                AddAction("Show on map", "Open the Map Tracker centered on this location", () => { Go(owner, Tool.MapTracker); owner.RevealOnMap(t.LocationId); });
             if (owner != null && owner.HasLogicRow(t.LocationId) && !owner.LogicHidden)
-                AddAction("Logic Tracker", "Find this check in the Logic Tracker", () => { Go(owner, 4); owner.RevealLogicRow(t.LocationId); });
+                AddAction("Logic Tracker", "Find this check in the Logic Tracker", () => { Go(owner, Tool.LogicTracker); owner.RevealLogicRow(t.LocationId); });
             if (hint != null)
             {
                 var hintHolder = _host.ConnectedSlots.FirstOrDefault(x => IsInstanceValid(x) && x.CurrentHints.Any(h => h.FindingPlayer == hint.FindingPlayer && h.LocationId == hint.LocationId)) ?? view;
-                AddAction("Hints", "Find this hint in the Hints tab", () => { Go(hintHolder, 6); hintHolder.RevealHint(hint.FindingPlayer, hint.LocationId); });
+                AddAction("Hints", "Find this hint in the Hints tab", () => { Go(hintHolder, Tool.Hints); hintHolder.RevealHint(hint.FindingPlayer, hint.LocationId); });
             }
             if (owner != null && isChecked == false && hint == null)
                 AddAction("Request hint", "Ask the server what's here (!hint_location; costs hint points)", () => RequestHint(owner, "!hint_location " + name, name));
@@ -916,9 +916,9 @@ namespace AP_Atlas.UI
 
             BeginActions();
             if (owner != null && copies.Count > 0)
-                AddAction("Item History", "Find this item in Item History", () => { Go(owner, 5); owner.RevealHistory(t); });
+                AddAction("Item History", "Find this item in Item History", () => { Go(owner, Tool.ItemHistory); owner.RevealHistory(t); });
             if (owner != null)
-                AddAction("Key Items", "Show this item in Key Items", () => { Go(owner, 3); owner.RevealKeyItem(name); });
+                AddAction("Key Items", "Show this item in Key Items", () => { Go(owner, Tool.KeyItems); owner.RevealKeyItem(name); });
             if (owner != null && (poolCount == 0 || copies.Count < poolCount) && hintsForItem.All(h => h.Found))
                 AddAction("Request hint", "Ask the server where this item is (!hint; costs hint points)", () => RequestHint(owner, "!hint " + name, name));
             AddAction("Copy", "Copy the item name", () => CopyText(name));
@@ -990,7 +990,7 @@ namespace AP_Atlas.UI
                 var steps = owner.StepsUnlockedBy(name);
                 if (steps.Count == 0) AddHint(copies.Count > 0 ? "Receiving it hasn't opened any new checks." : "Not received yet.");
                 foreach (var (step, count) in steps)
-                    AddText(Link($"Step {step}", () => { Go(owner, 4); }, Colors.LightGray) + Colored($": opened {count} check{(count == 1 ? "" : "s")}", Colors.LightGray));
+                    AddText(Link($"Step {step}", () => { Go(owner, Tool.LogicTracker); }, Colors.LightGray) + Colored($": opened {count} check{(count == 1 ? "" : "s")}", Colors.LightGray));
             }
 
             // Map pack item definition (Key Items).
@@ -1048,7 +1048,7 @@ namespace AP_Atlas.UI
             if (connected != null && connected != _host.SelectedSlot) AddAction("Switch to slot", "Select this player's slot", () => _host.SelectSlot(connected));
             if (connected != null) AddAction("Slot summary", "Show this slot's summary", () => Inspect(InspectTarget.ForSlot(connected.ProfileId, connected.SlotName)));
             if (connected == null && inProfile) AddAction("Connect", $"Connect {realName} (it's in this profile)", () => _host.ConnectSlot(profile.Id, realName));
-            AddAction("Hints with player", "Show hints mentioning this player", () => { Go(view, 6); view.FilterHints(name); });
+            AddAction("Hints with player", "Show hints mentioning this player", () => { Go(view, Tool.Hints); view.FilterHints(name); });
             AddAction("Copy", "Copy the player name", () => CopyText(name));
             EndActions();
 
@@ -1169,9 +1169,9 @@ namespace AP_Atlas.UI
                 }
             }
             var holder = _host.ConnectedSlots.FirstOrDefault(x => IsInstanceValid(x) && x.CurrentHints.Any(y => y.FindingPlayer == h.FindingPlayer && y.LocationId == h.LocationId)) ?? view;
-            AddAction("Find in Hints", "Show this hint in the Hints tab", () => { Go(holder, 6); holder.RevealHint(h.FindingPlayer, h.LocationId); });
+            AddAction("Find in Hints", "Show this hint in the Hints tab", () => { Go(holder, Tool.Hints); holder.RevealHint(h.FindingPlayer, h.LocationId); });
             if (finderSlot != null && finderSlot.IsOnMap(h.LocationId))
-                AddAction("Show on map", "Open the map at this location", () => { Go(finderSlot, 2); finderSlot.RevealOnMap(h.LocationId); });
+                AddAction("Show on map", "Open the map at this location", () => { Go(finderSlot, Tool.MapTracker); finderSlot.RevealOnMap(h.LocationId); });
             AddAction("Copy", "Copy the hint as a sentence", () => CopyText(text));
             EndActions();
 
@@ -1222,7 +1222,7 @@ namespace AP_Atlas.UI
                 ids.Count == 0 ? "Not in this world" : $"{done} / {ids.Count} checked");
 
             BeginActions();
-            if (ids.Count > 0) AddAction("Show on map", "Center the map on this pin", () => { Go(view, 2); view.RevealOnMap(ids[0]); });
+            if (ids.Count > 0) AddAction("Show on map", "Center the map on this pin", () => { Go(view, Tool.MapTracker); view.RevealOnMap(ids[0]); });
             AddAction("Copy", "Copy the pin name", () => CopyText(pin.Name));
             EndActions();
 
@@ -1288,7 +1288,7 @@ namespace AP_Atlas.UI
             SetHeader("Map", pm.Name, Colored(map.Pack.Manifest?.Name ?? "", Colors.LightGray),
                 hidden ? Colors.SteelBlue : inLogic > 0 ? Good : Muted, hidden ? $"{inLogic + outLogic} open" : $"{inLogic} in logic");
             BeginActions();
-            AddAction("Open map", "Show this map in the Map Tracker", () => { Go(view, 2); map.ShowMap(t.MapId); });
+            AddAction("Open map", "Show this map in the Map Tracker", () => { Go(view, Tool.MapTracker); map.ShowMap(t.MapId); });
             EndActions();
 
             Section("Overview");
@@ -1343,7 +1343,7 @@ namespace AP_Atlas.UI
             BeginActions();
             if (File.Exists(path)) AddAction("Open folder", "Show the pack file in Explorer", () => AP_Atlas.Core.ExternalLinks.OpenFolder(Path.GetDirectoryName(path)));
             if (!string.IsNullOrEmpty(m?.VersionsUrl)) AddAction("Versions page", m.VersionsUrl, () => AP_Atlas.Core.ExternalLinks.OpenWeb(m.VersionsUrl));
-            AddAction("Map Packs", "Open the Map Packs tab", () => _host.ShowGlobalTab(1));
+            AddAction("Map Packs", "Open the Map Packs tab", () => _host.ShowTool(Tool.MapPacks));
             if (File.Exists(path)) AddAction("Pack Doctor…", "Check this pack against the game and fix problems locally", () => _host.OpenPackDoctor(path));
             EndActions();
 
@@ -1388,7 +1388,7 @@ namespace AP_Atlas.UI
             BeginActions();
             var notConnected = profile.Slots.Where(n => live.All(l => l.SlotName != n) && !_host.IsSlotConnecting(profile.Id, n)).ToList();
             if (notConnected.Count > 0) AddAction("Connect all", "Connect every slot in this profile", () => { foreach (var n in notConnected) _host.ConnectSlot(profile.Id, n); });
-            AddAction("Edit", "Open this profile on the Connections tab", () => { _host.ShowGlobalTab(0); _host.SelectProfile(profile.Id); });
+            AddAction("Edit", "Open this profile on the Connections tab", () => { _host.ShowTool(Tool.Connections); _host.SelectProfile(profile.Id); });
             AddAction("Copy server", "Copy the server address", () => CopyText(profile.ServerUrl));
             EndActions();
 
