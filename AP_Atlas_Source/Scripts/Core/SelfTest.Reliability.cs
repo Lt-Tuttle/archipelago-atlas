@@ -241,6 +241,93 @@ namespace AP_Atlas.Core
         }
 
         /// <summary>
+        /// Map packs: reading one decodes none of its images (they're most of a pack's memory); using it decodes them once
+        /// for every user; they're kept while it's used and for the pack released last, and freed (textures too) when
+        /// another pack is released after it. The Pack Doctor learns which images decode, and their sizes, without keeping
+        /// them, and finds the same whether or not the images are decoded.
+        /// </summary>
+        private static void PackImagesOnlyWhileUsed()
+        {
+            string first = Scratch("selftest_images_a.zip"), second = Scratch("selftest_images_b.zip"), third = Scratch("selftest_images_c.zip");
+            AP_Atlas.Core.Testing.FakeMapPack.Write(first, "Self-test pack A", "Self Test Game A");
+            AP_Atlas.Core.Testing.FakeMapPack.Write(second, "Self-test pack B", "Self Test Game B");
+            AP_Atlas.Core.Testing.FakeMapPack.Write(third, "Self-test pack C", "Self Test Game C");
+            long decoded = PopTracker.PackImages.Decoded;
+
+            // Reading: the structure, no images.
+            var pack = PopTracker.PopTrackerPackLoader.InspectZipPack(first) ?? throw new InvalidOperationException("the test pack wasn't read");
+            Expect(pack.Maps.Count == 2 && pack.ItemsByCode.ContainsKey("sword") && pack.ItemsByCode.ContainsKey("shield"), "the test pack was read wrong");
+            Expect(PopTracker.PackImages.Decoded == decoded && !pack.ImagesLoaded && pack.Images.Count == 0, "reading a pack decoded its images");
+            Expect(pack.FindImage("images/sword.png") == null && pack.Maps["World"].Background == null, "a pack nobody uses has images to show");
+
+            // The Pack Doctor's check: which images decode, and their sizes, without textures.
+            var doctored = PopTracker.PopTrackerPackLoader.InspectZipPack(third) ?? throw new InvalidOperationException("the third test pack wasn't read");
+            PopTracker.PackImages.Check(doctored);
+            Expect(PopTracker.PackImages.Decoded == decoded && !doctored.ImagesLoaded, "checking a pack's images kept them");
+            Expect(doctored.ImagesChecked && doctored.BrokenImages.Contains("images/broken.png"), "the image that can't be decoded wasn't found");
+            Expect(doctored.HasDecodableImage("images/sword.png") && doctored.HasDecodableImage("/images/sword") && !doctored.HasDecodableImage("images/broken.png") && !doctored.HasDecodableImage("images/none.png"),
+                "which images decode is wrong");
+            Expect(doctored.HasMapBackground(doctored.Maps["World"]) && !doctored.HasMapBackground(doctored.Maps["Broken"]), "which maps have a background is wrong");
+            Expect(doctored.ImageSize("images/world.png") == new Godot.Vector2I(AP_Atlas.Core.Testing.FakeMapPack.MapWidth, AP_Atlas.Core.Testing.FakeMapPack.MapHeight), "the map image's size wasn't learnt");
+            // The Pack Doctor, and the stamps that tell a fix whether the author changed its subject, are the same with or
+            // without the images decoded (a stamp that changed with them would set a user's fix aside on its own).
+            string[] stamped = { "map:World", "map:Broken" };
+            var without = PopTracker.PackDoctor.Analyze(PopTracker.PackDoctor.Prepare(doctored, null)).Findings.Select(f => f.Key).OrderBy(k => k).ToList();
+            var stampsWithout = stamped.Select(subject => PopTracker.PackFixes.AuthorStamp(doctored, subject)).ToList();
+            List<string> with, stampsWith;
+            using (PopTracker.PackImages.Use(doctored))
+            {
+                with = PopTracker.PackDoctor.Analyze(PopTracker.PackDoctor.Prepare(doctored, null)).Findings.Select(f => f.Key).OrderBy(k => k).ToList();
+                stampsWith = stamped.Select(subject => PopTracker.PackFixes.AuthorStamp(doctored, subject)).ToList();
+            }
+            Expect(without.SequenceEqual(with), $"the Pack Doctor finds [{string.Join(", ", without)}] without the images decoded, [{string.Join(", ", with)}] with them");
+            Expect(with.Contains("map:nobg:Broken") && with.Contains("map:outside:World") && with.Contains("tile:noimage:shield") &&
+                   !with.Contains("map:nobg:World") && !with.Contains("tile:noimage:sword"), $"the Pack Doctor's findings are wrong: {string.Join(", ", with)}");
+            Expect(stampsWithout.SequenceEqual(stampsWith) && stampsWith[0] == "images/world.png|ok" && stampsWith[1] == "images/broken.png|missing",
+                $"the maps' stamps are [{string.Join(", ", stampsWithout)}] without the images decoded, [{string.Join(", ", stampsWith)}] with them");
+
+            // Using: decoded once for two users, and kept while used.
+            decoded = PopTracker.PackImages.Decoded;
+            var a = PopTracker.PackImages.Use(pack);
+            var b = PopTracker.PackImages.Use(pack);
+            Expect(PopTracker.PackImages.Decoded - decoded == 2 && PopTracker.PackImages.UsersOf(pack) == 2, $"two uses of a pack decoded {PopTracker.PackImages.Decoded - decoded} images, not its 2 once");
+            var sword = pack.FindImage("images/sword.png");
+            Expect(sword != null && pack.Maps["World"].Background != null && pack.Maps["Broken"].Background == null, "a used pack's images aren't there");
+            a.Dispose();
+            a.Dispose(); // twice is harmless
+            Expect(PopTracker.PackImages.UsersOf(pack) == 1 && pack.ImagesLoaded, "a pack stopped being used while still used");
+            b.Dispose();
+            Expect(pack.ImagesLoaded && Godot.GodotObject.IsInstanceValid(sword), "the pack released last didn't keep its images");
+
+            // Another pack released after it: the first is freed, its textures at once.
+            using (PopTracker.PackImages.Use(PopTracker.PopTrackerPackLoader.InspectZipPack(second) ?? throw new InvalidOperationException("the second test pack wasn't read"))) { }
+            Expect(!pack.ImagesLoaded && pack.Images.Count == 0 && pack.Maps["World"].BackgroundTexture == null, "a pack released before another kept its images");
+            Expect(!Godot.GodotObject.IsInstanceValid(sword), "a freed pack's textures weren't freed");
+
+            // Used again: decoded again.
+            decoded = PopTracker.PackImages.Decoded;
+            using (PopTracker.PackImages.Use(pack))
+                Expect(PopTracker.PackImages.Decoded - decoded == 2 && pack.FindImage("images/sword.png") != null, "a freed pack wasn't decoded again when used again");
+        }
+
+        /// <summary>
+        /// The Pack Doctor, checking a pack nobody uses (one picked in the Map Packs tab, or just installed), learns which of
+        /// its images don't decode first, so its findings are those of a decoded pack, and keeps none of them.
+        /// </summary>
+        private static async Task PackDoctorChecksUnusedPacksImages()
+        {
+            string zip = Scratch("selftest_images_d.zip");
+            AP_Atlas.Core.Testing.FakeMapPack.Write(zip, "Self-test pack D", "Self Test Game D");
+            var pack = PopTracker.PopTrackerPackLoader.InspectZipPack(zip) ?? throw new InvalidOperationException("the test pack wasn't read");
+            long decoded = PopTracker.PackImages.Decoded;
+            var report = await PopTracker.PackDoctorService.CheckAsync(pack, prompt: false) ?? throw new InvalidOperationException("the Pack Doctor didn't check the pack");
+            var keys = report.Findings.Select(f => f.Key).ToList();
+            Expect(keys.Contains("map:nobg:Broken") && keys.Contains("tile:noimage:shield") && !keys.Contains("map:nobg:World") && !keys.Contains("tile:noimage:sword"),
+                $"the Pack Doctor's findings for a pack nobody uses are wrong: {string.Join(", ", keys)}");
+            Expect(PopTracker.PackImages.Decoded == decoded && !pack.ImagesLoaded, "checking a pack nobody uses kept its images");
+        }
+
+        /// <summary>
         /// The Pack Doctor analyses a snapshot taken on the main thread: a fix edited while an analysis runs doesn't change
         /// it under the analysis, and the next snapshot sees the edit. The pack's own mapping is linked as usual.
         /// </summary>

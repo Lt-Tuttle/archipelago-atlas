@@ -87,6 +87,8 @@ public partial class MainTrackerWindow
             RoomTextReachesEverySlotAsync);
         await ScenarioAsync("Moving a slot's panel: out of the window and docked elsewhere, the slot keeps its connection, views and updates, and shows what arrived meanwhile",
             SlotPanelMovesWholeAsync);
+        await ScenarioAsync("Map packs: a slot's pack has its images while the slot is connected (its map shows them), the Pack Doctor's while its window is open; then they're freed once another pack is used",
+            PackImagesFollowTheirUsersAsync);
         await ScenarioAsync("Race rooms: a room the server calls a race restricts its slots (no \"why\" answers), and the Sphere Tracker hides that multiworld's spheres",
             RaceRoomRestrictsAsync);
         await ScenarioAsync("Logic: the slot's logic follows its items and checks step by step; after an engine crash, an engine update or a restart it's rebuilt from scratch on a new engine; race mode can hide it",
@@ -494,6 +496,55 @@ public partial class MainTrackerWindow
         {
             elsewhere.QueueFree();
             DeleteProfile(profile);
+        }
+    }
+
+    private async Task PackImagesFollowTheirUsersAsync()
+    {
+        string packs = AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory();
+        string zip = System.IO.Path.Combine(packs, "uitest_pack.zip"), other = System.IO.Path.Combine(packs, "uitest_other_pack.zip");
+        FakeMapPack.Write(zip, "UI test pack", "Test Game");
+        FakeMapPack.Write(other, "UI test other pack", "Another Game");
+        await using var server = new FakeArchipelagoServer();
+        server.Games["Test Game"] = new FakeGame("0123456789abcdef0123456789abcdef01234567",
+            new Dictionary<string, long> { ["Sword"] = 1000 }, new Dictionary<string, long> { ["Cave Chest"] = 2000 });
+        var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Tester");
+        _profiles.Add(profile);
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        try
+        {
+            await OnConnectSlotPressedAsync("Tester", profile);
+            var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
+            var pack = await UiTestWaitForAsync(() => slot.Pack, "the slot's map pack");
+            UiTestExpect(AP_Atlas.Core.PopTracker.PackImages.UsersOf(pack) == 1 && pack.ImagesLoaded, "the connected slot doesn't use its pack's images");
+            // The map shows its background.
+            ShowTextClient(slot);
+            host.ShowTool(AP_Atlas.UI.Tool.MapTracker);
+            await UiTestWaitForAsync(() => slot.MapTracker.FindChildren("*", "Sprite2D", true, false).OfType<Sprite2D>().FirstOrDefault(s => s.Texture != null), "the map's background on the Map Tracker");
+
+            // The Pack Doctor window uses the pack while it's open.
+            OpenPackDoctor(zip);
+            var window = await UiTestWaitForAsync(() => GetTree().Root.GetChildren().OfType<AP_Atlas.UI.PackDoctorWindow>().FirstOrDefault(), "the Pack Doctor window");
+            await UiTestWaitForAsync(() => AP_Atlas.Core.PopTracker.PackImages.UsersOf(pack) == 2 && pack.ImagesLoaded ? window : null, "the Pack Doctor window to use the pack's images");
+            await UiTestWaitAsync(0.3); // the window takes the use on the main thread, after the images are decoded
+            window.EmitSignal(Window.SignalName.CloseRequested);
+            await UiTestWaitForAsync(() => AP_Atlas.Core.PopTracker.PackImages.UsersOf(pack) == 1 ? window : null, "the closed Pack Doctor window to stop using the pack");
+
+            // The slot ends: the pack keeps its images (the last one released) until another pack is used.
+            DeleteProfile(profile);
+            await UiTestWaitForAsync(() => slot.Ended ? slot : null, "the slot to end");
+            UiTestExpect(AP_Atlas.Core.PopTracker.PackImages.UsersOf(pack) == 0 && pack.ImagesLoaded, "the ended slot still uses its pack, or its pack lost its images too soon");
+            var otherPack = AP_Atlas.Core.PopTracker.PopTrackerPackLoader.InspectZipPack(other) ?? throw new InvalidOperationException("the other test pack wasn't read");
+            using (AP_Atlas.Core.PopTracker.PackImages.Use(otherPack)) { }
+            UiTestExpect(!pack.ImagesLoaded, "the ended slot's pack kept its images after another pack was used");
+        }
+        finally
+        {
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+            if (_profiles.Contains(profile)) DeleteProfile(profile);
+            foreach (string file in new[] { zip, other }) AP_Atlas.Core.SafeFile.Delete(file);
         }
     }
 

@@ -416,7 +416,7 @@ namespace AP_Atlas.Core.PopTracker
                             Suggestions = Suggest(item.Name, itemNames, 6)
                         });
                     }
-                    if (pack.FindImage(TileImagePath(item, code)) == null)
+                    if (!pack.HasDecodableImage(TileImagePath(item, code)))
                     {
                         add(new Finding
                         {
@@ -582,9 +582,10 @@ namespace AP_Atlas.Core.PopTracker
             }
             foreach (var map in pack.Maps.Values)
             {
-                if (map.BackgroundTexture == null)
+                bool broken = pack.BrokenImages.Any(b => b.EndsWith(map.MapBg?.TrimStart('/') ?? "\0", StringComparison.OrdinalIgnoreCase));
+                // A background replaced by a fix, or the pack's own (decoded or not: the analysis needn't decode it).
+                if (map.Background == null && !pack.HasMapBackground(map))
                 {
-                    bool broken = pack.BrokenImages.Any(b => b.EndsWith(map.MapBg?.TrimStart('/') ?? "\0", StringComparison.OrdinalIgnoreCase));
                     add(new Finding
                     {
                         Key = "map:nobg:" + map.Id,
@@ -610,9 +611,9 @@ namespace AP_Atlas.Core.PopTracker
                     });
                     continue;
                 }
-                if (map.BackgroundTexture != null)
+                Godot.Vector2? imageSize = map.Background?.GetSize() ?? (pack.MapBackgroundPath(map) is { } bgPath && pack.ImageSize(bgPath) is { } known ? new Godot.Vector2(known.X, known.Y) : null);
+                if (imageSize is { } size)
                 {
-                    var size = map.BackgroundTexture.GetSize();
                     var outside = pins.Where(p => p.X < 0 || p.Y < 0 || p.X > size.X || p.Y > size.Y).ToList();
                     if (outside.Count > 0)
                     {

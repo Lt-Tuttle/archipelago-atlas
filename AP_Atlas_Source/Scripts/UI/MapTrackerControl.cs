@@ -575,10 +575,10 @@ namespace AP_Atlas.UI
         private void AutoFitCamera()
         {
             if (_pack == null || string.IsNullOrEmpty(_currentMapId) || !_pack.Maps.ContainsKey(_currentMapId)) return;
-            var map = _pack.Maps[_currentMapId];
-            if (map.BackgroundTexture == null) return;
-            _camera.Position = map.BackgroundTexture.GetSize() / 2f;
-            var mapSize = map.BackgroundTexture.GetSize();
+            var background = Background(_pack.Maps[_currentMapId]);
+            if (background == null) return;
+            _camera.Position = background.GetSize() / 2f;
+            var mapSize = background.GetSize();
             var viewSize = _viewportContainer.Size;
             if (viewSize.X > 0 && viewSize.Y > 0 && (mapSize.X > viewSize.X || mapSize.Y > viewSize.Y))
             {
@@ -613,6 +613,9 @@ namespace AP_Atlas.UI
         {
             DisplayOptionsChanged -= OnDisplayOptionsChanged;
         }
+        /// <summary>A map's background, or null when it has none (or it was freed with its pack).</summary>
+        private static ImageTexture Background(PopTrackerMap map) => map?.Background;
+
         private void SwitchMap(string mapId)
         {
             if (_pack == null || !_pack.Maps.ContainsKey(mapId)) return;
@@ -621,10 +624,10 @@ namespace AP_Atlas.UI
                 SaveCurrentCamera();
             }
             _currentMapId = mapId;
-            var map = _pack.Maps[mapId];
-            if (map.BackgroundTexture != null)
+            var background = Background(_pack.Maps[mapId]);
+            if (background != null)
             {
-                _mapBackground.Texture = map.BackgroundTexture;
+                _mapBackground.Texture = background;
                 if (_appSettings != null && _appSettings.MapCameras != null && _appSettings.MapCameras.TryGetValue(mapId, out var state))
                 {
                     _camera.Position = new Vector2(state.X, state.Y);
@@ -714,9 +717,9 @@ namespace AP_Atlas.UI
                 {
                     size = currentMap.LocationSize;
                 }
-                else if (currentMap != null && currentMap.BackgroundTexture != null)
+                else if (Background(currentMap) is { } background)
                 {
-                    size = Math.Max(16f, Math.Min(currentMap.BackgroundTexture.GetWidth(), currentMap.BackgroundTexture.GetHeight()) * 0.015f);
+                    size = Math.Max(16f, Math.Min(background.GetWidth(), background.GetHeight()) * 0.015f);
                 }
                 size = size * _appSettings.MapNodeScale;
                 var btn = new Button

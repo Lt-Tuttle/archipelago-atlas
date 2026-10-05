@@ -111,6 +111,8 @@ namespace AP_Atlas.Core
             await TestAsync("Profiles another program held at load aren't saved over, and the user is told", HeldProfilesAreNotSavedOver);
             await TestAsync("Window updates handed to the main thread skip a closed owner, and a failure is logged", DeferredWorkRespectsItsOwner);
             Test("Hitch reports: a measured step's time leaves out garbage collection pauses (listed on their own)", StepTimesLeaveOutCollections);
+            Test("Map packs: images are decoded only while a pack is used, kept for the pack released last, then freed; the Pack Doctor needs none", PackImagesOnlyWhileUsed);
+            await TestAsync("Pack Doctor: checking a pack nobody uses finds its images that don't decode, without keeping any", PackDoctorChecksUnusedPacksImages);
             await TestAsync("Pack Doctor: an analysis reads its own snapshot, never the fixes as they change", PackDoctorReadsASnapshot);
             await TestAsync("Settings saved from a background thread are written on the main thread, and the log says so", OffThreadSavesMoveToTheMainThread);
 
@@ -507,6 +509,8 @@ namespace AP_Atlas.Core
                 {
                     pack = await Task.Run(() => PopTracker.PopTrackerPackLoader.InspectZipPack(zip));
                     if (pack == null) loadError = "not a PopTracker pack (no usable manifest)";
+                    // Which images decode, as the Pack Doctor learns it before checking a pack: the counts below include them.
+                    else await Task.Run(() => PopTracker.PackImages.Check(pack));
                 }
                 catch (Exception ex) { loadError = "the loader crashed: " + ex.GetType().Name + ": " + ex.Message; }
                 if (pack == null)

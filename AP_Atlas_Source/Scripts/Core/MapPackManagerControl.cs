@@ -358,8 +358,9 @@ namespace AP_Atlas.Core
         }
 
         /// <summary>
-        /// Rebuilds the pack list. Packs that haven't been parsed yet (each zip holds every map/item image)
-        /// are read on a worker thread first so opening the tab doesn't freeze the UI.
+        /// Rebuilds the pack list. Packs that haven't been read yet are read on a worker thread first, so opening the tab
+        /// doesn't freeze the UI. Only their structure is read: their images are decoded only while a slot or the Pack
+        /// Doctor window uses the pack (PackImages).
         /// </summary>
         private void RefreshPackList() => AP_Atlas.Core.Async.Fire(RefreshPackListAsync(), "reading your map packs");
 
@@ -377,7 +378,7 @@ namespace AP_Atlas.Core
                     var loading = new Label { Text = $"Reading {uncached.Count} map pack(s)...", HorizontalAlignment = HorizontalAlignment.Center };
                     loading.AddThemeColorOverride("font_color", Colors.Gray);
                     _packListVBox.AddChild(loading);
-                    _logAction($"[color=gray]Reading {uncached.Count} map pack(s) in the background (map and item images are decoded once, then cached)...[/color]");
+                    _logAction($"[color=gray]Reading {uncached.Count} map pack(s) in the background...[/color]");
                     var sw = System.Diagnostics.Stopwatch.StartNew();
                     await Task.Run(() =>
                     {

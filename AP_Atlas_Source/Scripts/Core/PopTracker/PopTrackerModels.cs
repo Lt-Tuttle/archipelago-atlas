@@ -51,6 +51,12 @@ namespace AP_Atlas.Core.PopTracker
         // Metadata not bound via JSON, populated at load time
         [JsonIgnore] public string Id { get; set; } = "";
         [JsonIgnore] public Godot.ImageTexture BackgroundTexture { get; set; } = null;
+
+        /// <summary>
+        /// The background to show: <see cref="BackgroundTexture"/> while it's decoded and not freed since (a pack nobody
+        /// uses has its images freed, see PackImages), else null.
+        /// </summary>
+        [JsonIgnore] public Godot.ImageTexture Background => BackgroundTexture is { } texture && Godot.GodotObject.IsInstanceValid(texture) ? texture : null;
     }
 
     public class PopTrackerManifest

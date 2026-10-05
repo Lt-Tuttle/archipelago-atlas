@@ -21,18 +21,31 @@ public partial class SlotTrackerControl : MarginContainer
 
     private void LoadMapPack() => AP_Atlas.Core.Async.Fire(LoadMapPackAsync(), $"loading {_slotName}'s map pack");
 
+    /// <summary>The pack's images, used while this slot is open (released when it ends).</summary>
+    private IDisposable _packImages;
+
     private async Task LoadMapPackAsync()
     {
         string game = Session?.ConnectionInfo?.Game;
         if (string.IsNullOrEmpty(game)) return;
 
-        var pack = await System.Threading.Tasks.Task.Run(() =>
-            AP_Atlas.Core.PopTracker.PopTrackerPackLoader.LoadPackForGame(game, null));
+        // The pack, and its images decoded here, off the main thread (a big pack takes seconds).
+        var (pack, images) = await System.Threading.Tasks.Task.Run(() =>
+        {
+            var found = AP_Atlas.Core.PopTracker.PopTrackerPackLoader.LoadPackForGame(game, null);
+            return (found, found == null ? null : AP_Atlas.Core.PopTracker.PackImages.Use(found));
+        });
 
-        if (!GodotObject.IsInstanceValid(this) || _mapTracker == null) return;
+        if (_ended || !GodotObject.IsInstanceValid(this) || _mapTracker == null)
+        {
+            images?.Dispose();
+            return;
+        }
 
         if (pack != null)
         {
+            _packImages?.Dispose(); // a pack this slot loaded before
+            _packImages = images;
             Pack = pack;
             RebuildPackIndex();
             StartPackScripts();

@@ -535,6 +535,9 @@ public partial class SlotTrackerControl : MarginContainer
         {
             if (view != null && GodotObject.IsInstanceValid(view)) view.QueueFree();
         }
+        // Its pack's images can be freed now (they're kept while another slot uses the pack, or it's the last one used).
+        _packImages?.Dispose();
+        _packImages = null;
     }
 
     public override void _Notification(int what)

@@ -26,7 +26,30 @@ namespace AP_Atlas.Core.PopTracker
         /// <summary>Rows of the grids that hold items (settings grids left out).</summary>
         public List<List<string>> ItemGrids => ItemGridGroups.Where(g => !g.LooksLikeSettings).SelectMany(g => g.Rows).ToList();
 
+        /// <summary>
+        /// The pack's decoded images, by path ("/images/x.png" and "images/x.png"). Empty until something uses the pack
+        /// (<see cref="PackImages.Use"/>), and emptied again once it's been unused a while: reading a pack never decodes them.
+        /// </summary>
         public Dictionary<string, ImageTexture> Images { get; set; } = new Dictionary<string, ImageTexture>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>The pack's images as its zip holds them: path (both forms, as <see cref="Images"/>) → the zip entry's name.</summary>
+        public Dictionary<string, string> ImageEntries { get; set; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Whether <see cref="Images"/> holds the pack's images now (see <see cref="PackImages"/>).</summary>
+        public bool ImagesLoaded { get; internal set; }
+
+        /// <summary>
+        /// Whether the images have been decoded (for use, or only checked), so <see cref="BrokenImages"/> and
+        /// <see cref="ImageSizes"/> are complete.
+        /// </summary>
+        public bool ImagesChecked { get; internal set; }
+
+        /// <summary>Each decodable image's size, by path (both forms, as <see cref="Images"/>), once <see cref="ImagesChecked"/>.</summary>
+        public Dictionary<string, Vector2I> ImageSizes { get; set; } = new Dictionary<string, Vector2I>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Held while the pack's images are decoded, checked or freed.</summary>
+        internal readonly object ImageLock = new object();
+
         public Dictionary<string, PopTrackerMap> Maps { get; set; } = new Dictionary<string, PopTrackerMap>(StringComparer.OrdinalIgnoreCase);
         public List<PopTrackerLocation> Locations { get; set; } = new List<PopTrackerLocation>();
 
@@ -42,20 +65,69 @@ namespace AP_Atlas.Core.PopTracker
         /// <summary>Problems found while reading the pack, for the Pack Doctor.</summary>
         public List<string> LoadIssues { get; set; } = new List<string>();
 
-        /// <summary>Image paths items or maps referenced that weren't in the pack or couldn't be decoded.</summary>
+        /// <summary>
+        /// Images that are in the pack but couldn't be decoded. Known once the images were decoded or checked
+        /// (<see cref="ImagesChecked"/>).
+        /// </summary>
         public HashSet<string> BrokenImages { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        /// <summary>Finds an image by a path as items/maps write it ("images/x.png", "/images/x.png", or without extension).</summary>
+        /// <summary>
+        /// Finds a decoded image by a path as items/maps write it ("images/x.png", "/images/x.png", or without extension).
+        /// Null when the pack doesn't have it, or its images aren't decoded now (see <see cref="Images"/>).
+        /// </summary>
         public ImageTexture FindImage(string path)
+        {
+            string key = FindKey(Images, path);
+            var texture = key == null ? null : Images[key];
+            // Freed with its pack while something still held this copy of the pack: no image, not an exception.
+            return texture != null && GodotObject.IsInstanceValid(texture) ? texture : null;
+        }
+
+        /// <summary>
+        /// Whether the pack has an image that decodes (matched as <see cref="FindImage"/> does), decoded now or not: one
+        /// added by a fix, or one of the pack's own that isn't broken. Exact once <see cref="ImagesChecked"/>.
+        /// </summary>
+        public bool HasDecodableImage(string path)
+        {
+            if (FindKey(Images, path) != null) return true;
+            string key = FindKey(ImageEntries, path);
+            return key != null && !BrokenImages.Contains(key.TrimStart('/'));
+        }
+
+        /// <summary>A decodable image's size (matched as <see cref="FindImage"/> does), once <see cref="ImagesChecked"/>.</summary>
+        public Vector2I? ImageSize(string path)
+        {
+            string key = FindKey(ImageSizes, path);
+            return key == null ? null : ImageSizes[key];
+        }
+
+        /// <summary>
+        /// The path a map's own background is under: the map's path exactly, with or without a leading slash, as maps are
+        /// linked to their backgrounds. Null when the pack doesn't have it.
+        /// </summary>
+        public string MapBackgroundPath(PopTrackerMap map)
+        {
+            if (string.IsNullOrEmpty(map?.MapBg)) return null;
+            string withSlash = "/" + map.MapBg.Replace("\\", "/");
+            if (ImageEntries.ContainsKey(withSlash)) return withSlash;
+            return ImageEntries.ContainsKey(map.MapBg) ? map.MapBg : null;
+        }
+
+        /// <summary>Whether a map's own background is in the pack and decodes, decoded now or not (exact once <see cref="ImagesChecked"/>).</summary>
+        public bool HasMapBackground(PopTrackerMap map) => MapBackgroundPath(map) is { } path && !BrokenImages.Contains(path.TrimStart('/'));
+
+        /// <summary>The key an image is under, matched as items and maps write paths ("images/x.png", "/images/x.png", or without extension).</summary>
+        private static string FindKey<TValue>(Dictionary<string, TValue> byPath, string path)
         {
             if (string.IsNullOrEmpty(path)) return null;
             string p = path.Replace("\\", "/");
-            if (Images.TryGetValue(p, out var tex) || Images.TryGetValue("/" + p.TrimStart('/'), out tex) || Images.TryGetValue(p.TrimStart('/'), out tex)) return tex;
+            foreach (string candidate in new[] { p, "/" + p.TrimStart('/'), p.TrimStart('/') })
+                if (byPath.ContainsKey(candidate)) return candidate;
             string baseName = p.Contains('.') ? p.Substring(0, p.LastIndexOf('.')) : p;
-            foreach (var kvp in Images)
+            foreach (string key in byPath.Keys)
             {
-                string key = kvp.Key.Contains('.') ? kvp.Key.Substring(0, kvp.Key.LastIndexOf('.')) : kvp.Key;
-                if (key.TrimStart('/') == baseName.TrimStart('/')) return kvp.Value;
+                string keyBase = key.Contains('.') ? key.Substring(0, key.LastIndexOf('.')) : key;
+                if (keyBase.TrimStart('/') == baseName.TrimStart('/')) return key;
             }
             return null;
         }
@@ -229,44 +301,16 @@ namespace AP_Atlas.Core.PopTracker
                     // 3. Read layouts: follow the tracker layout through its groups to find the item grids.
                     ExtractLayoutGrids(archive, rootPrefix, pack, logDebug);
 
-                    // 4. Load Images
+                    // 4. Index the images: they're decoded only while something uses the pack (PackImages), since a pack's
+                    // images are most of it (three large packs measured 948 MB of textures).
                     var imageEntries = archive.Entries.Where(e => e.FullName.StartsWith(rootPrefix + "images/", StringComparison.OrdinalIgnoreCase) && !e.FullName.EndsWith("/"));
                     foreach (var entry in imageEntries)
                     {
                         string localPath = entry.FullName.Substring(rootPrefix.Length).TrimStart('/');
-                        // e.g. "images/items/Annex Key.png"
-
-                        // Godot image loading
-                        byte[] buffer;
-                        using (var stream = entry.Open())
-                        using (var ms = new MemoryStream())
-                        {
-                            stream.CopyTo(ms);
-                            buffer = ms.ToArray();
-                        }
-
-                        Image img = new Image();
-                        Error err = Error.Failed;
-                        if (localPath.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
-                            err = img.LoadPngFromBuffer(buffer);
-                        else if (localPath.EndsWith(".webp", StringComparison.OrdinalIgnoreCase))
-                            err = img.LoadWebpFromBuffer(buffer);
-                        else if (localPath.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) || localPath.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase))
-                            err = img.LoadJpgFromBuffer(buffer);
-
-                        if (err == Error.Ok)
-                        {
-                            var texture = ImageTexture.CreateFromImage(img);
-                            pack.Images["/" + localPath] = texture; // Match the /images/... pathing from items.json
-                            pack.Images[localPath] = texture; // And without slash just in case
-                        }
-                        else if (err != Error.Failed) // Failed = unsupported extension, skipped on purpose
-                        {
-                            // Godot logs only a bare ERR_PARSE_ERROR for these; name the image so the user knows what's missing.
-                            AP_Atlas.Core.Logger.LogWarning($"Map pack '{System.IO.Path.GetFileName(zipPath)}': could not decode image '{localPath}' ({err}). Anything using it (e.g. a map background) will appear blank.");
-                            pack.BrokenImages.Add(localPath);
-                            pack.LoadIssues.Add($"Image '{localPath}' couldn't be decoded ({err}).");
-                        }
+                        // e.g. "images/items/Annex Key.png"; other file types are left out on purpose.
+                        if (!PackImages.CanDecode(localPath)) continue;
+                        pack.ImageEntries["/" + localPath] = entry.FullName; // Match the /images/... pathing from items.json
+                        pack.ImageEntries[localPath] = entry.FullName; // And without slash just in case
                     }
 
                     // 5. Read maps
@@ -394,25 +438,7 @@ namespace AP_Atlas.Core.PopTracker
                     ReadMappingScripts(archive, rootPrefix, pack);
                     pack.LoadIssues = pack.LoadIssues.Distinct().ToList();
 
-                    if (logDebug != null) logDebug($"[PopTracker] Extraction Complete! Items: {pack.ItemsByCode.Count}, Layout Grids: {pack.ItemGridGroups.Count}, Maps: {pack.Maps.Count}, Locations: {pack.Locations.Count}, Item mappings: {pack.ItemMapping.Count}, Location mappings: {pack.LocationMappingById.Count + pack.UnkeyedLocationPaths.Count}");
-
-                    // Link Textures
-                    foreach (var map in pack.Maps.Values)
-                    {
-                        if (!string.IsNullOrEmpty(map.MapBg))
-                        {
-                            string key = "/" + map.MapBg.Replace("\\", "/");
-                            if (pack.Images.ContainsKey(key))
-                            {
-                                map.BackgroundTexture = pack.Images[key];
-                            }
-                            else if (pack.Images.ContainsKey(map.MapBg))
-                            {
-                                map.BackgroundTexture = pack.Images[map.MapBg];
-                            }
-                        }
-                    }
-
+                    if (logDebug != null) logDebug($"[PopTracker] Extraction Complete! Items: {pack.ItemsByCode.Count}, Layout Grids: {pack.ItemGridGroups.Count}, Maps: {pack.Maps.Count}, Locations: {pack.Locations.Count}, Item mappings: {pack.ItemMapping.Count}, Location mappings: {pack.LocationMappingById.Count + pack.UnkeyedLocationPaths.Count}, Images: {pack.ImageEntries.Count / 2}");
                     return pack;
                 }
             }

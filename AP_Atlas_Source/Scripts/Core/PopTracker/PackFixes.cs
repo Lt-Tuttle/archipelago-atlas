@@ -280,7 +280,13 @@ namespace AP_Atlas.Core.PopTracker
                         return pin == null ? "(absent)" : $"{pin.MapRef}:{pin.X},{pin.Y}|{string.Join(";", (pin.MapLocations ?? new List<PopTrackerMapLocation>()).Select(m => $"{m.Map}:{m.X},{m.Y}"))}";
                     }
                 case "map":
-                    return original.Maps.TryGetValue(what, out var map) ? $"{map.MapBg}|{(map.BackgroundTexture == null ? "missing" : "ok")}" : "(absent)";
+                    {
+                        if (!original.Maps.TryGetValue(what, out var map)) return "(absent)";
+                        // "ok" when the author's background is in the pack and decodes, decoded now or not (a stamp
+                        // mustn't depend on whether anything uses the pack). Known once its images were checked.
+                        if (!original.ImagesChecked) PackImages.Check(original);
+                        return $"{map.MapBg}|{(original.HasMapBackground(map) ? "ok" : "missing")}";
+                    }
             }
             return "";
         }
@@ -372,6 +378,10 @@ namespace AP_Atlas.Core.PopTracker
                 RootPrefix = original.RootPrefix,
                 ItemsByCode = new Dictionary<string, PopTrackerItem>(original.ItemsByCode, StringComparer.OrdinalIgnoreCase),
                 Images = new Dictionary<string, ImageTexture>(original.Images, StringComparer.OrdinalIgnoreCase),
+                ImageEntries = original.ImageEntries,
+                ImageSizes = original.ImageSizes,
+                ImagesLoaded = original.ImagesLoaded,
+                ImagesChecked = original.ImagesChecked,
                 ItemMapping = original.ItemMapping,
                 LocationMappingById = original.LocationMappingById,
                 UnkeyedLocationPaths = original.UnkeyedLocationPaths,

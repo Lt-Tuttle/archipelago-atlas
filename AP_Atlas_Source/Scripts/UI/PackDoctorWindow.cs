@@ -24,6 +24,9 @@ namespace AP_Atlas.UI
         private static readonly Color Fixed = new Color("#FFC53D");
 
         private readonly LoadedPack _original;
+        // The pack's images, used while the window is open (it shows tiles and maps).
+        private IDisposable _images;
+        private bool _closed;
         private readonly string _key;
         private readonly int _fontSize;
         private DoctorReport _report;
@@ -124,11 +127,20 @@ namespace AP_Atlas.UI
             PackDoctorService.ReportReady += OnReportReady;
             PackFixes.Changed += OnFixesChanged;
             _report = PackDoctorService.Reports.TryGetValue(_key, out var r) ? r : null;
-            if (_report == null)
+            // The pack's images are decoded in the background (a big pack takes seconds), then the pack is checked again,
+            // so what the window shows has them. An earlier report shows meanwhile.
+            SetStatus("Reading the pack's images…");
+            AP_Atlas.Core.Async.Then(System.Threading.Tasks.Task.Run(() => PackImages.Use(_original)), images => AP_Atlas.UI.Ui.Defer(null, () =>
             {
+                if (_closed)
+                {
+                    images?.Dispose();
+                    return;
+                }
+                _images = images;
                 SetStatus("Checking the pack…");
                 AP_Atlas.Core.Async.Fire(PackDoctorService.CheckAsync(_original, prompt: false), "checking the map pack");
-            }
+            }, "showing the pack's images"), "reading the map pack's images");
             RenderCurrentTab();
         }
 
@@ -137,6 +149,9 @@ namespace AP_Atlas.UI
             PackDoctorService.ReportReady -= OnReportReady;
             PackFixes.Changed -= OnFixesChanged;
             _open.Remove(_key);
+            _closed = true;
+            _images?.Dispose();
+            _images = null;
         }
 
         private void OnReportReady(string key)

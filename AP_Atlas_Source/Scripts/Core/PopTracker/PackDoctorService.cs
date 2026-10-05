@@ -56,6 +56,10 @@ namespace AP_Atlas.Core.PopTracker
             if (!_running.Add(key)) return Reports.TryGetValue(key, out var existing) ? existing : null;
             try
             {
+                // Which of the pack's images decode (and their sizes): checked off the main thread, without keeping them,
+                // when nothing that uses the pack has decoded them. The fixes' stamps and the checks below read them.
+                if (!original.ImagesChecked) await Task.Run(() => PackImages.Check(original));
+
                 // Author wins: an update that changed something the user fixed sets that fix aside.
                 var authorNotes = PackFixes.ResolveAuthorChanges(original);
                 if (authorNotes.Count > 0) Logger.LogWarning($"Map pack '{original.Manifest?.Name}' updated: " + string.Join(" ", authorNotes));

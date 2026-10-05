@@ -75,6 +75,10 @@ Development toward the first public beta, 0.1.0.
     - The UI test's room text scenario: three slots with one text connection, each line once in every slot and named from that slot's view, a command and its answer, hints with and without text, and the text slot leaving.
     - Unit tests against the fake server cover the same, plus teams and a slot logging in while the room talks.
   - A guard rail: chat, commands and tag changes go only through `SessionManager`.
+  - A test map pack (`FakeMapPack`, written as a real pack zip) and tests for map pack memory:
+    - Self-test: reading a pack decodes nothing, uses share one decoding, and the right pack is freed when.
+    - The Pack Doctor finds the same, and fixes keep the same stamps, whether or not a pack's images are decoded.
+    - A UI scenario: a slot's map shows its pack's images while it's connected, the Pack Doctor window uses them while open, and both let them go.
   - The fake Cheese Tracker site is now shared test code (`FakeCheeseServer`). The UI test runs Cheese Tracker against a connected slot for the first time:
     - The suggestion follows the slot's logic: unblocked, then go mode.
     - It suggests nothing while race mode hides logic.
@@ -108,6 +112,10 @@ Development toward the first public beta, 0.1.0.
   - A slot that doesn't receive text shows its new hints from its hint list, worded and coloured like the server's hint lines.
   - When the text connection drops or is disconnected, another of the multiworld's connections takes over, preferring one that receives text already.
   - Rooms with several teams have one text connection per team.
+- **Map packs use far less memory.** Reading a pack (the Map Packs tab, the Pack Doctor's checks, Properties) no longer decodes its images, which are most of a pack's size.
+  - Images are decoded while a connected slot or the Pack Doctor window uses the pack. The pack used last keeps them, so reconnecting is quick; others are freed at once.
+  - With three large packs installed, opening the Map Packs tab took texture memory from 13 MB to 948 MB, and Atlas to 2.1 GB. It now stays at 13 MB, and reading the packs takes 0.2 s instead of 2.3 s.
+  - The Pack Doctor finds exactly what it did: checked on 40 real packs.
 - **Logs:** the System Log and Debug Log keep their last 2,000 lines (the log file keeps everything), and add new lines once per frame, all together.
 - **Saving:** dragging a splitter or moving a map no longer writes your settings to disk on every mouse movement. They're saved once you stop, and when Atlas closes.
 - **Renderer:** Atlas now draws with Godot's Compatibility renderer (OpenGL 3.3, with a Direct3D fallback built into Godot), which runs on more graphics cards. On the test PC it starts about a quarter faster and uses about a third less video memory, and every screen looks the same.

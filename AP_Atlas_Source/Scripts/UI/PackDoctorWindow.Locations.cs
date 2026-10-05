@@ -200,7 +200,7 @@ namespace AP_Atlas.UI
             var ordered = pack.Maps.Values.OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase).ToList();
             for (int i = 0; i < ordered.Count; i++)
             {
-                picker.AddItem(ordered[i].Name + (ordered[i].BackgroundTexture == null ? "  (no image)" : ""), i);
+                picker.AddItem(ordered[i].Name + (ordered[i].Background == null ? "  (no image)" : ""), i);
                 if (ordered[i].Id == _editorMapId) picker.Selected = i;
             }
             picker.ItemSelected += i => { _editorMapId = ordered[(int)i].Id; _editorZoom = 0; _mapScrollPos = Vector2.Zero; _selectedPinPath = null; RenderCurrentTab(); };
@@ -255,18 +255,19 @@ namespace AP_Atlas.UI
             split.AddChild(sideScroll);
 
             _mapScroll = scroll;
-            _mapImgSize = map.BackgroundTexture?.GetSize() ?? new Vector2(1600, 1000);
+            var background = map.Background;
+            _mapImgSize = background?.GetSize() ?? new Vector2(1600, 1000);
             _mapPins.Clear();
             float zoom = _editorZoom > 0 ? _editorZoom : 0.2f; // real fit happens once the view has its size
             var canvas = new Control { CustomMinimumSize = _mapImgSize * zoom, MouseFilter = Control.MouseFilterEnum.Stop };
             _mapCanvas = canvas;
             scroll.AddChild(canvas);
             _mapBg = null;
-            if (map.BackgroundTexture != null)
+            if (background != null)
             {
                 _mapBg = new TextureRect
                 {
-                    Texture = map.BackgroundTexture,
+                    Texture = background,
                     ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
                     StretchMode = TextureRect.StretchModeEnum.Scale,
                     Size = _mapImgSize * zoom,

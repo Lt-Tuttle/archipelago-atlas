@@ -1300,7 +1300,7 @@ namespace AP_Atlas.UI
             }
             PlainRow("Hinted", hinted.ToString(), Colors.DeepSkyBlue);
             PlainRow("Checked", done.ToString(), Muted);
-            if (pm.BackgroundTexture != null) PlainRow("Image", $"{pm.BackgroundTexture.GetWidth()} × {pm.BackgroundTexture.GetHeight()}");
+            if (pm.Background is { } background) PlainRow("Image", $"{background.GetWidth()} × {background.GetHeight()}");
             if (pm.LocationSize > 0) PlainRow("Pin size", pm.LocationSize.ToString("0"));
 
             Section("Pins with open checks");
@@ -1319,7 +1319,8 @@ namespace AP_Atlas.UI
         private void BuildPack(InspectTarget t)
         {
             string path = t.PackPath;
-            // Parsing a pack reads the whole zip (images included); do it off the main thread the first time.
+            // Reading a pack takes a moment (its images aren't decoded, but every map and location is read): off the main
+            // thread the first time.
             if (File.Exists(path) && !PopTrackerPackLoader.IsPackCached(path) && _packReadsAttempted.Add(path))
             {
                 SetHeader("Map pack", Path.GetFileNameWithoutExtension(path), Colored("Reading the pack…", Muted), Colors.Gray, "");
