@@ -57,6 +57,12 @@ public partial class MainTrackerWindow
     private async Task<int> VisualCheckAsync()
     {
         var host = (AP_Atlas.UI.IPropertiesHost)this;
+        string baseline = System.Environment.GetEnvironmentVariable("ATLAS_VISUALCHECK_BASELINE");
+        if (!string.IsNullOrWhiteSpace(baseline) && !Directory.Exists(baseline))
+        {
+            VisualCheckPrint($"VISUALCHECK REFUSED: the baseline folder {baseline} doesn't exist.");
+            return 2;
+        }
         GetTree().Root.Size = VisualCheckWindowSize;
         await VisualCheckWaitAsync(1.5);
 
@@ -90,7 +96,6 @@ public partial class MainTrackerWindow
         await VisualCheckPictureAsync("profile_properties");
 
         VisualCheckPrint($"VISUALCHECK TAKEN: {_visualCheckPictures.Count} pictures in {Path.GetFullPath(VisualCheckFolder)}");
-        string baseline = System.Environment.GetEnvironmentVariable("ATLAS_VISUALCHECK_BASELINE");
         return string.IsNullOrWhiteSpace(baseline) ? 0 : VisualCheckCompare(Path.GetFullPath(baseline));
     }
 

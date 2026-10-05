@@ -41,6 +41,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $project = Split-Path -Parent $PSScriptRoot
+# Relative paths mean relative to where you are in PowerShell (.NET's GetFullPath would use the process's folder).
+function Get-FullPath([string]$path) { $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($path) }
+$ScratchRoot = Get-FullPath $ScratchRoot
 
 if (-not $Godot) {
     $Godot = Join-Path (Split-Path -Parent $project) 'Godot_Engine\Godot_v4.7.2-stable_mono_win64\Godot_v4.7.2-stable_mono_win64_console.exe'
@@ -49,9 +52,12 @@ if (-not (Test-Path -LiteralPath $Godot)) {
     Write-Host "Godot not found at '$Godot'. Pass -Godot <path> or set ATLAS_GODOT." -ForegroundColor Red
     exit 2
 }
-if ($Baseline -and -not (Test-Path -LiteralPath $Baseline -PathType Container)) {
-    Write-Host "The baseline folder '$Baseline' doesn't exist." -ForegroundColor Red
-    exit 2
+if ($Baseline) {
+    $Baseline = Get-FullPath $Baseline
+    if (-not (Test-Path -LiteralPath $Baseline -PathType Container)) {
+        Write-Host "The baseline folder '$Baseline' doesn't exist." -ForegroundColor Red
+        exit 2
+    }
 }
 
 if (-not $NoBuild) {
@@ -66,7 +72,7 @@ if (-not $NoBuild) {
 $scratch = Join-Path $ScratchRoot ('atlas-visualcheck-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
 $data = Join-Path $scratch 'data'
 if (-not $OutDir) { $OutDir = Join-Path $scratch 'pictures' }
-$OutDir = [System.IO.Path]::GetFullPath($OutDir)
+$OutDir = Get-FullPath $OutDir
 if ((Test-Path -LiteralPath $OutDir) -and (Get-ChildItem -LiteralPath $OutDir -Force | Select-Object -First 1)) {
     Write-Host "The picture folder '$OutDir' isn't empty." -ForegroundColor Red
     exit 2
@@ -85,7 +91,7 @@ $psi.CreateNoWindow = $true
 # Only the child process sees these, so nothing leaks into the caller's session.
 $psi.EnvironmentVariables['ATLAS_DATA_DIR'] = $data
 $psi.EnvironmentVariables['ATLAS_VISUALCHECK'] = $OutDir
-if ($Baseline) { $psi.EnvironmentVariables['ATLAS_VISUALCHECK_BASELINE'] = [System.IO.Path]::GetFullPath($Baseline) }
+if ($Baseline) { $psi.EnvironmentVariables['ATLAS_VISUALCHECK_BASELINE'] = $Baseline }
 foreach ($name in 'ATLAS_SELFTEST', 'ATLAS_SELFTEST_AP') {
     if ($psi.EnvironmentVariables.ContainsKey($name)) { $psi.EnvironmentVariables.Remove($name) }
 }

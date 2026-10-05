@@ -416,7 +416,8 @@ namespace AP_Atlas.Core.CheeseTracker
             profile.CheeseTrackerUrl = "";
             _saveProfiles();
             _rooms.Remove(profileId);
-            try { File.Delete(CachePath(profileId)); } catch { }
+            try { SafeFile.Delete(CachePath(profileId)); }
+            catch (Exception ex) { Logger.LogWarning($"Couldn't delete {profile.Name}'s Cheese Tracker cache: {ex.Message}"); }
             LinkChanged?.Invoke(profileId);
             RaiseChanged();
         }

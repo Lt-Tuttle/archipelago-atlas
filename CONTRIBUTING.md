@@ -50,7 +50,7 @@ CI runs the build, formatting, guard rails and self-test on every push and pull 
 
   | For | Use |
   |---|---|
-  | Saving | `SafeFile` |
+  | Saving, and deleting what was saved | `SafeFile` (`SafeFile.Delete` removes the backup too) |
   | Web requests | `PoliteHttp` (`GitHubApi` for GitHub) |
   | Opening links and folders | `ExternalLinks` |
   | Anything outside Atlas's folder, or a new site | `Permissions` with `PermissionDialog` |

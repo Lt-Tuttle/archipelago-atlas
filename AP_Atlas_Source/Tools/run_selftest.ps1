@@ -37,6 +37,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $project = Split-Path -Parent $PSScriptRoot
+# Relative paths mean relative to where you are in PowerShell (the Godot process would resolve them from its own folder).
+function Get-FullPath([string]$path) { $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($path) }
+$ScratchRoot = Get-FullPath $ScratchRoot
+if ($ArchipelagoDir) { $ArchipelagoDir = Get-FullPath $ArchipelagoDir }
 
 if (-not $Godot) {
     $Godot = Join-Path (Split-Path -Parent $project) 'Godot_Engine\Godot_v4.7.2-stable_mono_win64\Godot_v4.7.2-stable_mono_win64_console.exe'

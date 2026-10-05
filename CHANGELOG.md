@@ -78,6 +78,10 @@ Development toward the first public beta, 0.1.0.
 - **Deeply nested JSON** is refused instead of overflowing the stack (Newtonsoft.Json 13).
 
 ### Fixed
+- **Files held by another program:**
+  - If an antivirus or sync tool (OneDrive, Dropbox) was reading your settings or profiles at the moment Atlas read them, Atlas took the file for damaged and put its older backup in its place. Your latest changes were lost.
+  - Now Atlas reads the file again until it's free. If it stays held, Atlas carries on without it, says so, and won't save over it.
+- **Deleted data came back:** deleting a slot's saved data, or unlinking Cheese Tracker, left a backup that the next read restored. Deleting now removes the backup too.
 - **No silent failures in background work:**
   - Every check, download and connection Atlas runs in the background now reports a failure instead of losing it. The log says what was being done, and you're told in plain words (at most once every 10 minutes for the same work).
   - Before, 28 such tasks could fail without a trace.

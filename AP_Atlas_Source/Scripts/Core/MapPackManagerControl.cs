@@ -231,7 +231,7 @@ namespace AP_Atlas.Core
                 {
                     try
                     {
-                        System.IO.File.Delete(zipPath);
+                        SafeFile.Delete(zipPath);
                     }
                     catch (Exception ex)
                     {

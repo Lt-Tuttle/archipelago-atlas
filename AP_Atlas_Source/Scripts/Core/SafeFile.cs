@@ -16,6 +16,10 @@ namespace AP_Atlas.Core
     {
         private static readonly ConcurrentDictionary<string, object> _locks = new(StringComparer.OrdinalIgnoreCase);
 
+        // Files another program kept Atlas from reading. Their real contents are still on disk, so Atlas never writes
+        // over them (what it has in memory is only the fallback) until a later read succeeds.
+        private static readonly ConcurrentDictionary<string, bool> _unreadable = new(StringComparer.OrdinalIgnoreCase);
+
         /// <summary>Raised (any thread) when a damaged file was recovered from its backup or reset: (file, what happened).</summary>
         public static event Action<string, string> Recovered;
 
@@ -24,6 +28,7 @@ namespace AP_Atlas.Core
         /// <summary>Writes text atomically, keeping the previous version as path.bak. Retries briefly if the file is locked.</summary>
         public static void WriteAllText(string path, string content)
         {
+            RefuseIfUnread(path);
             string dir = Path.GetDirectoryName(Path.GetFullPath(path));
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
             lock (LockFor(path))
@@ -53,6 +58,7 @@ namespace AP_Atlas.Core
 
         public static void WriteAllBytes(string path, byte[] bytes)
         {
+            RefuseIfUnread(path);
             string dir = Path.GetDirectoryName(Path.GetFullPath(path));
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
             lock (LockFor(path))
@@ -71,8 +77,27 @@ namespace AP_Atlas.Core
         }
 
         /// <summary>
-        /// Reads JSON. Missing → fallback. Damaged or unreadable → the damaged file is kept aside, the .bak is used if
-        /// it reads, else fallback; either way it's logged and Recovered is raised. Never throws.
+        /// Deletes a file Atlas saved, together with its backup and any temp file an interrupted save left, so it can't
+        /// come back from the backup on the next read. Retries briefly while another program holds a file; throws if it
+        /// still can't be deleted (the file itself is then intact).
+        /// </summary>
+        public static void Delete(string path)
+        {
+            lock (LockFor(path))
+            {
+                // The backup goes first: if the file itself then can't be deleted, it's still whole.
+                Retry(() => File.Delete(path + ".tmp"));
+                Retry(() => File.Delete(path + ".bak"));
+                Retry(() => File.Delete(path));
+                _unreadable.TryRemove(Path.GetFullPath(path), out _);
+            }
+        }
+
+        /// <summary>
+        /// Reads JSON. Missing → fallback. Damaged → the damaged file is kept aside, the .bak is used if it reads, else
+        /// fallback. Held by another program (an antivirus or sync tool) → read again for about a second and a half;
+        /// if it still can't be read, it isn't damaged: it's left as it is, never written over this session, and the
+        /// fallback is used. Every recovery is logged and raises Recovered. Never throws.
         /// </summary>
         public static T ReadJson<T>(string path, Func<T> fallback, JsonSerializerSettings settings = null) where T : class
         {
@@ -81,21 +106,41 @@ namespace AP_Atlas.Core
                 if (!File.Exists(path))
                 {
                     // A crash between writing the temp file and swapping it in leaves only path.tmp / path.bak.
-                    var orphan = TryParse<T>(path + ".bak", out _, settings);
+                    var orphan = TryParse<T>(path + ".bak", out _, out _, settings);
                     if (orphan != null)
                     {
                         Report(path, "was missing; restored the last good copy");
-                        try { File.Copy(path + ".bak", path, true); } catch { }
+                        try { File.Copy(path + ".bak", path, true); }
+                        catch (Exception ex) { Logger.LogWarning($"Couldn't put back {Path.GetFileName(path)} from its backup: {ex.Message}"); }
                         return orphan;
                     }
                     return fallback();
                 }
-                var value = TryParse<T>(path, out string error, settings);
-                if (value != null) return value;
+                T value = null;
+                string error = null;
+                bool held = false;
+                for (int attempt = 0; attempt < 5; attempt++)
+                {
+                    // 100, 200, 400 and 800 ms between tries: about a second and a half in all.
+                    if (attempt > 0) Thread.Sleep(50 << attempt);
+                    value = TryParse<T>(path, out error, out held, settings);
+                    if (!held) break;
+                }
+                if (value != null)
+                {
+                    _unreadable.TryRemove(Path.GetFullPath(path), out _);
+                    return value;
+                }
+                if (held)
+                {
+                    _unreadable[Path.GetFullPath(path)] = true;
+                    Report(path, $"couldn't be read because another program is using it ({error}). Atlas carries on without it and won't save over it; restart Atlas once it's free");
+                    return fallback();
+                }
 
                 string kept = path + ".corrupt-" + DateTime.Now.ToString("yyyyMMdd-HHmmss");
                 try { File.Copy(path, kept, true); } catch { kept = null; }
-                var backup = TryParse<T>(path + ".bak", out _, settings);
+                var backup = TryParse<T>(path + ".bak", out _, out _, settings);
                 if (backup != null)
                 {
                     try { File.Copy(path + ".bak", path, true); } catch { }
@@ -107,9 +152,11 @@ namespace AP_Atlas.Core
             }
         }
 
-        private static T TryParse<T>(string path, out string error, JsonSerializerSettings settings) where T : class
+        /// <param name="held">The file is there but couldn't be opened (locked, or access denied), so its contents are unknown.</param>
+        private static T TryParse<T>(string path, out string error, out bool held, JsonSerializerSettings settings) where T : class
         {
             error = null;
+            held = false;
             try
             {
                 if (!File.Exists(path)) { error = "missing"; return null; }
@@ -121,9 +168,16 @@ namespace AP_Atlas.Core
             }
             catch (Exception ex)
             {
+                held = (ex is IOException && ex is not FileNotFoundException && ex is not DirectoryNotFoundException) || ex is UnauthorizedAccessException;
                 error = ex.Message.Length > 120 ? ex.Message.Substring(0, 120) + "…" : ex.Message;
                 return null;
             }
+        }
+
+        private static void RefuseIfUnread(string path)
+        {
+            if (_unreadable.ContainsKey(Path.GetFullPath(path)))
+                throw new IOException($"Atlas couldn't read {Path.GetFileName(path)} earlier (another program was using it), so it won't save over it. Restart Atlas once it's free");
         }
 
         private static void Report(string path, string what)

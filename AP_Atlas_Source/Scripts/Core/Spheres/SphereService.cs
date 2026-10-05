@@ -467,7 +467,8 @@ namespace AP_Atlas.Core.Spheres
         private void Forget(string profileId)
         {
             if (_sources.Remove(profileId, out var s)) s.Forgotten = true;
-            try { File.Delete(CachePath(profileId)); } catch { }
+            try { SafeFile.Delete(CachePath(profileId)); }
+            catch (Exception ex) { Logger.LogWarning($"Couldn't delete a sphere cache: {ex.Message}"); }
         }
 
         /// <summary>For the self-test: waits until the multiworld's room has loaded, finished reading and been saved.</summary>
@@ -584,7 +585,8 @@ namespace AP_Atlas.Core.Spheres
             {
                 // Only a cache: a damaged one is dropped and the room read again.
                 Logger.LogDebug($"Sphere cache {Path.GetFileName(path)} unreadable ({ex.Message}); dropped.");
-                try { File.Delete(path); } catch { }
+                try { SafeFile.Delete(path); }
+                catch (Exception deleteFailure) { Logger.LogDebug($"Couldn't delete it either: {deleteFailure.Message}"); }
                 return null;
             }
         }
@@ -618,7 +620,7 @@ namespace AP_Atlas.Core.Spheres
                     if (s.Forgotten) return;
                     SafeFile.WriteAllBytes(path, buffer.ToArray());
                     // Unlinked while this was written: don't leave it behind.
-                    if (s.Forgotten) File.Delete(path);
+                    if (s.Forgotten) SafeFile.Delete(path);
                 }
                 catch (Exception ex)
                 {

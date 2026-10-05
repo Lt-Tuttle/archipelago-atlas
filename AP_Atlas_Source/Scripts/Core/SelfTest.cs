@@ -100,6 +100,8 @@ namespace AP_Atlas.Core
             Test("Map packs: versions compare by number; only real PopTracker packs are installed", PackChecks);
             Test("Engine packages: Archipelago's are exact versions with hashes; a world's requirements can't point pip elsewhere", EnginePackagesArePinned);
             await TestAsync("Unawaited work: a failure is reported with what was being done; cancelling isn't one; routine work is only logged", UnawaitedWorkIsReported);
+            await TestAsync("SafeFile: a file another program holds is read again, never taken for damage, and never saved over", HeldFilesAreNeverMistakenOrOverwritten);
+            Test("SafeFile: a deleted file stays deleted (its backup goes with it)", DeletedFilesStayDeleted);
 
             string ap = System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_AP");
             if (!string.IsNullOrWhiteSpace(ap))

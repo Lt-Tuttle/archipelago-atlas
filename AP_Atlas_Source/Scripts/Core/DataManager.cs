@@ -418,6 +418,8 @@ public static class DataManager
         string filename = $"offline_{profileId}_{slotName}.json";
         foreach (char c in Path.GetInvalidFileNameChars()) filename = filename.Replace(c, '_');
         string path = Path.Combine(GetDataDirectory(), filename);
-        if (File.Exists(path)) File.Delete(path);
+        // With its backup: otherwise the next read would bring the deleted cache back.
+        try { AP_Atlas.Core.SafeFile.Delete(path); }
+        catch (System.Exception ex) { AP_Atlas.Core.Logger.LogWarning($"Couldn't delete {filename}: {ex.Message}"); }
     }
 }
