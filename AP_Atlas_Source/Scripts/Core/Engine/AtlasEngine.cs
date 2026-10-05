@@ -65,6 +65,9 @@ namespace AP_Atlas.Core.EngineSetup
         [JsonProperty("ok")] public bool Ok { get; set; }
         [JsonProperty("locations")] public int Locations { get; set; }
         [JsonProperty("in_logic")] public int InLogic { get; set; }
+        /// <summary>Whether the goal was reachable with every progression item (proves go-mode detection works).</summary>
+        [JsonProperty("goal_with_all_items")] public bool? GoalWithAllItems { get; set; }
+        [JsonProperty("goal_at_start")] public bool? GoalAtStart { get; set; }
         [JsonProperty("error")] public string Error { get; set; }
     }
 
@@ -1061,7 +1064,8 @@ namespace AP_Atlas.Core.EngineSetup
             else
             {
                 log?.Invoke($"Health check passed: Archipelago {result.Archipelago}, Universal Tracker {result.Tracker}, Python {result.Python}, {result.Games.Count} games" +
-                            (result.Smoke != null ? $"; logic test on {result.Smoke.Game}: {result.Smoke.Locations} locations, {result.Smoke.InLogic} in starting logic." : "."));
+                            (result.Smoke != null ? $"; logic test on {result.Smoke.Game}: {result.Smoke.Locations} locations, {result.Smoke.InLogic} in starting logic" +
+                             (result.Smoke.GoalWithAllItems == true ? ", goal reachable with every item (go mode detection works)." : result.Smoke.GoalWithAllItems == false ? ", but its goal wasn't reachable even with every item (go mode suggestions won't work)." : ".") : "."));
                 if (!result.TrackerTested) log?.Invoke($"Note: Universal Tracker {result.Tracker} hasn't been tested with Atlas (tested: {string.Join(", ", result.TestedTracker)}).");
                 if (result.FailedWorlds.Count > 0) log?.Invoke($"{result.FailedWorlds.Count} worlds couldn't load (they need extra packages or a newer Archipelago): {string.Join(", ", result.FailedWorlds.Take(12))}");
             }

@@ -19,11 +19,17 @@ namespace AP_Atlas.UI
         void SelectSlot(SlotTrackerControl slot);
         void ConnectSlot(string profileId, string slotName);
         void DisconnectSlot(string profileId, string slotName);
-        /// <summary>0 Connections, 1 Map Packs, 2 Map Tracker, 3 Key Items, 4 Logic Tracker, 5 Item History, 6 Hints.</summary>
+        /// <summary>0 Connections, 1 Map Packs, 2 Map Tracker, 3 Key Items, 4 Logic Tracker, 5 Item History, 6 Hints, 7 Cheese Tracker.</summary>
         void ShowGlobalTab(int tab);
         void SelectProfile(string profileId);
         void Toast(string message, Color color);
         void OpenPackDoctor(string zipPath, string startTab = null);
+        /// <summary>Cheese Tracker: linked trackers, slot statuses and changes.</summary>
+        AP_Atlas.Core.CheeseTracker.CheeseTrackerService Cheese { get; }
+        /// <summary>The Cheese Tracker tab's Settings page.</summary>
+        void OpenCheeseSettings();
+        /// <summary>The Cheese Tracker tab showing a multiworld (null: "My slots").</summary>
+        void ShowCheeseTab(string profileId);
     }
 
     /// <summary>

@@ -53,6 +53,15 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     private VBoxContainer _midLeftContent;
     private AP_Atlas.UI.PropertiesPanel _propertiesPanel;
     private List<MultiworldProfile> _profiles = new();
+    private AP_Atlas.Core.CheeseTracker.CheeseTrackerService _cheese;
+    private LineEdit _cheeseInput;
+    private AP_Atlas.UI.CheeseTrackerTab _cheeseTab;
+    /// <summary>The Cheese Tracker tab's place in the tab bar (a global tab, like Connections and Map Packs).</summary>
+    private const int CheeseTabIndex = 7;
+    private AP_Atlas.Core.Spheres.SphereService _spheres;
+    private AP_Atlas.UI.SphereTrackerTab _sphereTab;
+    /// <summary>The Sphere Tracker tab's place in the tab bar (global, like the Cheese Tracker tab).</summary>
+    private const int SphereTabIndex = 8;
     private MultiworldProfile _selectedProfile = null;
     private VSplitContainer _contentSplit;
     private RichTextLabel _debugLogConsole;
@@ -252,13 +261,14 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
 
     private void OnLogMessageReceived(string msg, string level)
     {
+        // Log lines can arrive from other threads while Atlas is closing, after the consoles are freed.
         if (_consoleOutput != null)
         {
-            Callable.From(() => _consoleOutput.AppendText(msg)).CallDeferred();
+            Callable.From(() => { if (GodotObject.IsInstanceValid(_consoleOutput)) _consoleOutput.AppendText(msg); }).CallDeferred();
         }
         if (_debugLogConsole != null)
         {
-            Callable.From(() => _debugLogConsole.AppendText(msg)).CallDeferred();
+            Callable.From(() => { if (GodotObject.IsInstanceValid(_debugLogConsole)) _debugLogConsole.AppendText(msg); }).CallDeferred();
         }
     }
 
@@ -291,6 +301,23 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         AP_Atlas.Core.PopTracker.PackDoctorService.Initialize(_appSettings);
         AP_Atlas.Core.PopTracker.PackDoctorService.ReviewSuggested += OnPackReviewSuggested;
         _profiles = DataManager.LoadProfiles();
+        _cheese = new AP_Atlas.Core.CheeseTracker.CheeseTrackerService(_appSettings, () => _profiles,
+            () => ActiveSlotNodes().OfType<SlotTrackerControl>(), () => DataManager.SaveProfiles(_profiles));
+        AddChild(_cheese);
+        _cheese.Notice += message => ShowToast(message, Colors.Orange);
+        _cheese.Changed += () => _propertiesPanel?.QueueRefresh();
+        _cheese.LinkChanged += id =>
+        {
+            if (_selectedProfile?.Id == id && _cheeseInput != null) _cheeseInput.Text = _selectedProfile.CheeseTrackerUrl ?? "";
+        };
+        // Cheese Tracker knows each linked multiworld's Archipelago tracker and organizer: a host's sphere room must be for
+        // that tracker, and is taken as the host's when its creator is that organizer.
+        _spheres = new AP_Atlas.Core.Spheres.SphereService(() => _profiles, () => ActiveSlotNodes().OfType<SlotTrackerControl>(),
+            () => DataManager.SaveProfiles(_profiles), p =>
+            {
+                var tracker = _cheese?.RoomView(p.Id)?.Tracker;
+                return (tracker?.UpstreamUrl, tracker?.OwnerName);
+            });
         // Restore window state
         var window = GetTree().Root;
         if (_appSettings.WindowWidth > 0 && _appSettings.WindowHeight > 0)
@@ -393,9 +420,17 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         settingsMenu.AddCheckItem("Use each seed's apworld version automatically", AutoFixApworldId);
         settingsMenu.SetItemChecked(settingsMenu.GetItemIndex(AutoFixApworldId), _appSettings.AutoFixApworldVersions);
         settingsMenu.SetItemTooltip(settingsMenu.GetItemIndex(AutoFixApworldId), "When a seed was made with another version of a game's apworld, Atlas finds that version and uses it for that slot.\nIt downloads only from sources you've trusted, and never changes your Archipelago install.");
+        const int CheeseId = 3;
+        settingsMenu.AddItem("Cheese Tracker…", CheeseId);
+        settingsMenu.SetItemTooltip(settingsMenu.GetItemIndex(CheeseId), "Your Cheese Tracker API key, and what Atlas does with Cheese Tracker");
+        const int SpheresId = 4;
+        settingsMenu.AddItem("Sphere Tracker…", SpheresId);
+        settingsMenu.SetItemTooltip(settingsMenu.GetItemIndex(SpheresId), "The spheretracker.de room each multiworld's host shared");
         settingsMenu.IdPressed += (id) =>
         {
             if (id == 0) OpenEngineSetup();
+            else if (id == CheeseId) OpenCheeseSettings();
+            else if (id == SpheresId) ShowSphereTab(AP_Atlas.UI.SphereTrackerTab.SettingsView);
             else if (id == AutoReconnectId)
             {
                 _appSettings.AutoReconnect = !_appSettings.AutoReconnect;
@@ -527,6 +562,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _workspaceSwitcher.AddTab("Logic Tracker");
         _workspaceSwitcher.AddTab("Item History");
         _workspaceSwitcher.AddTab("Hints");
+        _workspaceSwitcher.AddTab("Cheese Tracker");
+        _workspaceSwitcher.AddTab("Sphere Tracker");
         _workspaceSwitcher.TabSelected += ChangeGlobalTab;
         globalTabHBox.AddChild(_workspaceSwitcher);
         var contentMenuBtn = new Button { Text = "...", Flat = true, FocusMode = FocusModeEnum.None };
@@ -618,6 +655,14 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _contentStage.AddChild(_packManagerPanel);
         _packManagerPanel.SidebarContent.Visible = false;
         _midLeftVBox.AddChild(_packManagerPanel.SidebarContent);
+        _cheeseTab = new AP_Atlas.UI.CheeseTrackerTab(_appSettings, _cheese, () => _profiles, ShowToast) { Visible = false };
+        _contentStage.AddChild(_cheeseTab);
+        _cheeseTab.SidebarContent.Visible = false;
+        _midLeftVBox.AddChild(_cheeseTab.SidebarContent);
+        _sphereTab = new AP_Atlas.UI.SphereTrackerTab(_appSettings, _spheres, () => _profiles, ShowToast) { Visible = false };
+        _contentStage.AddChild(_sphereTab);
+        _sphereTab.SidebarContent.Visible = false;
+        _midLeftVBox.AddChild(_sphereTab.SidebarContent);
         BuildConnectionTab();
         BuildLandingPage();
         AutoDetectArchipelagoPath();
@@ -855,6 +900,23 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         SetupModernTheme();
         RefreshProfileListStyles();
         UpdateSidebar();
+    }
+
+    /// <summary>Opens the Cheese Tracker tab's Settings (the API key, links, automatic updates, the site).</summary>
+    public void OpenCheeseSettings() => ShowCheeseTab(AP_Atlas.UI.CheeseTrackerTab.SettingsView);
+
+    /// <summary>Switches to the Cheese Tracker tab showing a multiworld (profile id), "My slots" or Settings.</summary>
+    public void ShowCheeseTab(string view)
+    {
+        _cheeseTab.ShowView(view);
+        ((AP_Atlas.UI.IPropertiesHost)this).ShowGlobalTab(CheeseTabIndex);
+    }
+
+    /// <summary>Switches to the Sphere Tracker tab showing a slot (SphereTrackerTab.SlotView) or its Settings.</summary>
+    public void ShowSphereTab(string view)
+    {
+        _sphereTab.ShowView(view);
+        ((AP_Atlas.UI.IPropertiesHost)this).ShowGlobalTab(SphereTabIndex);
     }
 
     /// <summary>Opens the Atlas Engine setup window.</summary>
@@ -1123,6 +1185,10 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _passwordInput.TextChanged += (_) => MarkDirty();
         rightVbox.AddChild(new Label { Text = "Password:" });
         rightVbox.AddChild(_passwordInput);
+        _cheeseInput = new LineEdit { PlaceholderText = "Cheese Tracker link, or the archipelago.gg room link (optional)", SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        _cheeseInput.TextChanged += (_) => MarkDirty();
+        rightVbox.AddChild(new Label { Text = "Cheese Tracker:", TooltipText = "Links this multiworld to its Cheese Tracker page (the Cheese Tracker tab shows it; its Settings explain what Atlas does with it)", MouseFilter = MouseFilterEnum.Pass });
+        rightVbox.AddChild(_cheeseInput);
         rightVbox.AddChild(new HSeparator());
         rightVbox.AddChild(new Label { Text = "Multiworld Slots:" });
         var slotScroll = new ScrollContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
@@ -1465,8 +1531,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _propertiesPanel?.OnSelectedSlotChanged(_currentSelectedSlot);
         UpdateSidebarHighlighting();
         RefreshTerminalView();
-        // Tabs 0 (Connections) and 1 (Map Packs) are global and handled by ChangeGlobalTab.
-        if (_currentGlobalTab < 2) return;
+        // Tabs 0 (Connections), 1 (Map Packs), Cheese Tracker and Sphere Tracker are global and handled by ChangeGlobalTab.
+        if (_currentGlobalTab < 2 || _currentGlobalTab == CheeseTabIndex || _currentGlobalTab == SphereTabIndex) return;
         if (_currentSelectedSlot == null || !GodotObject.IsInstanceValid(_currentSelectedSlot))
         {
             _currentSelectedSlot = null;
@@ -1674,8 +1740,10 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                         _currentSelectedSlot = targetSlot;
                         RefreshContextViews();
                     }
-                    // Clicking a card also shows that slot in Properties (its summary, or saved stats when offline).
+                    // Clicking a card also shows that slot in Properties (its summary, or saved stats when offline), and
+                    // in the Sphere Tracker (which needs no connection).
                     AP_Atlas.Core.Inspector.Inspect(AP_Atlas.Core.InspectTarget.ForSlot(capturedProfileId, capturedSlotName));
+                    _sphereTab?.FollowSlot(capturedProfileId, capturedSlotName);
                 };
                 cardPanel.GuiInput += (ev) =>
                 {
@@ -1831,8 +1899,13 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 gameNameFooter.AddThemeColorOverride("font_color", Colors.DimGray);
                 gameNameFooter.SetMeta("font_size_ratio", 0.50);
                 gameNameFooter.AddThemeFontSizeOverride("font_size", 8);
+                var cheeseBadge = new Label { Name = "CheeseBadge", HorizontalAlignment = HorizontalAlignment.Center, MouseFilter = MouseFilterEnum.Pass, Visible = false };
+                cheeseBadge.SetMeta("font_size_ratio", 0.50);
+                cheeseBadge.AddThemeFontSizeOverride("font_size", 8);
                 footerHBox.AddChild(statusFooter);
+                footerHBox.AddChild(cheeseBadge);
                 footerHBox.AddChild(gameNameFooter);
+                UpdateCheeseBadge(cheeseBadge, profile.Id, slotName);
                 if (isConnected)
                 {
                     statusFooter.Text = session.RaceRestricted ? "● Live · Race mode" : "● Live";
@@ -1936,9 +2009,11 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             _nameInput.Text = "";
             _serverInput.Text = "";
             _passwordInput.Text = "";
+            _cheeseInput.Text = "";
             _nameInput.Editable = false;
             _serverInput.Editable = false;
             _passwordInput.Editable = false;
+            _cheeseInput.Editable = false;
             _saveButton.Disabled = true;
             _deleteButton.Disabled = true;
             _addSlotButton.Disabled = true;
@@ -1947,9 +2022,11 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _nameInput.Text = profile.Name;
         _serverInput.Text = profile.ServerUrl;
         _passwordInput.Text = profile.Password;
+        _cheeseInput.Text = profile.CheeseTrackerUrl ?? "";
         _nameInput.Editable = true;
         _serverInput.Editable = true;
         _passwordInput.Editable = true;
+        _cheeseInput.Editable = true;
         _saveButton.Disabled = false;
         _deleteButton.Disabled = false;
         _addSlotButton.Disabled = false;
@@ -2099,6 +2176,18 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         }
         DataManager.SaveProfiles(_profiles);
         Callable.From(UpdateSidebar).CallDeferred();
+    }
+
+    /// <summary>A slot card's Cheese Tracker badge: the slot's status there, or a suggestion from Atlas's logic that's ready.</summary>
+    private void UpdateCheeseBadge(Label badge, string profileId, string slotName)
+    {
+        if (badge == null) return;
+        var info = _cheese?.Badge(profileId, slotName);
+        badge.Visible = info != null;
+        if (info == null) return;
+        badge.Text = info.Value.Text;
+        badge.TooltipText = info.Value.Tooltip;
+        badge.AddThemeColorOverride("font_color", info.Value.Color);
     }
 
     private void UpdateSlotStatuses()
@@ -2269,6 +2358,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                                         statusFooter.AddThemeColorOverride("font_color", Colors.DimGray);
                                     }
                                 }
+                                UpdateCheeseBadge(cardVBox.GetNodeOrNull<HBoxContainer>("FooterHBox")?.GetNodeOrNull<Label>("CheeseBadge"), profileId, slotName);
                             }
                         }
                     }
@@ -2359,7 +2449,22 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             _saveButton.Modulate = Colors.White;
             RefreshProfileList();
             LogToSystem($"[color=green]Profile '{_selectedProfile.Name}' saved.[/color]");
+            string cheeseLink = _cheeseInput.Text.Trim();
+            if (cheeseLink != (_selectedProfile.CheeseTrackerUrl ?? "")) LinkCheeseFromEditor(_selectedProfile, cheeseLink);
         }
+    }
+
+    private async void LinkCheeseFromEditor(MultiworldProfile profile, string text)
+    {
+        string error = await _cheese.LinkAsync(profile.Id, text);
+        if (!IsInstanceValid(this)) return;
+        if (error != null)
+        {
+            ShowToast("Cheese Tracker: " + error, Colors.Salmon);
+            LogToSystem("[color=salmon]Cheese Tracker: " + error + "[/color]");
+        }
+        else ShowToast(string.IsNullOrWhiteSpace(text) ? $"{profile.Name} is no longer linked to Cheese Tracker" : $"{profile.Name} is linked to Cheese Tracker", Colors.Gray);
+        if (_selectedProfile == profile && _cheeseInput != null) _cheeseInput.Text = profile.CheeseTrackerUrl ?? "";
     }
 
     private void OnDeleteProfilePressed()
@@ -2376,6 +2481,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             confirmDialog.Confirmed += () =>
             {
                 var profileId = _selectedProfile.Id;
+                _cheese?.Unlink(profileId);
+                _spheres?.ForgetProfile(profileId);
                 _profiles.Remove(_selectedProfile);
                 DataManager.SaveProfiles(_profiles);
                 foreach (Node n in ActiveSlotNodes().ToList())
@@ -2534,7 +2641,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 LogToSystem("[color=red]Socket Error (" + slotName + "):[/color] " + msg);
                 if (_globalStatusLabel != null)
                 {
-                    Callable.From(() => _globalStatusLabel.Text = "Socket Error: " + msg).CallDeferred();
+                    Callable.From(() => { if (GodotObject.IsInstanceValid(_globalStatusLabel)) _globalStatusLabel.Text = "Socket Error: " + msg; }).CallDeferred();
                 }
             };
             session.Socket.SocketClosed += (reason) =>
@@ -2542,7 +2649,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 LogToSystem("[color=yellow]Socket Closed (" + slotName + "):[/color] " + reason);
                 if (_globalStatusLabel != null)
                 {
-                    Callable.From(() => _globalStatusLabel.Text = "Disconnected: " + reason).CallDeferred();
+                    Callable.From(() => { if (GodotObject.IsInstanceValid(_globalStatusLabel)) _globalStatusLabel.Text = "Disconnected: " + reason; }).CallDeferred();
                 }
                 // Atlas forgets a session before closing it on purpose, so one still tracked here dropped by itself.
                 bool dropped;
@@ -2629,6 +2736,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                     }
                     if (!profile.SavedStats.ContainsKey(slotName)) profile.SavedStats[slotName] = new SlotStats();
                     profile.SavedStats[slotName].GameName = session.ConnectionInfo.Game;
+                    profile.SavedStats[slotName].SlotNumber = session.ConnectionInfo.Slot;
                     DataManager.SaveProfiles(_profiles);
                     var slotTracker = new SlotTrackerControl(session, profile.Id, slotName, _appSettings, slotData,
                         (msg) => { if (_globalStatusLabel != null) _globalStatusLabel.Text = msg; },
@@ -2657,6 +2765,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                     _connectingSlots.Remove(SlotKey(profile.Id, slotName));
                     UpdateSidebar();
                     _currentSelectedSlot = slotTracker; RefreshContextViews();
+                    _sphereTab?.FollowSlot(profile.Id, slotName);
                     // Scale just the new slot's text client once its UI is built (not the whole window).
                     var timer = GetTree().CreateTimer(0.1);
                     timer.Timeout += () =>
@@ -2805,6 +2914,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         if (slot == null || !GodotObject.IsInstanceValid(slot)) return;
         _currentSelectedSlot = slot;
         RefreshContextViews();
+        _sphereTab?.FollowSlot(slot.ProfileId, slot.SlotName);
     }
 
     void AP_Atlas.UI.IPropertiesHost.ConnectSlot(string profileId, string slotName)
@@ -2829,6 +2939,12 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
 
     void AP_Atlas.UI.IPropertiesHost.Toast(string message, Godot.Color color) => ShowToast(message, color);
 
+    AP_Atlas.Core.CheeseTracker.CheeseTrackerService AP_Atlas.UI.IPropertiesHost.Cheese => _cheese;
+
+    void AP_Atlas.UI.IPropertiesHost.OpenCheeseSettings() => OpenCheeseSettings();
+
+    void AP_Atlas.UI.IPropertiesHost.ShowCheeseTab(string profileId) => ShowCheeseTab(profileId ?? AP_Atlas.UI.CheeseTrackerTab.MineView);
+
     private void ChangeGlobalTab(int tab)
     {
         string tabName = _workspaceSwitcher.GetTabTitle(tab);
@@ -2838,6 +2954,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _currentGlobalTab = tab;
         if (tab == 0) { SwapSidebar("Connections", _connectionSidebarContent); SwapContentView(_connectionPanel); RefreshContextViews(); }
         else if (tab == 1) { SwapSidebar("Packs", _packManagerPanel.SidebarContent); SwapContentView(_packManagerPanel); RefreshContextViews(); }
+        else if (tab == CheeseTabIndex) { SwapSidebar("Cheese Tracker", _cheeseTab.SidebarContent); SwapContentView(_cheeseTab); RefreshContextViews(); _cheeseTab.OnShown(); }
+        else if (tab == SphereTabIndex) { SwapSidebar("Sphere Tracker", _sphereTab.SidebarContent); SwapContentView(_sphereTab); RefreshContextViews(); _sphereTab.OnShown(); }
         else RefreshContextViews(); // 2 Map Tracker, 3 Key Items, 4 Logic Tracker, 5 Item History, 6 Hints
     }
 }

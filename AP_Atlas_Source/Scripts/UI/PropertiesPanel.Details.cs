@@ -331,6 +331,7 @@ namespace AP_Atlas.UI
             }
 
             BuildAccuracy(slot);
+            BuildCheese(slot.ProfileId, slot.SlotName, live: true);
 
             Section("Hints");
             var room = s.RoomState;
@@ -405,6 +406,7 @@ namespace AP_Atlas.UI
             if (profile != null) AddAction("Connect", "Connect this slot", () => _host.ConnectSlot(t.ProfileId, t.SlotName));
             EndActions();
             BuildSavedStats(profile, t.SlotName);
+            BuildCheese(t.ProfileId, t.SlotName, live: false);
             BuildOfflineSeedSettings(t.ProfileId, t.SlotName);
         }
 
@@ -1412,6 +1414,8 @@ namespace AP_Atlas.UI
                 var slot = live.FirstOrDefault(l => l.SlotName == t.SlotName);
                 if (slot == null) BuildSavedStats(profile, t.SlotName);
             }
+
+            BuildCheeseRoom(profile);
 
             Section("Advanced");
             PlainRow("Profile id", profile.Id);

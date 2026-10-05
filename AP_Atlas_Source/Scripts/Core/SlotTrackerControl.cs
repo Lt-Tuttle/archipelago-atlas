@@ -45,6 +45,33 @@ public partial class SlotTrackerControl : MarginContainer
     /// <summary>Raised on the main thread whenever items, checks, hints or logic change.</summary>
     public event Action StateChanged;
 
+    /// <summary>Whether this slot's goal can be completed with what it has now (go mode). Null: not known.</summary>
+    public bool? GoalInLogic { get; private set; }
+
+    /// <summary>The server says this slot reached its goal (its goal message, or a status check after connecting).</summary>
+    public bool GoalCompleted { get; private set; }
+    private bool _goalStatusAsked;
+
+    /// <summary>Asks the server, once per connection, whether this slot already reached its goal.</summary>
+    public void EnsureGoalStatus()
+    {
+        if (_goalStatusAsked || Session == null) return;
+        _goalStatusAsked = true;
+        ClientStatusAsync(PlayerSlot).ContinueWith(t =>
+        {
+            if (t.Status == System.Threading.Tasks.TaskStatus.RanToCompletion && t.Result == ArchipelagoClientState.ClientGoal)
+                Callable.From(() =>
+                {
+                    if (!GodotObject.IsInstanceValid(this)) return;
+                    GoalCompleted = true;
+                    RaiseStateChanged();
+                }).CallDeferred();
+        });
+    }
+
+    /// <summary>Logic is running and finished evaluating every item received (not starting or rebuilding).</summary>
+    public bool LogicSettled => _engineRunning && _startingLogicDone && !_logicBusy && !_logicDirty && EngineProblem == null;
+
     // --- Per-slot views (mounted by MainTrackerWindow) ---
     public AP_Atlas.UI.MapTrackerControl MapTracker => _mapTracker;
     public AP_Atlas.Core.PopTracker.ProgressionTrackerControl ProgressionTracker => _progressionTracker;
@@ -316,6 +343,9 @@ public partial class SlotTrackerControl : MarginContainer
     /// <summary>The server reports this room as a race (null until asked).</summary>
     public bool IsRaceRoom { get; private set; }
 
+    /// <summary>The server has answered whether this room is a race (IsRaceRoom is meaningful).</summary>
+    public bool RaceStateKnown { get; private set; }
+
     /// <summary>Race restrictions apply: no "why" explanations from the logic engine.</summary>
     public bool RaceRestricted => AP_Atlas.Core.RaceRules.IsActive(IsRaceRoom);
 
@@ -331,6 +361,7 @@ public partial class SlotTrackerControl : MarginContainer
             bool race = await Session.DataStorage.GetRaceModeAsync();
             if (!GodotObject.IsInstanceValid(this)) return;
             IsRaceRoom = race;
+            RaceStateKnown = true;
             AppendDebugLog($"Race mode reported by the server: {race}");
         }
         catch (Exception ex)
@@ -1230,6 +1261,8 @@ public partial class SlotTrackerControl : MarginContainer
                 await EvaluateLogicStepAsync();
                 if (!GodotObject.IsInstanceValid(this)) return;
             } while (_logicDirty);
+            // The last answer was for everything received so far, so its goal flag describes the slot now.
+            GoalInLogic = _logicEngine.LastGoalReachable;
 
             RenderLogicTree();
             IsFullyLoaded = true;
@@ -1317,6 +1350,7 @@ public partial class SlotTrackerControl : MarginContainer
         _progressionLog.Clear();
         _knownReachableLocations.Clear();
         _explainCache.Clear();
+        GoalInLogic = null;
         RenderLogicTree(forceFull: true);
     }
 
@@ -1325,8 +1359,9 @@ public partial class SlotTrackerControl : MarginContainer
         var missingLocs = Session.Locations.AllLocations.Except(Session.Locations.AllLocationsChecked).ToList();
         if (missingLocs.Count == 0) return;
 
+        var poolProgression = PoolProgressionIds();
         var currentProgression = Session.Items.AllItemsReceived
-            .Where(i => i.Flags.HasFlag(ItemFlags.Advancement) || i.Flags.HasFlag(ItemFlags.NeverExclude))
+            .Where(i => i.Flags.HasFlag(ItemFlags.Advancement) || i.Flags.HasFlag(ItemFlags.NeverExclude) || poolProgression.Contains(i.ItemId))
             .ToList();
 
         if (currentProgression.Count == _lastEvaluatedItemCount && _startingLogicDone) return;
@@ -1368,6 +1403,25 @@ public partial class SlotTrackerControl : MarginContainer
         }
 
         _lastEvaluatedItemCount = currentProgression.Count;
+    }
+
+    private List<WorldItemInfo> _poolProgressionSource;
+    private HashSet<long> _poolProgression = new HashSet<long>();
+
+    /// <summary>
+    /// Items the world itself classes as progression. Items an admin sends with a server command (/send) arrive with no
+    /// flags, so the world's own classification counts as well as the server's flags. The pool only changes when the
+    /// engine starts, and every engine start begins with a reset, so the evaluated list stays in step.
+    /// </summary>
+    private HashSet<long> PoolProgressionIds()
+    {
+        var pool = _logicEngine?.LastItemPool;
+        if (!ReferenceEquals(pool, _poolProgressionSource))
+        {
+            _poolProgressionSource = pool;
+            _poolProgression = pool == null ? new HashSet<long>() : new HashSet<long>(pool.Where(p => (p.Flags & 1) != 0).Select(p => p.Id));
+        }
+        return _poolProgression;
     }
 
     /// <summary>Excluded by your choice if you made one, else by the seed (as the logic engine reads its options).</summary>
@@ -2255,6 +2309,11 @@ public partial class SlotTrackerControl : MarginContainer
         {
             _chatHistory.Add(new ChatEntry { APMessage = msg });
             if (_chatHistory.Count > 1000) _chatHistory.RemoveAt(0);
+            if (msg is GoalLogMessage goal && goal.IsActivePlayer && !GoalCompleted)
+            {
+                GoalCompleted = true;
+                RaiseStateChanged();
+            }
             ProcessSingleMessage(msg);
             AnnounceSpecialItem(msg);
         }).CallDeferred();

@@ -69,6 +69,30 @@ public class AppSettings
     /// <summary>Game → GitHub projects ("owner/name") the user added as sources of its apworld.</summary>
     public Dictionary<string, List<string>> ExtraApworldRepos { get; set; } = new Dictionary<string, List<string>>();
 
+    // Cheese Tracker (cheesetrackers.theincrediblewheelofchee.se, or another instance the user runs)
+    /// <summary>The Cheese Tracker site Atlas talks to. The API key below is only ever sent to this site.</summary>
+    public string CheeseInstanceUrl { get; set; } = AP_Atlas.Core.CheeseTracker.CheeseClient.DefaultInstance;
+    /// <summary>The user's Cheese Tracker API key, encrypted for this Windows account (DPAPI). Empty: none.</summary>
+    public string CheeseApiKeyProtected { get; set; } = "";
+    /// <summary>The Cheese Tracker account the key belongs to (checked when the key was added).</summary>
+    public int? CheeseUserId { get; set; }
+    public string CheeseUserName { get; set; } = "";
+    /// <summary>Slot keys ("profileId|slotName") whose Cheese Tracker status Atlas keeps updated by itself.</summary>
+    public List<string> CheeseAutoSlots { get; set; } = new List<string>();
+    /// <summary>Slot key → the progression status Atlas last set (or adopted). Anything else means someone changed it.</summary>
+    public Dictionary<string, string> CheeseAutoLastSet { get; set; } = new Dictionary<string, string>();
+    /// <summary>Slot key → why automatic updates are paused for it (until the user resumes them).</summary>
+    public Dictionary<string, string> CheeseAutoPaused { get; set; } = new Dictionary<string, string>();
+    // The Cheese Tracker tab: what it shows, and how its table sorts (filters reset each session, like Cheese Tracker's).
+    public string CheeseTabView { get; set; } = "";
+    public string CheeseSortColumn { get; set; } = "name";
+    public bool CheeseSortDescending { get; set; } = false;
+    public bool CheeseMineFirst { get; set; } = true;
+    public bool CheeseChecksAsPercent { get; set; } = false;
+    public int CheeseTableSplitOffset { get; set; } = 0;
+    // The Sphere Tracker tab: the slot (or the settings) it last showed.
+    public string SphereTabView { get; set; } = "";
+
     // Window State
     public int WindowWidth { get; set; } = 1024;
     public int WindowHeight { get; set; } = 768;
@@ -82,6 +106,8 @@ public class SlotStats
     public int CompleteCount { get; set; }
     public int LogicCount { get; set; }
     public string GameName { get; set; }
+    /// <summary>The slot's player number in its multiworld (matches Cheese Tracker rows while offline). 0: unknown.</summary>
+    public int SlotNumber { get; set; }
     public System.DateTime LastUpdated { get; set; } = System.DateTime.Now;
 }
 
@@ -94,6 +120,12 @@ public class MultiworldProfile
     public List<string> Slots { get; set; } = new List<string>();
     public List<string> ActiveSlots { get; set; } = new List<string>();
     public Dictionary<string, SlotStats> SavedStats { get; set; } = new Dictionary<string, SlotStats>();
+    /// <summary>This multiworld's Cheese Tracker page ("https://…/tracker/&lt;id&gt;"). Empty: not linked.</summary>
+    public string CheeseTrackerUrl { get; set; } = "";
+    /// <summary>The spheretracker.de room this multiworld's host created and shared. Empty: none.</summary>
+    public string SphereTrackerUrl { get; set; } = "";
+    /// <summary>Whether the room is a race, as last reported by the server (null: never connected since this was kept).</summary>
+    public bool? RaceRoom { get; set; }
 
     // Legacy support
     public string SlotName { get; set; } = "";
@@ -164,6 +196,15 @@ public static class DataManager
         settings.ApworldSourcesUrl ??= "";
         settings.ApprovedApworldSources ??= new List<string>();
         settings.ExtraApworldRepos = new Dictionary<string, List<string>>(settings.ExtraApworldRepos ?? new Dictionary<string, List<string>>(), System.StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(settings.CheeseInstanceUrl)) settings.CheeseInstanceUrl = AP_Atlas.Core.CheeseTracker.CheeseClient.DefaultInstance;
+        settings.CheeseApiKeyProtected ??= "";
+        settings.CheeseUserName ??= "";
+        settings.CheeseAutoSlots ??= new List<string>();
+        settings.CheeseAutoLastSet ??= new Dictionary<string, string>();
+        settings.CheeseAutoPaused ??= new Dictionary<string, string>();
+        settings.CheeseTabView ??= "";
+        if (string.IsNullOrWhiteSpace(settings.CheeseSortColumn)) settings.CheeseSortColumn = "name";
+        settings.SphereTabView ??= "";
         if (settings.MapNodeScale <= 0 || float.IsNaN(settings.MapNodeScale)) settings.MapNodeScale = 1f;
         return settings;
     }
@@ -200,6 +241,8 @@ public static class DataManager
             {
                 profile.SavedStats = new Dictionary<string, SlotStats>();
             }
+            profile.CheeseTrackerUrl ??= "";
+            profile.SphereTrackerUrl ??= "";
         }
 
         return list;

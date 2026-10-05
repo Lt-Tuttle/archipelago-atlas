@@ -102,6 +102,7 @@ public class LogicEngineManager
     {
         if (_engineProcess != null && !_engineProcess.HasExited) return true;
         LastStartError = null;
+        LastGoalReachable = null;
         LastApworldOverride = null;
         string problem = AP_Atlas.Core.EngineSetup.AtlasEngine.ProblemWith(_install);
         if (problem != null)
@@ -216,6 +217,9 @@ public class LogicEngineManager
     /// <summary>Locations reachable only with the world's glitch/sequence-break logic, from the last update.</summary>
     public HashSet<long> LastGlitchedLocations { get; private set; } = new HashSet<long>();
 
+    /// <summary>From the last update: whether the slot's goal can be completed with those items (null: the engine can't tell).</summary>
+    public bool? LastGoalReachable { get; private set; }
+
     /// <summary>Why the last query failed (when GetReachableLocationsAsync returned null).</summary>
     public string LastQueryFailure { get; private set; }
 
@@ -280,6 +284,8 @@ public class LogicEngineManager
             var reachableToken = response["reachable"];
             if (reachableToken != null)
             {
+                var goalToken = response["goal"];
+                LastGoalReachable = goalToken?.Type == JTokenType.Boolean ? (bool)goalToken : null;
                 return reachableToken.ToObject<List<long>>();
             }
             LastQueryFailure = "the logic engine's answer had no locations";

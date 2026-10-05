@@ -18,7 +18,7 @@ namespace AP_Atlas.Core
     /// It refuses to run against a real data folder. Results print as "SELFTEST PASS/FAIL …" lines and go to
     /// selftest_results.txt in the scratch folder; Atlas exits with code 1 if anything failed.
     /// </summary>
-    public static class SelfTest
+    public static partial class SelfTest
     {
         public static bool Requested => System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST") == "1";
 
@@ -58,6 +58,20 @@ namespace AP_Atlas.Core
             await TestAsync("Engine: process registry finds and stops engine processes", ProcessRegistry);
             await TestAsync("Logic: a failed query is a failure, never an empty answer", LogicFailureIsExplicit);
             await TestAsync("Downloads: a file that doesn't match its hash is rejected", DownloadRejectsBadHash);
+            Test("Cheese Tracker: links in any form are understood", CheeseLinksParse);
+            Test("Cheese Tracker: slots match by number and game, never by guess", CheeseRowsMatch);
+            Test("Cheese Tracker: suggestions follow logic and leave judgment calls alone", CheeseSuggestions);
+            Test("Cheese Tracker: automatic updates only touch your claimed slots and stop for outside changes", CheeseAutomaticRules);
+            Test("Cheese Tracker: the API key is stored encrypted", CheeseKeyEncrypted);
+            Test("Cheese Tracker tab: filters, sorting, activity and hint counts match Cheese Tracker's", CheeseTableRules);
+            await TestAsync("Cheese Tracker: a failing site is left alone, then asked again", CheeseBacksOff);
+            await TestAsync("Cheese Tracker: changes re-read first, keep others' edits, and never touch others' slots", CheeseChangesAreSafe);
+            await TestAsync("Cheese Tracker: a read while the site is left alone never sticks as updating", CheeseReadsNeverStick);
+            Test("Sphere Tracker: only spheretracker.de room links are taken (never ?refresh)", SphereLinksParse);
+            Test("Sphere Tracker: the host's room tables are read, and which multiworld the room is for", SpherePagesParse);
+            Test("Sphere Tracker tab: a slot's rows, searching and sorting", SphereTableRules);
+            await TestAsync("Sphere Tracker: only a room the host created, for this multiworld; nothing in race mode; never stuck", SpheresHostRoomOnly);
+            await TestAsync("Sphere Tracker: a page too large isn't retried on its own, large pages are read less often, a stalled one is cut off", SpheresLargePagesAndStalls);
 
             string ap = System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_AP");
             if (!string.IsNullOrWhiteSpace(ap))
@@ -546,6 +560,7 @@ namespace AP_Atlas.Core
             var check = await AtlasEngine.RunCheckAsync(install, line => Print("  " + line), default);
             Expect(check.Passed, "health check failed: " + check.Problem);
             Expect(check.Smoke != null && check.Smoke.Ok, "the end-to-end logic test didn't run or failed");
+            Expect(check.Smoke.GoalWithAllItems == true, $"the engine couldn't tell that {check.Smoke.Game}'s goal is reachable with every item (go mode detection)");
         }
     }
 }

@@ -74,14 +74,14 @@ namespace AP_Atlas.Core
         /// Reads JSON. Missing → fallback. Damaged or unreadable → the damaged file is kept aside, the .bak is used if
         /// it reads, else fallback; either way it's logged and Recovered is raised. Never throws.
         /// </summary>
-        public static T ReadJson<T>(string path, Func<T> fallback) where T : class
+        public static T ReadJson<T>(string path, Func<T> fallback, JsonSerializerSettings settings = null) where T : class
         {
             lock (LockFor(path))
             {
                 if (!File.Exists(path))
                 {
                     // A crash between writing the temp file and swapping it in leaves only path.tmp / path.bak.
-                    var orphan = TryParse<T>(path + ".bak", out _);
+                    var orphan = TryParse<T>(path + ".bak", out _, settings);
                     if (orphan != null)
                     {
                         Report(path, "was missing; restored the last good copy");
@@ -90,12 +90,12 @@ namespace AP_Atlas.Core
                     }
                     return fallback();
                 }
-                var value = TryParse<T>(path, out string error);
+                var value = TryParse<T>(path, out string error, settings);
                 if (value != null) return value;
 
                 string kept = path + ".corrupt-" + DateTime.Now.ToString("yyyyMMdd-HHmmss");
                 try { File.Copy(path, kept, true); } catch { kept = null; }
-                var backup = TryParse<T>(path + ".bak", out _);
+                var backup = TryParse<T>(path + ".bak", out _, settings);
                 if (backup != null)
                 {
                     try { File.Copy(path + ".bak", path, true); } catch { }
@@ -107,7 +107,7 @@ namespace AP_Atlas.Core
             }
         }
 
-        private static T TryParse<T>(string path, out string error) where T : class
+        private static T TryParse<T>(string path, out string error, JsonSerializerSettings settings) where T : class
         {
             error = null;
             try
@@ -115,7 +115,7 @@ namespace AP_Atlas.Core
                 if (!File.Exists(path)) { error = "missing"; return null; }
                 string text = File.ReadAllText(path);
                 if (string.IsNullOrWhiteSpace(text) || text.Contains('\0')) { error = "empty or zero-filled"; return null; }
-                var value = JsonConvert.DeserializeObject<T>(text);
+                var value = settings == null ? JsonConvert.DeserializeObject<T>(text) : JsonConvert.DeserializeObject<T>(text, settings);
                 if (value == null) error = "empty";
                 return value;
             }

@@ -193,7 +193,18 @@ def smoke_test():
             state = c.updateTracker()
             in_logic = len(getattr(state, 'in_logic_locations', None) or [])
             ok = len(locs) > 0 and in_logic > 0
+            goal_start = goal_reachable(c, state)
+            goal_all = None
+            try:
+                from NetUtils import NetworkItem
+                prog = [it.code for it in c.multiworld.itempool
+                        if it.player == c.player_id and it.code is not None and it.advancement]
+                c.set_items_received([NetworkItem(i, -1, -1, 0) for i in prog])
+                goal_all = goal_reachable(c, c.updateTracker())
+            except Exception:
+                goal_all = None
             return {'game': game, 'ok': ok, 'locations': len(locs), 'in_logic': in_logic,
+                    'goal_at_start': goal_start, 'goal_with_all_items': goal_all,
                     'error': None if ok else 'the tracker computed no logic for a world that has some'}
         except Exception:
             return {'game': game, 'ok': False, 'locations': 0, 'in_logic': 0, 'error': traceback.format_exc()[-600:]}
@@ -324,6 +335,20 @@ def start_slot(req, logger):
             'attempts': attempts, 'notes': notes, 'apworld_override': override}
     info.update(best[4])
     return best[1], info
+
+
+def goal_reachable(core, tracker_state):
+    # Whether the slot's goal can be completed now: the world's own completion rule, checked against the same state
+    # that produced the in-logic list (events already collected). None when it can't be told.
+    try:
+        st = getattr(tracker_state, 'state', None)
+        mw = getattr(core, 'multiworld', None)
+        player = getattr(core, 'player_id', None)
+        if st is None or mw is None or player is None:
+            return None
+        return bool(mw.has_beaten_game(st, player))
+    except Exception:
+        return None
 
 
 def reachable_after(core, item_ids, missing_locations=None):
@@ -596,7 +621,8 @@ def launch_bridge(*args):
                         if loc_name in world.location_name_to_id:
                             glitched_ids.append(world.location_name_to_id[loc_name])
 
-                    print(json.dumps({'id': rid, 'reachable': reachable_ids, 'excluded': excluded_ids, 'glitched': glitched_ids}))
+                    print(json.dumps({'id': rid, 'reachable': reachable_ids, 'excluded': excluded_ids, 'glitched': glitched_ids,
+                                      'goal': goal_reachable(core, state)}))
                     sys.stdout.flush()
 
                 elif action == 'explain':
