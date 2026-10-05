@@ -42,7 +42,7 @@ namespace AP_Atlas.Core
                 Array.Sort(old, (a, b) => b.LastWriteTimeUtc.CompareTo(a.LastWriteTimeUtc));
                 for (int i = 10; i < old.Length; i++) { try { old[i].Delete(); } catch { } }
             }
-            catch { }
+            catch { } // housekeeping only: logging carries on in the same file
         }
 
         private static void WriteLog(string level, string message)

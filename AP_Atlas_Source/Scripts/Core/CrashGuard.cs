@@ -45,7 +45,7 @@ namespace AP_Atlas.Core
                 Array.Sort(reports, (a, b) => b.LastWriteTimeUtc.CompareTo(a.LastWriteTimeUtc));
                 for (int i = 30; i < reports.Length; i++) { try { reports[i].Delete(); } catch { } }
             }
-            catch { }
+            catch { } // the last resort: there's nowhere left to report that the report itself failed
         }
 
         /// <summary>True when this is the only Atlas using its data folder (held until Atlas exits).</summary>

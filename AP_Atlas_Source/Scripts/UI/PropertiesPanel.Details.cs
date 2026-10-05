@@ -1332,7 +1332,8 @@ namespace AP_Atlas.UI
                 return;
             }
             LoadedPack pack = null;
-            try { pack = File.Exists(path) ? PopTrackerPackLoader.InspectZipPack(path) : null; } catch { }
+            try { pack = File.Exists(path) ? PopTrackerPackLoader.InspectZipPack(path) : null; }
+            catch (Exception ex) { Logger.LogDebug($"Couldn't read the map pack {Path.GetFileName(path)}: {ex.Message}"); }
             var m = pack?.Manifest;
             string title = m?.Name ?? Path.GetFileNameWithoutExtension(path ?? "Map pack");
             var users = _host.ConnectedSlots.Where(sl => IsInstanceValid(sl) && sl.MapPackName != null && sl.MapPackName == m?.Name).ToList();

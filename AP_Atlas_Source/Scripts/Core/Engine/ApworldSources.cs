@@ -528,7 +528,7 @@ namespace AP_Atlas.Core.EngineSetup
             await AtlasEngine.RunComponentAsync(install, "AtlasChecksum", request, line =>
             {
                 string t = line.Trim();
-                if (t.StartsWith("{")) { try { result = JObject.Parse(t); } catch { } }
+                if (t.StartsWith("{")) { try { result = JObject.Parse(t); } catch { } } // not every output line is a reply
             }, err => { if (errors.Length < 2000) errors.AppendLine(err); }, ct, TimeSpan.FromMinutes(3));
             if (result == null) return (null, null, null, "The engine didn't report a checksum.");
             return (result["game"]?.ToString(), result["data_checksum"]?.ToString(), result["world_version"]?.ToString(), result["error"]?.ToString());

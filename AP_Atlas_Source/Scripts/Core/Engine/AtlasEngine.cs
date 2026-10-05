@@ -249,7 +249,7 @@ namespace AP_Atlas.Core.EngineSetup
                     }
                 }
             }
-            catch { }
+            catch (Exception ex) { Logger.LogDebug("Couldn't read Windows' list of installed programs: " + ex.Message); }
             return found;
         }
 
@@ -694,7 +694,8 @@ namespace AP_Atlas.Core.EngineSetup
                 catch { Thread.Sleep(200); }
             }
             // Still locked: move it out of the way and clean it up next time.
-            try { Directory.Move(dir, dir + ".trash-" + DateTime.Now.ToString("yyyyMMddHHmmss")); } catch { }
+            try { Directory.Move(dir, dir + ".trash-" + DateTime.Now.ToString("yyyyMMddHHmmss")); }
+            catch (Exception ex) { Logger.LogWarning($"Couldn't delete or set aside {dir} (another program may be using it): {ex.Message}"); }
         }
 
         // --- Setup ---
@@ -1105,7 +1106,12 @@ namespace AP_Atlas.Core.EngineSetup
             }
             catch
             {
-                foreach (var (from, to) in moved) { try { if (!File.Exists(from)) File.Move(to, from); } catch { } }
+                // Put back what was moved in the user's own install; say so if something can't be.
+                foreach (var (from, to) in moved)
+                {
+                    try { if (!File.Exists(from)) File.Move(to, from); }
+                    catch (Exception ex) { Logger.LogWarning($"Couldn't move {Path.GetFileName(from)} back from {to}: {ex.Message}"); }
+                }
                 throw;
             }
             if (install.Mode == EngineMode.Portable) { State.Tracker = TrackerVersion; SaveState(); }
@@ -1212,7 +1218,7 @@ namespace AP_Atlas.Core.EngineSetup
                     string t = line.Trim();
                     if (t.StartsWith("{") && t.Contains("\"python\""))
                     {
-                        try { result = JsonConvert.DeserializeObject<EngineCheckResult>(t); } catch { }
+                        try { result = JsonConvert.DeserializeObject<EngineCheckResult>(t); } catch { } // not every output line is a reply
                     }
                 }, err => { if (errors.Length < 4000) errors.AppendLine(err); }, ct, TimeSpan.FromMinutes(3));
             }
@@ -1373,7 +1379,7 @@ namespace AP_Atlas.Core.EngineSetup
                 if (stdin != null) await process.StandardInput.WriteLineAsync(stdin);
                 process.StandardInput.Close(); // a component waiting on stdin sees the request, then EOF
             }
-            catch { }
+            catch { } // it already exited (its exit code says how)
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeoutCts.CancelAfter(timeout);
             try

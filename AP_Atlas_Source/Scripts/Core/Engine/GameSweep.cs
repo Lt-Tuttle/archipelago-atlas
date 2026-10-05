@@ -73,7 +73,7 @@ namespace AP_Atlas.Core.EngineSetup
                             var r = JsonConvert.DeserializeObject<GameSweepResult>(t);
                             if (r?.Game != null) lock (results) results[r.Game] = r;
                         }
-                        catch { }
+                        catch (Exception ex) { Logger.LogDebug("A game test reply couldn't be read: " + ex.Message); }
                     }, _ => { }, ct, TimeSpan.FromMinutes(10));
                     var missing = remaining.Where(g => !results.ContainsKey(g)).ToList();
                     if (missing.Count == 0) break;

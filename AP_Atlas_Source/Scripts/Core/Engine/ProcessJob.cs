@@ -45,7 +45,7 @@ namespace AP_Atlas.Core.EngineSetup
                 {
                     if (!kv.Value.Process.HasExited) { kv.Value.Process.Kill(true); killed++; }
                 }
-                catch { }
+                catch { } // it exited between the check and the kill
                 _live.TryRemove(kv.Key, out _);
             }
             return killed;
@@ -57,7 +57,7 @@ namespace AP_Atlas.Core.EngineSetup
             if (process == null) return;
             if (engineRoot != null)
             {
-                try { _live[process.Id] = (process, Norm(engineRoot)); } catch { }
+                try { _live[process.Id] = (process, Norm(engineRoot)); } catch { } // it already exited: nothing to track
             }
             if (!OperatingSystem.IsWindows()) return;
             try

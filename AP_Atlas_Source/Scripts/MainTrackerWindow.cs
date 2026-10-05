@@ -2795,13 +2795,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                     _statusLabel.AddThemeColorOverride("font_color", Colors.Green);
                     if (_globalStatusLabel != null) _globalStatusLabel.Text = "Booting Engine for " + slotName + "...";
                     LogToSystem("[color=lime]Successfully authenticated as " + slotName + ".[/color]");
-                    Dictionary<string, object> slotData = null;
-                    try
-                    {
-                        var loginSuccess = (Archipelago.MultiClient.Net.LoginSuccessful)result;
-                        slotData = loginSuccess.SlotData;
-                    }
-                    catch { }
+                    var slotData = (result as Archipelago.MultiClient.Net.LoginSuccessful)?.SlotData;
                     foreach (Node n in ActiveSlotNodes())
                     {
                         if (n is SlotTrackerControl oldSlot && oldSlot.ProfileId == profile.Id && oldSlot.SlotName == slotName)

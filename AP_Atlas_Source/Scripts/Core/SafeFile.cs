@@ -143,7 +143,8 @@ namespace AP_Atlas.Core
                 var backup = TryParse<T>(path + ".bak", out _, out _, settings);
                 if (backup != null)
                 {
-                    try { File.Copy(path + ".bak", path, true); } catch { }
+                    try { File.Copy(path + ".bak", path, true); }
+                    catch (Exception ex) { Logger.LogWarning($"Couldn't put back {Path.GetFileName(path)} from its backup (it's read from the backup until then): {ex.Message}"); }
                     Report(path, $"was damaged ({error}); restored the last good copy" + (kept != null ? $" (the damaged file is kept as {Path.GetFileName(kept)})" : ""));
                     return backup;
                 }

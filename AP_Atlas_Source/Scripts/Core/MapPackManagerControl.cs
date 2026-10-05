@@ -568,7 +568,7 @@ namespace AP_Atlas.Core
                     var manifest = ReadManifest(file);
                     if (!string.IsNullOrEmpty(manifest?.GameName)) installed.Add(manifest.GameName);
                 }
-                catch { }
+                catch (Exception ex) { Logger.LogDebug($"Skipped the map pack {Path.GetFileName(file)}: {ex.Message}"); }
             }
             return installed;
         }

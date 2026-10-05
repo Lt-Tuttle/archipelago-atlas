@@ -730,16 +730,12 @@ namespace AP_Atlas.UI
         private static string IssuesUrl(string versionsUrl)
         {
             if (string.IsNullOrEmpty(versionsUrl)) return null;
-            try
-            {
-                var uri = new Uri(versionsUrl);
-                var parts = uri.AbsolutePath.Trim('/').Split('/');
-                if (uri.Host.Equals("raw.githubusercontent.com", StringComparison.OrdinalIgnoreCase) && parts.Length >= 2)
-                    return $"https://github.com/{parts[0]}/{parts[1]}/issues/new";
-                if (uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) && parts.Length >= 2)
-                    return $"https://github.com/{parts[0]}/{parts[1]}/issues/new";
-            }
-            catch { }
+            if (!Uri.TryCreate(versionsUrl, UriKind.Absolute, out var uri)) return null;
+            var parts = uri.AbsolutePath.Trim('/').Split('/');
+            if (uri.Host.Equals("raw.githubusercontent.com", StringComparison.OrdinalIgnoreCase) && parts.Length >= 2)
+                return $"https://github.com/{parts[0]}/{parts[1]}/issues/new";
+            if (uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) && parts.Length >= 2)
+                return $"https://github.com/{parts[0]}/{parts[1]}/issues/new";
             return null;
         }
     }

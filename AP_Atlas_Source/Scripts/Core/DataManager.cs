@@ -370,10 +370,10 @@ public static class DataManager
                 {
                     if (System.Text.RegularExpressions.Regex.IsMatch(File.ReadAllText(file), "\"Password\"\\s*:\\s*\"[^\"]")) found.Add(file);
                 }
-                catch { }
+                catch (System.Exception ex) { AP_Atlas.Core.Logger.LogDebug($"Couldn't check {Path.GetFileName(file)} for plain-text passwords: {ex.Message}"); }
             }
         }
-        catch { }
+        catch (System.Exception ex) { AP_Atlas.Core.Logger.LogDebug("Couldn't look for old damaged copies of profiles.json: " + ex.Message); }
         return found;
     }
 
@@ -450,7 +450,7 @@ public static class DataManager
                 var s = JsonConvert.DeserializeObject<SavedSlotData>(File.ReadAllText(file));
                 if (s != null && string.Equals(s.Game, game, System.StringComparison.OrdinalIgnoreCase) && (best == null || s.Saved > best.Saved)) best = s;
             }
-            catch { }
+            catch (System.Exception ex) { AP_Atlas.Core.Logger.LogDebug($"Skipped saved slot data {Path.GetFileName(file)}: {ex.Message}"); }
         }
         return best;
     }

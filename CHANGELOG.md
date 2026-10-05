@@ -86,6 +86,7 @@ Development toward the first public beta, 0.1.0.
 - **Closing Atlas** now saves your multiworlds as well, so what changed during the session (slot stats, links) is kept.
 - **Notes, flags, exclusions and Pack Doctor fixes:** a save that fails is now shown to you, not only logged.
 - **Deleted data came back:** deleting a slot's saved data, or unlinking Cheese Tracker, left a backup that the next read restored. Deleting now removes the backup too.
+- **Hidden failures:** a dozen places that ignored a failure now log what went wrong. Putting files back into your Archipelago install after a failed step says so if a file can't be put back.
 - **No silent failures in background work:**
   - Every check, download and connection Atlas runs in the background now reports a failure instead of losing it. The log says what was being done, and you're told in plain words (at most once every 10 minutes for the same work).
   - Before, 28 such tasks could fail without a trace.

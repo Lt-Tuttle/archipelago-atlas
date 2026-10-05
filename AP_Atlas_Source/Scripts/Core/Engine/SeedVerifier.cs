@@ -144,7 +144,7 @@ namespace AP_Atlas.Core.EngineSetup
                         string t = line.Trim();
                         if (t.StartsWith("{") && t.Contains("\"players\""))
                         {
-                            try { report = JsonConvert.DeserializeObject<SeedTestReport>(t); } catch { }
+                            try { report = JsonConvert.DeserializeObject<SeedTestReport>(t); } catch { } // not every output line is a reply
                         }
                     }, err => { if (errors.Length < 4000) errors.AppendLine(err); }, ct, TimeSpan.FromMinutes(15));
                 }
