@@ -594,21 +594,29 @@ public partial class MainTrackerWindow
             UiTestExpect(Mathf.IsEqualApprox(camera.Position.X, positionBefore.X - 30f / camera.Zoom.X, 0.01f) && Follows() == null, $"dragging 30 px: {Follows() ?? $"the camera moved from {positionBefore} to {camera.Position}"}");
             mapViewport.Size += new Vector2I(40, 20);
             UiTestExpect(Follows() == null, $"a new view size: {Follows()}");
-            // The slot's card refreshes its statuses twice a second; unchanged, its labels aren't re-styled (each restyle
-            // redraws the window, so Atlas would never idle).
+            // The slot's card refreshes its statuses twice a second. Once the slot has settled (its statuses can still change
+            // just after it connects), nothing changes and its labels aren't re-styled: each restyle redraws the window, so
+            // Atlas would never idle.
             int restyled = 0;
             void Restyled() => restyled++;
             var cardLabels = _activeSessionsList.FindChildren("*", "Label", true, false).OfType<Label>().ToList();
+            UiTestExpect(cardLabels.Count > 0, "the slot has no card in the sidebar");
             foreach (var label in cardLabels) label.ThemeChanged += Restyled;
             try
             {
-                await UiTestWaitAsync(1.6);
+                var settling = System.Diagnostics.Stopwatch.StartNew();
+                while (true)
+                {
+                    restyled = 0;
+                    await UiTestWaitAsync(1.2); // a little over two status refreshes
+                    if (restyled == 0) break;
+                    UiTestExpect(settling.Elapsed.TotalSeconds < 15, $"the slot card's labels were still being re-styled after 15 s ({restyled} times in the last 1.2 s)");
+                }
             }
             finally
             {
                 foreach (var label in cardLabels) label.ThemeChanged -= Restyled;
             }
-            UiTestExpect(cardLabels.Count > 0 && restyled == 0, $"the slot card's {cardLabels.Count} labels were re-styled {restyled} times while nothing changed");
         }
         finally
         {
