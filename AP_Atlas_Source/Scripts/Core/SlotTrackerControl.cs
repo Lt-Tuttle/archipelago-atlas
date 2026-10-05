@@ -632,7 +632,7 @@ public partial class SlotTrackerControl : MarginContainer
             dialog.QueueFree();
             _apworldFixStatus = "Checking that project's releases…";
             SyncAccuracyBanner();
-            var (repo, problem) = await System.Threading.Tasks.Task.Run(() => AP_Atlas.Core.EngineSetup.ApworldSources.AddUserRepoAsync(_appSettings, game, link, System.Threading.CancellationToken.None));
+            var (repo, problem) = await System.Threading.Tasks.Task.Run(() => AP_Atlas.Core.EngineSetup.ApworldSources.CheckUserRepoAsync(link, System.Threading.CancellationToken.None));
             if (!GodotObject.IsInstanceValid(this)) return;
             if (repo == null)
             {
@@ -640,6 +640,8 @@ public partial class SlotTrackerControl : MarginContainer
                 SyncAccuracyBanner();
                 return;
             }
+            // Back on the main thread: settings change only here.
+            AP_Atlas.Core.EngineSetup.ApworldSources.AddUserRepo(_appSettings, game, repo);
             AppendDebugLog($"Added github.com/{repo} as a source of {game} apworlds.");
             _apworldFixAttempted.Remove(ServerChecksumFor(game) ?? "");
             await FixApworldVersionAsync(interactive: true);

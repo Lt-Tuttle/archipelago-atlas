@@ -485,10 +485,12 @@ namespace AP_Atlas.Core.PopTracker
         }
 
         /// <summary>Applies the user's pairing fixes (sections ↔ AP locations, tiles ↔ AP items) to an index.</summary>
-        public static void ApplyLinks(PackIndex index)
+        public static void ApplyLinks(PackIndex index) => ApplyLinks(index, Get(KeyFor(index.Pack)));
+
+        /// <summary>Applies the given fixes' pairings; with a copy of the fixes, this is safe on a worker thread.</summary>
+        public static void ApplyLinks(PackIndex index, PackFixFile f)
         {
             var e = index.Pack;
-            var f = Get(KeyFor(e));
             foreach (var lf in f.Links)
             {
                 var pin = e.Locations.FirstOrDefault(l => l.FullPath == lf.PinPath);

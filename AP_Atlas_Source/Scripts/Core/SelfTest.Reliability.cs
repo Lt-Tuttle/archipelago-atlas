@@ -206,6 +206,59 @@ namespace AP_Atlas.Core
             }
         }
 
+        /// <summary>
+        /// The Pack Doctor analyses a snapshot taken on the main thread: a fix edited while an analysis runs doesn't change
+        /// it under the analysis, and the next snapshot sees the edit. The pack's own mapping is linked as usual.
+        /// </summary>
+        private static async Task PackDoctorReadsASnapshot()
+        {
+            var pack = new PopTracker.LoadedPack
+            {
+                Manifest = new PopTracker.PopTrackerManifest { Name = "Self-test pack", GameName = "Self-test Game", Version = "1.0" },
+                SourcePath = Scratch("selftest_pack.zip")
+            };
+            var pin = new PopTracker.PopTrackerLocation { Name = "Village", FullPath = "Village" };
+            pin.Sections.Add(new PopTracker.PopTrackerSection { Name = "Chest" });
+            pack.Locations.Add(pin);
+            pack.LocationMappingById[1001] = new List<string> { "@Village/Chest" };
+            var names = new PopTracker.GameNameTable { Game = "Self-test Game", Source = "server" };
+            names.Locations["Village Chest"] = 1001;
+            string key = PopTracker.PackFixes.KeyFor(pack);
+
+            var snapshot = PopTracker.PackDoctor.Prepare(pack, names);
+            var first = await Task.Run(() => PopTracker.PackDoctor.Analyze(snapshot));
+            Expect(first.Findings.Count > 0, "a pack without scripts should get at least one finding");
+            Expect(first.Index.ByLocation.ContainsKey(1001), "the pack's mapping links location 1001 to its pin");
+            string findingKey = first.Findings[0].Key;
+
+            PopTracker.PackFixes.Edit(key, "self-test: ignore a finding", f => f.Ignored.Add(findingKey));
+            var again = await Task.Run(() => PopTracker.PackDoctor.Analyze(snapshot));
+            Expect(!again.Findings.First(f => f.Key == findingKey).Ignored, "an analysis reads its snapshot, not the fixes as they change");
+            var fresh = await Task.Run(() => PopTracker.PackDoctor.Analyze(PopTracker.PackDoctor.Prepare(pack, names)));
+            Expect(fresh.Findings.First(f => f.Key == findingKey).Ignored, "a new snapshot sees the edit");
+        }
+
+        /// <summary>Settings saved from a background thread are written on the main thread instead, and the log says so.</summary>
+        private static async Task OffThreadSavesMoveToTheMainThread()
+        {
+            string path = Path.Combine(DataManager.GetDataDirectory(), "settings.json");
+            var warnings = new List<string>();
+            void OnLog(string line, string level) { if (level == "WARN") lock (warnings) warnings.Add(line); }
+            Logger.OnLogMessage += OnLog;
+            try
+            {
+                var settings = new AppSettings { MainSplitOffset = 777 };
+                await Task.Run(() => DataManager.SaveSettings(settings));
+                await Task.Delay(200);
+                Expect(Newtonsoft.Json.JsonConvert.DeserializeObject<AppSettings>(File.ReadAllText(path))?.MainSplitOffset == 777, "the save still happens");
+                lock (warnings) Expect(warnings.Any(w => w.Contains("background thread")), "the log says a save came from a background thread");
+            }
+            finally
+            {
+                Logger.OnLogMessage -= OnLog;
+            }
+        }
+
         /// <summary>SafeFile.Delete removes the backup and any temp file too, so a deleted file doesn't come back on the next read.</summary>
         private static void DeletedFilesStayDeleted()
         {

@@ -83,22 +83,56 @@ namespace AP_Atlas.Core.PopTracker
 
     /// <summary>
     /// Checks a map pack against the game's real item and location names and reports what's wrong, what Atlas
-    /// fixed on its own, and what the user should decide, with ranked suggestions. Pure analysis: safe to run on
-    /// a worker thread (no Godot calls).
+    /// fixed on its own, and what the user should decide, with ranked suggestions. <see cref="Prepare"/> reads its
+    /// inputs on the main thread; <see cref="Analyze"/> then works only from them, so it can run on a worker thread.
     /// </summary>
     public static class PackDoctor
     {
-        public static DoctorReport Analyze(LoadedPack original, GameNameTable names, DataManager.SavedSlotData slotData = null)
+        /// <summary>
+        /// What the analysis reads from the shared stores, read on the main thread by <see cref="Prepare"/>: PackFixes and
+        /// GameNames aren't thread-safe, and the effective pack can load the user's fixed images (textures).
+        /// </summary>
+        public sealed class Inputs
         {
-            var effective = PackFixes.Effective(original);
+            public LoadedPack Original { get; init; }
+            public LoadedPack Effective { get; init; }
+            /// <summary>A copy of the pack's fixes: an edit made during the analysis can't change them under it.</summary>
+            public PackFixFile Fixes { get; init; }
+            public GameNameTable Names { get; init; }
+            public int ItemNameDiffs { get; init; }
+            public int LocationNameDiffs { get; init; }
+        }
+
+        /// <summary>Reads what <see cref="Analyze"/> needs. Main thread only.</summary>
+        public static Inputs Prepare(LoadedPack original, GameNameTable names)
+        {
             var fixes = PackFixes.Get(PackFixes.KeyFor(original));
+            var (itemDiffs, locDiffs) = names == null ? (0, 0) : GameNames.CompareSources(names.Game);
+            return new Inputs
+            {
+                Original = original,
+                Effective = PackFixes.Effective(original),
+                Fixes = Newtonsoft.Json.JsonConvert.DeserializeObject<PackFixFile>(Newtonsoft.Json.JsonConvert.SerializeObject(fixes)),
+                Names = names,
+                ItemNameDiffs = itemDiffs,
+                LocationNameDiffs = locDiffs
+            };
+        }
+
+        /// <summary>Analyses prepared inputs. Pure: it reads only them, so it's safe on a worker thread.</summary>
+        public static DoctorReport Analyze(Inputs inputs, DataManager.SavedSlotData slotData = null)
+        {
+            var original = inputs.Original;
+            var names = inputs.Names;
+            var effective = inputs.Effective;
+            var fixes = inputs.Fixes;
             var report = new DoctorReport { Pack = effective, Names = names };
             var ignored = new HashSet<string>(fixes.Ignored);
 
             var locNames = names?.LocationsById() ?? new Dictionary<long, string>();
             var itemNames = names?.ItemsById() ?? new Dictionary<long, string>();
             var index = new PackIndex(effective, locNames, itemNames);
-            PackFixes.ApplyLinks(index);
+            PackFixes.ApplyLinks(index, fixes);
             report.Index = index;
 
             void Add(Finding f)
@@ -121,7 +155,7 @@ namespace AP_Atlas.Core.PopTracker
             }
             else
             {
-                var (itemDiffs, locDiffs) = GameNames.CompareSources(names.Game);
+                var (itemDiffs, locDiffs) = (inputs.ItemNameDiffs, inputs.LocationNameDiffs);
                 if (itemDiffs + locDiffs > 0)
                 {
                     Add(new Finding

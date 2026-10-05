@@ -66,7 +66,8 @@ namespace AP_Atlas.Core.PopTracker
                 var names = GameNames.Best(game);
 
                 var slotData = DataManager.LatestSlotDataForGame(game) ?? DataManager.LatestSlotDataForGame(original.Manifest?.GameName);
-                var report = await Task.Run(() => PackDoctor.Analyze(original, names, slotData));
+                var inputs = PackDoctor.Prepare(original, names);
+                var report = await Task.Run(() => PackDoctor.Analyze(inputs, slotData));
                 Reports[key] = report;
                 ReportReady?.Invoke(key);
 

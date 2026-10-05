@@ -409,10 +409,10 @@ namespace AP_Atlas.Core.EngineSetup
         }
 
         /// <summary>
-        /// Adds a repository (pasted link) as a source of a game's apworld. It must publish .apworld files in its
-        /// releases. Adding it trusts it: Atlas may download from it to match seeds.
+        /// Checks a pasted link as a source of a game's apworld: it must be a GitHub repository that publishes .apworld
+        /// files in its releases. Changes nothing (it can run on any thread); <see cref="AddUserRepo"/> records it.
         /// </summary>
-        public static async Task<(string Repo, string Problem)> AddUserRepoAsync(AppSettings settings, string game, string link, CancellationToken ct)
+        public static async Task<(string Repo, string Problem)> CheckUserRepoAsync(string link, CancellationToken ct)
         {
             string repo = ParseRepo(link);
             if (repo == null) return (null, "that isn't a GitHub repository link (e.g. https://github.com/owner/project/releases)");
@@ -420,12 +420,20 @@ namespace AP_Atlas.Core.EngineSetup
             var listing = await RepoAssetsAsync(repo, ct);
             if (listing.Problem != null) return (null, $"GitHub couldn't be checked just now ({listing.Problem.TrimEnd('.')}); try again later");
             if (listing.Assets.Count == 0) return (null, $"github.com/{repo} has no .apworld files in its releases");
+            return (repo, null);
+        }
+
+        /// <summary>
+        /// Records a checked repository as a source of a game's apworld, and trusts it: Atlas may download from it to
+        /// match seeds. Main thread only, like every settings change.
+        /// </summary>
+        public static void AddUserRepo(AppSettings settings, string game, string repo)
+        {
             settings.ExtraApworldRepos ??= new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
             if (!settings.ExtraApworldRepos.TryGetValue(game, out var list)) settings.ExtraApworldRepos[game] = list = new List<string>();
             if (!list.Contains(repo, StringComparer.OrdinalIgnoreCase)) list.Add(repo);
             ApproveRepo(settings, repo);
             DataManager.SaveSettings(settings);
-            return (repo, null);
         }
 
         // =====================================================================

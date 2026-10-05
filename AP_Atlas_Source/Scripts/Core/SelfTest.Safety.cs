@@ -147,7 +147,7 @@ namespace AP_Atlas.Core
                 Expect(r.Outcome == WebOutcome.RateLimited && server.RequestCount == before, "Atlas asked GitHub again before the reset");
 
                 // Apworld sources: a repository GitHub couldn't be asked about isn't "a repository with no apworlds".
-                var (repo, problem) = await ApworldSources.AddUserRepoAsync(new AppSettings(), "Some Game", "https://github.com/owner/limited", CancellationToken.None);
+                var (repo, problem) = await ApworldSources.CheckUserRepoAsync("https://github.com/owner/limited", CancellationToken.None);
                 Expect(repo == null && problem != null && problem.Contains("couldn't be checked") && !problem.Contains("no .apworld"), "a rate-limited check was reported as: " + problem);
 
                 // An unchanged answer is served from the cache (a 304 doesn't count against the limit).

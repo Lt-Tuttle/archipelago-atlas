@@ -87,6 +87,9 @@ Development toward the first public beta, 0.1.0.
 - **Closing Atlas** now saves your multiworlds as well, so what changed during the session (slot stats, links) is kept.
 - **Notes, flags, exclusions and Pack Doctor fixes:** a save that fails is now shown to you, not only logged.
 - **Deleted data came back:** deleting a slot's saved data, or unlinking Cheese Tracker, left a backup that the next read restored. Deleting now removes the backup too.
+- **Stopping or restarting the logic engine** while it was answering a logic question could break that question. Worse, the next engine's startup could wait out its 3-minute limit, because the old question read the new engine's first answer. The engine's connection now changes only between questions.
+- **Settings changed by background work:** adding an apworld source from a link changed and saved your settings from a background thread, where it could collide with other changes. Settings are now changed and saved on the main thread only.
+- **Pack Doctor:** its background check read your fixes and the name lists while you might be editing them, and could load images off the main thread. It now works from a snapshot taken first.
 - **Hidden failures:** a dozen places that ignored a failure now log what went wrong. Putting files back into your Archipelago install after a failed step says so if a file can't be put back.
 - **No silent failures in background work:**
   - Every check, download and connection Atlas runs in the background now reports a failure instead of losing it. The log says what was being done, and you're told in plain words (at most once every 10 minutes for the same work).

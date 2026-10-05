@@ -307,6 +307,7 @@ public static class DataManager
 
     public static void SaveSettings(AppSettings settings)
     {
+        if (HopToMainThread("settings", () => SaveSettings(settings))) return;
         // This save includes whatever SaveSettingsSoon was waiting to write.
         if (ReferenceEquals(_settingsToSave, settings)) _settingsToSave = null;
         Save(Path.Combine(GetDataDirectory(), "settings.json"), settings);
@@ -378,7 +379,25 @@ public static class DataManager
         return found;
     }
 
-    public static void SaveProfiles(List<MultiworldProfile> profiles) => Save(Path.Combine(GetDataDirectory(), "profiles.json"), profiles);
+    public static void SaveProfiles(List<MultiworldProfile> profiles)
+    {
+        if (HopToMainThread("profiles", () => SaveProfiles(profiles))) return;
+        Save(Path.Combine(GetDataDirectory(), "profiles.json"), profiles);
+    }
+
+    /// <summary>
+    /// Settings and profiles are changed on the main thread, so they're saved there too: a save from another thread
+    /// could catch them mid-change. One that arrives from elsewhere moves to the main thread, and the log says so (it's
+    /// a mistake to fix). Returns true when it moved.
+    /// </summary>
+    private static bool HopToMainThread(string what, System.Action save)
+    {
+        if (Engine.GetMainLoop() is not SceneTree || OS.GetThreadCallerId() == OS.GetMainThreadId()) return false;
+        AP_Atlas.Core.Logger.LogWarning($"The {what} were saved from a background thread; saving them on the main thread instead.");
+        AP_Atlas.Core.Logger.LogDebug(System.Environment.StackTrace);
+        AP_Atlas.UI.Ui.Defer(null, save, $"saving the {what}");
+        return true;
+    }
 
     public static void SaveOfflineCache(OfflineSlotCache cache)
     {

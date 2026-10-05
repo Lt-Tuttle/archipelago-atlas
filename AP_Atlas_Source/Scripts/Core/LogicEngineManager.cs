@@ -137,9 +137,19 @@ public class LogicEngineManager
             AP_Atlas.Core.EngineSetup.ProcessJob.Track(_engineProcess, _install.Root);
             _engineProcess.BeginErrorReadLine();
 
-            _engineWriter = _engineProcess.StandardInput;
-            _engineReader = _engineProcess.StandardOutput;
-            _pendingRead = null;
+            // Under the request lock: a request still running against a stopped engine finishes first, so it can't read
+            // (and throw away) this engine's replies.
+            await _requestLock.WaitAsync();
+            try
+            {
+                _engineWriter = _engineProcess.StandardInput;
+                _engineReader = _engineProcess.StandardOutput;
+                _pendingRead = null;
+            }
+            finally
+            {
+                _requestLock.Release();
+            }
 
             var initReq = new Dictionary<string, object>
             {
@@ -408,8 +418,14 @@ public class LogicEngineManager
         await _requestLock.WaitAsync();
         try
         {
-            if (_engineWriter == null || _engineReader == null) return null;
+            if (_engineProcess == null || _engineWriter == null || _engineReader == null) return null;
             return await SendRequestLockedAsync(request, timeoutMs);
+        }
+        catch (Exception ex) when (ex is System.IO.IOException or ObjectDisposedException)
+        {
+            // The engine stopped or crashed mid-request: that's no answer, not a failure of the caller.
+            _logger("The logic engine stopped during a request: " + ex.Message);
+            return null;
         }
         finally
         {
@@ -466,11 +482,30 @@ public class LogicEngineManager
         _stopping = true;
         var process = _engineProcess;
         _engineProcess = null;
-        _engineWriter = null;
-        _engineReader = null;
-        _pendingRead = null;
         if (process == null) return;
+        // Kill first: a request waiting on this engine then reads the end of its output and gives up.
         try { if (!process.HasExited) process.Kill(); } catch { }
+        // The pipes are cleared, and the process disposed, once no request is using them.
+        AP_Atlas.Core.Async.Fire(ReleasePipesAsync(process, _engineWriter), "stopping the logic engine", tellUser: false);
+    }
+
+    private async Task ReleasePipesAsync(System.Diagnostics.Process process, System.IO.StreamWriter writer)
+    {
+        await _requestLock.WaitAsync();
+        try
+        {
+            // A new engine may have started meanwhile: clear only this one's pipes.
+            if (ReferenceEquals(_engineWriter, writer))
+            {
+                _engineWriter = null;
+                _engineReader = null;
+                _pendingRead = null;
+            }
+        }
+        finally
+        {
+            _requestLock.Release();
+        }
         try { process.Dispose(); } catch { }
     }
 

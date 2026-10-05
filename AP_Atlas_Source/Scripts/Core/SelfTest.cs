@@ -106,6 +106,8 @@ namespace AP_Atlas.Core
             await TestAsync("Settings: a burst of changes is written once; closing or an immediate save writes a pending one", SettingsBurstsAreSavedOnce);
             await TestAsync("Profiles another program held at load aren't saved over, and the user is told", HeldProfilesAreNotSavedOver);
             await TestAsync("Window updates handed to the main thread skip a closed owner, and a failure is logged", DeferredWorkRespectsItsOwner);
+            await TestAsync("Pack Doctor: an analysis reads its own snapshot, never the fixes as they change", PackDoctorReadsASnapshot);
+            await TestAsync("Settings saved from a background thread are written on the main thread, and the log says so", OffThreadSavesMoveToTheMainThread);
 
             string ap = System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_AP");
             if (!string.IsNullOrWhiteSpace(ap))
@@ -521,7 +523,8 @@ namespace AP_Atlas.Core
                 {
                     try
                     {
-                        var report = await Task.Run(() => PopTracker.PackDoctor.Analyze(pack, PopTracker.GameNames.Best(game)));
+                        var inputs = PopTracker.PackDoctor.Prepare(pack, PopTracker.GameNames.Best(game));
+                        var report = await Task.Run(() => PopTracker.PackDoctor.Analyze(inputs));
                         entry.SectionsPct = Pct(report.SectionsLinked, report.SectionsTotal);
                         entry.TilesPct = Pct(report.TilesLinked, report.TilesTotal);
                         entry.PlacedPct = Pct(report.ApLocationsPlaced, report.ApLocationsTotal);

@@ -63,6 +63,11 @@ Atlas reads or writes outside this folder only with the user's permission.
   - `SafeFile.Delete` removes the backup and any temp file too, so a deleted file can't come back from its backup.
   - Settings that change in bursts (splitters, the map camera) are saved with `DataManager.SaveSettingsSoon`: once, half a second after the last change. Closing Atlas writes a pending save, and saves the profiles too.
   - A failed save of the user's own data (settings, profiles, notes and flags, Pack Doctor fixes) is shown to them (`DataManager.SaveFailed`); caches Atlas can rebuild are only logged.
+- **Threads:** the window, settings, profiles, PackFixes and GameNames belong to the main thread.
+  - Background work hands results back with `Ui.Defer`.
+  - A save of settings or profiles that arrives from another thread moves to the main thread and is logged as a mistake.
+  - The Pack Doctor reads a snapshot (`PackDoctor.Prepare`), then analyses it on a worker thread.
+  - The logic engine's pipes change only under its request lock.
 - **No failure goes unseen:** work nobody awaits (button handlers, background checks, closing connections) starts with `Async.Fire(task, "what it's doing")`. A failure is logged with that description and, unless the work is routine, shown to the user in plain words. There's no `async void` and no discarded task (`_ = …`): the guard rails reject both.
 
 ## How things talk to each other
