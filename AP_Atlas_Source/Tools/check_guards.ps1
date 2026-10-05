@@ -13,6 +13,10 @@
       - Handing work to the main thread with Callable.From(...).CallDeferred(): only in Ui.Defer, which skips work whose
         owner was freed and logs a failure.
       - Throwing away a call's result ("_ = SomethingAsync()"), which hides a failed task: only in the self-test's fake servers (and Async.cs, which describes the rule).
+      - Creating an Archipelago session: only AtlasSessions, which keeps the games' names in Atlas's folder (the
+        connection library's own cache is in %LocalAppData%).
+      - Starting a program: only the engine's launch points (EngineInstall.StartInfo, AtlasEngine.SetupStartInfo), which
+        keep its temporary files and caches in Atlas's folder, and the self-test.
     Run it from anywhere; CI runs it on every push. Exit code 0 means every rule holds.
 #>
 $ErrorActionPreference = 'Stop'
@@ -28,14 +32,19 @@ $rules = @(
     @{ Name = 'Letting Windows run a program by file type'; Pattern = 'UseShellExecute\s*=\s*true'; Allowed = @() },
     @{ Name = 'An async void method (use Async.Fire)'; Pattern = '\basync\s+void\b'; Allowed = @('AP_Atlas.Core\Async.cs') },
     @{ Name = 'Handing work to the main thread without Ui.Defer'; Pattern = '\)\.CallDeferred\(\)'; Allowed = @('AP_Atlas_Source\Scripts\UI\Ui.cs') },
-    @{ Name = 'Throwing away a call''s result (use Async.Fire for tasks)'; Pattern = '(?<!var\s)(?<![\w.])_\s*=\s*[^;=>]*\('; Allowed = @('AP_Atlas.Core\Async.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.Cheese.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.Spheres.cs') }
+    @{ Name = 'Throwing away a call''s result (use Async.Fire for tasks)'; Pattern = '(?<!var\s)(?<![\w.])_\s*=\s*[^;=>]*\('; Allowed = @('AP_Atlas.Core\Async.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.Cheese.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.Spheres.cs') },
+    @{ Name = 'Creating an Archipelago session outside AtlasSessions'; Pattern = 'ArchipelagoSessionFactory'; Allowed = @('AP_Atlas.Core\Connections\AtlasSessions.cs') },
+    # Case-sensitive, so starting an engine process made at a launch point (process.Start()) isn't mistaken for one.
+    @{ Name = 'Starting a program outside the engine''s launch points'; CaseSensitive = $true
+       Pattern = 'new\s+(System\.Diagnostics\.)?ProcessStartInfo\b|(?<![\w.])(System\.Diagnostics\.)?Process\.Start\s*\(|\bOS\.(Execute|ExecuteWithPipe|CreateProcess|CreateInstance)\s*\('
+       Allowed = @('AP_Atlas_Source\Scripts\Core\Engine\AtlasEngine.cs', 'AP_Atlas_Source\Scripts\Core\Engine\EngineInstall.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.cs') }
 )
 
 $files = $roots | ForEach-Object { Get-ChildItem -Path $_ -Recurse -Filter '*.cs' -File } |
     Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' }
 $broken = 0
 foreach ($rule in $rules) {
-    $hits = $files | Select-String -Pattern $rule.Pattern | Where-Object {
+    $hits = $files | Select-String -Pattern $rule.Pattern -CaseSensitive:([bool]$rule.CaseSensitive) | Where-Object {
         $relative = $_.Path.Substring($repo.Length).TrimStart('\', '/')
         -not ($rule.Allowed -contains $relative)
     }

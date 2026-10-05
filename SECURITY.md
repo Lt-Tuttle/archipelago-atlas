@@ -11,6 +11,7 @@ Only the latest release gets security fixes.
 ## What Atlas protects
 - **Your secrets are encrypted for your Windows account:** room passwords, and your Cheese Tracker API key. The key is only ever sent to Cheese Tracker.
 - **Atlas asks before it touches anything outside its own folder.** That covers searching your PC for Archipelago, adding files to your Archipelago install (which it records, so they can be undone), and looking things up on GitHub by itself.
+  - Everything else stays inside: the games' names from servers, Atlas's logs, and the Atlas Engine's temporary files and caches. Tests fail if a run writes anything outside. (Godot, the engine Atlas is built on, creates an empty folder in `%APPDATA%\Godot\app_userdata` when Atlas starts; it has no setting to stop that.)
   - It reads only the YAMLs you link.
   - Everything you've allowed is listed in Settings → Privacy & permissions, where you can take it back.
 - **Links are opened safely:** only https web pages and folders. Atlas never asks Windows to open a file, because that could run it.

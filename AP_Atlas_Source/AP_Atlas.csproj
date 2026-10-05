@@ -11,9 +11,7 @@
   </PropertyGroup>
   
   <ItemGroup>
-    <!-- Archipelago.MultiClient.Net: for net10.0 NuGet picks the package's lib/net6.0 build, the only one that enables
-         websocket compression (the netstandard2.0 build can't), which the Archipelago server asks clients to use. -->
-    <PackageReference Include="Archipelago.MultiClient.Net" Version="6.7.1" />
+    <!-- Archipelago.MultiClient.Net comes from AP_Atlas.Core, which creates every session (see AtlasSessions). -->
     <!-- 13.0.1 and later limit JSON nesting to 64 levels by default, so deeply nested input can't overflow the stack. -->
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="MoonSharp" Version="2.0.0" />

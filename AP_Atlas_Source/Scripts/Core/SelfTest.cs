@@ -98,6 +98,9 @@ namespace AP_Atlas.Core
             await TestAsync("Downloads: the wrong file or a too-large one is never kept; redirects only to web addresses", DownloadsAreChecked);
             await TestAsync("GitHub: a rate limit is reported as one (never as 'not found') and waited out; unchanged answers come from the cache", GitHubLimitsAreRespected);
             Test("JSON: deeply nested input is refused instead of crashing", DeepJsonIsRefused);
+            Test("Godot writes no log or shader cache outside Atlas's folder; its own warnings go to Atlas's log", GodotWritesNothingOutside);
+            Test("Connections keep the games' names in Atlas's folder, never in the connection library's own cache", ConnectionsKeepNamesInside);
+            Test("Engine processes keep temporary files and caches in the engine folder, and ignore the user's own pip settings", EngineProcessesKeepFilesInside);
             await TestAsync("Your Archipelago install: nothing is added without your OK, and Remove Atlas's files undoes it", OwnInstallNeedsConsent);
             Test("Map packs: versions compare by number; only real PopTracker packs are installed", PackChecks);
             Test("Engine packages: Archipelago's are exact versions with hashes; a world's requirements can't point pip elsewhere", EnginePackagesArePinned);

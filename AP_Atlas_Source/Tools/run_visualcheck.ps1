@@ -9,8 +9,12 @@
     as -Baseline: each changed picture gets a ".diff.png" with the changed pixels in magenta.
     Pictures compare pixel for pixel only on the same PC (fonts, display scaling and graphics drivers all differ).
 
+    The run also gets empty stand-ins for the user's folders and the temp folder, and fails if anything is written to
+    them (see footprint.ps1).
+
     Exit code: 0 all pictures taken (and, with -Baseline, all the same), 1 some differ from the baseline (look at the
-    .diff.png pictures), 2 refused or set up wrongly, 3 failed or timed out.
+    .diff.png pictures), 2 refused or set up wrongly, 3 failed or timed out, 5 something was written outside Atlas's
+    folder.
 
 .PARAMETER Godot
     The Godot .NET console executable. Defaults to $env:ATLAS_GODOT, then the workspace's Godot_Engine folder.
@@ -40,6 +44,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'footprint.ps1')
 $project = Split-Path -Parent $PSScriptRoot
 # Relative paths mean relative to where you are in PowerShell (.NET's GetFullPath would use the process's folder).
 function Get-FullPath([string]$path) { $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($path) }
@@ -96,6 +101,7 @@ foreach ($name in 'ATLAS_SELFTEST', 'ATLAS_SELFTEST_AP') {
     if ($psi.EnvironmentVariables.ContainsKey($name)) { $psi.EnvironmentVariables.Remove($name) }
 }
 if (-not $Baseline -and $psi.EnvironmentVariables.ContainsKey('ATLAS_VISUALCHECK_BASELINE')) { $psi.EnvironmentVariables.Remove('ATLAS_VISUALCHECK_BASELINE') }
+$outside = Set-StandInUserFolders $psi $scratch
 
 Write-Host "Taking pictures (into $OutDir)..."
 $proc = [System.Diagnostics.Process]::Start($psi)
@@ -127,6 +133,7 @@ if (-not ($results | Where-Object { $_ -match '^VISUALCHECK TAKEN' })) {
     $lines | Select-Object -Last 40 | ForEach-Object { Write-Host "  $_" }
     if ($code -eq 0) { $code = 3 }
 }
+if ((Test-Footprint $outside) -gt 0 -and $code -eq 0) { $code = 5 }
 
 # The pictures are the point: keep them (and Godot's output); the scratch data folder isn't needed.
 Remove-Item -LiteralPath $data -Recurse -Force -ErrorAction SilentlyContinue

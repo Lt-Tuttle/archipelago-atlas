@@ -61,20 +61,37 @@ namespace AP_Atlas.Core
             catch { } // housekeeping only: logging carries on in the same file
         }
 
+        private static string Line(string level, string message) => $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [{level}] {message}";
+
+        private static void AppendToFile(string line)
+        {
+            // Called from network and process threads as well as the main thread.
+            lock (_fileLock) if (_logFilePath != null) File.AppendAllText(_logFilePath, line + System.Environment.NewLine);
+        }
+
         private static void WriteLog(string level, string message)
         {
-            string time = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-            string logEntry = $"[{time}] [{level}] {message}";
+            string logEntry = Line(level, message);
             try
             {
-                // Called from network and process threads as well as the main thread.
-                if (_logFilePath != null) lock (_fileLock) File.AppendAllText(_logFilePath, logEntry + System.Environment.NewLine);
+                AppendToFile(logEntry);
             }
             catch (Exception ex)
             {
                 EchoError("Failed to write to log: " + ex.Message);
             }
             Echo(logEntry);
+        }
+
+        /// <summary>
+        /// Writes a line to the log file only: no echo and no line in the window. For Godot's own errors and warnings, which
+        /// Godot reports on any thread, sometimes while holding its own locks: this never calls back into Godot. Lines
+        /// before <see cref="UseFolder"/> are dropped (Godot has already printed them to its console).
+        /// </summary>
+        public static void RecordOnly(string level, string message)
+        {
+            try { AppendToFile(Line(level, message)); }
+            catch { } // nowhere safe to report it from inside Godot's error reporting; the console already has the line
         }
 
         public static void LogInfo(string message)

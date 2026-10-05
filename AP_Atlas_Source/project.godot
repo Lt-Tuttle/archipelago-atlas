@@ -17,6 +17,11 @@ run/main_scene="res://Scenes/Main_Window.tscn"
 config/features=PackedStringArray("4.7", "C#", "GL Compatibility")
 run/low_processor_mode=true
 
+[debug]
+
+file_logging/enable_file_logging=false
+file_logging/enable_file_logging.pc=false
+
 [dotnet]
 
 project/assembly_name="AP_Atlas"
@@ -31,3 +36,4 @@ window/size/viewport_height=648
 
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
+shader_compiler/shader_cache/enabled=false

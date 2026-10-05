@@ -31,6 +31,28 @@ class _WorldLoadFailures(logging.Handler):
             pass
 
 
+def keep_files_in_engine_folder():
+    # Archipelago keeps a per-user cache (data packages, a client id) in %LocalAppData%\Archipelago, and Python's
+    # temporary files go to %TEMP%: both outside Atlas's folder. They stay in the engine folder instead (Atlas also
+    # points the process's environment there; this holds whatever the installed packages do).
+    engine = os.path.dirname(os.path.abspath(__file__))
+    temp = os.path.join(engine, 'temp')
+    os.makedirs(temp, exist_ok=True)
+    for name in ('TEMP', 'TMP', 'TMPDIR'):
+        os.environ[name] = temp
+    import tempfile
+    tempfile.tempdir = temp
+    cache = os.path.join(engine, 'user', 'Local', 'Archipelago', 'Cache')
+
+    def cache_path(*path):
+        return os.path.join(cache, *path)
+
+    cache_path.cached_path = cache
+    # Utils' own functions look cache_path up when they run, and later "from Utils import cache_path" gets this one.
+    import Utils
+    Utils.cache_path = cache_path
+
+
 def main():
     root, component = os.path.abspath(sys.argv[1]), sys.argv[2]
     os.chdir(root)
@@ -40,6 +62,7 @@ def main():
     # Never pip-install or prompt on stdin: stdin carries Atlas's requests.
     import ModuleUpdate
     ModuleUpdate.update_ran = True
+    keep_files_in_engine_folder()
 
     logging.getLogger().addHandler(_WorldLoadFailures(level=logging.ERROR))
     import worlds  # noqa: F401  loads every world, including the custom apworlds that register components

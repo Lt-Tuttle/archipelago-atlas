@@ -228,6 +228,16 @@ public static class DataManager
         return _dataDir;
     }
 
+    private static AP_Atlas.Core.Connections.DataPackageStore _dataPackages;
+
+    /// <summary>
+    /// The games' names as servers sent them (data packages), kept in the data folder's datapackage_cache: every
+    /// connection uses it instead of the connection library's own cache outside Atlas's folder. Any thread.
+    /// </summary>
+    public static AP_Atlas.Core.Connections.DataPackageStore DataPackages =>
+        System.Threading.LazyInitializer.EnsureInitialized(ref _dataPackages,
+            () => new AP_Atlas.Core.Connections.DataPackageStore(Path.Combine(GetDataDirectory(), "datapackage_cache")));
+
     /// <summary>Raised when a save failed even after retries (disk full, permissions): the file name and why.</summary>
     public static event System.Action<string, string> SaveFailed;
 

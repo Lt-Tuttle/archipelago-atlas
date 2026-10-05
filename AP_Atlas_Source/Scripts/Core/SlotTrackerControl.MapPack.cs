@@ -51,27 +51,45 @@ public partial class SlotTrackerControl : MarginContainer
     // Game names (the server's data package) and the pack's index
     // =====================================================================
 
-    /// <summary>
-    /// Asks the server for this game's data package (item and location name tables) once per connection.
-    /// It's stored and saved, so the Pack Doctor and other slots can use it offline later.
-    /// </summary>
     /// <summary>Each game's data checksum from the server's RoomInfo (set by MainTrackerWindow at connect).</summary>
     public IReadOnlyDictionary<string, string> ServerDataChecksums { get; set; }
 
     public string ServerChecksumFor(string game) =>
         game != null && ServerDataChecksums != null && ServerDataChecksums.TryGetValue(game, out var c) && !string.IsNullOrEmpty(c) ? c : null;
 
+    /// <summary>
+    /// Puts this game's data package (item and location name tables) in Atlas's name tables, so the Pack Doctor and other
+    /// slots can use it offline later. Connecting has usually stored it already (once per game version); only when it
+    /// hasn't is the server asked, once per connection.
+    /// </summary>
     private void RequestGameNames()
     {
         if (Session == null || string.IsNullOrEmpty(Game)) return;
-        // Names are fixed by the checksum: when the stored copy has the same one, there's nothing to download.
-        string checksum = ServerChecksumFor(Game);
-        var stored = AP_Atlas.Core.PopTracker.GameNames.Server(Game);
+        string game = Game;
+        // Names are fixed by the checksum: when the stored copy has the same one, there's nothing to do.
+        string checksum = ServerChecksumFor(game);
+        var stored = AP_Atlas.Core.PopTracker.GameNames.Server(game);
         if (checksum != null && stored != null && stored.Version == checksum && stored.Locations.Count > 0)
         {
-            AppendDebugLog($"Names for {Game} are already stored for checksum {checksum[..Math.Min(8, checksum.Length)]}; not downloading them again.");
+            AppendDebugLog($"Names for {game} are already stored for checksum {checksum[..Math.Min(8, checksum.Length)]}; not downloading them again.");
             return;
         }
+        if (checksum == null)
+        {
+            AskServerForGameNames();
+            return;
+        }
+        // Read off the main thread (a large game's names take a moment), then use them, or ask the server if they're missing.
+        var dataPackages = DataManager.DataPackages;
+        AP_Atlas.Core.Async.Then(Task.Run(() => dataPackages.TryGet(game, checksum, out var data) ? data : null), data => AP_Atlas.UI.Ui.Defer(null, () =>
+        {
+            if (data != null) UseGameNames(game, data);
+            else if (GodotObject.IsInstanceValid(this) && Session != null) AskServerForGameNames();
+        }), "reading the stored game names");
+    }
+
+    private void AskServerForGameNames()
+    {
         Session.Socket.PacketReceived += OnDataPackagePacket;
         AP_Atlas.Core.Async.Fire(Session.Socket.SendPacketAsync(new GetDataPackagePacket { Games = new[] { Game } }), "asking the server for game names", tellUser: false);
     }
@@ -82,7 +100,16 @@ public partial class SlotTrackerControl : MarginContainer
         string game = Game;
         if (!dp.DataPackage.Games.TryGetValue(game, out var data) || data.ItemLookup == null) return;
         Session.Socket.PacketReceived -= OnDataPackagePacket;
-        var table = new AP_Atlas.Core.PopTracker.GameNameTable
+        AP_Atlas.UI.Ui.Defer(null, () => UseGameNames(game, data));
+    }
+
+    /// <summary>
+    /// Keeps a game's names in the name tables (saved for offline use) and, while this slot is open, pairs its map pack
+    /// with them. Main thread.
+    /// </summary>
+    private void UseGameNames(string game, GameData data)
+    {
+        AP_Atlas.Core.PopTracker.GameNames.Store(new AP_Atlas.Core.PopTracker.GameNameTable
         {
             Game = game,
             Source = AP_Atlas.Core.PopTracker.GameNames.ServerSource,
@@ -90,15 +117,11 @@ public partial class SlotTrackerControl : MarginContainer
             Version = data.Checksum ?? "",
             Items = new Dictionary<string, long>(data.ItemLookup),
             Locations = new Dictionary<string, long>(data.LocationLookup ?? new Dictionary<string, long>())
-        };
-        AP_Atlas.UI.Ui.Defer(null, () =>
-        {
-            AP_Atlas.Core.PopTracker.GameNames.Store(table);
-            if (!GodotObject.IsInstanceValid(this)) return;
-            RebuildPackIndex();
-            // The server's names are the most accurate; re-check the pack against them.
-            if (Pack != null) AP_Atlas.Core.Async.Fire(AP_Atlas.Core.PopTracker.PackDoctorService.CheckAsync(Pack), "checking a map pack");
         });
+        if (!GodotObject.IsInstanceValid(this)) return;
+        RebuildPackIndex();
+        // The server's names are the most accurate; re-check the pack against them.
+        if (Pack != null) AP_Atlas.Core.Async.Fire(AP_Atlas.Core.PopTracker.PackDoctorService.CheckAsync(Pack), "checking a map pack");
     }
 
     /// <summary>The pairing of the loaded pack with this slot's locations and items.</summary>

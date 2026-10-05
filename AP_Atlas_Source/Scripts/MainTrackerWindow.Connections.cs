@@ -311,7 +311,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         ArchipelagoSession session = null;
         try
         {
-            session = ArchipelagoSessionFactory.CreateSession(profile.ServerUrl);
+            // Through Atlas's session factory, so the games' names are kept in Atlas's folder (see AtlasSessions).
+            session = AP_Atlas.Core.Connections.AtlasSessions.Create(profile.ServerUrl, DataManager.DataPackages);
             TrackSession(session);
             var earlyMessages = new List<Archipelago.MultiClient.Net.MessageLog.Messages.LogMessage>();
             void earlyHandler(Archipelago.MultiClient.Net.MessageLog.Messages.LogMessage msg)

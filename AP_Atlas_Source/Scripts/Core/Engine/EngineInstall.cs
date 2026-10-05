@@ -113,6 +113,7 @@ namespace AP_Atlas.Core.EngineSetup
             info.UseShellExecute = false;
             info.CreateNoWindow = true;
             info.StandardOutputEncoding = System.Text.Encoding.UTF8;
+            AtlasEngine.KeepFilesInEngineFolder(info);
             return info;
         }
 

@@ -65,6 +65,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
 
     public override void _ExitTree()
     {
+        AP_Atlas.Core.GodotLog.Uninstall();
         // A self-test or a refused test run never subscribed. Touching the services here would start them, and the
         // logger would create its folder in a data folder the run had refused.
         if (!_subscribed) return;
@@ -84,6 +85,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         // Log lines also go to Godot's output (the log file starts once the data folder has been checked, below).
         AP_Atlas.Core.Logger.Echo = line => GD.Print(line);
         AP_Atlas.Core.Logger.EchoError = line => GD.PrintErr(line);
+        // Godot's own errors go to Atlas's log too (Godot's log file is off: it would be kept outside Atlas's folder).
+        AP_Atlas.Core.GodotLog.Install();
         AP_Atlas.Core.CrashGuard.Install();
         if (AP_Atlas.Core.SelfTest.Requested)
         {
@@ -109,6 +112,10 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         AP_Atlas.Core.Logger.OnLogMessage += OnLogMessageReceived;
         AP_Atlas.Core.Annotations.Changed += OnAnnotationsChanged;
         AP_Atlas.Core.Logger.LogInfo($"The Archipelago Atlas {AP_Atlas.Core.AtlasVersion.Full} started.");
+        // Games' names nobody has used for three months (older versions pile up as games update).
+        var dataPackages = DataManager.DataPackages;
+        AP_Atlas.Core.Async.Fire(System.Threading.Tasks.Task.Run(() => dataPackages.RemoveUnused(System.TimeSpan.FromDays(90))),
+            "tidying the stored game names", tellUser: false);
         GetWindow().Title = "The Archipelago Atlas " + AP_Atlas.Core.AtlasVersion.Display;
         _appSettings = DataManager.LoadSettings();
         AP_Atlas.Core.ThemeColors.SetAccent(_appSettings.ThemeAccentColor);

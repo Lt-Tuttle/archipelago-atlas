@@ -141,6 +141,10 @@ namespace AP_Atlas.Core.EngineSetup
         private static string StatePath => Path.Combine(EngineDir, "engine.json");
         private static string DownloadsDir => Path.Combine(EngineDir, "downloads");
         private static string BackupsDir => Path.Combine(EngineDir, "backups");
+        /// <summary>The engine processes' temporary files (see <see cref="KeepFilesInEngineFolder"/>).</summary>
+        public static string TempDir => Path.Combine(EngineDir, "temp");
+        /// <summary>Stands in for %LocalAppData% and %AppData% in engine processes (Archipelago's cache, pip's cache).</summary>
+        public static string UserDir => Path.Combine(EngineDir, "user");
 
         private static AppSettings _settings;
 
@@ -1350,11 +1354,63 @@ namespace AP_Atlas.Core.EngineSetup
         private static Action<long, long> Report(Action<float> progress) =>
             progress == null ? null : (done, total) => progress(total > 0 ? (float)done / total : -1f);
 
-        private static Task<int> RunAsync(string exe, IEnumerable<string> args, string workDir, Action<string> log, CancellationToken ct, TimeSpan timeout)
+        private static Task<int> RunAsync(string exe, IEnumerable<string> args, string workDir, Action<string> log, CancellationToken ct, TimeSpan timeout) =>
+            RunAsync(SetupStartInfo(exe, args, workDir), null, line => log?.Invoke("  " + line), line => log?.Invoke("  " + line), ct, timeout);
+
+        /// <summary>How a setup step (Python, pip) is started.</summary>
+        internal static ProcessStartInfo SetupStartInfo(string exe, IEnumerable<string> args, string workDir)
         {
             var info = new ProcessStartInfo { FileName = exe, WorkingDirectory = workDir, RedirectStandardOutput = true, RedirectStandardError = true, RedirectStandardInput = true, UseShellExecute = false, CreateNoWindow = true };
             foreach (var a in args) info.ArgumentList.Add(a);
-            return RunAsync(info, null, line => log?.Invoke("  " + line), line => log?.Invoke("  " + line), ct, timeout);
+            KeepFilesInEngineFolder(info);
+            return info;
+        }
+
+        /// <summary>
+        /// Keeps an engine process's own files in the engine folder. Python's temporary files, Archipelago's cache (data
+        /// packages, a client id) and pip's downloads would otherwise go to %TEMP%, %LocalAppData% and %AppData%, outside
+        /// Atlas's folder. pip also stops reading the user's own pip settings, so they can't change what Atlas installs.
+        /// Every engine process starts through this (EngineInstall.StartInfo, SetupStartInfo; a guard rail checks).
+        /// </summary>
+        internal static void KeepFilesInEngineFolder(ProcessStartInfo info)
+        {
+            string local = Path.Combine(UserDir, "Local"), roaming = Path.Combine(UserDir, "Roaming");
+            foreach (var dir in new[] { TempDir, local, roaming }) Directory.CreateDirectory(dir);
+            RemoveOldTemp();
+            var env = info.Environment;
+            foreach (var name in env.Keys.Where(k => k.StartsWith("PIP_", StringComparison.OrdinalIgnoreCase)).ToList()) env.Remove(name);
+            env["TEMP"] = TempDir;
+            env["TMP"] = TempDir;
+            // platformdirs (used by Archipelago and pip) reads the WIN_PD_OVERRIDE_* names; other code reads the usual ones.
+            env["LOCALAPPDATA"] = local;
+            env["WIN_PD_OVERRIDE_LOCAL_APPDATA"] = local;
+            env["APPDATA"] = roaming;
+            env["WIN_PD_OVERRIDE_APPDATA"] = roaming;
+            env["PIP_CACHE_DIR"] = Path.Combine(EngineDir, "pip_cache");
+            env["PIP_CONFIG_FILE"] = "nul"; // Python's os.devnull: pip reads no pip.ini at all
+            env["PYTHONNOUSERSITE"] = "1"; // nothing from the user's own Python packages folder
+        }
+
+        /// <summary>Removes what engine runs that crashed left in the temp folder (anything over a day old).</summary>
+        private static void RemoveOldTemp()
+        {
+            try
+            {
+                foreach (var entry in new DirectoryInfo(TempDir).EnumerateFileSystemInfos())
+                {
+                    if (DateTime.UtcNow - entry.LastWriteTimeUtc < TimeSpan.FromDays(1)) continue;
+                    try
+                    {
+                        if (entry is DirectoryInfo dir) dir.Delete(recursive: true);
+                        else entry.Delete();
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { } // still in use: next time
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Logger.LogDebug("[Atlas Engine] Couldn't tidy the engine's temp folder: " + ex.Message);
+            }
         }
 
         /// <summary>Runs one bridge component with an optional request line on stdin.</summary>

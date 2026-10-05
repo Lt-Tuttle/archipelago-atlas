@@ -5,7 +5,9 @@
 .DESCRIPTION
     The self-test never touches real data: it refuses any data folder that isn't empty, and this script always
     makes a fresh one under the system temp folder. Godot's output goes to a file next to (never inside) that
-    data folder. The script exits with the self-test's exit code (0 = all passed).
+    data folder. The run also gets empty stand-ins for the user's folders and the temp folder, and fails if anything
+    is written to them (see footprint.ps1). The script exits with the self-test's exit code (0 = all passed), or 5 if
+    the self-test passed but something was written outside Atlas's folder.
 
 .PARAMETER Godot
     The Godot .NET console executable. Defaults to $env:ATLAS_GODOT, then the workspace's Godot_Engine folder.
@@ -36,6 +38,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'footprint.ps1')
 $project = Split-Path -Parent $PSScriptRoot
 # Relative paths mean relative to where you are in PowerShell (the Godot process would resolve them from its own folder).
 function Get-FullPath([string]$path) { $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($path) }
@@ -76,6 +79,7 @@ $psi.EnvironmentVariables['ATLAS_SELFTEST'] = '1'
 $psi.EnvironmentVariables['ATLAS_DATA_DIR'] = $data
 if ($ArchipelagoDir) { $psi.EnvironmentVariables['ATLAS_SELFTEST_AP'] = $ArchipelagoDir }
 elseif ($psi.EnvironmentVariables.ContainsKey('ATLAS_SELFTEST_AP')) { $psi.EnvironmentVariables.Remove('ATLAS_SELFTEST_AP') }
+$outside = Set-StandInUserFolders $psi $scratch
 
 Write-Host "Running the self-test (data folder: $data)..."
 $proc = [System.Diagnostics.Process]::Start($psi)
@@ -106,6 +110,7 @@ if (-not ($results | Where-Object { $_ -match '^SELFTEST DONE' })) {
     $lines | Select-Object -Last 40 | ForEach-Object { Write-Host "  $_" }
     if ($code -eq 0) { $code = 4 }
 }
+if ((Test-Footprint $outside) -gt 0 -and $code -eq 0) { $code = 5 }
 
 if ($Keep -or $code -ne 0) {
     Write-Host "Full output: $outputFile"
