@@ -169,7 +169,8 @@ namespace AP_Atlas.Core.PopTracker
             }
             catch (Exception ex)
             {
-                Logger.LogWarning($"Couldn't save pack fixes for {file.PackKey}: {ex.Message}");
+                // Pack Doctor fixes are the user's own work: they hear about it.
+                DataManager.ReportSaveFailure($"the Pack Doctor fixes for {file.PackKey}", ex);
             }
         }
 

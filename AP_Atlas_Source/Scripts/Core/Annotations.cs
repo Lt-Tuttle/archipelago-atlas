@@ -392,7 +392,8 @@ namespace AP_Atlas.Core
             }
             catch (Exception ex)
             {
-                Logger.LogWarning($"Could not save annotations.json: {ex.Message}");
+                // Notes, flags and exclusions are the user's own work: they hear about it.
+                DataManager.ReportSaveFailure("annotations.json", ex);
             }
         }
     }

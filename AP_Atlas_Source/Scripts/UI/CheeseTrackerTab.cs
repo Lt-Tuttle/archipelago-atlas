@@ -284,7 +284,7 @@ namespace AP_Atlas.UI
             split.Dragged += offset =>
             {
                 _settings.CheeseTableSplitOffset = (int)offset;
-                DataManager.SaveSettings(_settings);
+                DataManager.SaveSettingsSoon(_settings);
             };
             _trackerPage.AddChild(split);
             _tree = new Tree

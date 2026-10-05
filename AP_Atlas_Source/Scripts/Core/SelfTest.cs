@@ -102,6 +102,8 @@ namespace AP_Atlas.Core
             await TestAsync("Unawaited work: a failure is reported with what was being done; cancelling isn't one; routine work is only logged", UnawaitedWorkIsReported);
             await TestAsync("SafeFile: a file another program holds is read again, never taken for damage, and never saved over", HeldFilesAreNeverMistakenOrOverwritten);
             Test("SafeFile: a deleted file stays deleted (its backup goes with it)", DeletedFilesStayDeleted);
+            await TestAsync("Settings: a burst of changes is written once; closing or an immediate save writes a pending one", SettingsBurstsAreSavedOnce);
+            await TestAsync("Profiles another program held at load aren't saved over, and the user is told", HeldProfilesAreNotSavedOver);
 
             string ap = System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_AP");
             if (!string.IsNullOrWhiteSpace(ap))

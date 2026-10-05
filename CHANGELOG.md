@@ -50,6 +50,7 @@ Development toward the first public beta, 0.1.0.
 ### Changed
 - **Platform:** Atlas now runs on Godot 4.7.2 and .NET 10 (it was on Godot 4.3 and .NET 8, whose support ends in November 2026). Every screen was compared before and after, pixel by pixel.
 - **Lighter at rest:** Atlas redraws only when something on screen changes, so it uses next to no CPU or graphics card while you're not using it.
+- **Saving:** dragging a splitter or moving a map no longer writes your settings to disk on every mouse movement. They're saved once you stop, and when Atlas closes.
 - **Renderer:** Atlas now draws with Godot's Compatibility renderer (OpenGL 3.3, with a Direct3D fallback built into Godot), which runs on more graphics cards. On the test PC it starts about a quarter faster and uses about a third less video memory, and every screen looks the same.
 - **Atlas asks before going outside its folder:**
   - Atlas no longer searches the PC for Archipelago at startup. Find in Atlas Engine asks first and says exactly where it will look.
@@ -81,6 +82,8 @@ Development toward the first public beta, 0.1.0.
 - **Files held by another program:**
   - If an antivirus or sync tool (OneDrive, Dropbox) was reading your settings or profiles at the moment Atlas read them, Atlas took the file for damaged and put its older backup in its place. Your latest changes were lost.
   - Now Atlas reads the file again until it's free. If it stays held, Atlas carries on without it, says so, and won't save over it.
+- **Closing Atlas** now saves your multiworlds as well, so what changed during the session (slot stats, links) is kept.
+- **Notes, flags, exclusions and Pack Doctor fixes:** a save that fails is now shown to you, not only logged.
 - **Deleted data came back:** deleting a slot's saved data, or unlinking Cheese Tracker, left a backup that the next read restored. Deleting now removes the backup too.
 - **No silent failures in background work:**
   - Every check, download and connection Atlas runs in the background now reports a failure instead of losing it. The log says what was being done, and you're told in plain words (at most once every 10 minutes for the same work).

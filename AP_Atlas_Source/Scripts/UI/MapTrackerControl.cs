@@ -227,10 +227,6 @@ namespace AP_Atlas.UI
             emptyVBox.AddChild(emptySubLbl);
             AddChild(_emptyStateContainer);
 
-            // Camera moves fire on every mouse-motion event; batch them into one settings write.
-            _cameraSaveTimer = new Timer { OneShot = true, WaitTime = 0.5 };
-            _cameraSaveTimer.Timeout += () => DataManager.SaveSettings(_appSettings);
-            AddChild(_cameraSaveTimer);
         }
 
         public override void _EnterTree()
@@ -334,8 +330,7 @@ namespace AP_Atlas.UI
         private void DisplayChanged()
         {
             // The slider fires continuously while dragged: save once it settles.
-            if (_cameraSaveTimer.IsInsideTree()) _cameraSaveTimer.Start();
-            else DataManager.SaveSettings(_appSettings);
+            DataManager.SaveSettingsSoon(_appSettings);
             _displayVersion++;
             DisplayOptionsChanged?.Invoke();
         }
@@ -349,7 +344,6 @@ namespace AP_Atlas.UI
             if (!string.IsNullOrEmpty(_currentMapId)) RenderLocations();
         }
 
-        private Timer _cameraSaveTimer;
         public void SetSession(Archipelago.MultiClient.Net.ArchipelagoSession session)
         {
             _session = session;
@@ -603,19 +597,13 @@ namespace AP_Atlas.UI
                 Y = _camera.Position.Y,
                 Zoom = _camera.Zoom.X
             };
-            if (_cameraSaveTimer.IsInsideTree()) _cameraSaveTimer.Start();
-            else DataManager.SaveSettings(_appSettings);
+            // Camera moves fire on every mouse-motion event: save once they settle.
+            DataManager.SaveSettingsSoon(_appSettings);
         }
 
         public override void _ExitTree()
         {
             DisplayOptionsChanged -= OnDisplayOptionsChanged;
-            // Flush a pending debounced camera save.
-            if (!_cameraSaveTimer.IsStopped())
-            {
-                _cameraSaveTimer.Stop();
-                DataManager.SaveSettings(_appSettings);
-            }
         }
         private void SwitchMap(string mapId)
         {

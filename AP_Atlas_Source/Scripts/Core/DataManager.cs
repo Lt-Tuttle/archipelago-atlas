@@ -233,11 +233,48 @@ public static class DataManager
     private static void Save(string path, object value)
     {
         try { AP_Atlas.Core.SafeFile.WriteJson(path, value); }
-        catch (System.Exception ex)
+        catch (System.Exception ex) { ReportSaveFailure(Path.GetFileName(path), ex); }
+    }
+
+    /// <summary>Logs a failed save of the user's own data and raises SaveFailed, so they hear about it. Never throws.</summary>
+    public static void ReportSaveFailure(string file, System.Exception error)
+    {
+        try { AP_Atlas.Core.Logger.LogError($"Couldn't save {file}: {error.Message}"); }
+        catch (System.Exception logFailure) { GD.PrintErr($"Couldn't save {file} ({error.Message}), and couldn't log it: {logFailure.Message}"); }
+        try { SaveFailed?.Invoke(file, error.Message); }
+        catch (System.Exception handlerFailure) { GD.PrintErr($"Couldn't show that {file} wasn't saved: {handlerFailure.Message}"); }
+    }
+
+    private static AppSettings _settingsToSave;
+    private static int _settingsSaveRequest;
+
+    /// <summary>
+    /// Saves settings half a second after the last call, so a burst of changes is written once (dragging a splitter
+    /// reports every mouse move, and each save is flushed to disk). Called off the main thread, it hops there first.
+    /// An immediate SaveSettings, or FlushPendingSaves when Atlas closes, writes a pending save at once.
+    /// </summary>
+    public static void SaveSettingsSoon(AppSettings settings)
+    {
+        if (Engine.GetMainLoop() is not SceneTree tree) { SaveSettings(settings); return; }
+        if (OS.GetThreadCallerId() != OS.GetMainThreadId())
         {
-            AP_Atlas.Core.Logger.LogError($"Couldn't save {Path.GetFileName(path)}: {ex.Message}");
-            try { SaveFailed?.Invoke(Path.GetFileName(path), ex.Message); } catch { }
+            Callable.From(() => SaveSettingsSoon(settings)).CallDeferred();
+            return;
         }
+        _settingsToSave = settings;
+        int request = ++_settingsSaveRequest;
+        tree.CreateTimer(0.5).Timeout += () =>
+        {
+            if (request == _settingsSaveRequest) FlushPendingSaves();
+        };
+    }
+
+    /// <summary>Writes a settings save that SaveSettingsSoon is still waiting on, if there is one.</summary>
+    public static void FlushPendingSaves()
+    {
+        var settings = _settingsToSave;
+        _settingsToSave = null;
+        if (settings != null) SaveSettings(settings);
     }
 
     public static AppSettings LoadSettings()
@@ -267,7 +304,12 @@ public static class DataManager
         return settings;
     }
 
-    public static void SaveSettings(AppSettings settings) => Save(Path.Combine(GetDataDirectory(), "settings.json"), settings);
+    public static void SaveSettings(AppSettings settings)
+    {
+        // This save includes whatever SaveSettingsSoon was waiting to write.
+        if (ReferenceEquals(_settingsToSave, settings)) _settingsToSave = null;
+        Save(Path.Combine(GetDataDirectory(), "settings.json"), settings);
+    }
 
     public static List<MultiworldProfile> LoadProfiles()
     {

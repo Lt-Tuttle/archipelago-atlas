@@ -103,6 +103,78 @@ namespace AP_Atlas.Core
             }
         }
 
+        /// <summary>
+        /// SaveSettingsSoon writes a burst of changes once, half a second after the last; an immediate save or closing
+        /// (FlushPendingSaves) writes a pending one at once, and nothing is written twice. Every write moves the previous
+        /// version to .bak, so .bak shows how many writes there were.
+        /// </summary>
+        private static async Task SettingsBurstsAreSavedOnce()
+        {
+            string path = Path.Combine(DataManager.GetDataDirectory(), "settings.json");
+            int OnDisk(string file) => Newtonsoft.Json.JsonConvert.DeserializeObject<AppSettings>(File.ReadAllText(file)).MainSplitOffset;
+            var settings = new AppSettings { MainSplitOffset = 100 };
+            DataManager.SaveSettings(settings);
+
+            // A drag: three changes in a row are one write, half a second after the last.
+            foreach (int offset in new[] { 101, 102, 103 })
+            {
+                settings.MainSplitOffset = offset;
+                DataManager.SaveSettingsSoon(settings);
+            }
+            await Task.Delay(250);
+            Expect(OnDisk(path) == 100, "nothing is written while changes are still coming");
+            await Task.Delay(600);
+            Expect(OnDisk(path) == 103, $"the last value is written after the burst, not {OnDisk(path)}");
+            Expect(OnDisk(path + ".bak") == 100, "the burst is written once (the backup is the value from before it)");
+
+            // Closing writes a pending save at once, and the timer doesn't write it again.
+            settings.MainSplitOffset = 104;
+            DataManager.SaveSettingsSoon(settings);
+            DataManager.FlushPendingSaves();
+            Expect(OnDisk(path) == 104, "closing writes a pending save at once");
+            await Task.Delay(700);
+            Expect(OnDisk(path + ".bak") == 103, "a flushed save isn't written a second time");
+
+            // An immediate save includes a pending one.
+            settings.MainSplitOffset = 105;
+            DataManager.SaveSettingsSoon(settings);
+            settings.MainSplitOffset = 106;
+            DataManager.SaveSettings(settings);
+            await Task.Delay(700);
+            Expect(OnDisk(path) == 106 && OnDisk(path + ".bak") == 104, "an immediate save takes the pending one's place");
+        }
+
+        /// <summary>
+        /// Profiles another program held while Atlas loaded them aren't saved over (Atlas only has the empty fallback);
+        /// the failed save is reported to the user, and the real file survives.
+        /// </summary>
+        private static async Task HeldProfilesAreNotSavedOver()
+        {
+            string path = Path.Combine(DataManager.GetDataDirectory(), "profiles.json");
+            var real = new List<MultiworldProfile> { new MultiworldProfile { Name = "Real multiworld" } };
+            DataManager.SaveProfiles(real);
+            var failures = new List<string>();
+            void OnSaveFailed(string file, string reason) { lock (failures) failures.Add(file); }
+            DataManager.SaveFailed += OnSaveFailed;
+            try
+            {
+                List<MultiworldProfile> loaded;
+                using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None))
+                    loaded = await Task.Run(DataManager.LoadProfiles);
+                Expect(loaded.Count == 0, "while held, the profiles can't be read (the empty fallback)");
+                DataManager.SaveProfiles(loaded);
+                Expect(failures.Contains("profiles.json"), "the refused save is reported to the user");
+                var onDisk = DataManager.LoadProfiles();
+                Expect(onDisk.Count == 1 && onDisk[0].Name == "Real multiworld", "the real profiles survive");
+                DataManager.SaveProfiles(onDisk);
+                Expect(failures.Count == 1, "once read again, saving works again");
+            }
+            finally
+            {
+                DataManager.SaveFailed -= OnSaveFailed;
+            }
+        }
+
         /// <summary>SafeFile.Delete removes the backup and any temp file too, so a deleted file doesn't come back on the next read.</summary>
         private static void DeletedFilesStayDeleted()
         {

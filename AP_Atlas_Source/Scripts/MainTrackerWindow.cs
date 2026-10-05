@@ -508,7 +508,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         appWorkspaceHBox.AddThemeConstantOverride("separation", 8);
         interiorMargin.AddChild(appWorkspaceHBox);
         _mainSplit = new HSplitContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, SplitOffsets = new[] { _appSettings.MainSplitOffset } };
-        _mainSplit.Dragged += (offset) => { _appSettings.MainSplitOffset = (int)offset; DataManager.SaveSettings(_appSettings); };
+        _mainSplit.Dragged += (offset) => { _appSettings.MainSplitOffset = (int)offset; DataManager.SaveSettingsSoon(_appSettings); };
         _mainSplit.AddThemeConstantOverride("separation", 8);
         interiorMargin.AddChild(_mainSplit);
         // --- 1. FAR LEFT SLOTS SIDEBAR ---
@@ -537,13 +537,13 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         // The explorer lives inside the content area, so showing or hiding it only resizes the content stage:
         // the tabs and terminal never move, and the tab bar's menu sits at the content's top-right corner.
         var centerRightSplit = new HSplitContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, SplitOffsets = new[] { _appSettings.SplitCenterRightOffset } };
-        centerRightSplit.Dragged += (offset) => { _appSettings.SplitCenterRightOffset = (int)offset; DataManager.SaveSettings(_appSettings); };
+        centerRightSplit.Dragged += (offset) => { _appSettings.SplitCenterRightOffset = (int)offset; DataManager.SaveSettingsSoon(_appSettings); };
         centerRightSplit.AddThemeConstantOverride("separation", 8);
         _mainSplit.AddChild(centerRightSplit);
         var rightColumn = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
         centerRightSplit.AddChild(rightColumn);
         var rightOfSidebarSplit = new HSplitContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, SplitOffsets = new[] { _appSettings.SplitRightSidebarOffset } };
-        rightOfSidebarSplit.Dragged += (offset) => { _appSettings.SplitRightSidebarOffset = (int)offset; DataManager.SaveSettings(_appSettings); };
+        rightOfSidebarSplit.Dragged += (offset) => { _appSettings.SplitRightSidebarOffset = (int)offset; DataManager.SaveSettingsSoon(_appSettings); };
         rightOfSidebarSplit.AddThemeConstantOverride("separation", 8);
         // --- 3. MID LEFT EXPLORER SIDEBAR ---
         _midLeftSidebar = new PanelContainer { SizeFlagsVertical = SizeFlags.ExpandFill, CustomMinimumSize = new Godot.Vector2(250, 0), Visible = false };
@@ -592,7 +592,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         globalTabHBox.AddChild(contentMenuBtn);
         rightColumn.AddChild(globalTabHBox);
         _contentSplit = new VSplitContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, SplitOffsets = new[] { _appSettings.SplitContentOffset } };
-        _contentSplit.Dragged += (offset) => { _appSettings.SplitContentOffset = (int)offset; DataManager.SaveSettings(_appSettings); };
+        _contentSplit.Dragged += (offset) => { _appSettings.SplitContentOffset = (int)offset; DataManager.SaveSettingsSoon(_appSettings); };
         _contentSplit.AddThemeConstantOverride("separation", 8);
         rightColumn.AddChild(_contentSplit);
         // --- 5. CONTENT STAGE ---
@@ -1140,6 +1140,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 _appSettings.WindowY = win.Position.Y;
             }
             DataManager.SaveSettings(_appSettings);
+            // What changed during the session (slot stats, links) is kept even if nothing else saved the profiles.
+            DataManager.SaveProfiles(_profiles);
             if (_globalStatusLabel != null) _globalStatusLabel.Text = "Disconnecting sessions...";
             LogToSystem("[color=yellow]Shutting down... Disconnecting active slots...[/color]");
             // Close every session we opened (connected slots and any still connecting) with a proper close frame,
