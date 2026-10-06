@@ -27,7 +27,10 @@ namespace AP_Atlas.Core
         }
 
         /// <summary>Sent with every web request, so site owners can see who is calling and where the project lives.</summary>
-        public static string UserAgent => $"TheArchipelagoAtlas/{Display} (Archipelago tracker; +https://github.com/Lt-Tuttle/archipelago-atlas)";
+        /// <summary>Where Atlas lives: its code, releases and issues.</summary>
+        public const string RepoUrl = "https://github.com/Lt-Tuttle/archipelago-atlas";
+
+        public static string UserAgent => $"TheArchipelagoAtlas/{Display} (Archipelago tracker; +{RepoUrl})";
 
         private static string Read()
         {

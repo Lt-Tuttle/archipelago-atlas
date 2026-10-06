@@ -22,13 +22,17 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         try
         {
             var win = GetWindow();
-            _appSettings.WindowMaximized = win.Mode == Window.ModeEnum.Maximized;
-            if (!_appSettings.WindowMaximized)
+            // In full screen (F11), what to come back to was noted when it was turned on: the window's size and place now aren't its own.
+            if (win.Mode != Window.ModeEnum.Fullscreen)
             {
-                _appSettings.WindowWidth = win.Size.X;
-                _appSettings.WindowHeight = win.Size.Y;
-                _appSettings.WindowX = win.Position.X;
-                _appSettings.WindowY = win.Position.Y;
+                _appSettings.WindowMaximized = win.Mode == Window.ModeEnum.Maximized;
+                if (!_appSettings.WindowMaximized)
+                {
+                    _appSettings.WindowWidth = win.Size.X;
+                    _appSettings.WindowHeight = win.Size.Y;
+                    _appSettings.WindowX = win.Position.X;
+                    _appSettings.WindowY = win.Position.Y;
+                }
             }
             DataManager.SaveSettings(_appSettings);
             // What changed during the session (slot stats, links) is kept even if nothing else saved the profiles.

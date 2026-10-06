@@ -30,6 +30,8 @@ public class AppSettings
     public string LastYamlFolder { get; set; } = "";
     /// <summary>What the user chose "Always allow" for (see Permissions): "kind" or "kind|scope".</summary>
     public List<string> PermissionsAllowed { get; set; } = new List<string>();
+    /// <summary>Keys the user rebound: command id ("tool.map-tracker") → shortcut ("Ctrl+3"), or "" for none. Help → Keyboard Shortcuts lists the ids.</summary>
+    public Dictionary<string, string> KeyBindings { get; set; } = new Dictionary<string, string>();
 
     // Layout State
     public int MainSplitOffset { get; set; } = 300;

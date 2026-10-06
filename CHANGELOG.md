@@ -98,8 +98,15 @@ Development toward the first public beta, 0.1.0.
   - A fake logic engine for tests (`FakeLogicEngine`): Atlas starts it through its real engine runner, and it answers from simple rules (which items each location needs). It can also crash, answer late or send a stale answer on purpose. The UI test runs a slot's logic on it: items and checks arriving, an item the server sends without flags, a crash and the restart, an engine update, and Restart logic. Its own unit tests check it answers as the real engine does.
   - CI runs the tests on Python 3.12, the version the portable engine uses, and fails a UI test run that skipped a scenario.
 - **Settings → Privacy & permissions:** everything you've allowed Atlas to do without asking, and every apworld source you trust, each with a way to take it back.
+- **A menu bar and keyboard shortcuts** (the first piece of the new shell):
+  - Six menus: File · Multiworld · View · Tools · Window · Help. Every plain action is one command, run from its menu item or its key; the command palette will run the same commands.
+  - Keys: Ctrl+1 to Ctrl+9 show the tools in order, Ctrl+N starts a new multiworld, F11 is full screen, F1 lists every command and its key (Help → Keyboard Shortcuts).
+  - Keys can be rebound: `KeyBindings` in settings.json, a command's id → its key (or "" for none); the shortcuts list shows each id. A Settings page for this is coming.
+  - Help → About names the version, what Atlas is and isn't, and who made it. Help → Atlas on GitHub opens the project.
+  - The UI test checks that every command is in a menu with its key shown, that the keys and a rebind work at once, and that the menu bar never runs a stale key itself.
 
 ### Changed
+- **The Settings menu's entries moved** into the new menus: automatic reconnects, each seed's apworld version and race mode under Multiworld; the Atlas Engine, the Cheese Tracker and Sphere Tracker settings and Privacy & permissions under Tools. The View menu keeps the console tabs, the theme accent and the font size, and gained the three console views.
 - **Platform:** Atlas now runs on Godot 4.7.2 and .NET 10 (it was on Godot 4.3 and .NET 8, whose support ends in November 2026). Every screen was compared before and after, pixel by pixel.
 - **Lighter at rest:** Atlas redraws only when something on screen changes, so it uses next to no CPU or graphics card while you're not using it.
 - **Fewer requests to the server:** a slot now takes its game's names from what the connection has already stored, instead of asking the server for them a second time.

@@ -87,6 +87,8 @@ public partial class MainTrackerWindow
             ViewsKeepTheirEventsWhenMovedAsync);
         await ScenarioAsync("Tools: every tool's tab shows its own view, and each slot tool the connected slot's view (or asks for a slot when none is connected)",
             EveryToolShowsItsViewAsync);
+        await ScenarioAsync("Menu bar and keys: the six menus hold every command with its key shown; Ctrl+1 to 9 switch tools, a rebind in the settings takes over at once, F1 lists the keys as they are, and About names the version",
+            MenuBarAndKeysAsync);
         await ScenarioAsync("Bursts: 40 items and 40 chat lines arriving together reach the slot once each, at most one update of the window in each frame they arrive over (not 80)",
             BurstIsOneUpdateAsync);
         await ScenarioAsync("Long text: a game's names and a hint's entrance of a megabyte, and a chat line of 100,000 characters without a space, hold up no frame for 150 ms, shown or not (names are cut to 500 characters; a long run of text gets breaks)",
@@ -278,14 +280,26 @@ public partial class MainTrackerWindow
         await UiTestWaitAsync(0.3);
         race.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
 
-        await UiTestWaitForAsync(() => !IsInstanceValid(doctor) && !IsInstanceValid(engine) && !IsInstanceValid(privacy) && !IsInstanceValid(race) ? this : null,
-            "the closed windows to be freed");
+        _commands!.Run("help.shortcuts");
+        var shortcuts = await UiTestWaitForAsync(() => GetChildren().OfType<AcceptDialog>().FirstOrDefault(d => d.Title == "Keyboard Shortcuts"), "the shortcuts dialog");
+        await UiTestWaitAsync(0.3);
+        shortcuts.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
+
+        _commands.Run("help.about");
+        var about = await UiTestWaitForAsync(() => GetChildren().OfType<AcceptDialog>().FirstOrDefault(d => d.Title == "About The Archipelago Atlas"), "the About dialog");
+        await UiTestWaitAsync(0.3);
+        about.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
+
+        await UiTestWaitForAsync(() => !IsInstanceValid(doctor) && !IsInstanceValid(engine) && !IsInstanceValid(privacy) && !IsInstanceValid(race)
+            && !IsInstanceValid(shortcuts) && !IsInstanceValid(about) ? this : null, "the closed windows to be freed");
         return new List<(string What, System.WeakReference Weak)>
         {
             ("a closed Pack Doctor window", new System.WeakReference(doctor)),
             ("a closed Atlas Engine window", new System.WeakReference(engine)),
             ("a closed Privacy window", new System.WeakReference(privacy)),
             ("a closed race mode dialog", new System.WeakReference(race)),
+            ("a closed Keyboard Shortcuts dialog", new System.WeakReference(shortcuts)),
+            ("a closed About dialog", new System.WeakReference(about)),
         };
     }
 
@@ -521,6 +535,70 @@ public partial class MainTrackerWindow
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
             DeleteProfile(profile);
         }
+    }
+
+    private async Task MenuBarAndKeysAsync()
+    {
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        // The six menus, in order, and every command in one of them with its key shown.
+        var menus = _menuHbox.GetChildren().OfType<MenuButton>().ToList();
+        UiTestExpect(string.Join(",", menus.Select(m => m.Text)) == "File,Multiworld,View,Tools,Window,Help", $"the menus are {string.Join(", ", menus.Select(m => m.Text))}");
+        var placed = _commandItems.Values.SelectMany(menu => menu.Values).ToHashSet();
+        var missing = _commands!.All.Select(c => c.Id).Where(id => !placed.Contains(id)).ToList();
+        UiTestExpect(missing.Count == 0, $"commands in no menu: {string.Join(", ", missing)}");
+        var tools = menus[3].GetPopup();
+        UiTestExpect(tools.GetItemText(2) == "Map Tracker" && ShortcutShown(tools, 2) == "Ctrl+3", $"the Tools menu's third item is \"{tools.GetItemText(2)}\" with \"{ShortcutShown(tools, 2)}\"");
+
+        host.ShowTool(AP_Atlas.UI.Tool.Connections);
+        await PressAsync("Ctrl+2");
+        UiTestExpect(ShownContent() == _packManagerPanel, "Ctrl+2 didn't show Map Packs");
+        await PressAsync("Ctrl+9");
+        UiTestExpect(ShownContent() == _sphereTab, "Ctrl+9 didn't show the Sphere Tracker");
+        // A rebind in the settings takes over at once (as a user might type it), and the old key means nothing.
+        _appSettings.KeyBindings["tool.map-packs"] = "ctrl+f6";
+        try
+        {
+            await PressAsync("Ctrl+F6");
+            UiTestExpect(ShownContent() == _packManagerPanel, "a rebound key (Ctrl+F6) didn't show Map Packs");
+            host.ShowTool(AP_Atlas.UI.Tool.SphereTracker);
+            await PressAsync("Ctrl+2");
+            UiTestExpect(ShownContent() == _sphereTab, "the old key still works after a rebind");
+            await PressAsync("F1");
+            var shortcuts = await UiTestWaitForAsync(() => GetChildren().OfType<AcceptDialog>().FirstOrDefault(d => d.Title == "Keyboard Shortcuts"), "the shortcuts dialog");
+            var rows = Rows(shortcuts.FindChildren("*", nameof(Tree), true, false).OfType<Tree>().First());
+            UiTestExpect(rows.Any(r => r[0] == "Map Packs" && r[1] == "Ctrl+F6") && rows.Any(r => r[0] == "Map Tracker" && r[1] == "Ctrl+3"),
+                "the shortcuts list doesn't show the keys as they are now");
+            shortcuts.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
+        }
+        finally
+        {
+            _appSettings.KeyBindings.Remove("tool.map-packs");
+        }
+        _commands.Run("help.about");
+        var about = await UiTestWaitForAsync(() => GetChildren().OfType<AcceptDialog>().FirstOrDefault(d => d.Title == "About The Archipelago Atlas"), "the About dialog");
+        UiTestExpect(about.DialogText.Contains(AP_Atlas.Core.AtlasVersion.Display), "About doesn't name the version");
+        about.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
+        await UiTestWaitAsync(0.2);
+        host.ShowTool(AP_Atlas.UI.Tool.Connections);
+    }
+
+    /// <summary>Presses a key as the user would ("Ctrl+2"), through the window's input.</summary>
+    private async Task PressAsync(string key)
+    {
+        var press = AP_Atlas.UI.CommandKeys.ToEvent(key) ?? throw new ArgumentException($"\"{key}\" isn't a key", nameof(key));
+        GetViewport().PushInput(press);
+        await UiTestWaitAsync(0.1);
+    }
+
+    private static string ShortcutShown(PopupMenu popup, int index) =>
+        popup.GetItemShortcut(index)?.Events.Select(v => v.AsGodotObject() as InputEventKey).FirstOrDefault(e => e != null)?.AsText() ?? "";
+
+    private static List<string[]> Rows(Tree tree)
+    {
+        var rows = new List<string[]>();
+        for (var item = tree.GetRoot()?.GetFirstChild(); item != null; item = item.GetNext())
+            rows.Add(new[] { item.GetText(0), item.GetText(1), item.GetText(2) });
+        return rows;
     }
 
     private async Task LongTextHoldsUpNothingAsync()
