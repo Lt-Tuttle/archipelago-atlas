@@ -224,9 +224,13 @@ namespace AP_Atlas.Core.PopTracker
             });
         }
 
-        /// <summary>Copies an image file into the pack's fix folder and returns its stored name.</summary>
+        /// <summary>
+        /// Copies an image file into the pack's fix folder and returns its stored name. Refused (with why, for the user) if
+        /// Atlas wouldn't show it: too big a file, not a PNG, JPEG or WebP image, or too many pixels.
+        /// </summary>
         public static string ImportImage(string packKey, string sourcePath)
         {
+            if (ImageFileRefusal(sourcePath) is string why) throw new InvalidDataException(why);
             string dir = AssetDir(packKey);
             Directory.CreateDirectory(dir);
             string name = Path.GetFileNameWithoutExtension(sourcePath) + "_" + DateTime.Now.ToString("yyyyMMddHHmmss") + Path.GetExtension(sourcePath).ToLowerInvariant();
@@ -239,11 +243,21 @@ namespace AP_Atlas.Core.PopTracker
             try
             {
                 string path = Path.Combine(AssetDir(packKey), fileName);
-                if (!File.Exists(path)) return null;
-                var img = Image.LoadFromFile(path);
+                var info = new FileInfo(path);
+                if (!info.Exists || info.Length > SafeZip.ImageLimit) return null;
+                using var img = PackImages.DecodeImage(File.ReadAllBytes(path), path, new ImageBudget(), out _);
                 return img == null ? null : ImageTexture.CreateFromImage(img);
             }
-            catch { return null; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { return null; } // gone, locked or misnamed: shown blank
+        }
+
+        /// <summary>Why Atlas wouldn't show an image file the user chose, or null. Checked as a pack's images are.</summary>
+        private static string ImageFileRefusal(string path)
+        {
+            if (!PackImages.CanDecode(path)) return "Atlas shows PNG, JPEG and WebP images";
+            var info = new FileInfo(path);
+            if (info.Length > SafeZip.ImageLimit) return $"it's larger than {SafeZip.Size(SafeZip.ImageLimit)}, more than Atlas reads from one image";
+            return new ImageBudget().Take(File.ReadAllBytes(path));
         }
 
         // =====================================================================

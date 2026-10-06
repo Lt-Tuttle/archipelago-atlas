@@ -216,7 +216,7 @@ namespace AP_Atlas.Core.PopTracker
             try
             {
                 if (logDebug != null) logDebug($"[PopTracker] Checking zip: {System.IO.Path.GetFileName(zipPath)}");
-                using (var archive = ZipFile.OpenRead(zipPath))
+                using (var archive = SafeZip.Open(zipPath))
                 {
                     // 1. Read manifest to check game name
                     var manifestEntry = archive.Entries.FirstOrDefault(e => e.FullName.EndsWith("manifest.json", StringComparison.OrdinalIgnoreCase) || e.FullName.EndsWith("pack.json", StringComparison.OrdinalIgnoreCase));
@@ -226,7 +226,7 @@ namespace AP_Atlas.Core.PopTracker
 
                     if (manifestEntry != null)
                     {
-                        string json = ReadStringFromEntry(manifestEntry);
+                        string json = archive.ReadText(manifestEntry);
                         try
                         {
                             manifest = JsonConvert.DeserializeObject<PopTrackerManifest>(json);
@@ -278,7 +278,7 @@ namespace AP_Atlas.Core.PopTracker
                     var itemEntries = archive.Entries.Where(e => e.FullName.StartsWith(rootPrefix + "items/", StringComparison.OrdinalIgnoreCase) && IsJsonFile(e.FullName));
                     foreach (var entry in itemEntries)
                     {
-                        var token = ParseJsonLenient(entry, pack, logDebug);
+                        var token = ParseJsonLenient(archive, entry, pack, logDebug);
                         if (token is not JArray itemsArray) continue;
                         foreach (var itemToken in itemsArray)
                         {
@@ -317,7 +317,8 @@ namespace AP_Atlas.Core.PopTracker
                     var mapEntries = archive.Entries.Where(e => e.FullName.StartsWith(rootPrefix + "maps/", StringComparison.OrdinalIgnoreCase) && (e.FullName.EndsWith(".json", StringComparison.OrdinalIgnoreCase) || e.FullName.EndsWith(".jsonc", StringComparison.OrdinalIgnoreCase)));
                     foreach (var entry in mapEntries)
                     {
-                        string json = ReadStringFromEntry(entry);
+                        string json = ReadText(archive, entry, pack);
+                        if (json == null) continue;
                         try
                         {
                             var settings = new JsonLoadSettings { CommentHandling = CommentHandling.Ignore };
@@ -378,7 +379,8 @@ namespace AP_Atlas.Core.PopTracker
                     var locationEntries = archive.Entries.Where(e => e.FullName.StartsWith(rootPrefix + "locations/", StringComparison.OrdinalIgnoreCase) && (e.FullName.EndsWith(".json", StringComparison.OrdinalIgnoreCase) || e.FullName.EndsWith(".jsonc", StringComparison.OrdinalIgnoreCase)));
                     foreach (var entry in locationEntries)
                     {
-                        string json = ReadStringFromEntry(entry);
+                        string json = ReadText(archive, entry, pack);
+                        if (json == null) continue;
                         try
                         {
                             var settings = new JsonLoadSettings { CommentHandling = CommentHandling.Ignore };
@@ -469,12 +471,14 @@ namespace AP_Atlas.Core.PopTracker
             }
         }
 
-        private static string ReadStringFromEntry(ZipArchiveEntry entry)
+        /// <summary>A text file from the pack's zip, or null when Atlas won't read it (too big, or damaged): the pack notes why.</summary>
+        private static string ReadText(SafeZip zip, ZipArchiveEntry entry, LoadedPack pack)
         {
-            using (var stream = entry.Open())
-            using (var reader = new StreamReader(stream))
+            try { return zip.ReadText(entry); }
+            catch (InvalidDataException ex)
             {
-                return reader.ReadToEnd();
+                pack.LoadIssues.Add($"{entry.FullName}: wasn't read ({ex.Message}).");
+                return null;
             }
         }
 
@@ -485,9 +489,10 @@ namespace AP_Atlas.Core.PopTracker
         /// Parses pack JSON the way PopTracker tolerates it: comments allowed, and trailing commas repaired.
         /// Repairs and failures are recorded on the pack for the Doctor.
         /// </summary>
-        private static JToken ParseJsonLenient(ZipArchiveEntry entry, LoadedPack pack, Action<string> logDebug)
+        private static JToken ParseJsonLenient(SafeZip zip, ZipArchiveEntry entry, LoadedPack pack, Action<string> logDebug)
         {
-            string json = ReadStringFromEntry(entry);
+            string json = ReadText(zip, entry, pack);
+            if (json == null) return null;
             var settings = new JsonLoadSettings { CommentHandling = CommentHandling.Ignore };
             try
             {
@@ -519,7 +524,7 @@ namespace AP_Atlas.Core.PopTracker
         /// "layout" references (by key), "group" headers, docks, tabs and arrays. Each grid keeps its group header
         /// and tile size, and grids under a settings-like group are marked so Key Items can leave them out.
         /// </summary>
-        private static void ExtractLayoutGrids(ZipArchive archive, string rootPrefix, LoadedPack pack, Action<string> logDebug)
+        private static void ExtractLayoutGrids(SafeZip archive, string rootPrefix, LoadedPack pack, Action<string> logDebug)
         {
             var layouts = new Dictionary<string, JToken>(StringComparer.OrdinalIgnoreCase);
             var layoutEntries = archive.Entries
@@ -527,7 +532,7 @@ namespace AP_Atlas.Core.PopTracker
                 .OrderBy(e => e.FullName, StringComparer.OrdinalIgnoreCase);
             foreach (var entry in layoutEntries)
             {
-                if (ParseJsonLenient(entry, pack, logDebug) is JObject obj)
+                if (ParseJsonLenient(archive, entry, pack, logDebug) is JObject obj)
                 {
                     foreach (var prop in obj.Properties()) layouts[prop.Name] = prop.Value;
                 }
@@ -652,13 +657,13 @@ namespace AP_Atlas.Core.PopTracker
         };
 
         /// <summary>Reads item_mapping.lua and location_mapping.lua, wherever the pack keeps them.</summary>
-        private static void ReadMappingScripts(ZipArchive archive, string rootPrefix, LoadedPack pack)
+        private static void ReadMappingScripts(SafeZip archive, string rootPrefix, LoadedPack pack)
         {
             var itemScript = archive.Entries.FirstOrDefault(e => e.FullName.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase) &&
                                                                  e.FullName.EndsWith("item_mapping.lua", StringComparison.OrdinalIgnoreCase));
-            if (itemScript != null)
+            if (itemScript != null && ReadText(archive, itemScript, pack) is string itemCode)
             {
-                var result = LuaMappingReader.Read(ReadStringFromEntry(itemScript));
+                var result = LuaMappingReader.Read(itemCode);
                 foreach (var problem in result.Problems) pack.LoadIssues.Add($"{itemScript.FullName}: {problem}");
                 foreach (var entry in result.Entries.Where(e => e.Id != null))
                 {
@@ -673,9 +678,9 @@ namespace AP_Atlas.Core.PopTracker
 
             var locationScript = archive.Entries.FirstOrDefault(e => e.FullName.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase) &&
                                                                      e.FullName.EndsWith("location_mapping.lua", StringComparison.OrdinalIgnoreCase));
-            if (locationScript != null)
+            if (locationScript != null && ReadText(archive, locationScript, pack) is string locationCode)
             {
-                var result = LuaMappingReader.Read(ReadStringFromEntry(locationScript));
+                var result = LuaMappingReader.Read(locationCode);
                 foreach (var problem in result.Problems) pack.LoadIssues.Add($"{locationScript.FullName}: {problem}");
                 foreach (var entry in result.Entries)
                 {

@@ -54,7 +54,7 @@ namespace AP_Atlas.Core.PopTracker
             }
             lock (pack.ImageLock)
             {
-                if (!pack.ImagesLoaded) Decode(pack, keep: true);
+                if (!pack.ImagesLoaded) Decode(pack, keep: true, new ImageBudget());
             }
             return new PackUse(pack);
         }
@@ -63,11 +63,14 @@ namespace AP_Atlas.Core.PopTracker
         /// Finds the pack's images that can't be decoded, for the Pack Doctor, without keeping any (no textures). Once per
         /// pack, and not needed once its images were decoded for use. Not on the main thread.
         /// </summary>
-        public static void Check(LoadedPack pack)
+        public static void Check(LoadedPack pack) => Check(pack, new ImageBudget());
+
+        /// <summary>As <see cref="Check(LoadedPack)"/>, within the given budget (a test's small one).</summary>
+        internal static void Check(LoadedPack pack, ImageBudget budget)
         {
             lock (pack.ImageLock)
             {
-                if (!pack.ImagesChecked) Decode(pack, keep: false);
+                if (!pack.ImagesChecked) Decode(pack, keep: false, budget);
             }
         }
 
@@ -127,8 +130,9 @@ namespace AP_Atlas.Core.PopTracker
         }
 
         // Under the pack's ImageLock. Reads each of the pack's images from its zip, and either keeps them as textures (and
-        // links the maps' backgrounds) or only notes which can't be decoded.
-        private static void Decode(LoadedPack pack, bool keep)
+        // links the maps' backgrounds) or only notes which can't be decoded. The same images are refused either way: the
+        // limits (SafeZip's, and the ImageBudget's) are taken in the same order.
+        private static void Decode(LoadedPack pack, bool keep, ImageBudget budget)
         {
             var images = new Dictionary<string, ImageTexture>(StringComparer.OrdinalIgnoreCase);
             var sizes = new Dictionary<string, Vector2I>(StringComparer.OrdinalIgnoreCase);
@@ -137,23 +141,27 @@ namespace AP_Atlas.Core.PopTracker
             bool firstLook = !pack.ImagesChecked;
             try
             {
-                using var archive = ZipFile.OpenRead(pack.SourcePath);
+                using var archive = SafeZip.Open(pack.SourcePath);
                 // Each image is indexed under two paths ("/images/x.png" and "images/x.png"): decode it once.
                 foreach (var image in pack.ImageEntries.GroupBy(entry => entry.Value, StringComparer.OrdinalIgnoreCase))
                 {
                     string localPath = image.Select(entry => entry.Key).FirstOrDefault(path => !path.StartsWith('/')) ?? image.First().Key.TrimStart('/');
                     var entry = archive.GetEntry(image.Key);
                     Image? decoded = null;
-                    Error error = Error.FileNotFound;
                     string? why = null;
-                    if (entry != null) decoded = DecodeEntry(entry, localPath, out error, out why);
+                    if (entry != null)
+                    {
+                        // Too big to read, or damaged: this image is blank, and the rest are still read.
+                        try { decoded = DecodeImage(archive.ReadImage(entry), localPath, budget, out why); }
+                        catch (InvalidDataException ex) { why = ex.Message; }
+                    }
                     if (decoded == null)
                     {
                         broken.Add(localPath);
-                        issues.Add(entry == null ? $"Image '{localPath}' isn't in the pack's zip any more." : $"Image '{localPath}' couldn't be decoded ({why ?? error.ToString()}).");
+                        issues.Add(entry == null ? $"Image '{localPath}' isn't in the pack's zip any more." : $"Image '{localPath}' couldn't be decoded ({why}).");
                         // Godot logs only a bare ERR_PARSE_ERROR; name the image (once per pack) so the user knows what's missing.
                         if (firstLook)
-                            Logger.LogWarning($"Map pack '{Path.GetFileName(pack.SourcePath)}': could not decode image '{localPath}' ({why ?? error.ToString()}). Anything using it (e.g. a map background) will appear blank.");
+                            Logger.LogWarning($"Map pack '{Path.GetFileName(pack.SourcePath)}': could not decode image '{localPath}' ({why ?? "it isn't in the zip"}). Anything using it (e.g. a map background) will appear blank.");
                         continue;
                     }
                     foreach (var path in image.Select(entry => entry.Key)) sizes[path] = new Vector2I(decoded.GetWidth(), decoded.GetHeight());
@@ -190,23 +198,22 @@ namespace AP_Atlas.Core.PopTracker
             pack.ImagesLoaded = true;
         }
 
-        /// <summary>Decodes one image; null (with why) when it can't be.</summary>
-        private static Image? DecodeEntry(ZipArchiveEntry entry, string localPath, out Error error, out string? why)
+        /// <summary>
+        /// Decodes an image file from outside Atlas (PNG, JPEG or WebP, by its name), or says why it can't be: a decoder sets
+        /// aside width × height × 4 bytes from the header alone, so the size the header gives is taken from the budget first
+        /// (see <see cref="ImageBudget"/>). Every image Atlas decodes from a pack, or from a file the user chose, comes here.
+        /// </summary>
+        internal static Image? DecodeImage(byte[] file, string path, ImageBudget budget, out string? why)
         {
-            why = null;
-            byte[] buffer;
-            using (var stream = entry.Open())
-            using (var copy = new MemoryStream())
-            {
-                stream.CopyTo(copy);
-                buffer = copy.ToArray();
-            }
+            why = budget.Take(file);
+            if (why != null) return null;
             var image = new Image();
-            if (localPath.EndsWith(".png", StringComparison.OrdinalIgnoreCase)) error = image.LoadPngFromBuffer(buffer);
-            else if (localPath.EndsWith(".webp", StringComparison.OrdinalIgnoreCase)) error = image.LoadWebpFromBuffer(buffer);
-            else error = image.LoadJpgFromBuffer(buffer);
+            Error error;
+            if (path.EndsWith(".png", StringComparison.OrdinalIgnoreCase)) error = image.LoadPngFromBuffer(file);
+            else if (path.EndsWith(".webp", StringComparison.OrdinalIgnoreCase)) error = image.LoadWebpFromBuffer(file);
+            else error = image.LoadJpgFromBuffer(file);
             if (error == Error.Ok && !image.IsEmpty()) return image;
-            if (error == Error.Ok) why = "empty image";
+            why = error == Error.Ok ? "empty image" : error.ToString();
             image.Dispose();
             return null;
         }

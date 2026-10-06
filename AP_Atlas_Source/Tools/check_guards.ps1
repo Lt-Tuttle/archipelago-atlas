@@ -38,6 +38,14 @@
       - Saving a whole file without SafeFile: only where it's checked to be safe (the log, a crash report, an export the
         user chose, files the engine setup regenerates, a store that writes a temporary file and moves it, the tests).
         Atlas's own data goes through SafeFile, which keeps a backup and survives a crash mid-save.
+      - Reading a zip without SafeZip: nowhere else. Map packs and apworlds come from outside Atlas, and a zip's headers
+        can lie: SafeZip refuses zip64 zips before they're listed, and counts every file's bytes as they're unpacked, with
+        limits per file and per zip. Making a zip (ZipArchiveMode.Create, CreateEntry(...).Open()) is fine anywhere.
+      - Unpacking a zip into a folder: only the engine's setup, for its downloads checked against pinned SHA-256 hashes
+        (Python, pip, Archipelago) before they're unpacked.
+      - Decoding an image: only PackImages.DecodeImage, which takes the image's size from its header and checks it against
+        an ImageBudget first (a decoder sets aside width x height x 4 bytes from the header alone), and the visual check,
+        for its own screenshots.
       - An empty catch that doesn't say why on the same line: nowhere. A failure is logged, handled, or explained.
     Where a rule names a number, the file may do it only that many times: one helper does it, everything else uses it.
     Libraries whose internals Atlas relies on are pinned (MoonSharp, Archipelago.MultiClient.Net): update one only with
@@ -90,6 +98,13 @@ $rules = @(
        Allowed = @('AP_Atlas.Core\Logger.cs', 'AP_Atlas.Core\Connections\DataPackageStore.cs', 'AP_Atlas.Core\Testing\FakeLogicEngine.cs',
                    'AP_Atlas_Source\Scripts\Core\CrashGuard.cs', 'AP_Atlas_Source\Scripts\Core\Annotations.cs', 'AP_Atlas_Source\Scripts\Core\Engine\AtlasEngine.cs',
                    'AP_Atlas_Source\Scripts\Core\SelfTest.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.Reliability.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.Safety.cs') },
+    @{ Name = 'Reading a zip without SafeZip'
+       Pattern = 'ZipFile\.Open(Read)?(Async)?\s*\((?![^)]*ZipArchiveMode\.Create)|new\s+(System\.IO\.Compression\.)?ZipArchive\s*\((?![^)]*ZipArchiveMode\.Create)|ZipArchive\.CreateAsync\s*\((?![^)]*ZipArchiveMode\.Create)|(?<!CreateEntry\([^()]*\))\.Open(Async)?\s*\(\s*\)'
+       Allowed = @('AP_Atlas.Core\SafeZip.cs'); Max = 2 },
+    @{ Name = 'Unpacking a zip into a folder'; Pattern = 'ExtractToDirectory|ExtractToFile'
+       Allowed = @('AP_Atlas_Source\Scripts\Core\Engine\AtlasEngine.cs'); Max = 3 },
+    @{ Name = 'Decoding an image without checking its size first (use PackImages.DecodeImage)'; Pattern = 'Load(Png|Jpg|Webp|Bmp|Tga|Svg|Ktx|Exr|Dds)FromBuffer\s*\(|\bImage\.LoadFromFile\s*\('
+       Allowed = @('AP_Atlas_Source\Scripts\Core\PopTracker\PackImages.cs', 'AP_Atlas_Source\Scripts\MainTrackerWindow.VisualCheck.cs'); Max = 3 },
     @{ Name = 'An empty catch that doesn''t say why'; Pattern = 'catch(\s*\([^)]*\))?\s*\{\s*\}(?!\s*//)'; Allowed = @() }
 )
 

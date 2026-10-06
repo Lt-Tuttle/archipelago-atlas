@@ -113,27 +113,37 @@ namespace AP_Atlas.Core.PopTracker
         // Loading
         // =====================================================================
 
-        /// <summary>Reads the pack's scripts and data files from its zip. Null if the pack has no init.lua.</summary>
+        /// <summary>
+        /// Reads the pack's scripts and data files from its zip. Null if the pack has no init.lua. A file Atlas won't read
+        /// (too big, see <see cref="SafeZip"/>, or damaged) stops the scripts before they start, saying why where a stop shows.
+        /// </summary>
         public static PackScriptHost Load(LoadedPack pack)
         {
             if (pack == null || string.IsNullOrEmpty(pack.SourcePath) || !File.Exists(pack.SourcePath)) return null;
             string variant = DefaultVariant(pack.Manifest);
-            var host = new PackScriptHost(pack, variant);
-            using (var zip = ZipFile.OpenRead(pack.SourcePath))
+            using var zip = SafeZip.Open(pack.SourcePath);
+            string root = pack.RootPrefix ?? "";
+            var entries = new Dictionary<string, ZipArchiveEntry>(StringComparer.OrdinalIgnoreCase);
+            foreach (var e in zip.Entries)
             {
-                string root = pack.RootPrefix ?? "";
-                foreach (var e in zip.Entries)
+                if (!e.FullName.StartsWith(root, StringComparison.OrdinalIgnoreCase)) continue;
+                string rel = e.FullName.Substring(root.Length).TrimStart('/');
+                if (rel.EndsWith(".lua", StringComparison.OrdinalIgnoreCase) || rel.EndsWith(".json", StringComparison.OrdinalIgnoreCase) || rel.EndsWith(".jsonc", StringComparison.OrdinalIgnoreCase))
+                    entries[rel] = e;
+            }
+            if (Resolve(entries, variant, "scripts/init.lua") == null) return null;
+            var host = new PackScriptHost(pack, variant);
+            foreach (var (rel, e) in entries)
+            {
+                try { host._files[rel] = DecodeText(zip.ReadTextBytes(e)); }
+                catch (InvalidDataException ex)
                 {
-                    if (!e.FullName.StartsWith(root, StringComparison.OrdinalIgnoreCase)) continue;
-                    string rel = e.FullName.Substring(root.Length).TrimStart('/');
-                    if (!(rel.EndsWith(".lua", StringComparison.OrdinalIgnoreCase) || rel.EndsWith(".json", StringComparison.OrdinalIgnoreCase) || rel.EndsWith(".jsonc", StringComparison.OrdinalIgnoreCase))) continue;
-                    using var s = e.Open();
-                    using var ms = new MemoryStream();
-                    s.CopyTo(ms);
-                    host._files[rel] = DecodeText(ms.ToArray());
+                    host._files.Clear();
+                    host.StopWith(ex.Message);
+                    break;
                 }
             }
-            return host.ResolveFile("scripts/init.lua") == null ? null : host;
+            return host;
         }
 
         private static string DefaultVariant(PopTrackerManifest m)
@@ -150,11 +160,13 @@ namespace AP_Atlas.Core.PopTracker
         }
 
         /// <summary>A pack file as PopTracker would see it: the variant's override first, then the base file.</summary>
-        private string ResolveFile(string path)
+        private string ResolveFile(string path) => Resolve(_files, Variant, path);
+
+        private static T Resolve<T>(Dictionary<string, T> files, string variant, string path) where T : class
         {
             path = path.Replace('\\', '/').TrimStart('/');
-            if (!string.IsNullOrEmpty(Variant) && _files.TryGetValue(Variant + "/" + path, out var v)) return v;
-            return _files.TryGetValue(path, out var text) ? text : null;
+            if (!string.IsNullOrEmpty(variant) && files.TryGetValue(variant + "/" + path, out var v)) return v;
+            return files.TryGetValue(path, out var file) ? file : null;
         }
 
         private sealed class PackLoader : ScriptLoaderBase

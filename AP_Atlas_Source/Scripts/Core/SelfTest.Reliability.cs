@@ -516,6 +516,71 @@ namespace AP_Atlas.Core
         }
 
         /// <summary>
+        /// A map pack's zip can't fill Atlas's memory, whatever its headers claim (SafeZip, ImageBudget). An image whose header
+        /// says 20,000 × 20,000 pixels (1.6 GB decoded, from a 33-byte file) is refused before it's decoded; a file that unpacks
+        /// to more than Atlas reads isn't read. Either way the rest of the pack works and the user is told why: a pack's load
+        /// issues, and for its scripts a stop before they start, which the Pack Doctor reports.
+        /// </summary>
+        private static async Task PackFilesCantFillMemory()
+        {
+            string zip = Scratch("selftest_bombs.zip");
+            byte[] huge = AP_Atlas.Core.Testing.FakeMapPack.Png(1, 1);
+            System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(huge.AsSpan(16), 20000);
+            System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(huge.AsSpan(20), 20000);
+            var bomb = new byte[SafeZip.TextLimit + 1]; // zips to about 65 KB
+            bomb.AsSpan().Fill((byte)' ');
+            AP_Atlas.Core.Testing.FakeMapPack.Write(zip, "Self-test bomb pack", "Self Test Game B",
+                binaryFiles: new Dictionary<string, byte[]> { ["images/huge.png"] = huge, ["locations/bomb.json"] = bomb });
+            var pack = PopTracker.PopTrackerPackLoader.InspectZipPack(zip) ?? throw new InvalidOperationException("the test pack wasn't read");
+            Expect(pack.LoadIssues.Any(i => i.StartsWith("pack/locations/bomb.json: wasn't read") && i.Contains("unpacks to more than 64 MB")),
+                "the oversized file isn't among the pack's issues: " + string.Join(" | ", pack.LoadIssues));
+            Expect(pack.Locations.Count == 2 && pack.ItemsByCode.ContainsKey("sword") && pack.Maps.ContainsKey("World"), "the rest of the pack wasn't read");
+
+            long decoded = PopTracker.PackImages.Decoded;
+            using (PopTracker.PackImages.Use(pack))
+            {
+                Expect(pack.BrokenImages.Contains("images/huge.png") && pack.LoadIssues.Any(i => i.Contains("'images/huge.png'") && i.Contains("20,000 × 20,000 pixels, larger than Atlas shows")),
+                    "the huge image wasn't refused: " + string.Join(" | ", pack.LoadIssues));
+                Expect(PopTracker.PackImages.Decoded - decoded == 2 && pack.Images.ContainsKey("images/sword.png") && pack.Maps["World"].BackgroundTexture != null,
+                    $"the pack's other images weren't decoded ({PopTracker.PackImages.Decoded - decoded} decoded)");
+            }
+
+            // One budget covers all of a pack's images: with room for sword.png (8 × 8) and world.png (64 × 32) only, the
+            // image after them is refused (a test's small total stands in for the 2 GB a real pack would need).
+            AP_Atlas.Core.Testing.FakeMapPack.Write(zip, "Self-test bomb pack", "Self Test Game B",
+                binaryFiles: new Dictionary<string, byte[]> { ["images/huge.png"] = huge, ["images/extra.png"] = AP_Atlas.Core.Testing.FakeMapPack.Png(32, 32) });
+            var budgeted = PopTracker.PopTrackerPackLoader.InspectZipPack(zip)!;
+            await Task.Run(() => PopTracker.PackImages.Check(budgeted, new ImageBudget((8 * 8 + 64 * 32) * 4)));
+            Expect(budgeted.BrokenImages.SetEquals(new[] { "images/broken.png", "images/huge.png", "images/extra.png" })
+                && budgeted.LoadIssues.Any(i => i.Contains("'images/extra.png'") && i.Contains("together come to more than Atlas decodes")),
+                "the pack's images weren't held to one budget: " + string.Join(" | ", budgeted.LoadIssues));
+
+            // Scripts with a file too big to read stop before they start, and say why.
+            AP_Atlas.Core.Testing.FakeMapPack.Write(zip, "Self-test bomb pack", "Self Test Game B", initLua: "error('init.lua ran')",
+                binaryFiles: new Dictionary<string, byte[]> { ["scripts/bomb.lua"] = bomb });
+            var host = PopTracker.PackScriptHost.Load(PopTracker.PopTrackerPackLoader.InspectZipPack(zip)!);
+            Expect(host?.StopReason == "'pack/scripts/bomb.lua' unpacks to more than 64 MB, more than Atlas reads from one file", $"the scripts weren't stopped: {host?.StopReason ?? "no scripts"}");
+            bool started = await Task.Run(() => host!.Initialize());
+            Expect(!started && host!.Errors.Count == 0, "stopped scripts still ran: " + string.Join(" | ", host!.Errors));
+            var report = await Task.Run(() => PopTracker.PackDoctor.Analyze(PopTracker.PackDoctor.Prepare(PopTracker.PopTrackerPackLoader.InspectZipPack(zip)!, null)));
+            Expect(report.Findings.Any(f => f.Key == "script:stopped" && f.Detail.Contains("unpacks to more than 64 MB")),
+                "the Pack Doctor doesn't report the stopped scripts: " + string.Join("; ", report.Findings.Where(f => f.Category == "Scripts").Select(f => f.Title)));
+
+            // An image the user chooses for a fix (Pack Doctor: "Replace image…") is checked the same way, before it's copied.
+            string key = PopTracker.PackFixes.KeyFor(pack);
+            string chosen = Scratch("selftest_chosen_huge.png");
+            File.WriteAllBytes(chosen, huge);
+            string? refusal = null;
+            try { PopTracker.PackFixes.ImportImage(key, chosen); }
+            catch (InvalidDataException ex) { refusal = ex.Message; }
+            Expect(refusal?.Contains("20,000 × 20,000 pixels, larger than Atlas shows") == true, $"a huge image was imported as a fix ({refusal ?? "not refused"})");
+            File.WriteAllBytes(chosen, AP_Atlas.Core.Testing.FakeMapPack.Png(16, 16));
+            string stored = PopTracker.PackFixes.ImportImage(key, chosen);
+            using var texture = PopTracker.PackFixes.LoadImage(key, stored);
+            Expect(texture?.GetWidth() == 16, "a good image chosen for a fix doesn't load");
+        }
+
+        /// <summary>
         /// MoonSharp's compiler recurses once per level of nesting, and running out of stack would end Atlas (.NET can't
         /// catch it). Code nested deeper than Atlas compiles is refused before the compiler sees it, whether it's one of the
         /// pack's files or code a script loads. Code within the limit compiles on a thread of its own with room to spare:

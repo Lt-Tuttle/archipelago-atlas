@@ -45,7 +45,7 @@ Development toward the first public beta, 0.1.0.
   - No test reaches a real site: the self-test's check that a download with the wrong hash is refused now uses a local server (it fetched a file from python.org).
   - Stricter checks on every change:
     - Any build warning is an error.
-    - The guard rails keep each protection in its one place: calling, compiling and making functions for map pack scripts, and closing server connections.
+    - The guard rails keep each protection in its one place: calling, compiling and making functions for map pack scripts, closing server connections, reading zips (only through `SafeZip`), and decoding images (only after their size is checked). Only the engine's setup unpacks a zip into a folder, and only its hash-checked downloads.
     - They also allow no forced memory collections, threads of its own, unexplained silent failures, or looking up your folders outside the install search you agree to. Whole-file saves are allowed only where SafeFile isn't needed.
     - The libraries whose insides Atlas relies on are pinned, and the nullable-check count can only go down.
     - A pre-push hook runs the quick checks before anything reaches CI.
@@ -166,6 +166,13 @@ Development toward the first public beta, 0.1.0.
   - A library call MoonSharp fails with a .NET error, where Lua raises an error (`math.random(1e20)`, say), is now a Lua error too: a script can catch it, and it never ends the scripts.
   - Compiling a pack's code can't crash Atlas either. Code nested far deeper than Lua allows (thousands of levels) used to overflow the compiler, which ended Atlas when the pack loaded. It's now refused with a clear message, and the compiler has a stack of its own with room to spare. The deepest script among 40 real packs nests 59 levels. Scripts also can't load compiled (binary) chunks, or more than a million characters of code at once.
   - Library functions that could hurt Atlas in one call are made safe. `collectgarbage` does nothing (it paused all of Atlas for a full memory collection). `string.rep` and `table.concat` check the size of what they'd build. The `json` and `dynamic` modules, which PopTracker doesn't have, are gone.
+- **Map packs and apworlds can't fill Atlas's memory.** They're zips from outside Atlas, and a zip's headers can lie: a "zip bomb" of a few kilobytes can unpack to gigabytes.
+  - Every file is counted as it unpacks. One that comes to more than Atlas reads from one file (64 MB of text, 256 MB for an image) isn't read, whatever its zip says. Neither is more than 128 MB of text, or 1 GB of images, from one zip. The largest real map pack holds 3.7 MB of text and 210 MB of images.
+  - A zip64 zip (the kind made for more than 65,534 files, or over 4 GB) is refused before its files are listed. No map pack or apworld needs one.
+  - An image's size is read from its header before it's decoded. A decoder sets aside memory for every pixel the header claims, and a file of a few bytes can claim billions. An image over 16,384 pixels a side, or one that would take a pack's images past 2 GB, shows blank, and the pack says why. Across 43 real packs (6,750 images), the longest side is 12,560 pixels and the most a pack's images take is 821 MB.
+  - JPEG sizes are read the way decoders read them, so a crafted file can't show the check a small picture while the decoder finds a huge one.
+  - Whatever isn't read, the rest of the pack still works, and the Pack Doctor lists it. A script file too big to read stops the pack's scripts before they start, and Key Items, the log, Properties and the Pack Doctor say why.
+  - An image you choose for a Pack Doctor fix is checked the same way before it's copied.
 
 ### Fixed
 - **Files outside Atlas's folder:** three things Atlas didn't ask for wrote outside its folder. Everything now stays inside it.

@@ -119,6 +119,7 @@ namespace AP_Atlas.Core
             await TestAsync("Pack scripts: work that runs away is stopped, wherever it runs, and the scripts with it", PackScriptsThatRunAwayAreStopped);
             await TestAsync("Pack scripts: modules come from the pack, compiled once; library functions that could hurt Atlas are safe", PackScriptsUseTheirOwnCompiledFiles);
             await TestAsync("Pack scripts: code nested deeper than Atlas compiles is refused, never compiled; every loader compiles that way, with room to spare", PackScriptsCompileSafely);
+            await TestAsync("Map packs: a file or image too big to read safely is refused before it fills memory; the rest of the pack works, and the user is told why", PackFilesCantFillMemory);
             await TestAsync("Pack Doctor: an analysis reads its own snapshot, never the fixes as they change", PackDoctorReadsASnapshot);
             await TestAsync("Settings saved from a background thread are written on the main thread, and the log says so", OffThreadSavesMoveToTheMainThread);
             await TestAsync("Settings saved by an older Atlas still load: settings it no longer has are ignored, never taken for damage", OlderSettingsStillLoad);

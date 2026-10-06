@@ -981,11 +981,9 @@ namespace AP_Atlas.Core.EngineSetup
             if (!File.Exists(apworld)) return null;
             try
             {
-                using var zip = ZipFile.OpenRead(apworld);
+                using var zip = SafeZip.Open(apworld);
                 var entry = zip.Entries.FirstOrDefault(e => e.FullName.Replace('\\', '/').Count(c => c == '/') == 1 && e.Name.Equals("requirements.txt", StringComparison.OrdinalIgnoreCase));
-                if (entry == null) return null;
-                using var reader = new StreamReader(entry.Open());
-                return reader.ReadToEnd();
+                return entry == null ? null : zip.ReadText(entry);
             }
             catch { return null; }
         }
@@ -1172,8 +1170,7 @@ namespace AP_Atlas.Core.EngineSetup
                 using (var stream = new FileStream(temp, FileMode.Create))
                 using (var archive = new ZipArchive(stream, ZipArchiveMode.Create))
                 {
-                    var entry = archive.CreateEntry("UltimateBridge/__init__.py");
-                    using var writer = new StreamWriter(entry.Open(), new UTF8Encoding(false));
+                    using var writer = new StreamWriter(archive.CreateEntry("UltimateBridge/__init__.py").Open(), new UTF8Encoding(false));
                     writer.Write(script);
                 }
                 File.Move(temp, apworld, true);
@@ -1198,11 +1195,9 @@ namespace AP_Atlas.Core.EngineSetup
         {
             try
             {
-                using var zip = ZipFile.OpenRead(apworld);
+                using var zip = SafeZip.Open(apworld);
                 var entry = zip.GetEntry("UltimateBridge/__init__.py");
-                if (entry == null) return null;
-                using var reader = new StreamReader(entry.Open(), Encoding.UTF8);
-                return reader.ReadToEnd();
+                return entry == null ? null : zip.ReadText(entry);
             }
             catch { return null; }
         }
@@ -1259,18 +1254,16 @@ namespace AP_Atlas.Core.EngineSetup
         {
             try
             {
-                using var zip = ZipFile.OpenRead(file);
+                using var zip = SafeZip.Open(file);
                 var manifest = zip.Entries.FirstOrDefault(e => e.FullName.EndsWith("archipelago.json", StringComparison.OrdinalIgnoreCase));
                 if (manifest != null)
                 {
-                    using var r = new StreamReader(manifest.Open());
-                    var game = JObject.Parse(r.ReadToEnd())["game"]?.ToString();
+                    var game = JObject.Parse(zip.ReadText(manifest))["game"]?.ToString();
                     if (!string.IsNullOrEmpty(game)) return game;
                 }
                 var init = zip.Entries.Where(e => e.FullName.Count(c => c == '/') == 1 && e.FullName.EndsWith("/__init__.py")).FirstOrDefault();
                 if (init == null) return null;
-                using var reader = new StreamReader(init.Open());
-                string src = reader.ReadToEnd();
+                string src = zip.ReadText(init);
                 // class XWorld(World): ... game = "Name"  /  game: str = "Name"  /  game: ClassVar[str] = "Name"
                 var m = Regex.Match(src, @"class\s+\w+\s*\([^)]*World[^)]*\)\s*:[\s\S]*?^\s+game\s*(?::\s*[\w\.\[\]]+\s*)?=\s*[""']([^""']+)[""']", RegexOptions.Multiline);
                 return m.Success ? m.Groups[1].Value : null;

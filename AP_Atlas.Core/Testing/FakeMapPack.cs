@@ -19,7 +19,9 @@ internal static class FakeMapPack
 
     /// <param name="initLua">The pack's scripts/init.lua, or null for a pack without scripts.</param>
     /// <param name="files">More files, by their path in the pack (e.g. "scripts/helper.lua").</param>
-    public static void Write(string zipPath, string name, string game, string? initLua = null, IReadOnlyDictionary<string, string>? files = null)
+    /// <param name="binaryFiles">More files given as bytes (e.g. a crafted image).</param>
+    public static void Write(string zipPath, string name, string game, string? initLua = null, IReadOnlyDictionary<string, string>? files = null,
+        IReadOnlyDictionary<string, byte[]>? binaryFiles = null)
     {
         if (File.Exists(zipPath)) File.Delete(zipPath);
         using var zip = ZipFile.Open(zipPath, ZipArchiveMode.Create);
@@ -46,6 +48,7 @@ internal static class FakeMapPack
         Bytes("pack/images/broken.png", new byte[] { 1, 2, 3, 4 });
         if (initLua != null) Text("pack/scripts/init.lua", initLua);
         foreach (var file in files ?? new Dictionary<string, string>()) Text("pack/" + file.Key, file.Value);
+        foreach (var file in binaryFiles ?? new Dictionary<string, byte[]>()) Bytes("pack/" + file.Key, file.Value);
     }
 
     /// <summary>A PNG of one colour (Atlas purple), RGBA, 8 bits per channel.</summary>

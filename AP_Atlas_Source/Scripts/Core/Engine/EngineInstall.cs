@@ -134,7 +134,7 @@ namespace AP_Atlas.Core.EngineSetup
         {
             try
             {
-                using var zip = ZipFile.OpenRead(file);
+                using var zip = SafeZip.Open(file);
                 return zip.Entries.Any(e => match(e.FullName.Replace('\\', '/')));
             }
             catch { return false; }

@@ -26,6 +26,7 @@ MainTrackerWindow (the shell)
 
 - **`AP_Atlas.Core/`**: everything that doesn't need Godot. It has no Godot reference, so it can't touch the window from a worker thread, and its tests run with plain `dotnet test`.
   - `SafeFile`, `Logger`, `Async`, `AtlasVersion`, `Secrets`.
+  - `SafeZip`, `ImageHeader` and `ImageBudget`: reading zips and images that come from outside Atlas (see "Files from outside Atlas", below).
   - `PoliteHttp` and `GitHubApi`.
   - `YamlExclusions`.
   - The Cheese Tracker client, models, table rules, advisor and key store (`CheeseTracker/`).
@@ -52,7 +53,7 @@ MainTrackerWindow (the shell)
 | `Core/SlotTrackerControl*.cs` | **Everything about one connected slot**, in partial files:<br>• `SlotTrackerControl.cs`: startup, its session events and the queries Properties uses.<br>• `.Race`: race mode.<br>• `.Apworld`: matching the seed's apworld version.<br>• `.MapPack`: the pack, game names, its index and the pack's scripts.<br>• `.Logic`: the logic engine.<br>• `.LogicView`, `.History`, `.Chat`: its views. |
 | `Core/` | **Infrastructure:**<br>• `DataManager` (settings and profiles), `CrashGuard`, `GodotLog` (Godot's own errors and warnings, into Atlas's log).<br>• `SlotModel`: one connected slot apart from its views: the session and its events, the text client's lines, hints and goal, its logic (`SlotLogic`), race mode and exclusions, logic as the slot shows it (race mode and exclusions applied), and the questions Atlas asks the server about it. It tells its views at most once per frame what changed. Services read it; views read the slot's panel, which forwards to it.<br>• `SlotLogic`: the slot's logic engine (started, restarted after a failure, paused while the engine is updated) and what's in logic, worked out item by item (a few items per request). Each engine run is numbered, so an answer or a failure from an engine since stopped is ignored.<br>• `Annotations` (notes, flags, special items, exclusions), `RaceRules`, `ThemeColors`, `Inspect`.<br>• `ExternalLinks`: the only way to open links and folders.<br>• `Permissions`: what the user allowed. |
 | `Core/Engine/` | **The Atlas Engine:**<br>• `AtlasEngine`: setup of the portable engine (Python, Archipelago, Universal Tracker, packages), health checks, rollback, and the user's own install with their consent.<br>• `EngineInstall`: where an engine lives and how to start its components.<br>• `ApworldSources`: apworld versions, matched to each seed.<br>• `SeedVerifier`, `GameSweep`.<br>• `Python/`: the bridge (`atlas_bridge.py`) and the portable runner. |
-| `Core/PopTracker/` | **Map packs:**<br>• `PopTrackerPackLoader` reads pack zips: their structure and an index of their images.<br>• `PackImages`: a pack's images, decoded only while a slot or the Pack Doctor window uses the pack (the pack used last keeps them; others are freed at once). The Pack Doctor learns which images decode, and their sizes, without keeping them.<br>• `PackScriptHost` runs pack Lua in a sandbox.<br>• `PackIndex`, `LuaMappingReader`, `GameNames`.<br>• The Pack Doctor (`PackDoctor`, `PackDoctorService`, `PackFixes`: local fixes with undo).<br>• Key Items (`ProgressionTrackerControl`). |
+| `Core/PopTracker/` | **Map packs:**<br>• `PopTrackerPackLoader` reads pack zips (through `SafeZip`): their structure and an index of their images.<br>• `PackImages`: a pack's images, decoded only while a slot or the Pack Doctor window uses the pack (the pack used last keeps them; others are freed at once), each one's size checked from its header first (`DecodeImage`). The Pack Doctor learns which images decode, and their sizes, without keeping them.<br>• `PackScriptHost` runs pack Lua in a sandbox.<br>• `PackIndex`, `LuaMappingReader`, `GameNames`.<br>• The Pack Doctor (`PackDoctor`, `PackDoctorService`, `PackFixes`: local fixes with undo).<br>• Key Items (`ProgressionTrackerControl`). |
 | `Core/CheeseTracker/` | **Cheese Tracker:** the service: rooms and linking, opt-in automation (the client and rules are in `AP_Atlas.Core`). |
 | `Core/Spheres/` | **Sphere Tracker:** the service that reads the host's spheretracker.de room (the parser and tables are in `AP_Atlas.Core`). |
 | `UI/` | **Windows and views:**<br>• Properties, Hints, Map Tracker, the Cheese and Sphere tabs.<br>• The Pack Doctor and Atlas Engine windows.<br>• Privacy, the permission dialog, shared dialogs, the tab strip.<br>• `TreeSubscriptions`: a view's event subscriptions, made while it's in the window (also after a move) and removed while it isn't.<br>• `ViewRefresh`: a view's refresh that runs only while the view shows, at most once a frame; asked for while hidden, it runs when the view shows. Every slot view, the hints, the map's colors and the Sphere tab use it.<br>• `LogPane`: writes to the System Log and Debug Log from any thread, once per frame, keeping their last lines.<br>• `Tool`: every tool (id, title, scope: the app, a multiworld or a slot), in tab order; a slot tool names the slot's view of it. |
@@ -144,6 +145,19 @@ Atlas reads or writes outside this folder only with the user's permission. Nothi
     - The compiler runs on a thread of its own with a 16 MB stack (`OnCompilerThread`), about ten times what 1,000 levels need, whatever thread the compile started on.
     - Binary chunks (`string.dump`) aren't loaded, and a script can't load more than a million characters of code at once.
 
+## Files from outside Atlas
+
+Map packs and apworlds are zips from outside Atlas, and both a zip's headers and an image's can lie. A "zip bomb" of a few kilobytes can unpack to gigabytes, and an image file of a few bytes can claim billions of pixels, which a decoder sets aside memory for before it reads them.
+- **Zips** are opened and read only through `SafeZip` (Core, unit-tested):
+  - A zip64 zip is refused before .NET lists its files. Only zip64 can list more than 65,534 files, and .NET lists as many as a zip64 record says (about 600 bytes each). The end record is found as .NET finds it: the last one in the final 64 KB.
+  - Each file's bytes are counted as it unpacks: no more than 64 MB of text or 256 MB for an image, and no more than 128 MB of text or 1 GB of images from one zip. .NET stops a compressed file at the size its headers give, but reads a stored one to the end of its bytes, so the count is what holds.
+  - A refusal is an `InvalidDataException`, as .NET's own for a damaged zip. The pack loader notes the file in the pack's load issues and carries on without it; the script host stops the pack's scripts before they start (`StopReason`), so the refusal shows wherever a stop does.
+  - Only the engine's setup unpacks a zip into a folder, and only its own downloads, checked against pinned SHA-256 hashes first.
+- **Images** (a pack's, or one the user chooses for a Pack Doctor fix) are decoded only by `PackImages.DecodeImage`:
+  - `ImageHeader` reads the size from the header without decoding: PNG's IHDR, WebP's VP8X, VP8L or VP8 header, and JPEG's first frame. JPEG markers are found as decoders find them (stray bytes and `FF 00` skipped), so a file can't show the check a small frame while the decoder finds a huge one hidden in between.
+  - `ImageBudget` refuses an image over 16,384 a side, or one that would take the pack's images past 2 GB (one budget per decoding of a pack). A file whose size can't be read isn't decoded either.
+  - The real corpus (43 packs, 6,750 images) has a longest side of 12,560, at most 821 MB of images in a pack, 3.7 MB of text and 210 MB of image files; the corpus check (`ATLAS_SELFTEST_PACKS`) would fail if any were refused.
+
 ## Safety rules the code enforces
 
 `Tools/check_guards.ps1` runs in CI and fails the build if any of these slip:
@@ -162,7 +176,11 @@ Atlas reads or writes outside this folder only with the user's permission. Nothi
 | the self-test | Forcing a garbage collection (it pauses all of Atlas). |
 | `AtlasEngine` | Looking up the user's own folders, for the install search the user agreed to. |
 | a reviewed list | Saving a whole file without `SafeFile`: the log, a crash report, an export the user chose, files the engine setup regenerates, a store that writes a temporary file and moves it, and the tests. |
-| nowhere | Starting a thread of its own; an empty catch that doesn't say why on its line. |
+| `SafeZip` | Reading a zip (opening one to read, or unpacking one of its files). Making a zip is allowed anywhere. |
+| `AtlasEngine` | Unpacking a zip into a folder: only the engine's hash-checked downloads. |
+| `PackImages.DecodeImage` (and the visual check, for its own screenshots) | Decoding an image: its size is checked against an `ImageBudget` first. |
+| `PackScriptHost` (its compiler, which needs a big stack) and the self-test | Starting a thread of its own. |
+| nowhere | An empty catch that doesn't say why on its line. |
 
 The build treats every warning as an error. MoonSharp and Archipelago.MultiClient.Net are pinned at the versions whose insides Atlas was checked against. The number of classes without nullable checks can only go down. A pre-push hook (`.githooks/pre-push`) runs the guard rails, the build, formatting and the unit tests before anything reaches CI.
 

@@ -381,12 +381,11 @@ namespace AP_Atlas.UI
                 try
                 {
                     if (!ImageExtensions.Contains(Path.GetExtension(path).ToLowerInvariant())) path += ext;
-                    using var zip = System.IO.Compression.ZipFile.OpenRead(_original.SourcePath);
+                    using var zip = SafeZip.Open(_original.SourcePath);
                     var entry = zip.Entries.FirstOrDefault(e => e.FullName.EndsWith(relativePath.TrimStart('/'), StringComparison.OrdinalIgnoreCase));
                     if (entry == null) { SetStatus("That image isn't in the pack."); return; }
-                    if (entry.Length > 64L * 1024 * 1024) { SetStatus("That image is larger than 64 MB, so Atlas won't copy it."); return; }
-                    using (var src = entry.Open())
-                    using (var dst = File.Create(path)) src.CopyTo(dst);
+                    byte[] image = zip.ReadImage(entry); // read whole first: a refused image leaves no partial copy behind
+                    using (var dst = File.Create(path)) dst.Write(image);
                     SetStatus($"Saved {Path.GetFileName(path)}. Re-save it as PNG in an image editor, then use \"Replace background…\".");
                 }
                 catch (Exception ex) { SetStatus("Couldn't save the image: " + ex.Message); }

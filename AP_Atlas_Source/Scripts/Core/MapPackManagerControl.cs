@@ -261,12 +261,10 @@ namespace AP_Atlas.Core
 
         private static PopTrackerManifest ReadManifest(string zipPath)
         {
-            using var archive = ZipFile.OpenRead(zipPath);
+            using var archive = SafeZip.Open(zipPath);
             var manifestEntry = archive.Entries.FirstOrDefault(e => e.FullName.EndsWith("manifest.json", StringComparison.OrdinalIgnoreCase));
             if (manifestEntry == null) return null;
-            using var stream = manifestEntry.Open();
-            using var reader = new StreamReader(stream);
-            return JsonConvert.DeserializeObject<PopTrackerManifest>(reader.ReadToEnd());
+            return JsonConvert.DeserializeObject<PopTrackerManifest>(archive.ReadText(manifestEntry));
         }
 
         /// <summary>
@@ -798,7 +796,7 @@ namespace AP_Atlas.Core
         {
             try
             {
-                using var zip = ZipFile.OpenRead(path);
+                using var zip = SafeZip.Open(path);
                 if (!zip.Entries.Any(e => e.FullName.EndsWith("manifest.json", StringComparison.OrdinalIgnoreCase))) return "it isn't a PopTracker pack (it has no manifest.json)";
                 if (zip.Entries.Sum(e => e.Length) > 1024L * 1024 * 1024) return "it unpacks to more than 1 GB";
                 return null;
