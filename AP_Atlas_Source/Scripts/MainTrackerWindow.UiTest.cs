@@ -81,6 +81,8 @@ public partial class MainTrackerWindow
             EndedSlotsAreFreedAsync);
         await ScenarioAsync("Ended slots with logic are freed: a deleted multiworld's engine stops, its engine pool is forgotten, and its slot's model and logic leave memory",
             EndedSlotsLogicIsFreedAsync);
+        await ScenarioAsync("Closed windows are freed: the Pack Doctor, the Atlas Engine window, Privacy and the race mode dialog, opened and closed again and again, leave nothing in memory and no node behind",
+            ClosedWindowsAreFreedAsync);
         await ScenarioAsync("Moving views: the Cheese and Sphere tabs and Properties keep following their events when moved to another parent (docking, pop-outs), and stop while out of the window",
             ViewsKeepTheirEventsWhenMovedAsync);
         await ScenarioAsync("Tools: every tool's tab shows its own view, and each slot tool the connected slot's view (or asks for a slot when none is connected)",
@@ -207,6 +209,84 @@ public partial class MainTrackerWindow
         }
         foreach (var (what, weak) in ended)
             UiTestExpect(!weak.IsAlive, $"{what} is still in memory after it ended");
+    }
+
+    /// <summary>
+    /// Windows that close leave nothing behind: the Pack Doctor, the Atlas Engine window, Privacy and the race mode dialog,
+    /// each opened and closed three times. A closed window still subscribed to a static event, kept in a static field or
+    /// only hidden would stay for the rest of the session, with all it holds.
+    /// </summary>
+    private async Task ClosedWindowsAreFreedAsync()
+    {
+        string zip = System.IO.Path.Combine(AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory(), "uitest_windows_pack.zip");
+        FakeMapPack.Write(zip, "UI test pack", "Test Game");
+        try
+        {
+            // Once first, so what a window makes once for the session (a theme, a font) is in the counts to compare with.
+            await OpenAndCloseWindowsAsync(zip);
+            await CollectEverythingAsync();
+            double nodes = Performance.GetMonitor(Performance.Monitor.ObjectNodeCount), orphans = Performance.GetMonitor(Performance.Monitor.ObjectOrphanNodeCount);
+            var closed = new List<(string What, System.WeakReference Weak)>();
+            for (int i = 0; i < 3; i++) closed.AddRange(await OpenAndCloseWindowsAsync(zip));
+            await CollectEverythingAsync();
+            foreach (var (what, weak) in closed)
+                UiTestExpect(!weak.IsAlive, $"{what} is still in memory after it closed");
+            double nodesAfter = Performance.GetMonitor(Performance.Monitor.ObjectNodeCount), orphansAfter = Performance.GetMonitor(Performance.Monitor.ObjectOrphanNodeCount);
+            GD.Print($"UITEST INFO Closed windows: nodes {nodes} -> {nodesAfter}, orphaned {orphans} -> {orphansAfter}");
+            UiTestExpect(nodesAfter <= nodes && orphansAfter <= orphans,
+                $"after the windows opened and closed three more times, Godot holds {nodesAfter - nodes} more nodes ({orphansAfter - orphans} more out of the window)");
+        }
+        finally
+        {
+            AP_Atlas.Core.SafeFile.Delete(zip);
+        }
+    }
+
+    /// <summary>Lets queued frees and work run, then collects everything nothing references any more.</summary>
+    private async Task CollectEverythingAsync()
+    {
+        await UiTestWaitAsync(0.5);
+        for (int i = 0; i < 3; i++)
+        {
+            System.GC.Collect();
+            System.GC.WaitForPendingFinalizers();
+            await UiTestWaitAsync(0.1);
+        }
+    }
+
+    // Apart from the scenario, so only weak references come back: an async method keeps its own locals until it ends.
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private async Task<List<(string What, System.WeakReference Weak)>> OpenAndCloseWindowsAsync(string zip)
+    {
+        OpenPackDoctor(zip);
+        var doctor = await UiTestWaitForAsync(() => GetTree().Root.GetChildren().OfType<AP_Atlas.UI.PackDoctorWindow>().FirstOrDefault(), "the Pack Doctor window");
+        await UiTestWaitAsync(0.3);
+        doctor.EmitSignal(Window.SignalName.CloseRequested);
+
+        OpenEngineSetup();
+        var engine = await UiTestWaitForAsync(() => GetTree().Root.GetChildren().OfType<AP_Atlas.UI.AtlasEngineWindow>().FirstOrDefault(), "the Atlas Engine window");
+        await UiTestWaitAsync(0.3);
+        engine.EmitSignal(Window.SignalName.CloseRequested);
+
+        OpenPrivacy();
+        var privacy = await UiTestWaitForAsync(() => GetChildren().OfType<AP_Atlas.UI.PrivacyWindow>().FirstOrDefault(), "the Privacy window");
+        await UiTestWaitAsync(0.3);
+        privacy.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
+
+        ShowRaceModeInfo();
+        var race = await UiTestWaitForAsync(() => GetChildren().OfType<AcceptDialog>().FirstOrDefault(d => d.Title == "Race Mode"), "the race mode dialog");
+        await UiTestWaitAsync(0.3);
+        race.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
+
+        await UiTestWaitForAsync(() => !IsInstanceValid(doctor) && !IsInstanceValid(engine) && !IsInstanceValid(privacy) && !IsInstanceValid(race) ? this : null,
+            "the closed windows to be freed");
+        return new List<(string What, System.WeakReference Weak)>
+        {
+            ("a closed Pack Doctor window", new System.WeakReference(doctor)),
+            ("a closed Atlas Engine window", new System.WeakReference(engine)),
+            ("a closed Privacy window", new System.WeakReference(privacy)),
+            ("a closed race mode dialog", new System.WeakReference(race)),
+        };
     }
 
     // Apart from the scenario, so only weak references come back: an async method keeps its own locals until it ends.
