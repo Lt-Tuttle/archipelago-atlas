@@ -64,7 +64,7 @@ Development toward the first public beta, 0.1.0.
   - Views are ready to be moved (for docking and pop-outs): the Cheese Tracker and Sphere Tracker tabs and Properties follow their events whenever they're in the window, including after a move, and never while out of it. Before, a move would have stopped them updating, because they subscribed only once. The UI test moves each one and counts the events' listeners.
   - So is a slot's own panel (its text client): it ends only when the slot is replaced or deleted, not when it leaves the window, so moving it keeps its engine, views and connection. The UI test moves it while items and messages arrive.
   - The guard rails check that every script has its Godot `.uid` file committed.
-  - The UI test also sends a burst of 40 items and 40 chat lines: each reaches the slot once, as one update of the window.
+  - The UI test also sends a burst of 40 items and 40 chat lines: each reaches the slot once, with at most one update of the window in each frame they arrive over (one or two, on a fast PC).
   - One list of Atlas's tools (`Tool`), in tab order, each with its id, title and scope (the whole app, a multiworld or one slot). The tabs, the "Show in…" links in Properties and the visual check use it instead of tab numbers, and the UI test checks every tool's tab shows the right view.
   - A slot's logic (its engine, and what's in logic item by item) is now part of the slot's model (`SlotLogic`), apart from its views, so it keeps running wherever its panel is.
   - So are its race mode and exclusions, and logic as the slot shows it (race mode and exclusions applied). The Cheese Tracker and Sphere Tracker read a slot itself (its model), never its panel.
@@ -72,7 +72,7 @@ Development toward the first public beta, 0.1.0.
   - The fake Archipelago server answers the data storage reads Atlas makes (race mode, client status, hints). The UI test has a race room: its slots give no "why" answers, and the Sphere Tracker hides that multiworld's spheres. It also turns on race mode's "hide all logic" and checks every view of logic hides, and comes back.
   - A scale scenario in the UI test: a 1,000-player room with 20 slots connected, then three bursts of items, item lines and hints.
     - It checks that hidden views do no work, that the text client draws a slice of lines per frame, and that connecting slots doesn't rebuild the sidebar.
-    - Its frames are guarded at 150 ms for the bursts (the target is 100 ms; the worst frame is 80 to 140 ms) and 300 ms for connecting.
+    - Atlas's work in a frame is guarded at 150 ms for the bursts (the target is 100 ms) and 300 ms for connecting. Garbage collection pauses are left out of those guards, as they are from each step's time, because they last as long as the machine takes (61 ms of one 150 ms frame on a slow CI machine). A whole frame, pauses included, is capped at 250 ms and 400 ms.
     - It also checks that one connection receives the room's text, and that every slot shows each item line, and each of its hints, once.
   - Hitch reports (frames over 100 ms, in the log) now give each step's runs, time and memory per frame, total the same step across slots, and say how long garbage collection paused the program. A step's time leaves out those pauses, so a collection another thread set off isn't blamed on whatever step was running.
   - The fake Archipelago server sends item lines, and data storage changes only to the clients that asked for them (SetNotify), as a real server does.

@@ -151,11 +151,21 @@ namespace AP_Atlas.Core
         public static double WorstFrameMs { get; private set; }
         public static string WorstFrameReport { get; private set; } = "";
 
+        /// <summary>
+        /// The most work a frame held since <see cref="ResetWorst"/>: its length with garbage collection pauses left out, as
+        /// in the step timings, and what ran in it. A collection pauses everything for as long as the machine takes (61 ms
+        /// in one frame on a slow CI machine, whose work in that frame took 89), so a guard on Atlas's own work uses this.
+        /// </summary>
+        public static double WorstWorkMs { get; private set; }
+        public static string WorstWorkReport { get; private set; } = "";
+
         /// <summary>Starts measuring the worst frame and the steps again (the UI test's scale scenario measures a burst this way).</summary>
         public static void ResetWorst()
         {
             WorstFrameMs = 0;
             WorstFrameReport = "";
+            WorstWorkMs = 0;
+            WorstWorkReport = "";
             _steps.Clear();
         }
 
@@ -204,6 +214,9 @@ namespace AP_Atlas.Core
             if (Engine.GetProcessFrames() < 10) return;
             bool worst = frameMs > WorstFrameMs;
             if (worst) WorstFrameMs = frameMs;
+            double workMs = Math.Max(0, frameMs - gcPausedMs);
+            bool worstWork = workMs > WorstWorkMs;
+            if (worstWork) WorstWorkMs = workMs;
             if (frameMs < HitchThresholdMs) return;
 
             string action = PerfMonitor.RecentAction(Engine.GetProcessFrames());
@@ -227,6 +240,7 @@ namespace AP_Atlas.Core
             }
             _previousScopes = new List<PerfMonitor.FrameScope>(); // already reported
             if (worst) WorstFrameReport = report.ToString();
+            if (worstWork) WorstWorkReport = report.ToString();
             Logger.LogWarning(report.ToString());
 
             double now = Time.GetTicksMsec() / 1000.0;
