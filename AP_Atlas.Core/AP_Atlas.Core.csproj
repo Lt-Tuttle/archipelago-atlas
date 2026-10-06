@@ -22,6 +22,14 @@
     <EmbeddedResource Include="Testing\fake_engine.py" LogicalName="AP_Atlas.Core.Testing.fake_engine.py" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Atlas's own documents, as the Help window shows them: one source, the repository's files (see Docs.cs). -->
+    <EmbeddedResource Include="..\docs\GUIDE.md" LogicalName="Docs.GUIDE.md" />
+    <EmbeddedResource Include="..\CHANGELOG.md" LogicalName="Docs.CHANGELOG.md" />
+    <EmbeddedResource Include="..\CREDITS.md" LogicalName="Docs.CREDITS.md" />
+    <EmbeddedResource Include="..\THIRD_PARTY_NOTICES.md" LogicalName="Docs.THIRD_PARTY_NOTICES.md" />
+    <EmbeddedResource Include="..\LICENSE" LogicalName="Docs.LICENSE" />
+  </ItemGroup>
+  <ItemGroup>
     <InternalsVisibleTo Include="AP_Atlas" />
     <InternalsVisibleTo Include="AP_Atlas.Core.Tests" />
   </ItemGroup>

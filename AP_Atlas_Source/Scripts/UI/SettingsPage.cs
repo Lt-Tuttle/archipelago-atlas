@@ -76,7 +76,8 @@ namespace AP_Atlas.UI
             SizeFlagsVertical = SizeFlags.ExpandFill;
             AddThemeConstantOverride("separation", 8);
 
-            _search = new LineEdit { PlaceholderText = _tr("Search settings"), ClearButtonEnabled = true, SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            // A steady caret: a blinking one made the visual check's pictures differ by the caret.
+            _search = new LineEdit { PlaceholderText = _tr("Search settings"), ClearButtonEnabled = true, CaretBlink = false, SizeFlagsHorizontal = SizeFlags.ExpandFill };
             _search.TextChanged += _ => Filter();
             AddChild(_search);
 

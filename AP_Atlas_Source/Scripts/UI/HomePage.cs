@@ -29,6 +29,9 @@ namespace AP_Atlas.UI
             public Action<MultiworldProfile> Connect { get; init; } = _ => { };
             public Action OpenCheeseSettings { get; init; } = () => { };
             public Action ShowAbout { get; init; } = () => { };
+            /// <summary>The newest version's headline changes, one line each (from the changelog built into Atlas).</summary>
+            public Func<IReadOnlyList<string>> WhatsNew { get; init; } = () => Array.Empty<string>();
+            public Action ShowWhatsNew { get; init; } = () => { };
             /// <summary>Opens a link in the browser (https only), when the user clicks it.</summary>
             public Action<string> OpenWeb { get; init; } = _ => { };
         }
@@ -90,6 +93,8 @@ namespace AP_Atlas.UI
         private readonly Dictionary<string, Button> _connectButtons = new();
         private readonly Dictionary<Tool, Button> _toolCards = new();
         private readonly Label _tip;
+        private readonly VBoxContainer _whatsNew = new();
+        private readonly Button _whatsNewButton;
         private int _tipIndex = -1;
 
         public HomePage(Func<string, string> tr, Hooks hooks)
@@ -185,6 +190,20 @@ namespace AP_Atlas.UI
             tipBox.AddChild(tipRow);
             body.AddChild(tipCard);
 
+            // What's new: the newest version's headline changes, from the changelog built into Atlas.
+            var newsCard = Card(out var newsBox);
+            var newsHeader = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            var newsTitle = new Label { Text = _tr("What's new"), SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ShrinkCenter };
+            newsTitle.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Accent.Lightened(0.3f));
+            newsHeader.AddChild(newsTitle);
+            _whatsNewButton = new Button { Text = _tr("All changes…") };
+            _whatsNewButton.Pressed += () => _hooks.ShowWhatsNew();
+            newsHeader.AddChild(_whatsNewButton);
+            newsBox.AddChild(newsHeader);
+            _whatsNew.AddThemeConstantOverride("separation", 2);
+            newsBox.AddChild(_whatsNew);
+            body.AddChild(newsCard);
+
             // Links: each opens in the browser when clicked; Atlas fetches none of them.
             body.AddChild(Heading(_tr("Links")));
             foreach (var group in LinkList.Select(l => l.Group).Distinct())
@@ -260,6 +279,11 @@ namespace AP_Atlas.UI
 
         public IReadOnlyList<(string Title, string Url)> Links => LinkList.Select(l => (l.Title, l.Url)).ToList();
 
+        /// <summary>The lines the What's new card shows.</summary>
+        public IReadOnlyList<string> WhatsNewLines { get; private set; } = Array.Empty<string>();
+
+        public Button WhatsNewButton => _whatsNewButton;
+
         private Step StepOf(string id) => _steps.FirstOrDefault(s => s.Id == id) ?? throw new InvalidOperationException($"No getting-started step is {id}.");
 
         // --- drawing -------------------------------------------------------------------------------------------------------
@@ -281,7 +305,17 @@ namespace AP_Atlas.UI
                 step.Mark.TooltipText = step.LastDone ? _tr("Done") : _tr("Not yet");
             }
             RefreshRecents();
+            RefreshWhatsNew();
             MainTrackerWindow.SetFontSizeRecursive(this, _hooks.ContentFontSize());
+        }
+
+        private void RefreshWhatsNew()
+        {
+            var lines = _hooks.WhatsNew();
+            if (lines.SequenceEqual(WhatsNewLines)) return;
+            WhatsNewLines = lines.ToList();
+            Clear(_whatsNew);
+            foreach (string line in lines) _whatsNew.AddChild(Small("•  " + line));
         }
 
         public void NextTip()

@@ -39,6 +39,22 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.SphereTracker);
     }
     /// <summary>Opens the Atlas Engine setup window.</summary>
+    /// <summary>Help: the guide, what's new, the credits and the licences, at a topic; the open window is brought back if there is one.</summary>
+    private void OpenHelp(string pageId)
+    {
+        var open = GetChildren().OfType<AP_Atlas.UI.HelpWindow>().FirstOrDefault();
+        if (open != null)
+        {
+            open.Select(pageId);
+            open.GrabFocus();
+            return;
+        }
+        new AP_Atlas.UI.HelpWindow(text => Tr(text), url =>
+        {
+            if (!AP_Atlas.Core.ExternalLinks.OpenWeb(url)) ShowToast(Tr("Couldn't open the link."), Colors.Salmon);
+        }).Open(this, pageId);
+    }
+
     /// <summary>Settings → Privacy &amp; permissions: what the user allowed Atlas to do without asking, and trusted sources.</summary>
     private void OpenPrivacy() => ShowSettings("privacy");
     public void OpenEngineSetup()

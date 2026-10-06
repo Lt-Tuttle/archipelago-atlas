@@ -144,6 +144,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         var tween = CreateTween();
         tween.TweenProperty(toastPanel, "modulate", new Godot.Color(1, 1, 1, 1), 0.3f).SetTrans(Tween.TransitionType.Cubic);
         tween.TweenInterval(hold);
+        // The visual check's pictures must not depend on the moment they're taken: its toasts stay up.
+        if (VisualCheckRequested) return;
         tween.TweenProperty(toastPanel, "modulate", new Godot.Color(1, 1, 1, 0), 0.5f).SetTrans(Tween.TransitionType.Cubic);
         tween.TweenCallback(Callable.From(() => canvas.QueueFree()));
     }

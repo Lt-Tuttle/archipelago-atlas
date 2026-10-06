@@ -110,6 +110,8 @@ public partial class MainTrackerWindow
             PrivacyAsync);
         await ScenarioAsync("Home: Ctrl+8 shows it on its own; every tool has a card with a line and every link is https; the checklist ticks the engine as it is and nothing else in a fresh folder, then a multiworld and a pack once they exist; a tip shows and Next tip goes around; the multiworld is listed and one click connects its slot, ticks the step and says Connected; a tool's card shows the tool",
             HomeAsync);
+        await ScenarioAsync("Help: the guide opens on its first topic with a topic per section; a topic shows its section, What's new the changelog, Credits & disclaimer the author and the credits, Licences Atlas's licence; a second Help command uses the same window at its topic; Home's What's new card lists the newest changes and leads here",
+            HelpAsync);
         await ScenarioAsync("Bursts: 40 items and 40 chat lines arriving together reach the slot once each, at most one update of the window in each frame they arrive over (not 80)",
             BurstIsOneUpdateAsync);
         await ScenarioAsync("Long text: a game's names and a hint's entrance of a megabyte, and a chat line of 100,000 characters without a space, hold up no frame for 150 ms, shown or not (names are cut to 500 characters; a long run of text gets breaks)",
@@ -306,6 +308,11 @@ public partial class MainTrackerWindow
         await UiTestWaitAsync(0.3);
         about.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
 
+        _commands.Run("help.guide");
+        var help = await UiTestWaitForAsync(() => GetChildren().OfType<AP_Atlas.UI.HelpWindow>().FirstOrDefault(), "the Help window");
+        await UiTestWaitAsync(0.3);
+        help.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
+
         _commands.Run(AP_Atlas.UI.CommandPalette.OwnCommandId);
         var palette = await UiTestWaitForAsync(() => GetChildren().OfType<AP_Atlas.UI.CommandPalette>().FirstOrDefault(p => p.Visible), "the command palette");
         await UiTestWaitAsync(0.3);
@@ -320,6 +327,7 @@ public partial class MainTrackerWindow
             ("a closed race mode dialog", new System.WeakReference(race)),
             ("a closed Keyboard Shortcuts dialog", new System.WeakReference(shortcuts)),
             ("a closed About dialog", new System.WeakReference(about)),
+            ("a closed Help window", new System.WeakReference(help)),
             ("a closed command palette", new System.WeakReference(palette)),
         };
     }
@@ -882,6 +890,41 @@ public partial class MainTrackerWindow
             AP_Atlas.Core.SafeFile.Delete(zip);
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
             DeleteProfile(profile);
+        }
+    }
+
+    private async Task HelpAsync()
+    {
+        _commands!.Run("help.guide");
+        var help = await UiTestWaitForAsync(() => GetChildren().OfType<AP_Atlas.UI.HelpWindow>().FirstOrDefault(), "the Help window");
+        try
+        {
+            UiTestExpect(help.PageIds.Count > 12 && help.PageIds[0] == "guide:Home" && help.CurrentPageId == "guide:Home", $"the guide opens on {help.CurrentPageId} with {help.PageIds.Count} topics");
+            help.Select("guide:Hints");
+            UiTestExpect(help.CurrentPageId == "guide:Hints" && help.ShownText.Contains("My Items"), "the Hints topic doesn't show the Hints section");
+            help.Select(AP_Atlas.UI.HelpWindow.WhatsNew);
+            UiTestExpect(help.ShownText.Contains("Added"), "What's new doesn't show the changelog");
+            help.Select(AP_Atlas.UI.HelpWindow.Credits);
+            UiTestExpect(help.ShownText.Contains("Lt-Tuttle") && help.ShownText.Contains("Godot"), "Credits & disclaimer doesn't name the author and the credits");
+            help.Select(AP_Atlas.UI.HelpWindow.Licences);
+            UiTestExpect(help.ShownText.Contains("MIT License"), "the licences don't show Atlas's licence");
+            // A second Help command uses the same window, at its topic.
+            _commands.Run("help.whats-new");
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(GetChildren().OfType<AP_Atlas.UI.HelpWindow>().Count() == 1 && help.CurrentPageId == AP_Atlas.UI.HelpWindow.WhatsNew,
+                "a second Help command opened another window, or didn't show its topic");
+            // Home's What's new card lists the newest changes and leads here.
+            var home = _homePage ?? throw new InvalidOperationException("Home wasn't built.");
+            UiTestExpect(home.WhatsNewLines.Count > 0, "Home's What's new card is empty");
+            help.Select("guide:Home");
+            home.WhatsNewButton.EmitSignal(BaseButton.SignalName.Pressed);
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(help.CurrentPageId == AP_Atlas.UI.HelpWindow.WhatsNew, "Home's card didn't open What's new");
+        }
+        finally
+        {
+            help.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
+            await UiTestWaitAsync(0.2);
         }
     }
 

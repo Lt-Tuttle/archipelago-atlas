@@ -6,6 +6,7 @@ using Godot;
 public partial class MainTrackerWindow
 {
     private AP_Atlas.UI.HomePage? _homePage;
+    private System.Collections.Generic.IReadOnlyList<string>? _whatsNewLines; // read from the changelog built in, once
 
     private AP_Atlas.UI.HomePage BuildHomePage()
     {
@@ -23,6 +24,8 @@ public partial class MainTrackerWindow
             Connect = ConnectEverySlot,
             OpenCheeseSettings = OpenCheeseSettings,
             ShowAbout = ShowAbout,
+            WhatsNew = () => _whatsNewLines ??= AP_Atlas.UI.HelpWindow.WhatsNewLines(),
+            ShowWhatsNew = () => OpenHelp(AP_Atlas.UI.HelpWindow.WhatsNew),
             OpenWeb = url =>
             {
                 if (!AP_Atlas.Core.ExternalLinks.OpenWeb(url)) ShowToast(Tr("Couldn't open the link."), Colors.Salmon);

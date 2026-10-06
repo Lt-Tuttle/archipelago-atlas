@@ -60,12 +60,15 @@ public partial class MainTrackerWindow
 
         Add("window.full-screen", "Window", "Full Screen", "F11", ToggleFullScreen);
 
+        Add("help.guide", "Help", "Guide", "", () => OpenHelp(null));
+        Add("help.whats-new", "Help", "What's New", "", () => OpenHelp(AP_Atlas.UI.HelpWindow.WhatsNew));
         Add("help.shortcuts", "Help", "Keyboard Shortcuts", "F1", ShowShortcuts);
         Add("help.race-mode", "Help", "What Does Race Mode Change?", "", ShowRaceModeInfo);
         Add("help.github", "Help", "Atlas on GitHub", "", () =>
         {
             if (!AP_Atlas.Core.ExternalLinks.OpenWeb(AP_Atlas.Core.AtlasVersion.RepoUrl)) ShowToast(Tr("Couldn't open the link."), Colors.Salmon);
         });
+        Add("help.credits", "Help", "Credits & Disclaimer", "", () => OpenHelp(AP_Atlas.UI.HelpWindow.Credits));
         Add("help.about", "Help", "About The Archipelago Atlas", "", ShowAbout);
     }
 
@@ -117,11 +120,13 @@ public partial class MainTrackerWindow
 
         AddCommandItems(menus["Window"], "window.full-screen");
 
+        AddCommandItems(menus["Help"], "help.guide", "help.whats-new");
+        menus["Help"].AddSeparator();
         AddCommandItems(menus["Help"], "help.shortcuts");
         menus["Help"].AddSeparator();
         AddCommandItems(menus["Help"], "help.race-mode", "help.github");
         menus["Help"].AddSeparator();
-        AddCommandItems(menus["Help"], "help.about");
+        AddCommandItems(menus["Help"], "help.credits", "help.about");
     }
 
     /// <summary>Adds commands to a menu, each with its key shown (the menu's own key handling is off: the window's runs every key).</summary>
