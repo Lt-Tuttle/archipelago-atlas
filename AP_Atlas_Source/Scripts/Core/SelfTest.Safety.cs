@@ -86,6 +86,39 @@ namespace AP_Atlas.Core
             Expect(Opened(), "the probe didn't see Godot open the file (has Godot changed how it loads [img] and [font]?)");
         }
 
+        /// <summary>
+        /// No pattern runs away on text from outside Atlas. Every regular expression has a time limit (set as Atlas's
+        /// assemblies load), and the ones reading large outside text run in linear time: an apworld's source
+        /// (GameOfApworld) and a pack's scripts (the option scan). Crafted inputs that would take a backtracking pattern
+        /// hours finish in well under the limit, which a fall back to the limit couldn't.
+        /// </summary>
+        private static void PatternsCantRunAway()
+        {
+            Expect(new System.Text.RegularExpressions.Regex("a").MatchTimeout == RegexDefaults.MatchTimeout,
+                "regular expressions in Atlas have no time limit (was one made before the limit was set?)");
+
+            // An apworld whose world class never closes its bases: 100,000 of them.
+            string apworld = Scratch("crafted.apworld");
+            if (File.Exists(apworld)) File.Delete(apworld);
+            using (var zip = System.IO.Compression.ZipFile.Open(apworld, System.IO.Compression.ZipArchiveMode.Create))
+            using (var writer = new StreamWriter(zip.CreateEntry("crafted/__init__.py").Open()))
+                for (int i = 0; i < 100_000; i++) writer.Write("class A(World ");
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            string game = AtlasEngine.GameOfApworld(apworld);
+            Expect(game == null && clock.Elapsed < TimeSpan.FromSeconds(1), $"the crafted apworld took {clock.Elapsed.TotalSeconds:0.00} s (and gave '{game}')");
+
+            // A pack script of 200,000 block comments that never close, looked through for the options it reads.
+            string pack = Scratch("selftest_crafted.zip");
+            var crafted = new System.Text.StringBuilder();
+            for (int i = 0; i < 200_000; i++) crafted.Append("--[[ x ");
+            AP_Atlas.Core.Testing.FakeMapPack.Write(pack, "Self-test crafted pack", "Self Test Game X", initLua: "local x = 1",
+                files: new Dictionary<string, string> { ["scripts/crafted.lua"] = crafted.ToString() });
+            var host = PopTracker.PackScriptHost.Load(PopTracker.PopTrackerPackLoader.InspectZipPack(pack)!);
+            clock.Restart();
+            var options = host!.OptionPathsByCode();
+            Expect(options != null && clock.Elapsed < TimeSpan.FromSeconds(1), $"looking through the crafted script took {clock.Elapsed.TotalSeconds:0.00} s");
+        }
+
         private static void PasswordsSavedEncrypted()
         {
             string path = Path.Combine(DataManager.GetDataDirectory(), "profiles.json");

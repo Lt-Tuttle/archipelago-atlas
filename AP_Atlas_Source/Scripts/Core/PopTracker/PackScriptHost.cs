@@ -1317,11 +1317,8 @@ namespace AP_Atlas.Core.PopTracker
         }
 
         /// <summary>Removes Lua comments but keeps line breaks, so line numbers stay put.</summary>
-        private static string StripLuaComments(string text)
-        {
-            text = Regex.Replace(text, @"--\[(=*)\[.*?\]\1\]", m => new string('\n', m.Value.Count(c => c == '\n')), RegexOptions.Singleline);
-            return Regex.Replace(text, @"--[^\n]*", "");
-        }
+        // In linear time (LuaText): a pattern for block comments backtracks, and a pack's scripts come from outside Atlas.
+        private static string StripLuaComments(string text) => LuaText.StripComments(text);
 
         private Dictionary<string, List<string>> _optionPathCache;
 

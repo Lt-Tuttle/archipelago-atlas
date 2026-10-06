@@ -1265,7 +1265,8 @@ namespace AP_Atlas.Core.EngineSetup
                 if (init == null) return null;
                 string src = zip.ReadText(init);
                 // class XWorld(World): ... game = "Name"  /  game: str = "Name"  /  game: ClassVar[str] = "Name"
-                var m = Regex.Match(src, @"class\s+\w+\s*\([^)]*World[^)]*\)\s*:[\s\S]*?^\s+game\s*(?::\s*[\w\.\[\]]+\s*)?=\s*[""']([^""']+)[""']", RegexOptions.Multiline);
+                // NonBacktracking: linear time in the source's length (an apworld's source comes from outside Atlas).
+                var m = Regex.Match(src, @"class\s+\w+\s*\([^)]*World[^)]*\)\s*:[\s\S]*?^\s+game\s*(?::\s*[\w\.\[\]]+\s*)?=\s*[""']([^""']+)[""']", RegexOptions.Multiline | RegexOptions.NonBacktracking);
                 return m.Success ? m.Groups[1].Value : null;
             }
             catch { return null; }

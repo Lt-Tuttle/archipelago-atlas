@@ -45,7 +45,7 @@ Development toward the first public beta, 0.1.0.
   - No test reaches a real site: the self-test's check that a download with the wrong hash is refused now uses a local server (it fetched a file from python.org).
   - Stricter checks on every change:
     - Any build warning is an error.
-    - The guard rails keep each protection in its one place: calling, compiling and making functions for map pack scripts, closing server connections, reading zips (only through `SafeZip`), decoding images (only after their size is checked), and rich text that reads markup (only `SafeRichText`). Log messages can't carry markup, and a program's output is read only a bounded line at a time. Only the engine's setup unpacks a zip into a folder, and only its hash-checked downloads.
+    - The guard rails keep each protection in its one place: calling, compiling and making functions for map pack scripts, closing server connections, reading zips (only through `SafeZip`), decoding images (only after their size is checked), and rich text that reads markup (only `SafeRichText`). Log messages can't carry markup, a program's output is read only a bounded line at a time, and no regular expression goes without a time limit. Only the engine's setup unpacks a zip into a folder, and only its hash-checked downloads.
     - They also allow no forced memory collections, threads of its own, unexplained silent failures, or looking up your folders outside the install search you agree to. Whole-file saves are allowed only where SafeFile isn't needed.
     - The libraries whose insides Atlas relies on are pinned, and the nullable-check count can only go down.
     - A pre-push hook runs the quick checks before anything reaches CI.
@@ -160,6 +160,13 @@ Development toward the first public beta, 0.1.0.
   - Text from outside now shows exactly as written everywhere: the System and Debug logs, the text client, the Map Packs tab, Properties and the Cheese Tracker tab.
   - Log messages are plain text; a line's colour is given separately.
   - A self-test plants a file Godot would read and shows it's never read. The UI test sends a hostile chat line, map pack and log line through the real window.
+- **No pattern can run away on text from outside Atlas.**
+  - A regular expression that backtracks can take hours on one crafted input. Two of Atlas's could, both reading outside text:
+    - the one that finds a game's name in an apworld's source;
+    - the one that strips comments from a map pack's scripts, before looking for the options they read. It runs as a pack's scripts start, so they would never have finished starting.
+  - Both now run in linear time. The first uses .NET's non-backtracking engine; the second is a small scanner (`LuaText`).
+  - Every regular expression in Atlas, libraries' included, now has a time limit of 2 seconds, so any other pattern fails in seconds rather than hanging.
+  - A self-test reads crafted inputs, 100,000 unclosed class headers and 200,000 unclosed block comments, and needs each done in under a second.
 - **No single line can fill Atlas's memory or freeze its window.**
   - The logic engine runs third-party worlds. Atlas used to hold each line of its output whole, however long, and a line of hundreds of megabytes could have ended Atlas. Program output is now read with a limit per line:
     - An answer line longer than any answer (64 million characters, where every installed game's names come to about 10 million) means the engine is broken. It's stopped as a crash is, and its slots start again on a new one.

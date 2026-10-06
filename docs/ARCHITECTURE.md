@@ -29,6 +29,7 @@ MainTrackerWindow (the shell)
   - `SafeZip`, `ImageHeader` and `ImageBudget`: reading zips and images that come from outside Atlas (see "Files from outside Atlas", below).
   - `Bbcode`: escaping text from outside Atlas for rich text, and the allowlist every piece of markup passes (`Safe`).
   - `BoundedLineReader`: reading a program's output a line at a time, with a limit on how much of a line is kept.
+  - `LuaText` (stripping a pack script's comments in linear time) and `RegexDefaults` (every regular expression's time limit).
   - `PoliteHttp` and `GitHubApi`.
   - `YamlExclusions`.
   - The Cheese Tracker client, models, table rules, advisor and key store (`CheeseTracker/`).
@@ -176,6 +177,11 @@ Map packs and apworlds are zips from outside Atlas, and both a zip's headers and
 - `Logger` cuts a message at `MaxMessageLength` (64 Ki), and the text client cuts a line at `MaxChatLine` (32,000; a server's longest real line, `!players` in a 1,000-player room, is about 19,000).
 - The fake engine can write an endless line on either stream (its `flood` rule) for the tests.
 
+**No pattern runs away.** A regular expression that backtracks can take hours on one crafted input.
+- Patterns over large outside text run in linear time: an apworld's source (`GameOfApworld`, `RegexOptions.NonBacktracking`) and a pack's scripts' comments (`LuaText`, a scanner, because the pattern needs a backreference, which the non-backtracking engine lacks).
+- Every regular expression has a 2-second limit besides. `RegexDefaults` sets it as `AP_Atlas.Core` loads (a module initializer), before any code makes one; .NET reads the default once, and libraries' patterns get it too.
+- The self-test checks the limit is in effect in Atlas, and that crafted inputs take well under a second, which falling back to the limit couldn't.
+
 ## Safety rules the code enforces
 
 `Tools/check_guards.ps1` runs in CI and fails the build if any of these slip:
@@ -200,6 +206,7 @@ Map packs and apworlds are zips from outside Atlas, and both a zip's headers and
 | `SafeRichText` (and the self-test's check that its probe works) | Rich text that reads BBCode: only Atlas's own tags get through. |
 | nowhere | Markup in a log message: messages are plain text, and a line's colour is an argument. |
 | `BoundedLineReader` | Reading a program's output: a line is kept only up to a limit. |
+| `RegexDefaults` | Setting regular expressions' time limit; nowhere may opt out (`InfiniteMatchTimeout`). |
 | `PackScriptHost` (its compiler, which needs a big stack) and the self-test | Starting a thread of its own. |
 | nowhere | An empty catch that doesn't say why on its line. |
 

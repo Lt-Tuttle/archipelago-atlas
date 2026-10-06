@@ -110,6 +110,7 @@ New code that doesn't need Godot belongs in `AP_Atlas.Core`, with tests. The vis
   - Read them through `SafeZip` and `PackImages.DecodeImage`. A refused file is an `InvalidDataException` with a message for the user: show it (a pack's load issues, a script stop, a status line), and carry on with the rest.
   - A new limit, or a change to one, is checked against the real corpus first (`ATLAS_SELFTEST_PACKS`): real packs must stay far below it. Note the corpus figure next to the limit, as `SafeZip` and `ImageBudget` do.
   - A new image format goes into `ImageHeader` first, read the way its decoder reads it, with a test for a file that tries to show the check a smaller size than its decoder would use.
+  - A regular expression over their text must run in linear time. Use `RegexOptions.NonBacktracking`, or a scanner where the pattern needs a backreference or a lookaround. Never `InfiniteMatchTimeout`: every pattern has `RegexDefaults`' limit, and the guard rails check.
   - Their text is shown as written. Never put it into markup unescaped: Godot opens files named in rich text tags, and for a network path that means connecting to another computer. A new tag of Atlas's own goes into `Bbcode.Safe`'s allowlist, with a test; never a tag that takes a path.
 - **Godot's `.uid` files:** Godot makes one next to each script (`Foo.cs.uid`) when it opens or imports the project. Commit it with the script; the guard rails check.
 - **Third-party code, data or art:**

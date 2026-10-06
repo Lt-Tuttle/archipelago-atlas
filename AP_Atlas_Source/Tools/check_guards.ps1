@@ -54,6 +54,9 @@
       - Reading a program's output line by line with .NET's own readers (ReadLine, BeginOutputReadLine and the like): nowhere.
         They hold a whole line however long it is, so one endless line from the engine (third-party worlds run in it)
         would fill Atlas's memory. BoundedLineReader cuts a line at its limit instead and says how much was cut.
+      - A regular expression without a time limit (InfiniteMatchTimeout), or another default limit: nowhere but
+        RegexDefaults, which sets one for every pattern in Atlas. A pattern that backtracks can take hours on one crafted
+        piece of outside text; patterns over large outside text run in linear time besides (NonBacktracking, LuaText).
       - Markup in a log message: nowhere. Messages are plain text, escaped for the window (they often quote outside text),
         so a tag in one would show as text; a line's colour is an argument (Logger.LogInfo(message, color)).
       - An empty catch that doesn't say why on the same line: nowhere. A failure is logged, handled, or explained.
@@ -122,6 +125,8 @@ $rules = @(
     @{ Name = 'Reading a program''s output without BoundedLineReader (one endless line would fill memory)'
        Pattern = 'BeginOutputReadLine|BeginErrorReadLine|OutputDataReceived|ErrorDataReceived|Standard(Output|Error)\s*\.\s*(ReadLine|ReadToEnd)'
        Allowed = @('AP_Atlas.Core\BoundedLineReader.cs') },
+    @{ Name = 'A regular expression without a time limit, or another default limit (RegexDefaults sets it for every pattern)'
+       Pattern = 'InfiniteMatchTimeout|REGEX_DEFAULT_MATCH_TIMEOUT'; Allowed = @('AP_Atlas.Core\RegexDefaults.cs'); Max = 1 },
     @{ Name = 'Markup in a log message (messages are plain text, shown as written: give the line''s colour as an argument)'
        Pattern = '\b(LogToSystem|LogToDebug|LogInfo|LogWarning|LogError|LogDebug|_logAction|AppendDebugLog)\s*\(.*\[/?(color|bgcolor|b|i|u|s|url|code)[=\]]'; Allowed = @() },
     @{ Name = 'An empty catch that doesn''t say why'; Pattern ='catch(\s*\([^)]*\))?\s*\{\s*\}(?!\s*//)'; Allowed = @() }
