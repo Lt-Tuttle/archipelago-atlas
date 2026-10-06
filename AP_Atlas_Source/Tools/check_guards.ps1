@@ -57,13 +57,18 @@
       - A regular expression without a time limit (InfiniteMatchTimeout), or another default limit: nowhere but
         RegexDefaults, which sets one for every pattern in Atlas. A pattern that backtracks can take hours on one crafted
         piece of outside text; patterns over large outside text run in linear time besides (NonBacktracking, LuaText).
+      - Timing by the wall clock (DateTime.UtcNow plus or minus a span, compared with a time, or kept as "now"): only on a
+        line that says why (// wall clock: ...), for a time that's saved, shown or sent to a site, and in tests that make
+        times up. In memory, a wait is a Deadline and a moment is SteadyClock.UtcNow: both measure with a monotonic clock,
+        so setting the PC's clock (a time sync after a wrong boot time) can't stretch a wait, end one early or lift a limit.
       - Markup in a log message: nowhere. Messages are plain text, escaped for the window (they often quote outside text),
         so a tag in one would show as text; a line's colour is an argument (Logger.LogInfo(message, color)).
       - An empty catch that doesn't say why on the same line: nowhere. A failure is logged, handled, or explained.
     Where a rule names a number, the file may do it only that many times: one helper does it, everything else uses it.
     Libraries whose internals Atlas relies on are pinned (MoonSharp, Archipelago.MultiClient.Net): update one only with
     the checks CONTRIBUTING lists for it.
-    It also checks that every script in the Godot project has its .uid file (Godot makes one per script; it's committed
+    It also checks that no source file, script or doc holds a stray control character, and that every script in the
+    Godot project has its .uid file (Godot makes one per script; it's committed
     with the script, or every fresh copy of the project gets new ones). CI runs this before Godot's import, so it checks
     what was committed.
     Run it from anywhere; CI runs it on every push. Exit code 0 means every rule holds.
@@ -127,6 +132,9 @@ $rules = @(
        Allowed = @('AP_Atlas.Core\BoundedLineReader.cs') },
     @{ Name = 'A regular expression without a time limit, or another default limit (RegexDefaults sets it for every pattern)'
        Pattern = 'InfiniteMatchTimeout|REGEX_DEFAULT_MATCH_TIMEOUT'; Allowed = @('AP_Atlas.Core\RegexDefaults.cs'); Max = 1 },
+    @{ Name = 'Timing by the wall clock (in memory, a wait is a Deadline and a moment SteadyClock.UtcNow; a time that''s saved, shown or sent says so on its line: // wall clock: why)'
+       Pattern = '^(?!.*//\s*wall clock:).*(DateTime(Offset)?\.(Utc)?Now\s*([-+<>]|\.\s*(Add|Subtract)[A-Za-z]*\()|(?<![=>])[-+<>]=?\s*(System\.)?DateTime(Offset)?\.(Utc)?Now\b(?!\s*\.\s*ToString\b)|\b(var|DateTime(Offset)?)\s+\w*now\w*\s*=\s*(System\.)?DateTime(Offset)?\.(Utc)?Now\b)'
+       Allowed = @('AP_Atlas_Source\Scripts\Core\SelfTest.Cheese.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.Safety.cs') },
     @{ Name = 'Markup in a log message (messages are plain text, shown as written: give the line''s colour as an argument)'
        Pattern = '\b(LogToSystem|LogToDebug|LogInfo|LogWarning|LogError|LogDebug|_logAction|AppendDebugLog)\s*\(.*\[/?(color|bgcolor|b|i|u|s|url|code)[=\]]'; Allowed = @() },
     @{ Name = 'An empty catch that doesn''t say why'; Pattern ='catch(\s*\([^)]*\))?\s*\{\s*\}(?!\s*//)'; Allowed = @() }
@@ -195,6 +203,21 @@ foreach ($script in $godotScripts) {
     if (Test-Path -LiteralPath ($script.FullName + '.uid')) { continue }
     $relative = $script.FullName.Substring($repo.Length).TrimStart('\', '/')
     Write-Host "GUARD: $relative has no .uid file. Run the project once in Godot (or with --import) and commit the .uid with the script." -ForegroundColor Red
+    $broken++
+}
+
+# No stray control characters (anything below a space but tab and line breaks) in the code, the scripts or the docs: one
+# slipped into this file once (a "\b" a tool turned into a backspace), and silently broke a rule's pattern.
+# The files git tracks: what's committed, as CI sees it (and quick to list).
+$textFiles = @(git -C $repo ls-files -- '*.cs' '*.ps1' '*.py' '*.md' '*.json' '*.csproj' '*.props' '*.yml' '*.txt' '*.gd' '*.tscn' '*.godot' '*.cfg')
+foreach ($relative in $textFiles) {
+    $path = Join-Path $repo $relative
+    if (-not (Test-Path -LiteralPath $path)) { continue }
+    $content = [System.IO.File]::ReadAllText($path)
+    $stray = [regex]::Match($content, '[\x00-\x08\x0B\x0C\x0E-\x1F]')
+    if (-not $stray.Success) { continue }
+    $line = ($content.Substring(0, $stray.Index) -split "`n").Count
+    Write-Host ("GUARD: $relative has a stray control character (0x{0:X2}) on line $line." -f [int][char]$stray.Value) -ForegroundColor Red
     $broken++
 }
 

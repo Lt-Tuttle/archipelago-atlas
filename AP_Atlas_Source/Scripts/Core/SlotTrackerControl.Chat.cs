@@ -392,6 +392,7 @@ public partial class SlotTrackerControl : MarginContainer
     }
 
     // Several connected slots of one multiworld all receive the same broadcast; toast it once.
+    // Toasts shown in the last few seconds, and when (on the steady clock).
     private static readonly Dictionary<string, DateTime> _recentSpecialToasts = new();
 
     /// <summary>Toasts when a special item is received, found by anyone, or hinted.</summary>
@@ -428,7 +429,7 @@ public partial class SlotTrackerControl : MarginContainer
 
     private void ToastSpecialOnce(string key, string text)
     {
-        var now = DateTime.Now;
+        var now = AP_Atlas.Core.SteadyClock.UtcNow;
         foreach (var stale in _recentSpecialToasts.Where(kv => (now - kv.Value).TotalSeconds > 10).Select(kv => kv.Key).ToList())
             _recentSpecialToasts.Remove(stale);
         if (_recentSpecialToasts.ContainsKey(key)) return;

@@ -109,8 +109,13 @@ namespace AP_Atlas.Core.Spheres
             public long PageBytes;
             public string Problem;
             public int Failures;
-            public DateTime NotBeforeUtc = DateTime.MinValue;
-            public DateTime LastManualUtc = DateTime.MinValue;
+            // When the page may be read again after a failure: a monotonic deadline, so setting the PC's clock can't stretch it.
+            public Deadline NotBefore;
+            // When the page was last read, and when Refresh last asked, on the steady clock (MinValue: never), so setting
+            // the PC's clock can't hold a read up or bring one early. A read saved by an earlier session is converted once,
+            // as it loads; FetchedUtc keeps the wall clock's time, for saving and showing.
+            public DateTime ReadAt = DateTime.MinValue;
+            public DateTime LastManual = DateTime.MinValue;
             public Task<string> Pending;
             /// <summary>The last read being loaded from disk.</summary>
             public Task Loading;
@@ -241,16 +246,15 @@ namespace AP_Atlas.Core.Spheres
 
         private static bool Due(Source s)
         {
-            if (s.Pending != null || s.Loading != null || DateTime.UtcNow < s.NotBeforeUtc) return false;
-            if (s.FetchedUtc == DateTime.MinValue || s.FetchedUtc > DateTime.UtcNow.AddMinutes(5)) return true; // never read, or the clock moved back
-            return DateTime.UtcNow - s.FetchedUtc >= ReadEveryFor(s.PageBytes);
+            if (s.Pending != null || s.Loading != null || !s.NotBefore.Passed) return false;
+            return s.ReadAt == DateTime.MinValue || SteadyClock.UtcNow - s.ReadAt >= ReadEveryFor(s.PageBytes);
         }
 
         /// <summary>Read (or asked to be read) moments ago: reading again would only show the same page and load the site.</summary>
         private static bool ReadRecently(Source s)
         {
-            var last = s.LastManualUtc > s.FetchedUtc ? s.LastManualUtc : s.FetchedUtc;
-            return last <= DateTime.UtcNow && DateTime.UtcNow - last < RefreshSpacingFor(s.PageBytes);
+            var last = s.LastManual > s.ReadAt ? s.LastManual : s.ReadAt;
+            return SteadyClock.UtcNow - last < RefreshSpacingFor(s.PageBytes);
         }
 
         /// <summary>The tab shows this multiworld's room: read it if it's due.</summary>
@@ -276,9 +280,9 @@ namespace AP_Atlas.Core.Spheres
             if (hidden != null) return hidden;
             var s = ShownSource(profile);
             if (s == null || ReadRecently(s)) return null;
-            s.LastManualUtc = DateTime.UtcNow;
+            s.LastManual = SteadyClock.UtcNow;
             if (tryNow) PoliteHttp.StopWaiting(PoliteHttp.NormalizeSite(s.Url));
-            s.NotBeforeUtc = DateTime.MinValue;
+            s.NotBefore = Deadline.None;
             return await FetchAsync(s, profileId);
         }
 
@@ -323,14 +327,14 @@ namespace AP_Atlas.Core.Spheres
                     if (r.Outcome == WebOutcome.Waiting)
                     {
                         // Nothing was sent: try again once the site's wait is over.
-                        s.NotBeforeUtc = PoliteHttp.WaitingFor(PoliteHttp.NormalizeSite(s.Url))?.UntilUtc ?? DateTime.UtcNow + RetryDelay(1);
+                        s.NotBefore = PoliteHttp.WaitOf(s.Url) is { Passed: false } siteWait ? siteWait : Deadline.In(RetryDelay(1));
                         return s.Problem;
                     }
                     s.Failures++;
                     // A room that's gone, refused or too large isn't asked for again until the user acts; other failures
                     // wait longer each time (2, 5, 15, 30, then 60 minutes).
                     bool stop = r.Outcome is WebOutcome.NotFound or WebOutcome.Forbidden or WebOutcome.TooLarge || r.Status is >= 300 and < 400;
-                    s.NotBeforeUtc = stop ? DateTime.MaxValue : DateTime.UtcNow + RetryDelay(s.Failures);
+                    s.NotBefore = stop ? Deadline.Never : Deadline.In(RetryDelay(s.Failures));
                     if (stop) Logger.LogWarning($"Sphere Tracker: {s.Problem}");
                     return s.Problem;
                 }
@@ -341,15 +345,16 @@ namespace AP_Atlas.Core.Spheres
                     s.Failures++;
                     var wait = RetryDelay(s.Failures);
                     var every = ReadEveryFor(r.Bytes);
-                    s.NotBeforeUtc = DateTime.UtcNow + (wait > every ? wait : every);
+                    s.NotBefore = Deadline.In(wait > every ? wait : every);
                     return parsed.Error;
                 }
                 s.Data = parsed.Data;
                 s.FetchedUtc = DateTime.UtcNow;
+                s.ReadAt = SteadyClock.UtcNow;
                 s.PageBytes = r.Bytes;
                 s.Problem = null;
                 s.Failures = 0;
-                s.NotBeforeUtc = DateTime.MinValue;
+                s.NotBefore = Deadline.None;
                 SaveCacheInBackground(profileId, s);
                 return null;
             }
@@ -357,7 +362,7 @@ namespace AP_Atlas.Core.Spheres
             {
                 s.Problem = "Reading the sphere tracker failed: " + ex.Message;
                 s.Failures++;
-                s.NotBeforeUtc = DateTime.UtcNow + RetryDelay(s.Failures);
+                s.NotBefore = Deadline.In(RetryDelay(s.Failures));
                 return s.Problem;
             }
             finally
@@ -433,6 +438,7 @@ namespace AP_Atlas.Core.Spheres
             var s = SourceOf(profile.Id, check.Url);
             s.Data = check.Data;
             s.FetchedUtc = DateTime.UtcNow;
+            s.ReadAt = SteadyClock.UtcNow;
             s.PageBytes = check.PageBytes;
             // A room whose layout Atlas can't read yet still links (its page opens in the browser).
             s.Problem = check.Problem;
@@ -543,10 +549,12 @@ namespace AP_Atlas.Core.Spheres
             {
                 string url = s.Url;
                 var cached = await Task.Run(() => ReadCache(path, url));
-                // Keep a read that finished meanwhile (it's newer).
-                if (cached == null || s.Forgotten || s.FetchedUtc >= cached.FetchedUtc) return;
+                // Keep a read that finished meanwhile: it's newer (whatever the PC's clock said when each was made).
+                if (cached == null || s.Forgotten || s.ReadAt != DateTime.MinValue) return;
                 s.Data = cached.Data;
                 s.FetchedUtc = cached.FetchedUtc;
+                // A saved read from the future (the PC's clock was put back since) counts as never read: it's read again.
+                s.ReadAt = SteadyClock.FromSaved(cached.FetchedUtc) ?? DateTime.MinValue;
                 s.PageBytes = cached.PageBytes;
             }
             catch (Exception ex)

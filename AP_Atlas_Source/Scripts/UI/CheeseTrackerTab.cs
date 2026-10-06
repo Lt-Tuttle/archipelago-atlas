@@ -753,7 +753,7 @@ namespace AP_Atlas.UI
         {
             if (_tree == null || _columns.Count == 0) return;
             using var __perf = PerfMonitor.Measure("Cheese Tracker tab: table");
-            var now = DateTime.UtcNow;
+            var now = DateTime.UtcNow; // wall clock: how long ago the site's times were, for showing
             for (int i = 0; i < _columns.Count; i++)
             {
                 string arrow = _columns[i].Id == _settings.CheeseSortColumn ? (_settings.CheeseSortDescending ? " ▼" : " ▲") : "";
@@ -1021,7 +1021,7 @@ namespace AP_Atlas.UI
                 return;
             }
             var g = row.Game;
-            var now = DateTime.UtcNow;
+            var now = DateTime.UtcNow; // wall clock: how long ago the site's times were, for showing
             var title = new Label { Text = $"#{g.Position}  {g.Name}  ·  {g.Game}" + (_view == MineView ? "  ·  " + row.ProfileName : ""), ClipText = true };
             title.SetMeta("font_size_ratio", 1.15);
             title.AddThemeColorOverride("font_color", row.Mine ? Colors.Magenta : Colors.White);

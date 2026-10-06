@@ -100,8 +100,8 @@ namespace AP_Atlas.Core.Connections
             lock (_gate)
             {
                 if (!Directory.Exists(Folder)) return 0;
-                var cutoff = DateTime.UtcNow - unusedFor;
-                var tempCutoff = DateTime.UtcNow - TimeSpan.FromHours(1);
+                var cutoff = DateTime.UtcNow - unusedFor; // wall clock: files' times
+                var tempCutoff = DateTime.UtcNow - TimeSpan.FromHours(1); // wall clock: files' times
                 foreach (string dir in SafeList(() => Directory.GetDirectories(Folder)))
                 {
                     foreach (string file in SafeList(() => Directory.GetFiles(dir)))
@@ -157,7 +157,7 @@ namespace AP_Atlas.Core.Connections
         {
             try
             {
-                if (DateTime.UtcNow - File.GetLastWriteTimeUtc(path) > TimeSpan.FromDays(1)) File.SetLastWriteTimeUtc(path, DateTime.UtcNow);
+                if (DateTime.UtcNow - File.GetLastWriteTimeUtc(path) > TimeSpan.FromDays(1)) File.SetLastWriteTimeUtc(path, DateTime.UtcNow); // wall clock: the file's time
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { } // only bookkeeping
         }

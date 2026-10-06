@@ -1,6 +1,7 @@
 #nullable disable
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -52,6 +53,10 @@ namespace AP_Atlas.Core
         internal static readonly IReadOnlyDictionary<string, string> EmptyHeaders = new Dictionary<string, string>();
 
         public string Header(string name) => Headers != null && Headers.TryGetValue(name.ToLowerInvariant(), out var v) ? v : null;
+
+        /// <summary>When the site sent its answer, by the site's own clock (its Date header); null without one.</summary>
+        public DateTime? SentUtc =>
+            DateTimeOffset.TryParse(Header("date"), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var sent) ? sent.UtcDateTime : null;
     }
 
     /// <summary>
@@ -72,8 +77,10 @@ namespace AP_Atlas.Core
         private sealed class SiteState
         {
             public readonly SemaphoreSlim Gate = new SemaphoreSlim(1, 1);
-            public DateTime LastRequest = DateTime.MinValue;
-            public DateTime WaitUntil = DateTime.MinValue;
+            // When the next request may go (Spacing after the last one), and when a wait after failures ends. Deadlines
+            // measure with a monotonic clock, so setting the PC's clock can't stretch either.
+            public Deadline NextRequest;
+            public Deadline Wait;
             public int Failures;
             public string WaitReason;
         }
@@ -139,14 +146,21 @@ namespace AP_Atlas.Core
             site = NormalizeSite(site);
             if (site == null) return null;
             var s = StateOf(site);
-            return DateTime.UtcNow < s.WaitUntil ? (s.WaitUntil, s.WaitReason) : null;
+            return s.Wait.Passed ? null : (s.Wait.ShownUtc, s.WaitReason);
+        }
+
+        /// <summary>When Atlas will next contact a site after a failure (passed already if it isn't waiting).</summary>
+        public static Deadline WaitOf(string site)
+        {
+            site = NormalizeSite(site);
+            return site == null ? Deadline.None : StateOf(site).Wait;
         }
 
         /// <summary>Ends a wait early (the user pressed "Try now").</summary>
         public static void StopWaiting(string site)
         {
             site = NormalizeSite(site);
-            if (site != null) StateOf(site).WaitUntil = DateTime.MinValue;
+            if (site != null) StateOf(site).Wait = Deadline.None;
         }
 
         internal static void ResetForTests()
@@ -243,11 +257,10 @@ namespace AP_Atlas.Core
             await state.Gate.WaitAsync(ct).ConfigureAwait(false);
             try
             {
-                if (DateTime.UtcNow < state.WaitUntil)
-                    return Fail(WebOutcome.Waiting, 0, $"{state.WaitReason}. Atlas tries again after {state.WaitUntil.ToLocalTime():HH:mm}.");
-                var gap = state.LastRequest + Spacing - DateTime.UtcNow;
-                if (gap > TimeSpan.Zero) await Task.Delay(gap, ct).ConfigureAwait(false);
-                state.LastRequest = DateTime.UtcNow;
+                if (!state.Wait.Passed)
+                    return Fail(WebOutcome.Waiting, 0, $"{state.WaitReason}. Atlas tries again after {state.Wait.ShownUtc.ToLocalTime():HH:mm}.");
+                if (!state.NextRequest.Passed) await Task.Delay(state.NextRequest.Left, ct).ConfigureAwait(false);
+                state.NextRequest = Deadline.In(Spacing);
 
                 using var request = new HttpRequestMessage(method, site + "/" + (path ?? "").TrimStart('/'));
                 // A key goes to this site and nowhere else (redirects aren't followed with it).
@@ -289,7 +302,7 @@ namespace AP_Atlas.Core
                     }
                     // Anything else means the site is up: no waiting.
                     state.Failures = 0;
-                    state.WaitUntil = DateTime.MinValue;
+                    state.Wait = Deadline.None;
                     if (code == 304) return new WebResponse { Outcome = WebOutcome.NotModified, Status = code, Headers = answerHeaders };
                     if (code >= 300 && code < 400)
                         return Fail(WebOutcome.Rejected, code, allowRedirect ? $"{siteName} moved the file (HTTP {code})." : $"{siteName} redirected the request (HTTP {code}).", answerHeaders);
@@ -370,15 +383,17 @@ namespace AP_Atlas.Core
                 var buffer = new byte[81920];
                 long done = 0;
                 int read;
-                var lastReport = DateTime.MinValue;
+                var sinceReport = System.Diagnostics.Stopwatch.StartNew();
+                bool reported = false;
                 while ((read = await source.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
                 {
                     await target.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
                     sha.AppendData(buffer, 0, read);
                     done += read;
-                    if (progress != null && (DateTime.UtcNow - lastReport).TotalMilliseconds > 150)
+                    if (progress != null && (!reported || sinceReport.ElapsedMilliseconds > 150))
                     {
-                        lastReport = DateTime.UtcNow;
+                        reported = true;
+                        sinceReport.Restart();
                         progress(done, total);
                     }
                 }
@@ -407,30 +422,18 @@ namespace AP_Atlas.Core
             site.Failures++;
             var wait = Backoff[Math.Min(site.Failures, Backoff.Length) - 1];
             if (asked.HasValue && asked.Value > wait) wait = asked.Value < TimeSpan.FromHours(6) ? asked.Value : TimeSpan.FromHours(6);
-            site.WaitUntil = DateTime.UtcNow + wait;
+            site.Wait = Deadline.In(wait);
             site.WaitReason = reason;
-            Logger.LogWarning($"{reason}; Atlas leaves it alone until {site.WaitUntil.ToLocalTime():HH:mm}.");
-        }
-
-        /// <summary>Makes Atlas leave a site alone until a time it named in its own way (e.g. GitHub's rate-limit reset).</summary>
-        internal static void WaitUntil(string site, DateTime untilUtc, string reason)
-        {
-            site = NormalizeSite(site);
-            if (site == null) return;
-            var s = StateOf(site);
-            var cap = DateTime.UtcNow + TimeSpan.FromHours(6);
-            if (untilUtc > cap) untilUtc = cap;
-            if (untilUtc <= s.WaitUntil) return;
-            s.WaitUntil = untilUtc;
-            s.WaitReason = reason;
-            Logger.LogWarning($"{reason}; Atlas leaves it alone until {untilUtc.ToLocalTime():HH:mm}.");
+            Logger.LogWarning($"{reason}; Atlas leaves it alone until {site.Wait.ShownUtc.ToLocalTime():HH:mm}.");
         }
 
         private static TimeSpan? RetryAfter(HttpResponseMessage response)
         {
             var header = response.Headers.RetryAfter;
             if (header?.Delta != null) return header.Delta;
-            if (header?.Date != null) return header.Date.Value - DateTimeOffset.UtcNow;
+            // A date is by the site's clock, so it's measured from when the site sent its answer (its Date header): a PC
+            // clock that's wrong can't shorten the wait. Without one, this PC's clock is all there is.
+            if (header?.Date != null) return header.Date.Value - (response.Headers.Date ?? DateTimeOffset.UtcNow);
             return null;
         }
 

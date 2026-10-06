@@ -364,6 +364,8 @@ namespace AP_Atlas.Core
         private readonly Dictionary<long, Task<ScoutedItemInfo?>> _scoutCache = new();
         private readonly Dictionary<string, Task<Dictionary<string, string[]>?>> _itemGroupCache = new();
         private readonly Dictionary<string, Task<Dictionary<string, string[]>?>> _locationGroupCache = new();
+        // Each player's last status request, and when it was made (on the steady clock, so setting the PC's clock can't keep
+        // an old answer).
         private readonly Dictionary<int, (DateTime At, Task<ArchipelagoClientState?> Task)> _statusCache = new();
 
         private bool Connected => !_disposed && Session.Socket.Connected;
@@ -430,9 +432,10 @@ namespace AP_Atlas.Core
         public Task<ArchipelagoClientState?> ClientStatusAsync(int player)
         {
             if (!Connected) return Task.FromResult<ArchipelagoClientState?>(null);
-            if (_statusCache.TryGetValue(player, out var cached) && (DateTime.Now - cached.At).TotalSeconds < 30) return cached.Task;
+            var now = SteadyClock.UtcNow;
+            if (_statusCache.TryGetValue(player, out var cached) && (now - cached.At).TotalSeconds < 30) return cached.Task;
             var task = FetchStatusAsync(player);
-            _statusCache[player] = (DateTime.Now, task);
+            _statusCache[player] = (now, task);
             return task;
         }
 

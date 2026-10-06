@@ -157,7 +157,7 @@ namespace AP_Atlas.Core.CheeseTracker
         public static string Ago(DateTime? utc)
         {
             if (utc == null) return "never";
-            var span = DateTime.UtcNow - utc.Value;
+            var span = DateTime.UtcNow - utc.Value; // wall clock: how long ago a time the site sent was
             if (span.TotalMinutes < 1) return "just now";
             if (span.TotalHours < 1) return $"{(int)span.TotalMinutes} min ago";
             if (span.TotalDays < 1) return $"{span.TotalHours:0.#} h ago";

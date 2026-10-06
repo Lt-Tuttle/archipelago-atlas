@@ -36,12 +36,14 @@ namespace AP_Atlas.Core
         {
             public string ETag;
             public string Body;
+            // When it was last used, on the steady clock: the cache drops the answer used least recently first.
             public DateTime Used;
         }
 
         private static readonly Dictionary<string, Cached> _cache = new Dictionary<string, Cached>(StringComparer.Ordinal);
         private static readonly object _lock = new object();
-        private static DateTime _coreWaitUntil = DateTime.MinValue, _searchWaitUntil = DateTime.MinValue;
+        // Until GitHub's limits reset: measured with a monotonic clock (Deadline), so setting the PC's clock can't stretch them.
+        private static Deadline _coreWait, _searchWait;
 
         /// <summary>
         /// Reads one API path (e.g. "/repos/owner/name/releases?per_page=50"). JSON comes back parsed; a 404 is
@@ -50,10 +52,10 @@ namespace AP_Atlas.Core
         public static async Task<Result> GetAsync(string pathAndQuery, CancellationToken ct = default)
         {
             bool search = pathAndQuery.StartsWith("/search/", StringComparison.OrdinalIgnoreCase);
-            DateTime until;
-            lock (_lock) until = search ? _searchWaitUntil : _coreWaitUntil;
-            if (DateTime.UtcNow < until)
-                return new Result { Outcome = WebOutcome.RateLimited, Message = $"GitHub's limit for anonymous {(search ? "searches" : "requests")} is used up; Atlas asks again after {until.ToLocalTime():HH:mm}." };
+            Deadline until;
+            lock (_lock) until = search ? _searchWait : _coreWait;
+            if (!until.Passed)
+                return new Result { Outcome = WebOutcome.RateLimited, Message = $"GitHub's limit for anonymous {(search ? "searches" : "requests")} is used up; Atlas asks again after {until.ShownUtc.ToLocalTime():HH:mm}." };
 
             Cached cached;
             lock (_lock) _cache.TryGetValue(pathAndQuery, out cached);
@@ -65,13 +67,13 @@ namespace AP_Atlas.Core
 
             if (r.Outcome == WebOutcome.NotModified && cached != null)
             {
-                lock (_lock) cached.Used = DateTime.UtcNow;
+                lock (_lock) cached.Used = SteadyClock.UtcNow;
                 return Parse(cached.Body);
             }
             if ((r.Outcome == WebOutcome.Forbidden || r.Outcome == WebOutcome.RateLimited) && IsRateLimit(r))
             {
-                lock (_lock) until = search ? _searchWaitUntil : _coreWaitUntil;
-                return new Result { Outcome = WebOutcome.RateLimited, Message = $"GitHub's limit for anonymous {(search ? "searches" : "requests")} is used up; Atlas asks again after {until.ToLocalTime():HH:mm}." };
+                lock (_lock) until = search ? _searchWait : _coreWait;
+                return new Result { Outcome = WebOutcome.RateLimited, Message = $"GitHub's limit for anonymous {(search ? "searches" : "requests")} is used up; Atlas asks again after {until.ShownUtc.ToLocalTime():HH:mm}." };
             }
             if (r.Outcome == WebOutcome.NotFound) return new Result { Outcome = WebOutcome.NotFound, Message = "GitHub has no such page (it may be private, renamed or deleted)." };
             if (!r.Ok) return new Result { Outcome = r.Outcome, Message = r.Message };
@@ -81,7 +83,7 @@ namespace AP_Atlas.Core
             {
                 lock (_lock)
                 {
-                    _cache[pathAndQuery] = new Cached { ETag = etag, Body = r.Text, Used = DateTime.UtcNow };
+                    _cache[pathAndQuery] = new Cached { ETag = etag, Body = r.Text, Used = SteadyClock.UtcNow };
                     if (_cache.Count > MaxCached)
                         foreach (var old in _cache.OrderBy(kv => kv.Value.Used).Take(_cache.Count - MaxCached).Select(kv => kv.Key).ToList()) _cache.Remove(old);
                 }
@@ -102,20 +104,26 @@ namespace AP_Atlas.Core
         /// <summary>Remembers GitHub's reset time when its limit is (about to be) used up, so nothing is sent until then.</summary>
         private static void NoteRateLimit(WebResponse r, bool search)
         {
-            DateTime? until = null;
+            Deadline? until = null;
             if (r.Header("retry-after") is string retry && int.TryParse(retry, out int seconds))
-                until = DateTime.UtcNow.AddSeconds(Math.Clamp(seconds, 1, 6 * 3600));
+                until = Deadline.In(TimeSpan.FromSeconds(Math.Clamp(seconds, 1, 6 * 3600)));
             else if (r.Header("x-ratelimit-remaining") == "0" && long.TryParse(r.Header("x-ratelimit-reset"), out long reset))
-                until = DateTimeOffset.FromUnixTimeSeconds(reset).UtcDateTime.AddSeconds(2);
+            {
+                // The reset is a time by GitHub's clock, so it's measured from when GitHub sent its answer (its Date header):
+                // a PC clock that's wrong can't shorten the wait. Six hours at most; no wait once it's past.
+                var resetUtc = DateTimeOffset.FromUnixTimeSeconds(Math.Clamp(reset, 0, 253402300799)).UtcDateTime;
+                var wait = resetUtc - (r.SentUtc ?? Deadline.WallClock()) + TimeSpan.FromSeconds(2);
+                if (wait > TimeSpan.Zero) until = Deadline.In(wait < TimeSpan.FromHours(6) ? wait : TimeSpan.FromHours(6));
+            }
             if (until == null) return;
             string resource = r.Header("x-ratelimit-resource");
             bool isSearch = resource != null ? resource.Equals("search", StringComparison.OrdinalIgnoreCase) : search;
             lock (_lock)
             {
-                if (isSearch) { if (until > _searchWaitUntil) _searchWaitUntil = until.Value; }
-                else if (until > _coreWaitUntil) _coreWaitUntil = until.Value;
+                if (isSearch) { if (until.Value.EndsAfter(_searchWait)) _searchWait = until.Value; }
+                else if (until.Value.EndsAfter(_coreWait)) _coreWait = until.Value;
             }
-            Logger.LogWarning($"GitHub's anonymous {(isSearch ? "search" : "request")} limit is used up; Atlas waits until {until.Value.ToLocalTime():HH:mm} before asking again.");
+            Logger.LogWarning($"GitHub's anonymous {(isSearch ? "search" : "request")} limit is used up; Atlas waits until {until.Value.ShownUtc.ToLocalTime():HH:mm} before asking again.");
         }
 
         internal static void ResetForTests()
@@ -123,7 +131,7 @@ namespace AP_Atlas.Core
             lock (_lock)
             {
                 _cache.Clear();
-                _coreWaitUntil = _searchWaitUntil = DateTime.MinValue;
+                _coreWait = _searchWait = Deadline.None;
             }
         }
 

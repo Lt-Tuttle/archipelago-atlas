@@ -318,7 +318,7 @@ namespace AP_Atlas.Core.EngineSetup
             var hashes = new HashSet<string>(installedSha256.Select(h => h.ToLowerInvariant()));
             lock (Provenance)
                 foreach (var h in hashes)
-                    if (Provenance.TryGetValue(h, out var record) && (record.Repo != null || (DateTime.Now - record.Checked).TotalDays < 7))
+                    if (Provenance.TryGetValue(h, out var record) && (record.Repo != null || (DateTime.Now - record.Checked).TotalDays < 7)) // wall clock: a saved time
                         return (record.Repo, record.Tag);
 
             // Set when any lookup couldn't be done: then "not found" isn't known, so it isn't remembered.

@@ -47,6 +47,7 @@ namespace AP_Atlas.Core
         private readonly List<long> _inventory = new();
         private readonly List<LogicStep> _steps = new();
         private readonly HashSet<long> _reachable = new();
+        // When the engine failed this slot lately, on the steady clock (setting the PC's clock can't clear or stretch the count).
         private readonly List<DateTime> _recentFailures = new();
         private readonly HashSet<string> _seedApworldFailed = new();
         private readonly Dictionary<long, Task<LogicExplanation?>> _explainCache = new();
@@ -488,7 +489,7 @@ namespace AP_Atlas.Core
                 return;
             }
 
-            var now = DateTime.Now;
+            var now = SteadyClock.UtcNow;
             _recentFailures.RemoveAll(t => (now - t).TotalMinutes > 10);
             if (counted) _recentFailures.Add(now);
             int failures = _recentFailures.Count;

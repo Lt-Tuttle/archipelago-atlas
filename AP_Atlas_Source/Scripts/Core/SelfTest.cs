@@ -88,7 +88,7 @@ namespace AP_Atlas.Core
             Test("Cheese Tracker tab: filters, sorting, activity and hint counts match Cheese Tracker's", CheeseTableRules);
             await TestAsync("Cheese Tracker: a failing site is left alone, then asked again", CheeseBacksOff);
             await TestAsync("Cheese Tracker: changes re-read first, keep others' edits, and never touch others' slots", CheeseChangesAreSafe);
-            await TestAsync("Cheese Tracker: a read while the site is left alone never sticks as updating", CheeseReadsNeverStick);
+            await TestAsync("Cheese Tracker: a read while the site is left alone never sticks as updating; one read moments ago isn't read again", CheeseReadsNeverStick);
             Test("Sphere Tracker: only spheretracker.de room links are taken (never ?refresh)", SphereLinksParse);
             Test("Sphere Tracker: the host's room tables are read, and which multiworld the room is for", SpherePagesParse);
             Test("Sphere Tracker tab: a slot's rows, searching and sorting", SphereTableRules);
@@ -97,6 +97,7 @@ namespace AP_Atlas.Core
             Test("Links: only https web pages and existing folders are opened, never files or network shares", LinksOpenSafely);
             Test("Text from outside is shown as written, never read as markup that opens a file (or reaches another computer)", OutsideTextIsNeverMarkup);
             Test("No pattern runs away: every regular expression has a time limit, and crafted outside text is read in linear time", PatternsCantRunAway);
+            await TestAsync("Waits keep their length when the PC's clock is changed: put back, the next request isn't held up; put forward, a site's wait doesn't end early; a time a site names is measured by its own clock", WaitsIgnoreClockChanges);
             Test("Room passwords are saved encrypted, never as plain text (older files are converted)", PasswordsSavedEncrypted);
             Test("Permissions: Always allow is kept and can be taken back; Allow once lasts the session", PermissionsAreKeptAndRevocable);
             await TestAsync("Downloads: the wrong file or a too-large one is never kept; redirects only to web addresses", DownloadsAreChecked);

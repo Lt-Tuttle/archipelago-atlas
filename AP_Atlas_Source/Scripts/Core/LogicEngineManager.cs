@@ -357,11 +357,12 @@ public class LogicEngineManager
             await process.StandardInput.WriteLineAsync(Newtonsoft.Json.JsonConvert.SerializeObject(new { games = games.ToList() }));
             await process.StandardInput.FlushAsync();
 
-            var deadline = DateTime.Now.AddSeconds(90);
-            while (DateTime.Now < deadline)
+            // A monotonic deadline: setting the PC's clock can't stretch the wait, or make it negative.
+            var deadline = AP_Atlas.Core.Deadline.In(TimeSpan.FromSeconds(90));
+            while (!deadline.Passed)
             {
                 var readTask = NextLineAsync();
-                var done = await Task.WhenAny(readTask, Task.Delay(deadline - DateTime.Now));
+                var done = await Task.WhenAny(readTask, Task.Delay(deadline.Left));
                 if (done != readTask) break;
                 if (await readTask is not { } read) break; // already finished: this only takes its result
                 if (read.Cut > 0)

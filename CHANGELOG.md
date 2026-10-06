@@ -48,6 +48,7 @@ Development toward the first public beta, 0.1.0.
     - The guard rails keep each protection in its one place: calling, compiling and making functions for map pack scripts, closing server connections, reading zips (only through `SafeZip`), decoding images (only after their size is checked), and rich text that reads markup (only `SafeRichText`). Log messages can't carry markup, a program's output is read only a bounded line at a time, and no regular expression goes without a time limit. Only the engine's setup unpacks a zip into a folder, and only its hash-checked downloads.
     - They also allow no forced memory collections, threads of its own, unexplained silent failures, or looking up your folders outside the install search you agree to. Whole-file saves are allowed only where SafeFile isn't needed.
     - The libraries whose insides Atlas relies on are pinned, and the nullable-check count can only go down.
+    - No wait or limit is timed by the PC's clock (a line that rightly uses it, for a time that's saved, shown or sent, says why on the line). No file in the repository may hold a stray control character: one once slipped into the guard script and quietly broke a rule's pattern.
     - A pre-push hook runs the quick checks before anything reaches CI.
     - Dead code stops the build: a private member nothing uses, or a private field nothing reads. What it found is gone, with an empty startup class and an offline cache nothing wrote.
   - Microsoft's async analyzers check every build. An unobserved task, `async void`, a blocking wait, or `ContinueWith` without a scheduler fails it.
@@ -195,6 +196,12 @@ Development toward the first public beta, 0.1.0.
   - An image you choose for a Pack Doctor fix is checked the same way before it's copied.
 
 ### Fixed
+- **Setting the PC's clock no longer changes how long Atlas waits.** Atlas timed its waits by the PC's clock, which a time sync can move by hours (when a PC starts with the wrong time, say).
+  - Put back, the clock held things up for as long as it moved: requests to a site, reading Cheese Tracker and spheretracker.de, the Refresh buttons, and the warning that a file couldn't be saved, which stayed silent.
+  - Put forward, it ended waits early: a site that had asked Atlas to slow down was asked again too soon, Cheese Tracker's limit of 20 automatic changes a day lifted at once, and a status suggestion counted as settled before it had held long enough.
+  - Waits and limits now use a clock that only moves forward, at a steady pace (`Deadline` and `SteadyClock` in `AP_Atlas.Core`). The PC's clock is only used for times that are saved, shown or sent.
+  - A time a site names (when to try again, GitHub's rate-limit reset) is now measured by the site's own clock, from the time it sent with its answer, so a PC clock that's wrong can't shorten the wait either.
+  - Reading the games' names from the engine could fail if the clock moved forward at the wrong moment, or wait far past its 90 seconds if it moved back. And at start-up, a spheretracker.de read saved earlier could replace a newer one if the clock had been put back since.
 - **A deleted multiworld's logic engine pools** stayed in memory for the rest of the session: a small object each, but one more for every multiworld deleted. They're now forgotten with the multiworld.
 - **Files outside Atlas's folder:** three things Atlas didn't ask for wrote outside its folder. Everything now stays inside it.
   - **The connection library** kept every game's names (data packages) in Archipelago's shared cache, `%LocalAppData%\Archipelago\Cache`, and read and wrote it on every connection. Atlas now keeps them in its own folder (`datapackage_cache`). A server still sends each game's names only once per version, and versions unused for three months are removed.

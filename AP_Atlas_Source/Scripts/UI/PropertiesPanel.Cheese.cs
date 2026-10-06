@@ -277,7 +277,7 @@ namespace AP_Atlas.UI
             var stillBk = g.LastCheckedUtc;
             var latest = stillBk != null && (activity == null || stillBk > activity) ? stillBk : activity;
             if (latest == null) return Colored("no checks yet", Muted);
-            double hours = (DateTime.UtcNow - latest.Value).TotalHours;
+            double hours = (DateTime.UtcNow - latest.Value).TotalHours; // wall clock: how long ago a time the site sent was
             var color = hours < t.YellowHours ? Good : hours < t.RedHours ? Colors.Gold : Bad;
             return Colored(CtTime.Ago(latest) + (latest == stillBk && stillBk != activity ? " (still BK)" : ""), color);
         }

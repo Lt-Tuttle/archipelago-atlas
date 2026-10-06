@@ -30,6 +30,7 @@ MainTrackerWindow (the shell)
   - `Bbcode`: escaping text from outside Atlas for rich text, and the allowlist every piece of markup passes (`Safe`).
   - `BoundedLineReader`: reading a program's output a line at a time, with a limit on how much of a line is kept.
   - `LuaText` (stripping a pack script's comments in linear time) and `RegexDefaults` (every regular expression's time limit).
+  - `Deadline` (when a wait ends) and `SteadyClock` (when something happened in this session). Both measure with a monotonic clock, so setting the PC's clock (a time sync after a wrong start-up time) can't stretch a wait, end one early or lift a limit. The PC's clock is only for times that are saved, shown or sent; a saved time enters the steady clock once, as it loads (`SteadyClock.FromSaved`).
   - `PoliteHttp` and `GitHubApi`.
   - `YamlExclusions`.
   - The Cheese Tracker client, models, table rules, advisor and key store (`CheeseTracker/`).
@@ -123,6 +124,7 @@ Atlas reads or writes outside this folder only with the user's permission. Nothi
 - **Web sites** (Cheese Tracker, spheretracker.de, GitHub, PyPI, python.org): only through `PoliteHttp`:
   - One request at a time per site, at least a second apart.
   - Backoff of 1, 2, 5, 10, then 30 minutes; `Retry-After` is honoured.
+  - Waits are `Deadline`s. A time the site names ("try again at", GitHub's rate-limit reset) is measured from the time it sent with its answer (its `Date` header), so a PC clock that's wrong can't shorten it.
   - Size and time limits; no redirects (downloads follow a few https redirects).
   - GitHub calls go through `GitHubApi`, which honours its rate-limit headers and uses ETags.
   - **Atlas never requests an archipelago.gg room page**, because that wakes the room.
@@ -209,8 +211,9 @@ Map packs and apworlds are zips from outside Atlas, and both a zip's headers and
 | `RegexDefaults` | Setting regular expressions' time limit; nowhere may opt out (`InfiniteMatchTimeout`). |
 | `PackScriptHost` (its compiler, which needs a big stack) and the self-test | Starting a thread of its own. |
 | nowhere | An empty catch that doesn't say why on its line. |
+| a line that says why (`// wall clock: …`), and the tests | Timing by the PC's clock. In memory, a wait is a `Deadline` and a moment `SteadyClock.UtcNow`; the wall clock is for times that are saved, shown or sent. |
 
-The build treats every warning as an error. MoonSharp and Archipelago.MultiClient.Net are pinned at the versions whose insides Atlas was checked against. The number of classes without nullable checks can only go down. A pre-push hook (`.githooks/pre-push`) runs the guard rails, the build, formatting and the unit tests before anything reaches CI.
+The build treats every warning as an error, and the guard rails fail on a stray control character in any file in the repository. MoonSharp and Archipelago.MultiClient.Net are pinned at the versions whose insides Atlas was checked against. The number of classes without nullable checks can only go down. A pre-push hook (`.githooks/pre-push`) runs the guard rails, the build, formatting and the unit tests before anything reaches CI.
 
 Downloads that become code are pinned:
 - The engine's Python, pip, Archipelago and Universal Tracker are each checked against a fixed SHA-256.

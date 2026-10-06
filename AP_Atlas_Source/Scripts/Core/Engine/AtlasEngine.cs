@@ -1393,7 +1393,7 @@ namespace AP_Atlas.Core.EngineSetup
             {
                 foreach (var entry in new DirectoryInfo(TempDir).EnumerateFileSystemInfos())
                 {
-                    if (DateTime.UtcNow - entry.LastWriteTimeUtc < TimeSpan.FromDays(1)) continue;
+                    if (DateTime.UtcNow - entry.LastWriteTimeUtc < TimeSpan.FromDays(1)) continue; // wall clock: a file's time
                     try
                     {
                         if (entry is DirectoryInfo dir) dir.Delete(recursive: true);

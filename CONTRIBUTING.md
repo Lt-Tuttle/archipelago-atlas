@@ -80,6 +80,7 @@ New code that doesn't need Godot belongs in `AP_Atlas.Core`, with tests. The vis
   | Background work | `Task.Run` or async code, never a thread of its own |
   | Memory | Leave collections to .NET: forcing one (`GC.Collect`) pauses all of Atlas |
   | A failure you choose to ignore | Say why on the same line (`catch { } // it exited meanwhile`), or log it |
+  | Waiting, or timing something in memory | `Deadline` for a wait (`Deadline.In(span)`, `.Passed`, `.Left`) and `SteadyClock.UtcNow` for when something happened, never `DateTime.UtcNow` arithmetic: setting the PC's clock moves neither. The PC's clock is for a time that's saved, shown or sent, with `// wall clock: why` on its line; a saved time enters the steady clock through `SteadyClock.FromSaved`, and a time a site names is measured from its answer's `Date` (`WebResponse.SentUtc`) |
   | A view following an event | A `TreeSubscriptions` child (`AddChild(new TreeSubscriptions().On(subscribe, unsubscribe))`), never `+=` in `_Ready`: it follows the view in and out of the window, so the view can be moved |
 
   The guard rails enforce the riskiest of these, locally before each push and in CI. A rule with a number allows only that many uses in its file: one helper does the job, and everything else calls it.

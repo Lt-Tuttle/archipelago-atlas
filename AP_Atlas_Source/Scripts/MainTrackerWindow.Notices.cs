@@ -33,8 +33,10 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         // A full disk fails every save: tell the user once a minute, not on every keystroke.
         lock (_lastSaveFailureToast)
         {
-            if (_lastSaveFailureToast.TryGetValue(file, out var last) && (System.DateTime.Now - last).TotalSeconds < 60) return;
-            _lastSaveFailureToast[file] = System.DateTime.Now;
+            // On the steady clock: putting the PC's clock back can't silence these for that long.
+            var now = AP_Atlas.Core.SteadyClock.UtcNow;
+            if (_lastSaveFailureToast.TryGetValue(file, out var last) && (now - last).TotalSeconds < 60) return;
+            _lastSaveFailureToast[file] = now;
         }
         Notice($"Couldn't save {file}: {reason}. Check free disk space and folder permissions.", Godot.Colors.Salmon);
     }
@@ -47,7 +49,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     {
         lock (_lastFailureNotice)
         {
-            var now = System.DateTime.UtcNow;
+            var now = AP_Atlas.Core.SteadyClock.UtcNow;
             if (_lastFailureNotice.TryGetValue(doing, out var last) && now - last < System.TimeSpan.FromMinutes(10)) return;
             _lastFailureNotice[doing] = now;
         }

@@ -290,6 +290,13 @@ namespace AP_Atlas.Core
                 Expect(server.RequestCount == before && room != null && !room.Busy && room.Problem != null, "a read while the site is left alone stuck as \"updating\" (or asked the site)");
                 CheeseClient.StopWaiting(server.Site);
                 Expect(await fresh.RefreshAsync(profile.Id) == null && server.RequestCount == before + 1, "reading didn't work again once the wait ended");
+
+                // A tracker read moments ago isn't read again: not when it's shown (every 10 minutes is enough), nor by
+                // Refresh within 30 seconds.
+                fresh.Watch(profile.Id);
+                for (int i = 0; i < 100 && fresh.RoomView(profile.Id)?.Busy == true; i++) await Task.Delay(20);
+                Expect(await fresh.RefreshAsync(profile.Id) is string again && again.StartsWith("Refreshed less than", StringComparison.Ordinal) && server.RequestCount == before + 1,
+                    "a tracker read moments ago was read again");
             }
             finally
             {

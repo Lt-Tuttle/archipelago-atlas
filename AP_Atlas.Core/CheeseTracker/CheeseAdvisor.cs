@@ -31,7 +31,6 @@ namespace AP_Atlas.Core.CheeseTracker
         public bool InSync { get; init; }
         /// <summary>The suggestion has held long enough to show on the slot card and to be applied automatically.</summary>
         public bool Ready { get; init; }
-        public DateTime SinceUtc { get; init; }
 
         /// <summary>The same suggestion (the reason's details, like how many checks are in logic, aside).</summary>
         public bool SameAs(CheeseAdvice o) =>
@@ -53,11 +52,11 @@ namespace AP_Atlas.Core.CheeseTracker
         /// <summary>Most automatic changes to one slot in a day; more means something is wrong, so Atlas stops.</summary>
         public const int AutoPerDay = 20;
 
-        /// <summary>The answer Atlas's logic gives, and since when it has given it without a break.</summary>
+        /// <summary>The answer Atlas's logic gives, and since when (on the steady clock) it has given it without a break.</summary>
         public sealed class Stability
         {
             public string Status;
-            public DateTime SinceUtc;
+            public DateTime Since;
         }
 
         /// <summary>The progression status Atlas's logic points to, or null and why it can't say.</summary>
@@ -72,14 +71,17 @@ namespace AP_Atlas.Core.CheeseTracker
             return ("bk", "Nothing in logic", null);
         }
 
-        /// <summary>Atlas's suggestion for a slot, compared with its row on Cheese Tracker. Updates <paramref name="stability"/>.</summary>
-        public static CheeseAdvice Advise(SlotSnapshot s, CtGame row, Stability stability, DateTime nowUtc)
+        /// <summary>
+        /// Atlas's suggestion for a slot, compared with its row on Cheese Tracker. Updates <paramref name="stability"/>.
+        /// <paramref name="now"/> is on the steady clock (SteadyClock.UtcNow), so setting the PC's clock can't settle a suggestion early.
+        /// </summary>
+        public static CheeseAdvice Advise(SlotSnapshot s, CtGame row, Stability stability, DateTime now)
         {
             var (status, reason, quiet) = Desired(s);
             if (status == null || stability.Status != status)
             {
                 stability.Status = status;
-                stability.SinceUtc = nowUtc;
+                stability.Since = now;
             }
 
             if (row == null) return new CheeseAdvice { Quiet = quiet ?? "This slot isn't on the linked tracker." };
@@ -94,18 +96,18 @@ namespace AP_Atlas.Core.CheeseTracker
             return new CheeseAdvice
             {
                 Status = status,
-                Reason = status == "bk" ? $"Nothing in logic since {stability.SinceUtc.ToLocalTime():HH:mm}" : reason,
-                Ready = nowUtc - stability.SinceUtc >= settle,
-                SinceUtc = stability.SinceUtc
+                Reason = status == "bk" ? $"Nothing in logic since {SteadyClock.Shown(stability.Since).ToLocalTime():HH:mm}" : reason,
+                Ready = now - stability.Since >= settle
             };
         }
 
         /// <summary>
         /// Why Atlas must not apply a suggestion by itself right now, or null when it may. <paramref name="pause"/> is set
-        /// when the reason should stop automatic updates for the slot until the user resumes them.
+        /// when the reason should stop automatic updates for the slot until the user resumes them. The times are on the
+        /// steady clock (SteadyClock.UtcNow), so setting the PC's clock can't lift the limits.
         /// </summary>
         public static string AutoBlocker(CheeseAdvice advice, CtGame row, int? myUserId, string lastSetByAtlas,
-            IReadOnlyList<DateTime> recentAutoUtc, DateTime nowUtc, out bool pause)
+            IReadOnlyList<DateTime> recentAuto, DateTime now, out bool pause)
         {
             pause = false;
             if (advice?.Status == null || !advice.Ready) return "nothing to change yet";
@@ -118,8 +120,8 @@ namespace AP_Atlas.Core.CheeseTracker
                 pause = true;
                 return $"the status was changed on Cheese Tracker (to {CtStatus.Label(row.Progression)}) since Atlas last set it";
             }
-            if (recentAutoUtc != null && recentAutoUtc.Count > 0 && nowUtc - recentAutoUtc.Max() < AutoSpacing) return "Atlas changed it less than 5 minutes ago";
-            if (recentAutoUtc != null && recentAutoUtc.Count(t => nowUtc - t < TimeSpan.FromDays(1)) >= AutoPerDay)
+            if (recentAuto != null && recentAuto.Count > 0 && now - recentAuto.Max() < AutoSpacing) return "Atlas changed it less than 5 minutes ago";
+            if (recentAuto != null && recentAuto.Count(t => now - t < TimeSpan.FromDays(1)) >= AutoPerDay)
             {
                 pause = true;
                 return $"Atlas already changed it {AutoPerDay} times today";

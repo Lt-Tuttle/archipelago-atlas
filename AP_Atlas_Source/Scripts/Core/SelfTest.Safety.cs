@@ -208,6 +208,67 @@ namespace AP_Atlas.Core
             }
         }
 
+        /// <summary>
+        /// Setting the PC's clock (a time sync putting right a wrong boot time, say) changes no wait: waits measure with a
+        /// monotonic clock (Deadline). Put back an hour, the next request to a site still goes after the usual second, not
+        /// an hour later. Put forward two hours, a site that asked Atlas to slow down is still left alone: ending its wait
+        /// early would ask it again too soon. A time a site names (try again at, GitHub's reset) is measured by the site's
+        /// clock, so a PC clock that's wrong can't shorten it either.
+        /// </summary>
+        private static async Task WaitsIgnoreClockChanges()
+        {
+            PoliteHttp.ResetForTests();
+            PoliteHttp.Spacing = TimeSpan.FromSeconds(1);
+            var wallClock = Deadline.WallClock;
+            using var server = new FakeWebServer();
+            server.Page("/page", 200, "text/plain", "hello");
+            server.Page("/busy", 429, "text/plain", "slow down", "Retry-After: 60\r\n");
+            try
+            {
+                var first = await PoliteHttp.GetAsync(server.Site + "/page", "test", timeout: TimeSpan.FromSeconds(10));
+                Deadline.WallClock = () => DateTime.UtcNow.AddHours(-1);
+                var clock = System.Diagnostics.Stopwatch.StartNew();
+                var second = await PoliteHttp.GetAsync(server.Site + "/page", "test", timeout: TimeSpan.FromSeconds(10));
+                Expect(first.Ok && second.Ok && clock.Elapsed < TimeSpan.FromSeconds(5), $"after the clock went back an hour, the next request took {clock.Elapsed.TotalSeconds:0.0} s ({second.Message})");
+
+                var busy = await PoliteHttp.GetAsync(server.Site + "/busy", "test", timeout: TimeSpan.FromSeconds(10));
+                Expect(busy.Outcome == WebOutcome.RateLimited && PoliteHttp.WaitingFor(server.Site) != null, "a site that asked Atlas to slow down wasn't left alone");
+                Deadline.WallClock = () => DateTime.UtcNow.AddHours(2);
+                var during = await PoliteHttp.GetAsync(server.Site + "/page", "test", timeout: TimeSpan.FromSeconds(10));
+                Expect(PoliteHttp.WaitingFor(server.Site) != null && during.Outcome == WebOutcome.Waiting, "setting the clock forward ended a site's wait early");
+
+                // A time a site names is measured by the site's own clock (its Date header), so a PC clock that's wrong can't
+                // shorten it: with this PC's clock two hours ahead of the site's, "try again at" twenty minutes after the
+                // answer still means twenty minutes, and so does GitHub's reset.
+                PoliteHttp.StopWaiting(server.Site);
+                var sent = DateTime.UtcNow.AddHours(-2);
+                server.Page("/busy-until", 429, "text/plain", "slow down", $"Date: {sent:r}\r\nRetry-After: {sent.AddMinutes(20):r}\r\n");
+                await PoliteHttp.GetAsync(server.Site + "/busy-until", "test", timeout: TimeSpan.FromSeconds(10));
+                var left = PoliteHttp.WaitOf(server.Site).Left;
+                Expect(left > TimeSpan.FromMinutes(15), $"with the PC's clock ahead of the site's, its 'try again at' left a wait of {left.TotalMinutes:0} minutes");
+
+                PoliteHttp.ResetForTests();
+                GitHubApi.ResetForTests();
+                GitHubApi.TestSite = server.Site;
+                long reset = new DateTimeOffset(sent.AddMinutes(20)).ToUnixTimeSeconds();
+                server.Page("/repos/owner/limited/releases", 403, "application/json", "{\"message\":\"API rate limit exceeded\"}",
+                    $"Date: {sent:r}\r\nx-ratelimit-remaining: 0\r\nx-ratelimit-reset: {reset}\r\nx-ratelimit-resource: core\r\n");
+                var limited = await GitHubApi.GetAsync("/repos/owner/limited/releases?per_page=50");
+                int asked = server.RequestCount;
+                var again = await GitHubApi.GetAsync("/repos/owner/other/releases?per_page=50");
+                Expect(limited.Outcome == WebOutcome.RateLimited && again.Outcome == WebOutcome.RateLimited && server.RequestCount == asked,
+                    $"with the PC's clock ahead of GitHub's, its reset was taken as past ({again.Outcome}: {again.Message})");
+            }
+            finally
+            {
+                Deadline.WallClock = wallClock;
+                GitHubApi.TestSite = null;
+                GitHubApi.ResetForTests();
+                PoliteHttp.Spacing = TimeSpan.FromSeconds(1);
+                PoliteHttp.ResetForTests();
+            }
+        }
+
         private static async Task GitHubLimitsAreRespected()
         {
             PoliteHttp.ResetForTests();

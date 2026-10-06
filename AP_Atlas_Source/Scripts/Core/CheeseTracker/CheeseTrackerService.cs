@@ -89,22 +89,25 @@ namespace AP_Atlas.Core.CheeseTracker
             public string Link, Site, TrackerId;
             public CtTracker Tracker;
             public DateTime FetchedUtc = DateTime.MinValue;
-            /// <summary>The tracker was read from the site in this session (not just loaded from the cache).</summary>
-            public bool FromNetwork;
             public string Problem;
-            public DateTime NotBeforeUtc = DateTime.MinValue;
-            public DateTime LastManualUtc = DateTime.MinValue;
+            // Monotonic deadlines, so setting the PC's clock can't stretch them: when the room may be read again after a
+            // failure, when it's next read after a read from the site (none for a tracker only loaded from the cache), and
+            // when Refresh may read it again.
+            public Deadline NotBefore;
+            public Deadline NextRead;
+            public Deadline NextManual;
             public Task<string> Pending;
         }
 
         private readonly Dictionary<string, Room> _rooms = new Dictionary<string, Room>();
         private readonly Dictionary<string, CheeseAdvisor.Stability> _stability = new Dictionary<string, CheeseAdvisor.Stability>();
         private readonly Dictionary<string, CheeseAdvice> _advice = new Dictionary<string, CheeseAdvice>();
+        // When Atlas changed each slot automatically (on the steady clock: setting the PC's clock can't lift the limits).
         private readonly Dictionary<string, List<DateTime>> _autoTimes = new Dictionary<string, List<DateTime>>();
         private readonly HashSet<string> _busy = new HashSet<string>();
         private readonly HashSet<string> _autoPending = new HashSet<string>();
         private readonly Dictionary<string, string> _errors = new Dictionary<string, string>();
-        private readonly Dictionary<string, DateTime> _watchedUntil = new Dictionary<string, DateTime>();
+        private readonly Dictionary<string, Deadline> _watchedUntil = new Dictionary<string, Deadline>();
         private string _apiKey;
         private bool _keyRejected;
 
@@ -284,13 +287,11 @@ namespace AP_Atlas.Core.CheeseTracker
             var profile = ProfileOf(profileId);
             var room = RoomOf(profile);
             if (room == null) return;
-            _watchedUntil[profileId] = DateTime.UtcNow + TimeSpan.FromMinutes(3);
+            _watchedUntil[profileId] = Deadline.In(TimeSpan.FromMinutes(3));
             if (Due(room)) AP_Atlas.Core.Async.Fire(FetchAsync(profile, room), "reading Cheese Tracker");
         }
 
-        private static bool Due(Room room) =>
-            room.Pending == null && DateTime.UtcNow >= room.NotBeforeUtc &&
-            (!room.FromNetwork || DateTime.UtcNow - room.FetchedUtc >= PollEvery);
+        private static bool Due(Room room) => room.Pending == null && room.NotBefore.Passed && room.NextRead.Passed;
 
         /// <summary>Reads the tracker now (at most every 30 seconds). Returns an error, or null.</summary>
         public async Task<string> RefreshAsync(string profileId, bool tryNow = false)
@@ -298,10 +299,10 @@ namespace AP_Atlas.Core.CheeseTracker
             var profile = ProfileOf(profileId);
             var room = RoomOf(profile);
             if (room == null) return "This multiworld isn't linked to Cheese Tracker.";
-            if (DateTime.UtcNow - room.LastManualUtc < ManualRefreshSpacing) return "Refreshed less than 30 seconds ago.";
-            room.LastManualUtc = DateTime.UtcNow;
+            if (!room.NextManual.Passed) return "Refreshed less than 30 seconds ago.";
+            room.NextManual = Deadline.In(ManualRefreshSpacing);
             if (tryNow) CheeseClient.StopWaiting(room.Site);
-            room.NotBeforeUtc = DateTime.MinValue;
+            room.NotBefore = Deadline.None;
             return await FetchAsync(profile, room);
         }
 
@@ -326,7 +327,7 @@ namespace AP_Atlas.Core.CheeseTracker
                 {
                     room.Tracker = r.Value;
                     room.FetchedUtc = DateTime.UtcNow;
-                    room.FromNetwork = true;
+                    room.NextRead = Deadline.In(PollEvery);
                     room.Problem = null;
                     SaveCache(profile.Id, room);
                     return null;
@@ -339,7 +340,7 @@ namespace AP_Atlas.Core.CheeseTracker
                 };
                 // A gone or refused tracker isn't asked again until the user acts; other failures retry in a few minutes
                 // (the client also leaves a failing site alone).
-                room.NotBeforeUtc = r.Outcome is CtOutcome.NotFound or CtOutcome.Forbidden ? DateTime.MaxValue : DateTime.UtcNow + TimeSpan.FromMinutes(2);
+                room.NotBefore = r.Outcome is CtOutcome.NotFound or CtOutcome.Forbidden ? Deadline.Never : Deadline.In(TimeSpan.FromMinutes(2));
                 if (r.Outcome == CtOutcome.Unauthorized && _apiKey != null) RejectKey();
                 return room.Problem;
             }
@@ -400,7 +401,7 @@ namespace AP_Atlas.Core.CheeseTracker
             _saveProfiles();
             room.Tracker = fetched.Value;
             room.FetchedUtc = DateTime.UtcNow;
-            room.FromNetwork = true;
+            room.NextRead = Deadline.In(PollEvery);
             _rooms[profile.Id] = room;
             SaveCache(profile.Id, room);
             Logger.LogInfo($"Cheese Tracker: {profile.Name} is linked to {trackerLink} ({found} of {profile.Slots.Count} slots found).");
@@ -694,7 +695,11 @@ namespace AP_Atlas.Core.CheeseTracker
                 if (!r.Ok)
                 {
                     if (r.Outcome == CtOutcome.Unauthorized) RejectKey();
-                    if (r.Outcome is CtOutcome.OwnerChanged or CtOutcome.Forbidden or CtOutcome.NotFound) room.FetchedUtc = DateTime.MinValue;
+                    if (r.Outcome is CtOutcome.OwnerChanged or CtOutcome.Forbidden or CtOutcome.NotFound)
+                    {
+                        room.FetchedUtc = DateTime.MinValue;
+                        room.NextRead = Deadline.None;
+                    }
                     string message = r.Outcome switch
                     {
                         CtOutcome.OwnerChanged => $"Someone changed who has {name} just now. Refresh and try again.",
@@ -889,7 +894,8 @@ namespace AP_Atlas.Core.CheeseTracker
         private List<DateTime> AutoTimesOf(string key)
         {
             if (!_autoTimes.TryGetValue(key, out var list)) _autoTimes[key] = list = new List<DateTime>();
-            list.RemoveAll(t => DateTime.UtcNow - t > TimeSpan.FromDays(1));
+            var now = SteadyClock.UtcNow;
+            list.RemoveAll(t => now - t > TimeSpan.FromDays(1));
             return list;
         }
 
@@ -901,12 +907,12 @@ namespace AP_Atlas.Core.CheeseTracker
         {
             try
             {
-                var now = DateTime.UtcNow;
+                var now = SteadyClock.UtcNow;
                 var connected = _slots().Where(s => !s.Ended).ToList();
                 foreach (var profile in _profiles())
                 {
                     if (string.IsNullOrWhiteSpace(profile.CheeseTrackerUrl)) continue;
-                    bool active = connected.Any(s => s.ProfileId == profile.Id) || (_watchedUntil.TryGetValue(profile.Id, out var until) && until > now);
+                    bool active = connected.Any(s => s.ProfileId == profile.Id) || (_watchedUntil.TryGetValue(profile.Id, out var until) && !until.Passed);
                     var room = active ? RoomOf(profile) : null;
                     if (room == null) continue;
                     AP_Atlas.Core.Async.Fire(VerifyKeyAsync(), "checking your Cheese Tracker API key");
@@ -947,11 +953,13 @@ namespace AP_Atlas.Core.CheeseTracker
         private CheeseAdvice LiveAdvice(SlotModel slot, CtGame row)
         {
             var held = _stability.GetValueOrDefault(SlotKey(slot.ProfileId, slot.SlotName));
-            var copy = new CheeseAdvisor.Stability { Status = held?.Status, SinceUtc = held?.SinceUtc ?? DateTime.UtcNow };
-            return CheeseAdvisor.Advise(SnapshotOf(slot), row, copy, DateTime.UtcNow);
+            var now = SteadyClock.UtcNow;
+            var copy = new CheeseAdvisor.Stability { Status = held?.Status, Since = held?.Since ?? now };
+            return CheeseAdvisor.Advise(SnapshotOf(slot), row, copy, now);
         }
 
-        private void EvaluateSlot(SlotModel slot, DateTime nowUtc)
+        /// <param name="now">On the steady clock (SteadyClock.UtcNow).</param>
+        private void EvaluateSlot(SlotModel slot, DateTime now)
         {
             var profile = ProfileOf(slot.ProfileId);
             var room = RoomOf(profile);
@@ -961,7 +969,7 @@ namespace AP_Atlas.Core.CheeseTracker
             slot.EnsureGoalStatus();
 
             if (!_stability.TryGetValue(key, out var stability)) _stability[key] = stability = new CheeseAdvisor.Stability();
-            var advice = CheeseAdvisor.Advise(SnapshotOf(slot), row, stability, nowUtc);
+            var advice = CheeseAdvisor.Advise(SnapshotOf(slot), row, stability, now);
             bool changed = !advice.SameAs(_advice.GetValueOrDefault(key));
             _advice[key] = advice;
             if (changed) RaiseChanged();
@@ -974,7 +982,7 @@ namespace AP_Atlas.Core.CheeseTracker
                 DataManager.SaveSettings(_settings);
             }
             string blocker = CheeseAdvisor.AutoBlocker(advice, row, HasKey ? _settings.CheeseUserId : null,
-                _settings.CheeseAutoLastSet.GetValueOrDefault(key), AutoTimesOf(key), nowUtc, out bool pause);
+                _settings.CheeseAutoLastSet.GetValueOrDefault(key), AutoTimesOf(key), now, out bool pause);
             if (pause)
             {
                 PauseAuto(key, slot.SlotName, blocker);
@@ -996,11 +1004,11 @@ namespace AP_Atlas.Core.CheeseTracker
                 {
                     // Checked again against the row as it is on Cheese Tracker right now.
                     string blocker = CheeseAdvisor.AutoBlocker(advice, row, HasKey ? _settings.CheeseUserId : null,
-                        _settings.CheeseAutoLastSet.GetValueOrDefault(key), AutoTimesOf(key), DateTime.UtcNow, out bool pause);
+                        _settings.CheeseAutoLastSet.GetValueOrDefault(key), AutoTimesOf(key), SteadyClock.UtcNow, out bool pause);
                     if (pause) PauseAuto(key, slotName, blocker);
                     if (blocker != null) return "";
                     // Counted even if the site then fails, so a failing change is retried at most every 5 minutes.
-                    AutoTimesOf(key).Add(DateTime.UtcNow);
+                    AutoTimesOf(key).Add(SteadyClock.UtcNow);
                     u.Progression = advice.Status;
                     if (advice.Status == "bk") u.LastChecked = CtTime.Format(DateTime.UtcNow);
                     return null;
