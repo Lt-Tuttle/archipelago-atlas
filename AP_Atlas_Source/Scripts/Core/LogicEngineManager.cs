@@ -237,21 +237,28 @@ public class LogicEngineManager
 
     public HashSet<long> LastExcludedLocations { get; private set; } = new HashSet<long>();
 
-    /// <summary>Locations reachable only with the world's glitch/sequence-break logic, from the last update.</summary>
+    /// <summary>Locations reachable only with the world's glitch/sequence-break logic, from the last answer.</summary>
     public HashSet<long> LastGlitchedLocations { get; private set; } = new HashSet<long>();
 
-    /// <summary>From the last update: whether the slot's goal can be completed with those items (null: the engine can't tell).</summary>
+    /// <summary>From the last answer: whether the slot's goal can be completed with those items (null: the engine can't tell).</summary>
     public bool? LastGoalReachable { get; private set; }
 
-    /// <summary>Why the last query failed (when GetReachableLocationsAsync returned null).</summary>
+    /// <summary>Why the last query failed (when GetStepsAsync returned null).</summary>
     public string LastQueryFailure { get; private set; }
 
+    /// <summary>What a slot's new items open, in the order they arrived (see <see cref="GetStepsAsync"/>).</summary>
+    /// <param name="Start">What's in logic with the items before them (only when asked for).</param>
+    /// <param name="Opened">For each new item: the locations in logic after it that weren't before it.</param>
+    public sealed record LogicSteps(IReadOnlyList<long> Start, IReadOnlyList<IReadOnlyList<long>> Opened);
+
     /// <summary>
-    /// The locations in logic with these items. Returns null when the engine couldn't answer (stopped, crashed,
-    /// timed out twice, or reported an error): never an empty list in place of an answer, so a failure can't be
-    /// mistaken for "these items unlock nothing".
+    /// What each of <paramref name="items"/> opens, after <paramref name="before"/> (the items worked out already), in one
+    /// request: the engine works out each in turn, as it would one by one. With <paramref name="start"/>, what's in logic
+    /// with just <paramref name="before"/> comes too. The answer is read into lists off the main thread. Returns null when
+    /// the engine couldn't answer (stopped, crashed, stuck, or reported an error): never an empty answer in place of one,
+    /// so a failure can't be mistaken for "these items unlock nothing".
     /// </summary>
-    public async Task<List<long>> GetReachableLocationsAsync(List<long> itemIds, IEnumerable<long> missingLocations = null)
+    public async Task<LogicSteps> GetStepsAsync(IReadOnlyList<long> before, IReadOnlyList<long> items, IEnumerable<long> missingLocations, bool start)
     {
         LastQueryFailure = null;
         var seat = _seat;
@@ -263,60 +270,44 @@ public class LogicEngineManager
 
         try
         {
-            var updateReq = new Dictionary<string, object>
-            {
-                { "action", "update" },
-                { "items", itemIds }
-            };
-            if (missingLocations != null)
-            {
-                updateReq["missing_locations"] = new List<long>(missingLocations);
-            }
-
-            // A big world on a slow PC can take a while; an engine that takes two minutes is stuck, and is started again.
-            var answer = await seat.AskAsync(JObject.FromObject(updateReq), TimeSpan.FromMinutes(2));
+            var request = new JObject { ["action"] = "steps", ["base"] = new JArray(before), ["items"] = new JArray(items), ["start"] = start };
+            if (missingLocations != null) request["missing_locations"] = new JArray(missingLocations);
+            // A big world on a slow PC can take a while; an engine that takes two minutes over a few items is stuck, and is
+            // started again.
+            var answer = await seat.AskAsync(request, TimeSpan.FromMinutes(2)).ConfigureAwait(false);
             var response = answer.Reply;
             if (response == null)
             {
                 LastQueryFailure = answer.Failure == AP_Atlas.Core.EngineSetup.EngineFailure.TimedOut ? "the logic engine stopped answering" : "the logic engine stopped";
-                _logger("GetReachableLocationsAsync: " + LastQueryFailure + " (" + answer.Why + ").");
+                _logger("GetStepsAsync: " + LastQueryFailure + " (" + answer.Why + ").");
                 return null;
             }
-
             if (response["error"] != null)
             {
                 LastQueryFailure = "the logic engine reported an error: " + response["error"];
-                _logger("GetReachableLocationsAsync: bridge error: " + response["error"] + "\n" + response["trace"]);
+                _logger("GetStepsAsync: bridge error: " + response["error"] + "\n" + response["trace"]);
                 return null;
             }
-
-            var excludedToken = response["excluded"];
-            if (excludedToken != null)
+            if (response["steps"] is not JArray steps || steps.Count != items.Count || (start && response["start"] is not JArray))
             {
-                LastExcludedLocations = new HashSet<long>(excludedToken.ToObject<List<long>>());
+                LastQueryFailure = "the logic engine's answer didn't say what each item opened";
+                _logger("GetStepsAsync: " + LastQueryFailure + ".");
+                return null;
             }
-            var glitchedToken = response["glitched"];
-            if (glitchedToken != null)
-            {
-                LastGlitchedLocations = new HashSet<long>(glitchedToken.ToObject<List<long>>());
-            }
-
-            var reachableToken = response["reachable"];
-            if (reachableToken != null)
-            {
-                var goalToken = response["goal"];
-                LastGoalReachable = goalToken?.Type == JTokenType.Boolean ? (bool)goalToken : null;
-                return reachableToken.ToObject<List<long>>();
-            }
-            LastQueryFailure = "the logic engine's answer had no locations";
+            var opened = steps.Select(step => (IReadOnlyList<long>)(step.ToObject<List<long>>() ?? new List<long>())).ToList();
+            var startList = start ? response["start"].ToObject<List<long>>() : new List<long>();
+            if (response["excluded"] is JArray excluded) LastExcludedLocations = new HashSet<long>(excluded.ToObject<List<long>>());
+            if (response["glitched"] is JArray glitched) LastGlitchedLocations = new HashSet<long>(glitched.ToObject<List<long>>());
+            var goal = response["goal"];
+            LastGoalReachable = goal?.Type == JTokenType.Boolean ? (bool)goal : null;
+            return new LogicSteps(startList, opened);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             LastQueryFailure = "the logic engine failed: " + ex.Message;
-            _logger("GetReachableLocationsAsync Exception: " + ex.Message);
+            _logger("GetStepsAsync Exception: " + ex.Message);
+            return null;
         }
-
-        return null;
     }
 
     /// <summary>Raised (on any thread) when the slot's engine is lost: it crashed, or got stuck (whose request it was answering says whose failure it is).</summary>

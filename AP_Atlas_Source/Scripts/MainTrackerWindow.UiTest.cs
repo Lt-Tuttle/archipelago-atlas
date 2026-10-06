@@ -734,7 +734,8 @@ public partial class MainTrackerWindow
             await UiTestWaitForAsync(() => slot.LogicSettled && slot.IsLocationInLogic(2001) == true ? slot : null, "the Sword to open the door");
             ExpectLogic(slot, "with the Sword", inLogic: new long[] { 2000, 2001 }, outOfLogic: new long[] { 2002, 2003 }, goal: false, active: 2);
             UiTestExpect(slot.UnlockStepOf(2001) == (1, 2, "Sword"), $"the door's step is {slot.UnlockStepOf(2001)}, not step 1 (the 2nd check) by the Sword");
-            UiTestExpect(Ids(engine.Requests("update")[^1]["items"]).SequenceEqual(new long[] { 1000 }), "the engine wasn't asked about the Sword");
+            var sword = engine.Requests("steps")[^1];
+            UiTestExpect(Ids(sword["base"]).Length == 0 && Ids(sword["items"]).SequenceEqual(new long[] { 1000 }), $"the engine wasn't asked what the Sword opens: {sword}");
             // Why the tower isn't in logic: the engine names the one item it lacks.
             var why = await slot.ExplainLocationAsync(2002);
             UiTestExpect(why is { InLogic: false } && why.SingleUnlocks?.SequenceEqual(new[] { "Shield" }) == true,
@@ -749,11 +750,11 @@ public partial class MainTrackerWindow
                 "── Unlocked by: Shield (1 checks) ──", "Tower Top");
 
             // Filler changes nothing about logic, so the engine isn't asked.
-            int asked = engine.Requests("update").Count;
+            int asked = engine.Requests("steps").Count;
             await server.BroadcastAsync(FakeArchipelagoServer.ReceivedItems(2, new long[] { 1002 }));
             await UiTestWaitForAsync(() => slot.Session.Items.AllItemsReceived.Count == 3 ? slot : null, "the Rupee to arrive");
             await UiTestWaitAsync(0.3);
-            UiTestExpect(engine.Requests("update").Count == asked && slot.LogicSettled, "the engine was asked about filler");
+            UiTestExpect(engine.Requests("steps").Count == asked && slot.LogicSettled, "the engine was asked about filler");
 
             // A check done in the game: it's no longer counted as one to do.
             await server.BroadcastAsync(FakeArchipelagoServer.LocationsChecked(2000));
@@ -775,13 +776,14 @@ public partial class MainTrackerWindow
             UiTestExpect(sinceCrash.Elapsed < TimeSpan.FromSeconds(6),
                 $"the new engine took {sinceCrash.Elapsed.TotalSeconds:0.0} s to start after one crash, not about 2 s (as if it had crashed twice)");
             ExpectLogic(slot, "after the restart", inLogic: new long[] { 2001, 2002, 2003 }, outOfLogic: Array.Empty<long>(), goal: true, active: 3);
-            // The new engine was asked about everything again, from the start and in the order it arrived.
+            // The new engine was asked about everything again, from the start and in the order it arrived: what was in logic
+            // before any item, and what each item opened, in one request.
             var journal = engine.Journal();
             var restarted = journal.Last(entry => (string?)entry["event"] == "start");
             var rebuilt = journal.SkipWhile(entry => entry != restarted).Select(entry => entry["request"]).OfType<JObject>().ToList();
             UiTestExpect(rebuilt.Count > 0 && (string?)rebuilt[0]["action"] == "init", "the new engine wasn't started for the slot first");
-            var asks = rebuilt.Where(r => (string?)r["action"] == "update").Select(r => string.Join(",", Ids(r["items"]))).ToList();
-            UiTestExpect(asks.SequenceEqual(new[] { "", "1000", "1000,1001", "1000,1001,1099" }), $"the new engine was asked about [{string.Join("] [", asks)}]");
+            var asks = rebuilt.Where(r => (string?)r["action"] == "steps").Select(r => $"{(bool?)r["start"]}: [{string.Join(",", Ids(r["base"]))}] then [{string.Join(",", Ids(r["items"]))}]").ToList();
+            UiTestExpect(asks.SequenceEqual(new[] { "True: [] then [1000,1001,1099]" }), $"the new engine was asked: {string.Join("; ", asks)}");
             UiTestExpect(slot.UnlockStepOf(2003) == (3, 3, "Gem") && slot.EngineProblem == null, $"the vault's step is {slot.UnlockStepOf(2003)}");
 
             // An engine update, as setup runs one: it pauses the slots using the engine, changes its files, then lets
@@ -803,6 +805,19 @@ public partial class MainTrackerWindow
             await UiTestWaitForAsync(() => slot.LogicSettled && engine.Starts == 4 ? slot : null, "logic to restart");
             ExpectLogic(slot, "after restarting logic", inLogic: new long[] { 2001, 2002, 2003 }, outOfLogic: Array.Empty<long>(), goal: true, active: 3);
             UiTestExpect(engine.Crashes == 1 && slot.EngineProblem == null, "the engine failed again");
+
+            // An answer that doesn't say what each new item opened is a failure, never taken for "it opened nothing": logic
+            // starts again (after 2 s: the restart above gave it a fresh set of tries).
+            engine.ShortSteps = true;
+            engine.Apply();
+            await server.BroadcastAsync(FakeArchipelagoServer.ReceivedItems(4, new long[] { 1000 }, flags: 1));
+            await UiTestWaitForAsync(() => slot.EngineProblem?.Code == "restarting" ? slot : null, "a broken answer to be a failure");
+            UiTestExpect(slot.EngineProblem?.Message?.Contains("didn't say what each item opened") == true && slot.EngineProblem.Message.Contains("in 2 s"),
+                $"a broken answer: {slot.EngineProblem?.Message}");
+            engine.ShortSteps = false;
+            engine.Apply();
+            await UiTestWaitForAsync(() => slot.LogicSettled && slot.EngineProblem == null ? slot : null, "logic to start again after the broken answer");
+            ExpectLogic(slot, "after the broken answer", inLogic: new long[] { 2001, 2002, 2003 }, outOfLogic: Array.Empty<long>(), goal: true, active: 3);
 
             // Race mode set to hide all logic: every view of it is hidden at once, and shown again when it's off.
             AP_Atlas.Core.RaceRules.SetMode(AP_Atlas.Core.RaceModeSetting.AlwaysOn);
@@ -849,10 +864,10 @@ public partial class MainTrackerWindow
 
             // The engine takes 3 s over Alice's Gem before it crashes. Bob connects meanwhile: his start waits behind it, and
             // fails with it. That's not his failure: he starts again in 2 s, as Alice does (her first failure).
-            engine.Delays["update"] = 3;
+            engine.Delays["steps"] = 3;
             engine.Apply();
             await server.SendToSlotAsync("Alice", FakeArchipelagoServer.ReceivedItems(0, new long[] { 1099 }, flags: 1));
-            await UiTestWaitForAsync(() => engine.Requests("update").Any(r => (string?)r["key"] == "Alice" && Ids(r["items"]).Contains(1099)) ? alice : null,
+            await UiTestWaitForAsync(() => engine.Requests("steps").Any(r => (string?)r["key"] == "Alice" && Ids(r["items"]).Contains(1099)) ? alice : null,
                 "the engine to work on Alice's Gem");
             await OnConnectSlotPressedAsync("Bob", profile);
             var bob = await UiTestWaitForAsync(() => SlotView(profile.Id, "Bob"), "Bob's view");
@@ -1031,7 +1046,8 @@ public partial class MainTrackerWindow
                 await UiTestWaitForAsync(() => slots.All(s => s.Session.Items.AllItemsReceived.Count == expected) ? slots : null, "a burst's items", seconds: 60);
                 await UiTestWaitAsync(0.5);
             }
-            await UiTestWaitForAsync(() => slots.All(s => s.LogicSettled) ? slots : null, "logic to catch up", seconds: 120);
+            // Logic has caught up when every slot has worked out all 60 of its progression items.
+            await UiTestWaitForAsync(() => slots.All(s => s.LogicSettled && s.Model.Logic.EvaluatedItems == 60) ? slots : null, "logic to catch up", seconds: 120);
             await UiTestWaitAsync(1.0);
             double worst = AP_Atlas.Core.HitchMonitor.WorstFrameMs;
             // Every slot shows the 300 item lines once, and its 150 hints once: the text slot as the server's lines, the
@@ -1045,7 +1061,7 @@ public partial class MainTrackerWindow
             var chatLines = AP_Atlas.Core.HitchMonitor.Step("Text client lines");
             var hintRefreshes = AP_Atlas.Core.HitchMonitor.Step("Hints refresh");
             var memory = GC.GetGCMemoryInfo();
-            GD.Print($"UITEST INFO Scale: {connected} slots in a {roomSize}-player room; the bursts took {stopwatch.Elapsed.TotalSeconds:0.0} s; the worst frame took {worst:0} ms; " +
+            GD.Print($"UITEST INFO Scale: {connected} slots in a {roomSize}-player room; the bursts took {stopwatch.Elapsed.TotalSeconds:0.0} s ({engine.Requests("steps").Count} logic requests in all); the worst frame took {worst:0} ms; " +
                      $"text client lines took at most {chatLines.WorstFrameMs:0} ms of a frame ({chatLines.Runs} runs, at most {chatLines.MostRunsInFrame} in a frame); " +
                      $".NET heap {memory.HeapSizeBytes / 1048576.0:0} MB, committed {memory.TotalCommittedBytes / 1048576.0:0} MB, process {System.Environment.WorkingSet / 1048576.0:0} MB, " +
                      $"GC paused {GC.GetTotalPauseDuration().TotalMilliseconds:0} ms in all; {Performance.GetMonitor(Performance.Monitor.ObjectNodeCount):0} nodes, " +
@@ -1056,6 +1072,11 @@ public partial class MainTrackerWindow
             // how many logic answers land in one frame. The guard leaves room for slower machines; that one connection
             // receives the room's text is checked above.
             UiTestExpect(worst < 150, $"a frame took {worst:0} ms during the bursts (the guard is 150 ms): {AP_Atlas.Core.HitchMonitor.WorstFrameReport}");
+            // Logic works out a burst's items a few per request (each slot gets 60 progression items in all): at most 10 in
+            // one, and far fewer requests than items.
+            var logicRequests = engine.Requests("steps");
+            UiTestExpect(logicRequests.All(r => Ids(r["items"]).Length <= 10) && logicRequests.Count < connected * 60 / 3,
+                $"logic asked {logicRequests.Count} times, with up to {logicRequests.Max(r => Ids(r["items"]).Length)} items at once");
             // Connecting is a click with a spinner, not play: guarded at 300 ms against things getting worse. Building a slot's
             // views only when first shown (with the new shell) is what brings it under 100 ms.
             UiTestExpect(connecting < 300, $"a frame took {connecting:0} ms while slots connected (the guard is 300 ms): {connectingReport}");

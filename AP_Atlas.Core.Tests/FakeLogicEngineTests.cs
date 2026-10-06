@@ -62,9 +62,24 @@ public class FakeLogicEngineTests
         var later = await bridge.AskAsync(Update(new long[] { 1000, 1001 }, 2002), ct);
         Assert.Equal(new long[] { 2002 }, Ids(later["reachable"]));
 
+        // What each item opens, in order, in one request: the chest from the start, the door by the Sword, the tower by
+        // the Shield; the goal with both.
+        var steps = await bridge.AskAsync(new JObject
+        {
+            ["action"] = "steps",
+            ["base"] = new JArray(),
+            ["items"] = new JArray(1000, 1001),
+            ["start"] = true,
+            ["missing_locations"] = new JArray(2000, 2001, 2002)
+        }, ct);
+        Assert.Equal(new long[] { 2000 }, Ids(steps["start"]));
+        Assert.Equal(new[] { "2001", "2002" }, steps["steps"]!.Select(step => string.Join(",", Ids(step))));
+        Assert.True((bool)steps["goal"]!);
+        Assert.Equal(new long[] { 2002 }, Ids(steps["excluded"]));
+
         var journal = engine.Journal();
         Assert.Equal(1, engine.Starts);
-        Assert.Equal(new[] { "init", "update", "update", "explain", "update", "update" },
+        Assert.Equal(new[] { "init", "update", "update", "explain", "update", "update", "steps" },
             journal.Select(entry => (string?)entry["request"]?["action"]).OfType<string>());
         Assert.Equal(new long[] { 1000, 1001 }, Ids(engine.Requests("update")[^1]["items"]));
     }

@@ -446,10 +446,12 @@ def item_pool(core):
 
 
 class Slot:
-    # One slot's world in this engine: its tracker core, and the state of its last update (which 'explain' answers
-    # about).
+    # One slot's world in this engine: its tracker core, and the state of its last answer ('explain' answers about it):
+    # the items it was for, what was in logic with them, and the tracker's state.
     def __init__(self, core):
         self.core = core
+        self.last_items = None
+        self.last_reachable = None
         self.last_state = None
         self.last_glitch_state = None
         self.goal_unknown_noted = False
@@ -474,10 +476,10 @@ def handle_init(req, logger):
     return reply, Slot(core)
 
 
-def handle_update(slot, req):
-    # What's in logic with these items: the same query the seed test checks against real playthroughs.
+def report_state(slot, items, reachable, state):
+    # The slot's answer for these items: what the seed excluded, what's reachable only with glitches, and whether the
+    # goal is. Kept as the slot's last answer ('explain' answers about this exact state; 'steps' starts from it).
     core = slot.core
-    reachable, state = reachable_after(core, req.get('items', []), req.get('missing_locations'))
     world = core.get_current_world()
     excluded = []
     for loc in core.multiworld.get_locations(getattr(core, 'player_id', None) or 1):
@@ -486,14 +488,60 @@ def handle_update(slot, req):
             excluded.append(world.location_name_to_id[loc.name])
     glitched = [world.location_name_to_id[name] for name in getattr(state, 'glitched_locations', []) or []
                 if name in world.location_name_to_id]
-    # Kept for 'explain', which answers questions about this exact state.
+    slot.last_items = list(items)
+    slot.last_reachable = set(reachable)
     slot.last_state = getattr(state, 'state', None)
     slot.last_glitch_state = getattr(state, 'glitches_state', None)
     goal = goal_reachable(core, state)
     if goal is None and not slot.goal_unknown_noted:
         slot.goal_unknown_noted = True
         note("This slot's goal can't be checked: go mode isn't shown for it.")
-    return {'reachable': reachable, 'excluded': excluded, 'glitched': glitched, 'goal': goal}
+    return {'excluded': excluded, 'glitched': glitched, 'goal': goal}
+
+
+def handle_update(slot, req):
+    # What's in logic with these items: the same query the seed test checks against real playthroughs.
+    items = req.get('items', [])
+    reachable, state = reachable_after(slot.core, items, req.get('missing_locations'))
+    reply = {'reachable': reachable}
+    reply.update(report_state(slot, items, reachable, state))
+    return reply
+
+
+def handle_steps(slot, req):
+    # What each new item opens, in the order they arrived, in one request: for each, the locations in logic after it
+    # that weren't before it (each the same query as 'update'). "base" is what the slot had before them; with "start",
+    # what's in logic with just that comes back too. A slot's last answer is kept, so when it was for the base it isn't
+    # worked out again (checks since then only take locations away).
+    core = slot.core
+    base = list(req.get('base') or [])
+    missing = req.get('missing_locations')
+    if missing is not None:
+        core.set_missing_locations(set(missing))
+    state = None
+    if slot.last_reachable is not None and slot.last_items == base:
+        before = slot.last_reachable & set(core.missing_locations)
+    else:
+        reachable, state = reachable_after(core, base)
+        before = set(reachable)
+    reply = {}
+    if req.get('start'):
+        reply['start'] = sorted(before)
+    steps = []
+    inventory = list(base)
+    for item in req.get('items') or []:
+        inventory.append(item)
+        reachable, state = reachable_after(core, inventory)
+        now = set(reachable)
+        steps.append(sorted(now - before))
+        before = now
+    if state is None:
+        # Nothing new, and the base was known: its state is still needed (glitches, the goal, 'explain').
+        reachable, state = reachable_after(core, inventory)
+        before = set(reachable)
+    reply['steps'] = steps
+    reply.update(report_state(slot, inventory, before, state))
+    return reply
 
 
 def rule_text(fn, state=None):
@@ -670,12 +718,14 @@ def launch_bridge(*args):
                 slots.pop(key, None)
                 forget_cached_worlds()
                 reply = {'dropped': True}
-            elif action in ('update', 'explain'):
+            elif action in ('update', 'steps', 'explain'):
                 slot = slots.get(key)
                 if slot is None:
                     reply = {'error': 'The logic engine has not been started for a slot yet.'}
                 elif action == 'update':
                     reply = handle_update(slot, req)
+                elif action == 'steps':
+                    reply = handle_steps(slot, req)
                 else:
                     reply = handle_explain(slot, req)
             else:

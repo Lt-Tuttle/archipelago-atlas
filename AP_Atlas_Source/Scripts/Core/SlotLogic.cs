@@ -34,6 +34,10 @@ namespace AP_Atlas.Core
     {
         private static readonly int[] RestartDelaysSeconds = { 2, 10, 30 };
 
+        // Items worked out per request: a big release can't keep an engine busy for minutes, and the other slots sharing
+        // it are answered in between.
+        private const int StepsPerRequest = 10;
+
         private static EngineStartError Paused() =>
             new() { Code = "paused", Message = "Logic is paused while the Atlas Engine is updated. It resumes by itself when the update finishes." };
 
@@ -357,7 +361,10 @@ namespace AP_Atlas.Core
             }
         }
 
-        /// <summary>Asks the engine about each new progression item in turn. False when the run ended meanwhile (nothing was recorded).</summary>
+        /// <summary>
+        /// Asks the engine what each new progression item opened, in the order they arrived, a few items per request. False
+        /// when the run ended meanwhile (nothing more was recorded).
+        /// </summary>
         private async Task<bool> EvaluateStepsAsync(int run)
         {
             var missing = Session.Locations.AllLocations.Except(Session.Locations.AllLocationsChecked).ToList();
@@ -369,37 +376,35 @@ namespace AP_Atlas.Core
                 .ToList();
             if (progression.Count == _evaluated && _startingDone) return true;
 
-            if (_evaluated == 0 && _steps.Count == 0 && !_startingDone)
+            bool first = true;
+            do
             {
-                var initial = await Engine.GetReachableLocationsAsync(new List<long>(), missing);
+                bool start = !_startingDone;
+                var chunk = progression.Skip(_evaluated).Take(StepsPerRequest).ToList();
+                // A failed answer stops here, before anything of it is recorded: those items are worked out again after recovery.
+                var answer = await Engine.GetStepsAsync(_inventory.ToList(), chunk.Select(item => item.ItemId).ToList(), first ? missing : null, start);
                 if (run != _run) return false;
-                if (initial == null) throw new LogicEngineFailure(Engine.LastQueryFailure);
-                _startingDone = true;
-                if (initial.Count > 0)
-                {
-                    _reachable.UnionWith(initial);
-                    // Excluded checks stay in the steps (hidden when shown), so changing an exclusion needs no re-run.
-                    _steps.Add(new LogicStep(LogicStep.StartName, initial.ToList()));
-                }
-            }
-
-            for (int i = _evaluated; i < progression.Count; i++)
-            {
-                var item = progression[i];
-                var inventory = new List<long>(_inventory) { item.ItemId };
-                // A failed answer stops here, before anything is recorded: the step is worked out again after recovery.
-                var reachable = await Engine.GetReachableLocationsAsync(inventory, missing);
-                if (run != _run) return false;
-                if (reachable == null) throw new LogicEngineFailure(Engine.LastQueryFailure);
+                if (answer == null) throw new LogicEngineFailure(Engine.LastQueryFailure);
+                first = false;
                 using var __perf = PerfMonitor.Measure($"[{_model.SlotName}] Logic step");
-                _inventory.Add(item.ItemId);
-                _evaluated = i + 1;
-                var opened = new List<long>();
-                foreach (long location in reachable)
-                    if (_reachable.Add(location)) opened.Add(location);
-                if (opened.Count > 0) _steps.Add(new LogicStep(Session.Items.GetItemName(item.ItemId) ?? "Unknown Item", opened));
-            }
-            _evaluated = progression.Count;
+                if (start)
+                {
+                    _startingDone = true;
+                    if (answer.Start.Count > 0)
+                    {
+                        _reachable.UnionWith(answer.Start);
+                        // Excluded checks stay in the steps (hidden when shown), so changing an exclusion needs no re-run.
+                        _steps.Add(new LogicStep(LogicStep.StartName, answer.Start.ToList()));
+                    }
+                }
+                for (int i = 0; i < chunk.Count; i++)
+                {
+                    _inventory.Add(chunk[i].ItemId);
+                    _evaluated++;
+                    var opened = answer.Opened[i].Where(_reachable.Add).ToList();
+                    if (opened.Count > 0) _steps.Add(new LogicStep(Session.Items.GetItemName(chunk[i].ItemId) ?? "Unknown Item", opened));
+                }
+            } while (_evaluated < progression.Count);
             return true;
         }
 

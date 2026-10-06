@@ -6,8 +6,8 @@
 # each named by its requests' "key" ("drop" forgets one). Instead of rebuilding a real world it
 # answers from simple rules: an item pool, the items each location needs, and the items the goal needs. It reads the
 # rules again for every request, so a test can change them while the engine runs. It can also misbehave on purpose:
-# crash on an item, answer late, fail to load, start a process of its own, or send a log line, a late answer to an
-# earlier request and a reply-like line without an id first. Everything it receives, and every crash, goes into a
+# crash on an item, answer late, fail to load, start a process of its own, leave an item's step out of an answer, or
+# send a log line, a late answer to an earlier request and a reply-like line without an id first. Everything it receives, and every crash, goes into a
 # journal the test reads. It reads and writes only its own folder.
 import json
 import os
@@ -96,6 +96,27 @@ def update(items, missing, rules):
             'goal': None if goal is None else has_all(goal, items)}
 
 
+def steps(req, slot, rules):
+    # What each new item opens, in order, as the bridge answers 'steps' (it works out each one as 'update' does).
+    if req.get('missing_locations') is not None:
+        slot['missing'] = set(req['missing_locations'])
+    inventory = list(req.get('base') or [])
+    before = set(update(inventory, slot['missing'], rules)['reachable'])
+    reply = {'start': sorted(before)} if req.get('start') else {}
+    opened = []
+    for item in req.get('items') or []:
+        inventory.append(item)
+        now = set(update(inventory, slot['missing'], rules)['reachable'])
+        opened.append(sorted(now - before))
+        before = now
+    final = update(inventory, slot['missing'], rules)
+    slot['items'] = inventory
+    if rules.get('short_steps') and opened:
+        opened = opened[:-1]  # a broken answer: one item's step missing
+    reply.update({'steps': opened, 'excluded': final['excluded'], 'glitched': final['glitched'], 'goal': final['goal']})
+    return reply
+
+
 def explain(req, items, rules):
     # Why a location is (or isn't) in logic with the items of the last update, as the real engine answers.
     names = {item['id']: item['name'] for item in rules['pool']}
@@ -148,7 +169,7 @@ def serve(*args):
         if delay:
             time.sleep(delay)
         crash = rules.get('crash')
-        if (crash and action == 'update' and crash['on_item'] in (req.get('items') or [])
+        if (crash and action in ('update', 'steps') and crash['on_item'] in (req.get('items') or []) + (req.get('base') or [])
                 and crashes_so_far() < crash.get('times', 1)):
             note({'event': 'crash', 'id': rid})
             os._exit(3)
@@ -166,7 +187,7 @@ def serve(*args):
         elif action == 'drop':
             slots.pop(key, None)
             reply = {'dropped': True}
-        elif action in ('update', 'explain') and key not in slots:
+        elif action in ('update', 'steps', 'explain') and key not in slots:
             reply = {'error': 'The logic engine has not been started for a slot yet.'}
         elif action == 'update':
             slot = slots[key]
@@ -174,6 +195,8 @@ def serve(*args):
                 slot['missing'] = set(req['missing_locations'])
             slot['items'] = list(req.get('items') or [])
             reply = update(slot['items'], slot['missing'], rules)
+        elif action == 'steps':
+            reply = steps(req, slots[key], rules)
         elif action == 'explain':
             reply = explain(req, slots[key]['items'], rules)
         else:

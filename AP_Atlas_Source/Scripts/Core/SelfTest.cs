@@ -375,7 +375,7 @@ namespace AP_Atlas.Core
         private static async Task LogicFailureIsExplicit()
         {
             var engine = new LogicEngineManager(EngineInstall.Existing(Scratch("no-archipelago-here")), _ => { });
-            var answer = await engine.GetReachableLocationsAsync(new List<long> { 1, 2, 3 });
+            var answer = await engine.GetStepsAsync(new List<long>(), new List<long> { 1, 2, 3 }, null, start: true);
             Expect(answer == null, "a stopped engine answered with a list (it would be read as 'unlocks nothing')");
             Expect(!string.IsNullOrEmpty(engine.LastQueryFailure), "no failure reason was given");
             bool started = await engine.StartEngineAsync("Some Game", "Slot", 1, new Dictionary<string, object>());
