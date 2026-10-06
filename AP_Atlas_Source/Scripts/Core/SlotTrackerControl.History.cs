@@ -156,10 +156,10 @@ public partial class SlotTrackerControl : MarginContainer
 
     private static Color ItemClassColor(bool isProgression, bool isUseful, bool isTrap)
     {
-        if (isProgression) return Colors.Plum;
-        if (isUseful) return Colors.SlateBlue;
-        if (isTrap) return Colors.Salmon;
-        return Colors.DimGray;
+        if (isProgression) return AP_Atlas.Core.ThemeColors.Progression;
+        if (isUseful) return AP_Atlas.Core.ThemeColors.Useful;
+        if (isTrap) return AP_Atlas.Core.ThemeColors.Error;
+        return AP_Atlas.Core.ThemeColors.TextSubtle;
     }
 
     private static string ItemClassName(int flags) =>
@@ -373,7 +373,7 @@ public partial class SlotTrackerControl : MarginContainer
             for (int c = 0; c < 3; c++)
             {
                 group.SetSelectable(c, false);
-                group.SetCustomBgColor(c, new Godot.Color("#252836"));
+                group.SetCustomBgColor(c, AP_Atlas.Core.ThemeColors.SurfacePanel);
                 group.SetCustomColor(c, fg);
             }
             _uncollectedGroups[className] = group;

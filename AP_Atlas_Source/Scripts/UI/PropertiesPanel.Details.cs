@@ -17,10 +17,10 @@ namespace AP_Atlas.UI
 {
     public partial class PropertiesPanel
     {
-        private static readonly Color Good = Colors.LimeGreen;
-        private static readonly Color Bad = Colors.Salmon;
-        private static readonly Color Muted = Colors.DimGray;
-        private static readonly Color Warn = Colors.Orange;
+        private static readonly Color Good = ThemeColors.Success;
+        private static readonly Color Bad = ThemeColors.Error;
+        private static readonly Color Muted = ThemeColors.TextSubtle;
+        private static readonly Color Warn = ThemeColors.Warning;
 
         private (string SlotKey, string EntityKey)? _currentAnnotation;
 
@@ -80,14 +80,14 @@ namespace AP_Atlas.UI
 
         private static (string Text, Color Color) ClassOf(ItemFlags flags)
         {
-            if (flags.HasFlag(ItemFlags.Advancement)) return ("Progression", Colors.Plum);
-            if (flags.HasFlag(ItemFlags.NeverExclude)) return ("Useful", Colors.SlateBlue);
-            if (flags.HasFlag(ItemFlags.Trap)) return ("Trap", Colors.Salmon);
-            return ("Filler", Colors.Cyan);
+            if (flags.HasFlag(ItemFlags.Advancement)) return ("Progression", ThemeColors.Progression);
+            if (flags.HasFlag(ItemFlags.NeverExclude)) return ("Useful", ThemeColors.Useful);
+            if (flags.HasFlag(ItemFlags.Trap)) return ("Trap", ThemeColors.Trap);
+            return ("Filler", ThemeColors.Filler);
         }
 
         private static (string Text, Color Color) ClassOfPoolFlags(int flags) =>
-            (flags & 1) != 0 ? ("Progression", Colors.Plum) : (flags & 2) != 0 ? ("Useful", Colors.SlateBlue) : (flags & 4) != 0 ? ("Trap", Colors.Salmon) : ("Filler", Colors.Cyan);
+            (flags & 1) != 0 ? ("Progression", ThemeColors.Progression) : (flags & 2) != 0 ? ("Useful", ThemeColors.Useful) : (flags & 4) != 0 ? ("Trap", ThemeColors.Trap) : ("Filler", ThemeColors.Filler);
 
         private static string StatusText(HintStatus s, bool found) => found ? "Found" : s switch
         {
@@ -99,10 +99,10 @@ namespace AP_Atlas.UI
 
         private static Color StatusColor(HintStatus s, bool found) => found ? Good : s switch
         {
-            HintStatus.Priority => Colors.Gold,
-            HintStatus.NoPriority => Colors.SlateBlue,
+            HintStatus.Priority => ThemeColors.HintPriority,
+            HintStatus.NoPriority => ThemeColors.HintNoPriority,
             HintStatus.Avoid => Bad,
-            _ => Colors.LightGray
+            _ => ThemeColors.TextMuted
         };
 
         private static string YesNo(bool v) => v ? "Yes" : "No";
@@ -133,12 +133,12 @@ namespace AP_Atlas.UI
             view == null ? null : InspectTarget.ForHint(view.ProfileId, view.SlotName, h.FindingPlayer, h.LocationId);
 
         private string PlayerLink(SlotTrackerControl view, int player) =>
-            LinkTo(PlayerName(view?.Session, player), PlayerT(view, player), player == view?.PlayerSlot ? Colors.Magenta : Colors.Yellow);
+            LinkTo(PlayerName(view?.Session, player), PlayerT(view, player), player == view?.PlayerSlot ? ThemeColors.You : ThemeColors.Player);
 
         private string LocationLink(SlotTrackerControl view, int player, long id)
         {
             string name = view?.Session?.Locations.GetLocationNameFromId(id, GameOf(view.Session, player)) ?? $"Location {id}";
-            return LinkTo(name, LocationT(view, player, id), Colors.LightGreen);
+            return LinkTo(name, LocationT(view, player, id), ThemeColors.Location);
         }
 
         private string ItemLink(SlotTrackerControl view, int player, long id, ItemFlags flags, int receipt = -1)
@@ -231,7 +231,7 @@ namespace AP_Atlas.UI
                 var all = slot.Session.Locations.AllLocations;
                 int placed = all.Count(id => slot.PackIndex.ByLocation.ContainsKey(id));
                 int pct = all.Count > 0 ? (int)Math.Round(100.0 * placed / all.Count) : 0;
-                Row("Map pack coverage", Colored($"{placed} / {all.Count} of your locations have a pin ({pct}%)", pct >= 95 ? Good : pct >= 70 ? Colors.White : Warn),
+                Row("Map pack coverage", Colored($"{placed} / {all.Count} of your locations have a pin ({pct}%)", pct >= 95 ? Good : pct >= 70 ? ThemeColors.Text : Warn),
                     "Locations with no pin still appear in the Logic Tracker; the Pack Doctor can add or link pins");
             }
 
@@ -264,7 +264,7 @@ namespace AP_Atlas.UI
             bool live = s.Socket.Connected;
             var profile = _host.Profiles.FirstOrDefault(p => p.Id == slot.ProfileId);
             SetHeader("Slot", slot.SlotName,
-                $"{Colored(slot.Game, Colors.LightGray)}  ·  {LinkTo(profile?.Name ?? "Profile", InspectTarget.ForProfile(slot.ProfileId), LinkColor)}",
+                $"{Colored(slot.Game, ThemeColors.TextMuted)}  ·  {LinkTo(profile?.Name ?? "Profile", InspectTarget.ForProfile(slot.ProfileId), LinkColor)}",
                 live ? Good : Bad, live ? "Live" : "Disconnected");
 
             BeginActions();
@@ -298,7 +298,7 @@ namespace AP_Atlas.UI
             Section("Progress");
             int total = slot.TotalLocationsCount, done = slot.CheckedLocationsCount;
             int pct = total > 0 ? (int)Math.Round(100.0 * done / total) : 0;
-            Row("Locations", Colored($"{done} / {total} checked ({pct}%)", pct >= 100 ? Good : Colors.White));
+            Row("Locations", Colored($"{done} / {total} checked ({pct}%)", pct >= 100 ? Good : ThemeColors.Text));
             PlainRow("Remaining", (total - done).ToString());
             if (slot.LogicHidden)
             {
@@ -327,7 +327,7 @@ namespace AP_Atlas.UI
             {
                 int progTotal = pool.Count(p => (p.Flags & 1) != 0);
                 int progGot = received.Count(i => i.Flags.HasFlag(ItemFlags.Advancement));
-                Row("Progression items", Colored($"{Math.Min(progGot, progTotal)} / {progTotal}", Colors.Plum));
+                Row("Progression items", Colored($"{Math.Min(progGot, progTotal)} / {progTotal}", ThemeColors.Progression));
                 PlainRow("Item pool size", pool.Count.ToString());
             }
 
@@ -371,7 +371,7 @@ namespace AP_Atlas.UI
             PlainRow("Logic engine", slot.EngineRunning ? "Running" : "Not running", slot.EngineRunning ? Good : Muted);
             string raceWhy = slot.IsRaceRoom ? "the room is a race" : "set to Always On";
             Row("Race mode", !slot.RaceRestricted
-                    ? Colored(slot.IsRaceRoom ? "Off (the room is a race, but restrictions are turned off)" : "Off", Colors.LightGray)
+                    ? Colored(slot.IsRaceRoom ? "Off (the room is a race, but restrictions are turned off)" : "Off", ThemeColors.TextMuted)
                     : Colored(slot.LogicHidden ? $"On, all logic hidden ({raceWhy})" : $"On, logic explanations off ({raceWhy})", Warn),
                 "Settings → Race Mode");
             PlainRow("Map pack", slot.MapPackName ?? "None installed for this game");
@@ -467,7 +467,7 @@ namespace AP_Atlas.UI
                 string state = s.StageName ?? (s.On ? "On" : "Off");
                 string value = s.ValueText;
                 string detail = s.OptionPath == null ? "" : s.OptionMissing ? Colored($"  ({s.OptionPath} isn't in the slot data)", Warn) : Colored($"  ({s.OptionPath} = {value})", Muted);
-                Row(s.Name, Colored(state, s.On ? Good : Colors.LightGray) + detail, "Set by the map pack's script from this slot's options");
+                Row(s.Name, Colored(state, s.On ? Good : ThemeColors.TextMuted) + detail, "Set by the map pack's script from this slot's options");
             }
 
             // Everything the server sent, for any game: the options live under "options" in most worlds.
@@ -479,7 +479,7 @@ namespace AP_Atlas.UI
                 foreach (var (path, val) in Flatten(obj, ""))
                 {
                     if (++shown > 250) { AddHint("…more (copy the panel to see everything)."); break; }
-                    PlainRow(path, val, Colors.LightGray);
+                    PlainRow(path, val, ThemeColors.TextMuted);
                 }
             }
         }
@@ -539,7 +539,7 @@ namespace AP_Atlas.UI
                 {
                     bool have = receivedNames.Contains(name);
                     string note = Annotations.GetSpecial(slot.Game, Annotations.SpecialItemKey(name))?.Note;
-                    AddText((have ? Colored("✔ ", Good) : Colored("○ ", Muted)) + LinkTo(name, slot.ItemTargetByName(name), have ? Colors.LightGray : Annotations.SpecialColor) +
+                    AddText((have ? Colored("✔ ", Good) : Colored("○ ", Muted)) + LinkTo(name, slot.ItemTargetByName(name), have ? ThemeColors.TextMuted : Annotations.SpecialColor) +
                             (string.IsNullOrWhiteSpace(note) ? "" : "  " + Colored(note, Muted)));
                 }
             }
@@ -555,7 +555,7 @@ namespace AP_Atlas.UI
                     bool done = checkedSet.Contains(id);
                     bool inLogic = slot.IsLocationReachable(id);
                     string mark = done ? Colored("✔ ", Good) : inLogic ? Colored("● ", Good) : Colored("○ ", Muted);
-                    AddText(mark + LinkTo(name, slot.LocationTarget(id), done ? Colors.LightGray : Annotations.SpecialColor));
+                    AddText(mark + LinkTo(name, slot.LocationTarget(id), done ? ThemeColors.TextMuted : Annotations.SpecialColor));
                 }
             }
         }
@@ -573,11 +573,11 @@ namespace AP_Atlas.UI
                 if (!long.TryParse(key.Substring(2), out long id)) continue;
                 string link;
                 if (key.StartsWith("L:"))
-                    link = LinkTo(s.Locations.GetLocationNameFromId(id, slot.Game) ?? key, slot.LocationTarget(id), Colors.LightGreen);
+                    link = LinkTo(s.Locations.GetLocationNameFromId(id, slot.Game) ?? key, slot.LocationTarget(id), ThemeColors.Location);
                 else
                 {
                     string name = s.Items.GetItemName(id, slot.Game) ?? key;
-                    link = LinkTo(name, slot.ItemTarget(id, name), Colors.Plum);
+                    link = LinkTo(name, slot.ItemTarget(id, name), ThemeColors.Progression);
                 }
                 string dot = a.Flag > 0 ? $"[color={Hex(Annotations.FlagColor(a.Flag))}]●[/color] " : "    ";
                 string note = string.IsNullOrWhiteSpace(a.Note) ? "" : "  " + Colored(a.Note.Length > 80 ? a.Note.Substring(0, 80) + "…" : a.Note, Muted);
@@ -608,13 +608,13 @@ namespace AP_Atlas.UI
             bool special = Annotations.IsSpecialLocation(game, name);
 
             (string badge, Color color) = isChecked == true ? ("Checked", Muted)
-                : owner?.LogicHidden == true ? ("Open", Colors.SteelBlue)
+                : owner?.LogicHidden == true ? ("Open", ThemeColors.LogicHidden)
                 : inLogic == true ? ("In logic", Good)
                 : glitched ? ("Sequence break", Warn)
                 : inLogic == false ? ("Out of logic", Bad)
-                : ("Logic unknown", Colors.Gray);
+                : ("Logic unknown", ThemeColors.TextSubtle);
             SetHeader("Location", name,
-                $"{Colored(game, Colors.LightGray)}  ·  {PlayerLink(view, ownerPlayer)}'s world" + (special ? "  " + Colored("◆ Special", Annotations.SpecialColor) : ""),
+                $"{Colored(game, ThemeColors.TextMuted)}  ·  {PlayerLink(view, ownerPlayer)}'s world" + (special ? "  " + Colored("◆ Special", Annotations.SpecialColor) : ""),
                 color, badge);
 
             // --- Quick actions ---
@@ -654,12 +654,12 @@ namespace AP_Atlas.UI
             PlainRow("Name", name);
             Row("World", PlayerLink(view, ownerPlayer));
             PlainRow("Game", game);
-            Row("Checked", isChecked == null ? Colored("Unknown (that world isn't connected here)", Muted) : isChecked.Value ? Colored("Yes", Good) : Colored("No", Colors.White));
+            Row("Checked", isChecked == null ? Colored("Unknown (that world isn't connected here)", Muted) : isChecked.Value ? Colored("Yes", Good) : Colored("No", ThemeColors.Text));
             switch (owner?.ExclusionSource(t.LocationId))
             {
                 case "seed": Row("Excluded", Colored("Yes, by the seed's options (never holds progression)", Muted)); break;
                 case "you": Row("Excluded", Colored("Yes, by you (left out of logic counts, the Logic Tracker and the map; the server isn't told)", Muted)); break;
-                case "included by you": Row("Excluded", Colored("No: the seed excludes it, but you included it", Colors.LightGray)); break;
+                case "included by you": Row("Excluded", Colored("No: the seed excludes it, but you included it", ThemeColors.TextMuted)); break;
             }
             if (hint != null) Row("Hinted", LinkTo(StatusText(hint.Status, hint.Found), HintT(view, hint), StatusColor(hint.Status, hint.Found)));
             var specialEntry = Annotations.GetSpecial(game, Annotations.SpecialLocationKey(name));
@@ -717,8 +717,8 @@ namespace AP_Atlas.UI
                 {
                     var (stepNo, order, itemName) = step.Value;
                     Row("Reached at", stepNo == 0
-                        ? Colored($"Base logic (order #{order})", Colors.LightGray)
-                        : $"{Colored($"Step {stepNo} (order #{order}) by ", Colors.LightGray)}{LinkTo(itemName, owner.ItemTargetByName(itemName), Colors.Plum)}");
+                        ? Colored($"Base logic (order #{order})", ThemeColors.TextMuted)
+                        : $"{Colored($"Step {stepNo} (order #{order}) by ", ThemeColors.TextMuted)}{LinkTo(itemName, owner.ItemTargetByName(itemName), ThemeColors.Progression)}");
                 }
                 if (isChecked == true)
                 {
@@ -773,31 +773,31 @@ namespace AP_Atlas.UI
                         if (!string.IsNullOrEmpty(ex.Error)) { status.Text = Colored(ex.Error, Muted); return; }
                         status.Text = "";
                         status.Visible = false;
-                        if (!string.IsNullOrEmpty(ex.Region)) Row("Region", Colored(ex.Region, Colors.LightGray) + (ex.RegionReachable ? Colored("  (reachable)", Good) : Colored("  (not reachable yet)", Bad)));
+                        if (!string.IsNullOrEmpty(ex.Region)) Row("Region", Colored(ex.Region, ThemeColors.TextMuted) + (ex.RegionReachable ? Colored("  (reachable)", Good) : Colored("  (not reachable yet)", Bad)));
                         if (!string.IsNullOrEmpty(ex.ProgressType) && ex.ProgressType != "DEFAULT") PlainRow("Progress type", ex.ProgressType);
                         if (!ex.InLogic)
                         {
                             if (ex.UnreachableWithAll)
                                 AddText(Colored("Not reachable even with every remaining item of this world. It likely needs another world's progress, an event, or a setting.", Warn));
                             else if (ex.SingleUnlocks != null && ex.SingleUnlocks.Count > 0)
-                                Row("Opens with any one of", string.Join(", ", ex.SingleUnlocks.Select(n => LinkTo(n, owner.ItemTargetByName(n), Colors.Plum))));
+                                Row("Opens with any one of", string.Join(", ", ex.SingleUnlocks.Select(n => LinkTo(n, owner.ItemTargetByName(n), ThemeColors.Progression))));
                             else if (ex.Required != null && ex.Required.Count > 0)
-                                Row("Needs all of", string.Join(", ", ex.Required.Select(n => LinkTo(n, owner.ItemTargetByName(n), Colors.Plum))));
+                                Row("Needs all of", string.Join(", ", ex.Required.Select(n => LinkTo(n, owner.ItemTargetByName(n), ThemeColors.Progression))));
                             else if (ex.Required != null)
                                 AddHint("Needs a combination of items; no single item is required on every route.");
                             if (ex.Partial) AddHint($"Partial answer: stopped after the time limit ({ex.Candidates} candidate items).");
                         }
                         if (!string.IsNullOrWhiteSpace(ex.Rule))
                         {
-                            AddText(Colored("Access rule", Colors.Gray));
+                            AddText(Colored("Access rule", ThemeColors.TextSubtle));
                             AddRule(ex.Rule, "No requirement beyond reaching the region.");
                         }
                         if (ex.Entrances != null && ex.Entrances.Count > 0)
                         {
-                            AddText(Colored($"Ways into {ex.Region}", Colors.Gray));
+                            AddText(Colored($"Ways into {ex.Region}", ThemeColors.TextSubtle));
                             foreach (var e in ex.Entrances)
                             {
-                                AddText((e.Reachable ? Colored("✔ ", Good) : Colored("✖ ", Bad)) + Colored(e.Name, Colors.LightGray) +
+                                AddText((e.Reachable ? Colored("✔ ", Good) : Colored("✖ ", Bad)) + Colored(e.Name, ThemeColors.TextMuted) +
                                         (string.IsNullOrEmpty(e.From) ? "" : Colored("  from " + e.From, Muted)));
                                 if (!e.Reachable) AddRule(e.Rule, $"No requirement beyond reaching {(string.IsNullOrEmpty(e.From) ? "the previous region" : e.From)}.");
                             }
@@ -819,7 +819,7 @@ namespace AP_Atlas.UI
         private void AddRule(string rule, string alwaysText)
         {
             if (string.IsNullOrWhiteSpace(rule)) return;
-            if (rule == "ALWAYS") { AddText(Colored(alwaysText, Colors.LightGray)); return; }
+            if (rule == "ALWAYS") { AddText(Colored(alwaysText, ThemeColors.TextMuted)); return; }
             if (rule == "NEVER") { AddText(Colored("Never: this rule can't be satisfied.", Bad)); return; }
             bool isSource = rule.Contains("lambda") || rule.Contains("def ") || rule.Contains("state.") || rule.Contains("return ");
             if (isSource) { AddCode(rule); return; }
@@ -849,9 +849,9 @@ namespace AP_Atlas.UI
                 if (maps.Count > 0)
                     Row("Maps", string.Join(", ", maps.Select(m => LinkTo(map.Pack.Maps.TryGetValue(m, out var pm) ? pm.Name : m, InspectTarget.ForMap(owner.ProfileId, owner.SlotName, m)))));
                 var rules = section?.AccessRulesRaw ?? pin.AccessRulesRaw;
-                if (rules != null && rules.HasValues) { AddText(Colored("Pack access rules", Colors.Gray)); AddCode(rules.ToString(Newtonsoft.Json.Formatting.None)); }
+                if (rules != null && rules.HasValues) { AddText(Colored("Pack access rules", ThemeColors.TextSubtle)); AddCode(rules.ToString(Newtonsoft.Json.Formatting.None)); }
                 var vis = section?.VisibilityRulesRaw;
-                if (vis != null && vis.HasValues) { AddText(Colored("Visibility rules", Colors.Gray)); AddCode(vis.ToString(Newtonsoft.Json.Formatting.None)); }
+                if (vis != null && vis.HasValues) { AddText(Colored("Visibility rules", ThemeColors.TextSubtle)); AddCode(vis.ToString(Newtonsoft.Json.Formatting.None)); }
             }
         }
 
@@ -870,7 +870,7 @@ namespace AP_Atlas.UI
                     var mine = groups?.Where(g => g.Value != null && g.Value.Contains(name) && g.Key != "Everywhere" && g.Key != "Everything").Select(g => g.Key).OrderBy(k => k).ToList();
                     placeholder.Text = groups == null ? Colored("Not available.", Muted)
                         : mine.Count == 0 ? Colored("Not in any named group.", Muted)
-                        : Colored(string.Join(", ", mine), Colors.LightGray);
+                        : Colored(string.Join(", ", mine), ThemeColors.TextMuted);
                 }));
             }, "reading the game's item and location groups");
         }
@@ -909,11 +909,11 @@ namespace AP_Atlas.UI
             (string Text, Color Color) cls = copies.Count > 0 ? ClassOf(copies[0].Info.Flags)
                 : poolCount > 0 ? ClassOfPoolFlags(pool[0].Flags)
                 : hintsForItem.Count > 0 ? ClassOf(hintsForItem[0].ItemFlags)
-                : ("Unknown class", Colors.Gray);
+                : ("Unknown class", ThemeColors.TextSubtle);
             bool special = Annotations.IsSpecialItem(game, name);
 
             SetHeader("Item", name,
-                $"{Colored(game, Colors.LightGray)}  ·  for {PlayerLink(view, ownerPlayer)}" + (special ? "  " + Colored("◆ Special", Annotations.SpecialColor) : ""),
+                $"{Colored(game, ThemeColors.TextMuted)}  ·  for {PlayerLink(view, ownerPlayer)}" + (special ? "  " + Colored("◆ Special", Annotations.SpecialColor) : ""),
                 cls.Color, cls.Text);
 
             BeginActions();
@@ -937,7 +937,7 @@ namespace AP_Atlas.UI
             if (owner != null)
             {
                 string got = poolCount > 0 ? $"{copies.Count} of {poolCount}" : copies.Count.ToString();
-                Row("Received", Colored(got, copies.Count > 0 ? Good : Colors.White));
+                Row("Received", Colored(got, copies.Count > 0 ? Good : ThemeColors.Text));
             }
             else
             {
@@ -968,7 +968,7 @@ namespace AP_Atlas.UI
                 {
                     int sender = info.Player?.Slot ?? 0;
                     string where = info.LocationId > 0 ? LocationLink(view, sender, info.LocationId) : Colored("start / server", Muted);
-                    AddText(LinkTo($"#{index + 1}", ItemT(view, ownerPlayer, info.ItemId, name, index), Colors.LightGray) + "  from " + PlayerLink(view, sender) + " at " + where);
+                    AddText(LinkTo($"#{index + 1}", ItemT(view, ownerPlayer, info.ItemId, name, index), ThemeColors.TextMuted) + "  from " + PlayerLink(view, sender) + " at " + where);
                 }
                 if (copies.Count > 40) AddHint($"…and {copies.Count - 40} more.");
             }
@@ -992,7 +992,7 @@ namespace AP_Atlas.UI
                 var steps = owner.StepsUnlockedBy(name);
                 if (steps.Count == 0) AddHint(copies.Count > 0 ? "Receiving it hasn't opened any new checks." : "Not received yet.");
                 foreach (var (step, count) in steps)
-                    AddText(Link($"Step {step}", () => { Go(owner, Tool.LogicTracker); }, Colors.LightGray) + Colored($": opened {count} check{(count == 1 ? "" : "s")}", Colors.LightGray));
+                    AddText(Link($"Step {step}", () => { Go(owner, Tool.LogicTracker); }, ThemeColors.TextMuted) + Colored($": opened {count} check{(count == 1 ? "" : "s")}", ThemeColors.TextMuted));
             }
 
             // Map pack item definition (Key Items).
@@ -1042,8 +1042,8 @@ namespace AP_Atlas.UI
             string realName = RealName(s, p);
             bool inProfile = profile != null && profile.Slots.Contains(realName);
 
-            SetHeader("Player", name, $"{Colored(game, Colors.LightGray)}  ·  slot {p}",
-                isYou ? Colors.Magenta : connected != null ? Good : Colors.Yellow,
+            SetHeader("Player", name, $"{Colored(game, ThemeColors.TextMuted)}  ·  slot {p}",
+                isYou ? ThemeColors.You : connected != null ? Good : ThemeColors.Player,
                 isYou ? "You" : connected != null ? "Connected here" : info?.IsGroup == true ? "Group" : "Player");
 
             BeginActions();
@@ -1072,9 +1072,9 @@ namespace AP_Atlas.UI
                     statusText.Text = st switch
                     {
                         ArchipelagoClientState.ClientGoal => Colored("Goal complete", Good),
-                        ArchipelagoClientState.ClientPlaying => Colored("Playing", Colors.LightGreen),
-                        ArchipelagoClientState.ClientReady => Colored("Ready", Colors.LightGray),
-                        ArchipelagoClientState.ClientConnected => Colored("Connected", Colors.LightGray),
+                        ArchipelagoClientState.ClientPlaying => Colored("Playing", ThemeColors.Success),
+                        ArchipelagoClientState.ClientReady => Colored("Ready", ThemeColors.TextMuted),
+                        ArchipelagoClientState.ClientConnected => Colored("Connected", ThemeColors.TextMuted),
                         ArchipelagoClientState.ClientUnknown => Colored("Not connected / unknown", Muted),
                         _ => Colored("Unavailable", Muted)
                     };
@@ -1085,8 +1085,8 @@ namespace AP_Atlas.UI
             {
                 Section($"With {view.SlotName}");
                 var fromThem = s.Items.AllItemsReceived.Where(i => i.Player?.Slot == p).ToList();
-                Row("Items you received from them", Colored(fromThem.Count.ToString(), Colors.White) +
-                    (fromThem.Count > 0 ? Colored($"  ({fromThem.Count(i => i.Flags.HasFlag(ItemFlags.Advancement))} progression)", Colors.Plum) : ""));
+                Row("Items you received from them", Colored(fromThem.Count.ToString(), ThemeColors.Text) +
+                    (fromThem.Count > 0 ? Colored($"  ({fromThem.Count(i => i.Flags.HasFlag(ItemFlags.Advancement))} progression)", ThemeColors.Progression) : ""));
                 int sentThisSession = view.ChatHistory.Count(c => c.APMessage is ItemSendLogMessage m && m is not HintItemSendLogMessage &&
                     m.Sender?.Slot == view.PlayerSlot && m.Receiver?.Slot == p);
                 PlainRow("Items you sent them (this session)", sentThisSession.ToString());
@@ -1095,14 +1095,14 @@ namespace AP_Atlas.UI
                 var yoursInTheirs = hints.Where(h => h.ReceivingPlayer == view.PlayerSlot && h.FindingPlayer == p).ToList();
                 if (theirsInYours.Count > 0)
                 {
-                    AddText(Colored($"Their items in your world ({theirsInYours.Count})", Colors.Gray));
+                    AddText(Colored($"Their items in your world ({theirsInYours.Count})", ThemeColors.TextSubtle));
                     foreach (var h in theirsInYours.Take(25))
                         AddText("  " + ItemLink(view, h.ReceivingPlayer, h.ItemId, h.ItemFlags) + " at " + LocationLink(view, h.FindingPlayer, h.LocationId) +
                                 (view.IsLocationReachable(h.LocationId) ? Colored("  in logic", Good) : ""));
                 }
                 if (yoursInTheirs.Count > 0)
                 {
-                    AddText(Colored($"Your items in their world ({yoursInTheirs.Count})", Colors.Gray));
+                    AddText(Colored($"Your items in their world ({yoursInTheirs.Count})", ThemeColors.TextSubtle));
                     foreach (var h in yoursInTheirs.Take(25))
                         AddText("  " + ItemLink(view, h.ReceivingPlayer, h.ItemId, h.ItemFlags) + " at " + LocationLink(view, h.FindingPlayer, h.LocationId));
                 }
@@ -1163,7 +1163,7 @@ namespace AP_Atlas.UI
                         try
                         {
                             receiverSlot.Session.Hints.UpdateHintStatus(h.FindingPlayer, h.LocationId, status);
-                            _host.Toast($"Marked {itemName} as {label}", Colors.Gray);
+                            _host.Toast($"Marked {itemName} as {label}", ThemeColors.TextSubtle);
                         }
                         catch (Exception ex) { _host.Toast("Couldn't change the hint: " + ex.Message, Bad); }
                     }, h.Status != status);
@@ -1185,7 +1185,7 @@ namespace AP_Atlas.UI
             Row("In world of", PlayerLink(view, h.FindingPlayer));
             if (!string.IsNullOrEmpty(h.Entrance)) PlainRow("Entrance", h.Entrance);
             Row("Status", Colored(StatusText(h.Status, h.Found), StatusColor(h.Status, h.Found)));
-            Row("Found", h.Found ? Colored("Yes", Good) : Colored("No", Colors.White));
+            Row("Found", h.Found ? Colored("Yes", Good) : Colored("No", ThemeColors.Text));
             if (!h.Found)
             {
                 bool? logic = finderSlot?.IsLocationInLogic(h.LocationId);
@@ -1219,7 +1219,7 @@ namespace AP_Atlas.UI
             string mapName = map.Pack.Maps.TryGetValue(t.MapId ?? "", out var pm) ? pm.Name : t.MapId;
 
             SetHeader("Map pin", pin.Name, $"on {LinkTo(mapName ?? "?", InspectTarget.ForMap(view.ProfileId, view.SlotName, t.MapId))}",
-                ids.Count == 0 ? Muted : done == ids.Count ? Muted : view.LogicHidden ? Colors.SteelBlue
+                ids.Count == 0 ? Muted : done == ids.Count ? Muted : view.LogicHidden ? ThemeColors.LogicHidden
                 : ids.Any(id => !checkedSet.Contains(id) && view.IsLocationReachable(id)) ? Good : Bad,
                 ids.Count == 0 ? "Not in this world" : $"{done} / {ids.Count} checked");
 
@@ -1241,20 +1241,20 @@ namespace AP_Atlas.UI
                         continue;
                     }
                     string state = map.LocationState(id);
-                    var c = state == "checked" ? Muted : view.LogicHidden ? Colors.SteelBlue : state.Contains("in logic") ? Good : Bad;
-                    AddText(LinkTo(secName, view.LocationTarget(id), Colors.LightGreen) + "  " + Colored(state, c) + (sec.ItemCount > 1 ? Colored($"  ×{sec.ItemCount}", Muted) : ""));
+                    var c = state == "checked" ? Muted : view.LogicHidden ? ThemeColors.LogicHidden : state.Contains("in logic") ? Good : Bad;
+                    AddText(LinkTo(secName, view.LocationTarget(id), ThemeColors.Location) + "  " + Colored(state, c) + (sec.ItemCount > 1 ? Colored($"  ×{sec.ItemCount}", Muted) : ""));
                 }
             }
             else if (ids.Count > 0)
             {
-                foreach (var id in ids) AddText(LocationLink(view, view.PlayerSlot, id) + "  " + Colored(map.LocationState(id), Colors.LightGray));
+                foreach (var id in ids) AddText(LocationLink(view, view.PlayerSlot, id) + "  " + Colored(map.LocationState(id), ThemeColors.TextMuted));
             }
             else AddHint("This pin has no sections that match this world's locations.");
 
             Section("Pack data");
             var maps = MapTrackerControl.MapsOf(pin);
             if (maps.Count > 0) Row("Maps", string.Join(", ", maps.Select(m => LinkTo(map.Pack.Maps.TryGetValue(m, out var mm) ? mm.Name : m, InspectTarget.ForMap(view.ProfileId, view.SlotName, m)))));
-            if (pin.AccessRulesRaw != null && pin.AccessRulesRaw.HasValues) { AddText(Colored("Access rules", Colors.Gray)); AddCode(pin.AccessRulesRaw.ToString(Newtonsoft.Json.Formatting.None)); }
+            if (pin.AccessRulesRaw != null && pin.AccessRulesRaw.HasValues) { AddText(Colored("Access rules", ThemeColors.TextSubtle)); AddCode(pin.AccessRulesRaw.ToString(Newtonsoft.Json.Formatting.None)); }
             if (pin.Children != null && pin.Children.Count > 0) PlainRow("Child locations", pin.Children.Count.ToString());
             PlainRow("Position", $"{pin.X:0}, {pin.Y:0}");
         }
@@ -1287,21 +1287,21 @@ namespace AP_Atlas.UI
             }
 
             bool hidden = view.LogicHidden;
-            SetHeader("Map", pm.Name, Colored(map.Pack.Manifest?.Name ?? "", Colors.LightGray),
-                hidden ? Colors.SteelBlue : inLogic > 0 ? Good : Muted, hidden ? $"{inLogic + outLogic} open" : $"{inLogic} in logic");
+            SetHeader("Map", pm.Name, Colored(map.Pack.Manifest?.Name ?? "", ThemeColors.TextMuted),
+                hidden ? ThemeColors.LogicHidden : inLogic > 0 ? Good : Muted, hidden ? $"{inLogic + outLogic} open" : $"{inLogic} in logic");
             BeginActions();
             AddAction("Open map", "Show this map in the Map Tracker", () => { Go(view, Tool.MapTracker); map.ShowMap(t.MapId); });
             EndActions();
 
             Section("Overview");
             PlainRow("Pins", pins.Count.ToString());
-            if (hidden) PlainRow("Open", (inLogic + outLogic).ToString(), Colors.SteelBlue);
+            if (hidden) PlainRow("Open", (inLogic + outLogic).ToString(), ThemeColors.LogicHidden);
             else
             {
                 PlainRow("In logic", inLogic.ToString(), Good);
                 PlainRow("Out of logic", outLogic.ToString(), Bad);
             }
-            PlainRow("Hinted", hinted.ToString(), Colors.DeepSkyBlue);
+            PlainRow("Hinted", hinted.ToString(), ThemeColors.Hinted);
             PlainRow("Checked", done.ToString(), Muted);
             if (pm.Background is { } background) PlainRow("Image", $"{background.GetWidth()} × {background.GetHeight()}");
             if (pm.LocationSize > 0) PlainRow("Pin size", pm.LocationSize.ToString("0"));
@@ -1312,7 +1312,7 @@ namespace AP_Atlas.UI
             if (openPins.Count == 0) AddHint("Everything on this map is checked.");
             foreach (var r in openPins.Take(80))
                 AddText(LinkTo(r.Name, InspectTarget.ForPackLocation(view.ProfileId, view.SlotName, t.MapId, r.Name)) +
-                        Colored($"  {r.Open} open", Colors.LightGray) + (r.InLogic > 0 ? Colored($", {r.InLogic} in logic", Good) : ""));
+                        Colored($"  {r.Open} open", ThemeColors.TextMuted) + (r.InLogic > 0 ? Colored($", {r.InLogic} in logic", Good) : ""));
 
             Section("Advanced");
             PlainRow("Map id", pm.Id);
@@ -1326,7 +1326,7 @@ namespace AP_Atlas.UI
             // thread the first time.
             if (File.Exists(path) && !PopTrackerPackLoader.IsPackCached(path) && _packReadsAttempted.Add(path))
             {
-                SetHeader("Map pack", Path.GetFileNameWithoutExtension(path), Colored("Reading the pack…", Muted), Colors.Gray, "");
+                SetHeader("Map pack", Path.GetFileNameWithoutExtension(path), Colored("Reading the pack…", Muted), ThemeColors.TextSubtle, "");
                 var current = StillCurrent();
                 Async.Fire(System.Threading.Tasks.Task.Run(() =>
                 {
@@ -1341,7 +1341,7 @@ namespace AP_Atlas.UI
             var m = pack?.Manifest;
             string title = m?.Name ?? Path.GetFileNameWithoutExtension(path ?? "Map pack");
             var users = _host.ConnectedSlots.Where(sl => IsInstanceValid(sl) && sl.MapPackName != null && sl.MapPackName == m?.Name).ToList();
-            SetHeader("Map pack", title, Colored(m?.GameName ?? "", Colors.LightGray), users.Count > 0 ? Good : Colors.Gray, users.Count > 0 ? "In use" : "Installed");
+            SetHeader("Map pack", title, Colored(m?.GameName ?? "", ThemeColors.TextMuted), users.Count > 0 ? Good : ThemeColors.TextSubtle, users.Count > 0 ? "In use" : "Installed");
 
             BeginActions();
             if (File.Exists(path)) AddAction("Open folder", "Show the pack file in Explorer", () => AP_Atlas.Core.ExternalLinks.OpenFolder(Path.GetDirectoryName(path)));
@@ -1385,7 +1385,7 @@ namespace AP_Atlas.UI
             var profile = _host.Profiles.FirstOrDefault(p => p.Id == t.ProfileId);
             if (profile == null) { SetHeader("Profile", "Profile", Colored("This profile was deleted.", Muted), Muted, ""); return; }
             var live = _host.ConnectedSlots.Where(s => IsInstanceValid(s) && s.ProfileId == profile.Id).ToList();
-            SetHeader("Profile", profile.Name, Colored(profile.ServerUrl, Colors.LightGray), live.Count > 0 ? Good : Colors.Gray,
+            SetHeader("Profile", profile.Name, Colored(profile.ServerUrl, ThemeColors.TextMuted), live.Count > 0 ? Good : ThemeColors.TextSubtle,
                 $"{live.Count} / {profile.Slots.Count} connected");
 
             BeginActions();
@@ -1405,11 +1405,11 @@ namespace AP_Atlas.UI
             foreach (var name in profile.Slots)
             {
                 var slot = live.FirstOrDefault(l => l.SlotName == name);
-                string state = slot != null ? Colored("● Live", Good) : _host.IsSlotConnecting(profile.Id, name) ? Colored("◌ Connecting", Colors.Yellow) : Colored("Offline", Muted);
+                string state = slot != null ? Colored("● Live", Good) : _host.IsSlotConnecting(profile.Id, name) ? Colored("◌ Connecting", ThemeColors.Pending) : Colored("Offline", Muted);
                 string stats = "";
                 if (profile.SavedStats != null && profile.SavedStats.TryGetValue(name, out var st))
-                    stats = Colored($"  {st.GameName}  {st.CompleteCount}/{st.TotalCount}", Colors.LightGray);
-                AddText(LinkTo(name, InspectTarget.ForSlot(profile.Id, name), name == t.SlotName ? Colors.White : LinkColor) + "  " + state + stats);
+                    stats = Colored($"  {st.GameName}  {st.CompleteCount}/{st.TotalCount}", ThemeColors.TextMuted);
+                AddText(LinkTo(name, InspectTarget.ForSlot(profile.Id, name), name == t.SlotName ? ThemeColors.Text : LinkColor) + "  " + state + stats);
             }
 
             if (!string.IsNullOrEmpty(t.SlotName))
@@ -1514,7 +1514,7 @@ namespace AP_Atlas.UI
                 Target.AddChild(flags);
                 _plainText.AppendLine("Flag: " + (flag > 0 ? Annotations.FlagLabel(flag) : "none"));
 
-                AddText(Colored($"Note (only for {ownerName})", Colors.Gray));
+                AddText(Colored($"Note (only for {ownerName})", ThemeColors.TextSubtle));
                 Target.AddChild(MakeNoteEditor(a?.Note ?? "", "Anything you want to remember about this…",
                     text => Annotations.SetNote(slotKey, entityKey, text)));
                 if (!string.IsNullOrWhiteSpace(a?.Note)) _plainText.AppendLine("Note: " + a.Note);
@@ -1615,7 +1615,7 @@ namespace AP_Atlas.UI
                 try
                 {
                     int n = Annotations.ExportSpecials(game, path);
-                    _host.Toast($"Exported {n} special entries for {game}", Colors.Gray);
+                    _host.Toast($"Exported {n} special entries for {game}", ThemeColors.TextSubtle);
                 }
                 catch (Exception ex) { _host.Toast("Export failed: " + ex.Message, Bad); }
                 dialog.QueueFree();
@@ -1642,7 +1642,7 @@ namespace AP_Atlas.UI
                 dialog.QueueFree();
                 var yaml = YamlExclusions.Read(path, slot.Game, slot.SlotName);
                 if (yaml.Error != null) { _host.Toast("Couldn't use that YAML: " + yaml.Error, Bad); return; }
-                if (yaml.Names.Count == 0) { _host.Toast($"{System.IO.Path.GetFileName(path)} has no exclude_locations for {slot.Game}.", Colors.Gray); return; }
+                if (yaml.Names.Count == 0) { _host.Toast($"{System.IO.Path.GetFileName(path)} has no exclude_locations for {slot.Game}.", ThemeColors.TextSubtle); return; }
                 if (!IsInstanceValid(slot)) return;
                 var (applied, listed, unknown) = await slot.ApplyYamlExclusionsAsync(yaml.Names);
                 string msg = applied > 0 ? $"Excluded {applied} location(s)" : listed > 0 ? "Those locations were already excluded" : "None of those locations are in this seed";
@@ -1651,7 +1651,7 @@ namespace AP_Atlas.UI
                     msg += $"; {unknown.Count} name(s) not found";
                     Logger.LogWarning($"[{slot.SlotName}] exclude_locations names not found in {slot.Game}: {string.Join(", ", unknown)}");
                 }
-                _host.Toast(msg, applied > 0 ? Good : Colors.Gray);
+                _host.Toast(msg, applied > 0 ? Good : ThemeColors.TextSubtle);
             }, $"applying excluded locations from {System.IO.Path.GetFileName(path)}");
             dialog.Canceled += () => dialog.QueueFree();
             GetTree().Root.AddChild(dialog);
@@ -1705,7 +1705,7 @@ namespace AP_Atlas.UI
         {
             if (string.IsNullOrEmpty(text)) return;
             DisplayServer.ClipboardSet(text);
-            _host.Toast("Copied: " + text, Colors.Gray);
+            _host.Toast("Copied: " + text, ThemeColors.TextSubtle);
         }
 
         /// <summary>Sends a !hint command after confirming the hint point cost.</summary>
@@ -1724,7 +1724,7 @@ namespace AP_Atlas.UI
             dialog.Confirmed += () =>
             {
                 Async.Fire(slot.Model.SayAsync(command), "sending your hint request");
-                _host.Toast("Requested: " + command, Colors.Gray);
+                _host.Toast("Requested: " + command, ThemeColors.TextSubtle);
                 dialog.QueueFree();
             };
             dialog.Canceled += () => dialog.QueueFree();

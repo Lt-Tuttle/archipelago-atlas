@@ -59,7 +59,7 @@ namespace AP_Atlas.UI
             SizeFlagsVertical = SizeFlags.ExpandFill;
             AddThemeStyleboxOverride("panel", new StyleBoxFlat
             {
-                BgColor = new Color("#181818"),
+                BgColor = AP_Atlas.Core.ThemeColors.Border,
                 CornerRadiusTopLeft = 6,
                 CornerRadiusTopRight = 6,
                 CornerRadiusBottomLeft = 6,
@@ -86,7 +86,7 @@ namespace AP_Atlas.UI
         {
             var label = new Label { Text = _tr(caption), HorizontalAlignment = HorizontalAlignment.Center };
             label.AddThemeFontSizeOverride("font_size", 9);
-            label.AddThemeColorOverride("font_color", new Color("#8a8a8a"));
+            label.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextSubtle);
             column.AddChild(label);
             foreach (var tool in Tool.All.Where(t => t.Group == group))
             {
@@ -134,11 +134,11 @@ namespace AP_Atlas.UI
                 button.Icon = ImageTexture.CreateFromImage(image);
             }
             button.AddThemeConstantOverride("icon_max_width", 22);
-            button.AddThemeColorOverride("icon_normal_color", new Color("#9a9a9a"));
-            button.AddThemeColorOverride("icon_hover_color", Colors.White);
-            button.AddThemeColorOverride("icon_pressed_color", Colors.White);
-            button.AddThemeColorOverride("icon_hover_pressed_color", Colors.White);
-            button.AddThemeColorOverride("icon_focus_color", Colors.White);
+            button.AddThemeColorOverride("icon_normal_color", AP_Atlas.Core.ThemeColors.TextSubtle);
+            button.AddThemeColorOverride("icon_hover_color", AP_Atlas.Core.ThemeColors.Text);
+            button.AddThemeColorOverride("icon_pressed_color", AP_Atlas.Core.ThemeColors.Text);
+            button.AddThemeColorOverride("icon_hover_pressed_color", AP_Atlas.Core.ThemeColors.Text);
+            button.AddThemeColorOverride("icon_focus_color", AP_Atlas.Core.ThemeColors.Text);
             _styled.Add(button);
             return button;
         }
@@ -151,9 +151,9 @@ namespace AP_Atlas.UI
             {
                 button.AddThemeStyleboxOverride("normal", new StyleBoxEmpty());
                 button.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
-                button.AddThemeStyleboxOverride("hover", Box(new Color("#232323"), null));
-                button.AddThemeStyleboxOverride("pressed", Box(new Color("#262626"), accent));
-                button.AddThemeStyleboxOverride("hover_pressed", Box(new Color("#2a2a2a"), accent));
+                button.AddThemeStyleboxOverride("hover", Box(AP_Atlas.Core.ThemeColors.SurfacePanel, null));
+                button.AddThemeStyleboxOverride("pressed", Box(AP_Atlas.Core.ThemeColors.SurfacePanel, accent));
+                button.AddThemeStyleboxOverride("hover_pressed", Box(AP_Atlas.Core.ThemeColors.SurfaceRaised, accent));
             }
         }
 

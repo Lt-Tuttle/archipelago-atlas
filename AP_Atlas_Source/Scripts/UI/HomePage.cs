@@ -129,12 +129,12 @@ namespace AP_Atlas.UI
             title.SetMeta("font_size_ratio", 2.0f);
             title.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Accent.Lightened(0.2f));
             titles.AddChild(title);
-            titles.AddChild(Text(_tr("Maps, logic, hints and the trackers your group uses, in one window."), Colors.LightGray));
+            titles.AddChild(Kit.Text(_tr("Maps, logic, hints and the trackers your group uses, in one window."), AP_Atlas.Core.ThemeColors.TextMuted));
             header.AddChild(titles);
             body.AddChild(header);
 
             // Getting started: each step reads Atlas's state and has the button that does it.
-            body.AddChild(Heading(_tr("Getting started")));
+            body.AddChild(Kit.Heading(_tr("Getting started"), 1.25f));
             var steps = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
             steps.AddThemeConstantOverride("separation", 8);
             body.AddChild(steps);
@@ -150,13 +150,13 @@ namespace AP_Atlas.UI
                 "Cheese Tracker", () => hooks.Profiles().Any(p => !string.IsNullOrWhiteSpace(p.CheeseTrackerUrl)), hooks.OpenCheeseSettings);
 
             // The user's multiworlds, the most recently played first.
-            body.AddChild(Heading(_tr("Your multiworlds")));
+            body.AddChild(Kit.Heading(_tr("Your multiworlds"), 1.25f));
             _recents.AddThemeConstantOverride("separation", 6);
             _recents.SizeFlagsHorizontal = SizeFlags.ExpandFill;
             body.AddChild(_recents);
 
             // The tools.
-            body.AddChild(Heading(_tr("Tools")));
+            body.AddChild(Kit.Heading(_tr("Tools"), 1.25f));
             var tools = new GridContainer { Columns = 3, SizeFlagsHorizontal = SizeFlags.ExpandFill };
             tools.AddThemeConstantOverride("h_separation", 10);
             tools.AddThemeConstantOverride("v_separation", 10);
@@ -168,7 +168,7 @@ namespace AP_Atlas.UI
             body.AddChild(tools);
 
             // What sets Atlas apart.
-            body.AddChild(Heading(_tr("What sets Atlas apart")));
+            body.AddChild(Kit.Heading(_tr("What sets Atlas apart"), 1.25f));
             var features = new GridContainer { Columns = 2, SizeFlagsHorizontal = SizeFlags.ExpandFill };
             features.AddThemeConstantOverride("h_separation", 10);
             features.AddThemeConstantOverride("v_separation", 10);
@@ -181,7 +181,7 @@ namespace AP_Atlas.UI
             // A tip.
             var tipRow = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
             tipRow.AddThemeConstantOverride("separation", 12);
-            _tip = Text("", Colors.LightGray);
+            _tip = Kit.Text("", AP_Atlas.Core.ThemeColors.TextMuted);
             tipRow.AddChild(_tip);
             var next = new Button { Text = _tr("Next tip"), SizeFlagsVertical = SizeFlags.ShrinkCenter };
             next.Pressed += NextTip;
@@ -205,20 +205,20 @@ namespace AP_Atlas.UI
             body.AddChild(newsCard);
 
             // Links: each opens in the browser when clicked; Atlas fetches none of them.
-            body.AddChild(Heading(_tr("Links")));
+            body.AddChild(Kit.Heading(_tr("Links"), 1.25f));
             foreach (var group in LinkList.Select(l => l.Group).Distinct())
             {
                 var row = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
                 row.AddThemeConstantOverride("separation", 12);
                 var name = new Label { Text = _tr(group), CustomMinimumSize = new Vector2(150, 0), SizeFlagsVertical = SizeFlags.ShrinkBegin };
-                name.AddThemeColorOverride("font_color", Colors.LightGray);
+                name.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextMuted);
                 row.AddChild(name);
                 var flow = new HFlowContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
                 flow.AddThemeConstantOverride("h_separation", 8);
                 flow.AddThemeConstantOverride("v_separation", 6);
                 foreach (var (_, linkTitle, url) in LinkList.Where(l => l.Group == group))
                 {
-                    var link = new Button { Text = _tr(linkTitle), Icon = LucideTextures.Get("external-link", Colors.LightGray, 1.1f), IconAlignment = HorizontalAlignment.Right, TooltipText = url };
+                    var link = new Button { Text = _tr(linkTitle), Icon = LucideTextures.Get("external-link", AP_Atlas.Core.ThemeColors.TextMuted, 1.1f), IconAlignment = HorizontalAlignment.Right, TooltipText = url };
                     link.AddThemeConstantOverride("h_separation", 6);
                     string target = url;
                     link.Pressed += () => _hooks.OpenWeb(target);
@@ -231,7 +231,7 @@ namespace AP_Atlas.UI
             // The footer.
             var footer = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
             footer.AddThemeConstantOverride("separation", 12);
-            footer.AddChild(Text(_tr("The Archipelago Atlas {0} · MIT licence · Unofficial: not affiliated with or endorsed by Archipelago.").Replace("{0}", AP_Atlas.Core.AtlasVersion.Display), Colors.Gray));
+            footer.AddChild(Kit.Text(_tr("The Archipelago Atlas {0} · MIT licence · Unofficial: not affiliated with or endorsed by Archipelago.").Replace("{0}", AP_Atlas.Core.AtlasVersion.Display), AP_Atlas.Core.ThemeColors.TextSubtle));
             var about = new Button { Text = _tr("About"), SizeFlagsVertical = SizeFlags.ShrinkCenter };
             about.Pressed += () => _hooks.ShowAbout();
             footer.AddChild(about);
@@ -301,7 +301,7 @@ namespace AP_Atlas.UI
             foreach (var step in _steps)
             {
                 step.LastDone = step.Done();
-                step.Mark.Texture = LucideTextures.Get(step.LastDone ? "circle-check" : "circle", step.LastDone ? AP_Atlas.Core.ThemeColors.Accent.Lightened(0.3f) : Colors.Gray);
+                step.Mark.Texture = LucideTextures.Get(step.LastDone ? "circle-check" : "circle", step.LastDone ? AP_Atlas.Core.ThemeColors.Accent.Lightened(0.3f) : AP_Atlas.Core.ThemeColors.TextSubtle);
                 step.Mark.TooltipText = step.LastDone ? _tr("Done") : _tr("Not yet");
             }
             RefreshRecents();
@@ -406,7 +406,7 @@ namespace AP_Atlas.UI
         private Control ToolCard(Tool tool)
         {
             var card = Card(out var box);
-            var button = new Button { Text = _tr(tool.Title), Icon = LucideTextures.Get(tool.Icon, Colors.White, 1.2f), Alignment = HorizontalAlignment.Left, Flat = true };
+            var button = new Button { Text = _tr(tool.Title), Icon = LucideTextures.Get(tool.Icon, AP_Atlas.Core.ThemeColors.Text, 1.2f), Alignment = HorizontalAlignment.Left, Flat = true };
             button.AddThemeConstantOverride("h_separation", 8);
             button.Pressed += () => _hooks.ShowTool(tool);
             box.AddChild(button);
@@ -430,7 +430,7 @@ namespace AP_Atlas.UI
             var panel = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
             panel.AddThemeStyleboxOverride("panel", new StyleBoxFlat
             {
-                BgColor = new Color("#1F1F25"),
+                BgColor = AP_Atlas.Core.ThemeColors.RowOdd,
                 CornerRadiusTopLeft = 6,
                 CornerRadiusTopRight = 6,
                 CornerRadiusBottomLeft = 6,
@@ -456,24 +456,9 @@ namespace AP_Atlas.UI
             }
         }
 
-        private static Label Heading(string text)
-        {
-            var label = new Label { Text = text };
-            label.SetMeta("font_size_ratio", 1.25f);
-            label.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Accent.Lightened(0.2f));
-            return label;
-        }
-
-        private static Label Text(string text, Color color)
-        {
-            var label = new Label { Text = text, AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ShrinkCenter };
-            label.AddThemeColorOverride("font_color", color);
-            return label;
-        }
-
         private static Label Small(string text)
         {
-            var label = Text(text, Colors.LightGray);
+            var label = Kit.Text(text, AP_Atlas.Core.ThemeColors.TextMuted);
             label.SetMeta("font_size_ratio", 0.9f);
             return label;
         }

@@ -27,9 +27,7 @@ namespace AP_Atlas.UI
 
         private static Button SectionButton(HFlowContainer flow, string text, string tooltip, Action onPressed, bool enabled = true)
         {
-            var b = new Button { Text = text, TooltipText = tooltip ?? "", Disabled = !enabled, FocusMode = FocusModeEnum.None };
-            b.SetMeta("font_size_ratio", 0.9);
-            b.Pressed += () => onPressed();
+            var b = Kit.Button(text, tooltip, onPressed, enabled, small: true);
             flow.AddChild(b);
             return b;
         }
@@ -79,11 +77,11 @@ namespace AP_Atlas.UI
             Row("Status", Colored(CtStatus.Label(row.Progression), AP_Atlas.UI.CheeseColors.Of(row.Progression)) + Colored("  ·  ", Muted) +
                 Colored(CtStatus.Label(row.Completion), AP_Atlas.UI.CheeseColors.Of(row.Completion)));
             Row("Claimed by", OwnerText(row, view.Ownership));
-            Row("Checks", Colored($"{row.ChecksDone} / {row.ChecksTotal}", row.ChecksTotal > 0 && row.ChecksDone >= row.ChecksTotal ? Good : Colors.White),
+            Row("Checks", Colored($"{row.ChecksDone} / {row.ChecksTotal}", row.ChecksTotal > 0 && row.ChecksDone >= row.ChecksTotal ? Good : ThemeColors.Text),
                 "As Cheese Tracker last read them from the Archipelago tracker");
             Row("Last activity", ActivityText(row, room.Tracker));
             PlainRow("Ping", CtStatus.Label(row.Ping));
-            Row("Notes", string.IsNullOrWhiteSpace(row.Notes) ? Colored("None", Muted) : Colored(row.Notes.Length > 500 ? row.Notes.Substring(0, 500) + "…" : row.Notes, Colors.White));
+            Row("Notes", string.IsNullOrWhiteSpace(row.Notes) ? Colored("None", Muted) : Colored(row.Notes.Length > 500 ? row.Notes.Substring(0, 500) + "…" : row.Notes, ThemeColors.Text));
 
             var advice = view.Advice;
             if (!live) Row("Atlas's logic", Colored("Connect this slot for Atlas to suggest a status.", Muted));
@@ -91,7 +89,7 @@ namespace AP_Atlas.UI
             else if (advice.InSync) Row("Atlas's logic", Colored("Agrees: " + advice.Reason, Good));
             else if (advice.Status != null)
                 Row("Atlas suggests", Colored(CtStatus.Label(advice.Status), AP_Atlas.UI.CheeseColors.Of(advice.Status)) + "  " +
-                    Colored(advice.Reason + (advice.Ready ? "" : " (confirming)"), Colors.LightGray),
+                    Colored(advice.Reason + (advice.Ready ? "" : " (confirming)"), ThemeColors.TextMuted),
                     "From Atlas's logic for this slot. BK is suggested after 5 minutes with nothing in logic; good news after a minute.");
             else if (advice.Quiet != null) Row("Atlas's logic", Colored(advice.Quiet, Muted));
 
@@ -192,7 +190,7 @@ namespace AP_Atlas.UI
 
             var counts = t.Games.GroupBy(CtStatus.Headline).ToDictionary(g => g.Key ?? "unknown", g => g.Count());
             var order = new[] { "bk", "soft_bk", "unknown", "unblocked", "go", "all_checks", "goal", "done", "released" };
-            Row("Slots", Colored($"{t.Games.Count}: ", Colors.LightGray) +
+            Row("Slots", Colored($"{t.Games.Count}: ", ThemeColors.TextMuted) +
                 string.Join(Colored(", ", Muted), order.Where(counts.ContainsKey).Select(id => Colored($"{counts[id]} {CtStatus.Label(id)}", AP_Atlas.UI.CheeseColors.Of(id)))));
             long done = t.Games.Sum(g => (long)g.ChecksDone), total = t.Games.Sum(g => (long)g.ChecksTotal);
             if (total > 0) PlainRow("Checks", $"{done} / {total} ({100.0 * done / total:0}%)");
@@ -209,13 +207,13 @@ namespace AP_Atlas.UI
             {
                 string headline = CtStatus.Headline(g);
                 string name = mine.TryGetValue(g.Id, out var slotName)
-                    ? LinkTo(g.Name, InspectTarget.ForSlot(profile.Id, slotName), Colors.Magenta)
-                    : Colored(g.Name, Colors.White);
+                    ? LinkTo(g.Name, InspectTarget.ForSlot(profile.Id, slotName), ThemeColors.You)
+                    : Colored(g.Name, ThemeColors.Text);
                 string owner = string.IsNullOrEmpty(g.OwnerName) ? Colored("unclaimed", Muted)
-                    : Colored(g.OwnerName + (g.OwnerAway ? " (away)" : ""), g.OwnerAway ? Warn : Colors.LightGray);
+                    : Colored(g.OwnerName + (g.OwnerAway ? " (away)" : ""), g.OwnerAway ? Warn : ThemeColors.TextMuted);
                 lines.Add($"{Colored(g.Position + ".", Muted)} {name} {Colored(g.Game, Muted)}  {Colored(CtStatus.Label(headline), AP_Atlas.UI.CheeseColors.Of(headline))}  " +
-                          $"{owner}  {Colored($"{g.ChecksDone}/{g.ChecksTotal}", Colors.LightGray)}  {ActivityText(g, t)}" +
-                          (string.IsNullOrWhiteSpace(g.Notes) ? "" : Colored("  *notes", Colors.LightGray)));
+                          $"{owner}  {Colored($"{g.ChecksDone}/{g.ChecksTotal}", ThemeColors.TextMuted)}  {ActivityText(g, t)}" +
+                          (string.IsNullOrWhiteSpace(g.Notes) ? "" : Colored("  *notes", ThemeColors.TextMuted)));
             }
             AddText(string.Join("\n", lines));
         }
@@ -263,8 +261,8 @@ namespace AP_Atlas.UI
             string who = owner switch
             {
                 CheeseOwnership.You => Colored("You (" + row.OwnerName + ")", Good) + away,
-                CheeseOwnership.YouByName => Colored(row.OwnerName + " (claimed without signing in; Claim makes it your account's)", Colors.LightGray),
-                CheeseOwnership.SomeoneElse => Colored(string.IsNullOrEmpty(row.OwnerName) ? "Someone" : row.OwnerName, Colors.White) + away,
+                CheeseOwnership.YouByName => Colored(row.OwnerName + " (claimed without signing in; Claim makes it your account's)", ThemeColors.TextMuted),
+                CheeseOwnership.SomeoneElse => Colored(string.IsNullOrEmpty(row.OwnerName) ? "Someone" : row.OwnerName, ThemeColors.Text) + away,
                 _ => Colored("Nobody", Muted)
             };
             return who + Colored($"  ({CtStatus.Label(row.Availability)})", Muted);
@@ -278,7 +276,7 @@ namespace AP_Atlas.UI
             var latest = stillBk != null && (activity == null || stillBk > activity) ? stillBk : activity;
             if (latest == null) return Colored("no checks yet", Muted);
             double hours = (DateTime.UtcNow - latest.Value).TotalHours; // wall clock: how long ago a time the site sent was
-            var color = hours < t.YellowHours ? Good : hours < t.RedHours ? Colors.Gold : Bad;
+            var color = hours < t.YellowHours ? Good : hours < t.RedHours ? CheeseColors.Caution : Bad;
             return Colored(CtTime.Ago(latest) + (latest == stillBk && stillBk != activity ? " (still BK)" : ""), color);
         }
 

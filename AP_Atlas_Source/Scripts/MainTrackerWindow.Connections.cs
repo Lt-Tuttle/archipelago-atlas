@@ -88,14 +88,14 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         UpdateSidebar();
         if (_sessions.AutoReconnect) return;
         var profile = ProfileById(slot.ProfileId);
-        if (profile != null) ShowToast($"Connection to {slot.SlotName} was lost.", Godot.Colors.Orange, "Reconnect", () => OnConnectSlotPressed(slot.SlotName, profile));
+        if (profile != null) ShowToast($"Connection to {slot.SlotName} was lost.", AP_Atlas.Core.ThemeColors.Warning, "Reconnect", () => OnConnectSlotPressed(slot.SlotName, profile));
     }
 
     private void OnReconnectScheduled(SlotId slot, int attempt, int tries, TimeSpan wait)
     {
         if (_shuttingDown) return;
         LogToSystem($"Reconnecting {slot.SlotName} in {wait.TotalSeconds:0} s (try {attempt} of {tries}).", "orange");
-        if (attempt == 1) ShowToast($"Connection to {slot.SlotName} lost. Reconnecting automatically…", Godot.Colors.Orange);
+        if (attempt == 1) ShowToast($"Connection to {slot.SlotName} lost. Reconnecting automatically…", AP_Atlas.Core.ThemeColors.Warning);
     }
 
     private void OnReconnected(ConnectedSlot connected)
@@ -109,7 +109,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         }
         BuildSlotTracker(profile, connected);
         LogToSystem($"Reconnected {connected.Slot.SlotName}.", "lime");
-        ShowToast($"Reconnected {connected.Slot.SlotName}.", Godot.Colors.LimeGreen);
+        ShowToast($"Reconnected {connected.Slot.SlotName}.", AP_Atlas.Core.ThemeColors.Success);
     }
 
     private void OnReconnectStopped(SlotId slot, string refusal)
@@ -119,14 +119,14 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         {
             // The server answered and refused (slot gone, wrong password, room changed): retrying won't help.
             LogToSystem($"Stopped reconnecting {slot.SlotName}: the server refused the login ({refusal}).", "red");
-            ShowToast($"{slot.SlotName} can't reconnect: {refusal}", Godot.Colors.Salmon);
+            ShowToast($"{slot.SlotName} can't reconnect: {refusal}", AP_Atlas.Core.ThemeColors.Error);
         }
         else
         {
             LogToSystem($"Stopped trying to reconnect {slot.SlotName} after {_sessions.ReconnectTries} tries over about 20 minutes. Reconnect it when the server is back.", "orange");
             var profile = ProfileById(slot.ProfileId);
             if (profile != null)
-                ShowToast($"{slot.SlotName} couldn't reconnect. The server may be down or the room closed.", Godot.Colors.Orange, "Try again", () => OnConnectSlotPressed(slot.SlotName, profile));
+                ShowToast($"{slot.SlotName} couldn't reconnect. The server may be down or the room closed.", AP_Atlas.Core.ThemeColors.Warning, "Try again", () => OnConnectSlotPressed(slot.SlotName, profile));
         }
         UpdateSidebar();
     }
@@ -151,11 +151,11 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 _connectingOverlay.SetAnchorsPreset(Control.LayoutPreset.FullRect);
                 var popup = new PanelContainer { Name = "PopupPanel" };
                 popup.CustomMinimumSize = new Godot.Vector2(450, 150);
-                var style = new StyleBoxFlat { BgColor = new Godot.Color(0.12f, 0.12f, 0.15f, 0.95f), CornerRadiusTopLeft = 10, CornerRadiusTopRight = 10, CornerRadiusBottomLeft = 10, CornerRadiusBottomRight = 10, BorderWidthBottom = 2, BorderWidthTop = 2, BorderWidthLeft = 2, BorderWidthRight = 2, BorderColor = Godot.Colors.DarkGray };
+                var style = new StyleBoxFlat { BgColor = new Godot.Color(AP_Atlas.Core.ThemeColors.SurfaceDeep, 0.95f), CornerRadiusTopLeft = 10, CornerRadiusTopRight = 10, CornerRadiusBottomLeft = 10, CornerRadiusBottomRight = 10, BorderWidthBottom = 2, BorderWidthTop = 2, BorderWidthLeft = 2, BorderWidthRight = 2, BorderColor = AP_Atlas.Core.ThemeColors.BorderSoft };
                 popup.AddThemeStyleboxOverride("panel", style);
                 var lbl = new Label { Name = "MessageLabel", HorizontalAlignment = HorizontalAlignment.Center };
                 lbl.AddThemeFontSizeOverride("font_size", 28);
-                lbl.AddThemeColorOverride("font_color", Godot.Colors.Yellow);
+                lbl.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Pending);
                 var popupCenter = new CenterContainer { Name = "CenterContainer" };
                 popupCenter.AddChild(lbl);
                 popup.AddChild(popupCenter);
@@ -228,19 +228,19 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         if (string.IsNullOrWhiteSpace(profile.ServerUrl))
         {
             _statusLabel.Text = "Status: Server URL cannot be empty";
-            _statusLabel.AddThemeColorOverride("font_color", Colors.Red);
+            _statusLabel.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Error);
             if (_globalStatusLabel != null) _globalStatusLabel.Text = "Connection Error";
             return false;
         }
         if (string.IsNullOrWhiteSpace(slotName))
         {
             _statusLabel.Text = "Status: Slot Name cannot be empty";
-            _statusLabel.AddThemeColorOverride("font_color", Colors.Red);
+            _statusLabel.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Error);
             if (_globalStatusLabel != null) _globalStatusLabel.Text = "Connection Error";
             return false;
         }
         _statusLabel.Text = "Status: Connecting to " + slotName + "...";
-        _statusLabel.AddThemeColorOverride("font_color", Colors.Yellow);
+        _statusLabel.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Pending);
         if (_globalStatusLabel != null) _globalStatusLabel.Text = "Connecting to " + profile.ServerUrl + " as " + slotName + "...";
         LogToSystem("Attempting to connect to " + profile.ServerUrl + " as " + slotName + "...", "cyan");
         _connectingSlots.Add(SlotKey(profile.Id, slotName));
@@ -274,7 +274,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _connectingSlots.Remove(SlotKey(profile.Id, slotName));
         UpdateSidebar();
         if (_shuttingDown || deleted || result.Outcome == ConnectOutcome.Cancelled) return;
-        _statusLabel.AddThemeColorOverride("font_color", Colors.Red);
+        _statusLabel.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Error);
         switch (result.Outcome)
         {
             case ConnectOutcome.TimedOut:
@@ -306,7 +306,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         string slotName = connected.Slot.SlotName;
         var session = connected.Session;
         _statusLabel.Text = "Status: Connected successfully as " + slotName + "!";
-        _statusLabel.AddThemeColorOverride("font_color", Colors.Green);
+        _statusLabel.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Success);
         if (_globalStatusLabel != null) _globalStatusLabel.Text = "Booting Engine for " + slotName + "...";
         LogToSystem("Successfully authenticated as " + slotName + ".", "lime");
         foreach (Node n in ActiveSlotNodes())

@@ -29,17 +29,17 @@ namespace AP_Atlas.UI
             SizeFlagsHorizontal = SizeFlags.ExpandFill;
             AddThemeConstantOverride("separation", 10);
 
-            AddChild(Heading(_tr("What Atlas may do by itself")));
+            AddChild(Kit.Heading(_tr("What Atlas may do by itself"), 1.1f));
             _permissions.AddThemeConstantOverride("separation", 8);
             AddChild(_permissions);
 
-            AddChild(Heading(_tr("Trusted apworld sources")));
-            AddChild(Text(_tr("Apworlds are programs that run inside Atlas's logic engine. Atlas downloads them only from sources listed here, or after asking you."), Colors.Gray));
+            AddChild(Kit.Heading(_tr("Trusted apworld sources"), 1.1f));
+            AddChild(Kit.Text(_tr("Apworlds are programs that run inside Atlas's logic engine. Atlas downloads them only from sources listed here, or after asking you."), ThemeColors.TextSubtle));
             _sources.AddThemeConstantOverride("separation", 6);
             AddChild(_sources);
 
-            AddChild(Heading(_tr("Where Atlas goes online")));
-            AddChild(Text(_tr(Permissions.WhereAtlasGoesOnline), Colors.Gray));
+            AddChild(Kit.Heading(_tr("Where Atlas goes online"), 1.1f));
+            AddChild(Kit.Text(_tr(Permissions.WhereAtlasGoesOnline), ThemeColors.TextSubtle));
             Refresh();
         }
 
@@ -76,12 +76,12 @@ namespace AP_Atlas.UI
                 var text = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
                 text.AddThemeConstantOverride("separation", 2);
                 text.AddChild(new Label { Text = _tr(kind.Title) });
-                var explanation = Text(_tr(kind.Explanation), Colors.LightGray);
+                var explanation = Kit.Text(_tr(kind.Explanation), ThemeColors.TextMuted);
                 explanation.SetMeta("font_size_ratio", 0.9f);
                 text.AddChild(explanation);
                 row.AddChild(text);
                 var shown = new Label { Text = state, SizeFlagsVertical = SizeFlags.ShrinkCenter };
-                shown.AddThemeColorOverride("font_color", grants.Count > 0 ? ThemeColors.Accent.Lightened(0.3f) : Colors.LightGray);
+                shown.AddThemeColorOverride("font_color", grants.Count > 0 ? ThemeColors.Accent.Lightened(0.3f) : ThemeColors.TextMuted);
                 row.AddChild(shown);
                 _permissions.AddChild(row);
 
@@ -89,7 +89,7 @@ namespace AP_Atlas.UI
                 {
                     var grant = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
                     grant.AddThemeConstantOverride("separation", 16);
-                    var where = Text(string.IsNullOrEmpty(scope) ? _tr("Everywhere") : scope, Colors.LightGray);
+                    var where = Kit.Text(string.IsNullOrEmpty(scope) ? _tr("Everywhere") : scope, ThemeColors.TextMuted);
                     grant.AddChild(where);
                     var take = new Button { Text = _tr("Take back"), TooltipText = _tr("Atlas will ask again next time.") };
                     var k = kind;
@@ -106,12 +106,12 @@ namespace AP_Atlas.UI
             }
 
             var sources = Permissions.TrustedSources(_settings);
-            if (sources.Count == 0) _sources.AddChild(Text(_tr("None."), Colors.Gray));
+            if (sources.Count == 0) _sources.AddChild(Kit.Text(_tr("None."), ThemeColors.TextSubtle));
             foreach (string source in sources)
             {
                 var row = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
                 row.AddThemeConstantOverride("separation", 16);
-                row.AddChild(Text(source, Colors.LightGray));
+                row.AddChild(Kit.Text(source, ThemeColors.TextMuted));
                 var stop = new Button { Text = _tr("Stop trusting"), TooltipText = _tr("Atlas will ask before downloading from it again.") };
                 string src = source;
                 stop.Pressed += () =>
@@ -137,19 +137,5 @@ namespace AP_Atlas.UI
             }
         }
 
-        private static Label Heading(string text)
-        {
-            var label = new Label { Text = text };
-            label.SetMeta("font_size_ratio", 1.1f);
-            label.AddThemeColorOverride("font_color", ThemeColors.Accent.Lightened(0.2f));
-            return label;
-        }
-
-        private static Label Text(string text, Color color)
-        {
-            var label = new Label { Text = text, AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ShrinkCenter };
-            label.AddThemeColorOverride("font_color", color);
-            return label;
-        }
     }
 }

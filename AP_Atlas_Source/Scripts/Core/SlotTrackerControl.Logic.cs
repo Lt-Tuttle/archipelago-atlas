@@ -116,10 +116,10 @@ public partial class SlotTrackerControl : MarginContainer
         if (!AP_Atlas.Core.Annotations.FirstOfferOfYamlExclusions(AnnotationKey, signature)) return;
         string file = System.IO.Path.GetFileName(yaml.File);
         AppendDebugLog($"[Exclusions] {file} lists {yaml.Names.Count} excluded location(s) for {slot}.");
-        ShowActionToast?.Invoke($"{file} excludes {yaml.Names.Count} location(s) for {slot}. Apply them to the tracker?", Colors.Gray, "Apply", () => AP_Atlas.Core.Async.Fire(async () =>
+        ShowActionToast?.Invoke($"{file} excludes {yaml.Names.Count} location(s) for {slot}. Apply them to the tracker?", AP_Atlas.Core.ThemeColors.TextSubtle, "Apply", () => AP_Atlas.Core.Async.Fire(async () =>
         {
             var (applied, listed, unknown) = await ApplyYamlExclusionsAsync(yaml.Names);
-            ShowToast?.Invoke($"Excluded {applied} location(s) from {file}" + (unknown.Count > 0 ? $" ({unknown.Count} name(s) not found)" : ""), Colors.Gray);
+            ShowToast?.Invoke($"Excluded {applied} location(s) from {file}" + (unknown.Count > 0 ? $" ({unknown.Count} name(s) not found)" : ""), AP_Atlas.Core.ThemeColors.TextSubtle);
         }, $"applying {file}'s excluded locations"));
     }
 }

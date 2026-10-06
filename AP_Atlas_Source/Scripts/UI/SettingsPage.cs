@@ -82,7 +82,7 @@ namespace AP_Atlas.UI
             AddChild(_search);
 
             _nothing = new Label { Text = _tr("No setting matches what you typed."), Visible = false, HorizontalAlignment = HorizontalAlignment.Center };
-            _nothing.AddThemeColorOverride("font_color", Colors.Gray);
+            _nothing.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextSubtle);
             AddChild(_nothing);
 
             _scroll = new ScrollContainer { HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled, SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
@@ -92,11 +92,6 @@ namespace AP_Atlas.UI
             _scroll.AddChild(_body);
 
             SectionList = new VBoxContainer { Name = "SettingsSections", SizeFlagsHorizontal = SizeFlags.ExpandFill };
-
-            // The headings wear the accent, so they follow it when the user picks another one on this very page.
-            AddChild(new TreeSubscriptions().On(
-                () => AP_Atlas.Core.ThemeColors.AccentChanged += RecolourHeadings,
-                () => AP_Atlas.Core.ThemeColors.AccentChanged -= RecolourHeadings));
         }
 
         /// <summary>Adds a section, after the others, with a note under its heading if given; its rows follow.</summary>
@@ -105,14 +100,12 @@ namespace AP_Atlas.UI
             if (_sections.Any(s => s.Id == id)) throw new InvalidOperationException($"Two settings sections are \"{id}\".");
             var box = new VBoxContainer { Name = "Section_" + id, SizeFlagsHorizontal = SizeFlags.ExpandFill };
             box.AddThemeConstantOverride("separation", 6);
-            var heading = new Label { Text = _tr(title) };
-            heading.AddThemeColorOverride("font_color", HeadingColour);
-            heading.SetMeta("font_size_ratio", 1.3f);
+            var heading = Kit.Heading(_tr(title), 1.3f);
             box.AddChild(heading);
             if (note.Length > 0)
             {
                 var text = new Label { Text = _tr(note), AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill };
-                text.AddThemeColorOverride("font_color", Colors.LightGray);
+                text.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextMuted);
                 text.SetMeta("font_size_ratio", 0.9f);
                 box.AddChild(text);
             }
@@ -170,7 +163,7 @@ namespace AP_Atlas.UI
             var box = new HBoxContainer();
             box.AddThemeConstantOverride("separation", 6);
             var warning = new Label { Text = _tr("Conflict"), Visible = false, SizeFlagsVertical = SizeFlags.ShrinkCenter };
-            warning.AddThemeColorOverride("font_color", Colors.Orange);
+            warning.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Warning);
             var capture = new KeyCapture(_tr) { Key = get() };
             var reset = new Button { Text = _tr("Reset"), TooltipText = _tr("Back to the key Atlas ships with.") };
             void Refresh()
@@ -226,7 +219,7 @@ namespace AP_Atlas.UI
             if (description.Length > 0 && !below)
             {
                 var hint = new Label { Text = _tr(description), AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill };
-                hint.AddThemeColorOverride("font_color", Colors.LightGray);
+                hint.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextMuted);
                 hint.SetMeta("font_size_ratio", 0.9f);
                 text.AddChild(hint);
             }
@@ -240,13 +233,6 @@ namespace AP_Atlas.UI
             row.AddChild(shown);
             section.Box.AddChild(row);
             _rows.Add(new Row(id, section, title, description, row, primary, refresh));
-        }
-
-        private static Color HeadingColour => AP_Atlas.Core.ThemeColors.Accent.Lightened(0.2f);
-
-        private void RecolourHeadings()
-        {
-            foreach (var section in _sections) section.Heading.AddThemeColorOverride("font_color", HeadingColour);
         }
 
         /// <summary>Shows the rows the typed words find (title, description or section), and the sections that keep a row.</summary>

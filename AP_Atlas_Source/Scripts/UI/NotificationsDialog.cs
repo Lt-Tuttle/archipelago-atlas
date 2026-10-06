@@ -39,7 +39,7 @@ namespace AP_Atlas.UI
             _tree.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
             box.AddChild(_tree);
             _empty = new Label { Text = _tr("Nothing yet this session."), HorizontalAlignment = HorizontalAlignment.Center };
-            _empty.AddThemeColorOverride("font_color", Colors.Gray);
+            _empty.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextSubtle);
             box.AddChild(_empty);
             AddChild(box);
             AddButton(_tr("Clear"), false, "clear");

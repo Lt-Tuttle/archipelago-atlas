@@ -127,6 +127,8 @@ public partial class MainTrackerWindow
             HelpAsync);
         await ScenarioAsync("Alerts: what Atlas tells the user stacks at the bottom right without overlapping, at most a few at once, every card in the history newest first with its kind; a card's button runs its action and the card goes, the × takes one away, the plain ones go after their hold; Window → Notifications lists the history, marks it seen, and Clear empties it",
             AlertsAsync);
+        await ScenarioAsync("UI kit: a button from the kit runs its action once per press, honours enabled and keeps its tooltip; its text lines take the palette's colours; every heading from it wears the accent's heading colour and follows an accent change, wherever it is; the alert feed names a card's kind from the palette",
+            UiKitAsync);
         await ScenarioAsync("Bursts: 40 items and 40 chat lines arriving together reach the slot once each, at most one update of the window in each frame they arrive over (not 80)",
             BurstIsOneUpdateAsync, attempts: 2);
         await ScenarioAsync("Long text: a game's names and a hint's entrance of a megabyte, and a chat line of 100,000 characters without a space, hold up no frame for 150 ms, shown or not (names are cut to 500 characters; a long run of text gets breaks)",
@@ -996,6 +998,44 @@ public partial class MainTrackerWindow
         UiTestExpect(feed.Log.Entries.Count == 0 && dialog.RowCount == 0, "Clear didn't empty the history");
         dialog.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
         await UiTestWaitAsync(0.2);
+    }
+
+    private async Task UiKitAsync()
+    {
+        // A button from the kit runs its action once per press, honours "enabled" and keeps its tooltip; a small one is scaled down.
+        int presses = 0;
+        var button = AP_Atlas.UI.Kit.Button("Press", "What it does", () => presses++);
+        AddChild(button);
+        button.EmitSignal(BaseButton.SignalName.Pressed);
+        UiTestExpect(presses == 1 && button.TooltipText == "What it does" && !button.Disabled, $"a kit button ran its action {presses} times, or lost its tooltip");
+        var off = AP_Atlas.UI.Kit.Button("Off", null, () => presses++, enabled: false, small: true);
+        off.EmitSignal(BaseButton.SignalName.Pressed);
+        UiTestExpect(off.Disabled && off.TooltipText == "" && off.HasMeta("font_size_ratio") && presses == 2, "a disabled small kit button isn't disabled, or isn't small");
+        // Its text lines wrap and take the palette's colours.
+        UiTestExpect(AP_Atlas.UI.Kit.Text("t").GetThemeColor("font_color") == AP_Atlas.Core.ThemeColors.Text
+            && AP_Atlas.UI.Kit.Muted("t").GetThemeColor("font_color") == AP_Atlas.Core.ThemeColors.TextMuted
+            && AP_Atlas.UI.Kit.Subtle("t").GetThemeColor("font_color") == AP_Atlas.Core.ThemeColors.TextSubtle
+            && AP_Atlas.UI.Kit.Text("t").AutowrapMode != TextServer.AutowrapMode.Off, "the kit's text lines don't take the palette's colours, or don't wrap");
+        // Every heading from the kit wears the accent's heading colour and follows an accent change, wherever it is: one added here, Home's, the Settings page's.
+        var heading = AP_Atlas.UI.Kit.Heading("Heading");
+        AddChild(heading);
+        var headings = GetTree().Root.FindChildren("*", nameof(Label), true, false).OfType<Label>().Where(l => l.HasMeta("kit_heading")).ToList();
+        UiTestExpect(headings.Count >= 6 && headings.All(l => l.GetThemeColor("font_color") == AP_Atlas.Core.ThemeColors.Heading), $"of {headings.Count} kit headings, not every one wears the heading colour");
+        ApplyAccent("#FFD700");
+        var changed = AP_Atlas.Core.ThemeColors.Heading;
+        UiTestExpect(AP_Atlas.Core.ThemeColors.Accent == new Color("#FFD700") && changed != new Color(AP_Atlas.Core.ThemeColors.DefaultAccentHex).Lightened(0.2f)
+            && headings.All(l => l.GetThemeColor("font_color") == changed), "after an accent change, not every kit heading follows it");
+        ApplyAccent(AP_Atlas.Core.ThemeColors.DefaultAccentHex);
+        UiTestExpect(headings.All(l => l.GetThemeColor("font_color") == AP_Atlas.Core.ThemeColors.Heading), "after the accent went back, not every kit heading followed");
+        // The alert feed names a card's kind from the palette.
+        UiTestExpect(AP_Atlas.UI.AlertFeed.KindOf(AP_Atlas.Core.ThemeColors.Danger) == AP_Atlas.Core.AlertKind.Error
+            && AP_Atlas.UI.AlertFeed.KindOf(AP_Atlas.Core.ThemeColors.Warning) == AP_Atlas.Core.AlertKind.Warning
+            && AP_Atlas.UI.AlertFeed.KindOf(AP_Atlas.Core.ThemeColors.Success) == AP_Atlas.Core.AlertKind.Success
+            && AP_Atlas.UI.AlertFeed.KindOf(AP_Atlas.Core.ThemeColors.TextSubtle) == AP_Atlas.Core.AlertKind.Info, "the alert feed doesn't name kinds from the palette");
+        button.QueueFree();
+        off.QueueFree();
+        heading.QueueFree();
+        await UiTestWaitAsync(0.1);
     }
 
     private async Task WindowPartsAsync()

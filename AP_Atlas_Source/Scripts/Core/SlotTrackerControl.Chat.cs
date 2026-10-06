@@ -160,7 +160,7 @@ public partial class SlotTrackerControl : MarginContainer
         var panel = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         var style = new StyleBoxFlat
         {
-            BgColor = _nextChatAltBg ? new Godot.Color("#2a2a2a") : new Godot.Color("#1e1e1e"),
+            BgColor = _nextChatAltBg ? AP_Atlas.Core.ThemeColors.SurfaceRaised : AP_Atlas.Core.ThemeColors.Surface,
             ContentMarginLeft = 5,
             ContentMarginRight = 5,
             ContentMarginTop = 2,
@@ -345,7 +345,7 @@ public partial class SlotTrackerControl : MarginContainer
         var panel = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         var style = new StyleBoxFlat
         {
-            BgColor = _nextChatAltBg ? new Godot.Color("#2a2a2a") : new Godot.Color("#1e1e1e"),
+            BgColor = _nextChatAltBg ? AP_Atlas.Core.ThemeColors.SurfaceRaised : AP_Atlas.Core.ThemeColors.Surface,
             ContentMarginLeft = 5,
             ContentMarginRight = 5,
             ContentMarginTop = 2,

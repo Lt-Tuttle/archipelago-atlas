@@ -64,6 +64,10 @@
       - Markup in a log message: nowhere. Messages are plain text, escaped for the window (they often quote outside text),
         so a tag in one would show as text; a line's colour is an argument (Logger.LogInfo(message, color)).
       - An empty catch that doesn't say why on the same line: nowhere. A failure is logged, handled, or explained.
+      - A colour of its own (Colors.X, new Color("#...")): only in the palettes (ThemeColors; CheeseColors for Cheese
+        Tracker's own; Annotations for the flag palette). Code names what a colour means (ThemeColors.TextMuted,
+        ThemeColors.Error, ThemeColors.SurfaceSunken), so a theme can change every colour in one place. The literals
+        left elsewhere (the map tracker's, until its canvas is rebuilt) are counted, and the count may only go down.
     Where a rule names a number, the file may do it only that many times: one helper does it, everything else uses it.
     Libraries whose internals Atlas relies on are pinned (MoonSharp, Archipelago.MultiClient.Net): update one only with
     the checks CONTRIBUTING lists for it.
@@ -185,7 +189,7 @@ foreach ($pin in $pinned) {
 # reworked. Counted by class (the file name up to its first dot), so splitting a class into partial files doesn't
 # change the count. This number only goes down, and must match: lower it in the same change that migrates a class, so
 # the progress can't be undone later.
-$nullableOptOutLimit = 53
+$nullableOptOutLimit = 52
 $optedOut = @($files | Where-Object { (Get-Content -LiteralPath $_.FullName -TotalCount 1) -eq '#nullable disable' } |
     ForEach-Object { $_.Name.Split('.')[0] } | Sort-Object -Unique).Count
 if ($optedOut -gt $nullableOptOutLimit) {
@@ -194,6 +198,24 @@ if ($optedOut -gt $nullableOptOutLimit) {
 }
 elseif ($optedOut -lt $nullableOptOutLimit) {
     Write-Host "GUARD: only $optedOut classes still turn nullable checks off: lower the limit in check_guards.ps1 to $optedOut, so it can't creep back up." -ForegroundColor Red
+    $broken++
+}
+
+# Colour literals outside the palettes: the count ratchets down (see the rules above).
+$colourLiteralLimit = 54
+$paletteFiles = @('ThemeColors.cs', 'CheeseColors.cs', 'Annotations.cs')
+$colourLiterals = 0
+foreach ($file in $files) {
+    if ($paletteFiles -contains $file.Name) { continue }
+    $content = [System.IO.File]::ReadAllText($file.FullName)
+    $colourLiterals += [regex]::Matches($content, '(?<!Net\.)\bColors\.[A-Z][A-Za-z]+\b|new (Godot\.)?Color\("#').Count
+}
+if ($colourLiterals -gt $colourLiteralLimit) {
+    Write-Host "GUARD: $colourLiterals colours are named outside the palettes (Colors.X, new Color(""#..."")), more than the $colourLiteralLimit allowed. Name what the colour means instead: a ThemeColors token (TextMuted, Error, SurfaceSunken...), or add one to the palette." -ForegroundColor Red
+    $broken++
+}
+elseif ($colourLiterals -lt $colourLiteralLimit) {
+    Write-Host "GUARD: only $colourLiterals colours are still named outside the palettes: lower the limit in check_guards.ps1 to $colourLiterals, so it can't creep back up." -ForegroundColor Red
     $broken++
 }
 

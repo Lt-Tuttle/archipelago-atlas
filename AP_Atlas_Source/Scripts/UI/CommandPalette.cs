@@ -32,8 +32,8 @@ namespace AP_Atlas.UI
         {
             AddThemeStyleboxOverride("panel", new StyleBoxFlat
             {
-                BgColor = new Color("#252526"),
-                BorderColor = new Color("#444444"),
+                BgColor = AP_Atlas.Core.ThemeColors.SurfacePanel,
+                BorderColor = AP_Atlas.Core.ThemeColors.BorderSoft,
                 BorderWidthLeft = 1,
                 BorderWidthTop = 1,
                 BorderWidthRight = 1,

@@ -20,10 +20,10 @@ namespace AP_Atlas.UI
         public const string MineView = "*mine";
         public const string SettingsView = "*settings";
 
-        private static readonly Color Good = Colors.LimeGreen;
-        private static readonly Color Warn = Colors.Orange;
-        private static readonly Color Bad = Colors.Salmon;
-        private static readonly Color Muted = Colors.Gray;
+        private static readonly Color Good = ThemeColors.Success;
+        private static readonly Color Warn = ThemeColors.Warning;
+        private static readonly Color Bad = ThemeColors.Error;
+        private static readonly Color Muted = ThemeColors.TextSubtle;
 
         private readonly AppSettings _settings;
         private readonly CheeseTrackerService _cheese;
@@ -621,9 +621,9 @@ namespace AP_Atlas.UI
                 _subtitle.Text = profile.Name + " · " + string.Join(" · ", parts);
                 if (rebuildButtons)
                 {
-                    _headerButtons.AddChild(HeaderButton("Refresh", "Read the tracker again now", () => CheeseDialogs.Run(this, _cheese.RefreshAsync(profile.Id), _toast, null, QueueRefresh), room?.Busy != true));
-                    if (room != null) _headerButtons.AddChild(HeaderButton("Open ↗", "Open this tracker on Cheese Tracker", () => AP_Atlas.Core.ExternalLinks.OpenWeb(room.Link)));
-                    _headerButtons.AddChild(HeaderButton("Change link…", "Link this multiworld to a different tracker", () => CheeseDialogs.Link(this, _cheese, profile, _toast, Refresh)));
+                    _headerButtons.AddChild(Kit.Button("Refresh", "Read the tracker again now", () => CheeseDialogs.Run(this, _cheese.RefreshAsync(profile.Id), _toast, null, QueueRefresh), room?.Busy != true));
+                    if (room != null) _headerButtons.AddChild(Kit.Button("Open ↗", "Open this tracker on Cheese Tracker", () => AP_Atlas.Core.ExternalLinks.OpenWeb(room.Link)));
+                    _headerButtons.AddChild(Kit.Button("Change link…", "Link this multiworld to a different tracker", () => CheeseDialogs.Link(this, _cheese, profile, _toast, Refresh)));
                 }
             }
             else
@@ -634,7 +634,7 @@ namespace AP_Atlas.UI
                 _subtitle.Text = $"Your slots in {rooms.Count} linked multiworld{(rooms.Count == 1 ? "" : "s")} · " +
                                  (busy > 0 ? "reading…" : rooms.Any(r => r.Room.FetchedUtc == null) ? "not all read yet" : "oldest read " + CtTime.Ago(oldest));
                 if (rebuildButtons)
-                    _headerButtons.AddChild(HeaderButton("Refresh", "Read every linked tracker again now", () =>
+                    _headerButtons.AddChild(Kit.Button("Refresh", "Read every linked tracker again now", () =>
                     {
                         foreach (var (p, _) in rooms) CheeseDialogs.Run(this, _cheese.RefreshAsync(p.Id), _toast, null, QueueRefresh);
                     }, busy == 0));
@@ -658,13 +658,6 @@ namespace AP_Atlas.UI
             RenderTable();
         }
 
-        private Button HeaderButton(string text, string tooltip, Action onPressed, bool enabled = true)
-        {
-            var b = new Button { Text = text, TooltipText = tooltip, Disabled = !enabled, FocusMode = FocusModeEnum.None };
-            b.Pressed += () => onPressed();
-            return b;
-        }
-
         // =====================================================================
         // Summary
         // =====================================================================
@@ -679,7 +672,7 @@ namespace AP_Atlas.UI
             var unified = stat.GroupBy(r => Unified(r.Game)).ToDictionary(g => g.Key, g => g.Count());
             var order = new[] { "bk", "soft_bk", "incomplete", "all_checks", "goal", "done" };
             string counts = string.Join(Colored(" · ", Muted), order.Where(unified.ContainsKey).Select(id => Colored($"{unified[id]} {UnifiedLabel(id)}", UnifiedColor(id))));
-            _summaryText.Markup = Colored($"{Plural(stat.Count, "slot")} · {Plural(players, "player")} · {Plural(games, "game")} · {done}/{total} checks" + (total > 0 ? $" ({100.0 * done / total:0}%)" : ""), Colors.LightGray) +
+            _summaryText.Markup = Colored($"{Plural(stat.Count, "slot")} · {Plural(players, "player")} · {Plural(games, "game")} · {done}/{total} checks" + (total > 0 ? $" ({100.0 * done / total:0}%)" : ""), ThemeColors.TextMuted) +
                                 (counts.Length > 0 ? "   " + counts : "");
 
             string barsSignature = string.Join(",", unified.OrderBy(kv => kv.Key).Select(kv => kv.Key + kv.Value)) + "|" +
@@ -687,8 +680,8 @@ namespace AP_Atlas.UI
             if (barsSignature == _barsSignature) return;
             _barsSignature = barsSignature;
             var progressionOrder = new[] { "unknown", "bk", "soft_bk", "unblocked", "go" };
-            var checks = progressionOrder.Select(id => (CtStatus.Label(id) + " (remaining)", (double)stat.Where(r => r.Game.Progression == id).Sum(r => Math.Max(0, r.Game.ChecksTotal - r.Game.ChecksDone)), AP_Atlas.UI.CheeseColors.Of(id) == Colors.WhiteSmoke ? Colors.LightSlateGray : AP_Atlas.UI.CheeseColors.Of(id)))
-                .Append(("Checked", done, Good.Darkened(0.25f)));
+            var checks = progressionOrder.Select(id => (CtStatus.Label(id) + " (remaining)", (double)stat.Where(r => r.Game.Progression == id).Sum(r => Math.Max(0, r.Game.ChecksTotal - r.Game.ChecksDone)), AP_Atlas.UI.CheeseColors.Of(id) == Colors.WhiteSmoke ? CheeseColors.Incomplete : AP_Atlas.UI.CheeseColors.Of(id)))
+                .Append(("Checked", done, ThemeColors.TextMuted));
             FillBar(_checksBar, checks);
             FillBar(_slotsBar, order.Select(id => (UnifiedLabel(id), (double)unified.GetValueOrDefault(id), UnifiedColor(id))));
         }
@@ -700,7 +693,7 @@ namespace AP_Atlas.UI
 
         private static string UnifiedLabel(string id) => id == "incomplete" ? "in progress" : CtStatus.Label(id);
 
-        private static Color UnifiedColor(string id) => id == "incomplete" ? Colors.LightSlateGray : AP_Atlas.UI.CheeseColors.Of(id);
+        private static Color UnifiedColor(string id) => id == "incomplete" ? CheeseColors.Incomplete : AP_Atlas.UI.CheeseColors.Of(id);
 
         private static void FillBar(HBoxContainer bar, IEnumerable<(string Label, double Value, Color Color)> parts)
         {
@@ -822,7 +815,7 @@ namespace AP_Atlas.UI
         {
             string text = menu.GetMeta("base_text").AsString();
             menu.Text = active ? text + " (filtered) ▾" : text + " ▾";
-            if (active) menu.AddThemeColorOverride("font_color", Colors.Gold);
+            if (active) menu.AddThemeColorOverride("font_color", ThemeColors.Pending);
             else menu.RemoveThemeColorOverride("font_color");
         }
 
@@ -851,24 +844,24 @@ namespace AP_Atlas.UI
             switch (column)
             {
                 case "multiworld":
-                    return (row.ProfileName, Colors.LightGray, null);
+                    return (row.ProfileName, ThemeColors.TextMuted, null);
                 case "position":
                     return (g.Position.ToString(CultureInfo.InvariantCulture), Muted, null);
                 case "name":
-                    return (g.Name, row.Mine ? Colors.Magenta : Colors.White,
+                    return (g.Name, row.Mine ? ThemeColors.You : ThemeColors.Text,
                         row.SlotName != null ? $"Your slot {row.SlotName} in Atlas (click to show it in Properties)" : ClaimedByYou(row) ? "Claimed by you" : null);
                 case "ping":
                     if (string.IsNullOrEmpty(g.OwnerName)) return ("", Muted, null);
                     string ping = CheeseTable.EffectivePing(row);
                     return (CtStatus.Label(ping), PingColor(ping), !string.IsNullOrEmpty(row.Tracker?.GlobalPingPolicy) ? "Set for everyone by the organizer" : null);
                 case "availability":
-                    return (CtStatus.Label(g.Availability), g.Availability switch { "open" => Good, "public" => Colors.SkyBlue, "claimed" => Colors.LightGray, _ => Muted }, null);
+                    return (CtStatus.Label(g.Availability), g.Availability switch { "open" => Good, "public" => ThemeColors.Info, "claimed" => ThemeColors.TextMuted, _ => Muted }, null);
                 case "owner":
                     if (string.IsNullOrEmpty(g.OwnerName)) return ("—", Muted, "Unclaimed");
-                    return (g.OwnerName + (g.OwnerAway ? " (away)" : ""), g.OwnerAway ? Warn : ClaimedByYou(row) ? Colors.Magenta : Colors.LightGray,
+                    return (g.OwnerName + (g.OwnerAway ? " (away)" : ""), g.OwnerAway ? Warn : ClaimedByYou(row) ? ThemeColors.You : ThemeColors.TextMuted,
                         g.OwnerAway ? "The owner is away" : g.ClaimedByUserId == null ? "Claimed without signing in" : null);
                 case "game":
-                    return (g.Game, Colors.LightGray, null);
+                    return (g.Game, ThemeColors.TextMuted, null);
                 case "status":
                     return StatusCell(row);
                 case "activity":
@@ -876,7 +869,7 @@ namespace AP_Atlas.UI
                         int level = CheeseTable.ActivityLevel(g, row.Tracker, now);
                         var latest = g.LastCheckedUtc != null && (g.LastActivityUtc == null || g.LastCheckedUtc > g.LastActivityUtc) ? g.LastCheckedUtc : g.LastActivityUtc;
                         string tip = latest == null ? "No checks yet" : latest.Value.ToLocalTime().ToString("g") + (latest == g.LastCheckedUtc && g.LastCheckedUtc != g.LastActivityUtc ? " (still BK)" : "");
-                        return (CheeseTable.ActivityText(g, now), level == 0 ? Good : level == 1 ? Colors.Gold : Bad, tip);
+                        return (CheeseTable.ActivityText(g, now), level == 0 ? Good : level == 1 ? CheeseColors.Caution : Bad, tip);
                     }
                 case "checks":
                     {
@@ -884,13 +877,13 @@ namespace AP_Atlas.UI
                         string text = _settings.CheeseChecksAsPercent
                             ? (g.ChecksTotal > 0 ? $"{100.0 * g.ChecksDone / g.ChecksTotal:0}%" : "—")
                             : $"{g.ChecksDone}/{g.ChecksTotal}";
-                        return (text, complete ? Good : Colors.White, $"{g.ChecksDone} of {g.ChecksTotal} checks");
+                        return (text, complete ? Good : ThemeColors.Text, $"{g.ChecksDone} of {g.ChecksTotal} checks");
                     }
                 case "hints":
                     {
                         bool notes = !string.IsNullOrWhiteSpace(g.Notes);
                         int n = row.UnfoundHints;
-                        var color = n == 0 ? (notes ? Colors.SkyBlue : Muted) : n <= 5 ? Colors.SkyBlue : n <= 10 ? Colors.Gold : Bad;
+                        var color = n == 0 ? (notes ? ThemeColors.Info : Muted) : n <= 5 ? ThemeColors.Info : n <= 10 ? CheeseColors.Caution : Bad;
                         bool hintsKnown = row.Tracker?.Hints != null && row.Tracker.Hints.Count > 0;
                         return (n + (notes ? "*" : ""), color, (hintsKnown ? $"{n} unfound hint{(n == 1 ? "" : "s")} for items in this world" : "Hints load with the next read of the tracker") + (notes ? "; this slot has notes" : ""));
                     }
@@ -911,7 +904,7 @@ namespace AP_Atlas.UI
             var a = view?.Advice;
             if (view?.AutoOn == true && view.AutoPaused != null) return (text + " · paused", Warn, tip + "\nAutomatic updates are paused: " + view.AutoPaused);
             if (a?.Status != null && a.Ready)
-                return ($"{text} → {CtStatus.Label(a.Status)}?", Colors.Yellow, tip + $"\nAtlas suggests {CtStatus.Label(a.Status)}: {a.Reason}" + (view.AutoOn ? " (it will set it automatically)" : ""));
+                return ($"{text} → {CtStatus.Label(a.Status)}?", ThemeColors.Pending, tip + $"\nAtlas suggests {CtStatus.Label(a.Status)}: {a.Reason}" + (view.AutoOn ? " (it will set it automatically)" : ""));
             if (view?.AutoOn == true) return (text + " · auto", color, tip + "\nAtlas keeps this updated automatically" + (a?.InSync == true ? " (its logic agrees)" : ""));
             if (a?.InSync == true) return (text, color, tip + "\nAtlas's logic agrees: " + a.Reason);
             return (text, color, tip);
@@ -920,8 +913,8 @@ namespace AP_Atlas.UI
         private static Color PingColor(string ping) => ping switch
         {
             "liberally" => Good,
-            "sparingly" or "hints" => Colors.Gold,
-            "see_notes" => Colors.SkyBlue,
+            "sparingly" or "hints" => CheeseColors.Caution,
+            "see_notes" => ThemeColors.Info,
             _ => Bad
         };
 
@@ -1016,7 +1009,7 @@ namespace AP_Atlas.UI
             foreach (Node child in _details.GetChildren()) child.QueueFree();
             if (row == null)
             {
-                _details.AddChild(DetailText(_rows.Count == 0 ? "" : "Select a slot to see its notes and hints. Right-click a slot for its actions.", Muted));
+                _details.AddChild(Kit.Text(_rows.Count == 0 ? "" : "Select a slot to see its notes and hints. Right-click a slot for its actions.", Muted));
                 MainTrackerWindow.SetFontSizeRecursive(_details, _settings.ContentFontSize);
                 return;
             }
@@ -1024,18 +1017,18 @@ namespace AP_Atlas.UI
             var now = DateTime.UtcNow; // wall clock: how long ago the site's times were, for showing
             var title = new Label { Text = $"#{g.Position}  {g.Name}  ·  {g.Game}" + (_view == MineView ? "  ·  " + row.ProfileName : ""), ClipText = true };
             title.SetMeta("font_size_ratio", 1.15);
-            title.AddThemeColorOverride("font_color", row.Mine ? Colors.Magenta : Colors.White);
+            title.AddThemeColorOverride("font_color", row.Mine ? ThemeColors.You : ThemeColors.Text);
             _details.AddChild(title);
 
             var facts = Rich();
-            string owner = string.IsNullOrEmpty(g.OwnerName) ? Colored("unclaimed", Muted) : Colored(g.OwnerName + (g.OwnerAway ? " (away)" : ""), g.OwnerAway ? Warn : Colors.LightGray);
+            string owner = string.IsNullOrEmpty(g.OwnerName) ? Colored("unclaimed", Muted) : Colored(g.OwnerName + (g.OwnerAway ? " (away)" : ""), g.OwnerAway ? Warn : ThemeColors.TextMuted);
             int level = CheeseTable.ActivityLevel(g, row.Tracker, now);
             facts.Markup = (g.IsComplete ? "" : Colored(CtStatus.Label(g.Progression), AP_Atlas.UI.CheeseColors.Of(g.Progression)) + Colored(" · ", Muted)) +
                          Colored(CtStatus.Label(g.Completion), AP_Atlas.UI.CheeseColors.Of(g.Completion)) + Colored("   Owner: ", Muted) + owner +
-                         Colored("   Availability: ", Muted) + Colored(CtStatus.Label(g.Availability), Colors.LightGray) +
+                         Colored("   Availability: ", Muted) + Colored(CtStatus.Label(g.Availability), ThemeColors.TextMuted) +
                          (string.IsNullOrEmpty(g.OwnerName) ? "" : Colored("   Ping: ", Muted) + Colored(CtStatus.Label(CheeseTable.EffectivePing(row)), PingColor(CheeseTable.EffectivePing(row)))) +
-                         Colored("   Last activity: ", Muted) + Colored(CheeseTable.ActivityText(g, now), level == 0 ? Good : level == 1 ? Colors.Gold : Bad) +
-                         Colored($"   Checks: ", Muted) + Colored($"{g.ChecksDone}/{g.ChecksTotal}", Colors.LightGray);
+                         Colored("   Last activity: ", Muted) + Colored(CheeseTable.ActivityText(g, now), level == 0 ? Good : level == 1 ? CheeseColors.Caution : Bad) +
+                         Colored($"   Checks: ", Muted) + Colored($"{g.ChecksDone}/{g.ChecksTotal}", ThemeColors.TextMuted);
             _details.AddChild(facts);
 
             // Actions for rows Atlas may change.
@@ -1049,22 +1042,22 @@ namespace AP_Atlas.UI
             bool canEdit = cannot == null && !busy;
             var advice = row.SlotName != null ? _cheese.SlotView(row.ProfileId, row.SlotName)?.Advice : null;
             if (advice?.Status != null && !g.IsComplete)
-                buttons.AddChild(DetailButton("Set " + CtStatus.Label(advice.Status), $"Atlas suggests it: {advice.Reason}", () => Run(_cheese.SetProgressionAsync(target, advice.Status)), canEdit));
+                buttons.AddChild(Kit.Button("Set " + CtStatus.Label(advice.Status), $"Atlas suggests it: {advice.Reason}", () => Run(_cheese.SetProgressionAsync(target, advice.Status)), canEdit));
             if (!g.IsComplete)
                 foreach (var status in CtStatus.ProgressionIds.Where(s => s != "unknown" && s != g.Progression && s != advice?.Status))
-                    buttons.AddChild(DetailButton(CtStatus.Label(status), $"Set {g.Name} to {CtStatus.Label(status)}", () => Run(_cheese.SetProgressionAsync(target, status)), canEdit));
+                    buttons.AddChild(Kit.Button(CtStatus.Label(status), $"Set {g.Name} to {CtStatus.Label(status)}", () => Run(_cheese.SetProgressionAsync(target, status)), canEdit));
             if (g.Progression is "bk" or "soft_bk" && !g.IsComplete)
-                buttons.AddChild(DetailButton("Still BK", "Tell the room you're still watching this slot (resets its inactivity clock)", () => Run(_cheese.StillBkAsync(target), "Marked still BK"), canEdit));
-            buttons.AddChild(DetailButton("Notes…", "Edit this slot's notes", () => CheeseDialogs.Notes(this, g.Name, g.Notes, text => Run(_cheese.SetNotesAsync(target, text), "Notes saved")), canEdit));
+                buttons.AddChild(Kit.Button("Still BK", "Tell the room you're still watching this slot (resets its inactivity clock)", () => Run(_cheese.StillBkAsync(target), "Marked still BK"), canEdit));
+            buttons.AddChild(Kit.Button("Notes…", "Edit this slot's notes", () => CheeseDialogs.Notes(this, g.Name, g.Notes, text => Run(_cheese.SetNotesAsync(target, text), "Notes saved")), canEdit));
             var ownership = _cheese.OwnershipOf(g);
             if (ownership is CheeseOwnership.Nobody or CheeseOwnership.YouByName)
-                buttons.AddChild(DetailButton("Claim", "Claim this slot with your Cheese Tracker account", () => Run(_cheese.ClaimAsync(target), $"Claimed {g.Name}"), _cheese.CanClaim(row.ProfileId, g) && !busy));
+                buttons.AddChild(Kit.Button("Claim", "Claim this slot with your Cheese Tracker account", () => Run(_cheese.ClaimAsync(target), $"Claimed {g.Name}"), _cheese.CanClaim(row.ProfileId, g) && !busy));
             else if (ownership == CheeseOwnership.You)
-                buttons.AddChild(DetailButton("Disclaim…", "Release your claim on this slot", () => CheeseDialogs.ConfirmDisclaim(this, g.Name, () => Run(_cheese.DisclaimAsync(target), $"Released {g.Name}")), canEdit));
+                buttons.AddChild(Kit.Button("Disclaim…", "Release your claim on this slot", () => CheeseDialogs.ConfirmDisclaim(this, g.Name, () => Run(_cheese.DisclaimAsync(target), $"Released {g.Name}")), canEdit));
             if (row.SlotName != null)
-                buttons.AddChild(DetailButton("Show in Properties", "All of this slot's details, Atlas's suggestion and automatic updates", () => Inspector.Inspect(InspectTarget.ForSlot(row.ProfileId, row.SlotName))));
-            if (cannot != null) _details.AddChild(DetailText(cannot, Muted));
-            if (busy) _details.AddChild(DetailText("Updating Cheese Tracker…", Muted));
+                buttons.AddChild(Kit.Button("Show in Properties", "All of this slot's details, Atlas's suggestion and automatic updates", () => Inspector.Inspect(InspectTarget.ForSlot(row.ProfileId, row.SlotName))));
+            if (cannot != null) _details.AddChild(Kit.Text(cannot, Muted));
+            if (busy) _details.AddChild(Kit.Text("Updating Cheese Tracker…", Muted));
 
             // Automatic updates, for your slots in Atlas.
             if (row.SlotName != null)
@@ -1073,9 +1066,9 @@ namespace AP_Atlas.UI
                 if (view != null)
                 {
                     if (advice != null)
-                        _details.AddChild(DetailText(advice.InSync ? "Atlas's logic agrees: " + advice.Reason :
+                        _details.AddChild(Kit.Text(advice.InSync ? "Atlas's logic agrees: " + advice.Reason :
                             advice.Status != null ? $"Atlas suggests {CtStatus.Label(advice.Status)}: {advice.Reason}" + (advice.Ready ? "" : " (confirming)") :
-                            advice.Quiet ?? "", advice.InSync ? Good : advice.Status != null ? Colors.Yellow : Muted));
+                            advice.Quiet ?? "", advice.InSync ? Good : advice.Status != null ? ThemeColors.Pending : Muted));
                     var auto = new Button
                     {
                         Text = view.AutoOn ? "Updating automatically" : "Update automatically",
@@ -1097,18 +1090,18 @@ namespace AP_Atlas.UI
                     _details.AddChild(auto);
                     if (view.AutoOn && view.AutoPaused != null)
                     {
-                        _details.AddChild(DetailText("Paused: " + view.AutoPaused + ".", Warn));
+                        _details.AddChild(Kit.Text("Paused: " + view.AutoPaused + ".", Warn));
                         var resume = new HFlowContainer();
-                        resume.AddChild(DetailButton("Resume", "Carry on from the status the slot has now", () => _cheese.ResumeAuto(profileId, slotName)));
+                        resume.AddChild(Kit.Button("Resume", "Carry on from the status the slot has now", () => _cheese.ResumeAuto(profileId, slotName)));
                         _details.AddChild(resume);
                     }
-                    if (view.LastError != null) _details.AddChild(DetailText(view.LastError, Warn));
+                    if (view.LastError != null) _details.AddChild(Kit.Text(view.LastError, Warn));
                 }
             }
 
             // Notes.
-            _details.AddChild(DetailHeading("Notes"));
-            _details.AddChild(DetailText(string.IsNullOrWhiteSpace(g.Notes) ? "No notes." : g.Notes, string.IsNullOrWhiteSpace(g.Notes) ? Muted : Colors.White));
+            _details.AddChild(Kit.Heading("Notes", 1f));
+            _details.AddChild(Kit.Text(string.IsNullOrWhiteSpace(g.Notes) ? "No notes." : g.Notes, string.IsNullOrWhiteSpace(g.Notes) ? Muted : ThemeColors.Text));
 
             RenderHints(row);
             MainTrackerWindow.SetFontSizeRecursive(_details, _settings.ContentFontSize);
@@ -1129,7 +1122,7 @@ namespace AP_Atlas.UI
 
         private void RenderHints(CheeseRow row)
         {
-            _details.AddChild(DetailHeading("Hints"));
+            _details.AddChild(Kit.Heading("Hints", 1f));
             var toggles = new HFlowContainer();
             toggles.AddThemeConstantOverride("h_separation", 4);
             var received = new Button { Text = "In this world", ToggleMode = true, ButtonPressed = !_sentHints, FocusMode = FocusModeEnum.None, TooltipText = "Items in this slot's world that other slots need (what Cheese Tracker calls received hints)" };
@@ -1146,7 +1139,7 @@ namespace AP_Atlas.UI
             var tracker = row.Tracker;
             if (tracker?.Hints == null || tracker.Hints.Count == 0)
             {
-                _details.AddChild(DetailText(tracker?.Games.Count > 0 ? "No hints yet (or they load with the next read of the tracker)." : "No hints yet.", Muted));
+                _details.AddChild(Kit.Text(tracker?.Games.Count > 0 ? "No hints yet (or they load with the next read of the tracker)." : "No hints yet.", Muted));
                 return;
             }
             var games = new Dictionary<int, CtGame>();
@@ -1161,7 +1154,7 @@ namespace AP_Atlas.UI
                 .ToList();
             if (hints.Count == 0)
             {
-                _details.AddChild(DetailText("There are no unfound hints right now.", Muted));
+                _details.AddChild(Kit.Text("There are no unfound hints right now.", Muted));
                 return;
             }
             var lines = new List<string>();
@@ -1175,17 +1168,17 @@ namespace AP_Atlas.UI
                 plain.Add(text);
                 var dim = state != "notfound";
                 lines.Add(Colored(HintClassLabel(h.Classification), dim ? Muted : HintClassColor(h.Classification)) + "  " +
-                          Colored(text, dim ? Muted : Colors.White) + (state == "notfound" ? "" : Colored($"  ({state})", Muted)));
+                          Colored(text, dim ? Muted : ThemeColors.Text) + (state == "notfound" ? "" : Colored($"  ({state})", Muted)));
             }
             var list = Rich();
             list.SelectionEnabled = true;
             list.Markup = string.Join("\n", lines);
             _details.AddChild(list);
             var copy = new HFlowContainer();
-            copy.AddChild(DetailButton("Copy all", "Copy these hints as text", () =>
+            copy.AddChild(Kit.Button("Copy all", "Copy these hints as text", () =>
             {
                 DisplayServer.ClipboardSet(string.Join("\n", plain));
-                _toast($"Copied {plain.Count} hint{(plain.Count == 1 ? "" : "s")}", Colors.Gray);
+                _toast($"Copied {plain.Count} hint{(plain.Count == 1 ? "" : "s")}", ThemeColors.TextSubtle);
             }));
             _details.AddChild(copy);
         }
@@ -1204,11 +1197,11 @@ namespace AP_Atlas.UI
 
         private static Color HintClassColor(string id) => id switch
         {
-            "critical" => Colors.Tomato,
-            "progression" => Colors.Gold,
-            "qol" => Colors.CornflowerBlue,
-            "trash" => Colors.Gray,
-            _ => Colors.LightGray
+            "critical" => CheeseColors.Critical,
+            "progression" => ThemeColors.Progression,
+            "qol" => CheeseColors.Qol,
+            "trash" => ThemeColors.TextSubtle,
+            _ => ThemeColors.TextMuted
         };
 
         /// <summary>Rich text in the same font as the labels around it.</summary>
@@ -1220,25 +1213,5 @@ namespace AP_Atlas.UI
             return rtl;
         }
 
-        private static Button DetailButton(string text, string tooltip, Action onPressed, bool enabled = true)
-        {
-            var b = new Button { Text = text, TooltipText = tooltip ?? "", Disabled = !enabled, FocusMode = FocusModeEnum.None };
-            b.Pressed += () => onPressed();
-            return b;
-        }
-
-        private static Label DetailHeading(string text)
-        {
-            var label = new Label { Text = text };
-            label.AddThemeColorOverride("font_color", ThemeColors.Accent.Lightened(0.2f));
-            return label;
-        }
-
-        private static Label DetailText(string text, Color color)
-        {
-            var label = new Label { Text = text, AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            label.AddThemeColorOverride("font_color", color);
-            return label;
-        }
     }
 }

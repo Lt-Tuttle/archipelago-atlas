@@ -28,7 +28,7 @@ public partial class MainTrackerWindow
             ShowWhatsNew = () => OpenHelp(AP_Atlas.UI.HelpWindow.WhatsNew),
             OpenWeb = url =>
             {
-                if (!AP_Atlas.Core.ExternalLinks.OpenWeb(url)) ShowToast(Tr("Couldn't open the link."), Colors.Salmon);
+                if (!AP_Atlas.Core.ExternalLinks.OpenWeb(url)) ShowToast(Tr("Couldn't open the link."), AP_Atlas.Core.ThemeColors.Error);
             },
         });
         page.Visible = false;

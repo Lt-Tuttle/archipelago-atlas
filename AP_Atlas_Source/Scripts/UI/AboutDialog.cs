@@ -15,13 +15,14 @@ namespace AP_Atlas.UI
         private readonly SafeRichText _text = new();
 
         /// <param name="engineLine">The logic engine as it is ("Atlas portable engine, Archipelago 0.6.7", or that it isn't set up).</param>
-        public AboutDialog(Func<string, string> tr, string engineLine, Action<string> openWeb, Action openGuide, Action<string> toast)
+        /// <param name="commit">The build's commit, named after the version (empty for none: the visual check, so its picture doesn't change with every commit).</param>
+        public AboutDialog(Func<string, string> tr, string engineLine, string commit, Action<string> openWeb, Action openGuide, Action<string> toast)
         {
             Title = tr("About The Archipelago Atlas");
             OkButtonText = tr("Close");
             MinSize = new Vector2I(760, 600);
             Unresizable = false;
-            SystemInfo = BuildSystemInfo(engineLine);
+            SystemInfo = BuildSystemInfo(engineLine, commit);
 
             _text.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
             _text.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
@@ -30,7 +31,7 @@ namespace AP_Atlas.UI
             var labelFont = GetThemeFont("font", "Label");
             if (labelFont != null) _text.AddThemeFontOverride("normal_font", labelFont);
             _text.CustomMinimumSize = new Vector2(720, 520);
-            _text.Markup = AP_Atlas.Core.Markdown.ToBbcode(Markdown(tr), "#" + AP_Atlas.Core.ThemeColors.Accent.Lightened(0.3f).ToHtml(false));
+            _text.Markup = AP_Atlas.Core.Markdown.ToBbcode(Markdown(tr, commit), "#" + AP_Atlas.Core.ThemeColors.Accent.Lightened(0.3f).ToHtml(false));
             _text.MetaClicked += meta =>
             {
                 string url = meta.AsString();
@@ -69,10 +70,9 @@ namespace AP_Atlas.UI
         /// <summary>The dialog's text as shown, without markup (for tests).</summary>
         public string ShownText => _text.GetParsedText();
 
-        private static string BuildSystemInfo(string engineLine)
+        private static string BuildSystemInfo(string engineLine, string commit)
         {
             var lines = new StringBuilder();
-            string commit = AP_Atlas.Core.AtlasVersion.Commit;
             lines.Append("The Archipelago Atlas ").Append(AP_Atlas.Core.AtlasVersion.Display).Append(commit.Length > 0 ? " (" + commit + ")" : "").Append('\n');
             lines.Append("Godot ").Append(Godot.Engine.GetVersionInfo()["string"].AsString()).Append('\n');
             lines.Append(".NET: ").Append(RuntimeInformation.FrameworkDescription).Append('\n');
@@ -83,9 +83,8 @@ namespace AP_Atlas.UI
             return lines.ToString();
         }
 
-        private string Markdown(Func<string, string> tr)
+        private string Markdown(Func<string, string> tr, string commit)
         {
-            string commit = AP_Atlas.Core.AtlasVersion.Commit;
             return "# " + tr("The Archipelago Atlas") + " " + AP_Atlas.Core.AtlasVersion.Display + (commit.Length > 0 ? " (" + commit + ")" : "") + "\n\n" +
                 tr("An unofficial tracker for Archipelago multiworlds. Not affiliated with or endorsed by the Archipelago project.") + "\n\n" +
                 tr("Designed, directed and tested by Lt-Tuttle. Most of its code was written with an AI assistant (Anthropic's Claude). Atlas's icon is AI-generated, drawn in the style of Archipelago's logo. Open source under the MIT licence; the credits and every licence are under Help → Credits & Disclaimer.") + "\n\n" +

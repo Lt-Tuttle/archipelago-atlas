@@ -135,7 +135,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         // Services read the slots themselves (their models), never their panels.
         _cheese = new AP_Atlas.Core.CheeseTracker.CheeseTrackerService(_appSettings, () => _profiles, SlotModels, () => DataManager.SaveProfiles(_profiles));
         AddChild(_cheese);
-        _cheese.Notice += message => ShowToast(message, Colors.Orange);
+        _cheese.Notice += message => ShowToast(message, AP_Atlas.Core.ThemeColors.Warning);
         _cheese.Changed += () => _propertiesPanel?.QueueRefresh();
         _cheese.LinkChanged += id =>
         {
@@ -256,12 +256,12 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         // The tool header: which tool the content area shows (the activity bar switches it).
         var globalTabHBox = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         _toolTitle = new Label { SizeFlagsHorizontal = SizeFlags.ExpandFill, VerticalAlignment = VerticalAlignment.Center };
-        _toolTitle.AddThemeColorOverride("font_color", Colors.LightGray);
+        _toolTitle.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextMuted);
         _toolTitle.AddThemeConstantOverride("margin_left", 8);
         globalTabHBox.AddChild(_toolTitle);
         globalTabHBox.AddChild(BuildSlotPicker());
         var contentMenuBtn = new Button { Text = "...", Flat = true, FocusMode = FocusModeEnum.None };
-        contentMenuBtn.AddThemeColorOverride("font_color", Colors.LightGray);
+        contentMenuBtn.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextMuted);
         AttachFontMenuPopup(contentMenuBtn,
             () => _appSettings.ContentFontSize,
             (newSize) => { _appSettings.ContentFontSize = newSize; ApplyUIScale(); DataManager.SaveSettings(_appSettings); }

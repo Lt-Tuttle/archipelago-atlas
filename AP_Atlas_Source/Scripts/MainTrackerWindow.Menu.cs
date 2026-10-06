@@ -25,7 +25,7 @@ public partial class MainTrackerWindow
         _commands = new AP_Atlas.Core.Commands(() => _appSettings?.KeyBindings);
         Add("file.data-folder", "File", "Open Atlas's Data Folder", "", () =>
         {
-            if (!AP_Atlas.Core.ExternalLinks.OpenFolder(DataManager.GetDataDirectory())) ShowToast(Tr("Couldn't open the data folder."), Colors.Salmon);
+            if (!AP_Atlas.Core.ExternalLinks.OpenFolder(DataManager.GetDataDirectory())) ShowToast(Tr("Couldn't open the data folder."), AP_Atlas.Core.ThemeColors.Error);
         });
         Add("file.exit", "File", "Exit", "", GracefulShutdown);
 
@@ -67,7 +67,7 @@ public partial class MainTrackerWindow
         Add("help.race-mode", "Help", "What Does Race Mode Change?", "", ShowRaceModeInfo);
         Add("help.github", "Help", "Atlas on GitHub", "", () =>
         {
-            if (!AP_Atlas.Core.ExternalLinks.OpenWeb(AP_Atlas.Core.AtlasVersion.RepoUrl)) ShowToast(Tr("Couldn't open the link."), Colors.Salmon);
+            if (!AP_Atlas.Core.ExternalLinks.OpenWeb(AP_Atlas.Core.AtlasVersion.RepoUrl)) ShowToast(Tr("Couldn't open the link."), AP_Atlas.Core.ThemeColors.Error);
         });
         Add("help.credits", "Help", "Credits & Disclaimer", "", () => OpenHelp(AP_Atlas.UI.HelpWindow.Credits));
         Add("help.about", "Help", "About The Archipelago Atlas", "", ShowAbout);
@@ -161,12 +161,13 @@ public partial class MainTrackerWindow
     /// <summary>Help → About: the version, what sets Atlas apart, where it goes online, and the system information with a Copy button.</summary>
     private void ShowAbout()
     {
-        var dialog = new AP_Atlas.UI.AboutDialog(text => Tr(text), EngineLineForAbout(),
+        // The visual check's picture of About must not change with every commit, so it leaves the commit out.
+        var dialog = new AP_Atlas.UI.AboutDialog(text => Tr(text), EngineLineForAbout(), VisualCheckRequested ? "" : AP_Atlas.Core.AtlasVersion.Commit,
             url =>
             {
-                if (!AP_Atlas.Core.ExternalLinks.OpenWeb(url)) ShowToast(Tr("Couldn't open the link."), Colors.Salmon);
+                if (!AP_Atlas.Core.ExternalLinks.OpenWeb(url)) ShowToast(Tr("Couldn't open the link."), AP_Atlas.Core.ThemeColors.Error);
             },
-            () => OpenHelp(null), message => ShowToast(message, Colors.LightGreen));
+            () => OpenHelp(null), message => ShowToast(message, AP_Atlas.Core.ThemeColors.Success));
         AddChild(dialog);
         dialog.PopupCentered();
     }

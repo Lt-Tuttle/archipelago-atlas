@@ -31,9 +31,9 @@ namespace AP_Atlas.UI
             right.AddThemeConstantOverride("separation", 8);
             split.AddChild(right);
 
-            left.AddChild(Note("Outline: green = linked by the pack's script · blue = by name · gold = your fix · red = not linked · purple = seed setting (dimmed when off). Click a tile to edit it."));
+            left.AddChild(Kit.Subtle("Outline: green = linked by the pack's script · blue = by name · gold = your fix · red = not linked · purple = seed setting (dimmed when off). Click a tile to edit it."));
             var legendRow = new HBoxContainer();
-            legendRow.AddChild(Btn("Add a tile for an item…", "Add a tile for an Archipelago item the grid doesn't show", AddTileForItem));
+            legendRow.AddChild(Kit.Button("Add a tile for an item…", "Add a tile for an Archipelago item the grid doesn't show", AddTileForItem));
             left.AddChild(legendRow);
 
             var pack = _report.Pack;
@@ -48,7 +48,7 @@ namespace AP_Atlas.UI
                 string subject = PackFixes.GridSubject(grid);
                 var header = new HBoxContainer();
                 header.AddThemeConstantOverride("separation", 8);
-                var title = Heading(string.IsNullOrEmpty(grid.Header) ? grid.LayoutKey : grid.Header);
+                var title = Kit.Heading(string.IsNullOrEmpty(grid.Header) ? grid.LayoutKey : grid.Header);
                 if (grid.LooksLikeSettings) title.AddThemeColorOverride("font_color", Muted);
                 header.AddChild(title);
                 var show = new CheckButton { Text = grid.LooksLikeSettings ? "Seed settings (switch on to treat as items)" : "Items (switch off for seed settings)", ButtonPressed = !grid.LooksLikeSettings, FocusMode = Control.FocusModeEnum.None, TooltipText = "Items count toward Key Items. Seed settings are lit from the slot's options by the pack's script." };
@@ -92,13 +92,13 @@ namespace AP_Atlas.UI
                 : userLinked.Contains(code) ? Fixed
                 : ids.Count == 0 ? Bad
                 : scriptCodes.Contains(code) ? Good
-                : Colors.DeepSkyBlue;
+                : ThemeColors.Info;
 
             var panel = new PanelContainer { CustomMinimumSize = new Vector2(56, 56), MouseDefaultCursorShape = Control.CursorShape.PointingHand };
             bool selected = code == _selectedTileCode;
             panel.AddThemeStyleboxOverride("panel", new StyleBoxFlat
             {
-                BgColor = selected ? new Color("#30303a") : new Color("#202027"),
+                BgColor = selected ? ThemeColors.SurfaceRaised : ThemeColors.RowOdd,
                 BorderColor = outline,
                 BorderWidthTop = selected ? 4 : 2,
                 BorderWidthBottom = selected ? 4 : 2,
@@ -148,19 +148,19 @@ namespace AP_Atlas.UI
         {
             if (_selectedTileCode == null)
             {
-                box.AddChild(Heading("Tile"));
-                box.AddChild(Note("Select a tile on the left to change which Archipelago item it tracks, give it an image, move it, or hide it."));
+                box.AddChild(Kit.Heading("Tile"));
+                box.AddChild(Kit.Subtle("Select a tile on the left to change which Archipelago item it tracks, give it an image, move it, or hide it."));
                 return;
             }
             string code = _selectedTileCode;
             pack.ItemsByCode.TryGetValue(code, out var item);
             var ids = _report.Index.ItemIdsFor(code);
-            box.AddChild(Heading(item?.Name ?? code));
-            box.AddChild(Note($"Code: {code}" + (item != null ? $" · type: {item.Type}" + (item.GetCodes().Count > 1 ? $" · all codes: {string.Join(", ", item.GetCodes())}" : "") : " · not defined by the pack")));
+            box.AddChild(Kit.Heading(item?.Name ?? code));
+            box.AddChild(Kit.Subtle($"Code: {code}" + (item != null ? $" · type: {item.Type}" + (item.GetCodes().Count > 1 ? $" · all codes: {string.Join(", ", item.GetCodes())}" : "") : " · not defined by the pack")));
 
             var tex = item == null ? null : pack.FindImage(PackDoctor.TileImagePath(item, code));
             if (tex != null) box.AddChild(new TextureRect { Texture = tex, ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspect, CustomMinimumSize = new Vector2(96, 96) });
-            else box.AddChild(Note("No image.", Warn));
+            else box.AddChild(Kit.Text("No image.", Warn));
 
             // A seed-setting indicator: no item to link; show what the pack's script read.
             var grid = _selectedGridIndex >= 0 && _selectedGridIndex < pack.ItemGridGroups.Count ? pack.ItemGridGroups[_selectedGridIndex] : null;
@@ -172,20 +172,19 @@ namespace AP_Atlas.UI
                 box.AddChild(head);
                 if (setting == null)
                 {
-                    box.AddChild(Note(_report.SlotDataSource == null
+                    box.AddChild(Kit.Subtle(_report.SlotDataSource == null
                         ? "Connect a slot of this game once: Atlas saves its options and the pack's script lights this from them."
                         : "The pack's script didn't set this from the slot's options."));
                 }
                 else
                 {
-                    box.AddChild(Note($"State: {setting.StageName ?? (setting.On ? "on" : "off")} (from {_report.SlotDataSource})", setting.On ? Good : Colors.LightGray));
+                    box.AddChild(Kit.Text($"State: {setting.StageName ?? (setting.On ? "on" : "off")} (from {_report.SlotDataSource})", setting.On ? Good : ThemeColors.TextMuted));
                     if (setting.OptionPath != null)
-                        box.AddChild(Note(setting.OptionMissing
+                        box.AddChild(Kit.Text(setting.OptionMissing
                             ? $"Reads {setting.OptionPath}, which that slot's data doesn't have."
-                            : $"Reads {setting.OptionPath} = {setting.ValueText}",
-                            setting.OptionMissing ? Warn : Colors.LightGray));
+                            : $"Reads {setting.OptionPath} = {setting.ValueText}", setting.OptionMissing ? Warn : ThemeColors.TextMuted));
                 }
-                box.AddChild(Note("Seed settings show in their own group in Key Items and in the slot's Properties; they never count as items. To count this grid as items instead, switch it on above."));
+                box.AddChild(Kit.Subtle("Seed settings show in their own group in Key Items and in the slot's Properties; they never count as items. To count this grid as items instead, switch it on above."));
                 return;
             }
 
@@ -195,33 +194,33 @@ namespace AP_Atlas.UI
                 Text = ids.Count == 0 ? "Tracks: nothing (never shows as collected)" : $"Tracks: {string.Join(", ", ids.Select(id => _report.Index.ItemName(id) ?? $"id {id}"))}  ({source})",
                 AutowrapMode = TextServer.AutowrapMode.WordSmart
             };
-            tracks.AddThemeColorOverride("font_color", ids.Count == 0 ? Bad : Colors.White);
+            tracks.AddThemeColorOverride("font_color", ids.Count == 0 ? Bad : ThemeColors.Text);
             box.AddChild(tracks);
 
             var actions = new HFlowContainer();
             actions.AddThemeConstantOverride("h_separation", 6);
             actions.AddThemeConstantOverride("v_separation", 6);
-            actions.AddChild(Btn("Choose item…", "Pick the Archipelago item this tile tracks", () => PickTileItem(code, item?.Name ?? code, null)));
-            actions.AddChild(Btn("Replace image…", "Use an image file for this tile", () => PickTileImage(code), item != null));
-            actions.AddChild(Btn("◀ Move", "Move left in its row", () => MoveTile(code, -1)));
-            actions.AddChild(Btn("Move ▶", "Move right in its row", () => MoveTile(code, 1)));
+            actions.AddChild(Kit.Button("Choose item…", "Pick the Archipelago item this tile tracks", () => PickTileItem(code, item?.Name ?? code, null)));
+            actions.AddChild(Kit.Button("Replace image…", "Use an image file for this tile", () => PickTileImage(code), item != null));
+            actions.AddChild(Kit.Button("◀ Move", "Move left in its row", () => MoveTile(code, -1)));
+            actions.AddChild(Kit.Button("Move ▶", "Move right in its row", () => MoveTile(code, 1)));
             bool added = code.StartsWith("atlas_item_");
-            if (added) actions.AddChild(Btn("Remove tile", "Remove this added tile", () => PackFixes.Edit(_key, "Remove added tile", f => f.AddedTiles.RemoveAll(a => a.Code == code))));
-            else actions.AddChild(Btn("Hide tile", "Remove it from Key Items (reset brings it back)", () => SetTileHidden(code, true)));
+            if (added) actions.AddChild(Kit.Button("Remove tile", "Remove this added tile", () => PackFixes.Edit(_key, "Remove added tile", f => f.AddedTiles.RemoveAll(a => a.Code == code))));
+            else actions.AddChild(Kit.Button("Hide tile", "Remove it from Key Items (reset brings it back)", () => SetTileHidden(code, true)));
             var tileFix = PackFixes.Get(_key).Tiles.FirstOrDefault(t => t.Code == code);
-            if (tileFix != null) actions.AddChild(Btn("Reset tile", "Back to the author's version", () => PackFixes.Reset(_key, "tiles", tileFix.Subject)));
+            if (tileFix != null) actions.AddChild(Kit.Button("Reset tile", "Back to the author's version", () => PackFixes.Reset(_key, "tiles", tileFix.Subject)));
             box.AddChild(actions);
 
             var hidden = PackFixes.Get(_key).Tiles.Where(t => t.Hidden).ToList();
             if (hidden.Count > 0)
             {
-                box.AddChild(Heading("Hidden tiles"));
+                box.AddChild(Kit.Heading("Hidden tiles"));
                 foreach (var h in hidden)
                 {
                     var row = new HBoxContainer();
                     row.AddChild(new Label { Text = _original.ItemsByCode.TryGetValue(h.Code, out var hi) ? hi.Name : h.Code, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill });
                     string hc = h.Code;
-                    row.AddChild(Btn("Show", "Show this tile again", () => SetTileHidden(hc, false)));
+                    row.AddChild(Kit.Button("Show", "Show this tile again", () => SetTileHidden(hc, false)));
                     box.AddChild(row);
                 }
             }

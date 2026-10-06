@@ -90,7 +90,7 @@ namespace AP_Atlas.UI
             var recs = Recommendations();
             ComputeConflicts(recs);
 
-            root.AddChild(Note("Fixes the Doctor can make from its suggested matches. Rows at or above the confidence level are selected for you; " +
+            root.AddChild(Kit.Subtle("Fixes the Doctor can make from its suggested matches. Rows at or above the confidence level are selected for you; " +
                                "change any row's match, untick what you don't want, then apply. Applying all selected is one step: Undo reverses it."));
 
             // ---- Confidence level ----
@@ -112,7 +112,7 @@ namespace AP_Atlas.UI
             bar.AddChild(slider);
             foreach (var (label, value) in new[] { ("95%", 0.95f), ("85%", 0.85f), ("70%", 0.70f), ("50%", 0.50f) })
             {
-                bar.AddChild(Btn(label, $"Select matches at or above {label}", () =>
+                bar.AddChild(Kit.Button(label, $"Select matches at or above {label}", () =>
                 {
                     _recThreshold = value;
                     _recTicked.Clear();
@@ -125,17 +125,17 @@ namespace AP_Atlas.UI
             int selected = recs.Count(IsTicked);
             var actions = new HBoxContainer();
             actions.AddThemeConstantOverride("separation", 8);
-            var applyAll = Btn($"Apply {selected} selected", "Apply every selected row in one undoable step", () => ApplyRecommendations(recs.Where(IsTicked).ToList()), selected > 0);
+            var applyAll = Kit.Button($"Apply {selected} selected", "Apply every selected row in one undoable step", () => ApplyRecommendations(recs.Where(IsTicked).ToList()), selected > 0);
             applyAll.AddThemeColorOverride("font_color", selected > 0 ? Good : Muted);
             actions.AddChild(applyAll);
-            actions.AddChild(Btn("Select all", "Select every row", () => { foreach (var f in recs) { _recTicked.Add(f.Key); _recUnticked.Remove(f.Key); } RenderCurrentTab(); }, recs.Count > 0));
-            actions.AddChild(Btn("Select none", "Clear the selection", () => { foreach (var f in recs) { _recUnticked.Add(f.Key); _recTicked.Remove(f.Key); } RenderCurrentTab(); }, recs.Count > 0));
-            actions.AddChild(Note($"{recs.Count} suggestion{(recs.Count == 1 ? "" : "s")} · {recs.Count(f => f.Suggestions[0].Score >= 0.85)} at 85%+ · {recs.Count(f => f.Suggestions[0].Score < 0.6)} below 60% (check those by hand)"));
+            actions.AddChild(Kit.Button("Select all", "Select every row", () => { foreach (var f in recs) { _recTicked.Add(f.Key); _recUnticked.Remove(f.Key); } RenderCurrentTab(); }, recs.Count > 0));
+            actions.AddChild(Kit.Button("Select none", "Clear the selection", () => { foreach (var f in recs) { _recUnticked.Add(f.Key); _recTicked.Remove(f.Key); } RenderCurrentTab(); }, recs.Count > 0));
+            actions.AddChild(Kit.Subtle($"{recs.Count} suggestion{(recs.Count == 1 ? "" : "s")} · {recs.Count(f => f.Suggestions[0].Score >= 0.85)} at 85%+ · {recs.Count(f => f.Suggestions[0].Score < 0.6)} below 60% (check those by hand)"));
             root.AddChild(actions);
 
             if (recs.Count == 0)
             {
-                root.AddChild(Note("No suggested fixes right now. Unlinked items or pins without a close match are listed on the Overview, Key Items and Locations tabs.", Good));
+                root.AddChild(Kit.Text("No suggested fixes right now. Unlinked items or pins without a close match are listed on the Overview, Key Items and Locations tabs.", Good));
                 return root;
             }
 
@@ -152,7 +152,7 @@ namespace AP_Atlas.UI
                 var panel = new PanelContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
                 panel.AddThemeStyleboxOverride("panel", new StyleBoxFlat
                 {
-                    BgColor = stripe++ % 2 == 0 ? new Color("#202027") : new Color("#191920"),
+                    BgColor = stripe++ % 2 == 0 ? AP_Atlas.Core.ThemeColors.RowOdd : AP_Atlas.Core.ThemeColors.RowEven,
                     ContentMarginLeft = 6,
                     ContentMarginRight = 6,
                     ContentMarginTop = 4,
@@ -176,7 +176,7 @@ namespace AP_Atlas.UI
 
                 bool isTile = f.Actions.HasFlag(FindingActions.LinkItem);
                 var kind = new Label { Text = isTile ? "Tile" : "Pin", CustomMinimumSize = new Vector2(48, 0) };
-                kind.AddThemeColorOverride("font_color", isTile ? Colors.Plum : Colors.LightGreen);
+                kind.AddThemeColorOverride("font_color", isTile ? AP_Atlas.Core.ThemeColors.Progression : AP_Atlas.Core.ThemeColors.Location);
                 row.AddChild(kind);
 
                 string subject = f.Subject.Substring(f.Subject.IndexOf(':') + 1);
@@ -209,8 +209,8 @@ namespace AP_Atlas.UI
                 row.AddChild(score);
                 if (conflict) choice.TooltipText = $"{s.Label}\n⚠ {why}";
 
-                row.AddChild(Btn("Apply", "Apply this match now", () => ApplyRecommendations(new List<Finding> { fc })));
-                row.AddChild(Btn("Choose…", "Pick a different match from every name", () =>
+                row.AddChild(Kit.Button("Apply", "Apply this match now", () => ApplyRecommendations(new List<Finding> { fc })));
+                row.AddChild(Kit.Button("Choose…", "Pick a different match from every name", () =>
                 {
                     if (isTile) PickTileItem(subject, what, fc.Suggestions);
                     else
@@ -219,8 +219,8 @@ namespace AP_Atlas.UI
                         PickSectionLocation(p[0], p.Length > 1 ? p[1] : "", fc.Suggestions);
                     }
                 }));
-                if (!isTile) row.AddChild(Btn("Map", "Show this pin on the map", () => { _focusPinPath = subject.Split('|')[0]; SelectTab("Maps"); }));
-                row.AddChild(Btn("Ignore", "Hide this suggestion (it stays in the report to the author)", () => ToggleIgnore(fc)));
+                if (!isTile) row.AddChild(Kit.Button("Map", "Show this pin on the map", () => { _focusPinPath = subject.Split('|')[0]; SelectTab("Maps"); }));
+                row.AddChild(Kit.Button("Ignore", "Hide this suggestion (it stays in the report to the author)", () => ToggleIgnore(fc)));
                 list.AddChild(panel);
             }
             return root;

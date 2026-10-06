@@ -23,10 +23,10 @@ namespace AP_Atlas.UI
         private const char Sep = '\u0001';
         private const int MaxRows = 2000;
 
-        private static readonly Color Good = Colors.LimeGreen;
-        private static readonly Color Warn = Colors.Orange;
-        private static readonly Color Muted = Colors.Gray;
-        private static readonly Color MineColor = Colors.Magenta;
+        private static readonly Color Good = ThemeColors.Success;
+        private static readonly Color Warn = ThemeColors.Warning;
+        private static readonly Color Muted = ThemeColors.TextSubtle;
+        private static readonly Color MineColor = ThemeColors.You;
 
         private readonly AppSettings _settings;
         private readonly SphereService _spheres;
@@ -190,7 +190,7 @@ namespace AP_Atlas.UI
             if (profile == null) return;
             if (_spheres.ReadRecently(profile.Id))
             {
-                _toast("Atlas read it moments ago, so it would be the same. Try again in a minute.", Colors.Gray);
+                _toast("Atlas read it moments ago, so it would be the same. Try again in a minute.", ThemeColors.TextSubtle);
                 return;
             }
             CheeseDialogs.Run(this, _spheres.RefreshAsync(profile.Id, tryNow), _toast, null, QueueRefresh);
@@ -231,7 +231,7 @@ namespace AP_Atlas.UI
             _trackerPage.AddChild(_problemRow);
 
             _overview = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, Visible = false };
-            _overview.AddThemeColorOverride("font_color", Colors.LightGray);
+            _overview.AddThemeColorOverride("font_color", ThemeColors.TextMuted);
             _trackerPage.AddChild(_overview);
 
             var toolbar = new HFlowContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
@@ -308,7 +308,7 @@ namespace AP_Atlas.UI
                     },
                     MouseFilter = MouseFilterEnum.Stop
                 };
-                header.AddThemeColorOverride("font_color", state.Length == 0 ? Colors.LightGray : Muted);
+                header.AddThemeColorOverride("font_color", state.Length == 0 ? ThemeColors.TextMuted : Muted);
                 header.SetMeta("font_size_ratio", 0.9);
                 SidebarContent.AddChild(header);
                 foreach (var slot in p.Slots)
@@ -448,9 +448,9 @@ namespace AP_Atlas.UI
                 parts.Add($"a {room.PageBytes / (1024 * 1024)} MB page, so Atlas reads it every {room.ReadEvery.TotalMinutes:0} minutes while it's shown");
             _subtitle.Text = string.Join(" · ", parts);
             foreach (Node child in _headerButtons.GetChildren()) child.QueueFree();
-            _headerButtons.AddChild(HeaderButton("Refresh", "Read the host's room again now (at most once a minute)", () => RefreshShown(tryNow: false), !room.Busy));
-            _headerButtons.AddChild(HeaderButton("Open ↗", "Open the host's room in your browser", () => AP_Atlas.Core.ExternalLinks.OpenWeb(room.Url)));
-            _headerButtons.AddChild(HeaderButton("Settings", "The host's room for each multiworld", () => ShowView(SettingsView)));
+            _headerButtons.AddChild(Kit.Button("Refresh", "Read the host's room again now (at most once a minute)", () => RefreshShown(tryNow: false), !room.Busy));
+            _headerButtons.AddChild(Kit.Button("Open ↗", "Open the host's room in your browser", () => AP_Atlas.Core.ExternalLinks.OpenWeb(room.Url)));
+            _headerButtons.AddChild(Kit.Button("Settings", "The host's room for each multiworld", () => ShowView(SettingsView)));
             MainTrackerWindow.SetFontSizeRecursive(_headerButtons, _settings.ContentFontSize);
             _problemRow.Visible = room.Problem != null;
             _problemLabel.Text = room.Problem ?? "";
@@ -537,7 +537,7 @@ namespace AP_Atlas.UI
                     int i = _shownColumns[k];
                     item.SetText(k, r[i]);
                     item.SetTooltipText(k, r[i]);
-                    item.SetCustomColor(k, mine && i == slotColumn ? MineColor : mine ? Colors.White : Colors.LightGray);
+                    item.SetCustomColor(k, mine && i == slotColumn ? MineColor : mine ? ThemeColors.Text : ThemeColors.TextMuted);
                 }
             }
             if (rows.Count == 0)
@@ -553,13 +553,6 @@ namespace AP_Atlas.UI
             MainTrackerWindow.SetFontSizeRecursive(_tree, _settings.ContentFontSize);
         }
 
-        private Button HeaderButton(string text, string tooltip, Action onPressed, bool enabled = true)
-        {
-            var b = new Button { Text = text, TooltipText = tooltip, Disabled = !enabled, FocusMode = FocusModeEnum.None };
-            b.Pressed += () => onPressed();
-            return b;
-        }
-
         // =====================================================================
         // Settings: the host's room for each multiworld
         // =====================================================================
@@ -572,14 +565,14 @@ namespace AP_Atlas.UI
             _settingsSignature = signature;
             foreach (Node child in _settingsBox.GetChildren()) child.QueueFree();
 
-            _settingsBox.AddChild(Heading("Sphere Tracker settings", ThemeColors.Accent.Lightened(0.2f), 1.3f));
-            _settingsBox.AddChild(Text("Hosts create a spheretracker.de room for their multiworld and share its link with the players; it lists every slot's open locations with their sphere. " +
+            _settingsBox.AddChild(Kit.Heading("Sphere Tracker settings", 1.3f));
+            _settingsBox.AddChild(Kit.Text("Hosts create a spheretracker.de room for their multiworld and share its link with the players; it lists every slot's open locations with their sphere. " +
                                        "Atlas uses only that, and takes a room link only when the room exists (rooms need a login to create; Atlas never creates one), " +
                                        "isn't another multiworld's (when Cheese Tracker tells Atlas which tracker this multiworld has), and was created by the host: " +
                                        "the room names its creator, and Atlas takes it at once when that's the multiworld's organizer on Cheese Tracker, otherwise only if you confirm the creator is the host. " +
                                        "The room stays hidden while race mode applies, and Atlas reads it only while this tab shows it, at most every 10 minutes; " +
-                                       "it never asks spheretracker.de to refresh a room.", Colors.LightGray));
-            if (profiles.Count == 0) _settingsBox.AddChild(Text("No multiworlds yet: add one on the Multiworlds page.", Muted));
+                                       "it never asks spheretracker.de to refresh a room.", ThemeColors.TextMuted));
+            if (profiles.Count == 0) _settingsBox.AddChild(Kit.Text("No multiworlds yet: add one on the Multiworlds page.", Muted));
             foreach (var profile in profiles)
             {
                 var p = profile;
@@ -590,10 +583,10 @@ namespace AP_Atlas.UI
                 name.SetMeta("font_size_ratio", 1.1);
                 nameRow.AddChild(name);
                 if (profile.Slots.Count > 0 && !string.IsNullOrWhiteSpace(profile.SphereTrackerUrl))
-                    nameRow.AddChild(SmallButton("Show", $"Show {profile.Slots[0]}'s rows", () => ShowView(SlotView(p.Id, p.Slots[0]))));
+                    nameRow.AddChild(Kit.Button("Show", $"Show {profile.Slots[0]}'s rows", () => ShowView(SlotView(p.Id, p.Slots[0]))));
                 _settingsBox.AddChild(nameRow);
                 string hidden = _spheres.HiddenBecause(profile);
-                if (hidden != null) _settingsBox.AddChild(Text("Hidden now: " + hidden, Warn));
+                if (hidden != null) _settingsBox.AddChild(Kit.Text("Hidden now: " + hidden, Warn));
                 var row = new HFlowContainer();
                 row.AddThemeConstantOverride("h_separation", 6);
                 row.AddThemeConstantOverride("v_separation", 4);
@@ -601,11 +594,11 @@ namespace AP_Atlas.UI
                 var label = new Label { Text = linked ? "Host's room: " + profile.SphereTrackerUrl : "Host's room: not linked", VerticalAlignment = VerticalAlignment.Center };
                 label.AddThemeColorOverride("font_color", linked ? Good : Muted);
                 row.AddChild(label);
-                row.AddChild(SmallButton(linked ? "Change…" : "Link…", "Paste the spheretracker.de room link your host created and shared", () => AskLinkSite(p)));
+                row.AddChild(Kit.Button(linked ? "Change…" : "Link…", "Paste the spheretracker.de room link your host created and shared", () => AskLinkSite(p)));
                 if (linked)
                 {
-                    row.AddChild(SmallButton("Unlink", "Stop using this room", () => { _spheres.UnlinkSphereSite(p.Id); _settingsSignature = null; _sidebarSignature = null; }));
-                    row.AddChild(SmallButton("Open ↗", "Open the host's room in your browser", () => AP_Atlas.Core.ExternalLinks.OpenWeb(p.SphereTrackerUrl)));
+                    row.AddChild(Kit.Button("Unlink", "Stop using this room", () => { _spheres.UnlinkSphereSite(p.Id); _settingsSignature = null; _sidebarSignature = null; }));
+                    row.AddChild(Kit.Button("Open ↗", "Open the host's room in your browser", () => AP_Atlas.Core.ExternalLinks.OpenWeb(p.SphereTrackerUrl)));
                 }
                 _settingsBox.AddChild(row);
             }
@@ -631,13 +624,13 @@ namespace AP_Atlas.UI
             }
             catch (Exception ex)
             {
-                if (IsInstanceValid(this)) _toast("Checking the room failed: " + ex.Message, Colors.Salmon);
+                if (IsInstanceValid(this)) _toast("Checking the room failed: " + ex.Message, ThemeColors.Error);
                 return;
             }
             if (!IsInstanceValid(this)) return;
             if (check.Error != null)
             {
-                _toast(check.Error, Colors.Salmon);
+                _toast(check.Error, ThemeColors.Error);
                 return;
             }
             if (check.ByOrganizer)
@@ -670,10 +663,10 @@ namespace AP_Atlas.UI
             string error = _spheres.LinkRoom(check, confirmed);
             if (error != null)
             {
-                _toast(error, Colors.Salmon);
+                _toast(error, ThemeColors.Error);
                 return;
             }
-            _toast(check.ByOrganizer ? $"Linked: the room was created by {check.Creator}, who runs {profile.Name}'s Cheese Tracker." : $"Linked {profile.Name}'s sphere tracker.", Colors.Gray);
+            _toast(check.ByOrganizer ? $"Linked: the room was created by {check.Creator}, who runs {profile.Name}'s Cheese Tracker." : $"Linked {profile.Name}'s sphere tracker.", ThemeColors.TextSubtle);
             _settingsSignature = null;
             _sidebarSignature = null;
             WatchShown();
@@ -684,26 +677,5 @@ namespace AP_Atlas.UI
         // Small builders
         // =====================================================================
 
-        private static Button SmallButton(string text, string tooltip, Action onPressed)
-        {
-            var b = new Button { Text = text, TooltipText = tooltip ?? "", FocusMode = FocusModeEnum.None };
-            b.Pressed += () => onPressed();
-            return b;
-        }
-
-        private static Label Heading(string text, Color color, float ratio = 1.15f)
-        {
-            var label = new Label { Text = text, ClipText = true };
-            label.AddThemeColorOverride("font_color", color);
-            label.SetMeta("font_size_ratio", ratio);
-            return label;
-        }
-
-        private static Label Text(string text, Color color)
-        {
-            var label = new Label { Text = text, AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            label.AddThemeColorOverride("font_color", color);
-            return label;
-        }
     }
 }

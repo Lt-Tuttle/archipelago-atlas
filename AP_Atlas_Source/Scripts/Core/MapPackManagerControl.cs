@@ -108,7 +108,7 @@ namespace AP_Atlas.Core
         private static StyleBoxFlat PackRowStyle(bool selected) => new StyleBoxFlat
         {
             BgColor = new Color(selected ? "#2A2D2E" : "#252526"),
-            BorderColor = selected ? ThemeColors.Accent : new Color("#333"),
+            BorderColor = selected ? ThemeColors.Accent : ThemeColors.BorderSoft,
             BorderWidthLeft = selected ? 4 : 1,
             BorderWidthBottom = 1,
             BorderWidthTop = 1,
@@ -227,7 +227,7 @@ namespace AP_Atlas.Core
             btnHBox.AddChild(updateBtn);
 
             var deleteBtn = new Button { Text = "Delete Map Pack", CustomMinimumSize = new Vector2(200, 40) };
-            deleteBtn.AddThemeColorOverride("font_color", Colors.Crimson);
+            deleteBtn.AddThemeColorOverride("font_color", ThemeColors.Danger);
             deleteBtn.Pressed += () => AP_Atlas.UI.Dialogs.Confirm(this, "Delete map pack",
                 $"Delete {pack.Manifest.Name} ({Path.GetFileName(zipPath)}) from Atlas's packs folder? Fixes you made in the Pack Doctor are kept, in case you install it again.",
                 "Delete", () =>
@@ -376,7 +376,7 @@ namespace AP_Atlas.Core
                 {
                     foreach (Node n in _packListVBox.GetChildren()) n.QueueFree();
                     var loading = new Label { Text = $"Reading {uncached.Count} map pack(s)...", HorizontalAlignment = HorizontalAlignment.Center };
-                    loading.AddThemeColorOverride("font_color", Colors.Gray);
+                    loading.AddThemeColorOverride("font_color", ThemeColors.TextSubtle);
                     _packListVBox.AddChild(loading);
                     _logAction($"Reading {uncached.Count} map pack(s) in the background...", "gray");
                     var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -406,7 +406,7 @@ namespace AP_Atlas.Core
             if (files.Length == 0)
             {
                 var lbl = new Label { Text = "No map packs installed.", HorizontalAlignment = HorizontalAlignment.Center };
-                lbl.AddThemeColorOverride("font_color", Colors.Gray);
+                lbl.AddThemeColorOverride("font_color", ThemeColors.TextSubtle);
                 _packListVBox.AddChild(lbl);
                 return;
             }
@@ -427,27 +427,27 @@ namespace AP_Atlas.Core
 
                     var titleLbl = new Label { Text = manifest.Name };
                     titleLbl.AddThemeFontSizeOverride("font_size", 16);
-                    titleLbl.AddThemeColorOverride("font_color", Colors.White);
+                    titleLbl.AddThemeColorOverride("font_color", ThemeColors.Text);
                     infoVBox.AddChild(titleLbl);
 
                     var detailLbl = new Label { Text = $"Game: {manifest.GameName} | v{manifest.GetActualVersion()}" };
                     detailLbl.AddThemeFontSizeOverride("font_size", 12);
-                    detailLbl.AddThemeColorOverride("font_color", Colors.LightGray);
+                    detailLbl.AddThemeColorOverride("font_color", ThemeColors.TextMuted);
                     infoVBox.AddChild(detailLbl);
 
                     var capsHbox = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
                     capsHbox.AddThemeConstantOverride("separation", 15);
                     var itemIndicator = new Label { Text = $"Items: {pack.ItemsByCode.Count}" };
                     itemIndicator.AddThemeFontSizeOverride("font_size", 11);
-                    itemIndicator.AddThemeColorOverride("font_color", pack.ItemsByCode.Count > 0 ? Colors.LightGreen : Colors.DimGray);
+                    itemIndicator.AddThemeColorOverride("font_color", pack.ItemsByCode.Count > 0 ? ThemeColors.Success : ThemeColors.TextSubtle);
                     capsHbox.AddChild(itemIndicator);
                     var mapIndicator = new Label { Text = $"Maps: {pack.Maps.Count}" };
                     mapIndicator.AddThemeFontSizeOverride("font_size", 11);
-                    mapIndicator.AddThemeColorOverride("font_color", pack.Maps.Count > 0 ? Colors.LightGreen : Colors.DimGray);
+                    mapIndicator.AddThemeColorOverride("font_color", pack.Maps.Count > 0 ? ThemeColors.Success : ThemeColors.TextSubtle);
                     capsHbox.AddChild(mapIndicator);
                     var locIndicator = new Label { Text = $"Locs: {pack.Locations.Count}" };
                     locIndicator.AddThemeFontSizeOverride("font_size", 11);
-                    locIndicator.AddThemeColorOverride("font_color", pack.Locations.Count > 0 ? Colors.LightGreen : Colors.DimGray);
+                    locIndicator.AddThemeColorOverride("font_color", pack.Locations.Count > 0 ? ThemeColors.Success : ThemeColors.TextSubtle);
                     capsHbox.AddChild(locIndicator);
                     // Pack Doctor status (filled in when a check finishes).
                     var doctorBadge = new Label { Name = "DoctorBadge" };
@@ -526,7 +526,7 @@ namespace AP_Atlas.Core
             int needs = report.NeedsReview.Count();
             int fixes = PackFixes.Get(key).Count;
             badge.Text = needs > 0 ? $"⚠ {needs} to review" : "✔ Checked" + (fixes > 0 ? $" · {fixes} fix{(fixes == 1 ? "" : "es")}" : "");
-            badge.AddThemeColorOverride("font_color", needs > 0 ? Colors.Orange : Colors.LightGreen);
+            badge.AddThemeColorOverride("font_color", needs > 0 ? ThemeColors.Warning : ThemeColors.Success);
         }
 
         private void OnDoctorReportReady(string key)
@@ -707,8 +707,8 @@ namespace AP_Atlas.Core
 
         private static Label Muted(string text)
         {
-            var l = new Label { Text = text, AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(680, 0) };
-            l.AddThemeColorOverride("font_color", Colors.Gray);
+            var l = AP_Atlas.UI.Kit.Subtle(text);
+            l.CustomMinimumSize = new Vector2(680, 0);
             return l;
         }
 

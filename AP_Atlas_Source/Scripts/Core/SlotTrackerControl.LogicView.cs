@@ -42,8 +42,8 @@ public partial class SlotTrackerControl : MarginContainer
         _accuracyBanner = new PanelContainer { Visible = false };
         _accuracyBanner.AddThemeStyleboxOverride("panel", new StyleBoxFlat
         {
-            BgColor = new Godot.Color("#3a2a10"),
-            BorderColor = Colors.Orange,
+            BgColor = AP_Atlas.Core.ThemeColors.WarningTint,
+            BorderColor = AP_Atlas.Core.ThemeColors.Warning,
             BorderWidthLeft = 3,
             ContentMarginLeft = 10,
             ContentMarginRight = 10,
@@ -53,7 +53,7 @@ public partial class SlotTrackerControl : MarginContainer
         var bannerRow = new HBoxContainer();
         bannerRow.AddThemeConstantOverride("separation", 10);
         _accuracyText = new Label { SizeFlagsHorizontal = SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart };
-        _accuracyText.AddThemeColorOverride("font_color", Colors.Orange);
+        _accuracyText.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Warning);
         bannerRow.AddChild(_accuracyText);
         _accuracyLinkYaml = new Button { Text = "Link YAML…", TooltipText = "Choose the YAML used to generate this seed; Atlas remembers it for this slot" };
         _accuracyLinkYaml.Pressed += PickYaml;
@@ -103,7 +103,7 @@ public partial class SlotTrackerControl : MarginContainer
         _logicNotice = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, Alignment = BoxContainer.AlignmentMode.Center, Visible = false };
         _logicNotice.AddThemeConstantOverride("separation", 14);
         _logicNoticeText = new Label { HorizontalAlignment = HorizontalAlignment.Center, AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        _logicNoticeText.AddThemeColorOverride("font_color", Colors.Gray);
+        _logicNoticeText.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextSubtle);
         _logicNotice.AddChild(_logicNoticeText);
         _logicNoticeActions = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
         _logicNoticeActions.AddThemeConstantOverride("separation", 10);
@@ -197,12 +197,12 @@ public partial class SlotTrackerControl : MarginContainer
         {
             _logicPlaceholder ??= _logicTree.CreateItem(root);
             _logicPlaceholder.SetText(1, Model.Logic.Running ? "No reachable checks found yet." : "Waiting for Logic Engine...");
-            _logicPlaceholder.SetCustomColor(1, Colors.Gray);
+            _logicPlaceholder.SetCustomColor(1, AP_Atlas.Core.ThemeColors.TextSubtle);
             return;
         }
 
         var checkedLocs = new HashSet<long>(Session.Locations.AllLocationsChecked);
-        var dividerBg = new Godot.Color("#252836");
+        var dividerBg = AP_Atlas.Core.ThemeColors.SurfacePanel;
         var dividerFg = AP_Atlas.Core.ThemeColors.Accent;
 
         for (; _logicRenderedSteps < steps.Count; _logicRenderedSteps++)
@@ -233,7 +233,7 @@ public partial class SlotTrackerControl : MarginContainer
                 row.SetText(1, Session.Locations.GetLocationNameFromId(locId) ?? "Unknown Check");
                 row.SetText(2, step.ItemName);
                 row.SetMetadata(0, locId);
-                var rowBg = (_logicOrderCount % 2 == 0) ? new Godot.Color("#16161C") : new Godot.Color("#1F1F27");
+                var rowBg = (_logicOrderCount % 2 == 0) ? AP_Atlas.Core.ThemeColors.RowEven : AP_Atlas.Core.ThemeColors.RowOdd;
                 for (int c = 0; c < 3; c++) row.SetCustomBgColor(c, rowBg);
                 bool isChecked = checkedLocs.Contains(locId);
                 ColorLogicRow(row, isChecked);
@@ -258,8 +258,8 @@ public partial class SlotTrackerControl : MarginContainer
 
     private static void ColorLogicRow(TreeItem row, bool isChecked)
     {
-        row.SetCustomColor(0, isChecked ? Colors.DimGray : Colors.LightGray);
-        row.SetCustomColor(1, isChecked ? Colors.DimGray : Colors.White);
-        row.SetCustomColor(2, isChecked ? Colors.DimGray : Colors.Plum);
+        row.SetCustomColor(0, isChecked ? AP_Atlas.Core.ThemeColors.TextSubtle : AP_Atlas.Core.ThemeColors.TextMuted);
+        row.SetCustomColor(1, isChecked ? AP_Atlas.Core.ThemeColors.TextSubtle : AP_Atlas.Core.ThemeColors.Text);
+        row.SetCustomColor(2, isChecked ? AP_Atlas.Core.ThemeColors.TextSubtle : AP_Atlas.Core.ThemeColors.Progression);
     }
 }

@@ -15,13 +15,13 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         LogToSystem(message, "orange");
         if (!AP_Atlas.Core.PopTracker.PackDoctorService.Reports.TryGetValue(packKey, out var report) || report?.Pack == null) return;
         string path = report.Pack.SourcePath;
-        ShowToast(message, Godot.Colors.Orange, "Review", () => OpenPackDoctor(path));
+        ShowToast(message, AP_Atlas.Core.ThemeColors.Warning, "Review", () => OpenPackDoctor(path));
     }
     /// <summary>Opens the Pack Doctor for a pack zip.</summary>
     public void OpenPackDoctor(string zipPath, string startTab = null)
     {
         var original = AP_Atlas.Core.PopTracker.PopTrackerPackLoader.InspectZipPack(zipPath);
-        if (original == null) { ShowToast("Couldn't read that map pack.", Godot.Colors.Salmon); return; }
+        if (original == null) { ShowToast("Couldn't read that map pack.", AP_Atlas.Core.ThemeColors.Error); return; }
         AP_Atlas.UI.PackDoctorWindow.Open(this, original, _appSettings.ContentFontSize, startTab);
     }
     /// <summary>Opens the Cheese Tracker tab's Settings (the API key, links, automatic updates, the site).</summary>
@@ -65,7 +65,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         }
         new AP_Atlas.UI.HelpWindow(text => Tr(text), url =>
         {
-            if (!AP_Atlas.Core.ExternalLinks.OpenWeb(url)) ShowToast(Tr("Couldn't open the link."), Colors.Salmon);
+            if (!AP_Atlas.Core.ExternalLinks.OpenWeb(url)) ShowToast(Tr("Couldn't open the link."), AP_Atlas.Core.ThemeColors.Error);
         }).Open(this, pageId);
     }
 

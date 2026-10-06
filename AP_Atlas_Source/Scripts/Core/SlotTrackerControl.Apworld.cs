@@ -167,7 +167,7 @@ public partial class SlotTrackerControl : MarginContainer
             _apworldFixStatus = null;
             string from = found.Version?.Url != null ? " from " + AP_Atlas.Core.EngineSetup.ApworldSources.SourceKey(found.Version.Url) : "";
             AP_Atlas.Core.Logger.LogInfo($"[{_slotName}] Found the {game} apworld this seed was made with ({found.Version?.Version}{from}); restarting logic on it.");
-            ShowToast?.Invoke($"{_slotName}: using {game} {found.Version?.Version}{from}, the version this seed was made with.", Colors.LimeGreen);
+            ShowToast?.Invoke($"{_slotName}: using {game} {found.Version?.Version}{from}, the version this seed was made with.", AP_Atlas.Core.ThemeColors.Success);
             RetryLogicEngine();
             return;
         }
@@ -252,7 +252,7 @@ public partial class SlotTrackerControl : MarginContainer
             {
                 _apworldFixStatus = null;
                 Model.Logic.RetrySeedApworld(checksum);
-                ShowToast?.Invoke($"{_slotName}: using your {game} apworld, which matches this seed.", Colors.LimeGreen);
+                ShowToast?.Invoke($"{_slotName}: using your {game} apworld, which matches this seed.", AP_Atlas.Core.ThemeColors.Success);
                 RetryLogicEngine();
                 return;
             }
@@ -399,11 +399,11 @@ public partial class SlotTrackerControl : MarginContainer
             var check = AP_Atlas.Core.YamlExclusions.Read(path, Game, _slotName);
             if (check.Error != null && !check.Error.StartsWith("Several"))
             {
-                ShowToast?.Invoke($"That YAML can't be used for {_slotName}: {check.Error}", Colors.Salmon);
+                ShowToast?.Invoke($"That YAML can't be used for {_slotName}: {check.Error}", AP_Atlas.Core.ThemeColors.Error);
                 return;
             }
             LinkYaml(path);
-            ShowToast?.Invoke($"Linked {System.IO.Path.GetFileName(path)} to {_slotName}. Restarting logic…", Colors.Gray);
+            ShowToast?.Invoke($"Linked {System.IO.Path.GetFileName(path)} to {_slotName}. Restarting logic…", AP_Atlas.Core.ThemeColors.TextSubtle);
         };
         dialog.Canceled += () => dialog.QueueFree();
         GetTree().Root.AddChild(dialog);

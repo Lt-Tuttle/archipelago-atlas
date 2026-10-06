@@ -145,7 +145,7 @@ namespace AP_Atlas.Core.PopTracker
             AddChild(toolbar);
 
             _scriptNote = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill, Visible = false };
-            _scriptNote.AddThemeColorOverride("font_color", Colors.Orange);
+            _scriptNote.AddThemeColorOverride("font_color", ThemeColors.Warning);
             AddChild(_scriptNote);
 
             // View Mode Segmented Control
@@ -199,7 +199,7 @@ namespace AP_Atlas.Core.PopTracker
             var footerSpacer = new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill };
             _visualFooter.AddChild(footerSpacer);
             var zoomLabel = new Label { Text = "Item Size:" };
-            zoomLabel.AddThemeColorOverride("font_color", Colors.LightGray);
+            zoomLabel.AddThemeColorOverride("font_color", ThemeColors.TextMuted);
             _visualFooter.AddChild(zoomLabel);
 
             var zoomMinus = new Button { Text = "-", CustomMinimumSize = new Vector2(24, 24), FocusMode = FocusModeEnum.None };
@@ -710,15 +710,15 @@ namespace AP_Atlas.Core.PopTracker
 
                     if (item.Received > 0)
                     {
-                        row.SetCustomColor(0, Colors.White);
-                        row.SetCustomColor(1, Colors.LightGray);
-                        row.SetCustomColor(2, Colors.LimeGreen);
+                        row.SetCustomColor(0, ThemeColors.Text);
+                        row.SetCustomColor(1, ThemeColors.TextMuted);
+                        row.SetCustomColor(2, ThemeColors.Success);
                     }
                     else
                     {
-                        row.SetCustomColor(0, Colors.DarkGray);
-                        row.SetCustomColor(1, Colors.DarkGray);
-                        row.SetCustomColor(2, Colors.DarkGray);
+                        row.SetCustomColor(0, ThemeColors.Disabled);
+                        row.SetCustomColor(1, ThemeColors.Disabled);
+                        row.SetCustomColor(2, ThemeColors.Disabled);
                     }
 
                     shownCount++;

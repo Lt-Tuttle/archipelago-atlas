@@ -17,10 +17,10 @@ namespace AP_Atlas.UI
     /// </summary>
     public partial class PackDoctorWindow : Window
     {
-        private static readonly Color Good = Colors.LimeGreen;
-        private static readonly Color Bad = Colors.Salmon;
-        private static readonly Color Muted = Colors.DimGray;
-        private static readonly Color Warn = Colors.Orange;
+        private static readonly Color Good = ThemeColors.Success;
+        private static readonly Color Bad = ThemeColors.Error;
+        private static readonly Color Muted = ThemeColors.TextSubtle;
+        private static readonly Color Warn = ThemeColors.Warning;
         private static readonly Color Fixed = new Color("#FFC53D");
 
         private readonly LoadedPack _original;
@@ -82,7 +82,7 @@ namespace AP_Atlas.UI
                 QueueFree();
             };
             var bg = new Panel();
-            bg.AddThemeStyleboxOverride("panel", new StyleBoxFlat { BgColor = new Color("#1a1a1f") });
+            bg.AddThemeStyleboxOverride("panel", new StyleBoxFlat { BgColor = ThemeColors.SurfaceSunken });
             bg.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
             AddChild(bg);
             var margin = new MarginContainer();
@@ -100,7 +100,7 @@ namespace AP_Atlas.UI
             var footer = new HBoxContainer();
             root.AddChild(footer);
             _status = new Label { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart };
-            _status.AddThemeColorOverride("font_color", Colors.Gray);
+            _status.AddThemeColorOverride("font_color", ThemeColors.TextSubtle);
             footer.AddChild(_status);
             _undoButton = new Button { Text = "Undo", TooltipText = "Undo your last change" };
             _undoButton.Pressed += () => { if (PackFixes.Undo(_key)) SetStatus("Undone."); };
@@ -399,28 +399,6 @@ namespace AP_Atlas.UI
         // Small UI helpers
         // =====================================================================
 
-        private static Label Heading(string text)
-        {
-            var l = new Label { Text = text };
-            l.SetMeta("font_size_ratio", 1.15);
-            l.AddThemeColorOverride("font_color", ThemeColors.Accent.Lightened(0.2f));
-            return l;
-        }
-
-        private static Label Note(string text, Color? color = null)
-        {
-            var l = new Label { Text = text, AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
-            l.AddThemeColorOverride("font_color", color ?? Colors.Gray);
-            return l;
-        }
-
-        private static Button Btn(string text, string tooltip, Action onPressed, bool enabled = true)
-        {
-            var b = new Button { Text = text, TooltipText = tooltip ?? "", Disabled = !enabled };
-            b.Pressed += () => onPressed();
-            return b;
-        }
-
         private static string SeverityText(FindingSeverity s) => s switch
         {
             FindingSeverity.Problem => "Problem",
@@ -434,7 +412,7 @@ namespace AP_Atlas.UI
             FindingSeverity.Problem => Bad,
             FindingSeverity.Warning => Warn,
             FindingSeverity.AutoFixed => Fixed,
-            _ => Colors.LightGray
+            _ => ThemeColors.TextMuted
         };
 
         private Control CoverageBar(string label, int done, int total, string detail)
@@ -447,7 +425,7 @@ namespace AP_Atlas.UI
             bar.AddThemeStyleboxOverride("fill", fill);
             row.AddChild(bar);
             row.AddChild(new Label { Text = total == 0 ? "—" : $"{done} / {total}" });
-            if (!string.IsNullOrEmpty(detail)) row.AddChild(Note(detail));
+            if (!string.IsNullOrEmpty(detail)) row.AddChild(Kit.Subtle(detail));
             return row;
         }
 
@@ -466,12 +444,12 @@ namespace AP_Atlas.UI
             split.AddChild(left);
 
             var m = _original.Manifest;
-            left.AddChild(Heading($"{m?.Name}  {m?.GetActualVersion()}"));
+            left.AddChild(Kit.Heading($"{m?.Name}  {m?.GetActualVersion()}"));
             string game = _report.Names?.Game ?? m?.GameName;
             string namesText = _report.Names == null
                 ? "No name list yet: connect a slot of this game, or set your Archipelago install path."
                 : $"Checked against {game} names from the {_report.Names.Source} ({_report.Names.Items.Count} items, {_report.Names.Locations.Count} locations{(string.IsNullOrEmpty(_report.Names.Version) || _report.Names.Version == "0.0.0" ? "" : ", version " + _report.Names.Version)}).";
-            left.AddChild(Note($"By {m?.Author}. {namesText}"));
+            left.AddChild(Kit.Subtle($"By {m?.Author}. {namesText}"));
 
             left.AddChild(CoverageBar("Key Items tiles linked", _report.TilesLinked, _report.TilesTotal,
                 _report.TilesByScript > 0 ? $"{_report.TilesByScript} by the pack's script" : ""));
@@ -483,8 +461,7 @@ namespace AP_Atlas.UI
             if (recs.Count > 0)
             {
                 int strong = recs.Count(r => r.Suggestions[0].Score >= 0.85);
-                var review = Btn($"Review {recs.Count} recommended fix{(recs.Count == 1 ? "" : "es")} ({strong} at 85%+)…",
-                    "See every suggested match in one list and apply them one at a time or all at once", () => SelectTab("Recommended"));
+                var review = Kit.Button($"Review {recs.Count} recommended fix{(recs.Count == 1 ? "" : "es")} ({strong} at 85%+)…", "See every suggested match in one list and apply them one at a time or all at once", () => SelectTab("Recommended"));
                 review.AddThemeColorOverride("font_color", Good);
                 left.AddChild(review);
             }
@@ -536,7 +513,7 @@ namespace AP_Atlas.UI
             {
                 foreach (Node c in detailBox.GetChildren()) c.QueueFree();
                 var f = _report.Findings.FirstOrDefault(x => x.Key == key);
-                if (f == null) { detailBox.AddChild(Note("Select a finding to see details and fixes.")); return; }
+                if (f == null) { detailBox.AddChild(Kit.Subtle("Select a finding to see details and fixes.")); return; }
                 _selectedFindingKey = key;
                 BuildFindingDetail(f, detailBox);
                 MainTrackerWindow.SetFontSizeRecursive(detailBox, _fontSize);
@@ -557,18 +534,18 @@ namespace AP_Atlas.UI
             title.SetMeta("font_size_ratio", 1.1);
             title.AddThemeColorOverride("font_color", SeverityColor(f.Severity));
             box.AddChild(title);
-            if (!string.IsNullOrEmpty(f.Detail)) box.AddChild(Note(f.Detail, Colors.LightGray));
+            if (!string.IsNullOrEmpty(f.Detail)) box.AddChild(Kit.Text(f.Detail, ThemeColors.TextMuted));
 
             // Suggestions with one-click "Use".
             if (f.Suggestions.Count > 0)
             {
-                box.AddChild(Note("Likely matches:"));
+                box.AddChild(Kit.Subtle("Likely matches:"));
                 foreach (var s in f.Suggestions)
                 {
                     var row = new HBoxContainer();
                     row.AddChild(new Label { Text = $"{s.Label}", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart });
                     row.AddChild(new Label { Text = $"{s.Score:P0}", Modulate = s.Score >= 0.85 ? Good : s.Score >= 0.6 ? Warn : Muted });
-                    row.AddChild(Btn("Use", "Apply this match", () => ApplySuggestion(f, s)));
+                    row.AddChild(Kit.Button("Use", "Apply this match", () => ApplySuggestion(f, s)));
                     box.AddChild(row);
                 }
             }
@@ -581,48 +558,48 @@ namespace AP_Atlas.UI
             string what = subject.Contains(':') ? subject.Substring(subject.IndexOf(':') + 1) : subject;
 
             if (f.Actions.HasFlag(FindingActions.LinkItem))
-                actions.AddChild(Btn("Choose item…", "Pick the Archipelago item this tile tracks", () => PickTileItem(what, ItemNameOf(what), f.Suggestions)));
+                actions.AddChild(Kit.Button("Choose item…", "Pick the Archipelago item this tile tracks", () => PickTileItem(what, ItemNameOf(what), f.Suggestions)));
             if (f.Actions.HasFlag(FindingActions.AddImage))
-                actions.AddChild(Btn("Add image…", "Use an image file for this tile", () => PickTileImage(what)));
+                actions.AddChild(Kit.Button("Add image…", "Use an image file for this tile", () => PickTileImage(what)));
             if (f.Actions.HasFlag(FindingActions.HideTile))
-                actions.AddChild(Btn("Hide tile", "Remove this tile from Key Items", () => SetTileHidden(what, true)));
+                actions.AddChild(Kit.Button("Hide tile", "Remove this tile from Key Items", () => SetTileHidden(what, true)));
             if (f.Actions.HasFlag(FindingActions.ToggleGrid))
-                actions.AddChild(Btn("Show this grid anyway", "Show it in Key Items", () => SetGridHidden(subject, false)));
+                actions.AddChild(Kit.Button("Show this grid anyway", "Show it in Key Items", () => SetGridHidden(subject, false)));
             if (f.Actions.HasFlag(FindingActions.LinkLocation))
             {
                 var parts = what.Split('|');
-                actions.AddChild(Btn("Choose location…", "Pick the Archipelago location this section shows", () => PickSectionLocation(parts[0], parts.Length > 1 ? parts[1] : "", f.Suggestions)));
-                actions.AddChild(Btn("Show on map", "Open the pin in the Maps tab", () => { _focusPinPath = parts[0]; SelectTab("Maps"); }));
+                actions.AddChild(Kit.Button("Choose location…", "Pick the Archipelago location this section shows", () => PickSectionLocation(parts[0], parts.Length > 1 ? parts[1] : "", f.Suggestions)));
+                actions.AddChild(Kit.Button("Show on map", "Open the pin in the Maps tab", () => { _focusPinPath = parts[0]; SelectTab("Maps"); }));
             }
             if (f.Actions.HasFlag(FindingActions.AddPin))
-                actions.AddChild(Btn("Place pins…", "Go to the Locations tab to place pins for these", () => SelectTab("Locations")));
+                actions.AddChild(Kit.Button("Place pins…", "Go to the Locations tab to place pins for these", () => SelectTab("Locations")));
             if (f.Actions.HasFlag(FindingActions.ReplaceMapImage))
             {
-                actions.AddChild(Btn("Replace background…", "Use an image file for this map", () => ReplaceMapImage(what)));
+                actions.AddChild(Kit.Button("Replace background…", "Use an image file for this map", () => ReplaceMapImage(what)));
                 if (_original.Maps.TryGetValue(what, out var map) && !string.IsNullOrEmpty(map.MapBg))
-                    actions.AddChild(Btn("Save original image…", "Save a copy of the pack's image where you choose, to re-save it as PNG", () => SavePackImage(map.MapBg)));
+                    actions.AddChild(Kit.Button("Save original image…", "Save a copy of the pack's image where you choose, to re-save it as PNG", () => SavePackImage(map.MapBg)));
             }
             if (f.Actions.HasFlag(FindingActions.ResetFixes) && f.RelatedSubjects.Count > 0)
             {
                 var subjects = f.RelatedSubjects.ToList();
-                actions.AddChild(Btn($"Undo these {subjects.Count} links", "Remove these links; the Doctor will suggest a match for each again", () =>
+                actions.AddChild(Kit.Button($"Undo these {subjects.Count} links", "Remove these links; the Doctor will suggest a match for each again", () =>
                     PackFixes.Edit(_key, $"Undo {subjects.Count} links", file => file.Links.RemoveAll(l => subjects.Contains(l.Subject)))));
             }
             if (f.Actions.HasFlag(FindingActions.RestoreFix))
             {
                 var s = PackFixes.Get(_key).Superseded.FirstOrDefault(x => x.Subject == subject);
-                if (s != null) actions.AddChild(Btn("Restore my fix", "Use your fix again over the author's change", () => PackFixes.Restore(_key, s, _original)));
+                if (s != null) actions.AddChild(Kit.Button("Restore my fix", "Use your fix again over the author's change", () => PackFixes.Restore(_key, s, _original)));
             }
             if (f.Severity >= FindingSeverity.Warning || f.Ignored)
-                actions.AddChild(Btn(f.Ignored ? "Stop ignoring" : "Ignore", f.Ignored ? "Show this finding again" : "Hide this finding (it stays in the report to the author)", () => ToggleIgnore(f)));
+                actions.AddChild(Kit.Button(f.Ignored ? "Stop ignoring" : "Ignore", f.Ignored ? "Show this finding again" : "Hide this finding (it stays in the report to the author)", () => ToggleIgnore(f)));
 
             if (f.Details.Count > 0)
             {
-                box.AddChild(Note($"Entries ({f.Details.Count}):"));
+                box.AddChild(Kit.Subtle($"Entries ({f.Details.Count}):"));
                 var list = new ItemList { CustomMinimumSize = new Vector2(0, 260), SizeFlagsVertical = Control.SizeFlags.ExpandFill };
                 foreach (var d in f.Details) list.AddItem(d);
                 box.AddChild(list);
-                box.AddChild(Btn("Copy list", "Copy these entries", () => DisplayServer.ClipboardSet(string.Join("\n", f.Details))));
+                box.AddChild(Kit.Button("Copy list", "Copy these entries", () => DisplayServer.ClipboardSet(string.Join("\n", f.Details))));
             }
         }
 
@@ -653,25 +630,25 @@ namespace AP_Atlas.UI
             scroll.AddChild(box);
             var f = PackFixes.Get(_key);
 
-            box.AddChild(Note("Your fixes are stored beside the pack (never inside it) and applied when it loads. " +
+            box.AddChild(Kit.Subtle("Your fixes are stored beside the pack (never inside it) and applied when it loads. " +
                               "If the pack's author later changes the same thing, their version wins and your fix is set aside below, ready to restore."));
             var top = new HBoxContainer();
-            top.AddChild(Btn("Open fixes folder", "Show where fixes are saved", () => { Directory.CreateDirectory(PackFixes.Dir); ExternalLinks.OpenFolder(PackFixes.Dir); }));
-            top.AddChild(Btn("Reset everything…", "Remove all your fixes for this pack", () => Confirm("Remove every fix for this pack?", () => PackFixes.Reset(_key)), f.Count > 0 || f.Ignored.Count > 0));
+            top.AddChild(Kit.Button("Open fixes folder", "Show where fixes are saved", () => { Directory.CreateDirectory(PackFixes.Dir); ExternalLinks.OpenFolder(PackFixes.Dir); }));
+            top.AddChild(Kit.Button("Reset everything…", "Remove all your fixes for this pack", () => Confirm("Remove every fix for this pack?", () => PackFixes.Reset(_key)), f.Count > 0 || f.Ignored.Count > 0));
             box.AddChild(top);
 
             void Group<T>(string title, string category, List<T> list, Func<T, string> describe) where T : PackFixBase
             {
-                box.AddChild(Heading($"{title} ({list.Count})"));
-                if (list.Count == 0) { box.AddChild(Note("None.")); return; }
-                box.AddChild(Btn($"Reset all {title.ToLowerInvariant()}", null, () => PackFixes.Reset(_key, category)));
+                box.AddChild(Kit.Heading($"{title} ({list.Count})"));
+                if (list.Count == 0) { box.AddChild(Kit.Subtle("None.")); return; }
+                box.AddChild(Kit.Button($"Reset all {title.ToLowerInvariant()}", null, () => PackFixes.Reset(_key, category)));
                 foreach (var fix in list.OrderByDescending(x => x.Made))
                 {
                     var row = new HBoxContainer();
                     row.AddChild(new Label { Text = describe(fix), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart });
-                    row.AddChild(Note(fix.Made.ToString("yyyy-MM-dd HH:mm")));
+                    row.AddChild(Kit.Subtle(fix.Made.ToString("yyyy-MM-dd HH:mm")));
                     string subj = fix.Subject;
-                    row.AddChild(Btn("Reset", "Use the author's version again", () => PackFixes.Reset(_key, category, subj)));
+                    row.AddChild(Kit.Button("Reset", "Use the author's version again", () => PackFixes.Reset(_key, category, subj)));
                     box.AddChild(row);
                 }
             }
@@ -695,19 +672,19 @@ namespace AP_Atlas.UI
             Group("Added pins", "pins", f.AddedPins, p => $"Added pin '{p.Name}' on {p.MapId} ({p.ApLocationIds.Count} location{(p.ApLocationIds.Count == 1 ? "" : "s")})");
             Group("Map images", "maps", f.MapImages, m => $"Map '{m.MapId}' uses {m.ImageFile}");
 
-            box.AddChild(Heading($"Set aside by pack updates ({f.Superseded.Count})"));
-            if (f.Superseded.Count == 0) box.AddChild(Note("None."));
+            box.AddChild(Kit.Heading($"Set aside by pack updates ({f.Superseded.Count})"));
+            if (f.Superseded.Count == 0) box.AddChild(Kit.Subtle("None."));
             foreach (var s in f.Superseded.OrderByDescending(x => x.When))
             {
                 var row = new HBoxContainer();
                 row.AddChild(new Label { Text = $"{s.Subject} (author changed it in {s.PackVersion})", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart });
                 var sc = s;
-                row.AddChild(Btn("Restore", "Use your fix again", () => PackFixes.Restore(_key, sc, _original)));
+                row.AddChild(Kit.Button("Restore", "Use your fix again", () => PackFixes.Restore(_key, sc, _original)));
                 box.AddChild(row);
             }
 
-            box.AddChild(Heading($"Ignored findings ({f.Ignored.Count})"));
-            if (f.Ignored.Count > 0) box.AddChild(Btn("Stop ignoring all", null, () => PackFixes.Edit(_key, "Stop ignoring all", x => x.Ignored.Clear())));
+            box.AddChild(Kit.Heading($"Ignored findings ({f.Ignored.Count})"));
+            if (f.Ignored.Count > 0) box.AddChild(Kit.Button("Stop ignoring all", null, () => PackFixes.Edit(_key, "Stop ignoring all", x => x.Ignored.Clear())));
             return scroll;
         }
 
@@ -728,15 +705,15 @@ namespace AP_Atlas.UI
         {
             var box = new VBoxContainer { SizeFlagsVertical = Control.SizeFlags.ExpandFill };
             box.AddThemeConstantOverride("separation", 6);
-            box.AddChild(Note("A summary of problems in the pack itself, ready to paste into an issue on the pack's page. Your local fixes and settings aren't included."));
+            box.AddChild(Kit.Subtle("A summary of problems in the pack itself, ready to paste into an issue on the pack's page. Your local fixes and settings aren't included."));
             string text = PackDoctor.AuthorReport(_report);
             var edit = new TextEdit { Text = text, Editable = true, SizeFlagsVertical = Control.SizeFlags.ExpandFill, WrapMode = TextEdit.LineWrappingMode.Boundary };
             edit.AddThemeFontSizeOverride("font_size", _fontSize);
             box.AddChild(edit);
             var row = new HBoxContainer();
-            row.AddChild(Btn("Copy", "Copy the report", () => { DisplayServer.ClipboardSet(edit.Text); SetStatus("Report copied."); }));
+            row.AddChild(Kit.Button("Copy", "Copy the report", () => { DisplayServer.ClipboardSet(edit.Text); SetStatus("Report copied."); }));
             string issues = IssuesUrl(_original.Manifest?.VersionsUrl);
-            if (issues != null) row.AddChild(Btn("Open the pack's issue page", issues, () => ExternalLinks.OpenWeb(issues)));
+            if (issues != null) row.AddChild(Kit.Button("Open the pack's issue page", issues, () => ExternalLinks.OpenWeb(issues)));
             box.AddChild(row);
             return box;
         }

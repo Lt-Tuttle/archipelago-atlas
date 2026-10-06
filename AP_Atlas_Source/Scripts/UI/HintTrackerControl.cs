@@ -144,7 +144,7 @@ namespace AP_Atlas.UI
             _searchBox = new LineEdit { PlaceholderText = "Search items, players, locations, entrances...", SizeFlagsHorizontal = SizeFlags.ExpandFill, ClearButtonEnabled = true };
             toolbar.AddChild(_searchBox);
             _summaryLabel = new Label { HorizontalAlignment = HorizontalAlignment.Right };
-            _summaryLabel.AddThemeColorOverride("font_color", Colors.LightGray);
+            _summaryLabel.AddThemeColorOverride("font_color", ThemeColors.TextMuted);
             toolbar.AddChild(_summaryLabel);
 
             _btnMyItems.Toggled += _ => Render();
@@ -210,7 +210,7 @@ namespace AP_Atlas.UI
             var requestPanel = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
             requestPanel.AddThemeStyleboxOverride("panel", new StyleBoxFlat
             {
-                BgColor = new Color("#1A1A1F"),
+                BgColor = ThemeColors.SurfaceSunken,
                 CornerRadiusTopLeft = 4,
                 CornerRadiusTopRight = 4,
                 CornerRadiusBottomLeft = 4,
@@ -250,7 +250,7 @@ namespace AP_Atlas.UI
             requestRow.AddChild(_pointsLabel);
 
             _requestFeedback = new Label { Text = "", AutowrapMode = TextServer.AutowrapMode.WordSmart };
-            _requestFeedback.AddThemeColorOverride("font_color", Colors.Gray);
+            _requestFeedback.AddThemeColorOverride("font_color", ThemeColors.TextSubtle);
             requestVBox.AddChild(_requestFeedback);
 
             // Hint points change with every check and RoomUpdate; poll cheaply while the tab is visible.
@@ -382,19 +382,19 @@ namespace AP_Atlas.UI
 
         private static Color StatusColor(HintStatus s) => s switch
         {
-            HintStatus.Priority => Colors.Gold,
-            HintStatus.NoPriority => Colors.SlateBlue,
-            HintStatus.Avoid => Colors.Salmon,
-            HintStatus.Found => Colors.LimeGreen,
-            _ => Colors.LightGray
+            HintStatus.Priority => ThemeColors.HintPriority,
+            HintStatus.NoPriority => ThemeColors.HintNoPriority,
+            HintStatus.Avoid => ThemeColors.Error,
+            HintStatus.Found => ThemeColors.Success,
+            _ => ThemeColors.TextMuted
         };
 
         private static Color ItemColor(ItemFlags flags)
         {
-            if (flags.HasFlag(ItemFlags.Advancement)) return Colors.Plum;
-            if (flags.HasFlag(ItemFlags.NeverExclude)) return Colors.SlateBlue;
-            if (flags.HasFlag(ItemFlags.Trap)) return Colors.Salmon;
-            return Colors.Cyan;
+            if (flags.HasFlag(ItemFlags.Advancement)) return ThemeColors.Progression;
+            if (flags.HasFlag(ItemFlags.NeverExclude)) return ThemeColors.Useful;
+            if (flags.HasFlag(ItemFlags.Trap)) return ThemeColors.Trap;
+            return ThemeColors.Filler;
         }
 
         private bool ServerSupportsHintStatus =>
@@ -472,7 +472,7 @@ namespace AP_Atlas.UI
             {
                 var empty = _tree.CreateItem(root);
                 empty.SetText((int)Col.Item, _rowsByKey.Count == 0 ? "No hints yet. Request one below, or use !hint in Chat." : "No hints match the current filters.");
-                empty.SetCustomColor((int)Col.Item, Colors.Gray);
+                empty.SetCustomColor((int)Col.Item, ThemeColors.TextSubtle);
                 empty.SetSelectable((int)Col.Item, false);
             }
 
@@ -503,16 +503,16 @@ namespace AP_Atlas.UI
                 item.SetCustomColor((int)Col.Item, ItemColor(h.ItemFlags));
 
                 item.SetText((int)Col.Receiver, r.ReceiverName);
-                item.SetCustomColor((int)Col.Receiver, r.IsMyItem ? Colors.Magenta : Colors.Yellow);
+                item.SetCustomColor((int)Col.Receiver, r.IsMyItem ? ThemeColors.You : ThemeColors.Player);
 
                 item.SetText((int)Col.Location, r.LocationName);
-                item.SetCustomColor((int)Col.Location, Colors.LightGreen);
+                item.SetCustomColor((int)Col.Location, ThemeColors.Location);
 
                 item.SetText((int)Col.Finder, r.FinderName);
-                item.SetCustomColor((int)Col.Finder, r.IsMyLocation ? Colors.Magenta : Colors.Yellow);
+                item.SetCustomColor((int)Col.Finder, r.IsMyLocation ? ThemeColors.You : ThemeColors.Player);
 
                 item.SetText((int)Col.Entrance, r.Entrance);
-                item.SetCustomColor((int)Col.Entrance, Colors.Gray);
+                item.SetCustomColor((int)Col.Entrance, ThemeColors.TextSubtle);
 
                 if (h.Found)
                 {
@@ -521,23 +521,23 @@ namespace AP_Atlas.UI
                 else if (r.InLogic == true)
                 {
                     item.SetText((int)Col.Logic, "✔ In logic");
-                    item.SetCustomColor((int)Col.Logic, Colors.LimeGreen);
+                    item.SetCustomColor((int)Col.Logic, ThemeColors.Success);
                 }
                 else if (r.InLogic == false)
                 {
                     item.SetText((int)Col.Logic, "✖ Not yet");
-                    item.SetCustomColor((int)Col.Logic, Colors.Salmon);
+                    item.SetCustomColor((int)Col.Logic, ThemeColors.Error);
                 }
                 else if (LogicHidden?.Invoke() == true)
                 {
                     item.SetText((int)Col.Logic, "Hidden");
-                    item.SetCustomColor((int)Col.Logic, Colors.DimGray);
+                    item.SetCustomColor((int)Col.Logic, ThemeColors.TextSubtle);
                     item.SetTooltipText((int)Col.Logic, "Hidden by race mode (Settings → Race Mode).");
                 }
                 else
                 {
                     item.SetText((int)Col.Logic, "Unknown");
-                    item.SetCustomColor((int)Col.Logic, Colors.DimGray);
+                    item.SetCustomColor((int)Col.Logic, ThemeColors.TextSubtle);
                     item.SetTooltipText((int)Col.Logic, r.IsMyLocation
                         ? "The logic engine for this slot isn't running."
                         : $"Connect {r.FinderName} in Atlas (same multiworld profile) to see their logic.");
@@ -545,10 +545,10 @@ namespace AP_Atlas.UI
 
                 if (h.Found)
                 {
-                    for (int c = 0; c < ColumnTitles.Length; c++) item.SetCustomColor(c, Colors.DimGray);
+                    for (int c = 0; c < ColumnTitles.Length; c++) item.SetCustomColor(c, ThemeColors.TextSubtle);
                 }
 
-                var bg = (shown % 2 == 0) ? new Color("#16161C") : new Color("#1F1F27");
+                var bg = (shown % 2 == 0) ? ThemeColors.RowEven : ThemeColors.RowOdd;
                 for (int c = 0; c < ColumnTitles.Length; c++) item.SetCustomBgColor(c, bg);
                 if (MarkerLookup != null)
                 {
@@ -613,11 +613,11 @@ namespace AP_Atlas.UI
             {
                 // The server identifies a hint by the player whose world holds the location.
                 _session.Hints.UpdateHintStatus(row.Hint.FindingPlayer, row.Hint.LocationId, newStatus);
-                SetFeedback($"Marked '{row.ItemName}' as {StatusText(newStatus)}.", Colors.Gray);
+                SetFeedback($"Marked '{row.ItemName}' as {StatusText(newStatus)}.", ThemeColors.TextSubtle);
             }
             catch (Exception ex)
             {
-                SetFeedback($"Could not update hint status: {ex.Message}", Colors.Salmon);
+                SetFeedback($"Could not update hint status: {ex.Message}", ThemeColors.Error);
             }
         }
 
@@ -629,7 +629,7 @@ namespace AP_Atlas.UI
                           (string.IsNullOrEmpty(row.Entrance) ? "" : $" ({row.Entrance})") +
                           (row.Hint.Found ? " (found)" : "");
             DisplayServer.ClipboardSet(text);
-            SetFeedback("Copied: " + text, Colors.Gray);
+            SetFeedback("Copied: " + text, ThemeColors.TextSubtle);
         }
 
         private void AnnounceNewHints(List<Hint> newHints)
@@ -756,14 +756,14 @@ namespace AP_Atlas.UI
             if (string.IsNullOrEmpty(name)) return;
             if (_session == null || !_session.Socket.Connected)
             {
-                SetFeedback("Not connected. Reconnect the slot to request hints.", Colors.Salmon);
+                SetFeedback("Not connected. Reconnect the slot to request hints.", ThemeColors.Error);
                 return;
             }
             string command = (IsLocationMode ? "!hint_location " : "!hint ") + name;
             AP_Atlas.Core.Async.Fire(Say(command), "sending your hint request");
             _requestInput.Text = "";
             _suggestions.Visible = false;
-            SetFeedback($"Sent \"{command}\". The server's reply appears in Chat; new hints show up here automatically.", Colors.Gray);
+            SetFeedback($"Sent \"{command}\". The server's reply appears in Chat; new hints show up here automatically.", ThemeColors.TextSubtle);
         }
 
         private void UpdatePointsLabel()
@@ -773,7 +773,7 @@ namespace AP_Atlas.UI
             int cost = _session.RoomState.HintCost;
             string afford = cost <= 0 ? "free" : $"can afford {points / cost}";
             _pointsLabel.Text = $"Points: {points} · Cost: {cost} · {afford}";
-            _pointsLabel.AddThemeColorOverride("font_color", cost <= 0 || points >= cost ? Colors.LightGreen : Colors.Salmon);
+            _pointsLabel.AddThemeColorOverride("font_color", cost <= 0 || points >= cost ? ThemeColors.Success : ThemeColors.Error);
             _requestButton.Disabled = !_session.Socket.Connected;
         }
 

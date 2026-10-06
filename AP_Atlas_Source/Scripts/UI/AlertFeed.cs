@@ -69,7 +69,7 @@ namespace AP_Atlas.UI
             var card = new PanelContainer();
             card.AddThemeStyleboxOverride("panel", new StyleBoxFlat
             {
-                BgColor = new Color(0.1f, 0.1f, 0.1f, 0.9f),
+                BgColor = new Color(AP_Atlas.Core.ThemeColors.SurfaceDeep, 0.95f),
                 BorderWidthTop = 1,
                 BorderWidthBottom = 1,
                 BorderWidthLeft = 1,
@@ -138,12 +138,12 @@ namespace AP_Atlas.UI
             }));
         }
 
-        /// <summary>What a card's colour means, for the history: the colours Atlas uses for errors, warnings and successes.</summary>
+        /// <summary>What a card's colour means, for the history: the palette's error, danger, warning and success colours.</summary>
         public static AP_Atlas.Core.AlertKind KindOf(Color color)
         {
-            if (color == Colors.Salmon || color == Colors.Red) return AP_Atlas.Core.AlertKind.Error;
-            if (color == Colors.Orange) return AP_Atlas.Core.AlertKind.Warning;
-            if (color == Colors.LimeGreen || color == Colors.LightGreen || color == Colors.Green) return AP_Atlas.Core.AlertKind.Success;
+            if (color == AP_Atlas.Core.ThemeColors.Error || color == AP_Atlas.Core.ThemeColors.Danger) return AP_Atlas.Core.AlertKind.Error;
+            if (color == AP_Atlas.Core.ThemeColors.Warning) return AP_Atlas.Core.AlertKind.Warning;
+            if (color == AP_Atlas.Core.ThemeColors.Success) return AP_Atlas.Core.AlertKind.Success;
             return AP_Atlas.Core.AlertKind.Info;
         }
     }

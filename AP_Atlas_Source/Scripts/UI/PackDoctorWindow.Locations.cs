@@ -33,12 +33,12 @@ namespace AP_Atlas.UI
 
             // ---- Unlinked sections ----
             var unlinked = _report.Findings.Where(f => f.Key.StartsWith("loc:unmatched:") && !f.Ignored).ToList();
-            box.AddChild(Heading($"Pin sections not linked to a location ({unlinked.Count})"));
-            box.AddChild(Note("These pins stay red and never clear. Accept the suggested match, choose another, or ignore ones the game doesn't have."));
+            box.AddChild(Kit.Heading($"Pin sections not linked to a location ({unlinked.Count})"));
+            box.AddChild(Kit.Subtle("These pins stay red and never clear. Accept the suggested match, choose another, or ignore ones the game doesn't have."));
             var strong = unlinked.Where(f => f.Suggestions.Count > 0 && f.Suggestions[0].Score >= 0.85).ToList();
             if (strong.Count > 0)
             {
-                box.AddChild(Btn($"Accept all {strong.Count} strong suggestions (85%+)", "Link each to its best match in one step (undoable)", () =>
+                box.AddChild(Kit.Button($"Accept all {strong.Count} strong suggestions (85%+)", "Link each to its best match in one step (undoable)", () =>
                 {
                     PackFixes.Edit(_key, $"Accept {strong.Count} suggestions", file =>
                     {
@@ -76,24 +76,24 @@ namespace AP_Atlas.UI
                     var match = new Label { Text = $"→ {best.Label} ({best.Score:P0})", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart };
                     match.AddThemeColorOverride("font_color", best.Score >= 0.85 ? Good : best.Score >= 0.6 ? Warn : Muted);
                     row.AddChild(match);
-                    row.AddChild(Btn("Accept", "Link to the suggested location", () => LinkSection(pinPath, section, best.Id, best.Label)));
+                    row.AddChild(Kit.Button("Accept", "Link to the suggested location", () => LinkSection(pinPath, section, best.Id, best.Label)));
                 }
-                else row.AddChild(Note("no close match", Muted));
+                else row.AddChild(Kit.Text("no close match", Muted));
                 var fc = f;
-                row.AddChild(Btn("Choose…", "Pick the location", () => PickSectionLocation(pinPath, section, fc.Suggestions)));
-                row.AddChild(Btn("Map", "Show this pin in the Maps tab", () => { _focusPinPath = pinPath; SelectTab("Maps"); }));
-                row.AddChild(Btn("Ignore", "Hide this finding", () => ToggleIgnore(fc)));
+                row.AddChild(Kit.Button("Choose…", "Pick the location", () => PickSectionLocation(pinPath, section, fc.Suggestions)));
+                row.AddChild(Kit.Button("Map", "Show this pin in the Maps tab", () => { _focusPinPath = pinPath; SelectTab("Maps"); }));
+                row.AddChild(Kit.Button("Ignore", "Hide this finding", () => ToggleIgnore(fc)));
                 box.AddChild(row);
             }
-            if (unlinked.Count > 300) box.AddChild(Note($"…and {unlinked.Count - 300} more (use the filter)."));
+            if (unlinked.Count > 300) box.AddChild(Kit.Subtle($"…and {unlinked.Count - 300} more (use the filter)."));
 
             // ---- Partial-name matches ----
             var loose = _report.Index.ByLocation
                 .SelectMany(kv => kv.Value.Where(m => m.Source == MatchSource.LooseName).Select(m => (Id: kv.Key, Match: m)))
                 .ToList();
             box.AddChild(new HSeparator());
-            box.AddChild(Heading($"Matched by partial name ({loose.Count})"));
-            box.AddChild(Note("Matched on the part of the Archipelago name before \" - \". Usually right; change any that aren't."));
+            box.AddChild(Kit.Heading($"Matched by partial name ({loose.Count})"));
+            box.AddChild(Kit.Subtle("Matched on the part of the Archipelago name before \" - \". Usually right; change any that aren't."));
             foreach (var (id, m) in loose.Take(300))
             {
                 string section = m.Section?.Name ?? "";
@@ -103,26 +103,26 @@ namespace AP_Atlas.UI
                 row.AddChild(new Label { Text = $"{m.Pin.FullPath} / {(string.IsNullOrEmpty(section) ? "(pin)" : section)}", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart });
                 row.AddChild(new Label { Text = "→ " + apName, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart });
                 string pp = m.Pin.FullPath;
-                row.AddChild(Btn("Change…", "Pick a different location", () => PickSectionLocation(pp, section, null)));
-                row.AddChild(Btn("Unlink", "This section shows no location", () => LinkSection(pp, section, null, null)));
+                row.AddChild(Kit.Button("Change…", "Pick a different location", () => PickSectionLocation(pp, section, null)));
+                row.AddChild(Kit.Button("Unlink", "This section shows no location", () => LinkSection(pp, section, null, null)));
                 box.AddChild(row);
             }
 
             // ---- Locations with no pin ----
             var unplaced = _report.Index.UnplacedLocations().Select(id => (Id: id, Name: _report.Index.LocationName(id))).OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase).ToList();
             box.AddChild(new HSeparator());
-            box.AddChild(Heading($"Game locations with no pin ({unplaced.Count})"));
-            box.AddChild(Note("Some may be turned off by your game's options. Place a pin for any of them on a map."));
+            box.AddChild(Kit.Heading($"Game locations with no pin ({unplaced.Count})"));
+            box.AddChild(Kit.Subtle("Some may be turned off by your game's options. Place a pin for any of them on a map."));
             int shown = 0;
             foreach (var (id, name) in unplaced)
             {
                 if (!Pass(name)) continue;
-                if (++shown > 300) { box.AddChild(Note("…more (use the filter).")); break; }
+                if (++shown > 300) { box.AddChild(Kit.Subtle("…more (use the filter).")); break; }
                 var row = new HBoxContainer();
                 row.AddChild(new Label { Text = name, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart });
                 long lid = id; string lname = name;
-                row.AddChild(Btn("Place on map…", "Click a spot on a map to put a pin there", () => { _placeLocation = (lid, lname); SelectTab("Maps"); }));
-                row.AddChild(Btn("Add to a pin…", "Show it in an existing pin as an extra section", () => PickPinForLocation(lid, lname)));
+                row.AddChild(Kit.Button("Place on map…", "Click a spot on a map to put a pin there", () => { _placeLocation = (lid, lname); SelectTab("Maps"); }));
+                row.AddChild(Kit.Button("Add to a pin…", "Show it in an existing pin as an extra section", () => PickPinForLocation(lid, lname)));
                 box.AddChild(row);
             }
             return scroll;
@@ -172,7 +172,7 @@ namespace AP_Atlas.UI
             root.AddThemeConstantOverride("separation", 6);
             if (pack.Maps.Count == 0)
             {
-                root.AddChild(Note("This pack has no maps."));
+                root.AddChild(Kit.Subtle("This pack has no maps."));
                 return root;
             }
 
@@ -205,12 +205,12 @@ namespace AP_Atlas.UI
             }
             picker.ItemSelected += i => { _editorMapId = ordered[(int)i].Id; _editorZoom = 0; _mapScrollPos = Vector2.Zero; _selectedPinPath = null; RenderCurrentTab(); };
             bar.AddChild(picker);
-            bar.AddChild(Btn("−", "Zoom out (or mouse wheel)", () => ZoomAtCenter(1 / 1.25f)));
-            bar.AddChild(Btn("+", "Zoom in (or mouse wheel)", () => ZoomAtCenter(1.25f)));
-            bar.AddChild(Btn("Fit", "Fit the whole map in view", () => FitMap()));
-            bar.AddChild(Btn("1:1", "Actual size", () => { _editorZoom = 1f; LayoutMapCanvas(); }));
+            bar.AddChild(Kit.Button("−", "Zoom out (or mouse wheel)", () => ZoomAtCenter(1 / 1.25f)));
+            bar.AddChild(Kit.Button("+", "Zoom in (or mouse wheel)", () => ZoomAtCenter(1.25f)));
+            bar.AddChild(Kit.Button("Fit", "Fit the whole map in view", () => FitMap()));
+            bar.AddChild(Kit.Button("1:1", "Actual size", () => { _editorZoom = 1f; LayoutMapCanvas(); }));
             if (_selectedPinPath != null)
-                bar.AddChild(Btn("Go to selected", "Center on the selected pin", () => FocusPin(_selectedPinPath)));
+                bar.AddChild(Kit.Button("Go to selected", "Center on the selected pin", () => FocusPin(_selectedPinPath)));
             var find = new LineEdit { PlaceholderText = "Find a pin on this map…", CustomMinimumSize = new Vector2(260, 0), ClearButtonEnabled = true };
             find.TextSubmitted += text =>
             {
@@ -223,25 +223,25 @@ namespace AP_Atlas.UI
                 FocusPin(hit.FullPath);
             };
             bar.AddChild(find);
-            bar.AddChild(Btn("Add pin…", "Pick a location, then click the map where its pin goes", () =>
+            bar.AddChild(Kit.Button("Add pin…", "Pick a location, then click the map where its pin goes", () =>
                 NamePickerDialog.Open(this, "Place a pin for which location?", null, LocationNames, new List<Suggestion>(),
                     (id, name) => { _placeLocation = (id, name); RenderCurrentTab(); })));
-            bar.AddChild(Btn("Replace background…", "Use an image file for this map", () => ReplaceMapImage(_editorMapId)));
+            bar.AddChild(Kit.Button("Replace background…", "Use an image file for this map", () => ReplaceMapImage(_editorMapId)));
             if (!string.IsNullOrEmpty(_original.Maps.TryGetValue(_editorMapId, out var om) ? om.MapBg : null))
-                bar.AddChild(Btn("Save original image…", "Save a copy of the pack's image where you choose (e.g. to re-save it as PNG)", () => SavePackImage(om.MapBg)));
+                bar.AddChild(Kit.Button("Save original image…", "Save a copy of the pack's image where you choose (e.g. to re-save it as PNG)", () => SavePackImage(om.MapBg)));
             var mapFix = PackFixes.Get(_key).MapImages.FirstOrDefault(m => m.MapId == _editorMapId);
-            if (mapFix != null) bar.AddChild(Btn("Reset background", "Use the pack's image again", () => PackFixes.Reset(_key, "maps", mapFix.Subject)));
+            if (mapFix != null) bar.AddChild(Kit.Button("Reset background", "Use the pack's image again", () => PackFixes.Reset(_key, "maps", mapFix.Subject)));
             root.AddChild(bar);
 
             if (_placeLocation != null)
             {
                 var banner = new HBoxContainer();
-                var msg = Note($"Click on the map to place a pin for: {_placeLocation.Value.Name}", Fixed);
+                var msg = Kit.Text($"Click on the map to place a pin for: {_placeLocation.Value.Name}", Fixed);
                 banner.AddChild(msg);
-                banner.AddChild(Btn("Cancel", "Stop placing", () => { _placeLocation = null; RenderCurrentTab(); }));
+                banner.AddChild(Kit.Button("Cancel", "Stop placing", () => { _placeLocation = null; RenderCurrentTab(); }));
                 root.AddChild(banner);
             }
-            else root.AddChild(Note("Drag pins to move them. Click a pin to see and change its links. Outline: green = all linked · orange = some · red = none · gold = added by you."));
+            else root.AddChild(Kit.Subtle("Drag pins to move them. Click a pin to see and change its links. Outline: green = all linked · orange = some · red = none · gold = added by you."));
 
             var split = new HSplitContainer { SizeFlagsVertical = Control.SizeFlags.ExpandFill };
             root.AddChild(split);
@@ -594,13 +594,13 @@ namespace AP_Atlas.UI
             var pin = _selectedPinPath == null ? null : pack.Locations.FirstOrDefault(l => l.FullPath == _selectedPinPath);
             if (pin == null)
             {
-                box.AddChild(Heading("Pin"));
-                box.AddChild(Note("Click a pin to see which Archipelago locations it shows and change them."));
+                box.AddChild(Kit.Heading("Pin"));
+                box.AddChild(Kit.Subtle("Click a pin to see which Archipelago locations it shows and change them."));
                 return;
             }
             bool isAdded = fixes.AddedPins.Any(p => p.PinPath == pin.FullPath);
-            box.AddChild(Heading(pin.Name));
-            box.AddChild(Note(pin.FullPath));
+            box.AddChild(Kit.Heading(pin.Name));
+            box.AddChild(Kit.Subtle(pin.FullPath));
 
             var sections = pin.Sections != null && pin.Sections.Count > 0 ? pin.Sections.Select(s => (PopTrackerSection)s).ToList() : new List<PopTrackerSection> { null };
             foreach (var sec in sections)
@@ -618,16 +618,16 @@ namespace AP_Atlas.UI
                 };
                 var row = new VBoxContainer();
                 row.AddChild(new Label { Text = secName.StartsWith("atlas:") ? "(added)" : string.IsNullOrEmpty(secName) ? "(the pin itself)" : secName, AutowrapMode = TextServer.AutowrapMode.WordSmart });
-                var l = Note($"→ {shown}" + (src.Length > 0 ? $"  ({src})" : ""), ids.Count == 0 ? Bad : Colors.LightGray);
+                var l = Kit.Text($"→ {shown}" + (src.Length > 0 ? $"  ({src})" : ""), ids.Count == 0 ? Bad : ThemeColors.TextMuted);
                 row.AddChild(l);
                 if (!secName.StartsWith("atlas:"))
                 {
                     var btns = new HBoxContainer();
                     string pp = pin.FullPath;
-                    btns.AddChild(Btn("Change…", "Pick the location this section shows", () => PickSectionLocation(pp, secName, null)));
-                    if (ids.Count > 0) btns.AddChild(Btn("Unlink", "Show no location here", () => LinkSection(pp, secName, null, null)));
+                    btns.AddChild(Kit.Button("Change…", "Pick the location this section shows", () => PickSectionLocation(pp, secName, null)));
+                    if (ids.Count > 0) btns.AddChild(Kit.Button("Unlink", "Show no location here", () => LinkSection(pp, secName, null, null)));
                     var linkFix = fixes.Links.FirstOrDefault(x => x.Subject == $"link:{pp}|{secName}");
-                    if (linkFix != null) btns.AddChild(Btn("Reset", "Use the author's link", () => PackFixes.Reset(_key, "links", linkFix.Subject)));
+                    if (linkFix != null) btns.AddChild(Kit.Button("Reset", "Use the author's link", () => PackFixes.Reset(_key, "links", linkFix.Subject)));
                     row.AddChild(btns);
                 }
                 box.AddChild(row);
@@ -637,14 +637,14 @@ namespace AP_Atlas.UI
             if (isAdded)
             {
                 var ap = fixes.AddedPins.First(p => p.PinPath == pin.FullPath);
-                box.AddChild(Btn("Delete this pin", "Remove the pin you added", () => PackFixes.Edit(_key, "Delete added pin", f => f.AddedPins.RemoveAll(p => p.Subject == ap.Subject))));
+                box.AddChild(Kit.Button("Delete this pin", "Remove the pin you added", () => PackFixes.Edit(_key, "Delete added pin", f => f.AddedPins.RemoveAll(p => p.Subject == ap.Subject))));
             }
             else
             {
                 string subject = $"pin:{pin.FullPath}@{_editorMapId}";
                 var pf = fixes.Pins.FirstOrDefault(p => p.Subject == subject);
-                if (pf != null && !pf.Removed) box.AddChild(Btn("Reset position", "Back to the author's position", () => PackFixes.Reset(_key, "pins", subject)));
-                box.AddChild(Btn("Remove this pin", "Hide it from the map (reset brings it back)", () =>
+                if (pf != null && !pf.Removed) box.AddChild(Kit.Button("Reset position", "Back to the author's position", () => PackFixes.Reset(_key, "pins", subject)));
+                box.AddChild(Kit.Button("Remove this pin", "Hide it from the map (reset brings it back)", () =>
                     PackFixes.Edit(_key, $"Remove pin {pin.Name}", f =>
                     {
                         f.Pins.RemoveAll(p => p.Subject == subject);
@@ -658,13 +658,13 @@ namespace AP_Atlas.UI
             var removed = fixes.Pins.Where(p => p.Removed && p.MapId == _editorMapId).ToList();
             if (removed.Count > 0)
             {
-                box.AddChild(Heading("Removed pins on this map"));
+                box.AddChild(Kit.Heading("Removed pins on this map"));
                 foreach (var r in removed)
                 {
                     var row = new HBoxContainer();
                     row.AddChild(new Label { Text = r.PinPath, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart });
                     string subj = r.Subject;
-                    row.AddChild(Btn("Restore", "Show it again", () => PackFixes.Reset(_key, "pins", subj)));
+                    row.AddChild(Kit.Button("Restore", "Show it again", () => PackFixes.Reset(_key, "pins", subj)));
                     box.AddChild(row);
                 }
             }

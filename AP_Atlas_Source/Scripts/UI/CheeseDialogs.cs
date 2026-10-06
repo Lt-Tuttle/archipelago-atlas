@@ -12,7 +12,7 @@ namespace AP_Atlas.UI
     /// <summary>The small dialogs behind Cheese Tracker actions, shared by Properties and the Cheese Tracker tab.</summary>
     public static class CheeseDialogs
     {
-        private static readonly Color Bad = Colors.Salmon;
+        private static readonly Color Bad = ThemeColors.Error;
 
         /// <summary>Runs a change; a failure shows as a toast (and so does <paramref name="success"/>, if given).</summary>
         public static void Run(Node owner, Task<string> change, Action<string, Color> toast, string success = null, Action done = null) => AP_Atlas.Core.Async.Fire(RunAsync(owner, change, toast, success, done), "updating Cheese Tracker");
@@ -31,7 +31,7 @@ namespace AP_Atlas.UI
             }
             if (!GodotObject.IsInstanceValid(owner)) return;
             if (error != null) toast(error, Bad);
-            else if (success != null) toast(success, Colors.Gray);
+            else if (success != null) toast(success, ThemeColors.TextSubtle);
             done?.Invoke();
         }
 
@@ -60,7 +60,7 @@ namespace AP_Atlas.UI
                 dialog.QueueFree();
                 string error = await cheese.LinkAsync(profile.Id, text);
                 if (!GodotObject.IsInstanceValid(parent)) return;
-                toast(error ?? (string.IsNullOrWhiteSpace(text) ? $"Unlinked {profile.Name}" : $"Linked {profile.Name} to Cheese Tracker"), error == null ? Colors.Gray : Bad);
+                toast(error ?? (string.IsNullOrWhiteSpace(text) ? $"Unlinked {profile.Name}" : $"Linked {profile.Name} to Cheese Tracker"), error == null ? ThemeColors.TextSubtle : Bad);
                 done?.Invoke();
             }, "linking Cheese Tracker");
             dialog.Canceled += () => dialog.QueueFree();
@@ -100,7 +100,7 @@ namespace AP_Atlas.UI
 
         private static async Task FindOnDashboardAndOfferAsync(Node parent, CheeseTrackerService cheese, MultiworldProfile profile, Action<string, Color> toast, Action done)
         {
-            toast("Looking on your Cheese Tracker dashboard…", Colors.Gray);
+            toast("Looking on your Cheese Tracker dashboard…", ThemeColors.TextSubtle);
             var (link, title, error) = await cheese.FindOnDashboardAsync(profile.Id);
             if (!GodotObject.IsInstanceValid(parent)) return;
             if (link == null)

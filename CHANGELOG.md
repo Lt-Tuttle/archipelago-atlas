@@ -120,6 +120,7 @@ Development toward the first public beta, 0.1.0.
   - The UI test checks that every command is in a menu with its key shown, that the keys and a rebind work at once, and that the menu bar never runs a stale key itself.
 
 ### Changed
+- **One palette, one kit:** every colour in the window now comes from `ThemeColors` by what it means (text, states, Archipelago's players, locations and items, the surfaces), and buttons, headings and lines of text from one `Kit`, in place of seven local copies and colours that had drifted apart (quiet text was two greys, success two greens, table stripes three pairs). Quiet text and the useful-item blue are a shade lighter where they were too dark to read. A self-test holds every colour of the palette to the accessibility contrast rule on every surface, and text on every accent preset (red now takes black text).
 - **Toasts no longer pile on top of each other:** they're cards on the alert feed.
 - **Atlas opens on Home** (the welcome picture is gone). With Home first among Atlas's pages, Multiworlds is Ctrl+9 and Map Packs is Ctrl+0 (Home is Ctrl+8).
 - **The Privacy & permissions window is gone:** it's a section of the Settings page now, with the same answers and sources.

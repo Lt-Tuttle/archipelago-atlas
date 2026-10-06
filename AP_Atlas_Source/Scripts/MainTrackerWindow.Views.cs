@@ -186,7 +186,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 SizeFlagsHorizontal = SizeFlags.ExpandFill,
                 SizeFlagsVertical = SizeFlags.ExpandFill
             };
-            _noSlotPlaceholder.AddThemeColorOverride("font_color", Colors.Gray);
+            _noSlotPlaceholder.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextSubtle);
             _contentStage.AddChild(_noSlotPlaceholder);
         }
         SwapContentView(_noSlotPlaceholder);

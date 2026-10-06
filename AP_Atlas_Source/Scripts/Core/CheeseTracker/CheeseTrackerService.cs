@@ -637,7 +637,7 @@ namespace AP_Atlas.Core.CheeseTracker
             {
                 text += " → " + CtStatus.Label(advice.Status) + "?";
                 tip += $"\nAtlas suggests {CtStatus.Label(advice.Status)}: {advice.Reason}. Open the slot's Properties to apply it.";
-                return (text, Colors.Yellow, tip);
+                return (text, ThemeColors.Pending, tip);
             }
             return (text, AP_Atlas.UI.CheeseColors.Of(status), tip);
         }

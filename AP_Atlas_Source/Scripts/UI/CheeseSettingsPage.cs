@@ -48,17 +48,17 @@ namespace AP_Atlas.UI
             page.AddThemeConstantOverride("separation", 8);
             AddChild(page);
 
-            page.AddChild(Heading("Cheese Tracker settings", 1.3f));
-            page.AddChild(Text("Cheese Tracker is the community tracker for async multiworlds. Atlas shows your multiworlds' trackers in this tab, " +
-                               "suggests statuses from its logic, and can make the changes for you.", Colors.LightGray));
+            page.AddChild(Kit.Heading("Cheese Tracker settings", 1.3f));
+            page.AddChild(Kit.Text("Cheese Tracker is the community tracker for async multiworlds. Atlas shows your multiworlds' trackers in this tab, " +
+                               "suggests statuses from its logic, and can make the changes for you.", ThemeColors.TextMuted));
 
-            page.AddChild(Heading("Your account"));
-            _account = Text("", Colors.White);
+            page.AddChild(Kit.Heading("Your account"));
+            _account = Kit.Text("", ThemeColors.Text);
             page.AddChild(_account);
-            page.AddChild(Text("Reading trackers needs nothing. To change statuses, claim slots and edit notes as you, Atlas needs your API key:\n" +
+            page.AddChild(Kit.Text("Reading trackers needs nothing. To change statuses, claim slots and edit notes as you, Atlas needs your API key:\n" +
                                "  1. Open Cheese Tracker's settings and sign in with Discord.\n" +
                                "  2. Under API key, press the ↻ button to generate a key, then copy it.\n" +
-                               "  3. Paste it here and press Save key.", Colors.LightGray));
+                               "  3. Paste it here and press Save key.", ThemeColors.TextMuted));
             var open = new Button { Text = "Open Cheese Tracker's settings ↗", SizeFlagsHorizontal = SizeFlags.ShrinkBegin };
             open.Pressed += () => AP_Atlas.Core.ExternalLinks.OpenWeb(_cheese.Site + "/settings");
             page.AddChild(open);
@@ -74,38 +74,38 @@ namespace AP_Atlas.UI
             _removeKey.Pressed += () =>
             {
                 _cheese.RemoveKey();
-                SetStatus(_keyStatus, "Removed. Atlas now only reads trackers.", Colors.Gray);
+                SetStatus(_keyStatus, "Removed. Atlas now only reads trackers.", ThemeColors.TextSubtle);
             };
             keyRow.AddChild(_removeKey);
             page.AddChild(keyRow);
-            _keyStatus = Text("", Colors.Gray);
+            _keyStatus = Kit.Text("", ThemeColors.TextSubtle);
             _keyStatus.Visible = false;
             page.AddChild(_keyStatus);
-            page.AddChild(Text("The key is stored encrypted for your Windows account and is only ever sent to the site below. " +
-                               "Anyone with it can act as you on Cheese Tracker; if it leaks, generate a new one there (the old one stops working).", Colors.Gray));
+            page.AddChild(Kit.Text("The key is stored encrypted for your Windows account and is only ever sent to the site below. " +
+                               "Anyone with it can act as you on Cheese Tracker; if it leaks, generate a new one there (the old one stops working).", ThemeColors.TextSubtle));
 
-            page.AddChild(Heading("Your multiworlds"));
-            page.AddChild(Text("Link each multiworld to its Cheese Tracker page (an archipelago.gg room link works too).", Colors.Gray));
+            page.AddChild(Kit.Heading("Your multiworlds"));
+            page.AddChild(Kit.Text("Link each multiworld to its Cheese Tracker page (an archipelago.gg room link works too).", ThemeColors.TextSubtle));
             _linksBox = new VBoxContainer();
             _linksBox.AddThemeConstantOverride("separation", 4);
             page.AddChild(_linksBox);
 
-            page.AddChild(Heading("Automatic updates"));
+            page.AddChild(Kit.Heading("Automatic updates"));
             _autoBox = new VBoxContainer();
             _autoBox.AddThemeConstantOverride("separation", 4);
             page.AddChild(_autoBox);
 
-            page.AddChild(Heading("What Atlas does"));
-            page.AddChild(Text("• Reads a linked tracker every 10 minutes while one of its slots is connected or this tab shows it, and right before any change, " +
+            page.AddChild(Kit.Heading("What Atlas does"));
+            page.AddChild(Kit.Text("• Reads a linked tracker every 10 minutes while one of its slots is connected or this tab shows it, and right before any change, " +
                                "so a change never overwrites someone else's newer edit. If the site has trouble, Atlas waits (1 minute, growing to 30) before asking again.\n" +
                                "• Suggests BK, Unblocked or Go mode from its logic (BK after 5 minutes with nothing in logic). It only suggests when " +
                                "its logic is verified for the slot (apworld matches the seed, rebuild matches the server).\n" +
                                "• Changes a slot automatically only if you turn that on for a slot claimed by your account. It never touches " +
                                "Soft BK, Goal, Done or Forfeit, makes at most one change every 5 minutes, and pauses if anyone else changes the status.\n" +
-                               "• Never changes a slot claimed by someone else.", Colors.LightGray));
+                               "• Never changes a slot claimed by someone else.", ThemeColors.TextMuted));
 
-            page.AddChild(Heading("Site"));
-            page.AddChild(Text("Only change this if you use another Cheese Tracker instance. Changing it removes the saved key (keys belong to one site).", Colors.Gray));
+            page.AddChild(Kit.Heading("Site"));
+            page.AddChild(Kit.Text("Only change this if you use another Cheese Tracker instance. Changing it removes the saved key (keys belong to one site).", ThemeColors.TextSubtle));
             var siteRow = new HBoxContainer();
             siteRow.AddThemeConstantOverride("separation", 6);
             _siteInput = new LineEdit { SizeFlagsHorizontal = SizeFlags.ExpandFill };
@@ -114,14 +114,14 @@ namespace AP_Atlas.UI
             useSite.Pressed += () =>
             {
                 string error = _cheese.SetSite(_siteInput.Text);
-                SetStatus(_siteStatus, error ?? "Saved.", error == null ? Colors.Gray : Colors.Salmon);
+                SetStatus(_siteStatus, error ?? "Saved.", error == null ? ThemeColors.TextSubtle : ThemeColors.Error);
             };
             siteRow.AddChild(useSite);
             var reset = new Button { Text = "Default" };
             reset.Pressed += () => _siteInput.Text = CheeseClient.DefaultInstance;
             siteRow.AddChild(reset);
             page.AddChild(siteRow);
-            _siteStatus = Text("", Colors.Gray);
+            _siteStatus = Kit.Text("", ThemeColors.TextSubtle);
             _siteStatus.Visible = false;
             page.AddChild(_siteStatus);
 
@@ -134,11 +134,11 @@ namespace AP_Atlas.UI
         {
             if (_account == null) return;
             if (_cheese.KeyRejected)
-                SetStatus(_account, "Cheese Tracker no longer accepts the saved key (was it regenerated?). Paste the current one below.", Colors.Orange);
+                SetStatus(_account, "Cheese Tracker no longer accepts the saved key (was it regenerated?). Paste the current one below.", ThemeColors.Warning);
             else if (_cheese.HasKey)
-                SetStatus(_account, $"Signed in as {_cheese.AccountName ?? "your account"}. Atlas can change your slots' status.", Colors.LimeGreen);
+                SetStatus(_account, $"Signed in as {_cheese.AccountName ?? "your account"}. Atlas can change your slots' status.", ThemeColors.Success);
             else
-                SetStatus(_account, "No API key: Atlas can read trackers but not change them.", Colors.Gray);
+                SetStatus(_account, "No API key: Atlas can read trackers but not change them.", ThemeColors.TextSubtle);
             _removeKey.Disabled = !_cheese.HasKey && !_cheese.KeyRejected;
             if (!_siteInput.HasFocus()) _siteInput.Text = _cheese.Site;
             RefreshLinks();
@@ -154,7 +154,7 @@ namespace AP_Atlas.UI
             foreach (Node child in _linksBox.GetChildren()) child.QueueFree();
             if (profiles.Count == 0)
             {
-                _linksBox.AddChild(Text("No multiworlds yet: add one on the Multiworlds page.", Colors.Gray));
+                _linksBox.AddChild(Kit.Text("No multiworlds yet: add one on the Multiworlds page.", ThemeColors.TextSubtle));
                 return;
             }
             foreach (var profile in profiles)
@@ -164,25 +164,23 @@ namespace AP_Atlas.UI
                 var name = new Label { Text = profile.Name, CustomMinimumSize = new Vector2(160, 0), ClipText = true };
                 row.AddChild(name);
                 var room = _cheese.RoomView(profile.Id);
-                var state = Text(room == null ? "Not linked" : "Linked: " + (string.IsNullOrWhiteSpace(room.Tracker?.Title) ? room.Link : room.Tracker.Title),
-                    room == null ? Colors.Gray : Colors.LimeGreen);
+                var state = Kit.Text(room == null ? "Not linked" : "Linked: " + (string.IsNullOrWhiteSpace(room.Tracker?.Title) ? room.Link : room.Tracker.Title), room == null ? ThemeColors.TextSubtle : ThemeColors.Success);
                 state.SizeFlagsHorizontal = SizeFlags.ExpandFill;
                 row.AddChild(state);
                 var p = profile;
                 if (room != null)
                 {
-                    row.AddChild(SmallButton("Show", "Show this tracker", () => _showView(p.Id)));
-                    row.AddChild(SmallButton("Change link…", "Link this multiworld to a different tracker", () => CheeseDialogs.Link(this, _cheese, p, _toast, Refresh)));
-                    row.AddChild(SmallButton("Unlink…", "Stop using Cheese Tracker for this multiworld", () =>
+                    row.AddChild(Kit.Button("Show", "Show this tracker", () => _showView(p.Id)));
+                    row.AddChild(Kit.Button("Change link…", "Link this multiworld to a different tracker", () => CheeseDialogs.Link(this, _cheese, p, _toast, Refresh)));
+                    row.AddChild(Kit.Button("Unlink…", "Stop using Cheese Tracker for this multiworld", () =>
                         CheeseDialogs.Confirm(this, $"Unlink {p.Name} from Cheese Tracker? Nothing changes on Cheese Tracker; Atlas just stops reading it (and stops automatic updates).", "Unlink",
                             () => _cheese.Unlink(p.Id))));
                 }
                 else
                 {
-                    row.AddChild(SmallButton("Link…", "Paste the tracker's link, or the archipelago.gg room link", () => CheeseDialogs.Link(this, _cheese, p, _toast, Refresh)));
+                    row.AddChild(Kit.Button("Link…", "Paste the tracker's link, or the archipelago.gg room link", () => CheeseDialogs.Link(this, _cheese, p, _toast, Refresh)));
                     if (_cheese.HasKey)
-                        row.AddChild(SmallButton("Find on my dashboard", "Look for this room among the trackers on your Cheese Tracker dashboard",
-                            () => CheeseDialogs.FindOnDashboard(this, _cheese, p, _toast, Refresh)));
+                        row.AddChild(Kit.Button("Find on my dashboard", "Look for this room among the trackers on your Cheese Tracker dashboard", () => CheeseDialogs.FindOnDashboard(this, _cheese, p, _toast, Refresh)));
                 }
                 _linksBox.AddChild(row);
             }
@@ -198,7 +196,7 @@ namespace AP_Atlas.UI
             foreach (Node child in _autoBox.GetChildren()) child.QueueFree();
             if (keys.Count == 0)
             {
-                _autoBox.AddChild(Text("No slot is updated automatically. Turn it on for a slot you've claimed from this tab's details or the slot's Properties.", Colors.Gray));
+                _autoBox.AddChild(Kit.Text("No slot is updated automatically. Turn it on for a slot you've claimed from this tab's details or the slot's Properties.", ThemeColors.TextSubtle));
                 MainTrackerWindow.SetFontSizeRecursive(_autoBox, _settings.ContentFontSize);
                 return;
             }
@@ -212,11 +210,11 @@ namespace AP_Atlas.UI
                 var row = new HBoxContainer();
                 row.AddThemeConstantOverride("separation", 6);
                 row.AddChild(new Label { Text = $"{slotName} ({profile?.Name ?? "deleted multiworld"})", CustomMinimumSize = new Vector2(220, 0), ClipText = true });
-                var state = Text(paused == null ? "On" : "Paused: " + paused, paused == null ? Colors.LimeGreen : Colors.Orange);
+                var state = Kit.Text(paused == null ? "On" : "Paused: " + paused, paused == null ? ThemeColors.Success : ThemeColors.Warning);
                 state.SizeFlagsHorizontal = SizeFlags.ExpandFill;
                 row.AddChild(state);
-                if (paused != null && profile != null) row.AddChild(SmallButton("Resume", "Carry on from the status the slot has now", () => _cheese.ResumeAuto(profileId, slotName)));
-                row.AddChild(SmallButton("Turn off", "Stop updating this slot automatically", () => _cheese.SetAuto(profileId, slotName, false)));
+                if (paused != null && profile != null) row.AddChild(Kit.Button("Resume", "Carry on from the status the slot has now", () => _cheese.ResumeAuto(profileId, slotName)));
+                row.AddChild(Kit.Button("Turn off", "Stop updating this slot automatically", () => _cheese.SetAuto(profileId, slotName, false)));
                 _autoBox.AddChild(row);
             }
             MainTrackerWindow.SetFontSizeRecursive(_autoBox, _settings.ContentFontSize);
@@ -229,16 +227,16 @@ namespace AP_Atlas.UI
             string key = _keyInput.Text;
             if (string.IsNullOrWhiteSpace(key)) return;
             _saveKey.Disabled = true;
-            SetStatus(_keyStatus, "Checking the key with Cheese Tracker…", Colors.Gray);
+            SetStatus(_keyStatus, "Checking the key with Cheese Tracker…", ThemeColors.TextSubtle);
             string error = await _cheese.SetKeyAsync(key);
             if (!IsInstanceValid(this)) return;
             _saveKey.Disabled = false;
             if (error == null)
             {
                 _keyInput.Text = "";
-                SetStatus(_keyStatus, "Saved.", Colors.Gray);
+                SetStatus(_keyStatus, "Saved.", ThemeColors.TextSubtle);
             }
-            else SetStatus(_keyStatus, error, Colors.Salmon);
+            else SetStatus(_keyStatus, error, ThemeColors.Error);
             Refresh();
         }
 
@@ -249,26 +247,5 @@ namespace AP_Atlas.UI
             label.AddThemeColorOverride("font_color", color);
         }
 
-        private static Button SmallButton(string text, string tooltip, Action onPressed)
-        {
-            var b = new Button { Text = text, TooltipText = tooltip, FocusMode = FocusModeEnum.None };
-            b.Pressed += () => onPressed();
-            return b;
-        }
-
-        private static Label Heading(string text, float ratio = 1.15f)
-        {
-            var label = new Label { Text = text };
-            label.AddThemeColorOverride("font_color", ThemeColors.Accent.Lightened(0.2f));
-            label.SetMeta("font_size_ratio", ratio);
-            return label;
-        }
-
-        private static Label Text(string text, Color color)
-        {
-            var label = new Label { Text = text, AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            label.AddThemeColorOverride("font_color", color);
-            return label;
-        }
     }
 }

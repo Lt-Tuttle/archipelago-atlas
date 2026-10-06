@@ -11,7 +11,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
 {
     private void MarkDirty()
     {
-        _saveButton.Modulate = Colors.Yellow;
+        _saveButton.Modulate = AP_Atlas.Core.ThemeColors.Pending;
     }
     private void RefreshProfileList()
     {
@@ -77,7 +77,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     private void SelectProfile(MultiworldProfile profile)
     {
         _selectedProfile = profile;
-        _saveButton.Modulate = Colors.White;
+        _saveButton.Modulate = AP_Atlas.Core.ThemeColors.Text;
         if (profile == null)
         {
             _nameInput.Text = "";
@@ -167,8 +167,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             connectBtn.SetMeta("is_icon_button", true);
             connectBtn.SetMeta("slot_name", slotName);
             connectBtn.TooltipText = "Connect";
-            connectBtn.AddThemeColorOverride("icon_disabled_color", Godot.Colors.White);
-            connectBtn.Modulate = Godot.Colors.LimeGreen;
+            connectBtn.AddThemeColorOverride("icon_disabled_color", AP_Atlas.Core.ThemeColors.Text);
+            connectBtn.Modulate = AP_Atlas.Core.ThemeColors.Success;
             connectBtn.Pressed += () =>
             {
                 if (connectBtn.Icon == _iconConnect) OnConnectSlotPressed(lineEdit.Text, _selectedProfile);
@@ -188,8 +188,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 TooltipText = "Disconnect"
             };
             disconnectBtn.SetMeta("is_icon_button", true);
-            disconnectBtn.AddThemeColorOverride("icon_disabled_color", Godot.Colors.DarkGray);
-            disconnectBtn.Modulate = Godot.Colors.DarkGray;
+            disconnectBtn.AddThemeColorOverride("icon_disabled_color", AP_Atlas.Core.ThemeColors.Disabled);
+            disconnectBtn.Modulate = AP_Atlas.Core.ThemeColors.Disabled;
             disconnectBtn.Pressed += () =>
             {
                 DisconnectSlot(_selectedProfile.Id, lineEdit.Text);
@@ -207,7 +207,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 TooltipText = "Delete Slot"
             };
             delBtn.SetMeta("is_icon_button", true);
-            delBtn.Modulate = Godot.Colors.Crimson;
+            delBtn.Modulate = AP_Atlas.Core.ThemeColors.Danger;
             delBtn.Pressed += () =>
             {
                 DisconnectSlot(_selectedProfile.Id, lineEdit.Text);
@@ -225,7 +225,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         {
             var btnRow = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
             _connectAllBtn = new Button { Text = "Connect All Slots", CustomMinimumSize = new Godot.Vector2(200, 40) };
-            _connectAllBtn.AddThemeColorOverride("font_color", Godot.Colors.LimeGreen);
+            _connectAllBtn.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Success);
             _connectAllBtn.Pressed += OnConnectAllPressed;
             btnRow.AddChild(_connectAllBtn);
             _slotsListVBox.AddChild(btnRow);
@@ -271,7 +271,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             // An automatic reconnect waiting for one of its slots uses the new address and password.
             _sessions?.UpdateLogins(_selectedProfile.Id, _selectedProfile.ServerUrl, string.IsNullOrEmpty(_selectedProfile.Password) ? null : _selectedProfile.Password);
             DataManager.SaveProfiles(_profiles);
-            _saveButton.Modulate = Colors.White;
+            _saveButton.Modulate = AP_Atlas.Core.ThemeColors.Text;
             RefreshProfileList();
             LogToSystem($"Profile '{_selectedProfile.Name}' saved.", "green");
             string cheeseLink = _cheeseInput.Text.Trim();
@@ -285,10 +285,10 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         if (!IsInstanceValid(this)) return;
         if (error != null)
         {
-            ShowToast("Cheese Tracker: " + error, Colors.Salmon);
+            ShowToast("Cheese Tracker: " + error, AP_Atlas.Core.ThemeColors.Error);
             LogToSystem("Cheese Tracker: " + error, "salmon");
         }
-        else ShowToast(string.IsNullOrWhiteSpace(text) ? $"{profile.Name} is no longer linked to Cheese Tracker" : $"{profile.Name} is linked to Cheese Tracker", Colors.Gray);
+        else ShowToast(string.IsNullOrWhiteSpace(text) ? $"{profile.Name} is no longer linked to Cheese Tracker" : $"{profile.Name} is linked to Cheese Tracker", AP_Atlas.Core.ThemeColors.TextSubtle);
         if (_selectedProfile == profile && _cheeseInput != null) _cheeseInput.Text = profile.CheeseTrackerUrl ?? "";
     }
     private void OnDeleteProfilePressed()
@@ -306,7 +306,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             confirmDialog.Confirmed += () =>
             {
                 DeleteProfile(profile);
-                ShowToast("Profile Deleted", Godot.Colors.Orange);
+                ShowToast("Profile Deleted", AP_Atlas.Core.ThemeColors.Warning);
                 confirmDialog.QueueFree();
             };
             confirmDialog.Canceled += () => confirmDialog.QueueFree();

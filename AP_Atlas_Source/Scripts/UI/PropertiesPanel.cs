@@ -79,15 +79,15 @@ namespace AP_Atlas.UI
             var nav = new HBoxContainer();
             nav.AddThemeConstantOverride("separation", 2);
             AddChild(nav);
-            _backButton = NavButton("◀", "Back (Alt+Left)", () => Navigate(-1));
-            _forwardButton = NavButton("▶", "Forward (Alt+Right)", () => Navigate(1));
+            _backButton = Kit.Button("◀", "Back (Alt+Left)", () => Navigate(-1), flat: true);
+            _forwardButton = Kit.Button("▶", "Forward (Alt+Right)", () => Navigate(1), flat: true);
             nav.AddChild(_backButton);
             nav.AddChild(_forwardButton);
             _kindLabel = new Label { SizeFlagsHorizontal = SizeFlags.ExpandFill, ClipText = true, VerticalAlignment = VerticalAlignment.Center };
-            _kindLabel.AddThemeColorOverride("font_color", Colors.Gray);
+            _kindLabel.AddThemeColorOverride("font_color", ThemeColors.TextSubtle);
             nav.AddChild(_kindLabel);
-            nav.AddChild(NavButton("⌂", "Show the selected slot's summary", () => Inspect(null)));
-            nav.AddChild(NavButton("⧉", "Copy everything shown (Ctrl+Shift+C)", CopyAll));
+            nav.AddChild(Kit.Button("⌂", "Show the selected slot's summary", () => Inspect(null), flat: true));
+            nav.AddChild(Kit.Button("⧉", "Copy everything shown (Ctrl+Shift+C)", CopyAll, flat: true));
 
             _scroll = new ScrollContainer
             {
@@ -106,13 +106,6 @@ namespace AP_Atlas.UI
                 .On(() => Inspector.Requested += Inspect, () => Inspector.Requested -= Inspect)
                 .On(() => Annotations.Changed += QueueRefresh, () => Annotations.Changed -= QueueRefresh));
             Render(keepScroll: false);
-        }
-
-        private Button NavButton(string text, string tooltip, Action onPressed)
-        {
-            var b = new Button { Text = text, TooltipText = tooltip, Flat = true, FocusMode = FocusModeEnum.None };
-            b.Pressed += onPressed;
-            return b;
         }
 
         // =====================================================================
@@ -214,7 +207,7 @@ namespace AP_Atlas.UI
             string text = _plainText.ToString().Trim();
             if (text.Length == 0) return;
             DisplayServer.ClipboardSet(text);
-            _host.Toast("Copied properties to the clipboard", Colors.Gray);
+            _host.Toast("Copied properties to the clipboard", ThemeColors.TextSubtle);
         }
 
         // =====================================================================
@@ -301,7 +294,7 @@ namespace AP_Atlas.UI
 
         /// <summary>BBCode for a link that opens another target in Properties.</summary>
         private string LinkTo(string text, InspectTarget target, Color? color = null) =>
-            target == null ? $"[color={Hex(color ?? Colors.White)}]{Esc(text)}[/color]" : Link(text, () => Inspect(target), color);
+            target == null ? $"[color={Hex(color ?? ThemeColors.Text)}]{Esc(text)}[/color]" : Link(text, () => Inspect(target), color);
 
         private static string Colored(string text, Color c) => $"[color={Hex(c)}]{Esc(text)}[/color]";
 
@@ -334,7 +327,7 @@ namespace AP_Atlas.UI
                     string text = rtl.GetParsedText().Trim();
                     if (text.Length == 0) return;
                     DisplayServer.ClipboardSet(text);
-                    _host.Toast("Copied: " + (text.Length > 60 ? text.Substring(0, 60) + "…" : text), Colors.Gray);
+                    _host.Toast("Copied: " + (text.Length > 60 ? text.Substring(0, 60) + "…" : text), ThemeColors.TextSubtle);
                 }
             };
             return rtl;
@@ -351,7 +344,7 @@ namespace AP_Atlas.UI
             box.AddThemeConstantOverride("separation", 2);
             var titleLabel = new Label { Text = title, AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill };
             titleLabel.SetMeta("font_size_ratio", 1.3);
-            titleLabel.AddThemeColorOverride("font_color", Colors.White);
+            titleLabel.AddThemeColorOverride("font_color", ThemeColors.Text);
             box.AddChild(titleLabel);
 
             string badge = string.IsNullOrEmpty(badgeText) ? "" : $"[bgcolor={Hex(badgeColor.Darkened(0.55f))}][color={Hex(badgeColor)}] {Esc(badgeText)} [/color][/bgcolor]  ";
@@ -377,9 +370,7 @@ namespace AP_Atlas.UI
         private Button AddAction(string text, string tooltip, Action onPressed, bool enabled = true)
         {
             if (_actionBar == null) BeginActions();
-            var b = new Button { Text = text, TooltipText = tooltip, Disabled = !enabled, FocusMode = FocusModeEnum.None };
-            b.SetMeta("font_size_ratio", 0.9);
-            b.Pressed += () => onPressed();
+            var b = Kit.Button(text, tooltip, onPressed, enabled, small: true);
             _actionBar.AddChild(b);
             return b;
         }
@@ -446,7 +437,7 @@ namespace AP_Atlas.UI
                 AutowrapMode = TextServer.AutowrapMode.WordSmart,
                 TooltipText = tooltip ?? ""
             };
-            key.AddThemeColorOverride("font_color", Colors.Gray);
+            key.AddThemeColorOverride("font_color", ThemeColors.TextSubtle);
             row.AddChild(key);
             var value = MakeRichText(valueBbcode);
             value.SizeFlagsStretchRatio = 1f;
@@ -457,7 +448,7 @@ namespace AP_Atlas.UI
         }
 
         private void PlainRow(string label, string value, Color? color = null) =>
-            Row(label, string.IsNullOrEmpty(value) ? null : Colored(value, color ?? Colors.White));
+            Row(label, string.IsNullOrEmpty(value) ? null : Colored(value, color ?? ThemeColors.Text));
 
         /// <summary>A full-width paragraph of BBCode.</summary>
         private RichTextLabel AddText(string bbcode)
@@ -475,7 +466,7 @@ namespace AP_Atlas.UI
             var panel = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
             panel.AddThemeStyleboxOverride("panel", new StyleBoxFlat
             {
-                BgColor = new Color("#121216"),
+                BgColor = ThemeColors.SurfaceDeep,
                 ContentMarginLeft = 6,
                 ContentMarginRight = 6,
                 ContentMarginTop = 4,
@@ -492,7 +483,7 @@ namespace AP_Atlas.UI
             _plainText.AppendLine(code);
         }
 
-        private void AddHint(string text) => AddText(Colored(text, Colors.DimGray));
+        private void AddHint(string text) => AddText(Colored(text, ThemeColors.TextSubtle));
 
         private static string StripBbcode(string bbcode)
         {

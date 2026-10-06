@@ -27,7 +27,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         });
     }
     private void OnFileRecovered(string path, string what) =>
-        Notice($"{System.IO.Path.GetFileName(path)} {what}.", Godot.Colors.Orange);
+        Notice($"{System.IO.Path.GetFileName(path)} {what}.", AP_Atlas.Core.ThemeColors.Warning);
     private void OnSaveFailed(string file, string reason)
     {
         // A full disk fails every save: tell the user once a minute, not on every keystroke.
@@ -38,7 +38,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             if (_lastSaveFailureToast.TryGetValue(file, out var last) && (now - last).TotalSeconds < 60) return;
             _lastSaveFailureToast[file] = now;
         }
-        Notice($"Couldn't save {file}: {reason}. Check free disk space and folder permissions.", Godot.Colors.Salmon);
+        Notice($"Couldn't save {file}: {reason}. Check free disk space and folder permissions.", AP_Atlas.Core.ThemeColors.Error);
     }
     private readonly Dictionary<string, System.DateTime> _lastFailureNotice = new Dictionary<string, System.DateTime>();
     /// <summary>
@@ -53,7 +53,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             if (_lastFailureNotice.TryGetValue(doing, out var last) && now - last < System.TimeSpan.FromMinutes(10)) return;
             _lastFailureNotice[doing] = now;
         }
-        Notice($"Something went wrong while {doing}. Atlas carries on; the details are in the System Log.", Godot.Colors.Salmon);
+        Notice($"Something went wrong while {doing}. Atlas carries on; the details are in the System Log.", AP_Atlas.Core.ThemeColors.Error);
     }
     /// <summary>
     /// Older damaged copies of profiles.json (set aside as ".corrupt-…") can still hold room passwords in plain text from
@@ -64,7 +64,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         var copies = DataManager.PlainTextPasswordCopies();
         if (copies.Count == 0) return;
         AP_Atlas.UI.Ui.Defer(this, () => ShowToast($"{copies.Count} old damaged cop{(copies.Count == 1 ? "y" : "ies")} of your profiles still hold room passwords in plain text. Delete {(copies.Count == 1 ? "it" : "them")}?",
-            Godot.Colors.Orange, "Delete", () =>
+            AP_Atlas.Core.ThemeColors.Warning, "Delete", () =>
             {
                 int deleted = 0;
                 foreach (var file in copies)
@@ -89,7 +89,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             return;
         }
         LogToSystem($"Logic engine: {problem} Settings → Atlas Engine sets it up.", "orange");
-        AP_Atlas.UI.Ui.Defer(this, () => ShowToast("Logic needs the Atlas Engine. Atlas can set it up for you: about 55 MB to download (160 MB on disk), no installer.", Godot.Colors.Orange, "Set up", OpenEngineSetup));
+        AP_Atlas.UI.Ui.Defer(this, () => ShowToast("Logic needs the Atlas Engine. Atlas can set it up for you: about 55 MB to download (160 MB on disk), no installer.", AP_Atlas.Core.ThemeColors.Warning, "Set up", OpenEngineSetup));
     }
     private void ShowToast(string message, Godot.Color color) => ShowToast(message, color, null, null);
     /// <summary>A card on the alert feed (and a line in its history); with an action it shows a button and stays up longer.</summary>

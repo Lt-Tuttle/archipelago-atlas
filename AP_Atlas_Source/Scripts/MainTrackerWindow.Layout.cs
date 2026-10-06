@@ -33,7 +33,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         bottomHeader.AddChild(_bottomTabs);
         bottomHeader.AddChild(new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill }); // Spacer
         var bottomMenuBtn = new Button { Text = "...", Flat = true, FocusMode = FocusModeEnum.None };
-        bottomMenuBtn.AddThemeColorOverride("font_color", Colors.LightGray);
+        bottomMenuBtn.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextMuted);
         var extraItems = new System.Collections.Generic.Dictionary<string, System.Action> {
             { "Copy System Log", () => DisplayServer.ClipboardSet(_consoleOutput.GetParsedText()) },
             { "Clear System Log", () => _consoleOutput.Clear() },
@@ -80,8 +80,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         var popup = new PopupPanel { Transient = true };
         var customPopupStyle = new StyleBoxFlat
         {
-            BgColor = new Godot.Color("#252526"),
-            BorderColor = new Godot.Color("#444444"),
+            BgColor = AP_Atlas.Core.ThemeColors.SurfacePanel,
+            BorderColor = AP_Atlas.Core.ThemeColors.BorderSoft,
             BorderWidthLeft = 1,
             BorderWidthTop = 1,
             BorderWidthRight = 1,
@@ -150,10 +150,10 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     {
         var headerBox = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, Name = "HeaderBox" };
         titleLabel = new Label { Name = "FixedHeaderTitle", Text = titleText, SizeFlagsHorizontal = SizeFlags.ExpandFill, HorizontalAlignment = HorizontalAlignment.Left };
-        titleLabel.AddThemeColorOverride("font_color", Colors.LightGray);
+        titleLabel.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextMuted);
         headerBox.AddChild(titleLabel);
         menuBtn = new Button { Text = "...", Flat = true, FocusMode = FocusModeEnum.None };
-        menuBtn.AddThemeColorOverride("font_color", Colors.LightGray);
+        menuBtn.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextMuted);
         AttachFontMenuPopup(menuBtn, getFontSize, setFontSize);
         headerBox.AddChild(menuBtn);
         return headerBox;
@@ -166,8 +166,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         var textOnAccent = AP_Atlas.Core.ThemeColors.TextOnAccent;
         var panelBg = new StyleBoxFlat
         {
-            BgColor = new Godot.Color("#252526"),
-            BorderColor = new Godot.Color("#181818"), // Dark VS Code border
+            BgColor = AP_Atlas.Core.ThemeColors.SurfacePanel,
+            BorderColor = AP_Atlas.Core.ThemeColors.Border, // Dark VS Code border
             BorderWidthTop = 1,
             BorderWidthBottom = 1,
             BorderWidthLeft = 1,
@@ -180,8 +180,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         theme.SetStylebox("panel", "PanelContainer", panelBg);
         var tabPanel = new StyleBoxFlat
         {
-            BgColor = new Godot.Color("#1e1e1e"),
-            BorderColor = new Godot.Color("#181818"),
+            BgColor = AP_Atlas.Core.ThemeColors.Surface,
+            BorderColor = AP_Atlas.Core.ThemeColors.Border,
             BorderWidthTop = 1,
             BorderWidthBottom = 1,
             BorderWidthLeft = 1,
@@ -190,7 +190,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         theme.SetStylebox("panel", "TabContainer", tabPanel);
         var tabSelected = new StyleBoxFlat
         {
-            BgColor = new Godot.Color("#1e1e1e"),
+            BgColor = AP_Atlas.Core.ThemeColors.Surface,
             BorderWidthTop = 2,
             BorderColor = accentColor,
             BorderWidthBottom = 0,
@@ -203,9 +203,9 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         theme.SetStylebox("tab_selected", "TabContainer", tabSelected);
         var tabUnselected = new StyleBoxFlat
         {
-            BgColor = new Godot.Color("#2d2d30"),
+            BgColor = AP_Atlas.Core.ThemeColors.SurfaceRaised,
             BorderWidthTop = 0,
-            BorderColor = new Godot.Color("#181818"),
+            BorderColor = AP_Atlas.Core.ThemeColors.Border,
             BorderWidthBottom = 1, // Creates a separator line
             ContentMarginLeft = 20,
             ContentMarginRight = 20,
@@ -243,20 +243,20 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         theme.SetConstant("autohide", "VSplitContainer", 0);
         theme.SetConstant("separation", "HSplitContainer", 8);
         theme.SetConstant("separation", "VSplitContainer", 8);
-        var tabActive = new StyleBoxFlat { BgColor = new Godot.Color("#1e1e1e"), BorderWidthTop = 2, BorderColor = accentColor, ContentMarginLeft = 15, ContentMarginRight = 15, ContentMarginTop = 5, ContentMarginBottom = 5 };
+        var tabActive = new StyleBoxFlat { BgColor = AP_Atlas.Core.ThemeColors.Surface, BorderWidthTop = 2, BorderColor = accentColor, ContentMarginLeft = 15, ContentMarginRight = 15, ContentMarginTop = 5, ContentMarginBottom = 5 };
         theme.SetStylebox("tab_selected", "TabContainer", tabActive);
-        var tabInactive = new StyleBoxFlat { BgColor = new Godot.Color("#2d2d30"), ContentMarginLeft = 15, ContentMarginRight = 15, ContentMarginTop = 5, ContentMarginBottom = 5 };
+        var tabInactive = new StyleBoxFlat { BgColor = AP_Atlas.Core.ThemeColors.SurfaceRaised, ContentMarginLeft = 15, ContentMarginRight = 15, ContentMarginTop = 5, ContentMarginBottom = 5 };
         theme.SetStylebox("tab_unselected", "TabContainer", tabInactive);
-        var btnNormal = new StyleBoxFlat { BgColor = new Godot.Color("#3e3e42"), CornerRadiusTopLeft = 4, CornerRadiusTopRight = 4, CornerRadiusBottomLeft = 4, CornerRadiusBottomRight = 4, ContentMarginLeft = 10, ContentMarginRight = 10, ContentMarginTop = 5, ContentMarginBottom = 5 };
+        var btnNormal = new StyleBoxFlat { BgColor = AP_Atlas.Core.ThemeColors.Control, CornerRadiusTopLeft = 4, CornerRadiusTopRight = 4, CornerRadiusBottomLeft = 4, CornerRadiusBottomRight = 4, ContentMarginLeft = 10, ContentMarginRight = 10, ContentMarginTop = 5, ContentMarginBottom = 5 };
         theme.SetStylebox("normal", "Button", btnNormal);
-        var btnHover = new StyleBoxFlat { BgColor = new Godot.Color("#4f4f53"), CornerRadiusTopLeft = 4, CornerRadiusTopRight = 4, CornerRadiusBottomLeft = 4, CornerRadiusBottomRight = 4, ContentMarginLeft = 10, ContentMarginRight = 10, ContentMarginTop = 5, ContentMarginBottom = 5 };
+        var btnHover = new StyleBoxFlat { BgColor = AP_Atlas.Core.ThemeColors.ControlHover, CornerRadiusTopLeft = 4, CornerRadiusTopRight = 4, CornerRadiusBottomLeft = 4, CornerRadiusBottomRight = 4, ContentMarginLeft = 10, ContentMarginRight = 10, ContentMarginTop = 5, ContentMarginBottom = 5 };
         theme.SetStylebox("hover", "Button", btnHover);
         var btnPressed = new StyleBoxFlat { BgColor = accentColor, CornerRadiusTopLeft = 4, CornerRadiusTopRight = 4, CornerRadiusBottomLeft = 4, CornerRadiusBottomRight = 4, ContentMarginLeft = 10, ContentMarginRight = 10, ContentMarginTop = 5, ContentMarginBottom = 5 };
         theme.SetStylebox("pressed", "Button", btnPressed);
         theme.SetStylebox("hover_pressed", "Button", btnPressed);
         // Every state needs the same content margins: Godot 4.3 measured a button with its current stylebox and didn't
         // re-measure on Disabled changes, so a button created disabled with Godot's thinner default clipped its text.
-        var btnDisabled = new StyleBoxFlat { BgColor = new Godot.Color("#2d2d30"), CornerRadiusTopLeft = 4, CornerRadiusTopRight = 4, CornerRadiusBottomLeft = 4, CornerRadiusBottomRight = 4, ContentMarginLeft = 10, ContentMarginRight = 10, ContentMarginTop = 5, ContentMarginBottom = 5 };
+        var btnDisabled = new StyleBoxFlat { BgColor = AP_Atlas.Core.ThemeColors.SurfaceRaised, CornerRadiusTopLeft = 4, CornerRadiusTopRight = 4, CornerRadiusBottomLeft = 4, CornerRadiusBottomRight = 4, ContentMarginLeft = 10, ContentMarginRight = 10, ContentMarginTop = 5, ContentMarginBottom = 5 };
         theme.SetStylebox("disabled", "Button", btnDisabled);
         theme.SetColor("font_disabled_color", "Button", new Godot.Color(1, 1, 1, 0.35f));
         theme.SetColor("font_pressed_color", "Button", textOnAccent);
@@ -268,7 +268,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         theme.SetStylebox("focus", "CheckBox", cbNormal);
         theme.SetStylebox("hover_pressed", "CheckBox", cbNormal);
         theme.SetStylebox("disabled", "CheckBox", cbNormal);
-        var lineEdit = new StyleBoxFlat { BgColor = new Godot.Color("#3c3c3c"), CornerRadiusTopLeft = 2, CornerRadiusTopRight = 2, CornerRadiusBottomLeft = 2, CornerRadiusBottomRight = 2, ContentMarginLeft = 8, ContentMarginRight = 8, ContentMarginTop = 6, ContentMarginBottom = 6, BorderWidthBottom = 1, BorderColor = accentColor };
+        var lineEdit = new StyleBoxFlat { BgColor = AP_Atlas.Core.ThemeColors.Input, CornerRadiusTopLeft = 2, CornerRadiusTopRight = 2, CornerRadiusBottomLeft = 2, CornerRadiusBottomRight = 2, ContentMarginLeft = 8, ContentMarginRight = 8, ContentMarginTop = 6, ContentMarginBottom = 6, BorderWidthBottom = 1, BorderColor = accentColor };
         theme.SetStylebox("normal", "LineEdit", lineEdit);
         var sysFont = GD.Load<FontFile>("res://Assets/Fonts/GoogleSans-Regular.ttf");
         if (sysFont != null)
@@ -298,8 +298,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         }
         theme.SetStylebox("panel", "PopupMenu", new StyleBoxFlat
         {
-            BgColor = new Godot.Color("#252526"),
-            BorderColor = new Godot.Color("#444444"),
+            BgColor = AP_Atlas.Core.ThemeColors.SurfacePanel,
+            BorderColor = AP_Atlas.Core.ThemeColors.BorderSoft,
             BorderWidthLeft = 1,
             BorderWidthTop = 1,
             BorderWidthRight = 1,
@@ -316,7 +316,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         this.Theme = theme;
         // Popups and windows (dialogs, the Pack Doctor) live under the root, not this control, so share the theme there too.
         if (IsInsideTree()) GetTree().Root.Theme = theme;
-        RenderingServer.SetDefaultClearColor(new Godot.Color("#1e1e1e"));
+        RenderingServer.SetDefaultClearColor(AP_Atlas.Core.ThemeColors.Surface);
         if (_globalStatusBar != null)
         {
             var statusStyle = new StyleBoxFlat { BgColor = accentColor, ContentMarginLeft = 10, ContentMarginRight = 10, ContentMarginTop = 2, ContentMarginBottom = 2 };
@@ -333,6 +333,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _appSettings.ThemeAccentColor = hex;
         DataManager.SaveSettings(_appSettings);
         SetupModernTheme();
+        AP_Atlas.UI.Kit.RecolourHeadings(GetTree().Root);
         RefreshProfileListStyles();
         UpdateSidebar();
     }
@@ -497,19 +498,19 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         };
         var clear = new Godot.Color(0, 0, 0, 0);
         bar.AddThemeStyleboxOverride("tab_unselected", Tab(clear, clear));
-        bar.AddThemeStyleboxOverride("tab_hovered", Tab(new Godot.Color("#2a2d2e"), clear));
-        bar.AddThemeStyleboxOverride("tab_selected", Tab(new Godot.Color("#1e1e1e"), AP_Atlas.Core.ThemeColors.Accent));
+        bar.AddThemeStyleboxOverride("tab_hovered", Tab(AP_Atlas.Core.ThemeColors.SurfaceRaised, clear));
+        bar.AddThemeStyleboxOverride("tab_selected", Tab(AP_Atlas.Core.ThemeColors.Surface, AP_Atlas.Core.ThemeColors.Accent));
     }
     private StyleBoxFlat GetVSCodePanelStyle()
     {
         return new StyleBoxFlat
         {
-            BgColor = new Godot.Color("#1e1e1e"),
+            BgColor = AP_Atlas.Core.ThemeColors.Surface,
             BorderWidthLeft = 2,
             BorderWidthRight = 2,
             BorderWidthTop = 2,
             BorderWidthBottom = 2,
-            BorderColor = new Godot.Color("#444444"),
+            BorderColor = AP_Atlas.Core.ThemeColors.BorderSoft,
             CornerRadiusTopLeft = 12,
             CornerRadiusTopRight = 12,
             CornerRadiusBottomLeft = 12,

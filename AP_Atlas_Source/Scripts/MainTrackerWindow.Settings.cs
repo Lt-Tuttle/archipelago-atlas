@@ -13,7 +13,7 @@ public partial class MainTrackerWindow
     private const int MinFontSize = 8, MaxFontSize = 32;
 
     /// <summary>The accent colours the page offers, the default first.</summary>
-    private static readonly (string Name, string Hex)[] AccentPresets =
+    internal static readonly (string Name, string Hex)[] AccentPresets =
     {
         ("Atlas Purple (default)", AP_Atlas.Core.ThemeColors.DefaultAccentHex),
         ("Pikachu Yellow", "#FFD700"),

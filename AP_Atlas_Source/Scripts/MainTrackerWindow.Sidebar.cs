@@ -21,7 +21,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         var accent = AP_Atlas.Core.ThemeColors.Accent;
         card.AddThemeStyleboxOverride("panel", new StyleBoxFlat
         {
-            BgColor = isSelected ? AP_Atlas.Core.ThemeColors.AccentTint : new Godot.Color("#1A1A1F"),
+            BgColor = isSelected ? AP_Atlas.Core.ThemeColors.AccentTint : AP_Atlas.Core.ThemeColors.SurfaceSunken,
             CornerRadiusTopLeft = 4,
             CornerRadiusTopRight = 4,
             CornerRadiusBottomLeft = 4,
@@ -30,7 +30,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             BorderWidthRight = 1,
             BorderWidthTop = 1,
             BorderWidthBottom = 1,
-            BorderColor = isSelected ? accent : new Godot.Color("#2C2D35"),
+            BorderColor = isSelected ? accent : AP_Atlas.Core.ThemeColors.BorderSoft,
             ContentMarginLeft = 6,
             ContentMarginRight = 6,
             ContentMarginTop = 5,
@@ -247,10 +247,10 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 connectBtn.SetMeta("slot_name", slotName);
                 connectBtn.SetMeta("profile_id", profile.Id);
                 connectBtn.TooltipText = isConnecting ? "Connecting..." : (isConnected ? "Connected" : "Connect");
-                connectBtn.AddThemeColorOverride("icon_disabled_color", Godot.Colors.White);
-                if (isConnected) connectBtn.Modulate = Godot.Colors.White;
-                else if (isConnecting) connectBtn.Modulate = Godot.Colors.White;
-                else connectBtn.Modulate = Godot.Colors.LimeGreen;
+                connectBtn.AddThemeColorOverride("icon_disabled_color", AP_Atlas.Core.ThemeColors.Text);
+                if (isConnected) connectBtn.Modulate = AP_Atlas.Core.ThemeColors.Text;
+                else if (isConnecting) connectBtn.Modulate = AP_Atlas.Core.ThemeColors.Text;
+                else connectBtn.Modulate = AP_Atlas.Core.ThemeColors.Success;
                 connectBtn.Pressed += () =>
                 {
                     // The card outlives the state it was built in: check now.
@@ -275,9 +275,9 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                     TooltipText = "Disconnect"
                 };
                 disconnectBtn.SetMeta("is_icon_button", true);
-                disconnectBtn.AddThemeColorOverride("icon_disabled_color", Godot.Colors.DarkGray);
-                if (isSocketConnected) disconnectBtn.Modulate = Godot.Colors.Crimson;
-                else disconnectBtn.Modulate = Godot.Colors.DarkGray;
+                disconnectBtn.AddThemeColorOverride("icon_disabled_color", AP_Atlas.Core.ThemeColors.Disabled);
+                if (isSocketConnected) disconnectBtn.Modulate = AP_Atlas.Core.ThemeColors.Danger;
+                else disconnectBtn.Modulate = AP_Atlas.Core.ThemeColors.Disabled;
                 disconnectBtn.Pressed += () =>
                 {
                     DisconnectSlot(profile.Id, slotName);
@@ -316,7 +316,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 var statsContainer = new PanelContainer { Name = "StatsContainer", SizeFlagsHorizontal = SizeFlags.ExpandFill };
                 var statsBg = new StyleBoxFlat
                 {
-                    BgColor = new Godot.Color("#131317"),
+                    BgColor = AP_Atlas.Core.ThemeColors.SurfaceDeep,
                     CornerRadiusTopLeft = 3,
                     CornerRadiusTopRight = 3,
                     CornerRadiusBottomLeft = 3,
@@ -338,7 +338,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                     var lblTitle = new Label { Text = title, HorizontalAlignment = HorizontalAlignment.Center };
                     lblTitle.SetMeta("font_size_ratio", 0.55);
                     lblTitle.AddThemeFontSizeOverride("font_size", 9);
-                    lblTitle.AddThemeColorOverride("font_color", Colors.Gray);
+                    lblTitle.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextSubtle);
                     col.AddChild(lblTitle);
                     var lblVal = new Label { Text = val, HorizontalAlignment = HorizontalAlignment.Center };
                     lblVal.SetMeta("font_size_ratio", 0.65);
@@ -347,21 +347,21 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                     col.AddChild(lblVal);
                     statsHBox.AddChild(col);
                 }
-                AddKpiCol("Total", total.ToString(), Colors.LightGray);
-                AddKpiCol("Done", complete.ToString(), Colors.LightCyan);
-                AddKpiCol("%", $"{percent}%", percent >= 100 ? Colors.LimeGreen : (percent > 0 ? Colors.Cyan : Colors.LightGray));
-                if (logicHidden) AddKpiCol("Logic", "—", Colors.DimGray);
-                else AddKpiCol("Logic", logic.ToString(), logic > 0 ? Colors.LimeGreen : Colors.DimGray);
+                AddKpiCol("Total", total.ToString(), AP_Atlas.Core.ThemeColors.TextMuted);
+                AddKpiCol("Done", complete.ToString(), AP_Atlas.Core.ThemeColors.Progress);
+                AddKpiCol("%", $"{percent}%", percent >= 100 ? AP_Atlas.Core.ThemeColors.Success : (percent > 0 ? AP_Atlas.Core.ThemeColors.Progress : AP_Atlas.Core.ThemeColors.TextMuted));
+                if (logicHidden) AddKpiCol("Logic", "—", AP_Atlas.Core.ThemeColors.TextSubtle);
+                else AddKpiCol("Logic", logic.ToString(), logic > 0 ? AP_Atlas.Core.ThemeColors.Success : AP_Atlas.Core.ThemeColors.TextSubtle);
                 // Special-item progress for games that have a special list (e.g. items needed to goal).
                 if (isConnected && session != null)
                 {
                     var (specialGot, specialTotal) = session.SpecialItemProgress();
                     if (specialTotal > 0)
-                        AddKpiCol("◆", $"{specialGot}/{specialTotal}", specialGot >= specialTotal ? Colors.LimeGreen : AP_Atlas.Core.Annotations.SpecialColor, "SpecialKpi");
+                        AddKpiCol("◆", $"{specialGot}/{specialTotal}", specialGot >= specialTotal ? AP_Atlas.Core.ThemeColors.Success : AP_Atlas.Core.Annotations.SpecialColor, "SpecialKpi");
                 }
                 else if (AP_Atlas.Core.Annotations.SpecialItemNames(gameName).Any())
                 {
-                    AddKpiCol("◆", AP_Atlas.Core.Annotations.SpecialItemNames(gameName).Count().ToString(), Colors.DimGray, "SpecialKpi");
+                    AddKpiCol("◆", AP_Atlas.Core.Annotations.SpecialItemNames(gameName).Count().ToString(), AP_Atlas.Core.ThemeColors.TextSubtle, "SpecialKpi");
                 }
                 cardVBox.AddChild(statsContainer);
                 var footerHBox = new HBoxContainer { Name = "FooterHBox", SizeFlagsHorizontal = SizeFlags.ExpandFill };
@@ -380,7 +380,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                     HorizontalAlignment = HorizontalAlignment.Right,
                     SizeFlagsHorizontal = SizeFlags.ExpandFill
                 };
-                gameNameFooter.AddThemeColorOverride("font_color", Colors.DimGray);
+                gameNameFooter.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextSubtle);
                 gameNameFooter.SetMeta("font_size_ratio", 0.50);
                 gameNameFooter.AddThemeFontSizeOverride("font_size", 8);
                 var cheeseBadge = new Label { Name = "CheeseBadge", HorizontalAlignment = HorizontalAlignment.Center, MouseFilter = MouseFilterEnum.Pass, Visible = false };
@@ -393,12 +393,12 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 if (isConnected)
                 {
                     statusFooter.Text = session.RaceRestricted ? "● Live · Race mode" : "● Live";
-                    statusFooter.AddThemeColorOverride("font_color", Colors.LimeGreen);
+                    statusFooter.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Success);
                 }
                 else if (isConnecting)
                 {
                     statusFooter.Text = "◌ Connecting...";
-                    statusFooter.AddThemeColorOverride("font_color", Colors.Yellow);
+                    statusFooter.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Pending);
                 }
                 else
                 {
@@ -410,7 +410,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                     {
                         statusFooter.Text = "Not connected yet";
                     }
-                    statusFooter.AddThemeColorOverride("font_color", Colors.DimGray);
+                    statusFooter.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextSubtle);
                 }
                 cardVBox.AddChild(footerHBox);
                 _activeSessionsList.AddChild(cardPanel);
@@ -471,24 +471,24 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                                     btn.Icon = null;
                                     btn.Text = _spinnerFrames[_spinnerIndex];
                                     btn.Disabled = false;
-                                    btn.Modulate = Godot.Colors.White;
-                                    if (disconnectBtn != null) { disconnectBtn.Disabled = true; disconnectBtn.Modulate = Godot.Colors.DarkGray; }
+                                    btn.Modulate = AP_Atlas.Core.ThemeColors.Text;
+                                    if (disconnectBtn != null) { disconnectBtn.Disabled = true; disconnectBtn.Modulate = AP_Atlas.Core.ThemeColors.Disabled; }
                                 }
                                 else if (isConnected)
                                 {
                                     btn.Icon = _iconCheck;
                                     btn.Text = "";
                                     btn.Disabled = true;
-                                    btn.Modulate = Godot.Colors.LimeGreen;
-                                    if (disconnectBtn != null) { disconnectBtn.Disabled = false; disconnectBtn.Modulate = Godot.Colors.Crimson; }
+                                    btn.Modulate = AP_Atlas.Core.ThemeColors.Success;
+                                    if (disconnectBtn != null) { disconnectBtn.Disabled = false; disconnectBtn.Modulate = AP_Atlas.Core.ThemeColors.Danger; }
                                 }
                                 else
                                 {
                                     btn.Icon = _iconConnect;
                                     btn.Text = "";
                                     btn.Disabled = false;
-                                    btn.Modulate = Godot.Colors.White;
-                                    if (disconnectBtn != null) { disconnectBtn.Disabled = true; disconnectBtn.Modulate = Godot.Colors.DarkGray; }
+                                    btn.Modulate = AP_Atlas.Core.ThemeColors.Text;
+                                    if (disconnectBtn != null) { disconnectBtn.Disabled = true; disconnectBtn.Modulate = AP_Atlas.Core.ThemeColors.Disabled; }
                                 }
                                 int total = 0, complete = 0, logic = 0;
                                 bool hasSaved = false;
@@ -547,8 +547,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                                             if (valPercent != null)
                                             {
                                                 valPercent.Text = $"{percent}%";
-                                                if (percent >= 100) SetFontColor(valPercent, Colors.LimeGreen);
-                                                else if (percent > 0) SetFontColor(valPercent, Colors.Cyan);
+                                                if (percent >= 100) SetFontColor(valPercent, AP_Atlas.Core.ThemeColors.Success);
+                                                else if (percent > 0) SetFontColor(valPercent, AP_Atlas.Core.ThemeColors.Progress);
                                                 else SetFontColor(valPercent, null);
                                             }
                                         }
@@ -558,7 +558,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                                             if (valAvail != null)
                                             {
                                                 valAvail.Text = logicHidden ? "—" : logic.ToString();
-                                                if (logic > 0 && !logicHidden) SetFontColor(valAvail, Colors.LimeGreen);
+                                                if (logic > 0 && !logicHidden) SetFontColor(valAvail, AP_Atlas.Core.ThemeColors.Success);
                                                 else SetFontColor(valAvail, null);
                                             }
                                         }
@@ -571,7 +571,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                                     if (specialTotal > 0)
                                     {
                                         special.Text = $"{specialGot}/{specialTotal}";
-                                        SetFontColor(special, specialGot >= specialTotal ? Colors.LimeGreen : AP_Atlas.Core.Annotations.SpecialColor);
+                                        SetFontColor(special, specialGot >= specialTotal ? AP_Atlas.Core.ThemeColors.Success : AP_Atlas.Core.Annotations.SpecialColor);
                                     }
                                 }
                                 var game = cardVBox.GetNodeOrNull<HBoxContainer>("FooterHBox")?.GetNodeOrNull<Label>("GameName");
@@ -582,12 +582,12 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                                     if (isConnected)
                                     {
                                         statusFooter.Text = activeSlot != null && activeSlot.RaceRestricted ? "● Live · Race mode" : "● Live";
-                                        SetFontColor(statusFooter, Colors.LimeGreen);
+                                        SetFontColor(statusFooter, AP_Atlas.Core.ThemeColors.Success);
                                     }
                                     else if (isConnecting)
                                     {
                                         statusFooter.Text = "◌ Connecting...";
-                                        SetFontColor(statusFooter, Colors.Yellow);
+                                        SetFontColor(statusFooter, AP_Atlas.Core.ThemeColors.Pending);
                                     }
                                     else
                                     {
@@ -599,7 +599,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                                         {
                                             statusFooter.Text = "Not connected yet";
                                         }
-                                        SetFontColor(statusFooter, Colors.DimGray);
+                                        SetFontColor(statusFooter, AP_Atlas.Core.ThemeColors.TextSubtle);
                                     }
                                 }
                                 UpdateCheeseBadge(cardVBox.GetNodeOrNull<HBoxContainer>("FooterHBox")?.GetNodeOrNull<Label>("CheeseBadge"), profileId, slotName);
@@ -639,24 +639,24 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                         connectBtn.Icon = null;
                         connectBtn.Text = _spinnerFrames[_spinnerIndex];
                         connectBtn.Disabled = false;
-                        connectBtn.Modulate = Godot.Colors.White;
-                        if (disconnectBtn != null) { disconnectBtn.Disabled = true; disconnectBtn.Modulate = Godot.Colors.DarkGray; }
+                        connectBtn.Modulate = AP_Atlas.Core.ThemeColors.Text;
+                        if (disconnectBtn != null) { disconnectBtn.Disabled = true; disconnectBtn.Modulate = AP_Atlas.Core.ThemeColors.Disabled; }
                     }
                     else if (isConnected)
                     {
                         connectBtn.Icon = _iconCheck;
                         connectBtn.Text = "";
                         connectBtn.Disabled = true;
-                        connectBtn.Modulate = Godot.Colors.LimeGreen;
-                        if (disconnectBtn != null) { disconnectBtn.Disabled = false; disconnectBtn.Modulate = Godot.Colors.Crimson; }
+                        connectBtn.Modulate = AP_Atlas.Core.ThemeColors.Success;
+                        if (disconnectBtn != null) { disconnectBtn.Disabled = false; disconnectBtn.Modulate = AP_Atlas.Core.ThemeColors.Danger; }
                     }
                     else
                     {
                         connectBtn.Icon = _iconConnect;
                         connectBtn.Text = "";
                         connectBtn.Disabled = false;
-                        connectBtn.Modulate = Godot.Colors.LimeGreen;
-                        if (disconnectBtn != null) { disconnectBtn.Disabled = true; disconnectBtn.Modulate = Godot.Colors.DarkGray; }
+                        connectBtn.Modulate = AP_Atlas.Core.ThemeColors.Success;
+                        if (disconnectBtn != null) { disconnectBtn.Disabled = true; disconnectBtn.Modulate = AP_Atlas.Core.ThemeColors.Disabled; }
                     }
                 }
             }

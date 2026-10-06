@@ -39,7 +39,7 @@ namespace AP_Atlas.UI
                 box.AddChild(detail);
             }
             var where = new Label { Text = "\"Allow once\" lasts until Atlas closes. You can take back \"Always allow\" in Settings → Privacy & permissions.", AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(500, 0) };
-            where.AddThemeColorOverride("font_color", Colors.Gray);
+            where.AddThemeColorOverride("font_color", ThemeColors.TextSubtle);
             box.AddChild(where);
             dialog.AddChild(box);
             dialog.AddButton("Always allow", true, "always");

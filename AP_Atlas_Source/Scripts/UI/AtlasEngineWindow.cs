@@ -20,10 +20,10 @@ namespace AP_Atlas.UI
     /// </summary>
     public partial class AtlasEngineWindow : Window
     {
-        private static readonly Color Good = Colors.LimeGreen;
-        private static readonly Color Bad = Colors.Salmon;
-        private static readonly Color Warn = Colors.Orange;
-        private static readonly Color Muted = Colors.Gray;
+        private static readonly Color Good = ThemeColors.Success;
+        private static readonly Color Bad = ThemeColors.Error;
+        private static readonly Color Warn = ThemeColors.Warning;
+        private static readonly Color Muted = ThemeColors.TextSubtle;
 
         private static AtlasEngineWindow _open;
 
@@ -74,7 +74,7 @@ namespace AP_Atlas.UI
         {
             CloseRequested += Close;
             var bg = new Panel();
-            bg.AddThemeStyleboxOverride("panel", new StyleBoxFlat { BgColor = new Color("#1a1a1f") });
+            bg.AddThemeStyleboxOverride("panel", new StyleBoxFlat { BgColor = ThemeColors.SurfaceSunken });
             bg.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
             AddChild(bg);
             var margin = new MarginContainer();
@@ -99,7 +99,7 @@ namespace AP_Atlas.UI
                        "no installer or admin rights), or use an Archipelago install you already have.",
                 AutowrapMode = TextServer.AutowrapMode.WordSmart
             };
-            intro.AddThemeColorOverride("font_color", Colors.LightGray);
+            intro.AddThemeColorOverride("font_color", ThemeColors.TextMuted);
             page.AddChild(intro);
 
             page.AddChild(Header("Engine"));
@@ -163,7 +163,7 @@ namespace AP_Atlas.UI
             logHeader.AddChild(copyLog);
             logBox.AddChild(logHeader);
             _log = new RichTextLabel { SizeFlagsVertical = Control.SizeFlags.ExpandFill, ScrollFollowing = true, SelectionEnabled = true, BbcodeEnabled = false };
-            _log.AddThemeStyleboxOverride("normal", new StyleBoxFlat { BgColor = new Color("#111116"), ContentMarginLeft = 8, ContentMarginTop = 6, ContentMarginRight = 8, ContentMarginBottom = 6 });
+            _log.AddThemeStyleboxOverride("normal", new StyleBoxFlat { BgColor = ThemeColors.SurfaceDeep, ContentMarginLeft = 8, ContentMarginTop = 6, ContentMarginRight = 8, ContentMarginBottom = 6 });
             logBox.AddChild(_log);
 
             var footer = new HBoxContainer();
@@ -385,7 +385,7 @@ namespace AP_Atlas.UI
                 row.AddChild(icon);
                 row.AddChild(new Label { Text = step.Title, CustomMinimumSize = new Vector2(170, 0) });
                 var detail = new Label { Text = step.Detail, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart };
-                detail.AddThemeColorOverride("font_color", step.State == EngineStepState.Ok ? Muted : Colors.LightGray);
+                detail.AddThemeColorOverride("font_color", step.State == EngineStepState.Ok ? Muted : ThemeColors.TextMuted);
                 row.AddChild(detail);
                 if (step.Action != null)
                 {
@@ -433,7 +433,7 @@ namespace AP_Atlas.UI
                     SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
                     AutowrapMode = TextServer.AutowrapMode.WordSmart
                 };
-                detail.AddThemeColorOverride("font_color", installed == true ? Muted : Colors.LightGray);
+                detail.AddThemeColorOverride("font_color", installed == true ? Muted : ThemeColors.TextMuted);
                 row.AddChild(detail);
                 if (installed == false && install.CanLaunch)
                 {
@@ -510,7 +510,7 @@ namespace AP_Atlas.UI
                 row.AddChild(icon);
                 row.AddChild(new Label { Text = $"{slot.SlotName} ({slot.Game})", CustomMinimumSize = new Vector2(240, 0), ClipText = true });
                 var detail = new Label { Text = text, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart };
-                detail.AddThemeColorOverride("font_color", Colors.LightGray);
+                detail.AddThemeColorOverride("font_color", ThemeColors.TextMuted);
                 row.AddChild(detail);
                 var link = new Button
                 {
@@ -829,7 +829,7 @@ namespace AP_Atlas.UI
             _cancel.Disabled = false;
             _progress.Visible = true;
             _progress.Value = 0;
-            SetStatus(name + "…", Colors.LightGray);
+            SetStatus(name + "…", ThemeColors.TextMuted);
             Render();
             void log(string line) => Ui.Defer(this, () => Log(line));
             void progress(float f) => Ui.Defer(this, () =>
@@ -935,7 +935,7 @@ namespace AP_Atlas.UI
         private static void Readable(BaseButton button)
         {
             foreach (var key in new[] { "font_pressed_color", "font_hover_pressed_color", "font_color", "font_focus_color", "font_hover_color" })
-                button.AddThemeColorOverride(key, Colors.White);
+                button.AddThemeColorOverride(key, ThemeColors.Text);
             button.AddThemeColorOverride("font_disabled_color", Muted);
         }
 
