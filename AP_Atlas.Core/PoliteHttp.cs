@@ -77,12 +77,29 @@ namespace AP_Atlas.Core
         private sealed class SiteState
         {
             public readonly SemaphoreSlim Gate = new SemaphoreSlim(1, 1);
-            // When the next request may go (Spacing after the last one), and when a wait after failures ends. Deadlines
-            // measure with a monotonic clock, so setting the PC's clock can't stretch either.
+            // Only while holding Gate: when the next request may go (Spacing after the last one; a deadline measures with a
+            // monotonic clock, so setting the PC's clock can't stretch it), and how many requests in a row failed.
             public Deadline NextRequest;
-            public Deadline Wait;
             public int Failures;
-            public string WaitReason;
+            // A wait after failures, and why. These are read without the gate (the window asks while a request runs), so
+            // they change together, under their own lock: a Deadline is two fields, which a reader could see half-changed.
+            private readonly object _waitLock = new object();
+            private Deadline _wait;
+            private string _waitReason;
+
+            public (Deadline Wait, string Reason) WaitState
+            {
+                get { lock (_waitLock) return (_wait, _waitReason); }
+            }
+
+            public void SetWait(Deadline wait, string reason)
+            {
+                lock (_waitLock)
+                {
+                    _wait = wait;
+                    _waitReason = reason;
+                }
+            }
         }
 
         private static readonly Dictionary<string, SiteState> Sites = new Dictionary<string, SiteState>(StringComparer.OrdinalIgnoreCase);
@@ -145,23 +162,27 @@ namespace AP_Atlas.Core
         {
             site = NormalizeSite(site);
             if (site == null) return null;
-            var s = StateOf(site);
-            return s.Wait.Passed ? null : (s.Wait.ShownUtc, s.WaitReason);
+            var (wait, reason) = StateOf(site).WaitState;
+            return wait.Passed ? null : (wait.ShownUtc, reason);
         }
 
         /// <summary>When Atlas will next contact a site after a failure (passed already if it isn't waiting).</summary>
         public static Deadline WaitOf(string site)
         {
             site = NormalizeSite(site);
-            return site == null ? Deadline.None : StateOf(site).Wait;
+            return site == null ? Deadline.None : StateOf(site).WaitState.Wait;
         }
 
         /// <summary>Ends a wait early (the user pressed "Try now").</summary>
         public static void StopWaiting(string site)
         {
             site = NormalizeSite(site);
-            if (site != null) StateOf(site).Wait = Deadline.None;
+            if (site != null) StateOf(site).SetWait(Deadline.None, null);
         }
+
+        /// <summary>Has Atlas leave a site alone for a while, as after a failure (for tests).</summary>
+        internal static void WaitForTests(string site, TimeSpan wait, string reason) =>
+            StateOf(NormalizeSite(site)).SetWait(Deadline.In(wait), reason);
 
         internal static void ResetForTests()
         {
@@ -257,8 +278,9 @@ namespace AP_Atlas.Core
             await state.Gate.WaitAsync(ct).ConfigureAwait(false);
             try
             {
-                if (!state.Wait.Passed)
-                    return Fail(WebOutcome.Waiting, 0, $"{state.WaitReason}. Atlas tries again after {state.Wait.ShownUtc.ToLocalTime():HH:mm}.");
+                var (waiting, waitReason) = state.WaitState;
+                if (!waiting.Passed)
+                    return Fail(WebOutcome.Waiting, 0, $"{waitReason}. Atlas tries again after {waiting.ShownUtc.ToLocalTime():HH:mm}.");
                 if (!state.NextRequest.Passed) await Task.Delay(state.NextRequest.Left, ct).ConfigureAwait(false);
                 state.NextRequest = Deadline.In(Spacing);
 
@@ -302,7 +324,7 @@ namespace AP_Atlas.Core
                     }
                     // Anything else means the site is up: no waiting.
                     state.Failures = 0;
-                    state.Wait = Deadline.None;
+                    state.SetWait(Deadline.None, null);
                     if (code == 304) return new WebResponse { Outcome = WebOutcome.NotModified, Status = code, Headers = answerHeaders };
                     if (code >= 300 && code < 400)
                         return Fail(WebOutcome.Rejected, code, allowRedirect ? $"{siteName} moved the file (HTTP {code})." : $"{siteName} redirected the request (HTTP {code}).", answerHeaders);
@@ -422,9 +444,9 @@ namespace AP_Atlas.Core
             site.Failures++;
             var wait = Backoff[Math.Min(site.Failures, Backoff.Length) - 1];
             if (asked.HasValue && asked.Value > wait) wait = asked.Value < TimeSpan.FromHours(6) ? asked.Value : TimeSpan.FromHours(6);
-            site.Wait = Deadline.In(wait);
-            site.WaitReason = reason;
-            Logger.LogWarning($"{reason}; Atlas leaves it alone until {site.Wait.ShownUtc.ToLocalTime():HH:mm}.");
+            var until = Deadline.In(wait);
+            site.SetWait(until, reason);
+            Logger.LogWarning($"{reason}; Atlas leaves it alone until {until.ShownUtc.ToLocalTime():HH:mm}.");
         }
 
         private static TimeSpan? RetryAfter(HttpResponseMessage response)
