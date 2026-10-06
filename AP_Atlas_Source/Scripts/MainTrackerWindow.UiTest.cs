@@ -95,6 +95,8 @@ public partial class MainTrackerWindow
             RaceRoomRestrictsAsync);
         await ScenarioAsync("Logic: the slot's logic follows its items and checks step by step; after an engine crash, an engine update or a restart it's rebuilt from scratch on a new engine; race mode can hide it",
             LogicFollowsTheSlotAsync);
+        await ScenarioAsync("Shared engines: a multiworld's slots share its engines; when one slot's request brings an engine down, a slot sharing it (even one still starting) starts again in 2 s, and only the slot whose request it was counts the failure",
+            SharedEnginesAsync);
         await ScenarioAsync("Cheese Tracker: its suggestion for a connected slot follows the slot's logic (unblocked, then go mode), says nothing while race mode hides logic, and changes nothing by itself",
             CheeseFollowsTheSlotAsync);
         await ScenarioAsync("Scale: in a 1,000-player room with 20 slots connected (one receiving the room's text), bursts of items, item lines and hints never hold up a frame for 150 ms (target 100 ms), nor does connecting a slot for 300 ms; the logs keep their last lines",
@@ -824,6 +826,75 @@ public partial class MainTrackerWindow
         }
     }
 
+    private async Task SharedEnginesAsync()
+    {
+        var engine = StartFakeEngine(UiTestPython());
+        // The Gem, which only Alice gets, crashes the engine answering her: twice.
+        engine.CrashOnItem = 1099;
+        engine.CrashTimes = 2;
+        engine.Apply();
+        await using var server = LogicWorldServer();
+        server.Slots.Clear();
+        server.Slots.AddRange(new[] { "Alice", "Bob" });
+        var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.AddRange(new[] { "Alice", "Bob" });
+        _profiles.Add(profile);
+        EnginePools.TestMaxEngines = 1; // the two slots share one engine on any PC
+        try
+        {
+            await OnConnectSlotPressedAsync("Alice", profile);
+            var alice = await UiTestWaitForAsync(() => SlotView(profile.Id, "Alice"), "Alice's view");
+            await UiTestWaitForAsync(() => alice.LogicSettled ? alice : null, "Alice's logic to start");
+
+            // The engine takes 3 s over Alice's Gem before it crashes. Bob connects meanwhile: his start waits behind it, and
+            // fails with it. That's not his failure: he starts again in 2 s, as Alice does (her first failure).
+            engine.Delays["update"] = 3;
+            engine.Apply();
+            await server.SendToSlotAsync("Alice", FakeArchipelagoServer.ReceivedItems(0, new long[] { 1099 }, flags: 1));
+            await UiTestWaitForAsync(() => engine.Requests("update").Any(r => (string?)r["key"] == "Alice" && Ids(r["items"]).Contains(1099)) ? alice : null,
+                "the engine to work on Alice's Gem");
+            await OnConnectSlotPressedAsync("Bob", profile);
+            var bob = await UiTestWaitForAsync(() => SlotView(profile.Id, "Bob"), "Bob's view");
+            await UiTestWaitForAsync(() => bob.EngineProblem?.Code == "restarting" ? bob : null, "Bob to lose the engine while starting");
+            string bobStarting = bob.EngineProblem?.Message ?? "";
+            UiTestExpect(engine.Crashes == 1 && bobStarting.Contains("shares with Alice") && bobStarting.Contains("in 2 s"), $"Bob, starting when the engine crashed: {bobStarting}");
+            await UiTestWaitForAsync(() => alice.EngineProblem?.Code == "restarting" ? alice : null, "Alice to lose the engine");
+            UiTestExpect(alice.EngineProblem?.Message?.Contains("in 2 s") == true, $"Alice's first failure: {alice.EngineProblem?.Message}");
+
+            // Both start again on one new engine; the Gem doesn't crash it yet.
+            engine.Delays.Clear();
+            engine.CrashTimes = 1;
+            engine.Apply();
+            await UiTestWaitForAsync(() => alice.LogicSettled && bob.LogicSettled ? alice : null, "both slots' logic to start again", seconds: 30);
+            var pool = EnginePools.For(profile.Id, AtlasEngine.Resolve(_appSettings));
+            UiTestExpect(pool.SlotsPerEngine.SequenceEqual(new[] { 2 }) && engine.Starts == 2,
+                $"the two slots run on engines with {string.Join(", ", pool.SlotsPerEngine)} slots ({engine.Starts} started), not sharing a second one");
+
+            // A new item for Alice, and the Gem brings the engine down again, answering her: her second failure waits 10 s.
+            // Bob, running, loses it too: still not his failure, so he's back in 2 s, long before her.
+            engine.CrashTimes = 2;
+            engine.Apply();
+            await server.SendToSlotAsync("Alice", FakeArchipelagoServer.ReceivedItems(1, new long[] { 1000 }, flags: 1));
+            await UiTestWaitForAsync(() => engine.Crashes == 2 && bob.EngineProblem?.Code == "restarting" ? bob : null, "Bob to lose the engine again", seconds: 30);
+            string bobRunning = bob.EngineProblem?.Message ?? "";
+            UiTestExpect(bobRunning.Contains("shares with Alice") && bobRunning.Contains("in 2 s"), $"Bob, running when the engine crashed again: {bobRunning}");
+            UiTestExpect(alice.EngineProblem?.Message?.Contains("in 10 s") == true, $"Alice's second failure: {alice.EngineProblem?.Message}");
+            UiTestExpect(alice.EngineFailures == 2 && bob.EngineFailures == 0, $"failures counted: Alice {alice.EngineFailures} (not 2), Bob {bob.EngineFailures} (not 0)");
+            await UiTestWaitForAsync(() => bob.LogicSettled ? bob : null, "Bob's logic to start again", seconds: 30);
+            UiTestExpect(alice.EngineProblem?.Code == "restarting", "Alice started again before her 10 s were up");
+            await UiTestWaitForAsync(() => alice.LogicSettled ? alice : null, "Alice's logic to start again", seconds: 60);
+            UiTestExpect(pool.SlotsPerEngine.SequenceEqual(new[] { 2 }) && engine.Crashes == 2 && alice.IsLocationInLogic(2003) == true,
+                $"after both restarts: engines {string.Join(", ", pool.SlotsPerEngine)}, {engine.Crashes} crashes, the vault in Alice's logic {alice.IsLocationInLogic(2003)}");
+        }
+        finally
+        {
+            EnginePools.TestMaxEngines = null;
+            DeleteProfile(profile);
+            AtlasEngine.TestPython = null;
+        }
+    }
+
     private async Task CheeseFollowsTheSlotAsync()
     {
         StartFakeEngine(UiTestPython());
@@ -930,6 +1001,11 @@ public partial class MainTrackerWindow
             double connecting = AP_Atlas.Core.HitchMonitor.WorstFrameMs;
             string connectingReport = AP_Atlas.Core.HitchMonitor.WorstFrameReport;
             UiTestExpect(server.TextClients == 1, $"{server.TextClients} of the {connected} connections receive the room's text, not 1");
+            // The 20 slots share a few engine processes: as many as the pool runs on this PC, each with its share.
+            var engines = EnginePools.For(profile.Id, AP_Atlas.Core.EngineSetup.AtlasEngine.Resolve(_appSettings)).SlotsPerEngine;
+            int maxEngines = AP_Atlas.Core.EngineSetup.EnginePool.EnginesFor(System.Environment.ProcessorCount);
+            UiTestExpect(engines.Count == Math.Min(maxEngines, connected) && engines.Sum() == connected && engines.Max() - engines.Min() <= 1,
+                $"the {connected} slots run on {engines.Count} engines ({string.Join(", ", engines)} slots each), not {Math.Min(maxEngines, connected)} sharing them evenly");
             // The multiworld was already in the sidebar: its cards update in place as slots connect.
             int sidebarRebuilds = AP_Atlas.Core.HitchMonitor.Step("Rebuild SLOTS sidebar").Runs;
             int sphereRedraws = AP_Atlas.Core.HitchMonitor.Step("Sphere Tracker tab: refresh").Runs;
@@ -987,10 +1063,11 @@ public partial class MainTrackerWindow
             UiTestExpect(sphereRedraws == 0, $"the Sphere Tracker tab, not showing, redrew {sphereRedraws} times while slots connected");
             // Only what shows does work: the hints views aren't showing, and only the selected slot's text client draws, a
             // slice of lines per frame. A slice draws for about 6 ms; with its last line and the scroll, a frame's share takes
-            // 8 to 20 ms here and on CI, and 50 ms once on a CI runner twice as slow as usual. Drawing a burst in one go
-            // (about 1 ms a line) takes 100 ms or more, so 60 ms tells the two apart.
+            // 8 to 20 ms here, and 15 to 50 ms on CI's shared machines (whose other work can hold up the window's thread).
+            // Drawing a burst in one go (about 1 ms a line) takes 130 ms here and two or three times that on CI, so 100 ms
+            // tells the two apart; a frame that long also fails the guard above.
             UiTestExpect(hintRefreshes.Runs == 0, $"hints views that weren't showing refreshed {hintRefreshes.Runs} times");
-            UiTestExpect(chatLines.Runs > 0 && chatLines.WorstFrameMs < 60,
+            UiTestExpect(chatLines.Runs > 0 && chatLines.WorstFrameMs < 100,
                 $"drawing text client lines took {chatLines.WorstFrameMs:0} ms of one frame ({chatLines.Runs} runs, at most {chatLines.MostRunsInFrame} in a frame)");
             // The log views keep their last lines (the log file keeps everything).
             for (int i = 0; i < AP_Atlas.UI.LogPane.Lines + 500; i++) AP_Atlas.Core.Logger.LogInfo($"UI test line {i}");

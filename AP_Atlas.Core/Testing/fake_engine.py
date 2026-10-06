@@ -2,7 +2,8 @@
 #
 # It stands in for the UltimateBridge component (Scripts/Core/Engine/Python/atlas_bridge.py) and speaks the same
 # protocol: one JSON object per line on stdin and on its own standard output (sys.__stdout__: atlas_run.py sends
-# whatever else prints to standard error), each reply carrying its request's id. Instead of rebuilding a real world it
+# whatever else prints to standard error), each reply carrying its request's id. Like the bridge it hosts several slots,
+# each named by its requests' "key" ("drop" forgets one). Instead of rebuilding a real world it
 # answers from simple rules: an item pool, the items each location needs, and the items the goal needs. It reads the
 # rules again for every request, so a test can change them while the engine runs. It can also misbehave on purpose:
 # crash on an item, answer late, fail to load, start a process of its own, or send a log line, a late answer to an
@@ -130,9 +131,7 @@ def serve(*args):
         child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(600)'],
                                  stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         note({'event': 'child', 'child_pid': child.pid})
-    started = False
-    missing = set()
-    last_items = None
+    slots = {}  # by key: the slot's missing locations and the items of its last update
     while True:
         line = sys.stdin.readline()
         if not line:
@@ -144,32 +143,39 @@ def serve(*args):
         action = req.get('action')
         note({'request': req})
         rules = read_rules()
+        # Working on it first (a slow world crashes after a while, not at once).
+        delay = rules.get('delays', {}).get(action, 0)
+        if delay:
+            time.sleep(delay)
         crash = rules.get('crash')
         if (crash and action == 'update' and crash['on_item'] in (req.get('items') or [])
                 and crashes_so_far() < crash.get('times', 1)):
             note({'event': 'crash', 'id': rid})
             os._exit(3)
-        delay = rules.get('delays', {}).get(action, 0)
-        if delay:
-            time.sleep(delay)
         if rules.get('chatter') and rid is not None:
             scribble('Fake engine: thinking about request ' + str(rid))
             send({'id': rid - 1, 'reachable': [], 'excluded': [], 'glitched': [], 'goal': None})
             scribble(json.dumps({'reachable': [], 'excluded': [], 'glitched': [], 'goal': None}))
+        key = req.get('key')
         if action == 'init':
             reply = start(req, rules)
             if reply.get('status') == 'ready':
-                started = True
-                missing = set(req.get('all_locations') or [loc['id'] for loc in rules['locations']])
-        elif not started:
+                slots[key] = {'missing': set(req.get('all_locations') or [loc['id'] for loc in rules['locations']]), 'items': None}
+            else:
+                slots.pop(key, None)
+        elif action == 'drop':
+            slots.pop(key, None)
+            reply = {'dropped': True}
+        elif action in ('update', 'explain') and key not in slots:
             reply = {'error': 'The logic engine has not been started for a slot yet.'}
         elif action == 'update':
+            slot = slots[key]
             if req.get('missing_locations') is not None:
-                missing = set(req['missing_locations'])
-            last_items = list(req.get('items') or [])
-            reply = update(last_items, missing, rules)
+                slot['missing'] = set(req['missing_locations'])
+            slot['items'] = list(req.get('items') or [])
+            reply = update(slot['items'], slot['missing'], rules)
         elif action == 'explain':
-            reply = explain(req, last_items, rules)
+            reply = explain(req, slots[key]['items'], rules)
         else:
             reply = {'error': 'Unknown action: ' + str(action)}
         reply['id'] = rid

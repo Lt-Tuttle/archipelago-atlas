@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
@@ -55,6 +56,9 @@ namespace AP_Atlas.Core.EngineSetup
         private readonly object _lock = new();
         private int _waitingId;
         private TaskCompletionSource<EngineAnswer>? _waiting;
+        // Requests sent and not answered yet, oldest first, with whose they are: the engine answers in order, so it's
+        // working on the first (a request that ran out of time may still be in it).
+        private readonly List<(int Id, object? Owner)> _unanswered = new();
         private int _nextId;
         // Why the engine can't answer any more, once it can't.
         private EngineAnswer? _ended;
@@ -98,6 +102,18 @@ namespace AP_Atlas.Core.EngineSetup
         /// <summary>The process's id (for tests and the log).</summary>
         public int Id => _process.Id;
 
+        /// <summary>
+        /// Whose request the engine is working on (the owner given to <see cref="AskAsync"/>), or null when it's working on
+        /// none. After the engine ends, whose request it was working on then.
+        /// </summary>
+        public object? Answering
+        {
+            get
+            {
+                lock (_lock) return _unanswered.Count > 0 ? _unanswered[0].Owner : null;
+            }
+        }
+
         /// <summary>Whether the engine can still answer: running, not stopped, and loaded.</summary>
         public bool Running
         {
@@ -113,9 +129,10 @@ namespace AP_Atlas.Core.EngineSetup
         /// <summary>
         /// Sends a request (an id is added) and waits up to <paramref name="timeout"/> for its answer, once any request
         /// before it has finished. A request that runs out of time leaves the engine working on it: its answer is thrown
-        /// away when it comes, and the next request is read after it.
+        /// away when it comes, and the next request is read after it. <paramref name="owner"/> is whose request it is
+        /// (<see cref="Answering"/>).
         /// </summary>
-        public async Task<EngineAnswer> AskAsync(JObject request, TimeSpan timeout, CancellationToken ct = default)
+        public async Task<EngineAnswer> AskAsync(JObject request, TimeSpan timeout, CancellationToken ct = default, object? owner = null)
         {
             await _oneAtATime.WaitAsync(ct).ConfigureAwait(false);
             try
@@ -132,12 +149,14 @@ namespace AP_Atlas.Core.EngineSetup
                 request["id"] = id;
                 try
                 {
+                    lock (_lock) _unanswered.Add((id, owner));
                     await _process.StandardInput.WriteLineAsync(request.ToString(Formatting.None)).ConfigureAwait(false);
                     await _process.StandardInput.FlushAsync().ConfigureAwait(false);
                 }
                 catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException)
                 {
                     Forget(id);
+                    lock (_lock) _unanswered.RemoveAll(entry => entry.Id == id); // never reached the engine
                     return _stopping ? EngineAnswer.Failed(EngineFailure.Stopped, "the engine was stopped") : EngineAnswer.Failed(EngineFailure.Ended, "the engine closed (" + ex.Message + ")");
                 }
                 using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -223,6 +242,9 @@ namespace AP_Atlas.Core.EngineSetup
             TaskCompletionSource<EngineAnswer>? answer = null;
             lock (_lock)
             {
+                // Answered in order: this request and any before it are done.
+                if (id?.Type == JTokenType.Integer)
+                    while (_unanswered.Count > 0 && _unanswered[0].Id <= (int)id) _unanswered.RemoveAt(0);
                 if (_waiting != null && id?.Type == JTokenType.Integer && (int)id == _waitingId)
                 {
                     answer = _waiting;

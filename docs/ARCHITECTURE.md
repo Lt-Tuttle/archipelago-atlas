@@ -32,6 +32,7 @@ MainTrackerWindow (the shell)
   - The Sphere Tracker parser, models and tables (`Spheres/`).
   - `Engine/`:
     - `EngineDownloader`.
+    - `EnginePool` and `EngineSeat`: a multiworld's logic engines. Up to `EnginePool.EnginesFor(processors)` processes (half the cores, 1 to 4); each slot gets its own until then, then joins the engine with the fewest. A slot's seat tags its requests with its key. An engine that crashes or doesn't answer in time (`stuckIfLate`; a "why" isn't) is stopped and only its slots lose it, each told whether its own request was the one being answered (`EngineLoss.Mine`, from `EngineProcess.Answering`). A slot that leaves has its world dropped; an engine whose last slot leaves is stopped.
     - `EngineProcess`: one logic engine process. One request at a time; only an answer carrying the request's id counts (a late answer, or a line the engine printed, never does); a reader of its own reads and parses its output off the main thread; a bridge that couldn't load ("boot_failed") or an engine that ended fails the waiting request at once; stopping it kills its whole process tree.
     - `ProcessJob`: engine processes close with Atlas, and setup can tell which run from an engine folder.
   - `Connections/`:
@@ -121,7 +122,10 @@ Atlas reads or writes outside this folder only with the user's permission. Nothi
   - Size and time limits; no redirects (downloads follow a few https redirects).
   - GitHub calls go through `GitHubApi`, which honours its rate-limit headers and uses ETags.
   - **Atlas never requests an archipelago.gg room page**, because that wakes the room.
-- **The logic engine:** a Python process per slot, speaking JSON lines over stdin and stdout (`EngineProcess`). Engines run in a kill-on-close job object, so they never outlive Atlas.
+- **The logic engine:** a few Python processes per multiworld, shared by its slots (`EnginePools`, `EnginePool`), speaking JSON lines over stdin and stdout (`EngineProcess`). Engines run in a kill-on-close job object, so they never outlive Atlas.
+  - A request names its slot with `key`; the bridge keeps each slot's world apart (`slots[key]`), and `drop` frees one. Slots of one multiworld can share an engine because they share the seed's apworld versions (a seed's apworld is swapped in per game, process-wide).
+  - The bridge empties the Universal Tracker's class-level world cache (`cached_multiworlds`) before each start and after a drop: it's shared by every slot in the process and would otherwise keep every world.
+  - `SlotLogic` restarts a slot whose engine was lost; only a loss its own request caused counts toward pausing its logic.
   - Each request carries an id, and each answer echoes it.
   - Standard output is Atlas's channel: answers only. The runner (`atlas_run.py`) and the bridge send everything else that prints (worlds as they load, the tracker) to standard error, which Atlas logs; components write answers with `send()`.
   - A bridge that can't load says so with `{"event": "boot_failed"}`.
@@ -160,6 +164,5 @@ These are known structural debts, scheduled before the new shell is built:
 - **Re-parenting:** the Cheese and Sphere tabs and Properties follow their events through `TreeSubscriptions` (made on entering the tree, removed on leaving it), so they can be moved (docking, pop-outs); the UI test proves it. A slot's views are pushed their updates by the slot, so they can move too, and the slot's own panel ends only through `EndSlot()` (the slot replaced or deleted, or the panel freed with the window), never by leaving the tree.
 - **Tools** are one list (`Tool`); the new shell will build its activity bar, menus and panels from it.
 - **Coalesced refreshes:** done. One refresh per frame, hidden views skipped (`ViewRefresh`), and the text client draws a slice of lines per frame. The UI test's scale scenario measures a 1,000-player room with 20 slots connected; with one text connection per multiworld, its worst frame during bursts is about the 100 ms target (80 to 140 ms on the development PC and on CI). What's left is mostly garbage collection after many logic answers arrive in one frame: Atlas asks the engine once per received item (the engine work of step 6).
-- **One engine process per multiworld** instead of per slot.
 
-Done in Phase 1 so far: the Godot-free `AP_Atlas.Core` library with unit tests, `SessionManager`, `TreeSubscriptions`, the tool list, `SlotModel` with the slot's logic (services read it), the fake logic engine, the UI test, and one text connection per multiworld.
+Done in Phase 1 so far: the Godot-free `AP_Atlas.Core` library with unit tests, `SessionManager`, `TreeSubscriptions`, the tool list, `SlotModel` with the slot's logic (services read it), the fake logic engine, the UI test, one text connection per multiworld, and a few shared logic engines per multiworld.

@@ -620,9 +620,26 @@ def handle_explain(slot, req):
     return out
 
 
+def forget_cached_worlds():
+    # The Universal Tracker keeps every world it rebuilds from slot data in lists on its class, shared by every slot in
+    # the process, and gives a slot with the same slot data another's world. Each slot here builds its own world, and
+    # one a slot no longer uses must be freed, so the lists are emptied before each start and after a slot leaves.
+    from worlds.tracker.TrackerCore import TrackerCore
+    found = False
+    for name in ('cached_multiworlds', 'cached_slot_data'):
+        cache = getattr(TrackerCore, name, None)
+        if isinstance(cache, list):
+            cache.clear()
+            found = True
+    if not found:
+        note_once("The Universal Tracker's world cache wasn't found, so it isn't emptied: worlds it rebuilt may stay in memory.")
+
+
 def launch_bridge(*args):
     # Atlas's logic engine: one request per line on stdin, one answer per line on Atlas's channel, each carrying its
-    # request's id. A request that fails is answered with the error; one the bridge doesn't understand, too.
+    # request's id. It hosts the slots of one multiworld (they share the seed's apworld versions); a request names its
+    # slot with "key" (requests without one share one slot). A request that fails is answered with the error; one the
+    # bridge doesn't understand, too.
     protect_channel()
     logger = logging.getLogger('UltimateBridge')
     try:
@@ -630,7 +647,7 @@ def launch_bridge(*args):
     except Exception as e:
         send({'event': 'boot_failed', 'error': type(e).__name__ + ': ' + str(e), 'trace': traceback.format_exc()})
         return
-    slot = None  # built at 'init', from the slot's own YAML only (other YAMLs can't break it)
+    slots = {}  # by key: each built at 'init', from the slot's own YAML only (other YAMLs can't break it)
     while True:
         line = sys.stdin.readline()
         if not line:
@@ -640,16 +657,27 @@ def launch_bridge(*args):
             req = json.loads(line)
             rid = req.get('id')
             action = req.get('action')
+            key = req.get('key')
             if action == 'init':
+                forget_cached_worlds()
                 reply, started = handle_init(req, logger)
                 if started is not None:
-                    slot = started
-            elif slot is None:
-                reply = {'error': 'The logic engine has not been started for a slot yet.'}
-            elif action == 'update':
-                reply = handle_update(slot, req)
-            elif action == 'explain':
-                reply = handle_explain(slot, req)
+                    slots[key] = started
+                else:
+                    slots.pop(key, None)
+            elif action == 'drop':
+                # The slot left: its world goes.
+                slots.pop(key, None)
+                forget_cached_worlds()
+                reply = {'dropped': True}
+            elif action in ('update', 'explain'):
+                slot = slots.get(key)
+                if slot is None:
+                    reply = {'error': 'The logic engine has not been started for a slot yet.'}
+                elif action == 'update':
+                    reply = handle_update(slot, req)
+                else:
+                    reply = handle_explain(slot, req)
             else:
                 reply = {'error': 'Unknown request: ' + str(action)}
         except Exception as e:

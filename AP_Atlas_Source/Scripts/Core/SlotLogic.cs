@@ -56,8 +56,9 @@ namespace AP_Atlas.Core
             _model = model;
             _settings = settings;
             _log = log;
-            Engine = new LogicEngineManager(AtlasEngine.Resolve(settings), log);
-            Engine.EngineExited += OnEngineExited;
+            // The multiworld's slots share a few engine processes (EnginePools).
+            Engine = new LogicEngineManager(AtlasEngine.Resolve(settings), log, model.ProfileId, model.SlotName);
+            Engine.EngineLost += OnEngineLost;
             AtlasEngine.Changed += OnEngineSetupChanged;
             AtlasEngine.PauseRequested += OnEnginePauseRequested;
         }
@@ -103,6 +104,9 @@ namespace AP_Atlas.Core
 
         /// <summary>Changes whenever the engine starts or stops, so a view knows its results were replaced, not added to.</summary>
         public int Run => _run;
+
+        /// <summary>The slot's own engine failures in the last ten minutes (a fourth pauses logic); a lost engine it shares doesn't count.</summary>
+        public int RecentFailures => _recentFailures.Count;
 
         /// <summary>The seed excluded this location (as the engine read the seed's options).</summary>
         public bool ExcludedBySeed(long location) => Engine.LastExcludedLocations?.Contains(location) == true;
@@ -173,6 +177,12 @@ namespace AP_Atlas.Core
                     ReportStart();
                     Notify(SlotChange.Logic | SlotChange.EngineStarted);
                     Refresh();
+                }
+                else if (Engine.LastStartLoss is { Mine: false } loss)
+                {
+                    // The engine this slot shares was lost answering another slot: not this slot's failure, so it starts again.
+                    RestartAfter(SharedLoss(loss), RestartDelaysSeconds[0]);
+                    Loaded = true;
                 }
                 else
                 {
@@ -330,7 +340,9 @@ namespace AP_Atlas.Core
             }
             catch (LogicEngineFailure failure)
             {
-                Fail(run, failure.Message);
+                // A lost engine says whose failure it was: another slot's request may have brought down the engine they share.
+                var loss = Engine.EngineLoss;
+                Fail(run, loss is { Mine: false } ? SharedLoss(loss) : failure.Message, counted: loss?.Mine ?? true);
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
@@ -439,23 +451,27 @@ namespace AP_Atlas.Core
             public LogicEngineFailure(string? reason) : base(string.IsNullOrEmpty(reason) ? "the logic engine stopped answering" : reason) { }
         }
 
-        /// <summary>The engine process ended by itself (any thread).</summary>
-        private void OnEngineExited(int code)
+        /// <summary>The slot's engine was lost: it crashed or got stuck (any thread).</summary>
+        private void OnEngineLost(EngineLoss loss)
         {
             int run = Volatile.Read(ref _run);
-            AP_Atlas.UI.Ui.Defer(null, () => Fail(run, $"the engine process exited with code {code}"), $"handling {_model.SlotName}'s logic engine stopping");
+            string reason = loss.Mine ? "the engine " + loss.Reason : SharedLoss(loss);
+            AP_Atlas.UI.Ui.Defer(null, () => Fail(run, reason, counted: loss.Mine), $"handling {_model.SlotName}'s logic engine stopping");
         }
 
+        private static string SharedLoss(EngineLoss loss) => $"the logic engine it shares with {loss.Culprit ?? "another slot"} stopped ({loss.Reason})";
+
         /// <summary>
-        /// The engine failed mid-session (a failed answer, or its process ended: one failure usually shows both ways, and
-        /// is handled once). Nothing half-done is kept: logic is reset and rebuilt from scratch on a fresh engine, after
-        /// 2 s, 10 s, then 30 s. A fourth failure within ten minutes pauses logic with an explanation rather than
-        /// restarting forever.
+        /// The engine failed mid-session (a failed answer, or the engine was lost: one failure usually shows both ways, and
+        /// is handled once). Nothing half-done is kept: logic is reset and rebuilt from scratch, after 2 s, 10 s, then 30 s.
+        /// A fourth failure of the slot's own within ten minutes pauses logic with an explanation rather than restarting
+        /// forever. An engine lost while answering another slot that shares it isn't this slot's failure: it starts again
+        /// after 2 s, and it doesn't count.
         /// </summary>
-        private void Fail(int run, string reason)
+        private void Fail(int run, string reason, bool counted = true)
         {
             if (_disposed || run != _run || !Running) return; // an engine since stopped, or this failure was already handled
-            _log("Logic engine failure: " + reason);
+            _log("Logic engine failure: " + reason + (counted ? "" : " (not this slot's)"));
             StopRun();
             Loaded = true;
             if (AtlasEngine.SetupRunning)
@@ -469,17 +485,11 @@ namespace AP_Atlas.Core
 
             var now = DateTime.Now;
             _recentFailures.RemoveAll(t => (now - t).TotalMinutes > 10);
-            _recentFailures.Add(now);
+            if (counted) _recentFailures.Add(now);
             int failures = _recentFailures.Count;
             string slot = _model.SlotName;
-            if (failures <= RestartDelaysSeconds.Length)
-            {
-                int delay = RestartDelaysSeconds[failures - 1];
-                Problem = new EngineStartError { Code = "restarting", Message = $"The logic engine stopped ({reason}). Restarting it in {delay} s; logic will be rebuilt from scratch." };
-                Status = "Restarting…";
-                Logger.LogWarning($"[{slot}] The logic engine stopped ({reason}); restarting in {delay} s.");
-                Async.Fire(RestartLaterAsync(_run, delay), $"restarting logic for {slot}");
-            }
+            if (!counted) RestartAfter(reason, RestartDelaysSeconds[0]);
+            else if (failures <= RestartDelaysSeconds.Length) RestartAfter(reason, RestartDelaysSeconds[failures - 1]);
             else
             {
                 Problem = new EngineStartError { Code = "crashed", Message = $"The logic engine stopped {failures} times in 10 minutes ({reason}). Logic is paused so it can't show anything wrong. The slot's Debug Log has details." };
@@ -487,6 +497,16 @@ namespace AP_Atlas.Core
                 Logger.LogError($"[{slot}] The logic engine failed {failures} times in 10 minutes ({reason}); logic is paused.");
             }
             Notify();
+        }
+
+        /// <summary>Says logic stopped, and starts it again after <paramref name="seconds"/>.</summary>
+        private void RestartAfter(string reason, int seconds)
+        {
+            string slot = _model.SlotName;
+            Problem = new EngineStartError { Code = "restarting", Message = $"The logic engine stopped ({reason}). Restarting it in {seconds} s; logic will be rebuilt from scratch." };
+            Status = "Restarting…";
+            Logger.LogWarning($"[{slot}] The logic engine stopped ({reason}); restarting in {seconds} s.");
+            Async.Fire(RestartLaterAsync(_run, seconds), $"restarting logic for {slot}");
         }
 
         private async Task RestartLaterAsync(int run, int seconds)
@@ -535,7 +555,7 @@ namespace AP_Atlas.Core
             _run++;
             AtlasEngine.Changed -= OnEngineSetupChanged;
             AtlasEngine.PauseRequested -= OnEnginePauseRequested;
-            Engine.EngineExited -= OnEngineExited;
+            Engine.EngineLost -= OnEngineLost;
             Engine.StopEngine();
         }
     }

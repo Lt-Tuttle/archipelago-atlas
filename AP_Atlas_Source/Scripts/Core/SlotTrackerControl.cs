@@ -269,6 +269,8 @@ public partial class SlotTrackerControl : MarginContainer
 
     public LogicEngineManager LogicEngine => Model.Logic.Engine;
     public bool EngineRunning => Model.Logic.Running;
+    /// <summary>The slot's own engine failures in the last ten minutes (see SlotLogic.RecentFailures).</summary>
+    public int EngineFailures => Model.Logic.RecentFailures;
     public AP_Atlas.Core.PopTracker.LoadedPack Pack { get; private set; }
     public Archipelago.MultiClient.Net.Models.Hint[] CurrentHints => Model.CurrentHints;
     public IReadOnlyList<AP_Atlas.Core.ChatEntry> ChatHistory => Model.Chat;

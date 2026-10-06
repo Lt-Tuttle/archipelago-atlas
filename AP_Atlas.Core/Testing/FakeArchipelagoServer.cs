@@ -387,6 +387,10 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
     /// <summary>Sends packets to one team's clients only, as a real server sends item lines (text skips NoText clients).</summary>
     public Task BroadcastToTeamAsync(int team, params JObject[] packets) => SendToAsync(client => client?.Team == team, packets);
 
+    /// <summary>Sends packets to one slot's clients only (as a server sends a slot its items).</summary>
+    public Task SendToSlotAsync(string slotName, params JObject[] packets) =>
+        SendToAsync(client => client is { } c && NameOf(c.Team, c.Slot) == slotName, packets);
+
     /// <summary>
     /// Sends packets, as one message, to the open connections <paramref name="to"/> accepts (it's given each one's login,
     /// null when it hasn't logged in). Text goes only to logged-in clients without NoText.
