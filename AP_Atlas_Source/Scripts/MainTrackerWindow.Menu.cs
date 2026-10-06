@@ -31,6 +31,7 @@ public partial class MainTrackerWindow
 
         Add("multiworld.new", "Multiworld", "New Multiworld…", "Ctrl+N", OnAddProfilePressed);
 
+        Add(AP_Atlas.UI.CommandPalette.OwnCommandId, "View", "Command Palette…", "Ctrl+Shift+P", OpenCommandPalette);
         Add("view.chat", "View", "Chat", "", () => ShowTerminalTab(0));
         Add("view.system-log", "View", "System Log", "", () => ShowTerminalTab(1));
         Add("view.debug-log", "View", "Debug Log", "", () => ShowTerminalTab(2));
@@ -93,6 +94,8 @@ public partial class MainTrackerWindow
         menus["Multiworld"].AddSeparator();
         AddMultiworldSettings(menus["Multiworld"]);
 
+        AddCommandItems(menus["View"], AP_Atlas.UI.CommandPalette.OwnCommandId);
+        menus["View"].AddSeparator();
         AddCommandItems(menus["View"], "view.chat", "view.system-log", "view.debug-log");
         menus["View"].AddSeparator();
         AddViewSettings(menus["View"]);
@@ -132,6 +135,21 @@ public partial class MainTrackerWindow
         if (_commands == null || @event is not InputEventKey key) return;
         string? name = AP_Atlas.UI.CommandKeys.Of(key);
         if (name != null && _commands.RunShortcut(name)) GetViewport().SetInputAsHandled();
+    }
+
+    /// <summary>Ctrl+Shift+P: the command palette, one at a time (opened again, it's focused).</summary>
+    private void OpenCommandPalette()
+    {
+        var open = GetChildren().OfType<AP_Atlas.UI.CommandPalette>().FirstOrDefault(p => p.Visible);
+        if (open != null)
+        {
+            open.GrabFocus();
+            return;
+        }
+        var palette = new AP_Atlas.UI.CommandPalette(_commands!, text => Tr(text));
+        AddChild(palette);
+        SetFontSizeRecursive(palette, _appSettings.GlobalFontSize);
+        palette.Open(this);
     }
 
     private void ShowTerminalTab(int tab)

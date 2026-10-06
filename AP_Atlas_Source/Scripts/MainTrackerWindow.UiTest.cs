@@ -89,6 +89,8 @@ public partial class MainTrackerWindow
             EveryToolShowsItsViewAsync);
         await ScenarioAsync("Menu bar and keys: the six menus hold every command with its key shown; Ctrl+1 to 9 switch tools, a rebind in the settings takes over at once, F1 lists the keys as they are, and About names the version",
             MenuBarAndKeysAsync);
+        await ScenarioAsync("Command palette: Ctrl+Shift+P opens it ready to type, it lists every command with its key, a typed word narrows it to the commands whose words start that way, Enter runs the pick and closes it, Escape only closes it",
+            CommandPaletteAsync);
         await ScenarioAsync("Bursts: 40 items and 40 chat lines arriving together reach the slot once each, at most one update of the window in each frame they arrive over (not 80)",
             BurstIsOneUpdateAsync);
         await ScenarioAsync("Long text: a game's names and a hint's entrance of a megabyte, and a chat line of 100,000 characters without a space, hold up no frame for 150 ms, shown or not (names are cut to 500 characters; a long run of text gets breaks)",
@@ -290,8 +292,13 @@ public partial class MainTrackerWindow
         await UiTestWaitAsync(0.3);
         about.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
 
+        _commands.Run(AP_Atlas.UI.CommandPalette.OwnCommandId);
+        var palette = await UiTestWaitForAsync(() => GetChildren().OfType<AP_Atlas.UI.CommandPalette>().FirstOrDefault(p => p.Visible), "the command palette");
+        await UiTestWaitAsync(0.3);
+        palette.Hide();
+
         await UiTestWaitForAsync(() => !IsInstanceValid(doctor) && !IsInstanceValid(engine) && !IsInstanceValid(privacy) && !IsInstanceValid(race)
-            && !IsInstanceValid(shortcuts) && !IsInstanceValid(about) ? this : null, "the closed windows to be freed");
+            && !IsInstanceValid(shortcuts) && !IsInstanceValid(about) && !IsInstanceValid(palette) ? this : null, "the closed windows to be freed");
         return new List<(string What, System.WeakReference Weak)>
         {
             ("a closed Pack Doctor window", new System.WeakReference(doctor)),
@@ -300,6 +307,7 @@ public partial class MainTrackerWindow
             ("a closed race mode dialog", new System.WeakReference(race)),
             ("a closed Keyboard Shortcuts dialog", new System.WeakReference(shortcuts)),
             ("a closed About dialog", new System.WeakReference(about)),
+            ("a closed command palette", new System.WeakReference(palette)),
         };
     }
 
@@ -582,6 +590,48 @@ public partial class MainTrackerWindow
         host.ShowTool(AP_Atlas.UI.Tool.Connections);
     }
 
+    private async Task CommandPaletteAsync()
+    {
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        host.ShowTool(AP_Atlas.UI.Tool.Connections);
+        await PressAsync("Ctrl+Shift+P");
+        var palette = await UiTestWaitForAsync(() => GetChildren().OfType<AP_Atlas.UI.CommandPalette>().FirstOrDefault(p => p.Visible), "the command palette");
+        var input = palette.FindChildren("*", nameof(LineEdit), true, false).OfType<LineEdit>().First();
+        var tree = palette.FindChildren("*", nameof(Tree), true, false).OfType<Tree>().First();
+        UiTestExpect(input.HasFocus(), "the palette's typing box isn't focused");
+        int listed = Rows(tree).Count, expected = _commands!.All.Count - 1;
+        UiTestExpect(listed == expected, $"the palette lists {listed} commands, not every command but itself ({expected})");
+        UiTestExpect(Rows(tree).Any(r => r[0] == "Map Tracker" && r[1] == "Ctrl+3"), "the palette doesn't show a command's key");
+
+        void Type(string text)
+        {
+            input.Text = text;
+            input.EmitSignal(LineEdit.SignalName.TextChanged, text);
+        }
+        Type("map p");
+        await UiTestWaitAsync(0.05);
+        var rows = Rows(tree);
+        UiTestExpect(rows.Count == 1 && rows[0][0] == "Map Packs", $"typing \"map p\" lists {string.Join("; ", rows.Select(r => r[0]))}");
+        Type("zzz");
+        await UiTestWaitAsync(0.05);
+        UiTestExpect(Rows(tree).Count == 0 && palette.FindChildren("*", nameof(Label), true, false).OfType<Label>().Any(l => l.Visible && l.Text == "No command matches."),
+            "a word nothing matches doesn't say so");
+        Type("map p");
+        await UiTestWaitAsync(0.05);
+        // Enter runs the pick and closes the palette, which frees itself.
+        input.EmitSignal(Control.SignalName.GuiInput, AP_Atlas.UI.CommandKeys.ToEvent("Enter")!);
+        await UiTestWaitForAsync(() => ShownContent() == _packManagerPanel ? this : null, "Map Packs to show after Enter in the palette");
+        await UiTestWaitForAsync(() => !IsInstanceValid(palette) ? this : null, "the palette to close and free itself");
+
+        // Escape closes it and runs nothing.
+        await PressAsync("Ctrl+Shift+P");
+        var again = await UiTestWaitForAsync(() => GetChildren().OfType<AP_Atlas.UI.CommandPalette>().FirstOrDefault(p => p.Visible), "the command palette again");
+        again.FindChildren("*", nameof(LineEdit), true, false).OfType<LineEdit>().First().EmitSignal(Control.SignalName.GuiInput, AP_Atlas.UI.CommandKeys.ToEvent("Escape")!);
+        await UiTestWaitForAsync(() => !IsInstanceValid(again) ? this : null, "the palette to close on Escape");
+        UiTestExpect(ShownContent() == _packManagerPanel, "Escape ran a command");
+        host.ShowTool(AP_Atlas.UI.Tool.Connections);
+    }
+
     /// <summary>Presses a key as the user would ("Ctrl+2"), through the window's input.</summary>
     private async Task PressAsync(string key)
     {
@@ -597,7 +647,7 @@ public partial class MainTrackerWindow
     {
         var rows = new List<string[]>();
         for (var item = tree.GetRoot()?.GetFirstChild(); item != null; item = item.GetNext())
-            rows.Add(new[] { item.GetText(0), item.GetText(1), item.GetText(2) });
+            rows.Add(Enumerable.Range(0, 3).Select(column => column < tree.Columns ? item.GetText(column) : "").ToArray());
         return rows;
     }
 
