@@ -24,8 +24,13 @@ namespace AP_Atlas.Core.Connections
     /// already, or one that's switched on. The server tells the whole room when a connection's tags change, so text is
     /// switched on only when needed: not when a slot replaces its own text connection, while Atlas closes, or for a
     /// deleted multiworld.</item>
-    /// <item>A slot that logs in without text gets the room's lines that arrived while it logged in, its own join line
-    /// among them.</item>
+    /// <item>A slot that logs in without text shows the room's lines from its own join line on, as its own connection
+    /// would with text. The server sends lines in order, so the text connection's lines before it were the room's before
+    /// the slot joined. The join line may reach Atlas while the slot logs in, or just after: the room's lines are held
+    /// until it passes. If it doesn't come in time (a server that doesn't announce joins), or the text connection
+    /// changes hands meanwhile, the held lines are shown with the next one. The join line surely comes only through a
+    /// text connection whose text the server had confirmed before the login began: through one switched on meanwhile, it
+    /// may not (the server may have let the slot in first), so the slot shows the lines from while it logged in.</item>
     /// </list>
     /// </summary>
     public sealed partial class SessionManager
@@ -40,8 +45,12 @@ namespace AP_Atlas.Core.Connections
         private readonly Dictionary<(string ProfileId, int Team), ArchipelagoSession> _textSessions = new();
         // Each slot's team, from its last login (a slot's first login can't know it).
         private readonly Dictionary<SlotId, int> _teams = new();
-        // The room's lines that arrived while a slot logged in without text, by multiworld (one login at a time).
-        private readonly Dictionary<string, List<(int Team, LogMessage Message)>> _replays = new();
+        // Connections the server surely sends text: logged in with it, or a line has come through them since.
+        private readonly HashSet<ArchipelagoSession> _textConfirmed = new();
+        // What reached Atlas while a slot logged in without text, by multiworld (one login at a time).
+        private readonly Dictionary<string, Replay> _replays = new();
+        // Slots that logged in without text and wait for their own join line, by connection: their room lines are held meanwhile.
+        private readonly Dictionary<ArchipelagoSession, JoinWait> _joinWaits = new();
         private int _textSwitchOns;
 
         /// <summary>
@@ -64,6 +73,11 @@ namespace AP_Atlas.Core.Connections
             return !_textSessions.Keys.Any(key => key.ProfileId == slot.ProfileId);
         }
 
+        /// <summary>Under _lock: a slot of this multiworld starts logging in without text.</summary>
+        private void StartReplay(string profileId) =>
+            _replays[profileId] = new Replay(_textSessions.Where(entry => entry.Key.ProfileId == profileId && _textConfirmed.Contains(entry.Value))
+                .Select(entry => entry.Value).ToHashSet());
+
         /// <summary>
         /// Under _lock: a slot finished logging in, replacing <paramref name="previous"/> (its earlier connections, already
         /// forgotten). Sets its part in the room's text, and returns the connections to switch text on for (outside the lock).
@@ -72,7 +86,11 @@ namespace AP_Atlas.Core.Connections
         {
             var switchOn = new List<ConnectedSlot>();
             _teams[slot.Slot] = slot.Team;
-            if (text) _textEnabled.Add(session);
+            if (text)
+            {
+                _textEnabled.Add(session);
+                _textConfirmed.Add(session);
+            }
             // An earlier connection of the slot hands its part over (to this one, when it receives text).
             foreach (var old in previous)
                 if (EndText(old) is { } next) switchOn.Add(next);
@@ -83,10 +101,21 @@ namespace AP_Atlas.Core.Connections
                 _textSessions[team] = session;
                 if (_textEnabled.Add(session)) switchOn.Add(slot);
             }
-            // Logged in without text: the room's lines that arrived meanwhile come first. Lines routed from here on reach
-            // it directly, after these (they're added to its inbox under the same lock that routes lines).
+            // Logged in without text: the room's lines start at the slot's own join line. If it reached Atlas while the
+            // slot logged in, the lines from it on come first; lines routed from here on reach the slot after these (they're
+            // added under the same lock that routes lines). If not, the room's lines are held until it passes (Route), when
+            // it surely comes: through a text connection the server had confirmed before the login began.
             if (!text && _replays.TryGetValue(slot.Slot.ProfileId, out var replay))
-                slot.Preload(replay.Where(line => line.Team == slot.Team).Select(line => line.Message).ToList());
+            {
+                var lines = replay.Lines.Where(line => line.Team == slot.Team).Select(line => line.Message).ToList();
+                int joined = lines.FindLastIndex(line => IsOwnJoin(slot, line));
+                var current = _textSessions[team];
+                if (joined >= 0) slot.Preload(lines.GetRange(joined, lines.Count - joined));
+                else if (current != session && replay.Confirmed.Contains(current))
+                    _joinWaits[session] = new JoinWait(lines, Environment.TickCount64 + (long)_options.JoinLineWait.TotalMilliseconds);
+                // Atlas can't tell which of these came before the slot joined: it shows rather than drops.
+                else slot.Preload(lines);
+            }
             return switchOn;
         }
 
@@ -98,6 +127,8 @@ namespace AP_Atlas.Core.Connections
         private ConnectedSlot? EndText(ArchipelagoSession session)
         {
             _textEnabled.Remove(session);
+            _textConfirmed.Remove(session);
+            _joinWaits.Remove(session);
             (string ProfileId, int Team)? part = null;
             foreach (var (team, text) in _textSessions)
             {
@@ -107,6 +138,9 @@ namespace AP_Atlas.Core.Connections
             }
             if (part is not { } key) return null;
             _textSessions.Remove(key);
+            // A slot waiting for its join line from this connection won't get it from another: what it held shows with the next line.
+            foreach (var (waiting, wait) in _joinWaits)
+                if (_loggedIn.TryGetValue(waiting, out var owner) && owner.Slot.ProfileId == key.ProfileId && owner.Team == key.Team) wait.Until = 0;
             if (_closing || _forgottenProfiles.Contains(key.ProfileId)) return null;
             var candidates = _loggedIn.Where(entry => entry.Value.Slot.ProfileId == key.ProfileId && entry.Value.Team == key.Team && IsOpen(entry.Key)).ToList();
             if (candidates.Count == 0) return null;
@@ -140,22 +174,83 @@ namespace AP_Atlas.Core.Connections
         /// </summary>
         private void OnText(ArchipelagoSession session, SlotInbox own, LogMessage message)
         {
-            List<ConnectedSlot>? to = null;
+            List<(ConnectedSlot Slot, LogMessage Line)>? to = null;
             lock (_lock)
             {
                 if (_loggedIn.TryGetValue(session, out var from))
                 {
-                    if (ForItsSlotOnly(message)) to = new List<ConnectedSlot>(1) { from };
+                    // The server sends a connection without text no line at all.
+                    _textConfirmed.Add(session);
+                    to = new List<(ConnectedSlot, LogMessage)>();
+                    if (ForItsSlotOnly(message)) to.Add((from, message));
                     else if (_textSessions.TryGetValue((from.Slot.ProfileId, from.Team), out var text) && text == session)
                     {
-                        to = _loggedIn.Values.Where(slot => slot.Team == from.Team && slot.Slot.ProfileId == from.Slot.ProfileId).ToList();
-                        if (_replays.TryGetValue(from.Slot.ProfileId, out var replay)) replay.Add((from.Team, message));
+                        foreach (var slot in _loggedIn.Values)
+                            if (slot.Team == from.Team && slot.Slot.ProfileId == from.Slot.ProfileId) Route(slot, message, to);
+                        if (_replays.TryGetValue(from.Slot.ProfileId, out var replay)) replay.Lines.Add((from.Team, message));
                     }
                     else return;
                 }
             }
             if (to == null) own.Deliver(message);
-            else foreach (var slot in to) slot.Deliver(message);
+            else foreach (var (slot, line) in to) slot.Deliver(line);
+        }
+
+        /// <summary>
+        /// Under _lock: a room line for one slot of the team. A slot waiting for its own join line (StartText) gets no line
+        /// before it: those are held, and dropped once it arrives. If it hasn't come in time, or the slot's text connection
+        /// changed hands meanwhile, the held lines go first, then this one: when Atlas can't tell, it shows rather than drops.
+        /// </summary>
+        private void Route(ConnectedSlot slot, LogMessage message, List<(ConnectedSlot Slot, LogMessage Line)> to)
+        {
+            if (_joinWaits.TryGetValue(slot.Session, out var wait))
+            {
+                if (IsOwnJoin(slot, message)) _joinWaits.Remove(slot.Session);
+                else if (Environment.TickCount64 < wait.Until)
+                {
+                    wait.Held.Add(message);
+                    return;
+                }
+                else
+                {
+                    _joinWaits.Remove(slot.Session);
+                    foreach (var held in wait.Held) to.Add((slot, held));
+                }
+            }
+            to.Add((slot, message));
+        }
+
+        /// <summary>Whether a line is the slot's own join line: its slot and team, logged in as Atlas logs in without text.</summary>
+        private static bool IsOwnJoin(ConnectedSlot slot, LogMessage message) =>
+            message is JoinLogMessage join && join.Player?.Slot == slot.Login.Slot && join.Player.Team == slot.Team &&
+            join.Tags != null && join.Tags.ToHashSet().SetEquals(QuietTags);
+
+        /// <summary>
+        /// A slot logging in without text: the multiworld's text connections whose text the server had confirmed when it
+        /// began (its join line surely comes through them), and the room's lines that reach Atlas meanwhile, with their team.
+        /// </summary>
+        private sealed class Replay
+        {
+            public Replay(HashSet<ArchipelagoSession> confirmed) => Confirmed = confirmed;
+
+            public HashSet<ArchipelagoSession> Confirmed { get; }
+
+            public List<(int Team, LogMessage Message)> Lines { get; } = new();
+        }
+
+        /// <summary>A slot waiting for its own join line: the room's lines held meanwhile, and until when it waits.</summary>
+        private sealed class JoinWait
+        {
+            public JoinWait(List<LogMessage> held, long until)
+            {
+                Held = held;
+                Until = until;
+            }
+
+            public List<LogMessage> Held { get; }
+
+            /// <summary>Environment.TickCount64 when the wait ends: 0 once the slot's text connection changed hands.</summary>
+            public long Until { get; set; }
         }
 
         /// <summary>

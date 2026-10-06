@@ -248,6 +248,177 @@ public sealed partial class SessionManagerTests
         await manager.CloseAllAsync(TimeSpan.FromSeconds(5));
     }
 
+    private const string BobJoined = "Bob (Team #1) tracking Test Game has joined.";
+
+    [Fact]
+    public async Task A_slot_logging_in_without_text_gets_no_line_from_before_it_joined()
+    {
+        await using var server = Server("Alice", "Bob");
+        var manager = Manager();
+        var alice = new Lines((await ConnectAll(manager, server, "p1", "Alice"))[0]);
+        // The room talks while the server holds Bob's login: the line reaches Atlas (through Alice's connection) while
+        // Bob logs in, before he joined. His own connection would never have had it.
+        server.HoldLogins();
+        var connecting = Connect(manager, Login(server, "Bob"));
+        await WaitFor(() => server.Count("Connect") == 2, "Bob's login to reach the server");
+        await server.BroadcastAsync(server.Chat("before Bob joined"));
+        await WaitFor(() => alice.Count("before Bob joined") == 1, "the line to reach Atlas");
+        server.ReleaseLogins();
+        var bob = new Lines((await connecting).Slot!);
+
+        await WaitFor(() => alice.Count(BobJoined) == 1, "Bob's join line to reach Atlas");
+        await server.BroadcastAsync(server.Chat("after Bob joined"));
+        await WaitFor(() => bob.Count("after Bob joined") == 1, "the next line to reach Bob");
+        await Settle();
+        Assert.Equal(new[] { BobJoined, "Alice: after Bob joined" }, bob.All);
+        await manager.CloseAllAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task A_slot_logging_in_without_text_starts_at_its_own_join_line_even_when_that_comes_late()
+    {
+        await using var server = Server("Alice", "Bob", "Carol");
+        var manager = Manager();
+        var alice = new Lines((await ConnectAll(manager, server, "p1", "Alice"))[0]);
+        // Bob's login is answered, but the room hears he joined only later: lines before his join line reach Atlas after
+        // he logged in. They were still the room's before he joined, and so are other clients' join lines: another
+        // tracker joining Carol's slot as Atlas joins, and Bob's own game joining his slot.
+        server.HoldJoins();
+        var bob = new Lines((await Connect(manager, Login(server, "Bob"))).Slot!);
+        await server.BroadcastAsync(server.Chat("before Bob's join line"));
+        await server.BroadcastAsync(server.Joined("Carol", "Tracker", "NoText"));
+        await server.BroadcastAsync(server.Joined("Bob", "AP"));
+        await WaitFor(() => alice.Count("Bob (Team #1) playing Test Game has joined.") == 1, "the lines to reach Atlas");
+
+        server.ReleaseJoins();
+        await WaitFor(() => alice.Count(BobJoined) == 1, "Bob's join line to reach Atlas");
+        await server.BroadcastAsync(server.Chat("after Bob's join line"));
+        await WaitFor(() => bob.Count("after Bob's join line") == 1, "the next line to reach Bob");
+        await Settle();
+        Assert.Equal(new[] { BobJoined, "Alice: after Bob's join line" }, bob.All);
+        await manager.CloseAllAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task A_connection_that_logged_in_with_text_carries_the_next_logins_join_line_at_once()
+    {
+        await using var server = Server("Alice", "Bob");
+        var manager = Manager();
+        // The room hears of joins only later, so no line has come through Alice's connection when Bob logs in. It
+        // logged in with text, though: the server surely sends it Bob's join line.
+        server.HoldJoins();
+        var alice = new Lines((await ConnectAll(manager, server, "p1", "Alice"))[0]);
+        var bob = new Lines((await Connect(manager, Login(server, "Bob"))).Slot!);
+        await server.BroadcastAsync(server.Chat("before Bob's join line"));
+        await WaitFor(() => alice.Count("before Bob's join line") == 1, "the line to reach Atlas");
+        server.ReleaseJoins();
+        await WaitFor(() => alice.Count(BobJoined) == 1, "Bob's join line to reach Atlas");
+        await server.BroadcastAsync(server.Chat("after Bob's join line"));
+
+        await WaitFor(() => bob.Count("after Bob's join line") == 1, "the next line to reach Bob");
+        Assert.Equal(0, bob.Count("before Bob's join line"));
+        Assert.Equal(1, bob.Count(BobJoined));
+        await manager.CloseAllAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task A_text_connection_switched_on_earlier_carries_a_later_logins_join_line()
+    {
+        await using var server = Server("Alice", "Bob", "Carol");
+        var manager = Manager();
+        var slots = await ConnectAll(manager, server, "p1", "Alice", "Bob");
+        var bob = new Lines(slots[1]);
+        // Alice leaves: Bob takes over the room's text, and the room's lines come through his connection.
+        await Disconnect(manager, slots[0].Slot);
+        await WaitFor(() => bob.Count("Bob (Team #1) has changed tags") == 1, "Bob's connection to receive the room's text");
+
+        server.HoldJoins();
+        var carol = new Lines((await Connect(manager, Login(server, "Carol"))).Slot!);
+        await server.BroadcastAsync(server.Chat("before Carol's join line"));
+        await WaitFor(() => bob.Count("before Carol's join line") == 1, "the line to reach Atlas");
+        server.ReleaseJoins();
+        await WaitFor(() => bob.Count("Carol (Team #1) tracking Test Game has joined.") == 1, "Carol's join line to reach Atlas");
+        await server.BroadcastAsync(server.Chat("after Carol's join line"));
+
+        await WaitFor(() => carol.Count("after Carol's join line") == 1, "the next line to reach Carol");
+        Assert.Equal(new[] { "Carol (Team #1) tracking Test Game has joined.", "Alice: after Carol's join line" }, carol.All);
+        await manager.CloseAllAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task Without_its_join_line_a_slot_shows_the_lines_it_held_once_its_wait_is_over()
+    {
+        await using var server = Server("Alice", "Bob");
+        var manager = Manager(new SessionManagerOptions { LoginTimeout = TimeSpan.FromSeconds(2), JoinLineWait = TimeSpan.FromMilliseconds(300) });
+        var alice = new Lines((await ConnectAll(manager, server, "p1", "Alice"))[0]);
+        // As with a server that doesn't announce joins: Bob's join line never comes.
+        server.HoldJoins();
+        var bob = new Lines((await Connect(manager, Login(server, "Bob"))).Slot!);
+        await server.BroadcastAsync(server.Chat("first"));
+        await WaitFor(() => alice.Count("first") == 1, "the first line to reach Atlas");
+        await Task.Delay(500, Ct);
+        Assert.Equal(0, bob.Count("first"));
+
+        await server.BroadcastAsync(server.Chat("second"));
+
+        await WaitFor(() => bob.Count("second") == 1, "the next line to reach Bob");
+        Assert.Equal(new[] { "Alice: first", "Alice: second" }, bob.All);
+        await manager.CloseAllAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task A_slot_waiting_for_its_join_line_gets_the_rooms_lines_when_its_text_connection_ends()
+    {
+        await using var server = Server("Alice", "Bob");
+        // A long wait: only the text connection's change can end it here.
+        var manager = Manager(new SessionManagerOptions { LoginTimeout = TimeSpan.FromSeconds(2), JoinLineWait = TimeSpan.FromMinutes(5) });
+        var slots = await ConnectAll(manager, server, "p1", "Alice");
+        var alice = new Lines(slots[0]);
+        server.HoldJoins();
+        var bob = new Lines((await Connect(manager, Login(server, "Bob"))).Slot!);
+        await server.BroadcastAsync(server.Chat("held for Bob"));
+        await WaitFor(() => alice.Count("held for Bob") == 1, "the line to reach Atlas");
+
+        // Alice leaves: Bob takes over the room's text, and his join line won't come through his own connection.
+        await Disconnect(manager, slots[0].Slot);
+        await WaitFor(() => server.TextClients == 1 && server.TagChanges == 1, "Bob to take over the room's text");
+        await server.BroadcastAsync(server.Chat("after Alice left"));
+
+        await WaitFor(() => bob.Count("after Alice left") == 1, "the room's lines to reach Bob");
+        // What he held is shown too, in order: when Atlas can't tell, it shows rather than drops.
+        var lines = bob.All;
+        Assert.True(lines.IndexOf("Alice: held for Bob") is >= 0 and var held && held < lines.IndexOf("Alice: after Alice left"), string.Join(" | ", lines));
+        await manager.CloseAllAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task A_slot_whose_text_connection_was_only_just_switched_on_gets_its_teams_lines()
+    {
+        // Every team has the same slots, as in a real room.
+        await using var server = Server("Alice", "Bob", "Xena", "Yuri");
+        server.Teams["Xena"] = 1;
+        server.Teams["Yuri"] = 1;
+        var manager = Manager();
+        var alice = new Lines((await ConnectAll(manager, server, "p1", "Alice"))[0]);
+        // Xena's team has no text connection, so hers is switched on once she's logged in. The server holds that switch
+        // until it has let Yuri in, so his join line never comes through her connection: he can't wait for it. Her
+        // switch then comes through her connection while his login is answered.
+        server.HoldTagChanges();
+        await ConnectAll(manager, server, "p1", "Xena");
+        server.JoinLead = TimeSpan.FromSeconds(1);
+        var connecting = Connect(manager, Login(server, "Yuri"));
+        await WaitFor(() => alice.Count("Yuri (Team #2) tracking Test Game has joined.") == 1, "the room to hear Yuri joined");
+        server.ReleaseTagChanges();
+        var yuri = new Lines((await connecting).Slot!);
+
+        await server.BroadcastToTeamAsync(1, FakeArchipelagoServer.ItemSend(1, 2, 1000, 2000));
+
+        await WaitFor(() => yuri.Count("Xena sent Sword to Yuri") == 1, "his team's lines to reach Yuri");
+        // Atlas can't tell whether the lines from while he logged in came before he joined: it shows them.
+        Assert.Equal(1, yuri.Count("Xena (Team #2) has changed tags"));
+        await manager.CloseAllAsync(TimeSpan.FromSeconds(5));
+    }
+
     [Fact]
     public async Task A_slot_logging_in_without_text_gets_the_rooms_lines_from_while_it_logged_in()
     {

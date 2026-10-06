@@ -45,6 +45,8 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private readonly Task _accepting;
     private int _accepted, _closesReceived, _ended;
+    // Set while logins, the room's join lines or tag changes are held (HoldLogins, HoldJoins, HoldTagChanges).
+    private TaskCompletionSource? _loginHold, _joinHold, _tagHold;
 
     public FakeArchipelagoServer()
     {
@@ -69,7 +71,8 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
 
     /// <summary>
     /// Slots on a team other than the first (teams count from 0), by name; every other slot is on team 0. Each team
-    /// numbers its own slots from 1, in the order of <see cref="Slots"/>.
+    /// numbers its own slots from 1, in the order of <see cref="Slots"/>. Give every team as many slots as the others,
+    /// as in a real room: the connection library looks up every player's slot in its own team's slot info.
     /// </summary>
     public Dictionary<string, int> Teams { get; } = new();
 
@@ -85,6 +88,37 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
 
     /// <summary>How long to wait before answering a login.</summary>
     public TimeSpan LoginDelay { get; set; }
+
+    // The holds below make an order a test needs certain, where a delay only makes it likely: the room's lines and a
+    // client's own packets travel on different connections, so a client may see them in either order.
+
+    /// <summary>Holds logins until <see cref="ReleaseLogins"/>: one that arrives meanwhile is answered only then.</summary>
+    public void HoldLogins() => Hold(ref _loginHold);
+
+    /// <summary>Answers the logins <see cref="HoldLogins"/> held, and later ones at once.</summary>
+    public void ReleaseLogins() => Release(ref _loginHold);
+
+    /// <summary>
+    /// Holds the room's join lines until <see cref="ReleaseJoins"/>: a login is answered at once, but the room hears the
+    /// client joined only then (or never, as from a server that doesn't announce joins).
+    /// </summary>
+    public void HoldJoins() => Hold(ref _joinHold);
+
+    /// <summary>Tells the room about the joins <see cref="HoldJoins"/> held, and about later ones at once.</summary>
+    public void ReleaseJoins() => Release(ref _joinHold);
+
+    /// <summary>Holds clients' tag changes (ConnectUpdate) until <see cref="ReleaseTagChanges"/>: a client's packets after one wait too.</summary>
+    public void HoldTagChanges() => Hold(ref _tagHold);
+
+    /// <summary>Makes the tag changes <see cref="HoldTagChanges"/> held, and later ones at once.</summary>
+    public void ReleaseTagChanges() => Release(ref _tagHold);
+
+    private static void Hold(ref TaskCompletionSource? hold) => Volatile.Write(ref hold, new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
+
+    private static void Release(ref TaskCompletionSource? hold) => Interlocked.Exchange(ref hold, null)?.TrySetResult();
+
+    /// <summary>Waits while <paramref name="hold"/> is held (or until the server stops).</summary>
+    private Task ReleasedAsync(TaskCompletionSource? hold) => hold?.Task.WaitAsync(_stop.Token) ?? Task.CompletedTask;
 
     /// <summary>How long to wait before answering a new connection's websocket handshake (a slow server).</summary>
     public TimeSpan HandshakeDelay { get; set; }
@@ -249,6 +283,7 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
                         string? cmd = (string?)packet["cmd"];
                         if (cmd == "ConnectUpdate" && packet["tags"] is JArray newTags)
                         {
+                            await ReleasedAsync(Volatile.Read(ref _tagHold));
                             await ChangeTagsAsync(socket, newTags.ToObject<string[]>() ?? Array.Empty<string>());
                             continue;
                         }
@@ -282,7 +317,10 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
                         }
                         await SendAsync(socket, sending, reply!);
                         lock (_clients) _clients[socket] = (TeamOf(name), SlotNumber(name), tags);
-                        if (JoinLead == TimeSpan.Zero) await BroadcastAsync(Joined(name, tags));
+                        if (JoinLead > TimeSpan.Zero) continue;
+                        // Held: told later, without holding up this connection's packets.
+                        if (Volatile.Read(ref _joinHold) is { } hold) lock (_serving) _serving.Add(JoinWhenReleasedAsync(hold, Joined(name, tags)));
+                        else await BroadcastAsync(Joined(name, tags));
                     }
                 }
             }
@@ -398,15 +436,30 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
 
     private string? NameOf(int team, int slot) => Slots.Where(name => TeamOf(name) == team).ElementAtOrDefault(slot - 1);
 
-    private JObject Joined(string name, string[] tags) => new()
+    private async Task JoinWhenReleasedAsync(TaskCompletionSource hold, JObject joined)
     {
-        ["cmd"] = "PrintJSON",
-        ["type"] = "Join",
-        ["team"] = TeamOf(name),
-        ["slot"] = SlotNumber(name),
-        ["tags"] = new JArray(tags),
-        ["data"] = new JArray(new JObject { ["text"] = $"{name} (Team #{TeamOf(name) + 1}) tracking {SlotGame} has joined." })
-    };
+        try { await ReleasedAsync(hold); }
+        catch (OperationCanceledException) { return; } // the server stopped first
+        await BroadcastAsync(joined);
+    }
+
+    /// <summary>
+    /// The room's line saying a client joined a slot with these tags, as a real server words it ("tracking" for a tracker,
+    /// "playing" for a game). The server sends one for each login; a test can send one for a client Atlas doesn't run.
+    /// </summary>
+    public JObject Joined(string name, params string[] tags)
+    {
+        string verb = tags.Contains("Tracker") ? "tracking" : tags.Contains("TextOnly") ? "viewing" : tags.Contains("HintGame") ? "hinting" : "playing";
+        return new JObject
+        {
+            ["cmd"] = "PrintJSON",
+            ["type"] = "Join",
+            ["team"] = TeamOf(name),
+            ["slot"] = SlotNumber(name),
+            ["tags"] = new JArray(tags),
+            ["data"] = new JArray(new JObject { ["text"] = $"{name} (Team #{TeamOf(name) + 1}) {verb} {SlotGame} has joined." })
+        };
+    }
 
     /// <summary>A list of tags as a real server writes it in its messages (Python's list).</summary>
     private static string PythonList(IEnumerable<string> tags) => "[" + string.Join(", ", tags.Select(tag => $"'{tag}'")) + "]";
@@ -685,6 +738,7 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
                 string name = (string?)packet["name"] ?? "";
                 Note("Connect " + name);
                 if (LoginDelay > TimeSpan.Zero) await Task.Delay(LoginDelay, _stop.Token);
+                await ReleasedAsync(Volatile.Read(ref _loginHold));
                 Note("Connected " + name);
                 if (!Slots.Contains(name)) return new JArray(new JObject { ["cmd"] = "ConnectionRefused", ["errors"] = new JArray("InvalidSlot") });
                 // As a real server does: the login and the slot's items so far (the room hears it joined just after).

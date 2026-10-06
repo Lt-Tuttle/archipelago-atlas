@@ -113,6 +113,13 @@ namespace AP_Atlas.Core.Connections
         /// back in the same second.
         /// </summary>
         public double Jitter { get; init; } = 0.2;
+
+        /// <summary>
+        /// How long a slot that logged in without text waits for its own join line before showing the room's lines it
+        /// held meanwhile (see SessionManager.Text.cs). The line normally comes moments after the login; a server that
+        /// doesn't announce joins never sends it.
+        /// </summary>
+        public TimeSpan JoinLineWait { get; init; } = TimeSpan.FromSeconds(10);
     }
 
     /// <summary>
@@ -309,7 +316,7 @@ namespace AP_Atlas.Core.Connections
                     if (_forgottenProfiles.Contains(login.Slot.ProfileId)) return new ConnectResult(ConnectOutcome.Cancelled, "Its multiworld was deleted.");
                     text = WantsText(login.Slot);
                     // A slot logging in without text gets the room's lines that arrive meanwhile (its own join among them).
-                    if (!text) _replays[login.Slot.ProfileId] = new List<(int, LogMessage)>();
+                    if (!text) StartReplay(login.Slot.ProfileId);
                 }
                 try
                 {

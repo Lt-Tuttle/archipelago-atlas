@@ -73,7 +73,7 @@ Development toward the first public beta, 0.1.0.
     - It writes out only what someone receives, since it runs inside the program it measures.
   - Tests for the room's text:
     - The UI test's room text scenario: three slots with one text connection, each line once in every slot and named from that slot's view, a command and its answer, hints with and without text, and the text slot leaving.
-    - Unit tests against the fake server cover the same, plus teams and a slot logging in while the room talks.
+    - Unit tests against the fake server cover the same, plus teams, and a slot logging in while the room talks: its join line arriving before it's logged in, after, or never, and its text connection changing hands meanwhile.
   - A guard rail: chat, commands and tag changes go only through `SessionManager`.
   - The UI test's "Idle" scenario: a connected slot's map camera doesn't run every frame (zooming, dragging and resizing still move the map), and its card isn't re-styled while nothing changes.
   - A test map pack (`FakeMapPack`, written as a real pack zip) and tests for map pack memory:
@@ -108,7 +108,7 @@ Development toward the first public beta, 0.1.0.
   - Connecting a slot pauses the window about half as long (100 to 150 ms in that room, from 250 to 400 ms).
   - Only one connection per multiworld receives the room's text (next item).
 - **One connection per multiworld receives the room's text.** An Archipelago server sends every connection every line of the room (each item found, each chat line). With 20 slots of one multiworld connected, Atlas received, and decoded, each line 20 times. Now one slot's connection receives the room's lines; the others connect with Archipelago's NoText option, and the server sends them none. In the test room, the longest pause during bursts went from about 130 ms to about 100 ms, and Atlas's memory use halved.
-  - Every slot's text client still shows every line once, in order, its own join included.
+  - Every slot's text client still shows every line once, in order, starting from its own join line, as it would on a connection of its own. Lines from just before a slot joined, which can reach Atlas through another slot's connection while it logs in, are left out.
   - When you send a command from a slot (like `!hint`), that slot's connection is switched to receive text first, so the answer shows in its text client. The server tells the room whenever a connection's tags change, so Atlas does this only when needed.
   - A slot that doesn't receive text shows its new hints from its hint list, worded and coloured like the server's hint lines.
   - When the text connection drops or is disconnected, another of the multiworld's connections takes over, preferring one that receives text already.

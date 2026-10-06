@@ -106,7 +106,10 @@ Atlas reads or writes outside this folder only with the user's permission. Nothi
     - The text connection's room lines (items found, chat, joins, goals) go to every slot of its team, in order. A line meant for one connection (a command's answer, a hint's line, the tutorial) stays with that connection's slot.
     - A command switches its slot's connection to text first, so the answer arrives. A slot without text shows its new hints from its hint list (`SlotModel`).
     - When the text connection ends, another of the team's connections takes over, preferring one that receives text already: the server tells the whole room about every tag change.
-    - A slot logging in without text gets the room's lines from while it logged in.
+    - A slot logging in without text shows the room's lines from its own join line on, as its own connection would with text: the server sends lines in order, so the text connection's lines before that one were the room's before the slot joined.
+      - The join line may reach Atlas while the slot logs in (the lines from it on are replayed) or just after (the room's lines are held until it passes).
+      - It waits only through a text connection the server had confirmed before its login began: one that logged in with text, or one a line has come through since. Through a connection switched on meanwhile, the join line may never come (the server may have let the slot in first), so the slot shows the lines from while it logged in.
+      - If the join line doesn't come within 10 seconds (a server that doesn't announce joins), or the text connection changes hands meanwhile, the held lines are shown with the next one: when Atlas can't tell, it shows rather than drops.
     - A line may reach a slot through another slot's connection, so its "active player" flags are that connection's. Who "you" are is decided by slot and team (`SlotModel.IsThisSlot`).
 - **Web sites** (Cheese Tracker, spheretracker.de, GitHub, PyPI, python.org): only through `PoliteHttp`:
   - One request at a time per site, at least a second apart.
