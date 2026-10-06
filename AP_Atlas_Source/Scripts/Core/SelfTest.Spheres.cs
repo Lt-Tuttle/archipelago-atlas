@@ -498,7 +498,7 @@ namespace AP_Atlas.Core
             public void Dispose()
             {
                 _stop.Cancel();
-                try { _listener.Stop(); } catch { }
+                try { _listener.Stop(); } catch { } // already stopped
             }
         }
     }

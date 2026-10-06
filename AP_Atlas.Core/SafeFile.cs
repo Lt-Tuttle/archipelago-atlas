@@ -189,8 +189,8 @@ namespace AP_Atlas.Core
 
         private static void Report(string path, string what)
         {
-            try { Logger.LogWarning($"{Path.GetFileName(path)} {what}."); } catch { }
-            try { Recovered?.Invoke(path, what); } catch { }
+            try { Logger.LogWarning($"{Path.GetFileName(path)} {what}."); } catch { } // logging failed: the recovery itself stands
+            try { Recovered?.Invoke(path, what); } catch { } // a listener's failure mustn't undo the recovery
         }
 
         private static void Retry(Action action)

@@ -229,7 +229,7 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
             client.Client.LingerState = new LingerOption(true, 0); // reset, not a graceful close
             client.Close();
         }
-        catch (ObjectDisposedException) { }
+        catch (ObjectDisposedException) { } // the test ended it already
     }
 
     private async Task AcceptAsync()

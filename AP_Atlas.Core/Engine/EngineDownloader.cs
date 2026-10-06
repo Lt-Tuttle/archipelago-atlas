@@ -49,7 +49,7 @@ namespace AP_Atlas.Core.EngineSetup
 
         internal static void TryDelete(string path)
         {
-            try { if (File.Exists(path)) File.Delete(path); } catch { }
+            try { if (File.Exists(path)) File.Delete(path); } catch { } // best effort: a file held now (an antivirus scan, say) is replaced by the next download
         }
     }
 }

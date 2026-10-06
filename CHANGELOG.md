@@ -42,6 +42,12 @@ Development toward the first public beta, 0.1.0.
   - `CREDITS.md` and `THIRD_PARTY_NOTICES.md` credit every component, service and inspiration, with license texts.
   - `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` and `docs/ARCHITECTURE.md`.
   - Guard rails (`Tools/check_guards.ps1`) run in CI.
+  - Stricter checks on every change:
+    - Any build warning is an error.
+    - The guard rails keep each protection in its one place: calling, compiling and making functions for map pack scripts, and closing server connections.
+    - They also allow no forced memory collections, threads of its own, unexplained silent failures, or looking up your folders outside the install search you agree to. Whole-file saves are allowed only where SafeFile isn't needed.
+    - The libraries whose insides Atlas relies on are pinned, and the nullable-check count can only go down.
+    - A pre-push hook runs the quick checks before anything reaches CI.
   - Microsoft's async analyzers check every build. An unobserved task, `async void`, a blocking wait, or `ContinueWith` without a scheduler fails it.
   - Code that doesn't need Godot lives in its own library, `AP_Atlas.Core`, with xUnit tests that run with `dotnet test` (and in CI). The version is set once, in `Directory.Build.props`.
   - Nullable reference checks for all new code. Older files are annotated as they're reworked, and the guard rails keep their number from growing.

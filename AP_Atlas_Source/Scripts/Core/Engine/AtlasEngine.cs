@@ -1455,7 +1455,7 @@ namespace AP_Atlas.Core.EngineSetup
             }
             catch (OperationCanceledException)
             {
-                try { process.Kill(true); } catch { }
+                try { process.Kill(true); } catch { } // it exited meanwhile
                 if (ct.IsCancellationRequested) throw;
                 throw new TimeoutException($"{Path.GetFileName(info.FileName)} took longer than {timeout.TotalMinutes:0} minutes and was stopped.");
             }

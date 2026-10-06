@@ -59,7 +59,11 @@ namespace AP_Atlas.Core
                 // Keep the ten most recent archived logs.
                 var old = new DirectoryInfo(logDir).GetFiles("atlas_log_*.txt");
                 Array.Sort(old, (a, b) => b.LastWriteTimeUtc.CompareTo(a.LastWriteTimeUtc));
-                for (int i = 10; i < old.Length; i++) { try { old[i].Delete(); } catch { } }
+                for (int i = 10; i < old.Length; i++)
+                {
+                    try { old[i].Delete(); }
+                    catch { } // one that can't be deleted now goes the next time the log is archived
+                }
             }
             catch { } // housekeeping only: logging carries on in the same file
         }

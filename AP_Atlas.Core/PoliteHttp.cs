@@ -231,7 +231,7 @@ namespace AP_Atlas.Core
 
         internal static void TryDelete(string path)
         {
-            try { if (File.Exists(path)) File.Delete(path); } catch { }
+            try { if (File.Exists(path)) File.Delete(path); } catch { } // best effort: a leftover partial download is replaced by the next one
         }
 
         private static async Task<WebResponse> SendCoreAsync(string site, string siteName, HttpMethod method, string path, HttpContent content,
@@ -312,8 +312,8 @@ namespace AP_Atlas.Core
                     // A stalled answer is cut off at the time limit (a blocked read only ends when its stream closes).
                     using var stall = limit.Token.Register(() =>
                     {
-                        try { stream?.Dispose(); } catch { }
-                        try { response.Dispose(); } catch { }
+                        try { stream?.Dispose(); } catch { } // cutting off a stalled read: it may be closed already
+                        try { response.Dispose(); } catch { } // likewise
                     });
                     try
                     {

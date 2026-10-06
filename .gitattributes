@@ -1,6 +1,8 @@
 # Text files are stored with LF and checked out with CRLF on every platform
 # (matches .editorconfig, which uses CRLF; .cs files must be CRLF).
 * text=auto eol=crlf
+# Git hooks run in Git's sh, which can't read a CRLF first line.
+.githooks/* text eol=lf
 
 # Binary files: never convert or diff as text.
 *.png      binary

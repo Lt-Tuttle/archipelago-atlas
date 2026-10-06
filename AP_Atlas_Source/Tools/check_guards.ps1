@@ -25,7 +25,22 @@
       - Sending chat or commands, or changing a connection's tags: only SessionManager, which keeps one connection per
         multiworld team receiving the room's text, and switches a slot's text on before its command (so the answer arrives).
       - Running Lua (MoonSharp): only PackScriptHost, where each piece of a pack's scripts' work runs under limits (work
-        that runs away is stopped, not left to freeze or crash Atlas).
+        that runs away is stopped, not left to freeze or crash Atlas). Inside it, one place calls Lua (CallLua), one
+        compiles it, and three helpers make the functions scripts call (Callback, Checked, AsLuaErrors): anything else
+        would bypass the limits or the way failures are handled.
+      - Closing a server connection: only SessionManager's DisconnectAsync (a connection still opening is closed as it
+        opens), and giving back a connection's thread (AtlasSessions.Finished) only in SessionManager.
+      - Forcing a garbage collection, which pauses all of Atlas: only in the self-test.
+      - Starting a thread of its own: nowhere (Task.Run and async code share the pool Atlas sizes for its connections).
+      - Looking up the user's own folders (Documents, AppData, Program Files, the temp folder): only AtlasEngine's install
+        search, which runs only after the user agrees. Atlas keeps everything in its own folder.
+      - Saving a whole file without SafeFile: only where it's checked to be safe (the log, a crash report, an export the
+        user chose, files the engine setup regenerates, a store that writes a temporary file and moves it, the tests).
+        Atlas's own data goes through SafeFile, which keeps a backup and survives a crash mid-save.
+      - An empty catch that doesn't say why on the same line: nowhere. A failure is logged, handled, or explained.
+    Where a rule names a number, the file may do it only that many times: one helper does it, everything else uses it.
+    Libraries whose internals Atlas relies on are pinned (MoonSharp, Archipelago.MultiClient.Net): update one only with
+    the checks CONTRIBUTING lists for it.
     It also checks that every script in the Godot project has its .uid file (Godot makes one per script; it's committed
     with the script, or every fresh copy of the project gets new ones). CI runs this before Godot's import, so it checks
     what was committed.
@@ -56,27 +71,70 @@ $rules = @(
     @{ Name = 'Changing how many engines a multiworld runs'; Pattern = '\bTestMaxEngines\s*=(?!=)'; Allowed = @('AP_Atlas_Source\Scripts\MainTrackerWindow.UiTest.cs') },
     @{ Name = 'Sending chat or changing a connection''s tags outside SessionManager'; Pattern = 'new\s+(SayPacket|ConnectUpdatePacket)\b|\.UpdateConnectionOptions\s*\('
        Allowed = @('AP_Atlas.Core\Connections\SessionManager.Text.cs') },
-    @{ Name = 'Running Lua outside PackScriptHost'; Pattern = 'using\s+MoonSharp|MoonSharp\.Interpreter\.'; Allowed = @('AP_Atlas_Source\Scripts\Core\PopTracker\PackScriptHost.cs') }
+    @{ Name = 'Running Lua outside PackScriptHost'; Pattern = 'using\s+MoonSharp|MoonSharp\.Interpreter\.'; Allowed = @('AP_Atlas_Source\Scripts\Core\PopTracker\PackScriptHost.cs') },
+    @{ Name = 'Calling Lua outside PackScriptHost.CallLua'; Pattern = '_script\.Call\s*\('; Allowed = @('AP_Atlas_Source\Scripts\Core\PopTracker\PackScriptHost.cs'); Max = 1 },
+    @{ Name = 'Compiling Lua outside PackScriptHost.CompileScripts'; Pattern = '_script\.(DoString|DoFile|LoadString|LoadFile|LoadStream|LoadFunction)\s*\('
+       Allowed = @('AP_Atlas_Source\Scripts\Core\PopTracker\PackScriptHost.cs'); Max = 1 },
+    @{ Name = 'Making a function for pack scripts outside Callback, Checked and AsLuaErrors'; Pattern = 'DynValue\.NewCallback\s*\('
+       Allowed = @('AP_Atlas_Source\Scripts\Core\PopTracker\PackScriptHost.cs'); Max = 3 },
+    @{ Name = 'Closing a server connection outside SessionManager.DisconnectAsync'; Pattern = '\.Socket\.DisconnectAsync\s*\('; Allowed = @('AP_Atlas.Core\Connections\SessionManager.cs'); Max = 1 },
+    @{ Name = 'Giving back a connection''s thread outside SessionManager'; Pattern = 'AtlasSessions\.Finished\s*\('; Allowed = @('AP_Atlas.Core\Connections\SessionManager.cs') },
+    @{ Name = 'Forcing a garbage collection (it pauses all of Atlas)'; Pattern = '\bGC\.Collect\s*\('
+       Allowed = @('AP_Atlas_Source\Scripts\Core\SelfTest.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.Reliability.cs') },
+    @{ Name = 'Starting a thread of its own (use Task.Run or async code)'; Pattern = 'new\s+(System\.Threading\.)?Thread\s*\('; Allowed = @() },
+    @{ Name = 'Looking up the user''s own folders'; Pattern = 'GetFolderPath\s*\(|\bSpecialFolder\.|GetTempPath\s*\(|GetTempFileName\s*\('
+       Allowed = @('AP_Atlas_Source\Scripts\Core\Engine\AtlasEngine.cs') },
+    @{ Name = 'Saving a whole file without SafeFile'; Pattern = '(?<!\w)File\.(WriteAll|AppendAll)\w*\s*\('
+       Allowed = @('AP_Atlas.Core\Logger.cs', 'AP_Atlas.Core\Connections\DataPackageStore.cs', 'AP_Atlas.Core\Testing\FakeLogicEngine.cs',
+                   'AP_Atlas_Source\Scripts\Core\CrashGuard.cs', 'AP_Atlas_Source\Scripts\Core\Annotations.cs', 'AP_Atlas_Source\Scripts\Core\Engine\AtlasEngine.cs',
+                   'AP_Atlas_Source\Scripts\Core\SelfTest.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.Reliability.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.Safety.cs') },
+    @{ Name = 'An empty catch that doesn''t say why'; Pattern = 'catch(\s*\([^)]*\))?\s*\{\s*\}(?!\s*//)'; Allowed = @() }
 )
 
 $files = $roots | ForEach-Object { Get-ChildItem -Path $_ -Recurse -Filter '*.cs' -File } |
     Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' }
 $broken = 0
 foreach ($rule in $rules) {
-    $hits = $files | Select-String -Pattern $rule.Pattern -CaseSensitive:([bool]$rule.CaseSensitive) | Where-Object {
-        $relative = $_.Path.Substring($repo.Length).TrimStart('\', '/')
-        -not ($rule.Allowed -contains $relative)
-    }
-    foreach ($hit in $hits) {
+    $all = @($files | Select-String -Pattern $rule.Pattern -CaseSensitive:([bool]$rule.CaseSensitive))
+    foreach ($hit in $all) {
         $relative = $hit.Path.Substring($repo.Length).TrimStart('\', '/')
+        if ($rule.Allowed -contains $relative) { continue }
         Write-Host "GUARD: $($rule.Name) is only allowed in $(if ($rule.Allowed.Count) { $rule.Allowed -join ', ' } else { 'no file' }), but $relative line $($hit.LineNumber) does it:" -ForegroundColor Red
         Write-Host "    $($hit.Line.Trim())"
         $broken++
     }
+    # Where it is allowed, a numbered rule allows it only that many times per file: one helper does it, the rest call that.
+    if ($rule.Max) {
+        foreach ($group in ($all | Group-Object Path)) {
+            if ($group.Count -le $rule.Max) { continue }
+            $relative = $group.Name.Substring($repo.Length).TrimStart('\', '/')
+            Write-Host "GUARD: $($rule.Name): $relative does it $($group.Count) times, but only $($rule.Max) is allowed there (one place does it; everything else goes through that):" -ForegroundColor Red
+            foreach ($hit in $group.Group) { Write-Host "    line $($hit.LineNumber): $($hit.Line.Trim())" }
+            $broken++
+        }
+    }
+}
+
+# Libraries whose internals Atlas relies on are pinned. Updating one takes the checks CONTRIBUTING lists for it (its tests
+# passing isn't enough: they test the behaviour Atlas expects of this version), then this list.
+$pinned = @(
+    @{ Package = 'MoonSharp'; Version = '2.0.0'; Project = 'AP_Atlas_Source\AP_Atlas.csproj'
+       Why = 'the limits on pack scripts rely on its debugger hook, its stacks and how its library handles errors' },
+    @{ Package = 'Archipelago.MultiClient.Net'; Version = '6.7.1'; Project = 'AP_Atlas.Core\AP_Atlas.Core.csproj'
+       Why = 'AtlasSessions relies on its internal data cache, and on how its connections open, close and end their send loop' }
+)
+foreach ($pin in $pinned) {
+    $text = Get-Content -Raw -LiteralPath (Join-Path $repo $pin.Project)
+    $found = [regex]::Match($text, '<PackageReference\s+Include="' + [regex]::Escape($pin.Package) + '"\s+Version="([^"]+)"')
+    if ($found.Success -and $found.Groups[1].Value -eq $pin.Version) { continue }
+    $now = if ($found.Success) { $found.Groups[1].Value } else { 'no reference' }
+    Write-Host "GUARD: $($pin.Package) is pinned at $($pin.Version) in $($pin.Project) ($($pin.Why)), but it's $now. Update it only with the checks in CONTRIBUTING." -ForegroundColor Red
+    $broken++
 }
 # Nullable checks: classes whose files still start with "#nullable disable" predate them and are annotated as they're
 # reworked. Counted by class (the file name up to its first dot), so splitting a class into partial files doesn't
-# change the count. This number only goes down: lower it when a class is migrated.
+# change the count. This number only goes down, and must match: lower it in the same change that migrates a class, so
+# the progress can't be undone later.
 $nullableOptOutLimit = 55
 $optedOut = @($files | Where-Object { (Get-Content -LiteralPath $_.FullName -TotalCount 1) -eq '#nullable disable' } |
     ForEach-Object { $_.Name.Split('.')[0] } | Sort-Object -Unique).Count
@@ -85,7 +143,8 @@ if ($optedOut -gt $nullableOptOutLimit) {
     $broken++
 }
 elseif ($optedOut -lt $nullableOptOutLimit) {
-    Write-Host "Nullable checks: $optedOut classes still opted out; lower the limit in check_guards.ps1 to $optedOut." -ForegroundColor Yellow
+    Write-Host "GUARD: only $optedOut classes still turn nullable checks off: lower the limit in check_guards.ps1 to $optedOut, so it can't creep back up." -ForegroundColor Red
+    $broken++
 }
 
 # Godot's .uid files: one per script, committed with it.

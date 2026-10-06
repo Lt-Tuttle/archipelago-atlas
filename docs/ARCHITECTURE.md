@@ -154,7 +154,14 @@ Atlas reads or writes outside this folder only with the user's permission. Nothi
 | `AtlasSessions` | Creating an Archipelago session. |
 | `SessionManager` | Connecting one. Sending chat or commands, and changing a connection's tags. |
 | `AtlasEngine`, `EngineInstall` (and the self-test) | Starting a program. |
-| `PackScriptHost` | Running Lua (MoonSharp): each piece of a pack's scripts' work runs under its limits. |
+| `PackScriptHost` | Running Lua (MoonSharp): each piece of a pack's scripts' work runs under its limits. Inside it, one place calls Lua (`CallLua`), one compiles it, and three helpers make the functions scripts call (`Callback`, `Checked`, `AsLuaErrors`). |
+| `SessionManager` | Closing a server connection (one place, `DisconnectAsync`), and giving back its thread. |
+| the self-test | Forcing a garbage collection (it pauses all of Atlas). |
+| `AtlasEngine` | Looking up the user's own folders, for the install search the user agreed to. |
+| a reviewed list | Saving a whole file without `SafeFile`: the log, a crash report, an export the user chose, files the engine setup regenerates, a store that writes a temporary file and moves it, and the tests. |
+| nowhere | Starting a thread of its own; an empty catch that doesn't say why on its line. |
+
+The build treats every warning as an error. MoonSharp and Archipelago.MultiClient.Net are pinned at the versions whose insides Atlas was checked against. The number of classes without nullable checks can only go down. A pre-push hook (`.githooks/pre-push`) runs the guard rails, the build, formatting and the unit tests before anything reaches CI.
 
 Downloads that become code are pinned:
 - The engine's Python, pip, Archipelago and Universal Tracker are each checked against a fixed SHA-256.

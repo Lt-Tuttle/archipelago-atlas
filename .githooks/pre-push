@@ -1,0 +1,16 @@
+#!/bin/sh
+# Atlas's pre-push checks: the quick ones CI starts with, run here first, so a push that would fail them never reaches
+# CI (its Windows minutes are limited). Turn it on once per clone:  git config core.hooksPath .githooks
+# The self-test and UI test take minutes: run AP_Atlas_Source/Tools/run_selftest.ps1 before pushing anything they cover
+# (CI runs them on every push).
+set -e
+cd "$(git rev-parse --show-toplevel)"
+echo "pre-push: guard rails"
+powershell -NoProfile -ExecutionPolicy Bypass -File AP_Atlas_Source/Tools/check_guards.ps1
+echo "pre-push: build (warnings are errors)"
+dotnet build AP_Atlas_Source/AP_Atlas.sln -nologo -v q
+echo "pre-push: formatting"
+dotnet format whitespace AP_Atlas_Source/AP_Atlas.sln --verify-no-changes
+echo "pre-push: unit tests"
+dotnet test --solution AP_Atlas_Source/AP_Atlas.sln --no-build
+echo "pre-push: all checks passed"

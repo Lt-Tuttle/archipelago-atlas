@@ -39,6 +39,7 @@ You need:
 | Run | `Launch_The_Archipelago_Atlas.bat` |
 | Self-test and UI test | `AP_Atlas_Source/Tools/run_selftest.ps1` (builds, then runs the self-test and the UI test, each in a new, empty scratch folder; never your real data). Set `ATLAS_SELFTEST_SETUP=1` to also set up the portable engine from nothing (about 55 MB of downloads), after changing engine setup. While working on a few checks, `ATLAS_SELFTEST_ONLY` and `ATLAS_UITEST_ONLY` (part of a check's or scenario's name) run only those |
 | Guard rails | `AP_Atlas_Source/Tools/check_guards.ps1` |
+| Pre-push checks | Turn them on once per clone: `git config core.hooksPath .githooks`. Every push then first runs the guard rails, the build, formatting and the unit tests (about a minute), and stops if one fails. Never skip them (`--no-verify`) |
 | Unit tests | `dotnet test --solution AP_Atlas_Source/AP_Atlas.sln` (`AP_Atlas.Core.Tests`: fast, no Godot) |
 | Formatting | `dotnet format whitespace AP_Atlas_Source/AP_Atlas.sln` (C# files use CRLF line endings) |
 | Visual check | `AP_Atlas_Source/Tools/run_visualcheck.ps1 [-Baseline <folder>]` (pictures of the main screens, as a new user sees them; with `-Baseline`, a `.diff.png` marks every changed pixel) |
@@ -69,13 +70,19 @@ New code that doesn't need Godot belongs in `AP_Atlas.Core`, with tests. The vis
   | Work nobody awaits (button handlers, background checks) | `Async.Fire(task, "what it's doing")`, never `async void` or `_ = …` |
   | Updating the window from another thread, or later | `Ui.Defer(owner, …)`, never `Callable.From(…).CallDeferred()` |
   | Running Lua | `PackScriptHost`, where a pack's scripts run under limits |
+  | Saving a file | `SafeFile`. It keeps a backup and survives a crash mid-save. The few places that write files directly (the log, a crash report, an export the user chose) are listed in the guard rails |
+  | Closing a server connection | `SessionManager` (a connection still opening is closed as it opens; its thread is given back) |
+  | Background work | `Task.Run` or async code, never a thread of its own |
+  | Memory | Leave collections to .NET: forcing one (`GC.Collect`) pauses all of Atlas |
+  | A failure you choose to ignore | Say why on the same line (`catch { } // it exited meanwhile`), or log it |
   | A view following an event | A `TreeSubscriptions` child (`AddChild(new TreeSubscriptions().On(subscribe, unsubscribe))`), never `+=` in `_Ready`: it follows the view in and out of the window, so the view can be moved |
 
-  The guard rails enforce the riskiest of these in CI.
+  The guard rails enforce the riskiest of these, locally before each push and in CI. A rule with a number allows only that many uses in its file: one helper does the job, and everything else calls it.
+- **Warnings are errors:** any compiler, analyzer, MSBuild or NuGet warning stops the build (`Directory.Build.props`). Fix the cause rather than silencing it. A NuGet warning about a known vulnerability means updating that package.
 - **Null checks:**
   - Nullable reference checks are on, and new code keeps them on.
   - Files that start with `#nullable disable` predate the checks. When you rework one, annotate it and remove that line, then lower the limit in `Tools/check_guards.ps1`.
-  - The guard rails stop the number of such files from growing.
+  - The guard rails stop the number of such files from growing, and fail until the limit is lowered when one is migrated, so it can't creep back up.
 - **Async code:** the build runs Microsoft's async analyzers. An unobserved task, `async void`, a blocking wait on unfinished work, or `ContinueWith` without a `TaskScheduler` stops the build. Methods that return a task end in `Async`.
 - **Tests:** every new protection gets a check in `Scripts/Core/SelfTest*.cs` or `AP_Atlas.Core.Tests`, and tests never touch real data. Connection tests use `FakeArchipelagoServer`, never a real server; Cheese Tracker tests use `FakeCheeseServer`, never the real site; and the UI test runs logic on `FakeLogicEngine`. What the window does with them gets a scenario in `MainTrackerWindow.UiTest.cs`. A test's expected results are written out in the test, never read from the code it checks.
 - **Nothing outside Atlas's folder:** the self-test and the visual check fail if a run writes anything to the user's folders or the temp folder (the footprint check). Godot's log and shader cache stay off in `project.godot`.
@@ -83,6 +90,8 @@ New code that doesn't need Godot belongs in `AP_Atlas.Core`, with tests. The vis
   - a node that runs every frame and changes what's shown, such as a `Camera2D` left processing;
   - a timer that re-applies the same value where setting it always redraws, such as `AddThemeColorOverride` with the same colour.
   - Set such values only when they change. The UI test's "Idle" scenario checks a connected slot.
+- **Pinned libraries:** the guard rails pin MoonSharp (2.0.0) and Archipelago.MultiClient.Net (6.7.1), because Atlas relies on how they work inside. Dependabot may propose an update; CI then fails until it's done properly:
+  - **MoonSharp:** the limits on pack scripts rely on its debugger hook seeing every step (nested calls and coroutines included), on its fixed stacks, on `table.sort` dropping errors that aren't Lua's, and on which library calls throw .NET exceptions. Re-check each against the new version's source (decompile it), then run the pack script self-tests and the corpus check (`ATLAS_SELFTEST_PACKS`).
 - **Updating Archipelago.MultiClient.Net:** `AtlasSessions` relies on the library's internal data cache, and on how a connection's send loop ends once it's woken (see `LibraryThreads`). The unit tests check both, and that the library reaches nothing else on the PC. If they fail, look at what changed before using the new version.
 - **The logic engine's channel:** an engine's standard output carries answers only, each with its request's id; Atlas takes nothing else for an answer. Bridge components write answers with `send()`, and everything that prints goes to standard error (the runner and `protect_channel()` see to it), which Atlas logs. A bridge that can't load says so with `{"event": "boot_failed"}`.
 - **Map pack scripts:** each piece of a pack's scripts' work runs under limits (see `ScriptLimits` in `PackScriptHost`). Keep it that way when adding to the PopTracker API:

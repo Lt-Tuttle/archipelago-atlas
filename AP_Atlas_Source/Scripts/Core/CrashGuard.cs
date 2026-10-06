@@ -34,7 +34,7 @@ namespace AP_Atlas.Core
         /// <summary>Logs an exception and writes a crash report file. Never throws.</summary>
         public static void Record(string what, Exception ex)
         {
-            try { Logger.LogError($"{what}: {ex?.GetType().Name}: {ex?.Message}"); } catch { }
+            try { Logger.LogError($"{what}: {ex?.GetType().Name}: {ex?.Message}"); } catch { } // logging failed too: the report file below still records it
             try
             {
                 string dir = Path.Combine(DataManager.GetDataDirectory(), "logs");
@@ -44,7 +44,11 @@ namespace AP_Atlas.Core
                 // Keep the folder from growing without bound.
                 var reports = new DirectoryInfo(dir).GetFiles("crash_*.txt");
                 Array.Sort(reports, (a, b) => b.LastWriteTimeUtc.CompareTo(a.LastWriteTimeUtc));
-                for (int i = 30; i < reports.Length; i++) { try { reports[i].Delete(); } catch { } }
+                for (int i = 30; i < reports.Length; i++)
+                {
+                    try { reports[i].Delete(); }
+                    catch { } // one that can't be deleted now goes after the next crash
+                }
             }
             catch { } // the last resort: there's nowhere left to report that the report itself failed
         }
@@ -65,7 +69,7 @@ namespace AP_Atlas.Core
             catch (Exception ex)
             {
                 // If the OS won't give us a mutex, don't block startup over it.
-                try { Logger.LogWarning("Couldn't check for another running Atlas: " + ex.Message); } catch { }
+                try { Logger.LogWarning("Couldn't check for another running Atlas: " + ex.Message); } catch { } // logging failed: startup goes on without the warning
                 return true;
             }
         }

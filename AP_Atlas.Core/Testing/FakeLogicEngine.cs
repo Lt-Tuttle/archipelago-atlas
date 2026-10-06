@@ -158,7 +158,7 @@ internal sealed class FakeLogicEngine
         {
             // The engine may be writing the last line right now: a line that isn't whole yet is left for the next read.
             try { entries.Add(JObject.Parse(line)); }
-            catch (JsonReaderException) { }
+            catch (JsonReaderException) { } // not whole yet: read next time
         }
         return entries;
     }

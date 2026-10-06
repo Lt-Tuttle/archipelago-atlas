@@ -145,7 +145,7 @@ namespace AP_Atlas.Core
                 Print($"SELFTEST FAIL no check's name contains \"{_only}\" (ATLAS_SELFTEST_ONLY)");
             }
             Print($"SELFTEST DONE: {_passes} passed, {_failures} failed" + (_skips > 0 ? $", {_skips} skipped" : ""));
-            try { File.WriteAllLines(Path.Combine(dataDir, "selftest_results.txt"), _results); } catch { }
+            try { File.WriteAllLines(Path.Combine(dataDir, "selftest_results.txt"), _results); } catch { } // the results were printed: the file is only a copy
             return _failures == 0 ? 0 : 1;
         }
 
@@ -409,7 +409,7 @@ namespace AP_Atlas.Core
                 await EngineDownloader.DownloadAsync("https://www.python.org/robots.txt", target, new string('0', 64), null, default);
                 throw new Exception("a file with the wrong hash was accepted");
             }
-            catch (InvalidDataException) { }
+            catch (InvalidDataException) { } // expected: the wrong hash is refused
             catch (IOException ex) when (ex.InnerException is System.Net.Http.HttpRequestException)
             {
                 Print("  (offline: skipped the download part)");
@@ -450,7 +450,7 @@ namespace AP_Atlas.Core
             string baselinePath = System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_BASELINE");
             if (string.IsNullOrWhiteSpace(baselinePath)) baselinePath = ProjectSettings.GlobalizePath("res://Tests/seed_baseline.json");
             Dictionary<string, SeedBaselineEntry> baseline = null;
-            try { baseline = SafeFile.ReadJson<Dictionary<string, SeedBaselineEntry>>(baselinePath, () => null); } catch { }
+            try { baseline = SafeFile.ReadJson<Dictionary<string, SeedBaselineEntry>>(baselinePath, () => null); } catch { } // no readable baseline: this run's is recorded
             if (baseline == null || baseline.Values.Any(v => v?.State == null) || System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_UPDATE_BASELINE") == "1")
             {
                 SafeFile.WriteJson(baselinePath, now);
@@ -483,7 +483,7 @@ namespace AP_Atlas.Core
             string baselinePath = System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_GAMES_BASELINE");
             if (string.IsNullOrWhiteSpace(baselinePath)) baselinePath = ProjectSettings.GlobalizePath("res://Tests/games_baseline.json");
             Dictionary<string, bool> baseline = null;
-            try { baseline = SafeFile.ReadJson<Dictionary<string, bool>>(baselinePath, () => null); } catch { }
+            try { baseline = SafeFile.ReadJson<Dictionary<string, bool>>(baselinePath, () => null); } catch { } // no readable baseline: this run's is recorded
             if (baseline == null || System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_UPDATE_BASELINE") == "1")
             {
                 SafeFile.WriteJson(baselinePath, now);
@@ -588,7 +588,7 @@ namespace AP_Atlas.Core
             string baselinePath = System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_PACKS_BASELINE");
             if (string.IsNullOrWhiteSpace(baselinePath)) baselinePath = ProjectSettings.GlobalizePath("res://Tests/packs_baseline.json");
             Dictionary<string, PackBaselineEntry> baseline = null;
-            try { baseline = SafeFile.ReadJson<Dictionary<string, PackBaselineEntry>>(baselinePath, () => null); } catch { }
+            try { baseline = SafeFile.ReadJson<Dictionary<string, PackBaselineEntry>>(baselinePath, () => null); } catch { } // no readable baseline: this run's is recorded
             int crashed = now.Values.Count(v => v.Note != null && v.Note.Contains("crashed"));
             if (baseline == null || System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_UPDATE_BASELINE") == "1")
             {
