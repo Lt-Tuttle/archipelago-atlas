@@ -42,6 +42,7 @@ Development toward the first public beta, 0.1.0.
   - `CREDITS.md` and `THIRD_PARTY_NOTICES.md` credit every component, service and inspiration, with license texts.
   - `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` and `docs/ARCHITECTURE.md`.
   - Guard rails (`Tools/check_guards.ps1`) run in CI.
+  - No test reaches a real site: the self-test's check that a download with the wrong hash is refused now uses a local server (it fetched a file from python.org).
   - Stricter checks on every change:
     - Any build warning is an error.
     - The guard rails keep each protection in its one place: calling, compiling and making functions for map pack scripts, and closing server connections.

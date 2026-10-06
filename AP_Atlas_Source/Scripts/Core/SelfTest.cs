@@ -401,20 +401,27 @@ namespace AP_Atlas.Core
             Expect(!started && engine.LastStartError?.Code == "no_engine", $"a missing engine should fail with no_engine, got {engine.LastStartError?.Code ?? "success"}");
         }
 
+        /// <summary>
+        /// The engine setup's downloader refuses a file that doesn't match its hash: it says it's the wrong file (never a
+        /// network failure worth retrying), and keeps nothing. Served locally: tests never reach a real site.
+        /// </summary>
         private static async Task DownloadRejectsBadHash()
         {
-            // A local HTTP server isn't available here, so use a tiny, stable public file and a wrong hash.
+            PoliteHttp.ResetForTests();
+            PoliteHttp.Spacing = TimeSpan.Zero;
+            using var server = new FakeWebServer();
+            server.Page("/file", 200, "application/octet-stream", "not the file the hash describes");
             string target = Scratch("download.bin");
             try
             {
-                await EngineDownloader.DownloadAsync("https://www.python.org/robots.txt", target, new string('0', 64), null, default);
+                await EngineDownloader.DownloadAsync(server.Site + "/file", target, new string('0', 64), null, default);
                 throw new Exception("a file with the wrong hash was accepted");
             }
-            catch (InvalidDataException) { } // expected: the wrong hash is refused
-            catch (IOException ex) when (ex.InnerException is System.Net.Http.HttpRequestException)
+            catch (InvalidDataException) { } // expected: the wrong hash is refused, as the wrong file
+            finally
             {
-                Print("  (offline: skipped the download part)");
-                return;
+                PoliteHttp.Spacing = TimeSpan.FromSeconds(1);
+                PoliteHttp.ResetForTests();
             }
             Expect(!File.Exists(target) && !File.Exists(target + ".part"), "a rejected download was left on disk");
         }
