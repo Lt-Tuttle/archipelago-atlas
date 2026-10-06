@@ -6,6 +6,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using MoonSharp.Interpreter;
@@ -69,6 +70,12 @@ namespace AP_Atlas.Core.PopTracker
         /// <summary>The most any one piece of work has taken so far (each measure on its own), and the work that took the most steps.</summary>
         public (long Steps, long Memory, TimeSpan Time) Peak { get; private set; }
         public string PeakWork { get; private set; }
+
+        /// <summary>The pack's scripts that don't compile, and why (a script that loads one gets the reason as its error).</summary>
+        public IReadOnlyDictionary<string, string> CompileErrors => _compileErrors;
+
+        /// <summary>How deeply the pack's most nested script nests (see <see cref="LuaNesting"/>).</summary>
+        public int DeepestNesting { get; private set; }
 
         private readonly Dictionary<string, string> _files = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private Script _script;
@@ -178,6 +185,7 @@ namespace AP_Atlas.Core.PopTracker
             WrapLibrary();
             InstallApi();
             GuardLibrary();
+            GuardLoaders();
             // Every script is compiled before the watchdog is attached: with a debugger attached, MoonSharp writes out all
             // the code loaded so far each time a file loads (for the debugger to show), which takes seconds for a big pack.
             CompileScripts();
@@ -255,13 +263,135 @@ namespace AP_Atlas.Core.PopTracker
         // Compiling
         // =====================================================================
 
-        private void CompileScripts()
+        /// <summary>
+        /// The deepest nesting Atlas compiles (as <see cref="LuaNesting"/> counts it). Lua itself stops at 200 levels;
+        /// across the 1,268 scripts of the 40-pack corpus, the deepest is 59. MoonSharp's compiler recurses about once per
+        /// level, using up to 1.7 KB of stack each (a function inside a function), so this many fit easily in
+        /// <see cref="CompilerStack"/>.
+        /// </summary>
+        internal const int MaxNesting = 1000;
+
+        /// <summary>The compiler's own stack: about ten times what <see cref="MaxNesting"/> levels need.</summary>
+        private const int CompilerStack = 16 << 20;
+
+        /// <summary>The most code a script may load at run time in one go (the pack's own files aren't limited).</summary>
+        private const int MaxLoadedCode = 1_000_000;
+
+        /// <summary>How MoonSharp's compiled (binary) chunks start. They aren't loaded: their bytecode is never checked.</summary>
+        private const string BinaryChunk = "MoonSharp_dump_b64::";
+
+        private void CompileScripts() => OnCompilerThread(() =>
         {
             foreach (var file in _files)
             {
                 if (!file.Key.EndsWith(".lua", StringComparison.OrdinalIgnoreCase)) continue;
-                try { _compiled[file.Key] = _script.LoadString(file.Value, null, file.Key); }
+                try { _compiled[file.Key] = Compile(file.Value, file.Key); }
                 catch (InterpreterException ex) { _compileErrors[file.Key] = ex.DecoratedMessage ?? ex.Message; }
+            }
+        });
+
+        /// <summary>
+        /// Compiles Lua (a pack's file, or code a script loads), on the compiler's thread (<see cref="OnCompilerThread"/>).
+        /// Refuses what could hurt Atlas before the compiler sees it: code nested deeper than <see cref="MaxNesting"/> (the
+        /// compiler recurses per level, and running out of stack would end Atlas) and binary chunks.
+        /// </summary>
+        private DynValue Compile(string code, string name, Table env = null)
+        {
+            if (code.StartsWith(BinaryChunk, StringComparison.Ordinal)) throw new ScriptRuntimeException("Atlas doesn't load compiled (binary) chunks");
+            int depth = LuaNesting.Depth(code);
+            if (depth > DeepestNesting) DeepestNesting = depth;
+            if (depth > MaxNesting) throw new ScriptRuntimeException($"nested {depth:N0} levels deep, deeper than Atlas compiles ({MaxNesting:N0})");
+            return _script.LoadString(code, env, name);
+        }
+
+        /// <summary>
+        /// Runs work on a thread of its own with a big stack (<see cref="CompilerStack"/>), and waits for it: MoonSharp's
+        /// compiler recurses once per level of nesting, and threads from the pool have far less room.
+        /// </summary>
+        private static void OnCompilerThread(Action work)
+        {
+            Exception failure = null;
+            var compiler = new System.Threading.Thread(() =>
+            {
+                try { work(); }
+                catch (Exception ex) { failure = ex; }
+            }, CompilerStack)
+            { IsBackground = true, Name = "Map pack script compiler" };
+            compiler.Start();
+            compiler.Join();
+            if (failure != null) ExceptionDispatchInfo.Capture(failure).Throw();
+        }
+
+        /// <summary>
+        /// The library's loaders compile through <see cref="Compile"/>, as the pack's own files do: load and loadsafe (a
+        /// string, or a function giving it in pieces), and loadfile, loadfilesafe and dofile (the pack's own files, already
+        /// compiled unless given an environment of their own). Results are as in Lua: a function, or nil and why.
+        /// </summary>
+        private void GuardLoaders()
+        {
+            var g = _script.Globals;
+            g["load"] = Callback((context, args) => LoadCode(args, null));
+            g["loadsafe"] = Callback((context, args) => LoadCode(args, context.CurrentGlobalEnv));
+            g["loadfile"] = Callback((context, args) => LoadPackFile(args, null));
+            g["loadfilesafe"] = Callback((context, args) => LoadPackFile(args, context.CurrentGlobalEnv));
+            g["dofile"] = Callback(args =>
+            {
+                string path = args.AsType(0, "dofile", DataType.String).String;
+                var chunk = Compiled(path, out string compileError) ?? throw new ScriptRuntimeException(compileError ?? $"cannot open {path}");
+                return DynValue.NewTailCallReq(chunk);
+            });
+        }
+
+        private DynValue LoadCode(CallbackArguments args, Table defaultEnv)
+        {
+            var source = args[0];
+            string code;
+            if (source.Type == DataType.String) code = source.String;
+            else if (source.Type == DataType.Function)
+            {
+                // A reader function gives the code in pieces, until it returns nil or an empty string.
+                var pieces = new StringBuilder();
+                while (true)
+                {
+                    var piece = CallLua(source);
+                    if (piece.Type == DataType.String && piece.String.Length > 0) pieces.Append(piece.String);
+                    else if (piece.IsNil() || piece.Type == DataType.String) break;
+                    else return DynValue.NewTuple(DynValue.Nil, DynValue.NewString("reader function must return a string"));
+                    if (pieces.Length > MaxLoadedCode) break;
+                }
+                code = pieces.ToString();
+            }
+            else throw new ScriptRuntimeException($"bad argument #1 to 'load' (string expected, got {source.Type.ToLuaTypeString()})");
+            string name = args.Count > 1 && args[1].Type == DataType.String ? args[1].String : "=(load)";
+            var env = args.Count > 3 && args[3].Type == DataType.Table ? args[3].Table : defaultEnv;
+            if (code.Length > MaxLoadedCode)
+                return DynValue.NewTuple(DynValue.Nil, DynValue.NewString($"{name}: {code.Length:N0} characters of code, more than Atlas loads at once ({MaxLoadedCode:N0})"));
+            return CompileNow(code, name, env);
+        }
+
+        private DynValue LoadPackFile(CallbackArguments args, Table defaultEnv)
+        {
+            string path = args.AsType(0, "loadfile", DataType.String).String;
+            var env = args.Count > 2 && args[2].Type == DataType.Table ? args[2].Table : defaultEnv;
+            if (env == null || env == _script.Globals)
+                return Compiled(path, out string compileError) ?? DynValue.NewTuple(DynValue.Nil, DynValue.NewString(compileError ?? $"cannot open {path}"));
+            string code = ResolveFile(path);
+            return code == null ? DynValue.NewTuple(DynValue.Nil, DynValue.NewString($"cannot open {path}")) : CompileNow(code, path, env);
+        }
+
+        /// <summary>Compiles code a script loads, on the compiler's thread: a function, or nil and why it doesn't compile.</summary>
+        private DynValue CompileNow(string code, string name, Table env)
+        {
+            try
+            {
+                DynValue chunk = null;
+                OnCompilerThread(() => chunk = Compile(code, name, env));
+                return chunk;
+            }
+            catch (InterpreterException ex)
+            {
+                // A syntax error names the chunk already; Atlas's own refusals don't.
+                return DynValue.NewTuple(DynValue.Nil, DynValue.NewString(ex.DecoratedMessage ?? $"{name}: {ex.Message}"));
             }
         }
 
@@ -701,9 +831,12 @@ namespace AP_Atlas.Core.PopTracker
         /// library function's would be: pcall can catch it, and the interpreter unwinds. A stop, or the interpreter failing
         /// in Lua the function called in turn, passes through untouched.
         /// </summary>
-        private static DynValue Callback(Func<CallbackArguments, DynValue> f) => DynValue.NewCallback((context, arguments) =>
+        private static DynValue Callback(Func<CallbackArguments, DynValue> f) => Callback((_, arguments) => f(arguments));
+
+        /// <inheritdoc cref="Callback(Func{CallbackArguments, DynValue})"/>
+        private static DynValue Callback(Func<ScriptExecutionContext, CallbackArguments, DynValue> f) => DynValue.NewCallback((context, arguments) =>
         {
-            try { return f(arguments); }
+            try { return f(context, arguments); }
             catch (Exception ex) when (ex is not InterpreterException && ex is not ScriptStopped && ex is not InterpreterBroke)
             {
                 throw new ScriptRuntimeException($"{ex.GetType().Name}: {ex.Message}");

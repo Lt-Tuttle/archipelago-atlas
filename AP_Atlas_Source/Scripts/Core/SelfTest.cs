@@ -118,6 +118,7 @@ namespace AP_Atlas.Core
             await TestAsync("Pack scripts: items that arrive while a pack's scripts start reach them", PackScriptsGetItemsThatArriveWhileTheyStart);
             await TestAsync("Pack scripts: work that runs away is stopped, wherever it runs, and the scripts with it", PackScriptsThatRunAwayAreStopped);
             await TestAsync("Pack scripts: modules come from the pack, compiled once; library functions that could hurt Atlas are safe", PackScriptsUseTheirOwnCompiledFiles);
+            await TestAsync("Pack scripts: code nested deeper than Atlas compiles is refused, never compiled; every loader compiles that way, with room to spare", PackScriptsCompileSafely);
             await TestAsync("Pack Doctor: an analysis reads its own snapshot, never the fixes as they change", PackDoctorReadsASnapshot);
             await TestAsync("Settings saved from a background thread are written on the main thread, and the log says so", OffThreadSavesMoveToTheMainThread);
 
@@ -570,9 +571,10 @@ namespace AP_Atlas.Core
                     if (scripts != null)
                     {
                         entry.ScriptSteps = scripts.Peak.Steps;
-                        entry.ScriptsStopped = scripts.StopReason;
+                        entry.ScriptsStopped = scripts.StopReason ?? scripts.CompileErrors.Values.FirstOrDefault(e => e.Contains("deeper than Atlas compiles"));
                         Print($"  {key}: scripts ran {fed}; the busiest piece of work, {scripts.PeakWork ?? "none"}, took {scripts.Peak.Steps:N0} steps; " +
-                              $"the most memory {scripts.Peak.Memory / 1048576.0:0.0} MB, the longest {scripts.Peak.Time.TotalMilliseconds:0} ms; {scripts.Errors.Count} script error(s)" +
+                              $"the most memory {scripts.Peak.Memory / 1048576.0:0.0} MB, the longest {scripts.Peak.Time.TotalMilliseconds:0} ms; nested {scripts.DeepestNesting} deep at most; " +
+                              $"{scripts.Errors.Count} script error(s)" +
                               (scripts.Stopped ? $" · STOPPED: {scripts.StopReason}" : ""));
                     }
                 }

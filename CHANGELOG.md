@@ -162,6 +162,7 @@ Development toward the first public beta, 0.1.0.
   - The limits are far above what real packs use: across 40 packs, the busiest piece of work took 1.5 million steps, 91 MB and 0.2 seconds.
   - Before, a script stuck in a loop kept one of Atlas's threads busy for good, and some scripts could end Atlas outright: one that loaded itself, say, or saved a table that holds itself as JSON.
   - A library call MoonSharp fails with a .NET error, where Lua raises an error (`math.random(1e20)`, say), is now a Lua error too: a script can catch it, and it never ends the scripts.
+  - Compiling a pack's code can't crash Atlas either. Code nested far deeper than Lua allows (thousands of levels) used to overflow the compiler, which ended Atlas when the pack loaded. It's now refused with a clear message, and the compiler has a stack of its own with room to spare. The deepest script among 40 real packs nests 59 levels. Scripts also can't load compiled (binary) chunks, or more than a million characters of code at once.
   - Library functions that could hurt Atlas in one call are made safe. `collectgarbage` does nothing (it paused all of Atlas for a full memory collection). `string.rep` and `table.concat` check the size of what they'd build. The `json` and `dynamic` modules, which PopTracker doesn't have, are gone.
 
 ### Fixed

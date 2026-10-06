@@ -96,7 +96,7 @@ New code that doesn't need Godot belongs in `AP_Atlas.Core`, with tests. The vis
 - **The logic engine's channel:** an engine's standard output carries answers only, each with its request's id; Atlas takes nothing else for an answer. Bridge components write answers with `send()`, and everything that prints goes to standard error (the runner and `protect_channel()` see to it), which Atlas logs. A bridge that can't load says so with `{"event": "boot_failed"}`.
 - **Map pack scripts:** each piece of a pack's scripts' work runs under limits (see `ScriptLimits` in `PackScriptHost`). Keep it that way when adding to the PopTracker API:
   - Make each function the scripts can call with `Callback`, so its failures are Lua errors.
-  - Call Lua from C# only through `CallLua`.
+  - Call Lua from C# only through `CallLua`, and compile it only through `Compile` (on the compiler's thread: `OnCompilerThread`), which refuses code nested too deep for the compiler's stack.
   - A library function that can build something big in one call (as `string.rep` can) needs a check before it runs.
   - The self-tests "Pack scripts: work that runs away is stopped…" cover each way a script can run away. The corpus check (`ATLAS_SELFTEST_PACKS`) shows that real packs stay far below the limits.
 - **Godot's `.uid` files:** Godot makes one next to each script (`Foo.cs.uid`) when it opens or imports the project. Commit it with the script; the guard rails check.

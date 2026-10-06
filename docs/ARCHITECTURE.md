@@ -139,7 +139,10 @@ Atlas reads or writes outside this folder only with the user's permission. Nothi
   - Atlas's functions for the scripts are made with `Callback` (a failure is a Lua error at the script's call), and Atlas calls Lua through `CallLua` (a failure that isn't a Lua error means the interpreter broke, and stops the scripts).
   - MoonSharp's library throws .NET exceptions for some arguments where Lua raises an error (`math.random(1e20)`, `string.format("%c", -1)`, `os.date` of a time out of range). Each library function is wrapped so its own failures are Lua errors; a failure from Lua it ran in turn (a sort's comparison) is left alone.
   - `collectgarbage`, `string.rep` and `table.concat` are checked versions; the `json` and `dynamic` modules aren't loaded.
-  - Not yet guarded: code nested thousands of levels deep can overflow MoonSharp's compiler before any of this runs (step 6e).
+  - Compiling is guarded too. MoonSharp's compiler recurses about once per level of nesting (up to 1.7 KB of stack each), and code nested a few thousand levels deep would overflow it before any script runs. Every compile goes through `Compile`, whether it's the pack's files or code a script loads (`load`, `loadsafe`, `loadfile`, `loadfilesafe`, `dofile`, `require`, `LoadScript`):
+    - `LuaNesting` (in Core, unit-tested) counts how deeply the source nests from its tokens, without compiling it. Code deeper than 1,000 is refused; Lua itself stops at 200, and the corpus's deepest script is 59.
+    - The compiler runs on a thread of its own with a 16 MB stack (`OnCompilerThread`), about ten times what 1,000 levels need, whatever thread the compile started on.
+    - Binary chunks (`string.dump`) aren't loaded, and a script can't load more than a million characters of code at once.
 
 ## Safety rules the code enforces
 

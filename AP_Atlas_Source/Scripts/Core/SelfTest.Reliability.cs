@@ -516,6 +516,63 @@ namespace AP_Atlas.Core
         }
 
         /// <summary>
+        /// MoonSharp's compiler recurses once per level of nesting, and running out of stack would end Atlas (.NET can't
+        /// catch it). Code nested deeper than Atlas compiles is refused before the compiler sees it, whether it's one of the
+        /// pack's files or code a script loads. Code within the limit compiles on a thread of its own with room to spare:
+        /// 900 functions inside each other, here started from a thread with only 1 MB of stack, which they'd overflow. Every
+        /// loader goes through the same checks (load from a string or a reader function, loadfile with or without its own
+        /// environment, dofile), and binary chunks and too much code at once are refused.
+        /// </summary>
+        private static async Task PackScriptsCompileSafely()
+        {
+            string zip = Scratch("selftest_compile.zip");
+            string nestedFunctions = "return " + string.Concat(Enumerable.Repeat("function() return ", 900)) + "1" + string.Concat(Enumerable.Repeat(" end", 900));
+            AP_Atlas.Core.Testing.FakeMapPack.Write(zip, "Self-test compile pack", "Self Test Game C", initLua: """
+                print("deep LoadScript: " .. tostring(ScriptHost:LoadScript("scripts/deep.lua")))
+                local f, unwrapped = require("scripts.functions"), 0
+                while type(f) == "function" do f = f() unwrapped = unwrapped + 1 end
+                print("unwrapped: " .. unwrapped .. " to " .. tostring(f))
+                local deep, deepError = load(string.rep("(", 5000) .. "1" .. string.rep(")", 5000))
+                print("deep load: " .. tostring(deep) .. " | " .. tostring(deepError))
+                print("plain load: " .. load("return 1 + 1")())
+                local parts, i = { "return ", "40 ", "+ 2" }, 0
+                print("reader load: " .. load(function() i = i + 1 return parts[i] end)())
+                local binary, binaryError = load(string.dump(function() return 1 end))
+                print("binary load: " .. tostring(binary) .. " | " .. tostring(binaryError))
+                local long, longError = load(string.rep("x = 1 ", 200000))
+                print("long load: " .. tostring(long) .. " | " .. tostring(longError))
+                print("loadfile: " .. loadfile("scripts/helper.lua")())
+                print("dofile: " .. dofile("scripts/helper.lua"))
+                print("loadfile with its own environment: " .. loadfile("scripts/env.lua", "t", { x = 5 })())
+                """, files: new Dictionary<string, string>
+            {
+                ["scripts/deep.lua"] = "return " + new string('(', 100_000) + "1" + new string(')', 100_000),
+                ["scripts/functions.lua"] = nestedFunctions,
+                ["scripts/helper.lua"] = "return 7",
+                ["scripts/env.lua"] = "return x",
+            });
+            var host = PopTracker.PackScriptHost.Load(PopTracker.PopTrackerPackLoader.InspectZipPack(zip) ?? throw new InvalidOperationException("the test pack wasn't read"));
+            // A thread with 1 MB of stack, like a .NET thread's default: the compiler must not need the caller's stack.
+            bool started = false;
+            var small = new System.Threading.Thread(() => started = host.Initialize(), 1 << 20);
+            small.Start();
+            await Task.Run(small.Join);
+            string Said(string what) => host.Log.FirstOrDefault(line => line.StartsWith(what + ": ")) is string line ? line.Substring(what.Length + 2) : "(nothing)";
+            Expect(started && !host.Stopped, $"init.lua didn't run: {host.StopReason ?? string.Join("; ", host.Errors)}");
+            Expect(host.CompileErrors.TryGetValue("scripts/deep.lua", out string? refused) && refused.Contains("levels deep, deeper than Atlas compiles"),
+                $"the 100,000-deep file wasn't refused: {refused ?? "it compiled"}");
+            Expect(Said("deep LoadScript") == "false" && host.Errors.Any(e => e.Contains("deeper than Atlas compiles")), $"loading the refused file: {Said("deep LoadScript")}");
+            Expect(host.DeepestNesting >= 100_000, $"the deepest nesting is {host.DeepestNesting}");
+            Expect(Said("unwrapped") == "900 to 1", $"900 functions inside each other: {Said("unwrapped")}");
+            Expect(Said("deep load").StartsWith("nil | ") && Said("deep load").Contains("deeper than Atlas compiles"), $"load of deep code: {Said("deep load")}");
+            Expect(Said("plain load") == "2" && Said("reader load") == "42", $"load: {Said("plain load")}, from a reader: {Said("reader load")}");
+            Expect(Said("binary load").StartsWith("nil | ") && Said("binary load").Contains("binary"), $"load of a binary chunk: {Said("binary load")}");
+            Expect(Said("long load").StartsWith("nil | ") && Said("long load").Contains("more than Atlas loads at once"), $"load of too much code: {Said("long load")}");
+            Expect(Said("loadfile") == "7" && Said("dofile") == "7" && Said("loadfile with its own environment") == "5",
+                $"loadfile: {Said("loadfile")}, dofile: {Said("dofile")}, with its own environment: {Said("loadfile with its own environment")}");
+        }
+
+        /// <summary>
         /// The Pack Doctor analyses a snapshot taken on the main thread: a fix edited while an analysis runs doesn't change
         /// it under the analysis, and the next snapshot sees the edit. The pack's own mapping is linked as usual.
         /// </summary>
