@@ -17,99 +17,58 @@ namespace AP_Atlas.UI
     /// spheres, its earliest, and the multiworld's earliest. The room's other tables are there as the page has them.
     /// Nothing is shown in race mode.
     /// </summary>
-    public partial class SphereTrackerTab : MarginContainer
+    public partial class SphereTrackerTab : ExplorerTabBase
     {
         public const string SettingsView = "*settings";
         private const char Sep = '\u0001';
         private const int MaxRows = 2000;
 
-        private static readonly Color Good = ThemeColors.Success;
-        private static readonly Color Warn = ThemeColors.Warning;
-        private static readonly Color Muted = ThemeColors.TextSubtle;
-        private static readonly Color MineColor = ThemeColors.You;
-
-        private readonly AppSettings _settings;
         private readonly SphereService _spheres;
-        private readonly Func<IReadOnlyList<MultiworldProfile>> _profiles;
-        private readonly Action<string, Color> _toast;
+        private string _settingsSignature;
 
-        /// <summary>The explorer list; the window mounts it in the explorer while this tab is shown.</summary>
-        public VBoxContainer SidebarContent { get; }
-
-        private string _view;
-        private string _sidebarSignature, _settingsSignature;
-
-        private VBoxContainer _trackerPage, _messagePage, _settingsBox;
+        private VBoxContainer _trackerPage, _settingsBox;
         private ScrollContainer _settingsPage;
-        private Label _title, _subtitle, _problemLabel, _note, _count, _overview;
-        /// <summary>The table's columns as shown (the slot's own column is left out while only its rows are shown).</summary>
-        private List<int> _shownColumns = new List<int>();
+        private Label _title, _subtitle, _problemLabel, _note, _overview;
         private HBoxContainer _headerButtons, _problemRow;
         private OptionButton _tablePicker;
         private Button _onlySlot;
-        private LineEdit _search;
-        private Tree _tree;
-        private Timer _refreshDebounce;
+        private AtlasTable _table;
         private SphereData _data;
         private string _dataSlot;
-        private int _sortColumn = -1;
-        private bool _sortDescending;
 
         public SphereTrackerTab(AppSettings settings, SphereService spheres, Func<IReadOnlyList<MultiworldProfile>> profiles, Action<string, Color> toast)
+            : base(settings, profiles, toast, "Sphere Tracker", settings.SphereTabView)
         {
-            _settings = settings;
             _spheres = spheres;
-            _profiles = profiles;
-            _toast = toast;
-            Name = "Sphere Tracker";
-            SizeFlagsHorizontal = SizeFlags.ExpandFill;
-            SizeFlagsVertical = SizeFlags.ExpandFill;
-            foreach (var side in new[] { "left", "top", "right", "bottom" }) AddThemeConstantOverride("margin_" + side, 10);
-            SidebarContent = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
-            SidebarContent.AddThemeConstantOverride("separation", 4);
-            _view = settings.SphereTabView ?? "";
         }
 
-        public override void _Ready()
+        protected override string DefaultView => SettingsView;
+
+        protected override void SaveView(string view)
+        {
+            Settings.SphereTabView = view;
+            // A view preference: saved with the next burst of settings (every slot that connects is followed).
+            DataManager.SaveSettingsSoon(Settings);
+        }
+
+        protected override void BuildPages()
         {
             BuildTrackerPage();
-            _settingsPage = new ScrollContainer { Visible = false, HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled, SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
+            _settingsPage = new ScrollContainer { HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled, SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
             _settingsBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
             _settingsBox.AddThemeConstantOverride("separation", 8);
             _settingsPage.AddChild(_settingsBox);
-            AddChild(_settingsPage);
-            _messagePage = new VBoxContainer { Visible = false, SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill, Alignment = BoxContainer.AlignmentMode.Center };
-            _messagePage.AddThemeConstantOverride("separation", 10);
-            AddChild(_messagePage);
-
-            _refreshDebounce = new Timer { OneShot = true, WaitTime = 0.3 };
-            // Something changed (a link, a read finished): read what's on screen if that's due, and redraw.
-            _refreshDebounce.Timeout += () =>
-            {
-                WatchShown();
-                Refresh();
-            };
-            AddChild(_refreshDebounce);
-            // While shown: keep the room fresh (it's read at most every 10 minutes).
-            var minute = new Timer { WaitTime = 60, Autostart = true };
-            minute.Timeout += () =>
-            {
-                if (!IsVisibleInTree()) return;
-                WatchShown();
-                Refresh();
-            };
-            AddChild(minute);
-            // Made while the tab is in the window, again after it's moved (docking, pop-outs), and removed while it isn't.
-            AddChild(new TreeSubscriptions()
-                .On(() => _spheres.Changed += QueueRefresh, () => _spheres.Changed -= QueueRefresh)
-                .On(() => RaceRules.Changed += OnRaceRulesChanged, () => RaceRules.Changed -= OnRaceRulesChanged));
-            Refresh();
+            AddPage(_settingsPage);
         }
+
+        protected override TreeSubscriptions Subscribe(TreeSubscriptions subscriptions) => subscriptions
+            .On(() => _spheres.Changed += QueueRefresh, () => _spheres.Changed -= QueueRefresh)
+            .On(() => RaceRules.Changed += OnRaceRulesChanged, () => RaceRules.Changed -= OnRaceRulesChanged);
 
         private void OnRaceRulesChanged()
         {
             _settingsSignature = null;
-            _sidebarSignature = null;
+            InvalidateSidebar();
             QueueRefresh();
         }
 
@@ -132,17 +91,10 @@ namespace AP_Atlas.UI
         /// <summary>The slot shown, if the view is a slot that still exists.</summary>
         private (MultiworldProfile Profile, string Slot) ViewedSlot()
         {
-            if (!IsSlotView(_view, out string profileId, out string slot)) return (null, null);
-            var profile = _profiles().FirstOrDefault(p => p.Id == profileId);
+            if (!IsSlotView(View, out string profileId, out string slot)) return (null, null);
+            var profile = Profiles().FirstOrDefault(p => p.Id == profileId);
             string name = profile?.Slots.FirstOrDefault(s => string.Equals(s, slot, StringComparison.OrdinalIgnoreCase));
             return name == null ? (null, null) : (profile, name);
-        }
-
-        /// <summary>The tab was just shown: read what it shows if that's due, and draw it.</summary>
-        public void OnShown()
-        {
-            WatchShown();
-            Refresh();
         }
 
         /// <summary>The slot you're viewing in Atlas changed: show its multiworld's room for it (when the tab is shown).</summary>
@@ -150,33 +102,11 @@ namespace AP_Atlas.UI
         {
             if (string.IsNullOrEmpty(profileId) || string.IsNullOrEmpty(slot)) return;
             string view = SlotView(profileId, slot);
-            if (view != _view) ShowView(view);
-        }
-
-        /// <summary>Shows a slot (<see cref="SlotView"/>) or <see cref="SettingsView"/>.</summary>
-        public void ShowView(string view)
-        {
-            if (string.IsNullOrEmpty(view)) view = SettingsView;
-            if (view != _view)
-            {
-                _view = view;
-                _settings.SphereTabView = view;
-                // A view preference: saved with the next burst of settings (every slot that connects is followed).
-                DataManager.SaveSettingsSoon(_settings);
-            }
-            _sidebarSignature = null;
-            WatchShown();
-            Refresh();
-        }
-
-        private void QueueRefresh()
-        {
-            if (!IsVisibleInTree()) return; // OnShown redraws
-            if (_refreshDebounce != null && _refreshDebounce.IsInsideTree() && _refreshDebounce.IsStopped()) _refreshDebounce.Start();
+            if (view != View) ShowView(view);
         }
 
         /// <summary>Reads the shown room if it's due (Atlas reads nothing for rooms that aren't shown).</summary>
-        private void WatchShown()
+        protected override void WatchShown()
         {
             if (!IsVisibleInTree()) return;
             var (profile, _) = ViewedSlot();
@@ -190,10 +120,10 @@ namespace AP_Atlas.UI
             if (profile == null) return;
             if (_spheres.ReadRecently(profile.Id))
             {
-                _toast("Atlas read it moments ago, so it would be the same. Try again in a minute.", ThemeColors.TextSubtle);
+                Toast("Atlas read it moments ago, so it would be the same. Try again in a minute.", ThemeColors.TextSubtle);
                 return;
             }
-            CheeseDialogs.Run(this, _spheres.RefreshAsync(profile.Id, tryNow), _toast, null, QueueRefresh);
+            CheeseDialogs.Run(this, _spheres.RefreshAsync(profile.Id, tryNow), Toast, null, QueueRefresh);
         }
 
         // =====================================================================
@@ -204,7 +134,7 @@ namespace AP_Atlas.UI
         {
             _trackerPage = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
             _trackerPage.AddThemeConstantOverride("separation", 6);
-            AddChild(_trackerPage);
+            AddPage(_trackerPage);
 
             var header = new HBoxContainer();
             header.AddThemeConstantOverride("separation", 6);
@@ -217,69 +147,43 @@ namespace AP_Atlas.UI
             header.AddChild(_headerButtons);
 
             _subtitle = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart };
-            _subtitle.AddThemeColorOverride("font_color", Muted);
+            _subtitle.AddThemeColorOverride("font_color", ThemeColors.TextSubtle);
             _trackerPage.AddChild(_subtitle);
 
             _problemRow = new HBoxContainer { Visible = false };
             _problemRow.AddThemeConstantOverride("separation", 6);
             _problemLabel = new Label { SizeFlagsHorizontal = SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart };
-            _problemLabel.AddThemeColorOverride("font_color", Warn);
+            _problemLabel.AddThemeColorOverride("font_color", ThemeColors.Warning);
             _problemRow.AddChild(_problemLabel);
-            var tryNow = new Button { Text = "Try now", FocusMode = FocusModeEnum.None };
-            tryNow.Pressed += () => RefreshShown(tryNow: true);
-            _problemRow.AddChild(tryNow);
+            _problemRow.AddChild(Kit.Button("Try now", "Read the host's room again now", () => RefreshShown(tryNow: true)));
             _trackerPage.AddChild(_problemRow);
 
             _overview = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, Visible = false };
             _overview.AddThemeColorOverride("font_color", ThemeColors.TextMuted);
             _trackerPage.AddChild(_overview);
 
+            _table = new AtlasTable("sphere", Settings, text => text) { MaxRows = MaxRows, Toast = Toast };
+            // The table's search, count and menus join the tab's own toolbar: the room's tables, then this slot's rows.
             var toolbar = new HFlowContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
             toolbar.AddThemeConstantOverride("h_separation", 6);
             toolbar.AddThemeConstantOverride("v_separation", 4);
             _trackerPage.AddChild(toolbar);
             _tablePicker = new OptionButton { FocusMode = FocusModeEnum.None, FitToLongestItem = false, TooltipText = "The tables on the host's room page" };
-            _tablePicker.ItemSelected += _ =>
-            {
-                _sortColumn = -1;
-                RenderTable();
-            };
+            _tablePicker.ItemSelected += _ => RenderTable();
             toolbar.AddChild(_tablePicker);
             _onlySlot = new Button { ToggleMode = true, ButtonPressed = true, FocusMode = FocusModeEnum.None, TooltipText = "Only the rows that name this slot" };
             _onlySlot.Toggled += _ => RenderTable();
             toolbar.AddChild(_onlySlot);
-            _search = new LineEdit { PlaceholderText = "Find…", ClearButtonEnabled = true, CustomMinimumSize = new Vector2(240, 0) };
-            _search.TextChanged += _ => RenderTable();
-            toolbar.AddChild(_search);
-            _count = new Label { VerticalAlignment = VerticalAlignment.Center };
-            _count.AddThemeColorOverride("font_color", Muted);
-            toolbar.AddChild(_count);
+            toolbar.AddChild(_table.Take(_table.SearchBox));
+            _table.SearchBox.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
+            toolbar.AddChild(_table.Take(_table.CountLabel));
+            toolbar.AddChild(_table.Take(_table.ColumnsMenu));
+            toolbar.AddChild(_table.Take(_table.ExportMenu));
+            _table.Toolbar.Visible = false;
             _note = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart };
-            _note.AddThemeColorOverride("font_color", Muted);
+            _note.AddThemeColorOverride("font_color", ThemeColors.TextSubtle);
             _trackerPage.AddChild(_note);
-            _tree = new Tree
-            {
-                SizeFlagsHorizontal = SizeFlags.ExpandFill,
-                SizeFlagsVertical = SizeFlags.ExpandFill,
-                ColumnTitlesVisible = true,
-                HideRoot = true,
-                SelectMode = Tree.SelectModeEnum.Row,
-                CustomMinimumSize = new Vector2(0, 160)
-            };
-            _tree.AddThemeConstantOverride("v_separation", 6);
-            _tree.ColumnTitleClicked += (column, button) =>
-            {
-                if (button != (long)MouseButton.Left) return;
-                int index = column >= 0 && column < _shownColumns.Count ? _shownColumns[(int)column] : (int)column;
-                if (_sortColumn == index) _sortDescending = !_sortDescending;
-                else
-                {
-                    _sortColumn = index;
-                    _sortDescending = false;
-                }
-                RenderTable();
-            };
-            _trackerPage.AddChild(_tree);
+            _trackerPage.AddChild(_table);
         }
 
         // =====================================================================
@@ -288,48 +192,45 @@ namespace AP_Atlas.UI
 
         private void RenderSidebar()
         {
-            var profiles = _profiles();
-            string signature = _view + "|" + string.Join("|", profiles.Select(p => p.Id + "=" + p.Name + "=" + StateOf(p) + "=" + string.Join(",", p.Slots)));
-            if (signature == _sidebarSignature) return;
-            _sidebarSignature = signature;
-            foreach (Node child in SidebarContent.GetChildren()) child.QueueFree();
-            foreach (var p in profiles)
+            var profiles = Profiles();
+            string signature = View + "|" + string.Join("|", profiles.Select(p => p.Id + "=" + p.Name + "=" + StateOf(p) + "=" + string.Join(",", p.Slots)));
+            RenderSidebar(signature, () =>
             {
-                string state = StateOf(p);
-                var header = new Label
+                foreach (var p in profiles)
                 {
-                    Text = state.Length == 0 ? p.Name : $"{p.Name}  ({state})",
-                    ClipText = true,
-                    TooltipText = state switch
+                    string state = StateOf(p);
+                    var header = new Label
                     {
-                        "" => "Your slots in this multiworld",
-                        "no room" => "No spheretracker.de room from the host is linked (Settings)",
-                        _ => "Hidden while race mode applies"
-                    },
-                    MouseFilter = MouseFilterEnum.Stop
-                };
-                header.AddThemeColorOverride("font_color", state.Length == 0 ? ThemeColors.TextMuted : Muted);
-                header.SetMeta("font_size_ratio", 0.9);
-                SidebarContent.AddChild(header);
-                foreach (var slot in p.Slots)
-                    SidebarContent.AddChild(ExplorerButton(slot, $"{slot} in the host's sphere tracker", SlotView(p.Id, slot), state.Length > 0, 12));
-                if (p.Slots.Count == 0)
-                {
-                    var none = new Label { Text = "No slots yet.", AutowrapMode = TextServer.AutowrapMode.WordSmart };
-                    none.AddThemeColorOverride("font_color", Muted);
-                    SidebarContent.AddChild(none);
+                        Text = state.Length == 0 ? p.Name : $"{p.Name}  ({state})",
+                        ClipText = true,
+                        TooltipText = state switch
+                        {
+                            "" => "Your slots in this multiworld",
+                            "no room" => "No spheretracker.de room from the host is linked (Settings)",
+                            _ => "Hidden while race mode applies"
+                        },
+                        MouseFilter = MouseFilterEnum.Stop
+                    };
+                    header.AddThemeColorOverride("font_color", state.Length == 0 ? ThemeColors.TextMuted : ThemeColors.TextSubtle);
+                    header.SetMeta("font_size_ratio", 0.9);
+                    SidebarContent.AddChild(header);
+                    foreach (var slot in p.Slots)
+                    {
+                        string profileId = p.Id, slotName = slot;
+                        // Choosing a slot here shows it in Properties too, as clicking its card does.
+                        SidebarContent.AddChild(ExplorerButton(slot, $"{slot} in the host's sphere tracker", SlotView(p.Id, slot), state.Length > 0, 12,
+                            () => Inspector.Inspect(InspectTarget.ForSlot(profileId, slotName))));
+                    }
+                    if (p.Slots.Count == 0) SidebarContent.AddChild(SidebarNote("No slots yet."));
+                    SidebarContent.AddChild(new HSeparator());
                 }
-                SidebarContent.AddChild(new HSeparator());
-            }
-            if (profiles.Count == 0)
-            {
-                var none = new Label { Text = "No multiworlds yet (the Multiworlds page).", AutowrapMode = TextServer.AutowrapMode.WordSmart };
-                none.AddThemeColorOverride("font_color", Muted);
-                SidebarContent.AddChild(none);
-                SidebarContent.AddChild(new HSeparator());
-            }
-            SidebarContent.AddChild(ExplorerButton("Settings", "The host's spheretracker.de room for each multiworld", SettingsView, false, 0));
-            MainTrackerWindow.SetFontSizeRecursive(SidebarContent, _settings.ExplorerFontSize);
+                if (profiles.Count == 0)
+                {
+                    SidebarContent.AddChild(SidebarNote("No multiworlds yet (the Multiworlds page)."));
+                    SidebarContent.AddChild(new HSeparator());
+                }
+                SidebarContent.AddChild(ExplorerButton("Settings", "The host's spheretracker.de room for each multiworld", SettingsView, false));
+            });
         }
 
         /// <summary>"" when the host's room is linked and shown; otherwise a short reason shown next to the name.</summary>
@@ -339,47 +240,25 @@ namespace AP_Atlas.UI
             return _spheres.HiddenBecause(p) != null ? "race" : "";
         }
 
-        private Control ExplorerButton(string text, string tooltip, string view, bool dim, int indent)
-        {
-            var b = new Button { Text = text, TooltipText = tooltip, Alignment = HorizontalAlignment.Left, ToggleMode = true, ButtonPressed = view == _view, FocusMode = FocusModeEnum.None, ClipText = true, SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            if (dim && view != _view) b.AddThemeColorOverride("font_color", Muted);
-            b.Pressed += () =>
-            {
-                ShowView(view);
-                // Choosing a slot here shows it in Properties too, as clicking its card does.
-                if (IsSlotView(view, out string profileId, out string slot)) Inspector.Inspect(InspectTarget.ForSlot(profileId, slot));
-            };
-            if (indent == 0) return b;
-            var margin = new MarginContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            margin.AddThemeConstantOverride("margin_left", indent);
-            margin.AddChild(b);
-            return margin;
-        }
-
         // =====================================================================
         // Pages
         // =====================================================================
 
-        private ViewRefresh _redraw;
-
-        /// <summary>Redraws the tab (keeps the table's scroll, search and sort): now if it shows, else when it does.</summary>
-        public void Refresh() => (_redraw ??= new ViewRefresh(this, RefreshNow, "redrawing the Sphere Tracker tab")).Request();
-
-        private void RefreshNow()
+        protected override void RefreshNow()
         {
             if (_trackerPage == null) return;
             using var __perf = PerfMonitor.Measure("Sphere Tracker tab: refresh");
-            if (_view != SettingsView && ViewedSlot().Profile == null)
+            if (View != SettingsView && ViewedSlot().Profile == null)
             {
                 // A view from an earlier Atlas (a multiworld, or My slots) or a slot that's gone: the multiworld's first
                 // slot, or any multiworld's, or the settings.
-                var profiles = _profiles();
-                var first = profiles.FirstOrDefault(p => p.Id == _view && p.Slots.Count > 0) ?? profiles.FirstOrDefault(p => p.Slots.Count > 0);
-                _view = first != null ? SlotView(first.Id, first.Slots[0]) : SettingsView;
-                _sidebarSignature = null;
+                var profiles = Profiles();
+                var first = profiles.FirstOrDefault(p => p.Id == View && p.Slots.Count > 0) ?? profiles.FirstOrDefault(p => p.Slots.Count > 0);
+                ShowView(first != null ? SlotView(first.Id, first.Slots[0]) : SettingsView);
+                return;
             }
             RenderSidebar();
-            if (_view == SettingsView)
+            if (View == SettingsView)
             {
                 ShowPage(_settingsPage);
                 RenderSettings();
@@ -387,35 +266,6 @@ namespace AP_Atlas.UI
             }
             var (profile, slot) = ViewedSlot();
             RenderSlot(profile, slot);
-        }
-
-        private void ShowPage(Control page)
-        {
-            _trackerPage.Visible = page == _trackerPage;
-            _settingsPage.Visible = page == _settingsPage;
-            _messagePage.Visible = page == _messagePage;
-        }
-
-        private void ShowMessage(string title, string text, List<(string Label, Action Action)> actions)
-        {
-            ShowPage(_messagePage);
-            foreach (Node child in _messagePage.GetChildren()) child.QueueFree();
-            var heading = new Label { Text = title, HorizontalAlignment = HorizontalAlignment.Center, AutowrapMode = TextServer.AutowrapMode.WordSmart };
-            heading.SetMeta("font_size_ratio", 1.25);
-            _messagePage.AddChild(heading);
-            var body = new Label { Text = text, HorizontalAlignment = HorizontalAlignment.Center, AutowrapMode = TextServer.AutowrapMode.WordSmart };
-            body.AddThemeColorOverride("font_color", Muted);
-            _messagePage.AddChild(body);
-            var row = new HFlowContainer { Alignment = FlowContainer.AlignmentMode.Center };
-            row.AddThemeConstantOverride("h_separation", 6);
-            foreach (var (label, action) in actions)
-            {
-                var b = new Button { Text = label, FocusMode = FocusModeEnum.None };
-                b.Pressed += action;
-                row.AddChild(b);
-            }
-            _messagePage.AddChild(row);
-            MainTrackerWindow.SetFontSizeRecursive(_messagePage, _settings.ContentFontSize);
         }
 
         private void RenderSlot(MultiworldProfile profile, string slot)
@@ -451,7 +301,7 @@ namespace AP_Atlas.UI
             _headerButtons.AddChild(Kit.Button("Refresh", "Read the host's room again now (at most once a minute)", () => RefreshShown(tryNow: false), !room.Busy));
             _headerButtons.AddChild(Kit.Button("Open ↗", "Open the host's room in your browser", () => AP_Atlas.Core.ExternalLinks.OpenWeb(room.Url)));
             _headerButtons.AddChild(Kit.Button("Settings", "The host's room for each multiworld", () => ShowView(SettingsView)));
-            MainTrackerWindow.SetFontSizeRecursive(_headerButtons, _settings.ContentFontSize);
+            MainTrackerWindow.SetFontSizeRecursive(_headerButtons, Settings.ContentFontSize);
             _problemRow.Visible = room.Problem != null;
             _problemLabel.Text = room.Problem ?? "";
             // The slot at a glance: its open locations and the earliest, against the multiworld's earliest.
@@ -464,13 +314,13 @@ namespace AP_Atlas.UI
                 _overview.Text = (rows.Count == 0
                                      ? $"{slot} has no open locations on the host's tracker."
                                      : $"{slot}: {rows.Count:N0} open location{(rows.Count == 1 ? "" : "s")}, the earliest in sphere {earliest}.") +
-                                 (first == null ? "" : $" The multiworld's earliest open location{(first.Value.Unfound == 1 ? " is" : "s are")} in sphere {first.Value.Sphere} ({first.Value.Unfound:N0} left).");
+                                 (first == null ? "" : $" The multiworld's earliest open location{(first.Value.Unfound == 1 ? " is" : "s are")} in sphere {first.Value.Sphere} ({first.Value.Unfound:N0} unfound).");
             }
             _onlySlot.Text = $"Only {slot}'s rows";
             _note.Text = (room.Data?.Tables?.Count ?? 0) == 0
                 ? (room.Busy ? "Reading the host's room…" : room.Problem == null ? "Atlas couldn't read this page's layout. Open it in your browser." : "")
                 : "As the host's page has it. Atlas only reads the room; it never asks spheretracker.de to refresh it.";
-            if (ReferenceEquals(room.Data, _data) && _dataSlot == slot && _tree.GetRoot() != null) return;
+            if (ReferenceEquals(room.Data, _data) && _dataSlot == slot && _table.Rows.Count > 0) return;
             _data = room.Data;
             _dataSlot = slot;
             var tables = _data?.Tables ?? new List<PageTable>();
@@ -492,19 +342,18 @@ namespace AP_Atlas.UI
             RenderTable();
         }
 
+        /// <summary>The picked table of the room's page: its columns as the page names them, this slot's rows lit, the slot's own column left out while only its rows show.</summary>
         private void RenderTable()
         {
-            var bar = _tree.GetChildren(true).OfType<VScrollBar>().FirstOrDefault();
-            double scroll = bar?.Value ?? 0;
-            _tree.Clear();
             var tables = _data?.Tables ?? new List<PageTable>();
             if (tables.Count == 0 || _tablePicker.ItemCount == 0)
             {
-                _count.Text = "";
                 _onlySlot.Visible = false;
+                _table.TotalCount = null;
+                _table.SetColumns(Array.Empty<AtlasTable.Column>());
+                _table.SetRows(Array.Empty<AtlasTable.Row>());
                 return;
             }
-            if (bar != null) Ui.Defer(bar, () => bar.Value = scroll);
             var table = tables[Math.Clamp(_tablePicker.GetItemId(Math.Max(0, _tablePicker.Selected)), 0, tables.Count - 1)];
             int slotColumn = SphereTable.ColumnOf(table, "Finder");
             if (slotColumn < 0) slotColumn = SphereTable.ColumnOf(table, "Slot");
@@ -513,44 +362,36 @@ namespace AP_Atlas.UI
             bool slotTable = slotColumn >= 0 || (pattern != null && table.Rows.Any(r => SphereTable.Names(r, pattern)));
             _onlySlot.Visible = slotTable;
             bool onlySlot = slotTable && pattern != null && _onlySlot.ButtonPressed;
-            _shownColumns = Enumerable.Range(0, table.Columns.Count).Where(i => !(onlySlot && i == slotColumn)).ToList();
-            _tree.Columns = Math.Max(1, _shownColumns.Count);
-            for (int k = 0; k < _shownColumns.Count; k++)
+            var shownColumns = Enumerable.Range(0, table.Columns.Count).Where(i => !(onlySlot && i == slotColumn)).ToList();
+            var columns = new List<AtlasTable.Column>();
+            var ids = new HashSet<string>();
+            foreach (int i in shownColumns)
             {
-                int i = _shownColumns[k];
-                _tree.SetColumnTitle(k, table.Columns[i] + (i == _sortColumn ? (_sortDescending ? " ▼" : " ▲") : ""));
-                _tree.SetColumnTitleAlignment(k, HorizontalAlignment.Left);
-                _tree.SetColumnExpand(k, true);
-                _tree.SetColumnExpandRatio(k, string.Equals(table.Columns[i], "Location", StringComparison.OrdinalIgnoreCase) ? 4 : 1);
-                _tree.SetColumnClipContent(k, true);
-                _tree.SetColumnCustomMinimumWidth(k, 60);
+                string name = string.IsNullOrWhiteSpace(table.Columns[i]) ? $"Column {i + 1}" : table.Columns[i];
+                string id = name;
+                for (int n = 2; !ids.Add(id); n++) id = $"{name} ({n})";
+                columns.Add(new AtlasTable.Column { Id = id, Title = name, MinWidth = 60, Ratio = string.Equals(table.Columns[i], "Location", StringComparison.OrdinalIgnoreCase) ? 4 : 1 });
             }
-            var all = SphereTable.FilterAndSort(table, _search.Text, _sortColumn, _sortDescending);
-            var rows = onlySlot ? all.Where(r => SphereTable.IsSlotRow(table, r, _dataSlot, pattern)).ToList() : all;
-            var root = _tree.CreateItem();
-            foreach (var r in rows.Take(MaxRows))
+            var rows = new List<AtlasTable.Row>();
+            for (int r = 0; r < table.Rows.Count; r++)
             {
-                var item = _tree.CreateItem(root);
-                bool mine = pattern != null && SphereTable.IsSlotRow(table, r, _dataSlot, pattern);
-                for (int k = 0; k < _shownColumns.Count; k++)
+                var cells = table.Rows[r];
+                bool mine = pattern != null && SphereTable.IsSlotRow(table, cells, _dataSlot, pattern);
+                if (onlySlot && !mine) continue;
+                var row = new AtlasTable.Row { Key = "r" + r, Cells = new AtlasTable.Cell[shownColumns.Count], Pinned = false };
+                for (int k = 0; k < shownColumns.Count; k++)
                 {
-                    int i = _shownColumns[k];
-                    item.SetText(k, r[i]);
-                    item.SetTooltipText(k, r[i]);
-                    item.SetCustomColor(k, mine && i == slotColumn ? MineColor : mine ? ThemeColors.Text : ThemeColors.TextMuted);
+                    int i = shownColumns[k];
+                    string text = i < cells.Count ? cells[i] ?? "" : "";
+                    row.Cells[k] = new AtlasTable.Cell(text, mine && i == slotColumn ? ThemeColors.You : mine ? ThemeColors.Text : ThemeColors.TextMuted, text);
                 }
+                rows.Add(row);
             }
-            if (rows.Count == 0)
-            {
-                var empty = _tree.CreateItem(root);
-                empty.SetText(0, all.Count == 0 ? "Nothing matches." : $"{_dataSlot} has no rows here. Switch off \"Only {_dataSlot}'s rows\" to see the whole table.");
-                empty.SetCustomColor(0, Muted);
-                empty.SetExpandRight(0, true);
-                for (int k = 0; k < _shownColumns.Count; k++) empty.SetSelectable(k, false);
-            }
-            _count.Text = (rows.Count != all.Count ? $"{rows.Count:N0} of {all.Count:N0} rows" : $"{rows.Count:N0} rows") +
-                          (rows.Count > MaxRows ? $" (showing the first {MaxRows:N0})" : "");
-            MainTrackerWindow.SetFontSizeRecursive(_tree, _settings.ContentFontSize);
+            _table.TotalCount = table.Rows.Count;
+            _table.EmptyText = onlySlot && rows.Count == 0 && table.Rows.Count > 0 ? $"{_dataSlot} has no rows here. Switch off \"Only {_dataSlot}'s rows\" to see the whole table." : "Nothing here.";
+            _table.SetColumns(columns);
+            _table.SetRows(rows);
+            MainTrackerWindow.SetFontSizeRecursive(_table, Settings.ContentFontSize);
         }
 
         // =====================================================================
@@ -559,7 +400,7 @@ namespace AP_Atlas.UI
 
         private void RenderSettings()
         {
-            var profiles = _profiles();
+            var profiles = Profiles();
             string signature = string.Join("|", profiles.Select(p => $"{p.Id}={p.Name}={p.SphereTrackerUrl}={_spheres.HiddenBecause(p)}"));
             if (signature == _settingsSignature) return;
             _settingsSignature = signature;
@@ -572,7 +413,7 @@ namespace AP_Atlas.UI
                                        "the room names its creator, and Atlas takes it at once when that's the multiworld's organizer on Cheese Tracker, otherwise only if you confirm the creator is the host. " +
                                        "The room stays hidden while race mode applies, and Atlas reads it only while this tab shows it, at most every 10 minutes; " +
                                        "it never asks spheretracker.de to refresh a room.", ThemeColors.TextMuted));
-            if (profiles.Count == 0) _settingsBox.AddChild(Kit.Text("No multiworlds yet: add one on the Multiworlds page.", Muted));
+            if (profiles.Count == 0) _settingsBox.AddChild(Kit.Subtle("No multiworlds yet: add one on the Multiworlds page."));
             foreach (var profile in profiles)
             {
                 var p = profile;
@@ -586,23 +427,23 @@ namespace AP_Atlas.UI
                     nameRow.AddChild(Kit.Button("Show", $"Show {profile.Slots[0]}'s rows", () => ShowView(SlotView(p.Id, p.Slots[0]))));
                 _settingsBox.AddChild(nameRow);
                 string hidden = _spheres.HiddenBecause(profile);
-                if (hidden != null) _settingsBox.AddChild(Kit.Text("Hidden now: " + hidden, Warn));
+                if (hidden != null) _settingsBox.AddChild(Kit.Text("Hidden now: " + hidden, ThemeColors.Warning));
                 var row = new HFlowContainer();
                 row.AddThemeConstantOverride("h_separation", 6);
                 row.AddThemeConstantOverride("v_separation", 4);
                 bool linked = !string.IsNullOrWhiteSpace(profile.SphereTrackerUrl);
                 var label = new Label { Text = linked ? "Host's room: " + profile.SphereTrackerUrl : "Host's room: not linked", VerticalAlignment = VerticalAlignment.Center };
-                label.AddThemeColorOverride("font_color", linked ? Good : Muted);
+                label.AddThemeColorOverride("font_color", linked ? ThemeColors.Success : ThemeColors.TextSubtle);
                 row.AddChild(label);
                 row.AddChild(Kit.Button(linked ? "Change…" : "Link…", "Paste the spheretracker.de room link your host created and shared", () => AskLinkSite(p)));
                 if (linked)
                 {
-                    row.AddChild(Kit.Button("Unlink", "Stop using this room", () => { _spheres.UnlinkSphereSite(p.Id); _settingsSignature = null; _sidebarSignature = null; }));
+                    row.AddChild(Kit.Button("Unlink", "Stop using this room", () => { _spheres.UnlinkSphereSite(p.Id); _settingsSignature = null; InvalidateSidebar(); }));
                     row.AddChild(Kit.Button("Open ↗", "Open the host's room in your browser", () => AP_Atlas.Core.ExternalLinks.OpenWeb(p.SphereTrackerUrl)));
                 }
                 _settingsBox.AddChild(row);
             }
-            MainTrackerWindow.SetFontSizeRecursive(_settingsBox, _settings.ContentFontSize);
+            MainTrackerWindow.SetFontSizeRecursive(_settingsBox, Settings.ContentFontSize);
         }
 
         private void AskLinkSite(MultiworldProfile profile)
@@ -624,13 +465,13 @@ namespace AP_Atlas.UI
             }
             catch (Exception ex)
             {
-                if (IsInstanceValid(this)) _toast("Checking the room failed: " + ex.Message, ThemeColors.Error);
+                if (IsInstanceValid(this)) Toast("Checking the room failed: " + ex.Message, ThemeColors.Error);
                 return;
             }
             if (!IsInstanceValid(this)) return;
             if (check.Error != null)
             {
-                _toast(check.Error, ThemeColors.Error);
+                Toast(check.Error, ThemeColors.Error);
                 return;
             }
             if (check.ByOrganizer)
@@ -663,19 +504,14 @@ namespace AP_Atlas.UI
             string error = _spheres.LinkRoom(check, confirmed);
             if (error != null)
             {
-                _toast(error, ThemeColors.Error);
+                Toast(error, ThemeColors.Error);
                 return;
             }
-            _toast(check.ByOrganizer ? $"Linked: the room was created by {check.Creator}, who runs {profile.Name}'s Cheese Tracker." : $"Linked {profile.Name}'s sphere tracker.", ThemeColors.TextSubtle);
+            Toast(check.ByOrganizer ? $"Linked: the room was created by {check.Creator}, who runs {profile.Name}'s Cheese Tracker." : $"Linked {profile.Name}'s sphere tracker.", ThemeColors.TextSubtle);
             _settingsSignature = null;
-            _sidebarSignature = null;
+            InvalidateSidebar();
             WatchShown();
             Refresh();
         }
-
-        // =====================================================================
-        // Small builders
-        // =====================================================================
-
     }
 }

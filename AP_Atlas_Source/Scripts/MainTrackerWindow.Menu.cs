@@ -246,26 +246,24 @@ public partial class MainTrackerWindow
         var dialog = new AcceptDialog { Title = Tr("Keyboard Shortcuts"), OkButtonText = Tr("Close"), MinSize = new Vector2I(600, 460) };
         var box = new VBoxContainer();
         box.AddThemeConstantOverride("separation", 8);
-        var tree = new Tree { Columns = 3, HideRoot = true, CustomMinimumSize = new Vector2(560, 360), SizeFlagsVertical = SizeFlags.ExpandFill };
-        tree.SetColumnTitlesVisible(true);
-        tree.SetColumnTitle(0, Tr("Command"));
-        tree.SetColumnTitle(1, Tr("Key"));
-        tree.SetColumnTitle(2, Tr("Menu"));
-        tree.SetColumnExpand(0, true);
-        tree.SetColumnExpand(1, false);
-        tree.SetColumnExpand(2, false);
-        tree.SetColumnCustomMinimumWidth(1, 130);
-        tree.SetColumnCustomMinimumWidth(2, 110);
-        var root = tree.CreateItem();
-        foreach (var command in _commands!.All)
+        var table = new AP_Atlas.UI.AtlasTable("keys", _appSettings, text => Tr(text)) { CustomMinimumSize = new Vector2(560, 360), Toast = ShowToast };
+        table.SetColumns(new List<AP_Atlas.UI.AtlasTable.Column>
         {
-            var row = tree.CreateItem(root);
-            row.SetText(0, Tr(command.Title));
-            row.SetText(1, _commands.ShortcutOf(command.Id));
-            row.SetText(2, Tr(command.Menu));
-            row.SetTooltipText(0, command.Id);
-        }
-        box.AddChild(tree);
+            new() { Id = "command", Title = "Command", MinWidth = 200, Ratio = 1 },
+            new() { Id = "key", Title = "Key", MinWidth = 130, Ratio = 0 },
+            new() { Id = "menu", Title = "Menu", MinWidth = 110, Ratio = 0 }
+        });
+        table.SetRows(_commands!.All.Select(command => new AP_Atlas.UI.AtlasTable.Row
+        {
+            Key = command.Id,
+            Cells = new[]
+            {
+                new AP_Atlas.UI.AtlasTable.Cell(Tr(command.Title), null, command.Id),
+                new AP_Atlas.UI.AtlasTable.Cell(_commands.ShortcutOf(command.Id)),
+                new AP_Atlas.UI.AtlasTable.Cell(Tr(command.Menu))
+            }
+        }).ToList());
+        box.AddChild(table);
         var conflicts = _commands.Conflicts();
         string note = conflicts.Count == 0 ? "" :
             Tr("Keys bound to more than one command (the first wins): ") + string.Join(", ", conflicts.Select(c => c.Shortcut)) + "\n";

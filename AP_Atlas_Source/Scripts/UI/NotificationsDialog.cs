@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using AP_Atlas.Core;
 using Godot;
 
 namespace AP_Atlas.UI
@@ -6,15 +9,15 @@ namespace AP_Atlas.UI
     /// <summary>
     /// Window → Notifications: everything the alert feed told the user this session, newest first, with when and what
     /// kind; opening it marks them seen, Clear empties the list. It follows the log while open, and frees itself when closed.
+    /// The rows are a table like any other: searchable, sortable, exportable.
     /// </summary>
     public sealed partial class NotificationsDialog : AcceptDialog
     {
-        private readonly AP_Atlas.Core.AlertLog _log;
+        private readonly AlertLog _log;
         private readonly Func<string, string> _tr;
-        private readonly Tree _tree = new();
-        private readonly Label _empty;
+        private readonly AtlasTable _table;
 
-        public NotificationsDialog(AP_Atlas.Core.AlertLog log, Func<string, string> tr)
+        public NotificationsDialog(AlertLog log, AppSettings settings, Func<string, string> tr, Action<string, Color> toast)
         {
             _log = log;
             _tr = tr;
@@ -22,26 +25,15 @@ namespace AP_Atlas.UI
             OkButtonText = _tr("Close");
             MinSize = new Vector2I(720, 460);
             Unresizable = false;
-            var box = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, SizeFlagsVertical = Control.SizeFlags.ExpandFill };
-            box.AddThemeConstantOverride("separation", 8);
-            _tree.Columns = 3;
-            _tree.HideRoot = true;
-            _tree.SetColumnTitlesVisible(true);
-            _tree.SetColumnTitle(0, _tr("When"));
-            _tree.SetColumnTitle(1, _tr("Kind"));
-            _tree.SetColumnTitle(2, _tr("What"));
-            _tree.SetColumnExpand(0, false);
-            _tree.SetColumnExpand(1, false);
-            _tree.SetColumnExpand(2, true);
-            _tree.SetColumnCustomMinimumWidth(0, 90);
-            _tree.SetColumnCustomMinimumWidth(1, 90);
-            _tree.CustomMinimumSize = new Vector2(680, 360);
-            _tree.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
-            box.AddChild(_tree);
-            _empty = new Label { Text = _tr("Nothing yet this session."), HorizontalAlignment = HorizontalAlignment.Center };
-            _empty.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextSubtle);
-            box.AddChild(_empty);
-            AddChild(box);
+            _table = new AtlasTable("notifications", settings, tr) { Toast = toast, EmptyText = _tr("Nothing yet this session.") };
+            _table.SetColumns(new List<AtlasTable.Column>
+            {
+                new() { Id = "when", Title = "When", MinWidth = 90, Ratio = 0 },
+                new() { Id = "kind", Title = "Kind", MinWidth = 90, Ratio = 0 },
+                new() { Id = "what", Title = "What", MinWidth = 300, Ratio = 1 }
+            });
+            _table.CustomMinimumSize = new Vector2(680, 360);
+            AddChild(_table);
             AddButton(_tr("Clear"), false, "clear");
             CustomAction += action =>
             {
@@ -55,23 +47,32 @@ namespace AP_Atlas.UI
         }
 
         /// <summary>The rows shown, newest first: when, kind, what.</summary>
-        public int RowCount { get; private set; }
+        public int RowCount => _table.ShownRows.Count;
+
+        /// <summary>The table, for the window's tests.</summary>
+        public AtlasTable Table => _table;
 
         private void Render()
         {
-            _tree.Clear();
-            var root = _tree.CreateItem();
-            RowCount = 0;
-            foreach (var entry in _log.Entries)
+            var rows = _log.Entries.Select(entry => new AtlasTable.Row
             {
-                var row = _tree.CreateItem(root);
-                row.SetText(0, entry.At.ToString("HH:mm:ss"));
-                row.SetText(1, _tr(entry.Kind.ToString()));
-                row.SetText(2, entry.Message);
-                row.SetTooltipText(2, entry.Message);
-                RowCount++;
-            }
-            _empty.Visible = RowCount == 0;
+                Key = entry.Id.ToString(),
+                Cells = new[]
+                {
+                    new AtlasTable.Cell(entry.At.ToString("HH:mm:ss"), ThemeColors.TextMuted, null, entry.At),
+                    new AtlasTable.Cell(_tr(entry.Kind.ToString()), KindColor(entry.Kind), null, (int)entry.Kind),
+                    new AtlasTable.Cell(entry.Message, null, entry.Message)
+                }
+            }).ToList();
+            _table.SetRows(rows);
         }
+
+        private static Color KindColor(AlertKind kind) => kind switch
+        {
+            AlertKind.Error => ThemeColors.Error,
+            AlertKind.Warning => ThemeColors.Warning,
+            AlertKind.Success => ThemeColors.Success,
+            _ => ThemeColors.TextMuted
+        };
     }
 }

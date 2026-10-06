@@ -36,11 +36,10 @@ namespace AP_Atlas.Core.CheeseTracker
         public string Owner { get; set; }
         /// <summary>Null: every game.</summary>
         public string Game { get; set; }
-        public string Text { get; set; } = "";
 
         public bool IsActive =>
             HiddenProgression.Count > 0 || HiddenCompletion.Count > 0 || HiddenAvailability.Count > 0 ||
-            Owner != null || Game != null || !string.IsNullOrWhiteSpace(Text);
+            Owner != null || Game != null;
 
         public void Clear()
         {
@@ -49,7 +48,6 @@ namespace AP_Atlas.Core.CheeseTracker
             HiddenAvailability.Clear();
             Owner = null;
             Game = null;
-            Text = "";
         }
     }
 
@@ -73,83 +71,35 @@ namespace AP_Atlas.Core.CheeseTracker
                 else if (!string.Equals(g.OwnerName, f.Owner, StringComparison.OrdinalIgnoreCase)) return false;
             }
             if (f.Game != null && !string.Equals(g.Game, f.Game, StringComparison.Ordinal)) return false;
-            string text = (f.Text ?? "").Trim();
-            if (text.Length > 0)
-            {
-                bool Has(string s) => s != null && s.IndexOf(text, StringComparison.OrdinalIgnoreCase) >= 0;
-                if (!Has(g.Name) && !Has(g.OwnerName) && !Has(g.Game) && !Has(g.Notes) && !Has(r.ProfileName)) return false;
-            }
             return true;
         }
 
         /// <summary>The direction a column sorts in first (Cheese Tracker's: least active and most hinted first).</summary>
         public static bool DefaultDescending(string column) => column is "activity" or "hints";
 
-        public static List<CheeseRow> Sort(IEnumerable<CheeseRow> rows, string column, bool descending, bool mineFirst, DateTime nowUtc)
+        /// <summary>
+        /// What a column sorts by for a row, as Cheese Tracker's own page orders it (every table compares keys through
+        /// TableSort: numbers as numbers, names naturally). Ties keep the rows' order: the tab gives them by name, then multiworld.
+        /// </summary>
+        public static IComparable SortKey(CheeseRow r, string column, DateTime nowUtc) => column switch
         {
-            Comparison<CheeseRow> byColumn = column switch
-            {
-                "multiworld" => (a, b) => string.Compare(a.ProfileName, b.ProfileName, StringComparison.OrdinalIgnoreCase),
-                "position" => (a, b) => a.Game.Position.CompareTo(b.Game.Position),
-                "ping" => (a, b) => Array.IndexOf(CtStatus.PingIds, EffectivePing(a)).CompareTo(Array.IndexOf(CtStatus.PingIds, EffectivePing(b))),
-                "availability" => (a, b) => AvailabilityRank(a.Game).CompareTo(AvailabilityRank(b.Game)),
-                "owner" => (a, b) => string.Compare(a.Game.OwnerName ?? "", b.Game.OwnerName ?? "", StringComparison.OrdinalIgnoreCase),
-                "game" => (a, b) => string.Compare(a.Game.Game, b.Game.Game, StringComparison.OrdinalIgnoreCase),
-                "progression" => (a, b) => ProgressionRank(a.Game).CompareTo(ProgressionRank(b.Game)),
-                "status" => (a, b) =>
-                {
-                    int c = ProgressionRank(a.Game).CompareTo(ProgressionRank(b.Game));
-                    return c != 0 ? c : Array.IndexOf(CtStatus.CompletionIds, a.Game.Completion).CompareTo(Array.IndexOf(CtStatus.CompletionIds, b.Game.Completion));
-                }
-                ,
-                "completion" => (a, b) => Array.IndexOf(CtStatus.CompletionIds, a.Game.Completion).CompareTo(Array.IndexOf(CtStatus.CompletionIds, b.Game.Completion)),
-                "activity" => (a, b) => (DaysSinceActivity(a.Game, nowUtc) ?? double.PositiveInfinity).CompareTo(DaysSinceActivity(b.Game, nowUtc) ?? double.PositiveInfinity),
-                "checks" => (a, b) => ChecksRatio(a.Game).CompareTo(ChecksRatio(b.Game)),
-                "hints" => (a, b) => a.UnfoundHints.CompareTo(b.UnfoundHints),
-                _ => (a, b) => NaturalCompare(a.Game.Name, b.Game.Name)
-            };
-            var list = rows.ToList();
-            list.Sort((a, b) =>
-            {
-                if (mineFirst && a.Mine != b.Mine) return a.Mine ? -1 : 1;
-                int c = byColumn(a, b);
-                if (c != 0) return descending ? -c : c;
-                // Ties fall back on the slot name, then the multiworld (stable and predictable).
-                c = NaturalCompare(a.Game.Name, b.Game.Name);
-                return c != 0 ? c : string.Compare(a.ProfileName, b.ProfileName, StringComparison.OrdinalIgnoreCase);
-            });
-            return list;
-        }
+            "multiworld" => r.ProfileName ?? "",
+            "position" => r.Game.Position,
+            "ping" => Array.IndexOf(CtStatus.PingIds, EffectivePing(r)),
+            "availability" => AvailabilityRank(r.Game),
+            "owner" => r.Game.OwnerName ?? "",
+            "game" => r.Game.Game ?? "",
+            "progression" => ProgressionRank(r.Game),
+            "status" => ProgressionRank(r.Game) * 100 + Array.IndexOf(CtStatus.CompletionIds, r.Game.Completion),
+            "completion" => Array.IndexOf(CtStatus.CompletionIds, r.Game.Completion),
+            "activity" => DaysSinceActivity(r.Game, nowUtc) ?? double.PositiveInfinity,
+            "checks" => ChecksRatio(r.Game),
+            "hints" => r.UnfoundHints,
+            _ => r.Game.Name ?? ""
+        };
 
-        /// <summary>Compares names with runs of digits as numbers ("Slot 2" before "Slot 10"), ignoring case.</summary>
-        public static int NaturalCompare(string a, string b)
-        {
-            a ??= "";
-            b ??= "";
-            int i = 0, j = 0;
-            while (i < a.Length && j < b.Length)
-            {
-                if (char.IsDigit(a[i]) && char.IsDigit(b[j]))
-                {
-                    // Numbers compare by value: leading zeros skipped, then the longer is larger, then digit by digit
-                    // (without making strings: big tables compare a lot).
-                    int si = i, sj = j;
-                    while (i < a.Length && char.IsDigit(a[i])) i++;
-                    while (j < b.Length && char.IsDigit(b[j])) j++;
-                    while (si < i && a[si] == '0') si++;
-                    while (sj < j && b[sj] == '0') sj++;
-                    if (i - si != j - sj) return (i - si).CompareTo(j - sj);
-                    for (; si < i; si++, sj++)
-                        if (a[si] != b[sj]) return a[si].CompareTo(b[sj]);
-                    continue;
-                }
-                int c = char.ToLowerInvariant(a[i]).CompareTo(char.ToLowerInvariant(b[j]));
-                if (c != 0) return c;
-                i++;
-                j++;
-            }
-            return (a.Length - i).CompareTo(b.Length - j);
-        }
+        /// <summary>Names in natural order ("Slot 2" before "Slot 10"), as every table sorts: see <see cref="TableSort.NaturalCompare"/>.</summary>
+        public static int NaturalCompare(string a, string b) => TableSort.NaturalCompare(a, b);
 
         /// <summary>BK first (it needs attention), then Soft BK, Unknown, Unblocked, Go mode; completed slots last.</summary>
         public static int ProgressionRank(CtGame g) => g.IsComplete ? 5 : g.Progression switch

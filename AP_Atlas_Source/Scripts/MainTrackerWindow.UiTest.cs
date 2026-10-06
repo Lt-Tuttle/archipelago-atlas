@@ -129,6 +129,8 @@ public partial class MainTrackerWindow
             AlertsAsync);
         await ScenarioAsync("UI kit: a button from the kit runs its action once per press, honours enabled and keeps its tooltip; its text lines take the palette's colours; every heading from it wears the accent's heading colour and follows an accent change, wherever it is; the alert feed names a card's kind from the palette",
             UiKitAsync);
+        await ScenarioAsync("Tables: a click on a column's title sorts by it (the column's own first direction, then the other; the arrow says which), typed words narrow the rows, a column hides and shows, pinned rows stay on top, the rows export as TSV, Markdown, Discord parts and a CSV file, the sort and the hidden columns are saved, and unchanged rows are updated in place with the selection kept",
+            TablesAsync);
         await ScenarioAsync("Bursts: 40 items and 40 chat lines arriving together reach the slot once each, at most one update of the window in each frame they arrive over (not 80)",
             BurstIsOneUpdateAsync, attempts: 2);
         await ScenarioAsync("Long text: a game's names and a hint's entrance of a megabyte, and a chat line of 100,000 characters without a space, hold up no frame for 150 ms, shown or not (names are cut to 500 characters; a long run of text gets breaks)",
@@ -1035,6 +1037,84 @@ public partial class MainTrackerWindow
         button.QueueFree();
         off.QueueFree();
         heading.QueueFree();
+        await UiTestWaitAsync(0.1);
+    }
+
+    private async Task TablesAsync()
+    {
+        var table = new AP_Atlas.UI.AtlasTable("uitest-table", _appSettings, text => text) { Toast = ShowToast };
+        AddChild(table);
+        table.SetColumns(new List<AP_Atlas.UI.AtlasTable.Column>
+        {
+            new() { Id = "name", Title = "Name", MinWidth = 100 },
+            new() { Id = "count", Title = "Count", MinWidth = 60, Align = HorizontalAlignment.Right, DescendingFirst = true },
+            new() { Id = "note", Title = "Note", MinWidth = 100 }
+        });
+        AP_Atlas.UI.AtlasTable.Row Row(string key, string name, int count, string note, bool pinned = false) => new()
+        {
+            Key = key,
+            Pinned = pinned,
+            Cells = new[] { new AP_Atlas.UI.AtlasTable.Cell(name), new AP_Atlas.UI.AtlasTable.Cell(count.ToString(), null, null, count), new AP_Atlas.UI.AtlasTable.Cell(note) }
+        };
+        var rows = new List<AP_Atlas.UI.AtlasTable.Row> { Row("a", "Slot 10", 5, "banana bread"), Row("b", "Slot 2", 12, "apple"), Row("c", "Slot 1", 7, "band camp"), Row("d", "Slot 3", 1, "cherry") };
+        table.SetRows(rows);
+        await UiTestWaitAsync(0.1);
+        string Order() => string.Join(",", table.ShownRows.Select(r => r.Key));
+        UiTestExpect(Order() == "a,b,c,d" && table.CountLabel.Text == "4 rows", $"without a sort the rows aren't in the order given: {Order()} ({table.CountLabel.Text})");
+        // A title click sorts (a column's own first direction, then the other), and the title says which way.
+        table.Tree.EmitSignal(Tree.SignalName.ColumnTitleClicked, 1, (long)MouseButton.Left);
+        UiTestExpect(Order() == "b,c,a,d" && table.Tree.GetColumnTitle(1).EndsWith("▼"), $"the first click on Count didn't sort it downward: {Order()} \"{table.Tree.GetColumnTitle(1)}\"");
+        table.Tree.EmitSignal(Tree.SignalName.ColumnTitleClicked, 1, (long)MouseButton.Left);
+        UiTestExpect(Order() == "d,a,c,b" && table.Tree.GetColumnTitle(1).EndsWith("▲"), $"the second click didn't turn the order: {Order()}");
+        table.SortBy("name");
+        await UiTestWaitAsync(0.8); // the sort is saved half a second later, apart from the hidden column below
+        UiTestExpect(Order() == "c,b,d,a", $"names don't sort naturally (Slot 2 before Slot 10): {Order()}");
+        // Pinned rows stay on top whichever way the table sorts.
+        rows[3].Pinned = true;
+        table.SetRows(rows);
+        UiTestExpect(Order() == "d,c,b,a", $"a pinned row isn't first: {Order()}");
+        rows[3].Pinned = false;
+        // Typed words narrow the rows: each word must start a word of a cell.
+        table.SearchBox.Text = "ban";
+        table.Render();
+        UiTestExpect(Order() == "c,a" && table.CountLabel.Text == "2 of 4 rows", $"the search didn't narrow to the rows with a word starting \"ban\": {Order()} ({table.CountLabel.Text})");
+        table.SearchBox.Text = "ban camp";
+        table.Render();
+        UiTestExpect(Order() == "c", $"two typed words didn't both have to match: {Order()}");
+        table.SearchBox.Text = "";
+        table.Render();
+        // A column hides and shows; the sort and the hidden columns are saved with the settings.
+        table.ToggleColumn(2);
+        UiTestExpect(table.ShownColumns.Count == 2 && table.Tree.Columns == 2 && table.ShownIndexOf("note") < 0, "hiding a column didn't take it out of the tree");
+        await UiTestWaitAsync(0.8); // saved half a second after the change
+        var saved = DataManager.LoadSettings().Tables.GetValueOrDefault("uitest-table");
+        UiTestExpect(saved != null && saved.SortColumn == "name" && !saved.SortDescending && saved.HiddenColumns.SequenceEqual(new[] { "note" }), "the table's sort and hidden columns weren't saved");
+        table.ToggleColumn(2);
+        UiTestExpect(table.ShownColumns.Count == 3, "showing the column again didn't bring it back");
+        // The rows export as shown: TSV, Markdown, Discord parts, and a CSV file in Atlas's folder.
+        string tsv = table.ExportText(AP_Atlas.Core.ExportFormat.Tsv);
+        UiTestExpect(tsv.StartsWith("Name\tCount\tNote\nSlot 1\t7\tband camp\n", StringComparison.Ordinal), $"the TSV export isn't the shown rows in order: {tsv.Replace("\n", "|")}");
+        UiTestExpect(table.ExportText(AP_Atlas.Core.ExportFormat.Markdown).StartsWith("| Name | Count | Note |\n|---|---|---|\n", StringComparison.Ordinal), "the Markdown export has no header");
+        UiTestExpect(table.DiscordParts().Count == 1 && table.DiscordParts()[0].StartsWith("```\n", StringComparison.Ordinal), "the Discord export isn't one code block");
+        string csvPath = System.IO.Path.Combine(DataManager.GetDataDirectory(), "uitest-table.csv");
+        string? csvProblem = table.SaveCsv(csvPath);
+        UiTestExpect(csvProblem == null && (await System.IO.File.ReadAllTextAsync(csvPath)).StartsWith("Name,Count,Note\r\nSlot 1,7,band camp\r\n", StringComparison.Ordinal), "the CSV file wasn't written as shown");
+        System.IO.File.Delete(csvPath);
+        // Unchanged rows are updated in place (the same tree items), the selection kept; new rows rebuild it, the selection still kept.
+        table.Select("b");
+        var first = table.Tree.GetRoot()!.GetFirstChild();
+        rows[1].Cells[2] = new AP_Atlas.UI.AtlasTable.Cell("apple pie");
+        table.SetRows(rows);
+        UiTestExpect(ReferenceEquals(first, table.Tree.GetRoot()!.GetFirstChild()) && table.Selected?.Key == "b" && table.Tree.GetSelected() != null && table.RowAt(table.Tree.GetSelected())?.Key == "b"
+            && table.Tree.GetRoot()!.GetFirstChild()!.GetNext()!.GetText(2) == "apple pie", "unchanged rows weren't updated in place with the selection kept");
+        rows.Add(Row("e", "Slot 4", 3, "date"));
+        table.SetRows(rows);
+        UiTestExpect(table.ShownRows.Count == 5 && table.Selected?.Key == "b" && table.RowAt(table.Tree.GetSelected())?.Key == "b", "a new row lost the selection");
+        // The most rows drawn is a limit the count says.
+        table.MaxRows = 2;
+        table.Render();
+        UiTestExpect(table.ShownRows.Count == 2 && table.CountLabel.Text.Contains("showing the first 2"), $"the row limit isn't applied or said: {table.CountLabel.Text}");
+        table.QueueFree();
         await UiTestWaitAsync(0.1);
     }
 

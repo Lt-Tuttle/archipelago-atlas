@@ -85,15 +85,15 @@ public class AppSettings
     public Dictionary<string, string> CheeseAutoLastSet { get; set; } = new Dictionary<string, string>();
     /// <summary>Slot key → why automatic updates are paused for it (until the user resumes them).</summary>
     public Dictionary<string, string> CheeseAutoPaused { get; set; } = new Dictionary<string, string>();
-    // The Cheese Tracker tab: what it shows, and how its table sorts (filters reset each session, like Cheese Tracker's).
+    // The Cheese Tracker tab: what it shows (filters reset each session, like Cheese Tracker's; the table's sort is in Tables).
     public string CheeseTabView { get; set; } = "";
-    public string CheeseSortColumn { get; set; } = "name";
-    public bool CheeseSortDescending { get; set; } = false;
     public bool CheeseMineFirst { get; set; } = true;
     public bool CheeseChecksAsPercent { get; set; } = false;
     public int CheeseTableSplitOffset { get; set; } = 0;
     // The Sphere Tracker tab: the slot (or the settings) it last showed.
     public string SphereTabView { get; set; } = "";
+    /// <summary>Each table's remembered sort and hidden columns, by the table's id (AtlasTable).</summary>
+    public Dictionary<string, TablePrefs> Tables { get; set; } = new Dictionary<string, TablePrefs>();
 
     // Window State
     public int WindowWidth { get; set; } = 1024;
@@ -180,6 +180,14 @@ public class MultiworldProfile
 
     // Legacy support
     public string SlotName { get; set; } = "";
+}
+
+/// <summary>What a table remembers: the column it sorts by (and which way), and the columns hidden.</summary>
+public class TablePrefs
+{
+    public string SortColumn { get; set; } = "";
+    public bool SortDescending { get; set; }
+    public List<string> HiddenColumns { get; set; } = new List<string>();
 }
 
 public static class DataManager
@@ -293,8 +301,14 @@ public static class DataManager
         settings.CheeseAutoLastSet ??= new Dictionary<string, string>();
         settings.CheeseAutoPaused ??= new Dictionary<string, string>();
         settings.CheeseTabView ??= "";
-        if (string.IsNullOrWhiteSpace(settings.CheeseSortColumn)) settings.CheeseSortColumn = "name";
         settings.SphereTabView ??= "";
+        settings.Tables ??= new Dictionary<string, TablePrefs>();
+        foreach (var key in new List<string>(settings.Tables.Keys))
+        {
+            settings.Tables[key] ??= new TablePrefs();
+            settings.Tables[key].SortColumn ??= "";
+            settings.Tables[key].HiddenColumns ??= new List<string>();
+        }
         if (settings.MapNodeScale <= 0 || float.IsNaN(settings.MapNodeScale)) settings.MapNodeScale = 1f;
         return settings;
     }

@@ -48,7 +48,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             open.GrabFocus();
             return;
         }
-        var dialog = new AP_Atlas.UI.NotificationsDialog(_alertLog, text => Tr(text));
+        var dialog = new AP_Atlas.UI.NotificationsDialog(_alertLog, _appSettings, text => Tr(text), ShowToast);
         AddChild(dialog);
         dialog.PopupCentered();
     }

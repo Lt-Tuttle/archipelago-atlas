@@ -166,15 +166,13 @@ namespace AP_Atlas.Core
             f.Clear();
             f.Game = "Hollow Knight";
             Expect(Passing(f).SequenceEqual(new[] { 4 }), "the game filter is wrong");
-            f.Clear();
-            f.Text = "CLAW";
-            Expect(Passing(f).SequenceEqual(new[] { 4 }), "text search doesn't look in notes");
-            f.Text = "carol";
-            Expect(Passing(f).SequenceEqual(new[] { 3 }) && f.IsActive, "text search doesn't look at owners");
+            Expect(f.IsActive, "a game filter doesn't count as active");
             f.Clear();
             Expect(!f.IsActive && Passing(f).Count == 4, "a cleared filter still filters");
 
-            List<int> Ids(string column, bool descending, bool mineFirst) => CheeseTable.Sort(rows, column, descending, mineFirst, now).Select(r => r.Game.Id).ToList();
+            // The table sorts by the keys Cheese Tracker's page orders by (ties keep the order given: by name, then multiworld).
+            var byName = TableSort.Order(rows, r => CheeseTable.SortKey(r, "name", now), false);
+            List<int> Ids(string column, bool descending, bool mineFirst) => TableSort.Order(byName, r => CheeseTable.SortKey(r, column, now), descending, r => mineFirst && r.Mine).Select(r => r.Game.Id).ToList();
             Expect(Ids("name", false, false).SequenceEqual(new[] { 4, 3, 2, 1 }), "name sort: " + string.Join(",", Ids("name", false, false)));
             Expect(Ids("name", false, true)[0] == 2, "mine first didn't put your slot on top");
             var activity = Ids("activity", true, false);

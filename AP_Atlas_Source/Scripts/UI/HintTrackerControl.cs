@@ -36,8 +36,6 @@ namespace AP_Atlas.UI
         private readonly HashSet<string> _seenHintKeys = new HashSet<string>();
         private bool _receivedInitialHints = false;
 
-        private Col _sortColumn = Col.Status;
-        private bool _sortAscending = true;
 
         // Hint request autocomplete sources (names in the slot's own game).
         private List<string> _itemNames = new List<string>();
@@ -48,7 +46,9 @@ namespace AP_Atlas.UI
         private Button _btnShowFound;
         private LineEdit _searchBox;
         private Label _summaryLabel;
+        private AtlasTable _table;
         private Tree _tree;
+        private AppSettings _settings;
         private ItemList _suggestions;
         private OptionButton _requestMode;
         private LineEdit _requestInput;
@@ -93,9 +93,10 @@ namespace AP_Atlas.UI
         private int MySlot => _session?.ConnectionInfo?.Slot ?? -1;
 
         public void Initialize(ArchipelagoSession session, string slotName, Func<long, bool?> ownLogic,
-            Func<int, long, bool?> otherSlotLogic, Action<string, Color> toast)
+            Func<int, long, bool?> otherSlotLogic, Action<string, Color> toast, AppSettings settings)
         {
             _session = session;
+            _settings = settings;
             _slotName = slotName;
             _ownLogic = ownLogic;
             _otherSlotLogic = otherSlotLogic;
@@ -141,62 +142,47 @@ namespace AP_Atlas.UI
             _btnMarkedOnly.Toggled += _ => Render();
             toolbar.AddChild(_btnMarkedOnly);
             toolbar.AddChild(new VSeparator());
-            _searchBox = new LineEdit { PlaceholderText = "Search items, players, locations, entrances...", SizeFlagsHorizontal = SizeFlags.ExpandFill, ClearButtonEnabled = true };
+            _table = new AtlasTable("hints", _settings, text => text) { Toast = _toast, EmptyText = "No hints yet. Request one below, or use !hint in Chat.", NoMatchText = "No hints match the current filters." };
+            _tree = _table.Tree;
+            _searchBox = _table.Take(_table.SearchBox);
+            _searchBox.PlaceholderText = "Search items, players, locations, entrances...";
+            _searchBox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
             toolbar.AddChild(_searchBox);
+            toolbar.AddChild(_table.Take(_table.CountLabel));
             _summaryLabel = new Label { HorizontalAlignment = HorizontalAlignment.Right };
             _summaryLabel.AddThemeColorOverride("font_color", ThemeColors.TextMuted);
             toolbar.AddChild(_summaryLabel);
+            toolbar.AddChild(_table.Take(_table.ColumnsMenu));
+            toolbar.AddChild(_table.Take(_table.ExportMenu));
+            _table.Toolbar.Visible = false;
 
             _btnMyItems.Toggled += _ => Render();
             _btnMyLocations.Toggled += _ => Render();
             _btnShowFound.Toggled += _ => Render();
-            _searchBox.TextChanged += _ => Render();
 
-            // --- Hint table ---
-            _tree = new Tree
-            {
-                SizeFlagsHorizontal = SizeFlags.ExpandFill,
-                SizeFlagsVertical = SizeFlags.ExpandFill,
-                Columns = ColumnTitles.Length,
-                ColumnTitlesVisible = true,
-                HideRoot = true,
-                SelectMode = Tree.SelectModeEnum.Row
-            };
-            _tree.AddThemeConstantOverride("v_separation", 6);
+            // --- Hint table: Archipelago's columns and colours; the status of your own unfound hints is editable. ---
             int[] ratios = { 2, 4, 3, 5, 3, 3, 2 };
             int[] minWidths = { 110, 160, 110, 200, 110, 100, 90 };
-            for (int c = 0; c < ColumnTitles.Length; c++)
-            {
-                _tree.SetColumnExpandRatio(c, ratios[c]);
-                _tree.SetColumnCustomMinimumWidth(c, minWidths[c]);
-                _tree.SetColumnClipContent(c, true);
-            }
-            _tree.ColumnTitleClicked += (column, mouseButton) =>
-            {
-                if (mouseButton != (long)MouseButton.Left) return;
-                var col = (Col)column;
-                if (col == _sortColumn) _sortAscending = !_sortAscending;
-                else { _sortColumn = col; _sortAscending = true; }
-                Render();
-            };
+            _table.SetColumns(Enumerable.Range(0, ColumnTitles.Length)
+                .Select(c => new AtlasTable.Column { Id = ((Col)c).ToString().ToLowerInvariant(), Title = ColumnTitles[c], MinWidth = minWidths[c], Ratio = ratios[c] }).ToList(), defaultSort: "status");
+            _table.Customize = CustomizeRow;
             _tree.ItemEdited += OnTreeItemEdited;
-            _tree.ItemActivated += OnTreeItemActivated;
+            _table.Activated += picked => CopyHint(picked.Tag as Row);
             // Clicking a cell inspects that part of the hint: the item, a player, the location, or the hint itself.
-            TreePicks.Hook(_tree, (item, column) =>
+            _table.CellPicked += (picked, columnId) =>
             {
-                var row = RowOf(item);
-                if (row == null || _suppressPick) return;
-                var part = (Col)column switch
+                if (picked.Tag is not Row row || _suppressPick) return;
+                var part = columnId switch
                 {
-                    Col.Item => HintPart.Item,
-                    Col.Location => HintPart.Location,
-                    Col.Receiver => HintPart.Receiver,
-                    Col.Finder => HintPart.Finder,
+                    "item" => HintPart.Item,
+                    "location" => HintPart.Location,
+                    "receiver" => HintPart.Receiver,
+                    "finder" => HintPart.Finder,
                     _ => HintPart.Hint
                 };
                 HintPicked?.Invoke(row.Hint, part);
-            });
-            vbox.AddChild(_tree);
+            };
+            vbox.AddChild(_table);
 
             // --- Autocomplete suggestions (shown above the request bar while typing) ---
             _suggestions = new ItemList { Visible = false, CustomMinimumSize = new Vector2(0, 150), SizeFlagsHorizontal = SizeFlags.ExpandFill, FocusMode = FocusModeEnum.None };
@@ -405,7 +391,6 @@ namespace AP_Atlas.UI
             bool myItems = _btnMyItems.ButtonPressed;
             bool myLocations = _btnMyLocations.ButtonPressed;
             bool showFound = _btnShowFound.ButtonPressed;
-            string search = _searchBox.Text.Trim();
 
             foreach (var r in _rowsByKey.Values)
             {
@@ -417,194 +402,90 @@ namespace AP_Atlas.UI
                     var m = MarkerLookup(r.Hint);
                     if (m.ItemFlag == 0 && !m.ItemSpecial && !m.ItemNote && m.LocFlag == 0 && !m.LocSpecial && !m.LocNote) continue;
                 }
-                if (search.Length > 0 &&
-                    r.ItemName.IndexOf(search, StringComparison.OrdinalIgnoreCase) < 0 &&
-                    r.LocationName.IndexOf(search, StringComparison.OrdinalIgnoreCase) < 0 &&
-                    r.ReceiverName.IndexOf(search, StringComparison.OrdinalIgnoreCase) < 0 &&
-                    r.FinderName.IndexOf(search, StringComparison.OrdinalIgnoreCase) < 0 &&
-                    r.Entrance.IndexOf(search, StringComparison.OrdinalIgnoreCase) < 0) continue;
                 yield return r;
             }
         }
 
-        private List<Row> SortRows(IEnumerable<Row> rows)
-        {
-            Func<Row, IComparable> key = _sortColumn switch
-            {
-                Col.Item => r => r.ItemName,
-                Col.Receiver => r => r.ReceiverName,
-                Col.Location => r => r.LocationName,
-                Col.Finder => r => r.FinderName,
-                Col.Entrance => r => r.Entrance,
-                Col.Logic => r => r.InLogic == true ? 0 : r.InLogic == null ? 1 : 2,
-                _ => r => StatusRank(EffectiveStatus(r.Hint))
-            };
-            var ordered = _sortAscending ? rows.OrderBy(key) : rows.OrderByDescending(key);
-            // Stable, predictable tiebreak: in-logic first, then item name.
-            return ordered
-                .ThenBy(r => r.InLogic == true ? 0 : r.InLogic == null ? 1 : 2)
-                .ThenBy(r => r.ItemName, StringComparer.OrdinalIgnoreCase)
-                .ToList();
-        }
-
         private void Render()
         {
-            if (_tree == null) return;
-
-            for (int c = 0; c < ColumnTitles.Length; c++)
-            {
-                string arrow = (Col)c == _sortColumn ? (_sortAscending ? " ▲" : " ▼") : "";
-                _tree.SetColumnTitle(c, ColumnTitles[c] + arrow);
-            }
-
-            // Keep the user's selected row selected across redraws (without re-inspecting it).
-            string selectedKey = null;
-            var selectedMeta = _tree.GetSelected()?.GetMetadata(0) ?? default;
-            if (selectedMeta.VariantType == Variant.Type.String) selectedKey = selectedMeta.AsString();
-            if (_revealKey != null) { selectedKey = _revealKey; }
-            TreeItem reselect = null;
-
-            _tree.Clear();
-            var root = _tree.CreateItem();
-            var rows = SortRows(FilteredRows());
-
-            if (_session == null || rows.Count == 0)
-            {
-                var empty = _tree.CreateItem(root);
-                empty.SetText((int)Col.Item, _rowsByKey.Count == 0 ? "No hints yet. Request one below, or use !hint in Chat." : "No hints match the current filters.");
-                empty.SetCustomColor((int)Col.Item, ThemeColors.TextSubtle);
-                empty.SetSelectable((int)Col.Item, false);
-            }
-
+            if (_table == null) return;
             bool canEditStatus = ServerSupportsHintStatus;
-            int shown = 0;
-            foreach (var r in rows)
+            bool hidden = LogicHidden?.Invoke() == true;
+            var rows = new List<AtlasTable.Row>();
+            // Ties in any sort keep this order: in logic first, then by item name.
+            foreach (var r in FilteredRows().OrderBy(r => r.InLogic == true ? 0 : r.InLogic == null ? 1 : 2).ThenBy(r => r.ItemName, StringComparer.OrdinalIgnoreCase))
             {
-                var item = _tree.CreateItem(root);
                 var h = r.Hint;
                 var status = EffectiveStatus(h);
-
-                // Status: editable dropdown for your own unfound item hints.
-                if (r.IsMyItem && !h.Found && canEditStatus)
+                var m = MarkerLookup?.Invoke(h);
+                var cells = new AtlasTable.Cell[ColumnTitles.Length];
+                cells[(int)Col.Status] = new AtlasTable.Cell(StatusText(status), h.Found ? null : StatusColor(status),
+                    r.IsMyItem && !h.Found && canEditStatus ? "Click to change this hint's priority (shared with everyone in the room)." : null, StatusRank(status));
+                cells[(int)Col.Item] = new AtlasTable.Cell(r.ItemName, h.Found ? null : ItemColor(h.ItemFlags), "Click to inspect the item. Double-click to copy this hint.")
                 {
-                    item.SetCellMode((int)Col.Status, TreeItem.TreeCellMode.Range);
-                    item.SetText((int)Col.Status, EditableStatusOptions);
-                    item.SetRange((int)Col.Status, Math.Max(0, Array.IndexOf(EditableStatuses, status)));
-                    item.SetEditable((int)Col.Status, true);
-                    item.SetTooltipText((int)Col.Status, "Click to change this hint's priority (shared with everyone in the room).");
-                }
-                else
+                    Icon = m is { } mi ? Annotations.MarkerIcon(mi.ItemFlag, mi.ItemSpecial, mi.ItemNote) : null,
+                    Background = m?.ItemSpecial == true ? Annotations.SpecialBg : null
+                };
+                cells[(int)Col.Receiver] = new AtlasTable.Cell(r.ReceiverName, h.Found ? null : r.IsMyItem ? ThemeColors.You : ThemeColors.Player);
+                cells[(int)Col.Location] = new AtlasTable.Cell(r.LocationName, h.Found ? null : ThemeColors.Location, "Click to inspect the location.")
                 {
-                    item.SetText((int)Col.Status, StatusText(status));
-                }
-                item.SetCustomColor((int)Col.Status, StatusColor(status));
-
-                item.SetText((int)Col.Item, r.ItemName);
-                item.SetCustomColor((int)Col.Item, ItemColor(h.ItemFlags));
-
-                item.SetText((int)Col.Receiver, r.ReceiverName);
-                item.SetCustomColor((int)Col.Receiver, r.IsMyItem ? ThemeColors.You : ThemeColors.Player);
-
-                item.SetText((int)Col.Location, r.LocationName);
-                item.SetCustomColor((int)Col.Location, ThemeColors.Location);
-
-                item.SetText((int)Col.Finder, r.FinderName);
-                item.SetCustomColor((int)Col.Finder, r.IsMyLocation ? ThemeColors.You : ThemeColors.Player);
-
-                item.SetText((int)Col.Entrance, r.Entrance);
-                item.SetCustomColor((int)Col.Entrance, ThemeColors.TextSubtle);
-
-                if (h.Found)
-                {
-                    item.SetText((int)Col.Logic, "");
-                }
-                else if (r.InLogic == true)
-                {
-                    item.SetText((int)Col.Logic, "✔ In logic");
-                    item.SetCustomColor((int)Col.Logic, ThemeColors.Success);
-                }
-                else if (r.InLogic == false)
-                {
-                    item.SetText((int)Col.Logic, "✖ Not yet");
-                    item.SetCustomColor((int)Col.Logic, ThemeColors.Error);
-                }
-                else if (LogicHidden?.Invoke() == true)
-                {
-                    item.SetText((int)Col.Logic, "Hidden");
-                    item.SetCustomColor((int)Col.Logic, ThemeColors.TextSubtle);
-                    item.SetTooltipText((int)Col.Logic, "Hidden by race mode (Settings → Race Mode).");
-                }
-                else
-                {
-                    item.SetText((int)Col.Logic, "Unknown");
-                    item.SetCustomColor((int)Col.Logic, ThemeColors.TextSubtle);
-                    item.SetTooltipText((int)Col.Logic, r.IsMyLocation
-                        ? "The logic engine for this slot isn't running."
-                        : $"Connect {r.FinderName} in Atlas (same multiworld profile) to see their logic.");
-                }
-
-                if (h.Found)
-                {
-                    for (int c = 0; c < ColumnTitles.Length; c++) item.SetCustomColor(c, ThemeColors.TextSubtle);
-                }
-
-                var bg = (shown % 2 == 0) ? ThemeColors.RowEven : ThemeColors.RowOdd;
-                for (int c = 0; c < ColumnTitles.Length; c++) item.SetCustomBgColor(c, bg);
-                if (MarkerLookup != null)
-                {
-                    var m = MarkerLookup(h);
-                    int iconWidth = Math.Max(16, _tree.GetThemeFontSize("font_size") * 2);
-                    item.SetIcon((int)Col.Item, Annotations.MarkerIcon(m.ItemFlag, m.ItemSpecial, m.ItemNote));
-                    item.SetIconMaxWidth((int)Col.Item, iconWidth);
-                    item.SetIcon((int)Col.Location, Annotations.MarkerIcon(m.LocFlag, m.LocSpecial, m.LocNote));
-                    item.SetIconMaxWidth((int)Col.Location, iconWidth);
-                    if (m.ItemSpecial) item.SetCustomBgColor((int)Col.Item, Annotations.SpecialBg);
-                    if (m.LocSpecial) item.SetCustomBgColor((int)Col.Location, Annotations.SpecialBg);
-                }
-                item.SetMetadata(0, r.Key);
-                item.SetTooltipText((int)Col.Item, "Click to inspect the item. Double-click to copy this hint.");
-                item.SetTooltipText((int)Col.Location, "Click to inspect the location.");
-                if (r.Key == selectedKey) reselect = item;
-                shown++;
+                    Icon = m is { } ml ? Annotations.MarkerIcon(ml.LocFlag, ml.LocSpecial, ml.LocNote) : null,
+                    Background = m?.LocSpecial == true ? Annotations.SpecialBg : null
+                };
+                cells[(int)Col.Finder] = new AtlasTable.Cell(r.FinderName, h.Found ? null : r.IsMyLocation ? ThemeColors.You : ThemeColors.Player);
+                cells[(int)Col.Entrance] = new AtlasTable.Cell(r.Entrance, ThemeColors.TextSubtle);
+                cells[(int)Col.Logic] = LogicCell(r, hidden);
+                rows.Add(new AtlasTable.Row { Key = r.Key, Tag = r, Cells = cells, Dim = h.Found });
             }
-
-            if (reselect != null)
-            {
-                _suppressPick = true;
-                reselect.Select(0);
-                Ui.Defer(this, () => _suppressPick = false); // after TreePicks' deferred handler
-                if (_revealKey != null) _tree.ScrollToItem(reselect, true);
-            }
+            _table.TotalCount = _rowsByKey.Count;
+            _table.SetRows(rows);
+            if (_revealKey != null) _table.Select(_revealKey, scrollTo: true);
             _revealKey = null;
 
             int open = _rowsByKey.Values.Count(r => !r.Hint.Found);
             int openMine = _rowsByKey.Values.Count(r => !r.Hint.Found && r.IsMyItem);
             int inLogic = _rowsByKey.Values.Count(r => !r.Hint.Found && r.InLogic == true);
-            _summaryLabel.Text = LogicHidden?.Invoke() == true
+            _summaryLabel.Text = hidden
                 ? $"{open} open · {openMine} for you"
                 : $"{open} open · {openMine} for you · {inLogic} in logic";
+        }
+
+        private AtlasTable.Cell LogicCell(Row r, bool hidden)
+        {
+            if (r.Hint.Found) return new AtlasTable.Cell("", null, null, 3);
+            if (r.InLogic == true) return new AtlasTable.Cell("✔ In logic", ThemeColors.Success, null, 0);
+            if (r.InLogic == false) return new AtlasTable.Cell("✖ Not yet", ThemeColors.Error, null, 2);
+            if (hidden) return new AtlasTable.Cell("Hidden", ThemeColors.TextSubtle, "Hidden by race mode (Settings → Race Mode).", 1);
+            return new AtlasTable.Cell("Unknown", ThemeColors.TextSubtle, r.IsMyLocation
+                ? "The logic engine for this slot isn't running."
+                : $"Connect {r.FinderName} in Atlas (same multiworld profile) to see their logic.", 1);
+        }
+
+        /// <summary>The status of your own unfound hints is a dropdown (the server shares the choice with the room).</summary>
+        private void CustomizeRow(TreeItem item, AtlasTable.Row picked)
+        {
+            if (picked.Tag is not Row r) return;
+            int status = _table.ShownIndexOf("status");
+            if (status < 0 || !(r.IsMyItem && !r.Hint.Found && ServerSupportsHintStatus)) return;
+            item.SetCellMode(status, TreeItem.TreeCellMode.Range);
+            item.SetText(status, EditableStatusOptions);
+            item.SetRange(status, Math.Max(0, Array.IndexOf(EditableStatuses, EffectiveStatus(r.Hint))));
+            item.SetEditable(status, true);
         }
 
         // =====================================================================
         // Interaction
         // =====================================================================
 
-        private Row RowOf(TreeItem item)
-        {
-            if (item == null) return null;
-            var meta = item.GetMetadata(0);
-            if (meta.VariantType != Variant.Type.String) return null;
-            return _rowsByKey.TryGetValue(meta.AsString(), out var row) ? row : null;
-        }
-
         private void OnTreeItemEdited()
         {
             var edited = _tree.GetEdited();
-            if (_tree.GetEditedColumn() != (int)Col.Status) return;
-            var row = RowOf(edited);
+            int status = _table.ShownIndexOf("status");
+            if (status < 0 || _tree.GetEditedColumn() != status) return;
+            var row = _table.RowAt(edited)?.Tag as Row;
             if (row == null || _session == null) return;
 
-            int index = (int)edited.GetRange((int)Col.Status);
+            int index = (int)edited.GetRange(status);
             if (index < 0 || index >= EditableStatuses.Length) return;
             var newStatus = EditableStatuses[index];
             if (newStatus == row.Hint.Status) return;
@@ -621,9 +502,9 @@ namespace AP_Atlas.UI
             }
         }
 
-        private void OnTreeItemActivated()
+        /// <summary>A double-click (or Enter) copies the hint as a line of text.</summary>
+        private void CopyHint(Row row)
         {
-            var row = RowOf(_tree.GetSelected());
             if (row == null) return;
             string text = $"{row.ReceiverName}'s {row.ItemName} is at {row.LocationName} in {row.FinderName}'s world" +
                           (string.IsNullOrEmpty(row.Entrance) ? "" : $" ({row.Entrance})") +

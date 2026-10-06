@@ -160,21 +160,11 @@ namespace AP_Atlas.Core
             Expect(SphereService.SameName("ElderWisp", "elderwisp") && SphereService.SameName("Elder Wisp", "elderwisp") &&
                    !SphereService.SameName("ElderWisp", "elderwisp2") && !SphereService.SameName("", "") && !SphereService.SameName("x", null), "names were compared wrongly");
 
-            // Natural order (numbers by value, letters ignoring case), shared with Cheese Tracker.
-            int N(string a, string b) => Math.Sign(CheeseTable.NaturalCompare(a, b));
-            Expect(N("Chest 9", "chest 10") < 0 && N("a02", "a2") == 0 && N("a010", "a9") > 0 && N("x", "x1") < 0 && N("B", "a") > 0 && N("", "a") < 0 &&
-                   N("Room 3b", "Room 3a") > 0 && N("v1.10", "v1.9") > 0 && N(null, null) == 0, "natural order changed");
-
-            // The room's tables: numbers sort as numbers, text naturally; search.
-            var table = new PageTable
-            {
-                Columns = new List<string> { "Player", "Sphere" },
-                Rows = new List<List<string>> { new() { "Chest 10", "10" }, new() { "Chest 9", "9" }, new() { "Bow", "9.5" } }
-            };
-            Expect(SphereTable.FilterAndSort(table, "", 1, false).Select(r => r[0]).SequenceEqual(new[] { "Chest 9", "Bow", "Chest 10" }), "numbers didn't sort as numbers");
-            Expect(SphereTable.FilterAndSort(table, "", 1, true).Select(r => r[0]).SequenceEqual(new[] { "Chest 10", "Bow", "Chest 9" }), "reversed sorting");
-            Expect(SphereTable.FilterAndSort(table, "", 0, false).Select(r => r[0]).SequenceEqual(new[] { "Bow", "Chest 9", "Chest 10" }), "text didn't sort naturally");
-            Expect(SphereTable.FilterAndSort(table, "chest", -1, false).Count == 2, "searching");
+            // The room's tables sort as every table does (TableSort, unit-tested): numbers as numbers, text naturally.
+            var rows = new List<List<string>> { new() { "Chest 10", "10" }, new() { "Chest 9", "9" }, new() { "Bow", "9.5" } };
+            Expect(TableSort.Order(rows, r => r[1], false).Select(r => r[0]).SequenceEqual(new[] { "Chest 9", "Bow", "Chest 10" }), "numbers didn't sort as numbers");
+            Expect(TableSort.Order(rows, r => r[1], true).Select(r => r[0]).SequenceEqual(new[] { "Chest 10", "Bow", "Chest 9" }), "reversed sorting");
+            Expect(TableSort.Order(rows, r => r[0], false).Select(r => r[0]).SequenceEqual(new[] { "Bow", "Chest 9", "Chest 10" }), "text didn't sort naturally");
         }
 
         private static async Task SpheresHostRoomOnly()

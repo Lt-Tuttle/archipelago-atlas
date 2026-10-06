@@ -168,7 +168,7 @@ public partial class SlotTrackerControl : MarginContainer
         _hintTracker = new AP_Atlas.UI.HintTrackerControl();
         _hintTracker.Initialize(Session, _slotName, IsLocationInLogic,
             (slot, loc) => ResolveOtherSlotLogic?.Invoke(slot, loc),
-            (msg, color) => ShowToast?.Invoke(msg, color));
+            (msg, color) => ShowToast?.Invoke(msg, color), _appSettings);
         _hintTracker.LogicHidden = () => LogicHidden;
         _hintTracker.Say = text => Model.SayAsync(text);
         _hintTracker.HintPicked += (hint, part) =>

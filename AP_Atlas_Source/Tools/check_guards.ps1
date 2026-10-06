@@ -119,7 +119,7 @@ $rules = @(
        Allowed = @('AP_Atlas_Source\Scripts\Core\Engine\AtlasEngine.cs') },
     @{ Name = 'Saving a whole file without SafeFile'; Pattern = '(?<!\w)File\.(WriteAll|AppendAll)\w*\s*\('
        Allowed = @('AP_Atlas.Core\Logger.cs', 'AP_Atlas.Core\Connections\DataPackageStore.cs', 'AP_Atlas.Core\Testing\FakeLogicEngine.cs',
-                   'AP_Atlas_Source\Scripts\Core\CrashGuard.cs', 'AP_Atlas_Source\Scripts\Core\Annotations.cs', 'AP_Atlas_Source\Scripts\Core\Engine\AtlasEngine.cs',
+                   'AP_Atlas_Source\Scripts\UI\AtlasTable.cs', 'AP_Atlas_Source\Scripts\Core\CrashGuard.cs', 'AP_Atlas_Source\Scripts\Core\Annotations.cs', 'AP_Atlas_Source\Scripts\Core\Engine\AtlasEngine.cs',
                    'AP_Atlas_Source\Scripts\Core\SelfTest.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.Reliability.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.Safety.cs',
                    'AP_Atlas_Source\Scripts\MainTrackerWindow.UiTest.cs') },
     @{ Name = 'Reading a zip without SafeZip'

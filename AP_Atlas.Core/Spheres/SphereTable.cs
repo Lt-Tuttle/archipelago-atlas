@@ -11,23 +11,6 @@ namespace AP_Atlas.Core.Spheres
     /// <summary>The Sphere Tracker tab's table rules (kept free of UI so the self-test checks them).</summary>
     public static class SphereTable
     {
-        /// <summary>Cells of a table filtered by text and sorted by a column (numbers as numbers, text in natural order).</summary>
-        public static List<List<string>> FilterAndSort(PageTable table, string text, int column, bool descending)
-        {
-            text = (text ?? "").Trim();
-            var rows = table.Rows.Where(r => text.Length == 0 || r.Any(c => c != null && c.IndexOf(text, StringComparison.OrdinalIgnoreCase) >= 0)).ToList();
-            if (column < 0 || column >= table.Columns.Count) return rows;
-            rows.Sort((a, b) =>
-            {
-                string x = a[column], y = b[column];
-                int c = double.TryParse(x, NumberStyles.Float, CultureInfo.InvariantCulture, out double dx) &&
-                        double.TryParse(y, NumberStyles.Float, CultureInfo.InvariantCulture, out double dy)
-                    ? dx.CompareTo(dy) : CheeseTable.NaturalCompare(x, y);
-                return descending ? -c : c;
-            });
-            return rows;
-        }
-
         /// <summary>Matches a slot's whole name in a cell, ignoring case ("DarkTuttle1", not "DarkTuttle10").</summary>
         public static Regex SlotPattern(string slot) =>
             new Regex(@"(?<![\p{L}\p{N}_])" + Regex.Escape(slot ?? "") + @"(?![\p{L}\p{N}_])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));

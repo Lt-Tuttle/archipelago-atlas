@@ -8,6 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 Development toward the first public beta, 0.1.0.
 
 ### Added
+- **Every table works the same way:** click a column's title to sort (the arrow says which way), right-click a title to hide or show columns, type words to narrow the rows, and Export the rows shown as TSV, a Markdown table, Discord messages (split to fit) or a CSV file; right-click a row for its actions and Copy row. The sort and the hidden columns are remembered per table. Hints, Cheese Tracker, Sphere Tracker, Notifications and the shortcuts list.
 - **Connections:**
   - Several multiworlds and slots at once.
   - Compressed connections.

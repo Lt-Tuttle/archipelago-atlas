@@ -23,6 +23,7 @@ Atlas opens on Home (Ctrl+8). It has:
 - The **bottom pane** holds Chat (the text client: the room's messages, and a line to type commands such as `!hint`), the System Log (what Atlas did, and any trouble it met) and the Debug Log (Atlas's own diagnostics).
 - The **View** menu shows or hides each part, and remembers it. **Focus mode** (F9) leaves the content and its header alone, with the menu bar; F9 again brings everything back. F11 is full screen.
 - The **command palette** (Ctrl+Shift+P) lists every command in the menus: type a few letters of its name and press Enter.
+- **Tables** (Hints, Cheese Tracker, Sphere Tracker, Notifications, the shortcuts list) all work the same way: click a column's title to sort by it (again to turn the order; the arrow says which), right-click a title to hide or show columns, type words in the search box to narrow the rows (each word must start a word of a cell), and use Export to copy the rows shown as TSV for a spreadsheet, as a Markdown table, as Discord messages (split to fit), or to save them as a CSV file. Right-click a row for its actions and Copy row. The sort and the hidden columns are remembered per table.
 
 ## Multiworlds
 

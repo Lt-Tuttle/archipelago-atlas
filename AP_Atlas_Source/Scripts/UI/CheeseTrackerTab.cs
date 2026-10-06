@@ -13,52 +13,34 @@ namespace AP_Atlas.UI
     /// <summary>
     /// The Cheese Tracker tab. The explorer lists "My slots" (yours in every linked multiworld), each multiworld, and the
     /// settings. A tracker shows the way Cheese Tracker's own page does: sortable columns, status/availability/owner/game
-    /// and text filters, "mine first", and a status summary, with the selected slot's notes, hints and actions below.
+    /// filters and a search, "mine first", and a status summary, with the selected slot's notes, hints and actions below.
     /// </summary>
-    public partial class CheeseTrackerTab : MarginContainer
+    public partial class CheeseTrackerTab : ExplorerTabBase
     {
         public const string MineView = "*mine";
         public const string SettingsView = "*settings";
 
-        private static readonly Color Good = ThemeColors.Success;
-        private static readonly Color Warn = ThemeColors.Warning;
-        private static readonly Color Bad = ThemeColors.Error;
-        private static readonly Color Muted = ThemeColors.TextSubtle;
-
-        private readonly AppSettings _settings;
         private readonly CheeseTrackerService _cheese;
-        private readonly Func<IReadOnlyList<MultiworldProfile>> _profiles;
-        private readonly Action<string, Color> _toast;
 
-        /// <summary>The explorer list; the window mounts it in the explorer while this tab is shown.</summary>
-        public VBoxContainer SidebarContent { get; }
-
-        private string _view;
         private readonly CheeseFilter _filter = new CheeseFilter();
-        private string _selectedKey;
-        private bool _suppressPick;
         private List<CheeseRow> _rows = new List<CheeseRow>();
-        private List<string> _renderedKeys = new List<string>();
         private string _columnsSignature, _barsSignature, _headerSignature, _detailsSignature;
 
         // Pages
         private VBoxContainer _trackerPage;
         private CheeseSettingsPage _settingsPage;
-        private VBoxContainer _messagePage;
 
         // Tracker page
-        private Label _title, _subtitle, _problemLabel, _countLabel;
+        private Label _title, _subtitle, _problemLabel;
         private HBoxContainer _headerButtons, _problemRow;
         private Button _accountButton, _tryNow;
         private SafeRichText _summaryText;
         private HBoxContainer _checksBar, _slotsBar;
-        private LineEdit _search;
         private MenuButton _statusMenu, _availabilityMenu, _ownerMenu, _gameMenu;
         private Button _mineFirst, _percent, _clearFilters;
-        private Tree _tree;
+        private AtlasTable _table;
         private VBoxContainer _details;
         private bool _sentHints, _includeFoundHints;
-        private Timer _refreshDebounce, _searchDebounce;
 
         private sealed class Column
         {
@@ -87,96 +69,43 @@ namespace AP_Atlas.UI
         private List<Column> _columns = new List<Column>();
 
         public CheeseTrackerTab(AppSettings settings, CheeseTrackerService cheese, Func<IReadOnlyList<MultiworldProfile>> profiles, Action<string, Color> toast)
+            : base(settings, profiles, toast, "Cheese Tracker", settings.CheeseTabView)
         {
-            _settings = settings;
             _cheese = cheese;
-            _profiles = profiles;
-            _toast = toast;
-            Name = "Cheese Tracker";
-            SizeFlagsHorizontal = SizeFlags.ExpandFill;
-            SizeFlagsVertical = SizeFlags.ExpandFill;
-            foreach (var side in new[] { "left", "top", "right", "bottom" }) AddThemeConstantOverride("margin_" + side, 10);
-            SidebarContent = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
-            SidebarContent.AddThemeConstantOverride("separation", 4);
-            _view = string.IsNullOrEmpty(settings.CheeseTabView) ? MineView : settings.CheeseTabView;
         }
 
-        public override void _Ready()
+        protected override string DefaultView => MineView;
+
+        protected override void SaveView(string view)
+        {
+            Settings.CheeseTabView = view;
+            DataManager.SaveSettings(Settings);
+        }
+
+        protected override void OnViewChanged() => _table?.Select(null);
+
+        protected override void BuildPages()
         {
             BuildTrackerPage();
-            _settingsPage = new CheeseSettingsPage(_settings, _cheese, _profiles, _toast, ShowView) { Visible = false };
-            AddChild(_settingsPage);
-            _messagePage = new VBoxContainer { Visible = false, SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill, Alignment = BoxContainer.AlignmentMode.Center };
-            _messagePage.AddThemeConstantOverride("separation", 10);
-            AddChild(_messagePage);
-
-            _refreshDebounce = new Timer { OneShot = true, WaitTime = 0.3 };
-            _refreshDebounce.Timeout += Refresh;
-            AddChild(_refreshDebounce);
-            _searchDebounce = new Timer { OneShot = true, WaitTime = 0.25 };
-            _searchDebounce.Timeout += () =>
-            {
-                _filter.Text = _search.Text;
-                RenderTable();
-            };
-            AddChild(_searchDebounce);
-            // While shown: keep the trackers on screen fresh (the service reads at most every 10 minutes) and the ages current.
-            var minute = new Timer { WaitTime = 60, Autostart = true };
-            minute.Timeout += () =>
-            {
-                if (!IsVisibleInTree()) return;
-                WatchShown();
-                Refresh();
-            };
-            AddChild(minute);
-
-            // Made while the tab is in the window, again after it's moved (docking, pop-outs), and removed while it isn't.
-            AddChild(new TreeSubscriptions()
-                .On(() => _cheese.Changed += QueueRefresh, () => _cheese.Changed -= QueueRefresh)
-                .On(() => _cheese.LinkChanged += OnLinkChanged, () => _cheese.LinkChanged -= OnLinkChanged));
-            Refresh();
+            _settingsPage = new CheeseSettingsPage(Settings, _cheese, Profiles, Toast, ShowView);
+            AddPage(_settingsPage);
         }
+
+        protected override TreeSubscriptions Subscribe(TreeSubscriptions subscriptions) => subscriptions
+            .On(() => _cheese.Changed += QueueRefresh, () => _cheese.Changed -= QueueRefresh)
+            .On(() => _cheese.LinkChanged += OnLinkChanged, () => _cheese.LinkChanged -= OnLinkChanged);
 
         private void OnLinkChanged(string profileId) => QueueRefresh();
 
-        /// <summary>The tab was just shown: read what it shows if that's due, and draw it.</summary>
-        public void OnShown()
-        {
-            WatchShown();
-            Refresh();
-        }
-
-        /// <summary>Shows a multiworld (profile id), <see cref="MineView"/> or <see cref="SettingsView"/>.</summary>
-        public void ShowView(string view)
-        {
-            if (string.IsNullOrEmpty(view)) view = MineView;
-            if (view != _view)
-            {
-                _view = view;
-                _selectedKey = null;
-                _renderedKeys.Clear();
-                _settings.CheeseTabView = view;
-                DataManager.SaveSettings(_settings);
-            }
-            WatchShown();
-            Refresh();
-        }
-
-        private void QueueRefresh()
-        {
-            if (!IsVisibleInTree()) return; // OnShown redraws
-            if (_refreshDebounce != null && _refreshDebounce.IsInsideTree() && _refreshDebounce.IsStopped()) _refreshDebounce.Start();
-        }
-
         private List<MultiworldProfile> ProfilesShown()
         {
-            if (_view == SettingsView) return new List<MultiworldProfile>();
-            if (_view == MineView) return _cheese.LinkedProfiles();
-            var p = _profiles().FirstOrDefault(x => x.Id == _view);
+            if (View == SettingsView) return new List<MultiworldProfile>();
+            if (View == MineView) return _cheese.LinkedProfiles();
+            var p = Profiles().FirstOrDefault(x => x.Id == View);
             return p == null ? new List<MultiworldProfile>() : new List<MultiworldProfile> { p };
         }
 
-        private void WatchShown()
+        protected override void WatchShown()
         {
             if (!IsVisibleInTree()) return;
             foreach (var p in ProfilesShown()) _cheese.Watch(p.Id);
@@ -190,7 +119,7 @@ namespace AP_Atlas.UI
         {
             _trackerPage = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
             _trackerPage.AddThemeConstantOverride("separation", 6);
-            AddChild(_trackerPage);
+            AddPage(_trackerPage);
 
             var header = new HBoxContainer();
             header.AddThemeConstantOverride("separation", 6);
@@ -201,24 +130,22 @@ namespace AP_Atlas.UI
             _headerButtons = new HBoxContainer();
             _headerButtons.AddThemeConstantOverride("separation", 4);
             header.AddChild(_headerButtons);
-            _accountButton = new Button { FocusMode = FocusModeEnum.None, TooltipText = "Your Cheese Tracker account and API key" };
-            _accountButton.Pressed += () => ShowView(SettingsView);
+            _accountButton = Kit.Button("", "Your Cheese Tracker account and API key", () => ShowView(SettingsView));
             header.AddChild(_accountButton);
 
             _subtitle = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart };
-            _subtitle.AddThemeColorOverride("font_color", Muted);
+            _subtitle.AddThemeColorOverride("font_color", ThemeColors.TextSubtle);
             _trackerPage.AddChild(_subtitle);
 
             _problemRow = new HBoxContainer { Visible = false };
             _problemRow.AddThemeConstantOverride("separation", 6);
             _problemLabel = new Label { SizeFlagsHorizontal = SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart };
-            _problemLabel.AddThemeColorOverride("font_color", Warn);
+            _problemLabel.AddThemeColorOverride("font_color", ThemeColors.Warning);
             _problemRow.AddChild(_problemLabel);
-            _tryNow = new Button { Text = "Try now", FocusMode = FocusModeEnum.None, TooltipText = "Ask Cheese Tracker again now" };
-            _tryNow.Pressed += () =>
+            _tryNow = Kit.Button("Try now", "Ask Cheese Tracker again now", () =>
             {
-                foreach (var p in ProfilesShown()) CheeseDialogs.Run(this, _cheese.RefreshAsync(p.Id, tryNow: true), _toast, null, QueueRefresh);
-            };
+                foreach (var p in ProfilesShown()) CheeseDialogs.Run(this, _cheese.RefreshAsync(p.Id, tryNow: true), Toast, null, QueueRefresh);
+            });
             _problemRow.AddChild(_tryNow);
             _trackerPage.AddChild(_problemRow);
 
@@ -228,14 +155,22 @@ namespace AP_Atlas.UI
             _checksBar = Bar("Checks left, by status");
             _slotsBar = Bar("Slots, by status");
 
-            // Filters and display options.
+            // The table: Cheese Tracker's columns; the search, the count and the menus join the tab's own toolbar with the filters.
+            _table = new AtlasTable("cheese", Settings, text => text) { Toast = Toast };
+            _table.SearchBox.PlaceholderText = "Find a slot, owner, game or note…";
+            _table.SearchBox.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
+            _table.SearchBox.CustomMinimumSize = new Vector2(240, 0);
+            _table.SearchBox.TextChanged += _ => UpdateClearFilters();
+            _table.SelectionChanged += OnRowSelected;
+            _table.RowMenu = row => RowActions(row.Tag as CheeseRow);
+            _table.EmptyText = "No slots to show yet.";
+            _table.NoMatchText = "No slots match the filters.";
+
             var toolbar = new HFlowContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
             toolbar.AddThemeConstantOverride("h_separation", 6);
             toolbar.AddThemeConstantOverride("v_separation", 4);
             _trackerPage.AddChild(toolbar);
-            _search = new LineEdit { PlaceholderText = "Find a slot, owner, game or note…", ClearButtonEnabled = true, CustomMinimumSize = new Vector2(240, 0) };
-            _search.TextChanged += _ => _searchDebounce.Start();
-            toolbar.AddChild(_search);
+            toolbar.AddChild(_table.Take(_table.SearchBox));
             _statusMenu = FilterMenu("Status", "Show or hide progression and completion statuses (progression filters don't hide completed slots)");
             BuildStatusMenu();
             toolbar.AddChild(_statusMenu);
@@ -250,75 +185,47 @@ namespace AP_Atlas.UI
             _gameMenu.GetPopup().AboutToPopup += BuildGameMenu;
             _gameMenu.GetPopup().IdPressed += OnGamePicked;
             toolbar.AddChild(_gameMenu);
-            _mineFirst = new Button { Text = "Mine first", ToggleMode = true, ButtonPressed = _settings.CheeseMineFirst, FocusMode = FocusModeEnum.None, TooltipText = "Your slots on top, before any column sort" };
+            _mineFirst = new Button { Text = "Mine first", ToggleMode = true, ButtonPressed = Settings.CheeseMineFirst, FocusMode = FocusModeEnum.None, TooltipText = "Your slots on top, before any column sort" };
             _mineFirst.Toggled += on =>
             {
-                _settings.CheeseMineFirst = on;
-                DataManager.SaveSettings(_settings);
+                Settings.CheeseMineFirst = on;
+                DataManager.SaveSettings(Settings);
                 RenderTable();
             };
             toolbar.AddChild(_mineFirst);
-            _percent = new Button { Text = "Checks %", ToggleMode = true, ButtonPressed = _settings.CheeseChecksAsPercent, FocusMode = FocusModeEnum.None, TooltipText = "Show checks as a percentage" };
+            _percent = new Button { Text = "Checks %", ToggleMode = true, ButtonPressed = Settings.CheeseChecksAsPercent, FocusMode = FocusModeEnum.None, TooltipText = "Show checks as a percentage" };
             _percent.Toggled += on =>
             {
-                _settings.CheeseChecksAsPercent = on;
-                DataManager.SaveSettings(_settings);
+                Settings.CheeseChecksAsPercent = on;
+                DataManager.SaveSettings(Settings);
                 RenderTable();
             };
             toolbar.AddChild(_percent);
-            _clearFilters = new Button { Text = "Clear filters", FocusMode = FocusModeEnum.None, Visible = false };
-            _clearFilters.Pressed += () =>
+            _clearFilters = Kit.Button("Clear filters", null, () =>
             {
                 _filter.Clear();
-                _search.Text = "";
+                _table.SearchBox.Text = "";
                 BuildStatusMenu();
                 BuildAvailabilityMenu();
                 RenderTable();
-            };
+            });
+            _clearFilters.Visible = false;
             toolbar.AddChild(_clearFilters);
-            _countLabel = new Label { VerticalAlignment = VerticalAlignment.Center };
-            _countLabel.AddThemeColorOverride("font_color", Muted);
-            toolbar.AddChild(_countLabel);
+            toolbar.AddChild(_table.Take(_table.CountLabel));
+            toolbar.AddChild(_table.Take(_table.ColumnsMenu));
+            toolbar.AddChild(_table.Take(_table.ExportMenu));
+            _table.Toolbar.Visible = false;
 
-            var split = new VSplitContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, SplitOffsets = new[] { _settings.CheeseTableSplitOffset } };
+            var split = new VSplitContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, SplitOffsets = new[] { Settings.CheeseTableSplitOffset } };
             split.Dragged += offset =>
             {
-                _settings.CheeseTableSplitOffset = (int)offset;
-                DataManager.SaveSettingsSoon(_settings);
+                Settings.CheeseTableSplitOffset = (int)offset;
+                DataManager.SaveSettingsSoon(Settings);
             };
             _trackerPage.AddChild(split);
-            _tree = new Tree
-            {
-                SizeFlagsHorizontal = SizeFlags.ExpandFill,
-                SizeFlagsVertical = SizeFlags.ExpandFill,
-                ColumnTitlesVisible = true,
-                HideRoot = true,
-                SelectMode = Tree.SelectModeEnum.Row,
-                AllowRmbSelect = true,
-                CustomMinimumSize = new Vector2(0, 160)
-            };
-            _tree.AddThemeConstantOverride("v_separation", 6);
-            _tree.ColumnTitleClicked += (column, button) =>
-            {
-                if (button != (long)MouseButton.Left || column < 0 || column >= _columns.Count) return;
-                string id = _columns[(int)column].Id;
-                if (_settings.CheeseSortColumn == id) _settings.CheeseSortDescending = !_settings.CheeseSortDescending;
-                else
-                {
-                    _settings.CheeseSortColumn = id;
-                    _settings.CheeseSortDescending = CheeseTable.DefaultDescending(id);
-                }
-                DataManager.SaveSettings(_settings);
-                RenderTable();
-            };
-            _tree.ItemSelected += OnRowSelected;
-            _tree.ItemMouseSelected += (position, button) =>
-            {
-                if (button == (long)MouseButton.Right) ShowRowMenu();
-            };
-            split.AddChild(_tree);
+            split.AddChild(_table);
 
-            var detailScroll = new ScrollContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.Fill, HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled, CustomMinimumSize = new Vector2(0, 150) };
+            var detailScroll = new ScrollContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.Fill, HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled, CustomMinimumSize = new Vector2(0, 120) };
             split.AddChild(detailScroll);
             _details = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
             _details.AddThemeConstantOverride("separation", 4);
@@ -330,7 +237,7 @@ namespace AP_Atlas.UI
             var row = new HBoxContainer();
             row.AddThemeConstantOverride("separation", 8);
             var name = new Label { Text = label, CustomMinimumSize = new Vector2(150, 0) };
-            name.AddThemeColorOverride("font_color", Muted);
+            name.AddThemeColorOverride("font_color", ThemeColors.TextSubtle);
             name.SetMeta("font_size_ratio", 0.85);
             row.AddChild(name);
             var bar = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 10) };
@@ -475,43 +382,23 @@ namespace AP_Atlas.UI
         // Explorer list
         // =====================================================================
 
-        private string _sidebarSignature;
-
         private void RenderSidebar()
         {
-            var profiles = _profiles();
-            string signature = _view + "|" + string.Join("|", profiles.Select(p => p.Id + "=" + p.Name + "=" + (string.IsNullOrWhiteSpace(p.CheeseTrackerUrl) ? "" : "L")));
-            if (signature == _sidebarSignature) return;
-            _sidebarSignature = signature;
-            foreach (Node child in SidebarContent.GetChildren()) child.QueueFree();
-            SidebarContent.AddChild(ExplorerButton("My slots", "Your slots in every linked multiworld", MineView, false));
-            SidebarContent.AddChild(new HSeparator());
-            foreach (var p in profiles)
+            var profiles = Profiles();
+            string signature = View + "|" + string.Join("|", profiles.Select(p => p.Id + "=" + p.Name + "=" + (string.IsNullOrWhiteSpace(p.CheeseTrackerUrl) ? "" : "L")));
+            RenderSidebar(signature, () =>
             {
-                bool linked = !string.IsNullOrWhiteSpace(p.CheeseTrackerUrl);
-                SidebarContent.AddChild(ExplorerButton(linked ? p.Name : p.Name + "  (not linked)", linked ? "Show this multiworld's tracker" : "Link this multiworld to Cheese Tracker", p.Id, !linked));
-            }
-            if (profiles.Count == 0)
-            {
-                var none = new Label { Text = "No multiworlds yet (the Multiworlds page).", AutowrapMode = TextServer.AutowrapMode.WordSmart };
-                none.AddThemeColorOverride("font_color", Muted);
-                SidebarContent.AddChild(none);
-            }
-            SidebarContent.AddChild(new HSeparator());
-            SidebarContent.AddChild(ExplorerButton("Settings", "Your API key, links and automatic updates", SettingsView, false));
-            MainTrackerWindow.SetFontSizeRecursive(SidebarContent, _settings.ExplorerFontSize);
-        }
-
-        private Button ExplorerButton(string text, string tooltip, string view, bool dim)
-        {
-            var b = new Button { Text = text, TooltipText = tooltip, Alignment = HorizontalAlignment.Left, ToggleMode = true, ButtonPressed = view == _view, FocusMode = FocusModeEnum.None, ClipText = true, SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            if (dim && view != _view) b.AddThemeColorOverride("font_color", Muted);
-            b.Pressed += () =>
-            {
-                _sidebarSignature = null;
-                ShowView(view);
-            };
-            return b;
+                SidebarContent.AddChild(ExplorerButton("My slots", "Your slots in every linked multiworld", MineView, false));
+                SidebarContent.AddChild(new HSeparator());
+                foreach (var p in profiles)
+                {
+                    bool linked = !string.IsNullOrWhiteSpace(p.CheeseTrackerUrl);
+                    SidebarContent.AddChild(ExplorerButton(linked ? p.Name : p.Name + "  (not linked)", linked ? "Show this multiworld's tracker" : "Link this multiworld to Cheese Tracker", p.Id, !linked));
+                }
+                if (profiles.Count == 0) SidebarContent.AddChild(SidebarNote("No multiworlds yet (the Multiworlds page)."));
+                SidebarContent.AddChild(new HSeparator());
+                SidebarContent.AddChild(ExplorerButton("Settings", "Your API key, links and automatic updates", SettingsView, false));
+            });
         }
 
         // =====================================================================
@@ -519,26 +406,25 @@ namespace AP_Atlas.UI
         // =====================================================================
 
         /// <summary>Redraws the tab from the service's data (keeps the selection, scroll and filters).</summary>
-        public void Refresh()
+        protected override void RefreshNow()
         {
             if (_trackerPage == null) return;
             using var __perf = PerfMonitor.Measure("Cheese Tracker tab: refresh");
             RenderSidebar();
             _accountButton.Text = _cheese.KeyRejected ? "Key not accepted" : _cheese.HasKey ? "● " + (_cheese.AccountName ?? "Signed in") : "Add API key";
-            _accountButton.AddThemeColorOverride("font_color", _cheese.KeyRejected ? Warn : _cheese.HasKey ? Good : Muted);
+            _accountButton.AddThemeColorOverride("font_color", _cheese.KeyRejected ? ThemeColors.Warning : _cheese.HasKey ? ThemeColors.Success : ThemeColors.TextSubtle);
 
-            if (_view == SettingsView)
+            if (View == SettingsView)
             {
                 ShowPage(_settingsPage);
                 _settingsPage.Refresh();
                 return;
             }
-            var profile = _view == MineView ? null : _profiles().FirstOrDefault(p => p.Id == _view);
-            if (_view != MineView && profile == null)
+            var profile = View == MineView ? null : Profiles().FirstOrDefault(p => p.Id == View);
+            if (View != MineView && profile == null)
             {
-                _view = MineView;
-                _sidebarSignature = null;
-                RenderSidebar();
+                ShowView(MineView);
+                return;
             }
             if (profile != null && string.IsNullOrWhiteSpace(profile.CheeseTrackerUrl))
             {
@@ -546,55 +432,26 @@ namespace AP_Atlas.UI
                 return;
             }
             var linked = _cheese.LinkedProfiles();
-            if (_view == MineView && linked.Count == 0)
+            if (View == MineView && linked.Count == 0)
             {
                 ShowMessage("No multiworld is linked to Cheese Tracker yet.",
                     "Link one from the explorer on the left (or the multiworld's field on the Multiworlds page) to see everyone's status here.",
-                    _profiles().Take(6).Select(p => ($"Link {p.Name}…", (Action)(() => CheeseDialogs.Link(this, _cheese, p, _toast, Refresh)))).ToList());
+                    Profiles().Take(6).Select(p => ($"Link {p.Name}…", (Action)(() => CheeseDialogs.Link(this, _cheese, p, Toast, Refresh)))).ToList());
                 return;
             }
             ShowPage(_trackerPage);
             RenderTrackerPage(profile, linked);
         }
 
-        private void ShowPage(Control page)
-        {
-            _trackerPage.Visible = page == _trackerPage;
-            _settingsPage.Visible = page == _settingsPage;
-            _messagePage.Visible = page == _messagePage;
-        }
-
         private void ShowNotLinked(MultiworldProfile profile)
         {
-            var actions = new List<(string, Action)> { ($"Link {profile.Name}…", () => CheeseDialogs.Link(this, _cheese, profile, _toast, Refresh)) };
-            if (_cheese.HasKey) actions.Add(("Find on my dashboard", () => CheeseDialogs.FindOnDashboard(this, _cheese, profile, _toast, Refresh)));
+            var actions = new List<(string, Action)> { ($"Link {profile.Name}…", () => CheeseDialogs.Link(this, _cheese, profile, Toast, Refresh)) };
+            if (_cheese.HasKey) actions.Add(("Find on my dashboard", () => CheeseDialogs.FindOnDashboard(this, _cheese, profile, Toast, Refresh)));
             else actions.Add(("Settings…", () => ShowView(SettingsView)));
             ShowMessage($"{profile.Name} isn't linked to Cheese Tracker.",
                 "Paste its Cheese Tracker link, or the archipelago.gg room link (Cheese Tracker finds or starts the room's tracker). " +
                 (_cheese.HasKey ? "Or let Atlas look for it among the trackers on your dashboard." : "With your API key added (Settings), Atlas can also look for it on your dashboard."),
                 actions);
-        }
-
-        private void ShowMessage(string title, string text, List<(string Label, Action Action)> actions)
-        {
-            ShowPage(_messagePage);
-            foreach (Node child in _messagePage.GetChildren()) child.QueueFree();
-            var heading = new Label { Text = title, HorizontalAlignment = HorizontalAlignment.Center, AutowrapMode = TextServer.AutowrapMode.WordSmart };
-            heading.SetMeta("font_size_ratio", 1.25);
-            _messagePage.AddChild(heading);
-            var body = new Label { Text = text, HorizontalAlignment = HorizontalAlignment.Center, AutowrapMode = TextServer.AutowrapMode.WordSmart };
-            body.AddThemeColorOverride("font_color", Muted);
-            _messagePage.AddChild(body);
-            var row = new HFlowContainer { Alignment = FlowContainer.AlignmentMode.Center };
-            row.AddThemeConstantOverride("h_separation", 6);
-            foreach (var (label, action) in actions)
-            {
-                var b = new Button { Text = label, FocusMode = FocusModeEnum.None };
-                b.Pressed += action;
-                row.AddChild(b);
-            }
-            _messagePage.AddChild(row);
-            MainTrackerWindow.SetFontSizeRecursive(_messagePage, _settings.ContentFontSize);
         }
 
         private void RenderTrackerPage(MultiworldProfile profile, List<MultiworldProfile> linked)
@@ -603,7 +460,7 @@ namespace AP_Atlas.UI
             var rooms = shown.Select(p => (Profile: p, Room: _cheese.RoomView(p.Id))).Where(x => x.Room != null).ToList();
 
             // Header (its buttons are rebuilt only when what they act on changes).
-            string headerSignature = _view + "|" + profile?.CheeseTrackerUrl + "|" + string.Join(",", rooms.Select(r => r.Room.Busy + r.Room.Link));
+            string headerSignature = View + "|" + profile?.CheeseTrackerUrl + "|" + string.Join(",", rooms.Select(r => r.Room.Busy + r.Room.Link));
             bool rebuildButtons = headerSignature != _headerSignature;
             _headerSignature = headerSignature;
             if (rebuildButtons) foreach (Node child in _headerButtons.GetChildren()) child.QueueFree();
@@ -621,9 +478,9 @@ namespace AP_Atlas.UI
                 _subtitle.Text = profile.Name + " · " + string.Join(" · ", parts);
                 if (rebuildButtons)
                 {
-                    _headerButtons.AddChild(Kit.Button("Refresh", "Read the tracker again now", () => CheeseDialogs.Run(this, _cheese.RefreshAsync(profile.Id), _toast, null, QueueRefresh), room?.Busy != true));
+                    _headerButtons.AddChild(Kit.Button("Refresh", "Read the tracker again now", () => CheeseDialogs.Run(this, _cheese.RefreshAsync(profile.Id), Toast, null, QueueRefresh), room?.Busy != true));
                     if (room != null) _headerButtons.AddChild(Kit.Button("Open ↗", "Open this tracker on Cheese Tracker", () => AP_Atlas.Core.ExternalLinks.OpenWeb(room.Link)));
-                    _headerButtons.AddChild(Kit.Button("Change link…", "Link this multiworld to a different tracker", () => CheeseDialogs.Link(this, _cheese, profile, _toast, Refresh)));
+                    _headerButtons.AddChild(Kit.Button("Change link…", "Link this multiworld to a different tracker", () => CheeseDialogs.Link(this, _cheese, profile, Toast, Refresh)));
                 }
             }
             else
@@ -636,10 +493,10 @@ namespace AP_Atlas.UI
                 if (rebuildButtons)
                     _headerButtons.AddChild(Kit.Button("Refresh", "Read every linked tracker again now", () =>
                     {
-                        foreach (var (p, _) in rooms) CheeseDialogs.Run(this, _cheese.RefreshAsync(p.Id), _toast, null, QueueRefresh);
+                        foreach (var (p, _) in rooms) CheeseDialogs.Run(this, _cheese.RefreshAsync(p.Id), Toast, null, QueueRefresh);
                     }, busy == 0));
             }
-            if (rebuildButtons) MainTrackerWindow.SetFontSizeRecursive(_headerButtons, _settings.ContentFontSize);
+            if (rebuildButtons) MainTrackerWindow.SetFontSizeRecursive(_headerButtons, Settings.ContentFontSize);
 
             var problems = rooms.Where(r => r.Room.Problem != null).Select(r => (rooms.Count > 1 ? r.Profile.Name + ": " : "") + r.Room.Problem).ToList();
             _problemRow.Visible = problems.Count > 0;
@@ -671,7 +528,7 @@ namespace AP_Atlas.UI
             int games = stat.Select(r => r.Game.Game).Distinct().Count();
             var unified = stat.GroupBy(r => Unified(r.Game)).ToDictionary(g => g.Key, g => g.Count());
             var order = new[] { "bk", "soft_bk", "incomplete", "all_checks", "goal", "done" };
-            string counts = string.Join(Colored(" · ", Muted), order.Where(unified.ContainsKey).Select(id => Colored($"{unified[id]} {UnifiedLabel(id)}", UnifiedColor(id))));
+            string counts = string.Join(Colored(" · ", ThemeColors.TextSubtle), order.Where(unified.ContainsKey).Select(id => Colored($"{unified[id]} {UnifiedLabel(id)}", UnifiedColor(id))));
             _summaryText.Markup = Colored($"{Plural(stat.Count, "slot")} · {Plural(players, "player")} · {Plural(games, "game")} · {done}/{total} checks" + (total > 0 ? $" ({100.0 * done / total:0}%)" : ""), ThemeColors.TextMuted) +
                                 (counts.Length > 0 ? "   " + counts : "");
 
@@ -723,93 +580,55 @@ namespace AP_Atlas.UI
         {
             // "My slots" are yours, so their ping and availability say little; the multiworld matters instead.
             var columns = AllColumns.Where(c => includeMultiworld ? c.Id is not ("ping" or "availability") : c.Id != "multiworld").ToList();
-            float scale = Math.Max(0.8f, _settings.ContentFontSize / 14f);
-            string signature = string.Join(",", columns.Select(c => c.Id)) + "@" + scale;
+            string signature = string.Join(",", columns.Select(c => c.Id));
             if (signature == _columnsSignature) return;
             _columnsSignature = signature;
             _columns = columns;
-            _tree.Clear();
-            _renderedKeys.Clear();
-            _tree.Columns = columns.Count;
-            for (int i = 0; i < columns.Count; i++)
+            _table.SetColumns(columns.Select(c => new AtlasTable.Column
             {
-                var c = columns[i];
-                _tree.SetColumnExpand(i, c.Ratio > 0);
-                _tree.SetColumnExpandRatio(i, Math.Max(1, c.Ratio));
-                _tree.SetColumnCustomMinimumWidth(i, (int)(c.MinWidth * scale));
-                _tree.SetColumnClipContent(i, true);
-                _tree.SetColumnTitleAlignment(i, c.Align);
-            }
+                Id = c.Id,
+                Title = c.Title,
+                MinWidth = c.MinWidth,
+                Ratio = c.Ratio,
+                Align = c.Align,
+                DescendingFirst = CheeseTable.DefaultDescending(c.Id)
+            }).ToList(), defaultSort: "name");
         }
 
         private void RenderTable()
         {
-            if (_tree == null || _columns.Count == 0) return;
+            if (_table == null || _columns.Count == 0) return;
             using var __perf = PerfMonitor.Measure("Cheese Tracker tab: table");
             var now = DateTime.UtcNow; // wall clock: how long ago the site's times were, for showing
-            for (int i = 0; i < _columns.Count; i++)
-            {
-                string arrow = _columns[i].Id == _settings.CheeseSortColumn ? (_settings.CheeseSortDescending ? " ▼" : " ▲") : "";
-                _tree.SetColumnTitle(i, _columns[i].Title + arrow);
-            }
-
-            var shown = CheeseTable.Sort(_rows.Where(r => CheeseTable.Passes(r, _filter, ClaimedByYou(r))), _settings.CheeseSortColumn, _settings.CheeseSortDescending, _settings.CheeseMineFirst, now);
-            var keys = shown.Select(r => r.Key).ToList();
-            _countLabel.Text = _filter.IsActive ? $"Showing {shown.Count} of {_rows.Count}" : $"{_rows.Count} slots";
-            _clearFilters.Visible = _filter.IsActive;
+            UpdateClearFilters();
             SetMenuActive(_statusMenu, _filter.HiddenProgression.Count + _filter.HiddenCompletion.Count > 0);
             SetMenuActive(_availabilityMenu, _filter.HiddenAvailability.Count > 0);
             SetMenuActive(_ownerMenu, _filter.Owner != null);
             SetMenuActive(_gameMenu, _filter.Game != null);
 
-            _suppressPick = true;
-            try
+            // Ties in any sort keep this order: by name, then by multiworld (stable and predictable, as Cheese Tracker's page).
+            var passing = TableSort.Order(_rows.Where(r => CheeseTable.Passes(r, _filter, ClaimedByYou(r))), r => CheeseTable.SortKey(r, "name", now), false);
+            var rows = new List<AtlasTable.Row>(passing.Count);
+            foreach (var r in passing)
             {
-                if (keys.SequenceEqual(_renderedKeys) && _tree.GetRoot() != null)
+                var row = new AtlasTable.Row { Key = r.Key, Tag = r, Pinned = Settings.CheeseMineFirst && r.Mine, SearchText = r.Game.Notes, Cells = new AtlasTable.Cell[_columns.Count] };
+                for (int i = 0; i < _columns.Count; i++)
                 {
-                    // Same rows in the same order: update the cells in place (keeps the scroll position and selection).
-                    var item = _tree.GetRoot().GetFirstChild();
-                    foreach (var row in shown)
-                    {
-                        if (item == null) break;
-                        FillRow(item, row, now);
-                        item = item.GetNext();
-                    }
+                    var (text, color, tip) = Cell(_columns[i].Id, r, now);
+                    row.Cells[i] = new AtlasTable.Cell(text ?? "", color, tip, CheeseTable.SortKey(r, _columns[i].Id, now));
+                    if (_columns[i].Id == "name" && r.Mine) row.Cells[i].Background = new Color(1, 0, 1, 0.08f);
                 }
-                else
-                {
-                    float scroll = ScrollBar()?.Value is double v ? (float)v : 0f;
-                    _tree.Clear();
-                    var root = _tree.CreateItem();
-                    TreeItem reselect = null;
-                    foreach (var row in shown)
-                    {
-                        var item = _tree.CreateItem(root);
-                        item.SetMetadata(0, row.Key);
-                        FillRow(item, row, now);
-                        if (row.Key == _selectedKey) reselect = item;
-                    }
-                    if (shown.Count == 0)
-                    {
-                        var empty = _tree.CreateItem(root);
-                        empty.SetText(Math.Min(2, _columns.Count - 1), _rows.Count == 0 ? "No slots to show yet." : "No slots match the filters.");
-                        empty.SetCustomColor(Math.Min(2, _columns.Count - 1), Muted);
-                        for (int i = 0; i < _columns.Count; i++) empty.SetSelectable(i, false);
-                    }
-                    _renderedKeys = keys;
-                    if (reselect != null) reselect.Select(0);
-                    var bar = ScrollBar();
-                    if (bar != null) Ui.Defer(bar, () => bar.Value = scroll);
-                }
+                rows.Add(row);
             }
-            finally
-            {
-                _suppressPick = false;
-            }
+            _table.TotalCount = _rows.Count;
+            _table.SetRows(rows);
             RenderDetails();
         }
 
-        private VScrollBar ScrollBar() => _tree.GetChildren(true).OfType<VScrollBar>().FirstOrDefault();
+        private void UpdateClearFilters()
+        {
+            if (_clearFilters != null) _clearFilters.Visible = _filter.IsActive || _table.SearchBox.Text.Length > 0;
+        }
 
         private static void SetMenuActive(MenuButton menu, bool active)
         {
@@ -821,23 +640,6 @@ namespace AP_Atlas.UI
 
         private bool ClaimedByYou(CheeseRow r) => _cheese.OwnershipOf(r.Game) is CheeseOwnership.You or CheeseOwnership.YouByName;
 
-        private void FillRow(TreeItem item, CheeseRow row, DateTime now)
-        {
-            var g = row.Game;
-            for (int i = 0; i < _columns.Count; i++)
-            {
-                var (text, color, tip) = Cell(_columns[i].Id, row, now);
-                item.SetText(i, text ?? "");
-                item.SetCustomColor(i, color);
-                item.SetTooltipText(i, tip ?? "");
-                item.SetTextAlignment(i, _columns[i].Align);
-            }
-            int nameColumn = _columns.FindIndex(c => c.Id == "name");
-            if (nameColumn < 0) return;
-            if (row.Mine) item.SetCustomBgColor(nameColumn, new Color(1, 0, 1, 0.08f));
-            else item.ClearCustomBgColor(nameColumn);
-        }
-
         private (string Text, Color Color, string Tip) Cell(string column, CheeseRow row, DateTime now)
         {
             var g = row.Game;
@@ -846,19 +648,19 @@ namespace AP_Atlas.UI
                 case "multiworld":
                     return (row.ProfileName, ThemeColors.TextMuted, null);
                 case "position":
-                    return (g.Position.ToString(CultureInfo.InvariantCulture), Muted, null);
+                    return (g.Position.ToString(CultureInfo.InvariantCulture), ThemeColors.TextSubtle, null);
                 case "name":
                     return (g.Name, row.Mine ? ThemeColors.You : ThemeColors.Text,
                         row.SlotName != null ? $"Your slot {row.SlotName} in Atlas (click to show it in Properties)" : ClaimedByYou(row) ? "Claimed by you" : null);
                 case "ping":
-                    if (string.IsNullOrEmpty(g.OwnerName)) return ("", Muted, null);
+                    if (string.IsNullOrEmpty(g.OwnerName)) return ("", ThemeColors.TextSubtle, null);
                     string ping = CheeseTable.EffectivePing(row);
                     return (CtStatus.Label(ping), PingColor(ping), !string.IsNullOrEmpty(row.Tracker?.GlobalPingPolicy) ? "Set for everyone by the organizer" : null);
                 case "availability":
-                    return (CtStatus.Label(g.Availability), g.Availability switch { "open" => Good, "public" => ThemeColors.Info, "claimed" => ThemeColors.TextMuted, _ => Muted }, null);
+                    return (CtStatus.Label(g.Availability), g.Availability switch { "open" => ThemeColors.Success, "public" => ThemeColors.Info, "claimed" => ThemeColors.TextMuted, _ => ThemeColors.TextSubtle }, null);
                 case "owner":
-                    if (string.IsNullOrEmpty(g.OwnerName)) return ("—", Muted, "Unclaimed");
-                    return (g.OwnerName + (g.OwnerAway ? " (away)" : ""), g.OwnerAway ? Warn : ClaimedByYou(row) ? ThemeColors.You : ThemeColors.TextMuted,
+                    if (string.IsNullOrEmpty(g.OwnerName)) return ("—", ThemeColors.TextSubtle, "Unclaimed");
+                    return (g.OwnerName + (g.OwnerAway ? " (away)" : ""), g.OwnerAway ? ThemeColors.Warning : ClaimedByYou(row) ? ThemeColors.You : ThemeColors.TextMuted,
                         g.OwnerAway ? "The owner is away" : g.ClaimedByUserId == null ? "Claimed without signing in" : null);
                 case "game":
                     return (g.Game, ThemeColors.TextMuted, null);
@@ -869,26 +671,26 @@ namespace AP_Atlas.UI
                         int level = CheeseTable.ActivityLevel(g, row.Tracker, now);
                         var latest = g.LastCheckedUtc != null && (g.LastActivityUtc == null || g.LastCheckedUtc > g.LastActivityUtc) ? g.LastCheckedUtc : g.LastActivityUtc;
                         string tip = latest == null ? "No checks yet" : latest.Value.ToLocalTime().ToString("g") + (latest == g.LastCheckedUtc && g.LastCheckedUtc != g.LastActivityUtc ? " (still BK)" : "");
-                        return (CheeseTable.ActivityText(g, now), level == 0 ? Good : level == 1 ? CheeseColors.Caution : Bad, tip);
+                        return (CheeseTable.ActivityText(g, now), level == 0 ? ThemeColors.Success : level == 1 ? CheeseColors.Caution : ThemeColors.Error, tip);
                     }
                 case "checks":
                     {
                         bool complete = g.ChecksTotal > 0 && g.ChecksDone >= g.ChecksTotal;
-                        string text = _settings.CheeseChecksAsPercent
+                        string text = Settings.CheeseChecksAsPercent
                             ? (g.ChecksTotal > 0 ? $"{100.0 * g.ChecksDone / g.ChecksTotal:0}%" : "—")
                             : $"{g.ChecksDone}/{g.ChecksTotal}";
-                        return (text, complete ? Good : ThemeColors.Text, $"{g.ChecksDone} of {g.ChecksTotal} checks");
+                        return (text, complete ? ThemeColors.Success : ThemeColors.Text, $"{g.ChecksDone} of {g.ChecksTotal} checks");
                     }
                 case "hints":
                     {
                         bool notes = !string.IsNullOrWhiteSpace(g.Notes);
                         int n = row.UnfoundHints;
-                        var color = n == 0 ? (notes ? ThemeColors.Info : Muted) : n <= 5 ? ThemeColors.Info : n <= 10 ? CheeseColors.Caution : Bad;
+                        var color = n == 0 ? (notes ? ThemeColors.Info : ThemeColors.TextSubtle) : n <= 5 ? ThemeColors.Info : n <= 10 ? CheeseColors.Caution : ThemeColors.Error;
                         bool hintsKnown = row.Tracker?.Hints != null && row.Tracker.Hints.Count > 0;
                         return (n + (notes ? "*" : ""), color, (hintsKnown ? $"{n} unfound hint{(n == 1 ? "" : "s")} for items in this world" : "Hints load with the next read of the tracker") + (notes ? "; this slot has notes" : ""));
                     }
             }
-            return ("", Muted, null);
+            return ("", ThemeColors.TextSubtle, null);
         }
 
         /// <summary>The slot's status (progression while in progress, else completion), with Atlas's ready suggestion for your slots.</summary>
@@ -902,7 +704,7 @@ namespace AP_Atlas.UI
             if (row.SlotName == null) return (text, color, tip);
             var view = _cheese.SlotView(row.ProfileId, row.SlotName);
             var a = view?.Advice;
-            if (view?.AutoOn == true && view.AutoPaused != null) return (text + " · paused", Warn, tip + "\nAutomatic updates are paused: " + view.AutoPaused);
+            if (view?.AutoOn == true && view.AutoPaused != null) return (text + " · paused", ThemeColors.Warning, tip + "\nAutomatic updates are paused: " + view.AutoPaused);
             if (a?.Status != null && a.Ready)
                 return ($"{text} → {CtStatus.Label(a.Status)}?", ThemeColors.Pending, tip + $"\nAtlas suggests {CtStatus.Label(a.Status)}: {a.Reason}" + (view.AutoOn ? " (it will set it automatically)" : ""));
             if (view?.AutoOn == true) return (text + " · auto", color, tip + "\nAtlas keeps this updated automatically" + (a?.InSync == true ? " (its logic agrees)" : ""));
@@ -912,23 +714,18 @@ namespace AP_Atlas.UI
 
         private static Color PingColor(string ping) => ping switch
         {
-            "liberally" => Good,
+            "liberally" => ThemeColors.Success,
             "sparingly" or "hints" => CheeseColors.Caution,
             "see_notes" => ThemeColors.Info,
-            _ => Bad
+            _ => ThemeColors.Error
         };
 
-        private CheeseRow SelectedRow() => _selectedKey == null ? null : _rows.FirstOrDefault(r => r.Key == _selectedKey);
+        private CheeseRow SelectedRow() => _table.Selected?.Tag as CheeseRow;
 
-        private void OnRowSelected()
+        private void OnRowSelected(AtlasTable.Row picked)
         {
-            var meta = _tree.GetSelected()?.GetMetadata(0) ?? default;
-            if (meta.VariantType != Variant.Type.String) return;
-            _selectedKey = meta.AsString();
             RenderDetails();
-            if (_suppressPick) return;
-            var row = SelectedRow();
-            if (row?.SlotName != null) Inspector.Inspect(InspectTarget.ForSlot(row.ProfileId, row.SlotName));
+            if (picked?.Tag is CheeseRow row && row.SlotName != null) Inspector.Inspect(InspectTarget.ForSlot(row.ProfileId, row.SlotName));
         }
 
         // =====================================================================
@@ -937,67 +734,47 @@ namespace AP_Atlas.UI
 
         private CheeseTarget TargetOf(CheeseRow row) => row.SlotName != null ? CheeseTarget.Slot(row.ProfileId, row.SlotName) : CheeseTarget.Row(row.ProfileId, row.Game.Id);
 
-        private void Run(System.Threading.Tasks.Task<string> change, string success = null) => CheeseDialogs.Run(this, change, _toast, success, QueueRefresh);
+        private void Run(System.Threading.Tasks.Task<string> change, string success = null) => CheeseDialogs.Run(this, change, Toast, success, QueueRefresh);
 
-        private void ShowRowMenu()
+        /// <summary>A row's right-click menu: what Cheese Tracker lets you change for it, then where it leads.</summary>
+        private IEnumerable<(string Label, Action Action, bool Enabled)> RowActions(CheeseRow row)
         {
-            var row = SelectedRow();
-            if (row == null) return;
-            var menu = new PopupMenu();
-            var actions = new Dictionary<long, Action>();
-            void Add(string label, Action action, bool enabled = true)
-            {
-                long id = actions.Count + 1;
-                menu.AddItem(label, (int)id);
-                menu.SetItemDisabled(menu.GetItemIndex((int)id), !enabled);
-                actions[id] = action;
-            }
+            if (row == null) yield break;
             string cannot = _cheese.CannotEdit(row.ProfileId, row.Game);
             var g = row.Game;
             var target = TargetOf(row);
             if (cannot != null)
             {
-                Add(cannot.Length > 80 ? cannot.Substring(0, 77) + "…" : cannot, () => { }, false);
-                if (_cheese.CanClaim(row.ProfileId, g)) Add("Claim", () => Run(_cheese.ClaimAsync(target), $"Claimed {g.Name}"));
-                menu.AddSeparator();
+                yield return (cannot.Length > 80 ? cannot.Substring(0, 77) + "…" : cannot, () => { }, false);
+                if (_cheese.CanClaim(row.ProfileId, g)) yield return ("Claim", () => Run(_cheese.ClaimAsync(target), $"Claimed {g.Name}"), true);
             }
             else
             {
                 if (!g.IsComplete)
                     foreach (var status in CtStatus.ProgressionIds.Where(s => s != "unknown" && s != g.Progression))
-                        Add("Set " + CtStatus.Label(status), () => Run(_cheese.SetProgressionAsync(target, status)));
-                if (g.Progression is "bk" or "soft_bk" && !g.IsComplete) Add("Still BK", () => Run(_cheese.StillBkAsync(target), "Marked still BK"));
-                Add("Notes…", () => CheeseDialogs.Notes(this, g.Name, g.Notes, text => Run(_cheese.SetNotesAsync(target, text), "Notes saved")));
-                var ping = new PopupMenu();
-                for (int i = 0; i < CtStatus.PingIds.Length; i++)
+                    {
+                        string s = status;
+                        yield return ("Set " + CtStatus.Label(s), () => Run(_cheese.SetProgressionAsync(target, s)), true);
+                    }
+                if (g.Progression is "bk" or "soft_bk" && !g.IsComplete) yield return ("Still BK", () => Run(_cheese.StillBkAsync(target), "Marked still BK"), true);
+                yield return ("Notes…", () => CheeseDialogs.Notes(this, g.Name, g.Notes, text => Run(_cheese.SetNotesAsync(target, text), "Notes saved")), true);
+                foreach (var ping in CtStatus.PingIds)
                 {
-                    ping.AddRadioCheckItem(CtStatus.Label(CtStatus.PingIds[i]), i);
-                    ping.SetItemChecked(i, CtStatus.PingIds[i] == g.Ping);
+                    string p = ping;
+                    yield return ((p == g.Ping ? "✓ " : "") + "Ping: " + CtStatus.Label(p), () => Run(_cheese.SetPingAsync(target, p)), p != g.Ping);
                 }
-                ping.IdPressed += id => Run(_cheese.SetPingAsync(target, CtStatus.PingIds[(int)id]));
-                menu.AddSubmenuNodeItem("Ping", ping);
-                if (g.Completion != "done") Add("Mark Done…", () => CheeseDialogs.ConfirmDone(this, g.Name, () => Run(_cheese.SetCompletionAsync(target, "done"))));
-                if (g.Completion != "released") Add("Forfeit…", () => CheeseDialogs.ConfirmForfeit(this, g.Name, () => Run(_cheese.SetCompletionAsync(target, "released"))));
-                if (g.Completion is "done" or "released") Add("Not done after all", () => Run(_cheese.SetCompletionAsync(target, "incomplete")));
+                if (g.Completion != "done") yield return ("Mark Done…", () => CheeseDialogs.ConfirmDone(this, g.Name, () => Run(_cheese.SetCompletionAsync(target, "done"))), true);
+                if (g.Completion != "released") yield return ("Forfeit…", () => CheeseDialogs.ConfirmForfeit(this, g.Name, () => Run(_cheese.SetCompletionAsync(target, "released"))), true);
+                if (g.Completion is "done" or "released") yield return ("Not done after all", () => Run(_cheese.SetCompletionAsync(target, "incomplete")), true);
                 var owner = _cheese.OwnershipOf(g);
-                if (owner is CheeseOwnership.Nobody or CheeseOwnership.YouByName) Add("Claim", () => Run(_cheese.ClaimAsync(target), $"Claimed {g.Name}"), _cheese.HasKey);
-                else if (owner == CheeseOwnership.You) Add("Disclaim…", () => CheeseDialogs.ConfirmDisclaim(this, g.Name, () => Run(_cheese.DisclaimAsync(target), $"Released {g.Name}")));
-                menu.AddSeparator();
+                if (owner is CheeseOwnership.Nobody or CheeseOwnership.YouByName) yield return ("Claim", () => Run(_cheese.ClaimAsync(target), $"Claimed {g.Name}"), _cheese.HasKey);
+                else if (owner == CheeseOwnership.You) yield return ("Disclaim…", () => CheeseDialogs.ConfirmDisclaim(this, g.Name, () => Run(_cheese.DisclaimAsync(target), $"Released {g.Name}")), true);
             }
-            if (row.SlotName != null) Add("Show in Properties", () => Inspector.Inspect(InspectTarget.ForSlot(row.ProfileId, row.SlotName)));
+            if (row.SlotName != null) yield return ("Show in Properties", () => Inspector.Inspect(InspectTarget.ForSlot(row.ProfileId, row.SlotName)), true);
             var room = _cheese.RoomView(row.ProfileId);
-            if (room != null) Add("Open on Cheese Tracker ↗", () => AP_Atlas.Core.ExternalLinks.OpenWeb(room.Link));
-            if (!string.IsNullOrEmpty(row.Tracker?.UpstreamUrl)) Add("Open on the Archipelago tracker ↗", () => AP_Atlas.Core.ExternalLinks.OpenWeb($"{row.Tracker.UpstreamUrl.TrimEnd('/')}/0/{g.Position}"));
-            Add("Copy name", () => DisplayServer.ClipboardSet(g.Name));
-            menu.IdPressed += id =>
-            {
-                if (actions.TryGetValue(id, out var action)) action();
-            };
-            menu.PopupHide += () => menu.QueueFree();
-            AddChild(menu);
-            MainTrackerWindow.SetFontSizeRecursive(menu, _settings.ContentFontSize);
-            menu.Position = (Vector2I)GetGlobalMousePosition();
-            menu.Popup();
+            if (room != null) yield return ("Open on Cheese Tracker ↗", () => AP_Atlas.Core.ExternalLinks.OpenWeb(room.Link), true);
+            if (!string.IsNullOrEmpty(row.Tracker?.UpstreamUrl)) yield return ("Open on the Archipelago tracker ↗", () => AP_Atlas.Core.ExternalLinks.OpenWeb($"{row.Tracker.UpstreamUrl.TrimEnd('/')}/0/{g.Position}"), true);
+            yield return ("Copy name", () => DisplayServer.ClipboardSet(g.Name), true);
         }
 
         private void RenderDetails()
@@ -1009,26 +786,26 @@ namespace AP_Atlas.UI
             foreach (Node child in _details.GetChildren()) child.QueueFree();
             if (row == null)
             {
-                _details.AddChild(Kit.Text(_rows.Count == 0 ? "" : "Select a slot to see its notes and hints. Right-click a slot for its actions.", Muted));
-                MainTrackerWindow.SetFontSizeRecursive(_details, _settings.ContentFontSize);
+                _details.AddChild(Kit.Subtle(_rows.Count == 0 ? "" : "Select a slot to see its notes and hints. Right-click a slot for its actions."));
+                MainTrackerWindow.SetFontSizeRecursive(_details, Settings.ContentFontSize);
                 return;
             }
             var g = row.Game;
             var now = DateTime.UtcNow; // wall clock: how long ago the site's times were, for showing
-            var title = new Label { Text = $"#{g.Position}  {g.Name}  ·  {g.Game}" + (_view == MineView ? "  ·  " + row.ProfileName : ""), ClipText = true };
+            var title = new Label { Text = $"#{g.Position}  {g.Name}  ·  {g.Game}" + (View == MineView ? "  ·  " + row.ProfileName : ""), ClipText = true };
             title.SetMeta("font_size_ratio", 1.15);
             title.AddThemeColorOverride("font_color", row.Mine ? ThemeColors.You : ThemeColors.Text);
             _details.AddChild(title);
 
             var facts = Rich();
-            string owner = string.IsNullOrEmpty(g.OwnerName) ? Colored("unclaimed", Muted) : Colored(g.OwnerName + (g.OwnerAway ? " (away)" : ""), g.OwnerAway ? Warn : ThemeColors.TextMuted);
+            string owner = string.IsNullOrEmpty(g.OwnerName) ? Colored("unclaimed", ThemeColors.TextSubtle) : Colored(g.OwnerName + (g.OwnerAway ? " (away)" : ""), g.OwnerAway ? ThemeColors.Warning : ThemeColors.TextMuted);
             int level = CheeseTable.ActivityLevel(g, row.Tracker, now);
-            facts.Markup = (g.IsComplete ? "" : Colored(CtStatus.Label(g.Progression), AP_Atlas.UI.CheeseColors.Of(g.Progression)) + Colored(" · ", Muted)) +
-                         Colored(CtStatus.Label(g.Completion), AP_Atlas.UI.CheeseColors.Of(g.Completion)) + Colored("   Owner: ", Muted) + owner +
-                         Colored("   Availability: ", Muted) + Colored(CtStatus.Label(g.Availability), ThemeColors.TextMuted) +
-                         (string.IsNullOrEmpty(g.OwnerName) ? "" : Colored("   Ping: ", Muted) + Colored(CtStatus.Label(CheeseTable.EffectivePing(row)), PingColor(CheeseTable.EffectivePing(row)))) +
-                         Colored("   Last activity: ", Muted) + Colored(CheeseTable.ActivityText(g, now), level == 0 ? Good : level == 1 ? CheeseColors.Caution : Bad) +
-                         Colored($"   Checks: ", Muted) + Colored($"{g.ChecksDone}/{g.ChecksTotal}", ThemeColors.TextMuted);
+            facts.Markup = (g.IsComplete ? "" : Colored(CtStatus.Label(g.Progression), AP_Atlas.UI.CheeseColors.Of(g.Progression)) + Colored(" · ", ThemeColors.TextSubtle)) +
+                         Colored(CtStatus.Label(g.Completion), AP_Atlas.UI.CheeseColors.Of(g.Completion)) + Colored("   Owner: ", ThemeColors.TextSubtle) + owner +
+                         Colored("   Availability: ", ThemeColors.TextSubtle) + Colored(CtStatus.Label(g.Availability), ThemeColors.TextMuted) +
+                         (string.IsNullOrEmpty(g.OwnerName) ? "" : Colored("   Ping: ", ThemeColors.TextSubtle) + Colored(CtStatus.Label(CheeseTable.EffectivePing(row)), PingColor(CheeseTable.EffectivePing(row)))) +
+                         Colored("   Last activity: ", ThemeColors.TextSubtle) + Colored(CheeseTable.ActivityText(g, now), level == 0 ? ThemeColors.Success : level == 1 ? CheeseColors.Caution : ThemeColors.Error) +
+                         Colored($"   Checks: ", ThemeColors.TextSubtle) + Colored($"{g.ChecksDone}/{g.ChecksTotal}", ThemeColors.TextMuted);
             _details.AddChild(facts);
 
             // Actions for rows Atlas may change.
@@ -1056,8 +833,8 @@ namespace AP_Atlas.UI
                 buttons.AddChild(Kit.Button("Disclaim…", "Release your claim on this slot", () => CheeseDialogs.ConfirmDisclaim(this, g.Name, () => Run(_cheese.DisclaimAsync(target), $"Released {g.Name}")), canEdit));
             if (row.SlotName != null)
                 buttons.AddChild(Kit.Button("Show in Properties", "All of this slot's details, Atlas's suggestion and automatic updates", () => Inspector.Inspect(InspectTarget.ForSlot(row.ProfileId, row.SlotName))));
-            if (cannot != null) _details.AddChild(Kit.Text(cannot, Muted));
-            if (busy) _details.AddChild(Kit.Text("Updating Cheese Tracker…", Muted));
+            if (cannot != null) _details.AddChild(Kit.Subtle(cannot));
+            if (busy) _details.AddChild(Kit.Subtle("Updating Cheese Tracker…"));
 
             // Automatic updates, for your slots in Atlas.
             if (row.SlotName != null)
@@ -1068,7 +845,7 @@ namespace AP_Atlas.UI
                     if (advice != null)
                         _details.AddChild(Kit.Text(advice.InSync ? "Atlas's logic agrees: " + advice.Reason :
                             advice.Status != null ? $"Atlas suggests {CtStatus.Label(advice.Status)}: {advice.Reason}" + (advice.Ready ? "" : " (confirming)") :
-                            advice.Quiet ?? "", advice.InSync ? Good : advice.Status != null ? ThemeColors.Pending : Muted));
+                            advice.Quiet ?? "", advice.InSync ? ThemeColors.Success : advice.Status != null ? ThemeColors.Pending : ThemeColors.TextSubtle));
                     var auto = new Button
                     {
                         Text = view.AutoOn ? "Updating automatically" : "Update automatically",
@@ -1084,27 +861,27 @@ namespace AP_Atlas.UI
                     auto.Toggled += on =>
                     {
                         string error = _cheese.SetAuto(profileId, slotName, on);
-                        if (error != null) _toast(error, Bad);
+                        if (error != null) Toast(error, ThemeColors.Error);
                         QueueRefresh();
                     };
                     _details.AddChild(auto);
                     if (view.AutoOn && view.AutoPaused != null)
                     {
-                        _details.AddChild(Kit.Text("Paused: " + view.AutoPaused + ".", Warn));
+                        _details.AddChild(Kit.Text("Paused: " + view.AutoPaused + ".", ThemeColors.Warning));
                         var resume = new HFlowContainer();
                         resume.AddChild(Kit.Button("Resume", "Carry on from the status the slot has now", () => _cheese.ResumeAuto(profileId, slotName)));
                         _details.AddChild(resume);
                     }
-                    if (view.LastError != null) _details.AddChild(Kit.Text(view.LastError, Warn));
+                    if (view.LastError != null) _details.AddChild(Kit.Text(view.LastError, ThemeColors.Warning));
                 }
             }
 
             // Notes.
             _details.AddChild(Kit.Heading("Notes", 1f));
-            _details.AddChild(Kit.Text(string.IsNullOrWhiteSpace(g.Notes) ? "No notes." : g.Notes, string.IsNullOrWhiteSpace(g.Notes) ? Muted : ThemeColors.Text));
+            _details.AddChild(Kit.Text(string.IsNullOrWhiteSpace(g.Notes) ? "No notes." : g.Notes, string.IsNullOrWhiteSpace(g.Notes) ? ThemeColors.TextSubtle : ThemeColors.Text));
 
             RenderHints(row);
-            MainTrackerWindow.SetFontSizeRecursive(_details, _settings.ContentFontSize);
+            MainTrackerWindow.SetFontSizeRecursive(_details, Settings.ContentFontSize);
         }
 
         /// <summary>Everything the details pane shows for a row, so it's rebuilt only when that changes.</summary>
@@ -1117,7 +894,7 @@ namespace AP_Atlas.UI
             return string.Join("|", row.Key, g.Progression, g.Completion, g.Availability, g.Ping, g.Notes, g.OwnerName, g.OwnerAway, g.ClaimedByUserId, g.DiscordUsername,
                 g.ChecksDone, g.ChecksTotal, CheeseTable.ActivityText(g, DateTime.UtcNow), row.UnfoundHints, row.Tracker?.Hints?.Count, row.Tracker?.GlobalPingPolicy,
                 a?.Status, a?.Ready, a?.InSync, a?.Reason, a?.Quiet, view?.AutoOn, view?.AutoPaused, view?.LastError, view?.CannotEdit,
-                _cheese.CannotEdit(row.ProfileId, g), _cheese.CanClaim(row.ProfileId, g), _cheese.IsBusy(TargetOf(row)), _sentHints, _includeFoundHints, _view == MineView);
+                _cheese.CannotEdit(row.ProfileId, g), _cheese.CanClaim(row.ProfileId, g), _cheese.IsBusy(TargetOf(row)), _sentHints, _includeFoundHints, View == MineView);
         }
 
         private void RenderHints(CheeseRow row)
@@ -1139,7 +916,7 @@ namespace AP_Atlas.UI
             var tracker = row.Tracker;
             if (tracker?.Hints == null || tracker.Hints.Count == 0)
             {
-                _details.AddChild(Kit.Text(tracker?.Games.Count > 0 ? "No hints yet (or they load with the next read of the tracker)." : "No hints yet.", Muted));
+                _details.AddChild(Kit.Subtle(tracker?.Games.Count > 0 ? "No hints yet (or they load with the next read of the tracker)." : "No hints yet."));
                 return;
             }
             var games = new Dictionary<int, CtGame>();
@@ -1154,7 +931,7 @@ namespace AP_Atlas.UI
                 .ToList();
             if (hints.Count == 0)
             {
-                _details.AddChild(Kit.Text("There are no unfound hints right now.", Muted));
+                _details.AddChild(Kit.Subtle("There are no unfound hints right now."));
                 return;
             }
             var lines = new List<string>();
@@ -1167,8 +944,8 @@ namespace AP_Atlas.UI
                 string text = $"{receiver}'s {h.Item} is at {finder}'s {h.Location}{entrance}";
                 plain.Add(text);
                 var dim = state != "notfound";
-                lines.Add(Colored(HintClassLabel(h.Classification), dim ? Muted : HintClassColor(h.Classification)) + "  " +
-                          Colored(text, dim ? Muted : ThemeColors.Text) + (state == "notfound" ? "" : Colored($"  ({state})", Muted)));
+                lines.Add(Colored(HintClassLabel(h.Classification), dim ? ThemeColors.TextSubtle : HintClassColor(h.Classification)) + "  " +
+                          Colored(text, dim ? ThemeColors.TextSubtle : ThemeColors.Text) + (state == "notfound" ? "" : Colored($"  ({state})", ThemeColors.TextSubtle)));
             }
             var list = Rich();
             list.SelectionEnabled = true;
@@ -1178,7 +955,7 @@ namespace AP_Atlas.UI
             copy.AddChild(Kit.Button("Copy all", "Copy these hints as text", () =>
             {
                 DisplayServer.ClipboardSet(string.Join("\n", plain));
-                _toast($"Copied {plain.Count} hint{(plain.Count == 1 ? "" : "s")}", ThemeColors.TextSubtle);
+                Toast($"Copied {plain.Count} hint{(plain.Count == 1 ? "" : "s")}", ThemeColors.TextSubtle);
             }));
             _details.AddChild(copy);
         }
@@ -1212,6 +989,5 @@ namespace AP_Atlas.UI
             if (font != null) rtl.AddThemeFontOverride("normal_font", font);
             return rtl;
         }
-
     }
 }
