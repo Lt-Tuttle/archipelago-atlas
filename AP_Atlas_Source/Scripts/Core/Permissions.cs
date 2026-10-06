@@ -124,6 +124,19 @@ namespace AP_Atlas.Core
             return result;
         }
 
+        /// <summary>The apworld sources the user trusts downloads from, as kept in the settings.</summary>
+        public static IReadOnlyList<string> TrustedSources(AppSettings settings) =>
+            settings?.ApprovedApworldSources?.ToList() ?? new List<string>();
+
+        /// <summary>Takes back the user's trust in a source: Atlas asks before downloading from it again.</summary>
+        public static void StopTrusting(AppSettings settings, string source)
+        {
+            if (settings?.ApprovedApworldSources == null) return;
+            settings.ApprovedApworldSources.RemoveAll(x => string.Equals(x, source, StringComparison.OrdinalIgnoreCase));
+            DataManager.SaveSettings(settings);
+            Logger.LogInfo($"No longer trusting {source} for apworld downloads.");
+        }
+
         internal static void ResetSessionForTests()
         {
             lock (_deniedThisSession)

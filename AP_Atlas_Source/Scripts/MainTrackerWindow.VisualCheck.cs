@@ -78,11 +78,17 @@ public partial class MainTrackerWindow
 
         // The engine window opens before anything is allowed, so it never goes online.
         await VisualCheckWindowAsync("engine", OpenEngineSetup, 1.5);
-        await VisualCheckWindowAsync("privacy_empty", OpenPrivacy);
+        OpenPrivacy();
+        await VisualCheckWaitAsync(0.5);
+        await VisualCheckPictureAsync("privacy_empty");
         AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.WriteArchipelago, @"C:\Games\Archipelago", true);
         AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.GitHubLookups, null, true);
         _appSettings.ApprovedApworldSources.Add("github.com/example/some-apworld");
-        await VisualCheckWindowAsync("privacy_granted", OpenPrivacy);
+        OpenPrivacy(); // drawn again with the answers kept
+        await VisualCheckWaitAsync(0.5);
+        await VisualCheckPictureAsync("privacy_granted");
+        host.ShowTool(AP_Atlas.UI.Tool.Connections);
+        await VisualCheckWaitAsync(0.3);
         await VisualCheckWindowAsync("permission_find", () =>
             AP_Atlas.UI.PermissionDialog.Ask(this, _appSettings, AP_Atlas.Core.Permissions.FindArchipelago, null, null, _ => { }));
 

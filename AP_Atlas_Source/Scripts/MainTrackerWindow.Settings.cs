@@ -8,6 +8,7 @@ using System.Linq;
 public partial class MainTrackerWindow
 {
     private AP_Atlas.UI.SettingsPage? _settingsPage;
+    private AP_Atlas.UI.PrivacyPanel? _privacyPanel;
 
     private const int MinFontSize = 8, MaxFontSize = 32;
 
@@ -112,7 +113,10 @@ public partial class MainTrackerWindow
         page.AddAction("tools", "cheese", "Cheese Tracker", "Your API key, links and automatic updates.", "Open…", OpenCheeseSettings);
         page.AddAction("tools", "spheres", "Sphere Tracker", "The host's spheretracker.de room for each multiworld.", "Open…",
             () => ShowSphereTab(AP_Atlas.UI.SphereTrackerTab.SettingsView));
-        page.AddAction("tools", "privacy", "Privacy & permissions", "Everything Atlas may look at outside its folder or reach online, each allowed by you and revocable there.", "Open…", OpenPrivacy);
+
+        page.AddSection("privacy", "Privacy & permissions", "Atlas never looks or writes outside its own folder, or goes online for something new, without asking: Allow once, Always allow or Don't allow. Every answer it keeps is listed here and can be taken back.");
+        _privacyPanel = new AP_Atlas.UI.PrivacyPanel(_appSettings, text => Tr(text));
+        page.AddBlock("privacy", "privacy", "permissions allowed trusted apworld sources online sites GitHub Cheese Tracker spheretracker", _privacyPanel, _privacyPanel.Refresh);
 
         page.AddSection("keyboard", "Keyboard", "Every command and its key. Press a key's button, then the key you want: Backspace for no key, Escape to keep it. A key bound to two commands runs the first.");
         foreach (var command in _commands!.All)
@@ -168,7 +172,8 @@ public partial class MainTrackerWindow
     /// <summary>Shows the Settings page, at a section when one is named (a tool's gear button, Multiworld → Race Mode…).</summary>
     private void ShowSettings(string? sectionId = null)
     {
-        ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.Settings);
+        if (_currentTool == AP_Atlas.UI.Tool.Settings) _settingsPage?.OnShown(); // drawn again: something may have changed meanwhile
+        else ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.Settings);
         if (sectionId != null) _settingsPage?.ShowSection(sectionId);
     }
 }

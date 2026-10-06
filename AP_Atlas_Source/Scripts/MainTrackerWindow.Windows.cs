@@ -40,12 +40,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     }
     /// <summary>Opens the Atlas Engine setup window.</summary>
     /// <summary>Settings → Privacy &amp; permissions: what the user allowed Atlas to do without asking, and trusted sources.</summary>
-    private void OpenPrivacy()
-    {
-        var window = new AP_Atlas.UI.PrivacyWindow(_appSettings, _appSettings.ContentFontSize);
-        AddChild(window);
-        window.PopupCentered();
-    }
+    private void OpenPrivacy() => ShowSettings("privacy");
     public void OpenEngineSetup()
     {
         AP_Atlas.UI.AtlasEngineWindow.Open(this, _appSettings,

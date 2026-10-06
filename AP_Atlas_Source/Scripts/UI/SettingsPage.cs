@@ -198,33 +198,44 @@ namespace AP_Atlas.UI
             Refresh();
         }
 
+        /// <summary>
+        /// A block that draws itself (a list of things with their own buttons), the section's full width, found by the
+        /// <paramref name="keywords"/> as well as the section's name; <paramref name="refresh"/> runs whenever the page shows.
+        /// </summary>
+        public void AddBlock(string section, string id, string keywords, Control content, Action refresh) =>
+            AddRow(section, id, "", keywords, content, content, refresh, below: true);
+
         private void RefreshAll()
         {
             foreach (var row in _rows) row.Refresh();
         }
 
-        /// <param name="shown">What the row shows on its right.</param>
+        /// <param name="shown">What the row shows: on its right, or under its words with <paramref name="below"/>.</param>
         /// <param name="primary">The control that changes the setting (what <see cref="ControlOf"/> gives), within <paramref name="shown"/> or the same.</param>
-        private void AddRow(string sectionId, string id, string title, string description, Control shown, Control primary, Action refresh)
+        private void AddRow(string sectionId, string id, string title, string description, Control shown, Control primary, Action refresh, bool below = false)
         {
             var section = _sections.FirstOrDefault(s => s.Id == sectionId) ?? throw new InvalidOperationException($"No settings section is \"{sectionId}\".");
             if (_rows.Any(r => r.Id == id)) throw new InvalidOperationException($"Two settings are \"{id}\".");
-            var row = new HBoxContainer { Name = "Setting_" + id, SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            row.AddThemeConstantOverride("separation", 16);
+            BoxContainer row = below ? new VBoxContainer { Name = "Setting_" + id, SizeFlagsHorizontal = SizeFlags.ExpandFill }
+                : new HBoxContainer { Name = "Setting_" + id, SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            row.AddThemeConstantOverride("separation", below ? 6 : 16);
             var text = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ShrinkCenter };
             text.AddThemeConstantOverride("separation", 2);
-            text.AddChild(new Label { Text = _tr(title) });
-            if (description.Length > 0)
+            if (title.Length > 0) text.AddChild(new Label { Text = _tr(title) });
+            if (description.Length > 0 && !below)
             {
                 var hint = new Label { Text = _tr(description), AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill };
                 hint.AddThemeColorOverride("font_color", Colors.LightGray);
                 hint.SetMeta("font_size_ratio", 0.9f);
                 text.AddChild(hint);
             }
-            row.AddChild(text);
+            if (text.GetChildCount() > 0) row.AddChild(text);
             shown.SizeFlagsVertical = SizeFlags.ShrinkCenter;
-            if (primary.TooltipText.Length == 0) primary.TooltipText = _tr(title);
-            primary.AccessibilityName = _tr(title);
+            if (title.Length > 0)
+            {
+                if (primary.TooltipText.Length == 0) primary.TooltipText = _tr(title);
+                primary.AccessibilityName = _tr(title);
+            }
             row.AddChild(shown);
             section.Box.AddChild(row);
             _rows.Add(new Row(id, section, title, description, row, primary, refresh));

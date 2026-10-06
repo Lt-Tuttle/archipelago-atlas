@@ -81,7 +81,7 @@ public partial class MainTrackerWindow
             EndedSlotsAreFreedAsync);
         await ScenarioAsync("Ended slots with logic are freed: a deleted multiworld's engine stops, its engine pool is forgotten, and its slot's model and logic leave memory",
             EndedSlotsLogicIsFreedAsync);
-        await ScenarioAsync("Closed windows are freed: the Pack Doctor, the Atlas Engine window, Privacy and the race mode dialog, opened and closed again and again, leave nothing in memory and no node behind",
+        await ScenarioAsync("Closed windows are freed: the Pack Doctor, the Atlas Engine window and the race mode dialog, opened and closed again and again, leave nothing in memory and no node behind",
             ClosedWindowsAreFreedAsync);
         await ScenarioAsync("Moving views: the Cheese and Sphere tabs and Properties keep following their events when moved to another parent (docking, pop-outs), and stop while out of the window",
             ViewsKeepTheirEventsWhenMovedAsync);
@@ -101,6 +101,8 @@ public partial class MainTrackerWindow
             SettingsPageAsync);
         await ScenarioAsync("Keyboard shortcuts: every command's key is a row of the Settings page; press the button, then a key, and the command runs on it at once, the menus and the bar show it and it's saved; a key two commands share is said on both rows; a reset brings the default back; Backspace means no key, Escape keeps it, a modifier alone isn't one, and losing the focus ends the wait; the F1 list leads here",
             KeyboardShortcutsAsync);
+        await ScenarioAsync("Privacy & permissions: a section of the Settings page lists every permission Atlas can ask for with its state (asks each time, allowed until Atlas closes, always allowed, not until Atlas restarts) and every trusted apworld source; a kept answer and a trusted source can be taken back, which is saved; the section is found by its words",
+            PrivacyAsync);
         await ScenarioAsync("Bursts: 40 items and 40 chat lines arriving together reach the slot once each, at most one update of the window in each frame they arrive over (not 80)",
             BurstIsOneUpdateAsync);
         await ScenarioAsync("Long text: a game's names and a hint's entrance of a megabyte, and a chat line of 100,000 characters without a space, hold up no frame for 150 ms, shown or not (names are cut to 500 characters; a long run of text gets breaks)",
@@ -226,7 +228,7 @@ public partial class MainTrackerWindow
     }
 
     /// <summary>
-    /// Windows that close leave nothing behind: the Pack Doctor, the Atlas Engine window, Privacy and the race mode dialog,
+    /// Windows that close leave nothing behind: the Pack Doctor, the Atlas Engine window and the race mode dialog,
     /// each opened and closed three times. A closed window still subscribed to a static event, kept in a static field or
     /// only hidden would stay for the rest of the session, with all it holds.
     /// </summary>
@@ -282,11 +284,6 @@ public partial class MainTrackerWindow
         await UiTestWaitAsync(0.3);
         engine.EmitSignal(Window.SignalName.CloseRequested);
 
-        OpenPrivacy();
-        var privacy = await UiTestWaitForAsync(() => GetChildren().OfType<AP_Atlas.UI.PrivacyWindow>().FirstOrDefault(), "the Privacy window");
-        await UiTestWaitAsync(0.3);
-        privacy.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
-
         ShowRaceModeInfo();
         var race = await UiTestWaitForAsync(() => GetChildren().OfType<AcceptDialog>().FirstOrDefault(d => d.Title == "Race Mode"), "the race mode dialog");
         await UiTestWaitAsync(0.3);
@@ -307,13 +304,12 @@ public partial class MainTrackerWindow
         await UiTestWaitAsync(0.3);
         palette.Hide();
 
-        await UiTestWaitForAsync(() => !IsInstanceValid(doctor) && !IsInstanceValid(engine) && !IsInstanceValid(privacy) && !IsInstanceValid(race)
+        await UiTestWaitForAsync(() => !IsInstanceValid(doctor) && !IsInstanceValid(engine) && !IsInstanceValid(race)
             && !IsInstanceValid(shortcuts) && !IsInstanceValid(about) && !IsInstanceValid(palette) ? this : null, "the closed windows to be freed");
         return new List<(string What, System.WeakReference Weak)>
         {
             ("a closed Pack Doctor window", new System.WeakReference(doctor)),
             ("a closed Atlas Engine window", new System.WeakReference(engine)),
-            ("a closed Privacy window", new System.WeakReference(privacy)),
             ("a closed race mode dialog", new System.WeakReference(race)),
             ("a closed Keyboard Shortcuts dialog", new System.WeakReference(shortcuts)),
             ("a closed About dialog", new System.WeakReference(about)),
@@ -774,6 +770,52 @@ public partial class MainTrackerWindow
             _appSettings.KeyBindings.Remove("tool.map-packs");
             DataManager.SaveSettings(_appSettings);
             RefreshShortcutsShown();
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+        }
+    }
+
+    private async Task PrivacyAsync()
+    {
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        var page = _settingsPage ?? throw new InvalidOperationException("The Settings page wasn't built.");
+        var panel = _privacyPanel ?? throw new InvalidOperationException("The privacy panel wasn't built.");
+        var write = AP_Atlas.Core.Permissions.WriteArchipelago;
+        var find = AP_Atlas.Core.Permissions.FindArchipelago;
+        var lookups = AP_Atlas.Core.Permissions.GitHubLookups;
+        const string Source = "github.com/example/some-apworld";
+        _commands!.Run("tools.privacy");
+        await UiTestWaitAsync(0.1);
+        UiTestExpect(ShownContent() == page && page.ScrollPosition > 0, "Tools → Privacy & Permissions… didn't show the section");
+        UiTestExpect(AP_Atlas.Core.Permissions.All.All(kind => panel.StateOf(kind) == "Asks each time") && panel.TakeBackButtons.Count == 0 && panel.StopTrustingButtons.Count == 0,
+            $"with nothing allowed the panel shows {string.Join(", ", AP_Atlas.Core.Permissions.All.Select(panel.StateOf))}, {panel.TakeBackButtons.Count} to take back, {panel.StopTrustingButtons.Count} to stop trusting");
+        try
+        {
+            // Every kind of answer shows as it is when the section shows again; a kept answer and a trusted source can be taken back, and that's saved.
+            AP_Atlas.Core.Permissions.SetAlways(_appSettings, write, @"C:\Games\Archipelago", true);
+            AP_Atlas.Core.Permissions.AllowForSession(find);
+            AP_Atlas.Core.Permissions.DenyForSession(lookups);
+            _appSettings.ApprovedApworldSources.Add(Source);
+            _commands.Run("tools.privacy");
+            UiTestExpect(panel.StateOf(write) == "Always allowed" && panel.StateOf(find) == "Allowed until Atlas closes" && panel.StateOf(lookups) == "Not until Atlas restarts",
+                $"the answers show as {panel.StateOf(write)} / {panel.StateOf(find)} / {panel.StateOf(lookups)}");
+            UiTestExpect(panel.TakeBackButtons.Count == 1 && panel.StopTrustingButtons.Count == 1, $"{panel.TakeBackButtons.Count} to take back, {panel.StopTrustingButtons.Count} to stop trusting");
+            panel.TakeBackButtons[0].EmitSignal(BaseButton.SignalName.Pressed);
+            UiTestExpect(AP_Atlas.Core.Permissions.Granted(_appSettings).Count == 0 && DataManager.LoadSettings().PermissionsAllowed.Count == 0 && panel.StateOf(write) == "Asks each time" && panel.TakeBackButtons.Count == 0,
+                "taking a kept answer back didn't take, or wasn't saved");
+            panel.StopTrustingButtons[0].EmitSignal(BaseButton.SignalName.Pressed);
+            UiTestExpect(_appSettings.ApprovedApworldSources.Count == 0 && DataManager.LoadSettings().ApprovedApworldSources.Count == 0 && panel.StopTrustingButtons.Count == 0,
+                "stopping trusting a source didn't take, or wasn't saved");
+            // The section is found by its words.
+            page.Search("trusted sources");
+            UiTestExpect(page.IsShown("privacy") && !page.IsShown("auto-reconnect"), "the privacy section isn't found by its words");
+            page.Search("");
+        }
+        finally
+        {
+            AP_Atlas.Core.Permissions.SetAlways(_appSettings, write, @"C:\Games\Archipelago", false);
+            AP_Atlas.Core.Permissions.ResetSessionForTests();
+            _appSettings.ApprovedApworldSources.RemoveAll(s => s == Source);
+            DataManager.SaveSettings(_appSettings);
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
         }
     }
