@@ -37,6 +37,12 @@ public partial class MainTrackerWindow
         Add("view.chat", "View", "Chat", "", () => ShowTerminalTab(0));
         Add("view.system-log", "View", "System Log", "", () => ShowTerminalTab(1));
         Add("view.debug-log", "View", "Debug Log", "", () => ShowTerminalTab(2));
+        Add("view.slots-panel", "View", "Slots Panel", "", () => TogglePart("view.slots-panel"));
+        Add("view.explorer", "View", "Explorer", "", () => TogglePart("view.explorer"));
+        Add("view.properties-panel", "View", "Properties Panel", "", () => TogglePart("view.properties-panel"));
+        Add("view.bottom-pane", "View", "Bottom Pane", "", () => TogglePart("view.bottom-pane"));
+        Add("view.status-bar", "View", "Status Bar", "", () => TogglePart("view.status-bar"));
+        Add("view.focus-mode", "View", "Focus Mode", "F9", ToggleFocusMode);
 
         // The tools, Ctrl+1 to Ctrl+9 in the tool list's order.
         int number = 1;
@@ -100,6 +106,10 @@ public partial class MainTrackerWindow
         menus["View"].AddSeparator();
         AddCommandItems(menus["View"], "view.chat", "view.system-log", "view.debug-log");
         menus["View"].AddSeparator();
+        AddCommandCheckItems(menus["View"], PartShown, "view.slots-panel", "view.explorer", "view.properties-panel", "view.bottom-pane", "view.status-bar");
+        menus["View"].AddSeparator();
+        AddCommandItems(menus["View"], "view.focus-mode");
+        menus["View"].AddSeparator();
         AddViewSettings(menus["View"]);
 
         AddCommandItems(menus["Tools"], AP_Atlas.UI.Tool.All.Select(t => "tool." + t.Id).ToArray());
@@ -116,14 +126,24 @@ public partial class MainTrackerWindow
     }
 
     /// <summary>Adds commands to a menu, each with its key shown (the menu's own key handling is off: the window's runs every key).</summary>
-    private void AddCommandItems(PopupMenu popup, params string[] commandIds)
+    private void AddCommandItems(PopupMenu popup, params string[] commandIds) => AddCommandItems(popup, null, commandIds);
+
+    /// <summary>Adds commands that turn something on and off, as check items whose marks follow <paramref name="isOn"/> as the menu opens.</summary>
+    private void AddCommandCheckItems(PopupMenu popup, Func<string, bool> isOn, params string[] commandIds) => AddCommandItems(popup, isOn, commandIds);
+
+    private void AddCommandItems(PopupMenu popup, Func<string, bool>? isOn, string[] commandIds)
     {
         var items = _commandItems[popup];
         foreach (string id in commandIds)
         {
             var command = _commands!.Find(id) ?? throw new InvalidOperationException($"No command is \"{id}\".");
             int itemId = CommandItemBase + _commandItems.Values.Sum(menu => menu.Count);
-            popup.AddItem(Tr(command.Title), itemId);
+            if (isOn == null) popup.AddItem(Tr(command.Title), itemId);
+            else
+            {
+                popup.AddCheckItem(Tr(command.Title), itemId);
+                popup.AboutToPopup += () => popup.SetItemChecked(popup.GetItemIndex(itemId), isOn(id));
+            }
             items[itemId] = id;
             string shortcut = _commands.ShortcutOf(id);
             if (shortcut.Length > 0 && AP_Atlas.UI.CommandKeys.ToShortcut(shortcut) is { } key)

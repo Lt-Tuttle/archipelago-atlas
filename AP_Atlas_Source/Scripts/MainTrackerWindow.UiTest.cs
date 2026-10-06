@@ -95,6 +95,8 @@ public partial class MainTrackerWindow
             ActivityBarAsync);
         await ScenarioAsync("Slot picker: the tool header lists the connected slots with the selected one chosen; picking one shows its view, Ctrl+Tab and Ctrl+Shift+Tab go through them around the end, a slot selected elsewhere shows as picked, a tool that isn't per slot hides it, and a slot that ends leaves it",
             SlotPickerAsync);
+        await ScenarioAsync("Window parts: the View menu hides and shows the slots panel, the explorer (whatever tool shows), Properties, the bottom pane and the status bar, remembering each; focus mode leaves the content alone and, off again, brings each part back as the user had it",
+            WindowPartsAsync);
         await ScenarioAsync("Bursts: 40 items and 40 chat lines arriving together reach the slot once each, at most one update of the window in each frame they arrive over (not 80)",
             BurstIsOneUpdateAsync);
         await ScenarioAsync("Long text: a game's names and a hint's entrance of a megabyte, and a chat line of 100,000 characters without a space, hold up no frame for 150 ms, shown or not (names are cut to 500 characters; a long run of text gets breaks)",
@@ -592,6 +594,57 @@ public partial class MainTrackerWindow
         about.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
         await UiTestWaitAsync(0.2);
         host.ShowTool(AP_Atlas.UI.Tool.Connections);
+    }
+
+    private async Task WindowPartsAsync()
+    {
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        var bottomPane = _bottomPane ?? throw new InvalidOperationException("The bottom pane wasn't built.");
+        // The View menu's check marks follow the parts as the menu opens.
+        var (viewMenu, viewItems) = _commandItems.First(menu => menu.Value.ContainsValue("view.slots-panel"));
+        bool Checked(string command)
+        {
+            viewMenu.EmitSignal(Window.SignalName.AboutToPopup);
+            return viewMenu.IsItemChecked(viewMenu.GetItemIndex((int)viewItems.First(item => item.Value == command).Key));
+        }
+        var parts = new (string Command, Control Node, Func<AppSettings, bool> Shown)[]
+        {
+            ("view.slots-panel", _sidebar, s => s.ShowSlotsPanel),
+            ("view.properties-panel", _propertiesSidebar, s => s.ShowPropertiesPanel),
+            ("view.bottom-pane", bottomPane, s => s.ShowBottomPane),
+            ("view.status-bar", _globalStatusBar, s => s.ShowStatusBar),
+        };
+        foreach (var (command, node, shown) in parts)
+        {
+            UiTestExpect(node.Visible && shown(_appSettings) && Checked(command), $"{command}: the part isn't shown and checked to begin with");
+            _commands!.Run(command);
+            UiTestExpect(!node.Visible && !shown(_appSettings) && !Checked(command), $"{command} didn't hide the part, or didn't uncheck it");
+            UiTestExpect(!shown(DataManager.LoadSettings()), $"{command}: the hidden part isn't remembered in the settings file");
+            _commands.Run(command);
+            UiTestExpect(node.Visible && shown(_appSettings) && Checked(command) && shown(DataManager.LoadSettings()), $"{command} didn't show the part again");
+        }
+        // The explorer: hidden by the user, it stays hidden whatever tool shows, until shown again.
+        host.ShowTool(AP_Atlas.UI.Tool.MapPacks);
+        await UiTestWaitAsync(0.05);
+        UiTestExpect(_midLeftSidebar.Visible && Checked("view.explorer"), "Map Packs' explorer isn't shown to begin with");
+        _commands!.Run("view.explorer");
+        UiTestExpect(!_midLeftSidebar.Visible && !_appSettings.ShowExplorer && !Checked("view.explorer") && !DataManager.LoadSettings().ShowExplorer, "the explorer wasn't hidden, or not remembered");
+        host.ShowTool(AP_Atlas.UI.Tool.Connections);
+        await UiTestWaitAsync(0.05);
+        UiTestExpect(!_midLeftSidebar.Visible, "the explorer came back with another tool while the user had hidden it");
+        _commands.Run("view.explorer");
+        UiTestExpect(_midLeftSidebar.Visible && _appSettings.ShowExplorer && Checked("view.explorer"), "the explorer wasn't shown again");
+        // Focus mode: the content and its header alone, with the menu bar; off again, each part as the user had it.
+        _commands.Run("view.properties-panel"); // hidden by the user before focus mode
+        await PressAsync("F9");
+        UiTestExpect(!_sidebar.Visible && !_midLeftSidebar.Visible && !_propertiesSidebar.Visible && !bottomPane.Visible && !_globalStatusBar.Visible && !_activityBar.Visible
+            && _toolTitle.Visible && _menuHbox.Visible && _contentStage.Visible, "focus mode doesn't leave the content alone");
+        UiTestExpect(_appSettings.ShowSlotsPanel && !_appSettings.ShowPropertiesPanel && Checked("view.slots-panel"), "focus mode changed the user's settings");
+        await PressAsync("F9");
+        UiTestExpect(_sidebar.Visible && _midLeftSidebar.Visible && !_propertiesSidebar.Visible && bottomPane.Visible && _globalStatusBar.Visible && _activityBar.Visible,
+            "leaving focus mode didn't bring each part back as the user had it");
+        _commands.Run("view.properties-panel");
+        UiTestExpect(_propertiesSidebar.Visible && _appSettings.ShowPropertiesPanel, "Properties didn't come back");
     }
 
     private async Task SlotPickerAsync()

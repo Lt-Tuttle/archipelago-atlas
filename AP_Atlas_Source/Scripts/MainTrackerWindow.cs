@@ -307,6 +307,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         statusHBox.AddChild(_globalStatusLabel);
         rootVbox.AddChild(_globalStatusBar);
         BuildBottomPanel();
+        ApplyWindowParts(); // the parts the user hid last time stay hidden
         _packManagerPanel = new AP_Atlas.Core.MapPackManagerControl(
             LogToSystem,
             () => ShowConnectingOverlay("Managing Map Packs..."),

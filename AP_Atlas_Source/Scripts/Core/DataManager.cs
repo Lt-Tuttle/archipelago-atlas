@@ -101,6 +101,12 @@ public class AppSettings
     public int WindowX { get; set; } = -1;
     public int WindowY { get; set; } = -1;
     public bool WindowMaximized { get; set; } = false;
+    // Which parts of the window show (the View menu). Focus mode isn't remembered.
+    public bool ShowSlotsPanel { get; set; } = true;
+    public bool ShowExplorer { get; set; } = true;
+    public bool ShowPropertiesPanel { get; set; } = true;
+    public bool ShowBottomPane { get; set; } = true;
+    public bool ShowStatusBar { get; set; } = true;
 }
 public class SlotStats
 {

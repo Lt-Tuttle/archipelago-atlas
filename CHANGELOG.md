@@ -106,6 +106,7 @@ Development toward the first public beta, 0.1.0.
   - The tools' keys follow the bar, top to bottom: Ctrl+1 is the Map Tracker, Ctrl+9 Map Packs. The Connections page is now called Multiworlds.
   - The icons are Lucide's (ISC; credited in `THIRD_PARTY_NOTICES.md` and `CREDITS.md`).
   - A slot picker in the tool header: for the slot tools it names the connected slot they show, and switches between the connected slots. Ctrl+Tab and Ctrl+Shift+Tab (Multiworld → Next Slot, Previous Slot) go through them the same way, as clicking their cards would.
+  - The View menu shows and hides each part of the window (the slots panel, the explorer, Properties, the bottom pane, the status bar), and remembers it. Focus Mode (F9) leaves the content and its header alone, with the menu bar; F9 again brings each part back as it was.
   - The UI test checks the bar's order and captions, that every tool has a shipped icon and its key in its tooltip, that a button shows its tool, that a tool switched any other way lights its button and names itself in the header, and that the engine button opens the engine window.
   - Keys can be rebound: `KeyBindings` in settings.json, a command's id → its key (or "" for none); the shortcuts list shows each id. A Settings page for this is coming.
   - Help → About names the version, what Atlas is and isn't, and who made it. Help → Atlas on GitHub opens the project.

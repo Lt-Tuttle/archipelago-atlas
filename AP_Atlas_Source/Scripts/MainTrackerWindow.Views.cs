@@ -35,9 +35,12 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     /// </summary>
     private void SetExplorerVisible(bool visible)
     {
-        if (_midLeftSidebar.Visible == visible) return;
-        _midLeftSidebar.Visible = visible;
-        if (_contentStageStyle != null) _contentStageStyle.CornerRadiusTopLeft = visible ? _midLeftStyle.CornerRadiusTopRight : 0;
+        _explorerWanted = visible;
+        // The tool's explorer shows only while the user shows the explorer, and never in focus mode.
+        bool shown = visible && _appSettings.ShowExplorer && !_focusMode;
+        if (_midLeftSidebar.Visible == shown) return;
+        _midLeftSidebar.Visible = shown;
+        if (_contentStageStyle != null) _contentStageStyle.CornerRadiusTopLeft = shown ? _midLeftStyle.CornerRadiusTopRight : 0;
     }
     private void SwapContentView(Control target)
     {

@@ -40,10 +40,10 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     private VBoxContainer _debugLogVBox;
     private void BuildBottomPanel()
     {
-        var bottomWrapper = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, CustomMinimumSize = new Godot.Vector2(0, 150) };
-        bottomWrapper.AddThemeConstantOverride("separation", 0);
+        _bottomPane = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, CustomMinimumSize = new Godot.Vector2(0, 150) };
+        _bottomPane.AddThemeConstantOverride("separation", 0);
         var bottomHeader = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        bottomWrapper.AddChild(bottomHeader);
+        _bottomPane.AddChild(bottomHeader);
         _bottomTabs = new TabBar { SizeFlagsHorizontal = SizeFlags.ExpandFill, FocusMode = FocusModeEnum.None };
         ApplyTabBarStyle(_bottomTabs, 8);
         _bottomTabs.AddTab("Chat");
@@ -69,7 +69,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         var contentStyle = GetVSCodePanelStyle();
         contentStyle.CornerRadiusTopLeft = 0;
         _terminalStage.AddThemeStyleboxOverride("panel", contentStyle);
-        bottomWrapper.AddChild(_terminalStage);
+        _bottomPane.AddChild(_terminalStage);
         _sysLogVBox = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
         _consoleOutput = new AP_Atlas.UI.SafeRichText { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, ScrollFollowing = true, SelectionEnabled = true };
         _sysLogVBox.AddChild(_consoleOutput);
@@ -85,7 +85,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             _currentTerminalTab = (int)tab;
             RefreshTerminalView();
         };
-        _contentSplit.AddChild(bottomWrapper);
+        _contentSplit.AddChild(_bottomPane);
     }
     private Label _sidebarTitle;
     private Button _sidebarMenuBtn;
