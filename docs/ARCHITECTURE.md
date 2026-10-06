@@ -102,7 +102,7 @@ Atlas reads or writes outside this folder only with the user's permission. Nothi
 ## How things talk to each other
 
 - **Archipelago servers:** websockets through MultiClient.Net, compressed, all through `SessionManager`:
-  - One connection at a time; a login has 10 seconds, and one that finishes later is closed (refused or not).
+  - One connection at a time; a login has 10 seconds, and one that finishes later is closed (refused or not). A connection Atlas gave up on or closed while it was still opening is closed as it opens, without logging in: the connection library can't close a connection that isn't open yet. A login that fails because Atlas let it go is "cancelled" (nothing to report, nothing to try again).
   - **Threads:** the library's send loop blocks a thread pool thread for as long as its connection is open, and closing the connection doesn't wake it. `AtlasSessions` raises the pool's minimum by one per open connection, and `SessionManager` calls `AtlasSessions.Finished` whenever a session ends (closed, dropped, found dead, or a late login): one more queued packet wakes the loop, which finds its connection closed and ends without sending it. Its "socket closed" error isn't passed on.
   - A drop is noticed from the socket's close, or by a check twice a second (a server that died sends none).
   - Reconnects wait 15 s, 30 s, 1, 2, 5 and 10 minutes (±20%), then stop; a refusal stops them at once.

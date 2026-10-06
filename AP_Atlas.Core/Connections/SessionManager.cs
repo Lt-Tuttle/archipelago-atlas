@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Archipelago.MultiClient.Net;
@@ -150,6 +151,11 @@ namespace AP_Atlas.Core.Connections
         private readonly object _lock = new();
         // Every session Atlas opened and hasn't closed, including ones still connecting or logging in.
         private readonly HashSet<ArchipelagoSession> _open = new();
+        // Sessions whose connection hasn't opened yet, and those of them Atlas closed meanwhile: the library can't close a
+        // connection that isn't open, so each is closed as it opens (left alone, it would stay open on the server). Weak, so
+        // a connection that never opens leaves nothing behind. Guarded by _lock.
+        private readonly ConditionalWeakTable<ArchipelagoSession, object> _opening = new();
+        private readonly ConditionalWeakTable<ArchipelagoSession, object> _closeOnOpen = new();
         // Sessions that finished logging in, and their slot. Only these count as dropped when their socket closes.
         private readonly Dictionary<ArchipelagoSession, ConnectedSlot> _loggedIn = new();
         // What each slot logged in with, for reconnecting.
@@ -326,7 +332,11 @@ namespace AP_Atlas.Core.Connections
                     {
                         return new ConnectResult(ConnectOutcome.Failed, ex.Message);
                     }
-                    lock (_lock) _open.Add(session);
+                    lock (_lock)
+                    {
+                        _open.Add(session);
+                        _opening.AddOrUpdate(session, _lock);
+                    }
                     return await LogInAsync(session, login, text, ct).ConfigureAwait(false);
                 }
                 finally
@@ -355,8 +365,11 @@ namespace AP_Atlas.Core.Connections
             session.Socket.PacketReceived += OnPacket;
             session.Socket.ErrorReceived += (_, message) => OnSocketError(session, login.Slot, message);
             session.Socket.SocketClosed += reason => OnSocketClosed(session, reason);
+            session.Socket.SocketOpened += () => OnSocketOpened(session);
+            var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            session.Socket.SocketClosed += _ => closed.TrySetResult();
 
-            var attempt = TryLogInAsync(session, login, text);
+            var attempt = TryLogInAsync(session, login, text, closed.Task);
             using var giveUp = CancellationTokenSource.CreateLinkedTokenSource(ct);
             var first = await Task.WhenAny(attempt, Task.Delay(_options.LoginTimeout, giveUp.Token)).ConfigureAwait(false);
             await giveUp.CancelAsync().ConfigureAwait(false); // ends the delay if the login won
@@ -407,7 +420,17 @@ namespace AP_Atlas.Core.Connections
             }
 
             inbox.Close();
+            // A login that failed because Atlas let it go (closing, a deleted multiworld, or closed while it logged in) was
+            // cancelled: nothing to report, and nothing to try again.
+            string? cancelled = null;
+            lock (_lock)
+            {
+                if (_forgottenProfiles.Contains(login.Slot.ProfileId)) cancelled = "Its multiworld was deleted while it logged in.";
+                else if (_closing) cancelled = "Atlas is closing.";
+                else if (!_open.Contains(session)) cancelled = "Atlas closed the connection while it logged in.";
+            }
             await CloseAsync(session).ConfigureAwait(false);
+            if (cancelled != null) return new ConnectResult(ConnectOutcome.Cancelled, cancelled);
             var failure = (LoginFailure)result;
             string errors = string.Join(", ", failure.Errors ?? Array.Empty<string>());
             // Only a refusal (wrong slot, game, version, password) is final; a server that couldn't be reached may come back.
@@ -416,14 +439,24 @@ namespace AP_Atlas.Core.Connections
         }
 
         /// <summary>
-        /// Connects the socket and logs in, with or without the room's text; a connection that can't be made becomes a
-        /// failed login.
+        /// Connects the socket and logs in, with or without the room's text; a connection that can't be made, or that
+        /// closes before the server answers, becomes a failed login.
         /// </summary>
-        private static async Task<LoginResult> TryLogInAsync(ArchipelagoSession session, SlotLogin login, bool text)
+        private async Task<LoginResult> TryLogInAsync(ArchipelagoSession session, SlotLogin login, bool text, Task closed)
         {
             try
             {
-                await session.ConnectAsync().ConfigureAwait(false);
+                // The library waits for the room's info for good: a connection that closes first (Atlas closed it, or the
+                // server did) ends the login.
+                var connecting = session.ConnectAsync();
+                if (await Task.WhenAny(connecting, closed).ConfigureAwait(false) != connecting)
+                    return new LoginFailure("The connection closed before the server answered.");
+                await connecting.ConfigureAwait(false);
+                // Atlas gave up on this login (its time limit passed, or Atlas is closing) while it connected: no late login.
+                lock (_lock)
+                {
+                    if (!_open.Contains(session)) return new LoginFailure("Atlas closed the connection before it logged in.");
+                }
                 return await session.LoginAsync("", login.Slot.SlotName, ItemsHandlingFlags.AllItems, new Version(0, 5, 0),
                     text ? TextTags : QuietTags, null, string.IsNullOrEmpty(login.Password) ? null : login.Password, true).ConfigureAwait(false);
             }
@@ -465,16 +498,54 @@ namespace AP_Atlas.Core.Connections
                 if (!_open.Remove(session)) return;
             }
             if (switchOn != null) SwitchOnText(new[] { switchOn });
+            if (!await DisconnectAsync(session).ConfigureAwait(false))
+            {
+                // Not open: if it's still opening, it's closed as it opens (OnSocketOpened). If it opened just now, it's
+                // closed here.
+                bool opening;
+                lock (_lock)
+                {
+                    opening = _opening.TryGetValue(session, out _);
+                    if (opening) _closeOnOpen.AddOrUpdate(session, _lock);
+                }
+                if (opening) return;
+                if (session.Socket.Connected) await DisconnectAsync(session).ConfigureAwait(false);
+            }
+            AtlasSessions.Finished(session);
+        }
+
+        /// <summary>Closes a session's connection with a close frame. False if there was nothing to close (not open, or gone).</summary>
+        private static async Task<bool> DisconnectAsync(ArchipelagoSession session)
+        {
             try
             {
                 var closing = session.Socket.DisconnectAsync();
                 if (closing != null) await closing.ConfigureAwait(false);
+                return true;
             }
             catch (Exception ex) when (ex is InvalidOperationException or ObjectDisposedException or OperationCanceledException
                                            or System.Net.WebSockets.WebSocketException or System.IO.IOException)
             {
                 Logger.LogDebug("A server connection had nothing left to close: " + ex.Message);
+                return false;
             }
+        }
+
+        /// <summary>A connection opened. If Atlas closed its session while it opened, it's closed now.</summary>
+        private void OnSocketOpened(ArchipelagoSession session)
+        {
+            bool close;
+            lock (_lock)
+            {
+                _opening.Remove(session);
+                close = _closeOnOpen.Remove(session);
+            }
+            if (close) Async.Fire(CloseOpenedAsync(session), "closing a connection that opened after Atlas closed it", tellUser: false);
+        }
+
+        private static async Task CloseOpenedAsync(ArchipelagoSession session)
+        {
+            await DisconnectAsync(session).ConfigureAwait(false);
             AtlasSessions.Finished(session);
         }
 

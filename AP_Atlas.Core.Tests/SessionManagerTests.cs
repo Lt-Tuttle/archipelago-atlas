@@ -307,6 +307,29 @@ public sealed partial class SessionManagerTests : IDisposable
     }
 
     [Fact]
+    public async Task A_connection_Atlas_closes_while_it_opens_is_closed_as_it_opens()
+    {
+        // The server takes a second to answer the connection's opening handshake, and never sends the room's info: Atlas
+        // closes while the connection is still opening.
+        await using var silent = Server();
+        silent.Silent = true;
+        silent.HandshakeDelay = TimeSpan.FromSeconds(1);
+        var manager = Manager();
+        var connecting = Connect(manager, Login(silent));
+        await WaitFor(() => silent.Accepted == 1, "the connection to start opening");
+
+        var (sessions, _) = await manager.CloseAllAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(1, sessions);
+        // The library can't close a connection that isn't open yet: Atlas closes it as it opens, with a close frame (it
+        // used to be left open, and the server waited for good).
+        await WaitFor(() => silent.ClosesReceived == 1 && silent.Ended == 1, "the connection to be closed as it opened");
+        // The login ends there, cancelled, instead of waiting for the room's info for good (and running out of time).
+        var result = await connecting.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+        Assert.Equal(ConnectOutcome.Cancelled, result.Outcome);
+    }
+
+    [Fact]
     public async Task Deleting_a_multiworld_while_its_slot_logs_in_closes_that_login()
     {
         await using var server = Server();
@@ -404,7 +427,7 @@ public sealed partial class SessionManagerTests : IDisposable
     }
 
     [Fact]
-    public async Task A_login_that_connects_after_its_time_limit_is_closed_even_when_refused()
+    public async Task A_connection_that_opens_after_its_logins_time_limit_is_closed_without_logging_in()
     {
         await using var server = Server();
         server.HandshakeDelay = TimeSpan.FromSeconds(2.5); // past the login's time limit
@@ -414,9 +437,10 @@ public sealed partial class SessionManagerTests : IDisposable
         var result = await Connect(manager, Login(server, "Nobody"));
 
         Assert.Equal(ConnectOutcome.TimedOut, result.Outcome);
-        // It connects after all and is refused: its connection is closed then, and its thread goes back.
-        await WaitFor(() => server.Count("Connect") == 1, "the late login");
-        await WaitFor(() => server.ClosesReceived == 1, "the late, refused login to be closed");
+        // Its connection opens after all. Atlas gave up on it, so it's closed as it opens, without logging in (it used to log
+        // in late, and a refused login was left open on the server), and its thread goes back.
+        await WaitFor(() => server.ClosesReceived == 1 && server.Ended == 1, "the late connection to be closed");
+        Assert.Equal(0, server.Count("Connect"));
         await WaitFor(() => LibraryThreads.Holding == before, "its thread to go back");
     }
 }
