@@ -3,6 +3,21 @@ namespace AP_Atlas.Core.Tests;
 public class LoggerTests
 {
     [Fact]
+    public void A_message_too_long_is_cut_saying_how_much()
+    {
+        string marker = "cut-test-" + Guid.NewGuid().ToString("N")[..8] + " ";
+        var shown = new List<string>();
+        void OnLine(string line, string level) { if (line.Contains(marker)) lock (shown) shown.Add(line); }
+        Logger.OnLogMessage += OnLine;
+        try { Logger.LogInfo(marker + new string('m', 100_000)); }
+        finally { Logger.OnLogMessage -= OnLine; }
+        string line = Assert.Single(shown);
+        int kept = Logger.MaxMessageLength - marker.Length;
+        Assert.Contains(marker + new string('m', kept) + $"… ({100_000 - kept:N0} more characters)", line);
+        Assert.DoesNotContain(new string('m', kept + 1), line);
+    }
+
+    [Fact]
     public void Lines_are_echoed_and_written_to_the_file_once_a_folder_is_given_and_Godot_lines_only_to_the_file()
     {
         using var dir = new TempFolder();

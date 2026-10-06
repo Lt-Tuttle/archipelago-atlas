@@ -71,6 +71,16 @@ namespace AP_Atlas.Core
             catch { } // housekeeping only: logging carries on in the same file
         }
 
+        /// <summary>
+        /// The most of one message that's logged, in characters. A longer one (a program's endless line quoted in full, say)
+        /// is cut, with a note of how much, so one message can't fill the log file or hold up the window laying it out.
+        /// </summary>
+        public const int MaxMessageLength = 64 << 10;
+
+        // The message, cut at MaxMessageLength.
+        private static string Bounded(string message) =>
+            message == null || message.Length <= MaxMessageLength ? message : message[..MaxMessageLength] + $"… ({message.Length - MaxMessageLength:N0} more characters)";
+
         private static string Line(string level, string message) => $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [{level}] {message}";
 
         private static void AppendToFile(string line)
@@ -121,25 +131,28 @@ namespace AP_Atlas.Core
         /// </summary>
         public static void RecordOnly(string level, string message)
         {
-            try { AppendToFile(Line(level, message)); }
+            try { AppendToFile(Line(level, Bounded(message))); }
             catch { } // nowhere safe to report it from inside Godot's error reporting; the console already has the line
         }
 
         /// <summary>Logs plain text (shown as written), in the window in a colour if given ("orange", "#8A2BE2").</summary>
         public static void LogInfo(string message, string color = null)
         {
+            message = Bounded(message);
             WriteLog("INFO", message);
             OnLogMessage?.Invoke($"{Stamp()} {Bbcode.Colored(message, color)}\n", "INFO");
         }
 
         public static void LogWarning(string message)
         {
+            message = Bounded(message);
             WriteLog("WARN", message);
             OnLogMessage?.Invoke($"{Stamp()} {Bbcode.Colored("WARN: " + message, "yellow")}\n", "WARN");
         }
 
         public static void LogError(string message)
         {
+            message = Bounded(message);
             WriteLog("ERROR", message);
             OnLogMessage?.Invoke($"{Stamp()} {Bbcode.Colored("ERROR: " + message, "red")}\n", "ERROR");
         }
@@ -149,7 +162,7 @@ namespace AP_Atlas.Core
 
         public static void LogDebug(string message)
         {
-            WriteLog("DEBUG", message);
+            WriteLog("DEBUG", Bounded(message));
             // Debug does not typically go to UI console unless verbosity is high
         }
     }

@@ -50,6 +50,9 @@
         the files named in [img] and [font] tags, and for a network path that means connecting to another computer with
         the user's Windows sign-in. Text from outside Atlas is escaped too (Bbcode.Escape); the self-test and the UI test
         show it never makes Atlas open a file. The self-test's check that its detection works is the one other use.
+      - Reading a program's output line by line with .NET's own readers (ReadLine, BeginOutputReadLine and the like): nowhere.
+        They hold a whole line however long it is, so one endless line from the engine (third-party worlds run in it)
+        would fill Atlas's memory. BoundedLineReader cuts a line at its limit instead and says how much was cut.
       - Markup in a log message: nowhere. Messages are plain text, escaped for the window (they often quote outside text),
         so a tag in one would show as text; a line's colour is an argument (Logger.LogInfo(message, color)).
       - An empty catch that doesn't say why on the same line: nowhere. A failure is logged, handled, or explained.
@@ -115,6 +118,9 @@ $rules = @(
     @{ Name = 'Rich text that reads BBCode outside SafeRichText (outside text could make Godot open a file)'
        Pattern = 'BbcodeEnabled\s*=(?!\s*false\b)|\bSetUseBbcode\s*\(|\bAppendText\s*\(|\bParseBbcode\s*\('
        Allowed = @('AP_Atlas_Source\Scripts\UI\SafeRichText.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.Safety.cs'); Max = 2 },
+    @{ Name = 'Reading a program''s output without BoundedLineReader (one endless line would fill memory)'
+       Pattern = 'BeginOutputReadLine|BeginErrorReadLine|OutputDataReceived|ErrorDataReceived|Standard(Output|Error)\s*\.\s*(ReadLine|ReadToEnd)'
+       Allowed = @('AP_Atlas.Core\BoundedLineReader.cs') },
     @{ Name = 'Markup in a log message (messages are plain text, shown as written: give the line''s colour as an argument)'
        Pattern = '\b(LogToSystem|LogToDebug|LogInfo|LogWarning|LogError|LogDebug|_logAction|AppendDebugLog)\s*\(.*\[/?(color|bgcolor|b|i|u|s|url|code)[=\]]'; Allowed = @() },
     @{ Name = 'An empty catch that doesn''t say why'; Pattern ='catch(\s*\([^)]*\))?\s*\{\s*\}(?!\s*//)'; Allowed = @() }

@@ -542,6 +542,12 @@ public partial class MainTrackerWindow
             await server.BroadcastAsync(server.Chat("look at " + hostile));
             await UiTestWaitForAsync(() => PanelShowsText(this, "look at " + hostile) ? slot : null, "the chat line to show as written");
 
+            // A chat line of a megabyte: shown cut at MaxChatLine, saying how much (the fake server's line is "{slot}: {message}").
+            string longLine = new string('w', 1_000_000);
+            await server.BroadcastAsync(server.Chat(longLine));
+            int cut = server.Slots[0].Length + 2 + longLine.Length - SlotTrackerControl.MaxChatLine;
+            await UiTestWaitForAsync(() => PanelShowsText(this, $"… ({cut:N0} more characters)") ? slot : null, "the megabyte chat line to show cut");
+
             // The System Log and the Debug Log, quoting it.
             LogToSystem("A line quoting " + hostile, "orange");
             LogToDebug("A debug line quoting " + hostile, "Tester");

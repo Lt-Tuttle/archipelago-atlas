@@ -322,25 +322,38 @@ public class LogicEngineManager
         if (_install == null || !_install.CanLaunch) return null;
         AP_Atlas.Core.EngineSetup.AtlasEngine.InstallBridge(_install);
         System.Diagnostics.Process process = null;
+        Task errors = Task.CompletedTask;
         try
         {
             process = new System.Diagnostics.Process { StartInfo = _install.StartInfo("AtlasNames") };
-            process.ErrorDataReceived += (_, e) => { };
             process.Start();
             AP_Atlas.Core.EngineSetup.ProcessJob.Track(process, _install.Root);
-            process.BeginErrorReadLine();
+            // Its error output is read and dropped (a full pipe would block it), and its answer is read without trusting
+            // its length: every installed game's names come to about 10 million characters, far below AnswerLimit.
+            errors = AP_Atlas.Core.BoundedLineReader.ForEachAsync(process.StandardError, AP_Atlas.Core.BoundedLineReader.LogLimit, null);
+            var answers = new AP_Atlas.Core.BoundedLineReader(process.StandardOutput, AP_Atlas.Core.BoundedLineReader.AnswerLimit);
+            // A read still waiting when the time runs out ends quietly once the process is stopped (below).
+            async Task<AP_Atlas.Core.OutputLine?> NextLineAsync()
+            {
+                try { return await answers.ReadLineAsync(); }
+                catch (Exception ex) when (ex is System.IO.IOException or ObjectDisposedException or InvalidOperationException) { return null; } // stopped: no more lines
+            }
             await process.StandardInput.WriteLineAsync(Newtonsoft.Json.JsonConvert.SerializeObject(new { games = games.ToList() }));
             await process.StandardInput.FlushAsync();
 
             var deadline = DateTime.Now.AddSeconds(90);
             while (DateTime.Now < deadline)
             {
-                var readTask = process.StandardOutput.ReadLineAsync();
+                var readTask = NextLineAsync();
                 var done = await Task.WhenAny(readTask, Task.Delay(deadline - DateTime.Now));
                 if (done != readTask) break;
-                string line = await readTask; // already finished: this only takes its result
-                if (line == null) break;
-                line = line.Trim();
+                if (await readTask is not { } read) break; // already finished: this only takes its result
+                if (read.Cut > 0)
+                {
+                    _logger($"AtlasNames: its answer was longer than {AP_Atlas.Core.BoundedLineReader.AnswerLimit:N0} characters, so Atlas didn't read it.");
+                    return null;
+                }
+                string line = read.Text.Trim();
                 if (!line.StartsWith("{")) continue;
                 JObject reply;
                 try { reply = JObject.Parse(line); } catch { continue; }
@@ -379,6 +392,7 @@ public class LogicEngineManager
             // The whole tree: anything the component started ends with it.
             try { if (process != null && !process.HasExited) process.Kill(entireProcessTree: true); }
             catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException) { } // it ended meanwhile
+            await errors; // ends with the process
             process?.Dispose();
         }
     }

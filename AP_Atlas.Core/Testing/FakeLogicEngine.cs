@@ -109,6 +109,12 @@ internal sealed class FakeLogicEngine
     /// <summary>The engine's "steps" answers leave the last item's step out (a broken answer).</summary>
     public bool ShortSteps { get; set; }
 
+    /// <summary>Before each answer, the engine writes one line this many characters long on Atlas's channel (0: none).</summary>
+    public int FloodAnswers { get; set; }
+
+    /// <summary>Before each answer, the engine writes one line this many characters long on standard error (0: none).</summary>
+    public int FloodErrors { get; set; }
+
     /// <summary>Writes the rules. The engine reads them for every request, so changes apply to the next one.</summary>
     public void Apply()
     {
@@ -126,7 +132,8 @@ internal sealed class FakeLogicEngine
             ["chatter"] = Chatter,
             ["boot_error"] = BootError,
             ["spawn_child"] = SpawnChild,
-            ["short_steps"] = ShortSteps
+            ["short_steps"] = ShortSteps,
+            ["flood"] = new JObject { ["stdout"] = FloodAnswers, ["stderr"] = FloodErrors }
         };
         // Replaced whole, so the engine never reads half a file. It may be reading the old one this moment: then retry.
         string temp = _rules + ".tmp";

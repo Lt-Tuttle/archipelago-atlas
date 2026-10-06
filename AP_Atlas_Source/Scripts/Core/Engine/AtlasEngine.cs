@@ -1418,13 +1418,13 @@ namespace AP_Atlas.Core.EngineSetup
         {
             using var process = new Process { StartInfo = info, EnableRaisingEvents = true };
             var exited = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            process.OutputDataReceived += (_, e) => { if (!string.IsNullOrWhiteSpace(e.Data)) onOut?.Invoke(e.Data); };
-            process.ErrorDataReceived += (_, e) => { if (!string.IsNullOrWhiteSpace(e.Data)) onErr?.Invoke(e.Data); };
             process.Exited += (_, _) => exited.TrySetResult(true);
             process.Start();
             ProcessJob.Track(process, engineRoot);
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
+            // Its output a line at a time, without trusting a line's length: an answer is cut at AnswerLimit, a line of
+            // its log at LogLimit (each says how much was cut).
+            var output = BoundedLineReader.ForEachAsync(process.StandardOutput, BoundedLineReader.AnswerLimit, onOut);
+            var errors = BoundedLineReader.ForEachAsync(process.StandardError, BoundedLineReader.LogLimit, onErr);
             try
             {
                 if (stdin != null) await process.StandardInput.WriteLineAsync(stdin);
@@ -1436,7 +1436,7 @@ namespace AP_Atlas.Core.EngineSetup
             try
             {
                 await exited.Task.WaitAsync(timeoutCts.Token);
-                await process.WaitForExitAsync(timeoutCts.Token); // flush the output events (bounded, like the run)
+                await Task.WhenAll(output, errors).WaitAsync(timeoutCts.Token); // its last lines (bounded, like the run)
                 return process.ExitCode;
             }
             catch (OperationCanceledException)

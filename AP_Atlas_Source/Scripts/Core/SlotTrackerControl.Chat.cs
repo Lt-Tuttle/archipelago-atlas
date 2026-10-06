@@ -213,20 +213,38 @@ public partial class SlotTrackerControl : MarginContainer
         return false;
     }
 
+    /// <summary>
+    /// The most of one line the text client shows, in characters. A longer line (another player's chat message of a
+    /// megabyte, say) is cut, with a note of how much, so laying it out can't hold up the window. The longest lines a
+    /// server sends (!players in a 1,000-player room) come to about 19,000.
+    /// </summary>
+    internal const int MaxChatLine = 32_000;
+
     private void AppendMessageToChat(LogMessage msg)
     {
         var text = new System.Text.StringBuilder();
+        int room = MaxChatLine;
+        long cut = 0;
         foreach (var part in msg.Parts)
         {
+            string shown = part.Text ?? "";
+            if (shown.Length > room)
+            {
+                cut += shown.Length - room;
+                shown = shown[..room];
+            }
+            room -= shown.Length;
+            if (shown.Length == 0) continue;
             text.Append(part switch
             {
-                Archipelago.MultiClient.Net.MessageLog.Parts.ItemMessagePart item => ItemBBCode(item.Player, item.ItemId, item.Text, item.Flags),
-                Archipelago.MultiClient.Net.MessageLog.Parts.LocationMessagePart location => LocationBBCode(location.Player, location.LocationId, location.Text),
-                Archipelago.MultiClient.Net.MessageLog.Parts.PlayerMessagePart player => PlayerBBCode(player.SlotId, player.Text),
+                Archipelago.MultiClient.Net.MessageLog.Parts.ItemMessagePart item => ItemBBCode(item.Player, item.ItemId, shown, item.Flags),
+                Archipelago.MultiClient.Net.MessageLog.Parts.LocationMessagePart location => LocationBBCode(location.Player, location.LocationId, shown),
+                Archipelago.MultiClient.Net.MessageLog.Parts.PlayerMessagePart player => PlayerBBCode(player.SlotId, shown),
                 // A colour the server set (a hint's status, an entrance); a background colour isn't the text's.
-                _ => TextBBCode(part.Text, part.IsBackgroundColor ? null : part.PaletteColor)
+                _ => TextBBCode(shown, part.IsBackgroundColor ? null : part.PaletteColor)
             });
         }
+        if (cut > 0) text.Append(AP_Atlas.Core.Bbcode.Colored($"… ({cut:N0} more characters)", "gray"));
         AppendChatLine(text.ToString());
     }
 

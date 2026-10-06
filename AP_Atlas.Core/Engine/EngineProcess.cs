@@ -44,6 +44,9 @@ namespace AP_Atlas.Core.EngineSetup
     /// out of time.</item>
     /// <item>Stopping it kills its whole process tree. One that ends by itself raises <see cref="Exited"/>, and a request
     /// waiting on it fails at once.</item>
+    /// <item>Its output is read a line at a time without trusting a line's length (<see cref="BoundedLineReader"/>). An
+    /// answer line longer than any answer can be is the engine broken: it's ended as a crash is. Its error lines are cut
+    /// for the log.</item>
     /// </list>
     /// Godot-free, so its tests run against the fake engine.
     /// </summary>
@@ -64,6 +67,7 @@ namespace AP_Atlas.Core.EngineSetup
         private EngineAnswer? _ended;
         private volatile bool _stopping;
         private Task _reading = Task.CompletedTask;
+        private Task _errors = Task.CompletedTask;
 
         private EngineProcess(Process process, Action<string> log)
         {
@@ -73,7 +77,8 @@ namespace AP_Atlas.Core.EngineSetup
 
         /// <summary>
         /// Starts an engine process: tied to Atlas's lifetime, and counted under its engine folder (so setup can tell it's
-        /// in use). Its error output goes to <paramref name="log"/> as it comes (a full pipe would block the engine).
+        /// in use). Its error output goes to <paramref name="log"/> as it comes (a full pipe would block the engine), each
+        /// line cut at <see cref="BoundedLineReader.LogLimit"/>.
         /// </summary>
         /// <exception cref="Win32Exception">The program couldn't be started.</exception>
         public static EngineProcess Start(ProcessStartInfo info, string? engineRoot, Action<string> log)
@@ -85,13 +90,9 @@ namespace AP_Atlas.Core.EngineSetup
             var process = new Process { StartInfo = info, EnableRaisingEvents = true };
             var engine = new EngineProcess(process, log);
             process.Exited += (_, _) => engine.OnExited();
-            process.ErrorDataReceived += (_, e) =>
-            {
-                if (!string.IsNullOrWhiteSpace(e.Data)) log("PYTHON: " + e.Data);
-            };
             process.Start();
             ProcessJob.Track(process, engineRoot);
-            process.BeginErrorReadLine();
+            engine._errors = engine.ReadErrorsAsync();
             engine._reading = engine.ReadAsync();
             return engine;
         }
@@ -182,6 +183,13 @@ namespace AP_Atlas.Core.EngineSetup
         {
             _stopping = true;
             End(EngineAnswer.Failed(EngineFailure.Stopped, "the engine was stopped"));
+            Kill();
+            Async.Fire(DisposeWhenReadAsync(), "closing a stopped logic engine", tellUser: false);
+        }
+
+        // Kills the engine's whole process tree (anything it started too).
+        private void Kill()
+        {
             try
             {
                 if (!_process.HasExited) _process.Kill(entireProcessTree: true);
@@ -191,13 +199,13 @@ namespace AP_Atlas.Core.EngineSetup
                 // It ended by itself meanwhile, or Windows refused (then Atlas's job object still ends it when Atlas closes).
                 _log("Stopping the logic engine: " + ex.Message);
             }
-            Async.Fire(DisposeWhenReadAsync(), "closing a stopped logic engine", tellUser: false);
         }
 
         private async Task DisposeWhenReadAsync()
         {
-            // The reader sees the end of the output once the process is gone; then nothing uses the process any more.
+            // The readers see the end of the output once the process is gone; then nothing uses the process any more.
             await _reading.ConfigureAwait(false);
+            await _errors.ConfigureAwait(false);
             _process.Dispose();
         }
 
@@ -206,15 +214,45 @@ namespace AP_Atlas.Core.EngineSetup
             string why;
             try
             {
-                var output = _process.StandardOutput;
-                while (await output.ReadLineAsync().ConfigureAwait(false) is { } line) Take(line.Trim());
-                why = "the engine stopped";
+                var lines = new BoundedLineReader(_process.StandardOutput, BoundedLineReader.AnswerLimit);
+                while (true)
+                {
+                    if (await lines.ReadLineAsync().ConfigureAwait(false) is not { } line)
+                    {
+                        why = "the engine stopped";
+                        break;
+                    }
+                    if (line.Cut > 0)
+                    {
+                        // No answer comes near this: the engine is broken (or worse). It's ended as a crash is, so its
+                        // slots start again on a new one.
+                        why = $"the engine wrote a line of over {BoundedLineReader.AnswerLimit:N0} characters, more than any answer";
+                        _log("The logic engine wrote a line of over " + BoundedLineReader.AnswerLimit.ToString("N0") + " characters; Atlas stopped it.");
+                        End(EngineAnswer.Failed(EngineFailure.Ended, why));
+                        Kill();
+                        return;
+                    }
+                    Take(line.Text.Trim());
+                }
             }
             catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException)
             {
                 why = "the engine stopped (" + ex.Message + ")";
             }
             End(EngineAnswer.Failed(EngineFailure.Ended, why));
+        }
+
+        // The engine's error output (tracebacks, and whatever its worlds print), to the log a line at a time, each cut at
+        // LogLimit: read as it comes, or a full pipe would block the engine.
+        private async Task ReadErrorsAsync()
+        {
+            try
+            {
+                var lines = new BoundedLineReader(_process.StandardError, BoundedLineReader.LogLimit);
+                while (await lines.ReadLineAsync().ConfigureAwait(false) is { } line)
+                    if (!string.IsNullOrWhiteSpace(line.Text)) _log("PYTHON: " + line);
+            }
+            catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException) { } // the engine ended: nothing more to read
         }
 
         /// <summary>One line of the engine's output: an answer (by its id), the bridge saying it couldn't load, or anything else, which is logged.</summary>

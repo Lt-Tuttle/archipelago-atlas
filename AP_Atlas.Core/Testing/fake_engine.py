@@ -6,8 +6,9 @@
 # each named by its requests' "key" ("drop" forgets one). Instead of rebuilding a real world it
 # answers from simple rules: an item pool, the items each location needs, and the items the goal needs. It reads the
 # rules again for every request, so a test can change them while the engine runs. It can also misbehave on purpose:
-# crash on an item, answer late, fail to load, start a process of its own, leave an item's step out of an answer, or
-# send a log line, a late answer to an earlier request and a reply-like line without an id first. Everything it receives, and every crash, goes into a
+# crash on an item, answer late, fail to load, start a process of its own, leave an item's step out of an answer, send a
+# log line, a late answer to an earlier request and a reply-like line without an id first, or write one endless line on
+# standard error or on Atlas's channel. Everything it receives, and every crash, goes into a
 # journal the test reads. It reads and writes only its own folder.
 import json
 import os
@@ -177,6 +178,14 @@ def serve(*args):
             scribble('Fake engine: thinking about request ' + str(rid))
             send({'id': rid - 1, 'reachable': [], 'excluded': [], 'glitched': [], 'goal': None})
             scribble(json.dumps({'reachable': [], 'excluded': [], 'glitched': [], 'goal': None}))
+        flood = rules.get('flood') or {}
+        if flood.get('stderr') and rid is not None:
+            # One endless line on standard error, as a broken world's output could be.
+            sys.stderr.write('E' * flood['stderr'] + '\n')
+            sys.stderr.flush()
+        if flood.get('stdout') and rid is not None:
+            # One endless line on Atlas's channel, longer than any answer.
+            scribble('{' + 'x' * flood['stdout'])
         key = req.get('key')
         if action == 'init':
             reply = start(req, rules)

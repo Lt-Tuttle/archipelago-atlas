@@ -74,6 +74,7 @@ New code that doesn't need Godot belongs in `AP_Atlas.Core`, with tests. The vis
   | Decoding an image | `PackImages.DecodeImage`, which checks the size its header gives against an `ImageBudget` before any memory is set aside for it |
   | Rich text (BBCode) | `SafeRichText` (`Markup`, `Append`), with outside text escaped (`Bbcode.Escape`, or a helper that does). Plain text goes in a `Label` |
   | Logging | `Logger.LogInfo(message, color)` and friends: the message is plain text, shown as written; its colour is an argument, never markup in it |
+  | Reading a program's output | `BoundedLineReader` (or its `ForEachAsync`), with `AnswerLimit` for answers and `LogLimit` for log lines, never `ReadLine` or `BeginOutputReadLine` |
   | Saving a file | `SafeFile`. It keeps a backup and survives a crash mid-save. The few places that write files directly (the log, a crash report, an export the user chose) are listed in the guard rails |
   | Closing a server connection | `SessionManager` (a connection still opening is closed as it opens; its thread is given back) |
   | Background work | `Task.Run` or async code, never a thread of its own |

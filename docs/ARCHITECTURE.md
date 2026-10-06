@@ -28,6 +28,7 @@ MainTrackerWindow (the shell)
   - `SafeFile`, `Logger`, `Async`, `AtlasVersion`, `Secrets`.
   - `SafeZip`, `ImageHeader` and `ImageBudget`: reading zips and images that come from outside Atlas (see "Files from outside Atlas", below).
   - `Bbcode`: escaping text from outside Atlas for rich text, and the allowlist every piece of markup passes (`Safe`).
+  - `BoundedLineReader`: reading a program's output a line at a time, with a limit on how much of a line is kept.
   - `PoliteHttp` and `GitHubApi`.
   - `YamlExclusions`.
   - The Cheese Tracker client, models, table rules, advisor and key store (`CheeseTracker/`).
@@ -168,6 +169,13 @@ Map packs and apworlds are zips from outside Atlas, and both a zip's headers and
   - The self-test plants `probe.png.remap` and `probe.ttf.remap`. It shows Godot reads them through rich text that isn't `SafeRichText`, so the probe works, and never through `SafeRichText` or the log.
   - The UI test sends a chat line, a map pack's details and log lines naming the probe, with tags of Atlas's own, through the real window.
 
+**No line can be too long.** .NET's own line readers (`ReadLine`, `BeginOutputReadLine`) hold a whole line however long it is, so one endless line would fill Atlas's memory, and running out on the thread reading it ends Atlas.
+- `BoundedLineReader` keeps a line up to a limit and reads the rest only to drop it, then says how much it cut. It reads the engine's answers, the engine's log, the engine setup's programs and the game-names reader:
+  - **Answers** are kept up to `AnswerLimit` (64 Mi characters). Every installed game's names come to about 10 million. A longer answer line means the engine is broken: `EngineProcess` ends it as a crash, so its pool starts its slots again.
+  - **A line of a program's log** is kept up to `LogLimit` (16 Ki characters).
+- `Logger` cuts a message at `MaxMessageLength` (64 Ki), and the text client cuts a line at `MaxChatLine` (32,000; a server's longest real line, `!players` in a 1,000-player room, is about 19,000).
+- The fake engine can write an endless line on either stream (its `flood` rule) for the tests.
+
 ## Safety rules the code enforces
 
 `Tools/check_guards.ps1` runs in CI and fails the build if any of these slip:
@@ -191,6 +199,7 @@ Map packs and apworlds are zips from outside Atlas, and both a zip's headers and
 | `PackImages.DecodeImage` (and the visual check, for its own screenshots) | Decoding an image: its size is checked against an `ImageBudget` first. |
 | `SafeRichText` (and the self-test's check that its probe works) | Rich text that reads BBCode: only Atlas's own tags get through. |
 | nowhere | Markup in a log message: messages are plain text, and a line's colour is an argument. |
+| `BoundedLineReader` | Reading a program's output: a line is kept only up to a limit. |
 | `PackScriptHost` (its compiler, which needs a big stack) and the self-test | Starting a thread of its own. |
 | nowhere | An empty catch that doesn't say why on its line. |
 

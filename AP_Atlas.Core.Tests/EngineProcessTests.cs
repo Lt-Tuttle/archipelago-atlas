@@ -168,4 +168,49 @@ public class EngineProcessTests
         await Task.Delay(300, Ct);
         Assert.False(exitedByItself, "a stopped engine was reported as having stopped by itself");
     }
+
+    [Fact]
+    public async Task An_endless_line_on_the_answer_channel_ends_the_engine_as_a_crash_does()
+    {
+        string python = (await PythonOrSkipAsync())!;
+        using var dir = new TempFolder();
+        var engine = FakeEngines.SmallWorld(dir);
+        engine.Apply();
+        var log = new Log();
+        var process = EngineProcess.Start(FakeEngines.StartInfo(python, engine), engine.Root, log.Add);
+        var exited = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        process.Exited += code => exited.TrySetResult(code);
+        Assert.Equal("ready", (string?)(await process.AskAsync(FakeEngines.Init(2000, 2001, 2002), Plenty, Ct)).Reply?["status"]);
+        engine.FloodAnswers = BoundedLineReader.AnswerLimit + 1000;
+        engine.Apply();
+
+        var answer = await process.AskAsync(FakeEngines.Update(new long[] { 1000 }, 2000, 2001, 2002), Plenty, Ct);
+
+        Assert.Equal(EngineFailure.Ended, answer.Failure);
+        Assert.Contains($"a line of over {BoundedLineReader.AnswerLimit:N0} characters", answer.Why);
+        // Ended as a crash is, so its pool starts its slots again on a new engine.
+        await exited.Task.WaitAsync(Plenty, Ct);
+        Assert.False(process.Running);
+        Assert.True(log.Has("Atlas stopped it"), log.ToString());
+    }
+
+    [Fact]
+    public async Task An_endless_error_line_is_cut_for_the_log_and_the_engine_carries_on()
+    {
+        string python = (await PythonOrSkipAsync())!;
+        using var dir = new TempFolder();
+        var engine = FakeEngines.SmallWorld(dir);
+        engine.FloodErrors = 1_000_000;
+        engine.Apply();
+        var log = new Log();
+        var process = EngineProcess.Start(FakeEngines.StartInfo(python, engine), engine.Root, log.Add);
+
+        await process.AskAsync(FakeEngines.Init(2000, 2001, 2002), Plenty, Ct);
+        var sword = await process.AskAsync(FakeEngines.Update(new long[] { 1000 }, 2000, 2001, 2002), Plenty, Ct);
+
+        Assert.Equal(new long[] { 2000, 2001 }, FakeEngines.Ids(sword.Reply?["reachable"]));
+        string cut = $"… ({1_000_000 - BoundedLineReader.LogLimit:N0} more characters)";
+        Assert.True(log.Has("PYTHON: " + new string('E', BoundedLineReader.LogLimit) + cut), "the error line wasn't cut for the log");
+        process.Stop();
+    }
 }
