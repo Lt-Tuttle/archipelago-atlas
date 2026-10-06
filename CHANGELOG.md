@@ -225,6 +225,7 @@ Development toward the first public beta, 0.1.0.
   - An image you choose for a Pack Doctor fix is checked the same way before it's copied.
 
 ### Fixed
+- **A burst arriving at the wrong moment updated a slot's views many times in one frame.** A deferred call made while a frame's deferred calls are running joins the same pass, so items and lines landing right then were applied in as many updates as they arrived in (18 in one test run). A slot's views now update once a frame, whatever the timing; what arrives after the update waits for the next frame.
 - **Setting the PC's clock no longer changes how long Atlas waits.** Atlas timed its waits by the PC's clock, which a time sync can move by hours (when a PC starts with the wrong time, say).
   - Put back, the clock held things up for as long as it moved: requests to a site, reading Cheese Tracker and spheretracker.de, the Refresh buttons, and the warning that a file couldn't be saved, which stayed silent.
   - Put forward, it ended waits early: a site that had asked Atlas to slow down was asked again too soon, Cheese Tracker's limit of 20 automatic changes a day lifted at once, and a status suggestion counted as settled before it had held long enough.

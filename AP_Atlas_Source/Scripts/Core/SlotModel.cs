@@ -500,9 +500,28 @@ namespace AP_Atlas.Core
             AP_Atlas.UI.Ui.Defer(null, Flush, $"updating {SlotName}");
         }
 
+        private ulong _lastFlushFrame = ulong.MaxValue;
+        private bool _flushWaitsForNextFrame;
+
         /// <summary>Applies what arrived since the last frame and tells the views once (main thread).</summary>
         private void Flush()
         {
+            // Once a frame, whatever the timing: a deferred call made while a frame's deferred calls are running joins the
+            // same pass, so a burst arriving right then would update the views again and again within one frame (the UI
+            // test saw 18 updates in 2 frames). What arrives after this frame's update waits for the next frame.
+            ulong frame = Godot.Engine.GetProcessFrames();
+            if (frame == _lastFlushFrame)
+            {
+                if (_flushWaitsForNextFrame) return;
+                _flushWaitsForNextFrame = true;
+                AP_Atlas.UI.Ui.NextFrame(null, () =>
+                {
+                    _flushWaitsForNextFrame = false;
+                    Flush();
+                }, $"updating {SlotName}");
+                return;
+            }
+            _lastFlushFrame = frame;
             using var __perf = PerfMonitor.Measure($"[{SlotName}] Slot update");
             SlotChange change;
             List<LogMessage> messages;
