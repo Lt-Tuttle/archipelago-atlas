@@ -39,7 +39,7 @@ namespace AP_Atlas.UI
             AddChild(_sources);
 
             AddChild(Heading(_tr("Where Atlas goes online")));
-            AddChild(Text(_tr("The archipelago.gg rooms you connect to. Cheese Tracker (your instance) and spheretracker.de (the host's room) for the multiworlds you link. GitHub for apworld releases, when you allow it. python.org, pypa.io and PyPI when you set up the Atlas Engine. Nothing else, and nothing at startup."), Colors.Gray));
+            AddChild(Text(_tr(Permissions.WhereAtlasGoesOnline), Colors.Gray));
             Refresh();
         }
 

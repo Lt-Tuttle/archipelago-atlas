@@ -155,6 +155,30 @@ public partial class MainTrackerWindow
         }
     }
 
+    /// <summary>Help → About: the version, what sets Atlas apart, where it goes online, and the system information with a Copy button.</summary>
+    private void ShowAbout()
+    {
+        var dialog = new AP_Atlas.UI.AboutDialog(text => Tr(text), EngineLineForAbout(),
+            url =>
+            {
+                if (!AP_Atlas.Core.ExternalLinks.OpenWeb(url)) ShowToast(Tr("Couldn't open the link."), Colors.Salmon);
+            },
+            () => OpenHelp(null), message => ShowToast(message, Colors.LightGreen));
+        AddChild(dialog);
+        dialog.PopupCentered();
+    }
+
+    /// <summary>The logic engine as About names it: its mode and Archipelago's version, or that it isn't set up.</summary>
+    private static string EngineLineForAbout()
+    {
+        var engine = AP_Atlas.Core.EngineSetup.AtlasEngine.Current;
+        if (!engine.CanLaunch) return "not set up";
+        // The portable engine is the pinned Archipelago; the user's own install isn't named by its path (a path can name the user).
+        return engine.Mode == AP_Atlas.Core.EngineSetup.EngineMode.Portable
+            ? "Atlas portable engine, Archipelago " + AP_Atlas.Core.EngineSetup.AtlasEngine.ArchipelagoVersion
+            : "your Archipelago install";
+    }
+
     /// <summary>Shows the keys as they are now in the menus and on the activity bar (after a rebind).</summary>
     private void RefreshShortcutsShown()
     {
@@ -261,26 +285,4 @@ public partial class MainTrackerWindow
     }
 
     /// <summary>Help → About: the version, what Atlas is and isn't, who made it. (The full About page comes with the shell.)</summary>
-    private void ShowAbout()
-    {
-        string commit = AP_Atlas.Core.AtlasVersion.Commit;
-        var dialog = new AcceptDialog
-        {
-            Title = Tr("About The Archipelago Atlas"),
-            OkButtonText = Tr("Close"),
-            DialogText = $"The Archipelago Atlas {AP_Atlas.Core.AtlasVersion.Display}" + (commit.Length > 0 ? $" ({commit})" : "") + "\n\n" +
-                         Tr("An unofficial tracker for Archipelago multiworlds. Not affiliated with or endorsed by Archipelago.") + "\n\n" +
-                         Tr("Designed, directed and tested by Lt-Tuttle. Most of its code was written with an AI assistant (Anthropic's Claude).") + "\n" +
-                         Tr("Open source under the MIT licence.")
-        };
-        dialog.AddButton(Tr("Atlas on GitHub"), true, "github");
-        dialog.CustomAction += action =>
-        {
-            if (action == "github") _commands!.Run("help.github");
-        };
-        dialog.Confirmed += dialog.QueueFree;
-        dialog.Canceled += dialog.QueueFree;
-        AddChild(dialog);
-        dialog.PopupCentered();
-    }
 }

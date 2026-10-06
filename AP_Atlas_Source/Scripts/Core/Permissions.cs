@@ -46,6 +46,11 @@ namespace AP_Atlas.Core
 
         public static IReadOnlyList<Kind> All { get; } = new[] { FindArchipelago, WriteArchipelago, GitHubLookups };
 
+        /// <summary>Every place Atlas reaches online, in plain words: the privacy statement (Settings → Privacy &amp; permissions, About). A new site joins it.</summary>
+        public const string WhereAtlasGoesOnline =
+            "The archipelago.gg rooms you connect to. Cheese Tracker (your instance) and spheretracker.de (the host's room) for the multiworlds you link. " +
+            "GitHub for apworld releases, when you allow it. python.org, pypa.io and PyPI when you set up the Atlas Engine. Nothing else, and nothing at startup.";
+
         private static readonly HashSet<string> _deniedThisSession = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly HashSet<string> _allowedThisSession = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 

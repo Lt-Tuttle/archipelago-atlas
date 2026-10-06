@@ -80,6 +80,7 @@ public partial class MainTrackerWindow
         await VisualCheckWindowAsync("engine", OpenEngineSetup, 1.5);
         // The guide as the Help window renders it (the documents built in, through Markdown).
         await VisualCheckWindowAsync("help_guide", () => OpenHelp(null), 1.0);
+        await VisualCheckWindowAsync("about", ShowAbout, 1.0);
         OpenPrivacy();
         await VisualCheckWaitAsync(0.5);
         await VisualCheckPictureAsync("privacy_empty");
@@ -126,6 +127,8 @@ public partial class MainTrackerWindow
     {
         // Frame-time reports in the status bar ("Hitch …") differ from run to run: pictures show the bar at rest.
         if (_globalStatusLabel != null && _globalStatusLabel.Text.StartsWith("Hitch ")) _globalStatusLabel.Text = "Ready";
+        // A text box's caret is drawn only while the OS window is the active one, which differs from run to run: no control keeps the focus in a picture.
+        GetViewport().GuiReleaseFocus();
         // Let deferred layout finish, then draw now: in low-processor mode Godot draws only when something changed.
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);

@@ -607,7 +607,11 @@ public partial class MainTrackerWindow
         }
         _commands.Run("help.about");
         var about = await UiTestWaitForAsync(() => GetChildren().OfType<AcceptDialog>().FirstOrDefault(d => d.Title == "About The Archipelago Atlas"), "the About dialog");
-        UiTestExpect(about.DialogText.Contains(AP_Atlas.Core.AtlasVersion.Display), "About doesn't name the version");
+        var aboutDialog = (AP_Atlas.UI.AboutDialog)about;
+        UiTestExpect(aboutDialog.ShownText.TrimStart().StartsWith("The Archipelago Atlas " + AP_Atlas.Core.AtlasVersion.Display, StringComparison.Ordinal) && aboutDialog.ShownText.Contains("Lt-Tuttle"), "About's heading doesn't name the version, or the text the author");
+        UiTestExpect(aboutDialog.SystemInfo.Contains("Godot ") && aboutDialog.SystemInfo.Contains(".NET") && aboutDialog.SystemInfo.Contains("Logic engine:")
+            && !aboutDialog.SystemInfo.Contains(System.Environment.UserName), $"the system information is wrong, or names the user: {aboutDialog.SystemInfo}");
+        UiTestExpect(aboutDialog.ShownText.Contains("Where Atlas goes online") && aboutDialog.ShownText.Contains("spheretracker.de"), "About has no privacy statement");
         about.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
         await UiTestWaitAsync(0.2);
         host.ShowTool(AP_Atlas.UI.Tool.Connections);
