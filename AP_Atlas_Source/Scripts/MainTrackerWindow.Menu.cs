@@ -150,6 +150,20 @@ public partial class MainTrackerWindow
         }
     }
 
+    /// <summary>Shows the keys as they are now in the menus and on the activity bar (after a rebind).</summary>
+    private void RefreshShortcutsShown()
+    {
+        foreach (var (popup, items) in _commandItems)
+        {
+            foreach (var (itemId, commandId) in items)
+            {
+                string shortcut = _commands!.ShortcutOf(commandId);
+                popup.SetItemShortcut(popup.GetItemIndex((int)itemId), shortcut.Length > 0 ? AP_Atlas.UI.CommandKeys.ToShortcut(shortcut) : null, false);
+            }
+        }
+        _activityBar?.RefreshKeys();
+    }
+
     /// <summary>A key press anywhere in the window that nothing else used: runs the command bound to it.</summary>
     public override void _UnhandledKeyInput(InputEvent @event)
     {
@@ -224,10 +238,17 @@ public partial class MainTrackerWindow
             Tr("Keys bound to more than one command (the first wins): ") + string.Join(", ", conflicts.Select(c => c.Shortcut)) + "\n";
         box.AddChild(new Label
         {
-            Text = note + Tr("To change a key, edit KeyBindings in settings.json (a command's id shows when you hover its name): \"tool.map-tracker\": \"Ctrl+3\", or \"\" for no key. A Settings page for this is coming."),
+            Text = note + Tr("To change a key: Settings → Keyboard."),
             AutowrapMode = TextServer.AutowrapMode.WordSmart
         });
         dialog.AddChild(box);
+        dialog.AddButton(Tr("Change Keys…"), false, "keys");
+        dialog.CustomAction += action =>
+        {
+            if (action != "keys") return;
+            dialog.QueueFree();
+            ShowSettings("keyboard");
+        };
         dialog.Confirmed += dialog.QueueFree;
         dialog.Canceled += dialog.QueueFree;
         AddChild(dialog);

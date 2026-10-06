@@ -99,6 +99,8 @@ public partial class MainTrackerWindow
             WindowPartsAsync);
         await ScenarioAsync("Settings page: Ctrl+, shows it with the search box ready and the sections in the explorer; each kind of row changes its setting at once and saves it (a toggle, a choice, a number, a window part, a bottom pane tab); a setting changed elsewhere shows as it is; typed words narrow the rows; a section jump scrolls",
             SettingsPageAsync);
+        await ScenarioAsync("Keyboard shortcuts: every command's key is a row of the Settings page; press the button, then a key, and the command runs on it at once, the menus and the bar show it and it's saved; a key two commands share is said on both rows; a reset brings the default back; Backspace means no key, Escape keeps it, a modifier alone isn't one, and losing the focus ends the wait; the F1 list leads here",
+            KeyboardShortcutsAsync);
         await ScenarioAsync("Bursts: 40 items and 40 chat lines arriving together reach the slot once each, at most one update of the window in each frame they arrive over (not 80)",
             BurstIsOneUpdateAsync);
         await ScenarioAsync("Long text: a game's names and a hint's entrance of a megabyte, and a chat line of 100,000 characters without a space, hold up no frame for 150 ms, shown or not (names are cut to 500 characters; a long run of text gets breaks)",
@@ -673,7 +675,7 @@ public partial class MainTrackerWindow
         // Search: typed words narrow the rows to those whose title, description or section has a word starting that way.
         page.Search("race");
         var shown = page.RowIds.Where(page.IsShown).ToList();
-        UiTestExpect(shown.Count > 0 && shown.All(id => id.StartsWith("race", StringComparison.Ordinal)) && shown.Contains("race-mode"), $"searching \"race\" shows {string.Join(", ", shown)}");
+        UiTestExpect(shown.Count > 0 && shown.All(id => id.StartsWith("race", StringComparison.Ordinal) || id.StartsWith("key.", StringComparison.Ordinal)) && shown.Contains("race-mode") && shown.Contains("key.multiworld.race-mode") && !shown.Contains("auto-reconnect"), $"searching \"race\" shows {string.Join(", ", shown)}");
         UiTestExpect(!page.NothingMatches, "the page says nothing matches while rows show");
         page.Search("qzx");
         UiTestExpect(!page.RowIds.Any(page.IsShown) && page.NothingMatches, "a search nothing matches doesn't say so");
@@ -688,6 +690,92 @@ public partial class MainTrackerWindow
         await UiTestWaitAsync(0.1);
         UiTestExpect(page.ScrollPosition == 0, "jumping to the first section didn't scroll back to the top");
         host.ShowTool(AP_Atlas.UI.Tool.Connections);
+    }
+
+    private async Task KeyboardShortcutsAsync()
+    {
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        var page = _settingsPage ?? throw new InvalidOperationException("The Settings page wasn't built.");
+        const string RowId = "key.tool.map-packs";
+        var tools = _menuHbox.GetChildren().OfType<MenuButton>().ToList()[3].GetPopup();
+        int item = tools.GetItemIndex((int)_commandItems[tools].First(entry => entry.Value == "tool.map-packs").Key);
+        var capture = (AP_Atlas.UI.KeyCapture)page.ControlOf(RowId);
+        var reset = page.KeyResetOf(RowId);
+        var conflict = page.KeyConflictOf(RowId);
+        var otherConflict = page.KeyConflictOf("key.tool.map-tracker");
+        ShowSettings("keyboard");
+        await UiTestWaitAsync(0.1);
+        UiTestExpect(ShownContent() == page && page.ScrollPosition > 0, "the keyboard section didn't show");
+        UiTestExpect(capture.Key == "Ctrl+9" && capture.Text == "Ctrl+9" && reset.Disabled && !conflict.Visible, $"Map Packs' row shows \"{capture.Text}\", reset {(reset.Disabled ? "off" : "on")}, conflict {conflict.Visible}");
+        try
+        {
+            // Press the key's button, then a key: the command runs on it at once, the menus and the bar show it, and it's saved.
+            capture.EmitSignal(BaseButton.SignalName.Pressed);
+            UiTestExpect(capture.Capturing && capture.Text != "Ctrl+9", "pressing the key's button didn't start waiting for a key");
+            capture.EmitSignal(Control.SignalName.GuiInput, AP_Atlas.UI.CommandKeys.ToEvent("Ctrl+F6")!);
+            UiTestExpect(!capture.Capturing && capture.Key == "Ctrl+F6" && _appSettings.KeyBindings.GetValueOrDefault("tool.map-packs") == "Ctrl+F6"
+                && DataManager.LoadSettings().KeyBindings.GetValueOrDefault("tool.map-packs") == "Ctrl+F6", "the pressed key wasn't taken, or wasn't saved");
+            UiTestExpect(!reset.Disabled, "a changed key leaves the reset off");
+            UiTestExpect(ShortcutShown(tools, item) == "Ctrl+F6" && _activityBar.ButtonOf(AP_Atlas.UI.Tool.MapPacks).TooltipText.Contains("Ctrl+F6"), "the menus and the bar don't show the new key");
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+            await PressAsync("Ctrl+F6");
+            UiTestExpect(ShownContent() == _packManagerPanel, "the new key doesn't run the command");
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+            await PressAsync("Ctrl+9");
+            UiTestExpect(ShownContent() == _connectionPanel, "the old key still runs the command");
+            host.ShowTool(AP_Atlas.UI.Tool.Settings);
+
+            // A key another command has: both rows say so.
+            capture.EmitSignal(BaseButton.SignalName.Pressed);
+            capture.EmitSignal(Control.SignalName.GuiInput, AP_Atlas.UI.CommandKeys.ToEvent("Ctrl+1")!);
+            UiTestExpect(conflict.Visible && conflict.TooltipText.Contains("Map Tracker") && otherConflict.Visible && otherConflict.TooltipText.Contains("Map Packs"),
+                $"a shared key isn't shown on both rows: {conflict.Visible} \"{conflict.TooltipText}\", {otherConflict.Visible} \"{otherConflict.TooltipText}\"");
+
+            // Reset: the default key again, the rebind forgotten.
+            reset.EmitSignal(BaseButton.SignalName.Pressed);
+            UiTestExpect(!_appSettings.KeyBindings.ContainsKey("tool.map-packs") && capture.Key == "Ctrl+9" && reset.Disabled && !conflict.Visible && !otherConflict.Visible
+                && ShortcutShown(tools, item) == "Ctrl+9", "the reset didn't bring the default key back");
+
+            // Backspace: no key at all.
+            capture.EmitSignal(BaseButton.SignalName.Pressed);
+            capture.EmitSignal(Control.SignalName.GuiInput, AP_Atlas.UI.CommandKeys.ToEvent("Backspace")!);
+            UiTestExpect(capture.Key == "" && capture.Text == "None" && _appSettings.KeyBindings.GetValueOrDefault("tool.map-packs") == "" && ShortcutShown(tools, item) == "",
+                $"Backspace didn't take the key away: \"{capture.Text}\", menu \"{ShortcutShown(tools, item)}\"");
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+            await PressAsync("Ctrl+9");
+            UiTestExpect(ShownContent() == _connectionPanel, "a key taken away still runs the command");
+            host.ShowTool(AP_Atlas.UI.Tool.Settings);
+            reset.EmitSignal(BaseButton.SignalName.Pressed);
+
+            // Escape keeps the key; a modifier on its own isn't a key; losing the focus ends the wait.
+            capture.EmitSignal(BaseButton.SignalName.Pressed);
+            capture.EmitSignal(Control.SignalName.GuiInput, AP_Atlas.UI.CommandKeys.ToEvent("Escape")!);
+            UiTestExpect(!capture.Capturing && capture.Key == "Ctrl+9" && !_appSettings.KeyBindings.ContainsKey("tool.map-packs"), "Escape didn't keep the key as it was");
+            capture.EmitSignal(BaseButton.SignalName.Pressed);
+            capture.EmitSignal(Control.SignalName.GuiInput, new InputEventKey { Pressed = true, Keycode = Key.Ctrl, CtrlPressed = true });
+            UiTestExpect(capture.Capturing && capture.Key == "Ctrl+9", "a modifier on its own was taken as the key");
+            capture.EmitSignal(Control.SignalName.FocusExited);
+            UiTestExpect(!capture.Capturing && capture.Text == "Ctrl+9", "losing the focus didn't end the wait");
+
+            // The rows are found by the command's words; the F1 list leads here.
+            page.Search("map packs");
+            UiTestExpect(page.IsShown(RowId) && !page.IsShown("auto-reconnect"), "the key row isn't found by its command's name");
+            page.Search("");
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+            await PressAsync("F1");
+            var dialog = await UiTestWaitForAsync(() => GetChildren().OfType<AcceptDialog>().FirstOrDefault(d => d.Title == "Keyboard Shortcuts"), "the shortcuts dialog");
+            var change = dialog.FindChildren("*", nameof(Button), true, false).OfType<Button>().First(b => b.Text == "Change Keys…");
+            change.EmitSignal(BaseButton.SignalName.Pressed);
+            await UiTestWaitAsync(0.2);
+            UiTestExpect(ShownContent() == page && page.ScrollPosition > 0, "the F1 list's Change Keys… didn't open the keyboard settings");
+        }
+        finally
+        {
+            _appSettings.KeyBindings.Remove("tool.map-packs");
+            DataManager.SaveSettings(_appSettings);
+            RefreshShortcutsShown();
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+        }
     }
 
     private async Task WindowPartsAsync()

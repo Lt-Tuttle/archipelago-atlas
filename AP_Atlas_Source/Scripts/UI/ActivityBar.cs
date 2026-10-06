@@ -90,8 +90,7 @@ namespace AP_Atlas.UI
             column.AddChild(label);
             foreach (var tool in Tool.All.Where(t => t.Group == group))
             {
-                string key = _keyOf(tool);
-                var button = MakeButton(tool.Icon, key.Length > 0 ? $"{_tr(tool.Title)}  ({key})" : _tr(tool.Title));
+                var button = MakeButton(tool.Icon, Tooltip(tool));
                 button.ToggleMode = true;
                 button.ButtonGroup = _group;
                 var shown = tool;
@@ -101,6 +100,18 @@ namespace AP_Atlas.UI
                 _order.Add(tool);
                 column.AddChild(button);
             }
+        }
+
+        private string Tooltip(Tool tool)
+        {
+            string key = _keyOf(tool);
+            return key.Length > 0 ? $"{_tr(tool.Title)}  ({key})" : _tr(tool.Title);
+        }
+
+        /// <summary>Shows the tools' keys as they are now (after a rebind).</summary>
+        public void RefreshKeys()
+        {
+            foreach (var (tool, button) in _buttons) button.TooltipText = Tooltip(tool);
         }
 
         private Button MakeButton(string icon, string tooltip)

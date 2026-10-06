@@ -280,6 +280,7 @@ public static class DataManager
         settings.SlotYamlPaths ??= new Dictionary<string, string>();
         settings.LastYamlFolder ??= "";
         settings.PermissionsAllowed ??= new List<string>();
+        settings.KeyBindings ??= new Dictionary<string, string>();
         settings.EngineMode ??= "";
         settings.ArchipelagoInstallationPath ??= "";
         settings.ApworldSourcesUrl ??= "";

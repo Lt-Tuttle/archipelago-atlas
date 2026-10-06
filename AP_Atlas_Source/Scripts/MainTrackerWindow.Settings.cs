@@ -114,8 +114,13 @@ public partial class MainTrackerWindow
             () => ShowSphereTab(AP_Atlas.UI.SphereTrackerTab.SettingsView));
         page.AddAction("tools", "privacy", "Privacy & permissions", "Everything Atlas may look at outside its folder or reach online, each allowed by you and revocable there.", "Open…", OpenPrivacy);
 
-        page.AddSection("keyboard", "Keyboard");
-        page.AddAction("keyboard", "shortcuts", "Keyboard shortcuts", "Every command with its key.", "Show", ShowShortcuts);
+        page.AddSection("keyboard", "Keyboard", "Every command and its key. Press a key's button, then the key you want: Backspace for no key, Escape to keep it. A key bound to two commands runs the first.");
+        foreach (var command in _commands!.All)
+        {
+            var bound = command;
+            page.AddKey("keyboard", "key." + bound.Id, bound.Title, bound.Menu,
+                () => _commands.ShortcutOf(bound.Id), () => bound.DefaultShortcut, key => SetKeyBinding(bound.Id, key), () => ConflictsOf(bound.Id));
+        }
 
         page.AddSection("data", "Data");
         page.AddAction("data", "data-folder", "Atlas's data folder", "Your multiworlds, settings, logs, map packs and the engine live here, and nowhere else.", "Open folder",
@@ -136,6 +141,23 @@ public partial class MainTrackerWindow
     /// <summary>A window part's toggle: the same setting the View menu's check item changes.</summary>
     private void AddPartSetting(AP_Atlas.UI.SettingsPage page, string id, string title, string description, string commandId) =>
         page.AddToggle("window", id, title, description, () => PartShown(commandId), on => SetPart(commandId, on));
+
+    /// <summary>Binds a command to a key ("" for none), or back to its default (null), and shows the keys as they are now.</summary>
+    private void SetKeyBinding(string commandId, string? key)
+    {
+        if (key == null) _appSettings.KeyBindings.Remove(commandId);
+        else _appSettings.KeyBindings[commandId] = key;
+        DataManager.SaveSettings(_appSettings);
+        RefreshShortcutsShown();
+    }
+
+    /// <summary>The other commands bound to a command's key, by title; "" while it has the key to itself.</summary>
+    private string ConflictsOf(string commandId)
+    {
+        string key = _commands!.ShortcutOf(commandId);
+        if (key.Length == 0) return "";
+        return string.Join(", ", _commands.All.Where(other => other.Id != commandId && _commands.ShortcutOf(other.Id) == key).Select(other => Tr(other.Title)));
+    }
 
     private void ReportRaceMode()
     {
