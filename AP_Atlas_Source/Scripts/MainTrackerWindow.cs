@@ -308,6 +308,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         rootVbox.AddChild(_globalStatusBar);
         BuildBottomPanel();
         ApplyWindowParts(); // the parts the user hid last time stay hidden
+        ApplyConsoleTabs();
         _packManagerPanel = new AP_Atlas.Core.MapPackManagerControl(
             LogToSystem,
             () => ShowConnectingOverlay("Managing Map Packs..."),
@@ -355,12 +356,17 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _sphereTab.SidebarContent.Visible = false;
         _midLeftVBox.AddChild(_sphereTab.SidebarContent);
         BuildConnectionTab();
+        var settingsPage = BuildSettingsPage();
+        _contentStage.AddChild(settingsPage);
+        settingsPage.SectionList.Visible = false;
+        _midLeftVBox.AddChild(settingsPage.SectionList);
         _toolViews = new Dictionary<AP_Atlas.UI.Tool, (Control, Control, string, Action)>
         {
             [AP_Atlas.UI.Tool.Connections] = (_connectionPanel, _connectionSidebarContent, "Multiworlds", null),
             [AP_Atlas.UI.Tool.MapPacks] = (_packManagerPanel, _packManagerPanel.SidebarContent, "Packs", null),
             [AP_Atlas.UI.Tool.CheeseTracker] = (_cheeseTab, _cheeseTab.SidebarContent, "Cheese Tracker", _cheeseTab.OnShown),
             [AP_Atlas.UI.Tool.SphereTracker] = (_sphereTab, _sphereTab.SidebarContent, "Sphere Tracker", _sphereTab.OnShown),
+            [AP_Atlas.UI.Tool.Settings] = (settingsPage, settingsPage.SectionList, "Sections", settingsPage.OnShown),
         };
         BuildLandingPage();
         ReportEngineAtStartup();

@@ -68,7 +68,19 @@ namespace AP_Atlas.UI
                 case "Down": return Key.Down;
                 case "Left": return Key.Left;
                 case "Right": return Key.Right;
+                // Punctuation, as Commands.Normalize writes it (Godot names these "Comma", "Period", ...).
+                case ",": return Key.Comma;
+                case ".": return Key.Period;
+                case "-": return Key.Minus;
+                case "+": return Key.Plus;
+                case "/": return Key.Slash;
+                case ";": return Key.Semicolon;
+                case "'": return Key.Apostrophe;
+                case "[": return Key.Bracketleft;
+                case "]": return Key.Bracketright;
+                case "`": return Key.Quoteleft;
             }
+            if (name.Length == 1 && name[0] == (char)92) return Key.Backslash;
             if (name.Length == 1 && char.IsAsciiDigit(name[0])) return Key.Key0 + (name[0] - '0');
             if (name.Length == 1 && char.IsAsciiLetterUpper(name[0])) return Key.A + (name[0] - 'A');
             if (name.Length >= 2 && name[0] == 'F' && int.TryParse(name.AsSpan(1), out int f) && f is >= 1 and <= 24) return Key.F1 + (f - 1);

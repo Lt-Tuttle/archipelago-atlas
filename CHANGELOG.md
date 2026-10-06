@@ -107,12 +107,14 @@ Development toward the first public beta, 0.1.0.
   - The icons are Lucide's (ISC; credited in `THIRD_PARTY_NOTICES.md` and `CREDITS.md`).
   - A slot picker in the tool header: for the slot tools it names the connected slot they show, and switches between the connected slots. Ctrl+Tab and Ctrl+Shift+Tab (Multiworld → Next Slot, Previous Slot) go through them the same way, as clicking their cards would.
   - The View menu shows and hides each part of the window (the slots panel, the explorer, Properties, the bottom pane, the status bar), and remembers it. Focus Mode (F9) leaves the content and its header alone, with the menu bar; F9 again brings each part back as it was.
+  - **A Settings page** (Ctrl+,, last on the activity bar): every setting in one place, in sections the explorer lists, found by typing words into its search box (as the command palette finds commands). Each setting applies and saves as you change it: automatic reconnects, each seed's apworld version, race mode, the accent colour, every font size, the window's parts, the bottom pane's tabs, and the tools' own settings pages.
   - The UI test checks the bar's order and captions, that every tool has a shipped icon and its key in its tooltip, that a button shows its tool, that a tool switched any other way lights its button and names itself in the header, and that the engine button opens the engine window.
   - Keys can be rebound: `KeyBindings` in settings.json, a command's id → its key (or "" for none); the shortcuts list shows each id. A Settings page for this is coming.
   - Help → About names the version, what Atlas is and isn't, and who made it. Help → Atlas on GitHub opens the project.
   - The UI test checks that every command is in a menu with its key shown, that the keys and a rebind work at once, and that the menu bar never runs a stale key itself.
 
 ### Changed
+- **Every setting is on the Settings page** (Ctrl+,): the Multiworld menu's check items (automatic reconnects, apworld versions, race mode) and the View menu's accent and font-size submenus moved there; Multiworld → Race Mode… opens its section. The bottom pane's System Log and Debug Log tabs are now remembered when hidden.
 - **The Settings menu's entries moved** into the new menus: automatic reconnects, each seed's apworld version and race mode under Multiworld; the Atlas Engine, the Cheese Tracker and Sphere Tracker settings and Privacy & permissions under Tools. The View menu keeps the console tabs, the theme accent and the font size, and gained the three console views.
 - **Platform:** Atlas now runs on Godot 4.7.2 and .NET 10 (it was on Godot 4.3 and .NET 8, whose support ends in November 2026). Every screen was compared before and after, pixel by pixel.
 - **Lighter at rest:** Atlas redraws only when something on screen changes, so it uses next to no CPU or graphics card while you're not using it.

@@ -32,6 +32,7 @@ public partial class MainTrackerWindow
         Add("multiworld.new", "Multiworld", "New Multiworld…", "Ctrl+N", OnAddProfilePressed);
         Add("slot.next", "Multiworld", "Next Slot", "Ctrl+Tab", () => CycleSlot(1));
         Add("slot.previous", "Multiworld", "Previous Slot", "Ctrl+Shift+Tab", () => CycleSlot(-1));
+        Add("multiworld.race-mode", "Multiworld", "Race Mode…", "", () => ShowSettings("multiworld"));
 
         Add(AP_Atlas.UI.CommandPalette.OwnCommandId, "View", "Command Palette…", "Ctrl+Shift+P", OpenCommandPalette);
         Add("view.chat", "View", "Chat", "", () => ShowTerminalTab(0));
@@ -44,12 +45,12 @@ public partial class MainTrackerWindow
         Add("view.status-bar", "View", "Status Bar", "", () => TogglePart("view.status-bar"));
         Add("view.focus-mode", "View", "Focus Mode", "F9", ToggleFocusMode);
 
-        // The tools, Ctrl+1 to Ctrl+9 in the tool list's order.
+        // The tools, Ctrl+1 to Ctrl+9 in the tool list's order; a later tool brings its own key (Settings: Ctrl+,).
         int number = 1;
         foreach (var tool in AP_Atlas.UI.Tool.All)
         {
             var shown = tool;
-            Add("tool." + shown.Id, "Tools", shown.Title, number <= 9 ? "Ctrl+" + number : "", () => ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(shown));
+            Add("tool." + shown.Id, "Tools", shown.Title, number <= 9 ? "Ctrl+" + number : shown.DefaultKey, () => ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(shown));
             number++;
         }
         Add("tools.engine", "Tools", "Atlas Engine…", "", OpenEngineSetup);
@@ -100,7 +101,7 @@ public partial class MainTrackerWindow
 
         AddCommandItems(menus["Multiworld"], "multiworld.new", "slot.next", "slot.previous");
         menus["Multiworld"].AddSeparator();
-        AddMultiworldSettings(menus["Multiworld"]);
+        AddCommandItems(menus["Multiworld"], "multiworld.race-mode");
 
         AddCommandItems(menus["View"], AP_Atlas.UI.CommandPalette.OwnCommandId);
         menus["View"].AddSeparator();
@@ -109,8 +110,6 @@ public partial class MainTrackerWindow
         AddCommandCheckItems(menus["View"], PartShown, "view.slots-panel", "view.explorer", "view.properties-panel", "view.bottom-pane", "view.status-bar");
         menus["View"].AddSeparator();
         AddCommandItems(menus["View"], "view.focus-mode");
-        menus["View"].AddSeparator();
-        AddViewSettings(menus["View"]);
 
         AddCommandItems(menus["Tools"], AP_Atlas.UI.Tool.All.Select(t => "tool." + t.Id).ToArray());
         menus["Tools"].AddSeparator();
@@ -257,130 +256,5 @@ public partial class MainTrackerWindow
         dialog.Canceled += dialog.QueueFree;
         AddChild(dialog);
         dialog.PopupCentered();
-    }
-
-    // The settings that live in menus until the Settings page exists: check items, radio items and the submenus they open.
-
-    private void AddMultiworldSettings(PopupMenu menu)
-    {
-        const int AutoReconnectId = 1, AutoFixApworldId = 2;
-        menu.AddCheckItem(Tr("Reconnect dropped connections automatically"), AutoReconnectId);
-        menu.SetItemChecked(menu.GetItemIndex(AutoReconnectId), _appSettings.AutoReconnect);
-        menu.SetItemTooltip(menu.GetItemIndex(AutoReconnectId), Tr("A few tries over about 20 minutes, then Atlas stops so it never keeps a closed room busy."));
-        menu.AddCheckItem(Tr("Use each seed's apworld version automatically"), AutoFixApworldId);
-        menu.SetItemChecked(menu.GetItemIndex(AutoFixApworldId), _appSettings.AutoFixApworldVersions);
-        menu.SetItemTooltip(menu.GetItemIndex(AutoFixApworldId), Tr("When a seed was made with another version of a game's apworld, Atlas finds that version and uses it for that slot.\nIt asks before looking things up on GitHub, downloads only from sources you've trusted, and never changes your Archipelago install."));
-        menu.IdPressed += id =>
-        {
-            if (id == AutoReconnectId)
-            {
-                _appSettings.AutoReconnect = !_appSettings.AutoReconnect;
-                menu.SetItemChecked(menu.GetItemIndex(AutoReconnectId), _appSettings.AutoReconnect);
-                DataManager.SaveSettings(_appSettings);
-                _sessions.AutoReconnect = _appSettings.AutoReconnect; // turning it off calls off waiting reconnects
-            }
-            else if (id == AutoFixApworldId)
-            {
-                _appSettings.AutoFixApworldVersions = !_appSettings.AutoFixApworldVersions;
-                menu.SetItemChecked(menu.GetItemIndex(AutoFixApworldId), _appSettings.AutoFixApworldVersions);
-                DataManager.SaveSettings(_appSettings);
-            }
-        };
-        menu.AddSeparator();
-
-        // Race mode: when restrictions apply, and how much they hide.
-        const int RaceFollowId = 0, RaceOnId = 1, RaceOffId = 2, RaceHideAllId = 10, RaceInfoId = 20;
-        var raceMenu = new PopupMenu { Name = "RaceModeMenu", HideOnCheckableItemSelection = false };
-        raceMenu.AddRadioCheckItem(Tr("Follow the server (on in race rooms)"), RaceFollowId);
-        raceMenu.AddRadioCheckItem(Tr("Always on"), RaceOnId);
-        raceMenu.AddRadioCheckItem(Tr("Off"), RaceOffId);
-        raceMenu.AddSeparator();
-        raceMenu.AddCheckItem(Tr("Hide all logic while on (not just explanations)"), RaceHideAllId);
-        raceMenu.AddSeparator();
-        raceMenu.AddItem(Tr("What does race mode change?"), RaceInfoId);
-        void RefreshRaceMenu()
-        {
-            raceMenu.SetItemChecked(raceMenu.GetItemIndex(RaceFollowId), AP_Atlas.Core.RaceRules.Mode == AP_Atlas.Core.RaceModeSetting.FollowServer);
-            raceMenu.SetItemChecked(raceMenu.GetItemIndex(RaceOnId), AP_Atlas.Core.RaceRules.Mode == AP_Atlas.Core.RaceModeSetting.AlwaysOn);
-            raceMenu.SetItemChecked(raceMenu.GetItemIndex(RaceOffId), AP_Atlas.Core.RaceRules.Mode == AP_Atlas.Core.RaceModeSetting.Off);
-            raceMenu.SetItemChecked(raceMenu.GetItemIndex(RaceHideAllId), AP_Atlas.Core.RaceRules.HideAllLogic);
-        }
-        raceMenu.AboutToPopup += RefreshRaceMenu;
-        raceMenu.IdPressed += id =>
-        {
-            switch (id)
-            {
-                case RaceFollowId: AP_Atlas.Core.RaceRules.SetMode(AP_Atlas.Core.RaceModeSetting.FollowServer); break;
-                case RaceOnId: AP_Atlas.Core.RaceRules.SetMode(AP_Atlas.Core.RaceModeSetting.AlwaysOn); break;
-                case RaceOffId: AP_Atlas.Core.RaceRules.SetMode(AP_Atlas.Core.RaceModeSetting.Off); break;
-                case RaceHideAllId: AP_Atlas.Core.RaceRules.SetHideAllLogic(!AP_Atlas.Core.RaceRules.HideAllLogic); break;
-                case RaceInfoId: ShowRaceModeInfo(); return;
-            }
-            RefreshRaceMenu();
-            LogToSystem($"Race mode: {DescribeRaceMode()}", "orange");
-            UpdateSidebar();
-        };
-        menu.AddChild(raceMenu);
-        menu.AddSubmenuNodeItem(Tr("Race Mode"), raceMenu);
-    }
-
-    private void AddViewSettings(PopupMenu menu)
-    {
-        // Which bottom console tabs show.
-        var consoleMenu = new PopupMenu { Name = "ConsoleMenu" };
-        consoleMenu.AddCheckItem(Tr("System Log"), 100);
-        consoleMenu.SetItemChecked(consoleMenu.GetItemIndex(100), true);
-        consoleMenu.AddCheckItem(Tr("Debug Log"), 101);
-        consoleMenu.SetItemChecked(consoleMenu.GetItemIndex(101), true);
-        consoleMenu.IdPressed += id =>
-        {
-            if (_bottomTabs == null) return;
-            int tabIdx = id == 100 ? 1 : 2; // 0 = Chat, 1 = System Log, 2 = Debug Log
-            bool nowHidden = !_bottomTabs.IsTabHidden(tabIdx);
-            _bottomTabs.SetTabHidden(tabIdx, nowHidden);
-            consoleMenu.SetItemChecked(consoleMenu.GetItemIndex((int)id), !nowHidden);
-            if (nowHidden && _bottomTabs.CurrentTab == tabIdx) _bottomTabs.CurrentTab = 0;
-        };
-        menu.AddChild(consoleMenu);
-        menu.AddSubmenuNodeItem(Tr("Bottom Console Tabs"), consoleMenu);
-
-        var themeSubMenu = new PopupMenu { Name = "ThemeColorMenu" };
-        themeSubMenu.AddItem(Tr("Pikachu Yellow"), 0);
-        themeSubMenu.AddItem(Tr("Dark Moon Violet"), 1);
-        themeSubMenu.AddItem(Tr("Mario Hat Red"), 2);
-        themeSubMenu.AddItem(Tr("Kokiri Green"), 3);
-        themeSubMenu.AddItem(Tr("Master Sword Blue"), 4);
-        themeSubMenu.AddItem(Tr("Bonfire Orange"), 5);
-        themeSubMenu.IdPressed += OnThemeColorMenuPressed;
-        menu.AddChild(themeSubMenu);
-        menu.AddSubmenuNodeItem(Tr("Theme Accent Color"), themeSubMenu);
-
-        // Menu & Tab font size: drives the menu bar, popups, top tabs and terminal tabs (GlobalFontSize).
-        var fontSubMenu = new PopupMenu { Name = "MenuFontMenu", HideOnItemSelection = false };
-        const int FontReadoutId = 0, FontIncreaseId = 1, FontDecreaseId = 2, FontResetId = 3;
-        fontSubMenu.AddItem("", FontReadoutId);
-        fontSubMenu.SetItemDisabled(fontSubMenu.GetItemIndex(FontReadoutId), true);
-        fontSubMenu.AddSeparator();
-        fontSubMenu.AddItem(Tr("Increase  +"), FontIncreaseId);
-        fontSubMenu.AddItem(Tr("Decrease  −"), FontDecreaseId);
-        fontSubMenu.AddItem(Tr("Reset to Default (14px)"), FontResetId);
-        void RefreshFontReadout() =>
-            fontSubMenu.SetItemText(fontSubMenu.GetItemIndex(FontReadoutId), Tr("Current Size: {0}px").Replace("{0}", _appSettings.GlobalFontSize.ToString()));
-        RefreshFontReadout();
-        fontSubMenu.AboutToPopup += RefreshFontReadout;
-        fontSubMenu.IdPressed += id =>
-        {
-            int size = _appSettings.GlobalFontSize;
-            if (id == FontIncreaseId) size = Math.Min(32, size + 1);
-            else if (id == FontDecreaseId) size = Math.Max(8, size - 1);
-            else if (id == FontResetId) size = 14;
-            else return;
-            _appSettings.GlobalFontSize = size;
-            ApplyUIScale();
-            DataManager.SaveSettings(_appSettings);
-            RefreshFontReadout();
-        };
-        menu.AddChild(fontSubMenu);
-        menu.AddSubmenuNodeItem(Tr("Menu & Tab Font Size"), fontSubMenu);
     }
 }

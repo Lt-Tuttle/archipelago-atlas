@@ -346,14 +346,10 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         if (_bottomTabs != null) ApplyTabBarStyle(_bottomTabs, 8);
         ApplyUIScale();
     }
-    private void OnThemeColorMenuPressed(long id)
+    /// <summary>Recolours the window for a new accent (the Settings page's choice), and remembers it.</summary>
+    private void ApplyAccent(string hex)
     {
-        if (id == 0) _appSettings.ThemeAccentColor = "#FFD700"; // Pokemon
-        else if (id == 1) _appSettings.ThemeAccentColor = "#8246DC"; // Elden Ring
-        else if (id == 2) _appSettings.ThemeAccentColor = "#EB2828"; // Mario
-        else if (id == 3) _appSettings.ThemeAccentColor = "#3CD250"; // Zelda OoT
-        else if (id == 4) _appSettings.ThemeAccentColor = "#32A0FF"; // Zelda ALttP
-        else if (id == 5) _appSettings.ThemeAccentColor = "#FF781E"; // Dark Souls
+        _appSettings.ThemeAccentColor = hex;
         DataManager.SaveSettings(_appSettings);
         SetupModernTheme();
         RefreshProfileListStyles();

@@ -14,6 +14,8 @@ public class CommandTests
     [InlineData("ctrl+tab", "Ctrl+Tab")]
     [InlineData("escape", "Escape")]
     [InlineData("ctrl+plus", "Ctrl++")]
+    [InlineData("ctrl+comma", "Ctrl+,")]
+    [InlineData("Ctrl+,", "Ctrl+,")]
     public void Shortcuts_are_written_one_way(string typed, string canonical) => Assert.Equal(canonical, Commands.Normalize(typed));
 
     [Theory]

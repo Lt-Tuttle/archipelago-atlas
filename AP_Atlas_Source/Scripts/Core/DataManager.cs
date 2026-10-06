@@ -107,6 +107,8 @@ public class AppSettings
     public bool ShowPropertiesPanel { get; set; } = true;
     public bool ShowBottomPane { get; set; } = true;
     public bool ShowStatusBar { get; set; } = true;
+    public bool ShowSystemLogTab { get; set; } = true;
+    public bool ShowDebugLogTab { get; set; } = true;
 }
 public class SlotStats
 {

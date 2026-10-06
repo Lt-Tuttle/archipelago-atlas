@@ -21,19 +21,31 @@ public partial class MainTrackerWindow
         _ => true
     };
 
-    private void TogglePart(string commandId)
+    private void TogglePart(string commandId) => SetPart(commandId, !PartShown(commandId));
+
+    /// <summary>Shows or hides a part (the View menu, the Settings page), remembering it.</summary>
+    private void SetPart(string commandId, bool shown)
     {
         switch (commandId)
         {
-            case "view.slots-panel": _appSettings.ShowSlotsPanel = !_appSettings.ShowSlotsPanel; break;
-            case "view.explorer": _appSettings.ShowExplorer = !_appSettings.ShowExplorer; break;
-            case "view.properties-panel": _appSettings.ShowPropertiesPanel = !_appSettings.ShowPropertiesPanel; break;
-            case "view.bottom-pane": _appSettings.ShowBottomPane = !_appSettings.ShowBottomPane; break;
-            case "view.status-bar": _appSettings.ShowStatusBar = !_appSettings.ShowStatusBar; break;
+            case "view.slots-panel": _appSettings.ShowSlotsPanel = shown; break;
+            case "view.explorer": _appSettings.ShowExplorer = shown; break;
+            case "view.properties-panel": _appSettings.ShowPropertiesPanel = shown; break;
+            case "view.bottom-pane": _appSettings.ShowBottomPane = shown; break;
+            case "view.status-bar": _appSettings.ShowStatusBar = shown; break;
             default: return;
         }
         DataManager.SaveSettings(_appSettings);
         ApplyWindowParts();
+    }
+
+    /// <summary>Which of the bottom pane's tabs show, as the settings say (Chat always does).</summary>
+    private void ApplyConsoleTabs()
+    {
+        if (_bottomTabs == null) return;
+        _bottomTabs.SetTabHidden(1, !_appSettings.ShowSystemLogTab);
+        _bottomTabs.SetTabHidden(2, !_appSettings.ShowDebugLogTab);
+        if (_bottomTabs.IsTabHidden(_bottomTabs.CurrentTab)) ShowTerminalTab(0);
     }
 
     /// <summary>F9: the content alone; again, every part as the user had it.</summary>

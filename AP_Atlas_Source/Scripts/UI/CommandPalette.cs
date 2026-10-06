@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Godot;
 
 namespace AP_Atlas.UI
@@ -103,7 +102,7 @@ namespace AP_Atlas.UI
             _list.Clear();
             _shown.Clear();
             var root = _list.CreateItem();
-            var typed = Words(_input.Text);
+            var typed = AP_Atlas.Core.WordSearch.Words(_input.Text);
             foreach (var command in _commands.All)
             {
                 if (command.Id == OwnCommandId || !command.Enabled() || !Matches(typed, command)) continue;
@@ -117,19 +116,10 @@ namespace AP_Atlas.UI
             _nothing.Visible = _shown.Count == 0;
         }
 
+
         /// <summary>Every typed word starts a word of the command's name or menu.</summary>
-        private bool Matches(string[] typed, AP_Atlas.Core.Command command)
-        {
-            if (typed.Length == 0) return true;
-            var words = Words(_tr(command.Title)).Concat(Words(_tr(command.Menu))).ToList();
-            return typed.All(t => words.Any(w => w.StartsWith(t, StringComparison.OrdinalIgnoreCase)));
-        }
-
-        private static readonly char[] Separators = { ' ', '\t', '-', '/', '&', '…', '.' };
-        private static readonly char[] Trimmed = { '(', ')', ',', ':', '?' };
-
-        private static string[] Words(string text) =>
-            text.Split(Separators, StringSplitOptions.RemoveEmptyEntries).Select(w => w.Trim(Trimmed)).Where(w => w.Length > 0).ToArray();
+        private bool Matches(string[] typed, AP_Atlas.Core.Command command) =>
+            AP_Atlas.Core.WordSearch.Matches(typed, _tr(command.Title), _tr(command.Menu));
 
         private int SelectedIndex()
         {

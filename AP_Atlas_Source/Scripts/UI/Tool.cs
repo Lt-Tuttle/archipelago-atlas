@@ -22,7 +22,8 @@ namespace AP_Atlas.UI
 
     /// <summary>
     /// One of Atlas's tools: a button on the activity bar, an item in the Tools menu (Ctrl+1 to Ctrl+9, in the bar's order),
-    /// and the view the content area shows. In the new shell they become panels that can be docked and popped out.
+    /// and the view the content area shows; a tool past the ninth brings its own key. In the new shell they become panels
+    /// that can be docked and popped out.
     /// A slot tool shows the selected slot's own view; the window registers the views of the others.
     /// </summary>
     public sealed class Tool
@@ -56,6 +57,9 @@ namespace AP_Atlas.UI
 
         public string ExplorerTitle { get; private init; } = "";
 
+        /// <summary>A tool's own default key, for a tool past the first nine (which get Ctrl+1 to Ctrl+9).</summary>
+        public string DefaultKey { get; private init; } = "";
+
         public static readonly Tool MapTracker = new("map-tracker", "Map Tracker", ToolScope.Slot, ToolGroup.Slot, "map")
         {
             SlotView = slot => slot.MapTracker,
@@ -70,9 +74,10 @@ namespace AP_Atlas.UI
         public static readonly Tool SphereTracker = new("sphere-tracker", "Sphere Tracker", ToolScope.Multiworld, ToolGroup.Multiworld, "orbit");
         public static readonly Tool Connections = new("connections", "Multiworlds", ToolScope.App, ToolGroup.Atlas, "globe");
         public static readonly Tool MapPacks = new("map-packs", "Map Packs", ToolScope.App, ToolGroup.Atlas, "package");
+        public static readonly Tool Settings = new("settings", "Settings", ToolScope.App, ToolGroup.Atlas, "settings") { DefaultKey = "Ctrl+," };
 
         /// <summary>Every tool, in the activity bar's order, top to bottom (Ctrl+1 to Ctrl+9).</summary>
-        public static IReadOnlyList<Tool> All { get; } = new[] { MapTracker, KeyItems, LogicTracker, ItemHistory, Hints, CheeseTracker, SphereTracker, Connections, MapPacks };
+        public static IReadOnlyList<Tool> All { get; } = new[] { MapTracker, KeyItems, LogicTracker, ItemHistory, Hints, CheeseTracker, SphereTracker, Connections, MapPacks, Settings };
 
         /// <summary>The tool's place in <see cref="All"/>.</summary>
         public int Index

@@ -97,6 +97,8 @@ public partial class MainTrackerWindow
             SlotPickerAsync);
         await ScenarioAsync("Window parts: the View menu hides and shows the slots panel, the explorer (whatever tool shows), Properties, the bottom pane and the status bar, remembering each; focus mode leaves the content alone and, off again, brings each part back as the user had it",
             WindowPartsAsync);
+        await ScenarioAsync("Settings page: Ctrl+, shows it with the search box ready and the sections in the explorer; each kind of row changes its setting at once and saves it (a toggle, a choice, a number, a window part, a bottom pane tab); a setting changed elsewhere shows as it is; typed words narrow the rows; a section jump scrolls",
+            SettingsPageAsync);
         await ScenarioAsync("Bursts: 40 items and 40 chat lines arriving together reach the slot once each, at most one update of the window in each frame they arrive over (not 80)",
             BurstIsOneUpdateAsync);
         await ScenarioAsync("Long text: a game's names and a hint's entrance of a megabyte, and a chat line of 100,000 characters without a space, hold up no frame for 150 ms, shown or not (names are cut to 500 characters; a long run of text gets breaks)",
@@ -502,6 +504,7 @@ public partial class MainTrackerWindow
             [AP_Atlas.UI.Tool.MapPacks] = _packManagerPanel,
             [AP_Atlas.UI.Tool.CheeseTracker] = _cheeseTab,
             [AP_Atlas.UI.Tool.SphereTracker] = _sphereTab,
+            [AP_Atlas.UI.Tool.Settings] = _settingsPage!,
         };
         var slotViews = new Dictionary<AP_Atlas.UI.Tool, Func<SlotTrackerControl, Control>>
         {
@@ -593,6 +596,97 @@ public partial class MainTrackerWindow
         UiTestExpect(about.DialogText.Contains(AP_Atlas.Core.AtlasVersion.Display), "About doesn't name the version");
         about.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
         await UiTestWaitAsync(0.2);
+        host.ShowTool(AP_Atlas.UI.Tool.Connections);
+    }
+
+    private async Task SettingsPageAsync()
+    {
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        var page = _settingsPage ?? throw new InvalidOperationException("The Settings page wasn't built.");
+        host.ShowTool(AP_Atlas.UI.Tool.Connections);
+        await PressAsync("Ctrl+,");
+        UiTestExpect(ShownContent() == page && _activityBar.Selected == AP_Atlas.UI.Tool.Settings, "Ctrl+, didn't show the Settings page");
+        UiTestExpect(page.SearchHasFocus, "the search box isn't ready to type into");
+        UiTestExpect(_midLeftSidebar.Visible && page.SectionList.Visible, "the explorer doesn't list the sections");
+        // The tools' keys still work while the search box has the focus.
+        await PressAsync("Ctrl+9");
+        UiTestExpect(ShownContent() == _packManagerPanel, "Ctrl+9 didn't switch tools while the search box had the focus");
+        host.ShowTool(AP_Atlas.UI.Tool.Settings);
+
+        // Each kind of row changes its setting at once and saves it.
+        var reconnect = (CheckButton)page.ControlOf("auto-reconnect");
+        UiTestExpect(reconnect.ButtonPressed && _appSettings.AutoReconnect, "auto-reconnect isn't on to begin with");
+        reconnect.ButtonPressed = false;
+        UiTestExpect(!_appSettings.AutoReconnect && !_sessions.AutoReconnect && !DataManager.LoadSettings().AutoReconnect, "turning auto-reconnect off didn't take, or wasn't saved");
+        reconnect.ButtonPressed = true;
+        UiTestExpect(_appSettings.AutoReconnect && _sessions.AutoReconnect, "auto-reconnect didn't come back");
+
+        var race = (OptionButton)page.ControlOf("race-mode");
+        UiTestExpect(race.Selected == 0 && AP_Atlas.Core.RaceRules.Mode == AP_Atlas.Core.RaceModeSetting.FollowServer, "race mode isn't following the server to begin with");
+        race.Select(1);
+        race.EmitSignal(OptionButton.SignalName.ItemSelected, 1); // Select() alone tells no one, unlike the user's pick
+        UiTestExpect(AP_Atlas.Core.RaceRules.Mode == AP_Atlas.Core.RaceModeSetting.AlwaysOn, "picking Always on didn't set race mode");
+        race.Select(0);
+        race.EmitSignal(OptionButton.SignalName.ItemSelected, 0);
+        UiTestExpect(AP_Atlas.Core.RaceRules.Mode == AP_Atlas.Core.RaceModeSetting.FollowServer, "race mode didn't go back to following the server");
+
+        var accent = (OptionButton)page.ControlOf("accent");
+        UiTestExpect(accent.Selected == 0, $"the accent choice shows item {accent.Selected}, not the default");
+        accent.Select(1);
+        accent.EmitSignal(OptionButton.SignalName.ItemSelected, 1);
+        UiTestExpect(_appSettings.ThemeAccentColor == "#FFD700" && AP_Atlas.Core.ThemeColors.Accent == new Color("#FFD700") && DataManager.LoadSettings().ThemeAccentColor == "#FFD700",
+            "picking an accent didn't recolour Atlas, or wasn't saved");
+        accent.Select(0);
+        accent.EmitSignal(OptionButton.SignalName.ItemSelected, 0);
+        UiTestExpect(_appSettings.ThemeAccentColor == AP_Atlas.Core.ThemeColors.DefaultAccentHex && AP_Atlas.Core.ThemeColors.Accent == new Color(AP_Atlas.Core.ThemeColors.DefaultAccentHex),
+            "the accent didn't go back to the default");
+
+        var fontSize = (SpinBox)page.ControlOf("menu-font-size");
+        UiTestExpect((int)fontSize.Value == _appSettings.GlobalFontSize, "the font size row doesn't show the setting");
+        fontSize.Value = 16;
+        UiTestExpect(_appSettings.GlobalFontSize == 16 && _toolTitle.GetThemeFontSize("font_size") == 16 && DataManager.LoadSettings().GlobalFontSize == 16, "a new font size didn't apply, or wasn't saved");
+        fontSize.Value = 14;
+        UiTestExpect(_appSettings.GlobalFontSize == 14 && _toolTitle.GetThemeFontSize("font_size") == 14, "the font size didn't go back");
+
+        var slots = (CheckButton)page.ControlOf("slots-panel");
+        slots.ButtonPressed = false;
+        UiTestExpect(!_sidebar.Visible && !_appSettings.ShowSlotsPanel, "hiding the slots panel from Settings didn't take");
+        slots.ButtonPressed = true;
+        UiTestExpect(_sidebar.Visible && _appSettings.ShowSlotsPanel, "the slots panel didn't come back");
+
+        var debugTab = (CheckButton)page.ControlOf("debug-log-tab");
+        debugTab.ButtonPressed = false;
+        UiTestExpect(_bottomTabs.IsTabHidden(2) && !DataManager.LoadSettings().ShowDebugLogTab, "hiding the Debug Log tab didn't take, or wasn't saved");
+        debugTab.ButtonPressed = true;
+        UiTestExpect(!_bottomTabs.IsTabHidden(2), "the Debug Log tab didn't come back");
+
+        // A setting changed elsewhere shows as it is when the page shows again.
+        _commands!.Run("view.status-bar");
+        host.ShowTool(AP_Atlas.UI.Tool.Connections);
+        host.ShowTool(AP_Atlas.UI.Tool.Settings);
+        UiTestExpect(!((CheckButton)page.ControlOf("status-bar")).ButtonPressed, "the status bar's row doesn't show that the View menu hid it");
+        _commands.Run("view.status-bar");
+        host.ShowTool(AP_Atlas.UI.Tool.Connections);
+        host.ShowTool(AP_Atlas.UI.Tool.Settings);
+        UiTestExpect(((CheckButton)page.ControlOf("status-bar")).ButtonPressed, "the status bar's row doesn't show that it's back");
+
+        // Search: typed words narrow the rows to those whose title, description or section has a word starting that way.
+        page.Search("race");
+        var shown = page.RowIds.Where(page.IsShown).ToList();
+        UiTestExpect(shown.Count > 0 && shown.All(id => id.StartsWith("race", StringComparison.Ordinal)) && shown.Contains("race-mode"), $"searching \"race\" shows {string.Join(", ", shown)}");
+        UiTestExpect(!page.NothingMatches, "the page says nothing matches while rows show");
+        page.Search("qzx");
+        UiTestExpect(!page.RowIds.Any(page.IsShown) && page.NothingMatches, "a search nothing matches doesn't say so");
+        page.Search("");
+        UiTestExpect(page.RowIds.All(page.IsShown) && !page.NothingMatches, "clearing the search didn't bring every row back");
+
+        // Jumping to a section scrolls to it (the explorer's buttons, a tool's gear button).
+        page.ShowSection("data");
+        await UiTestWaitAsync(0.1);
+        UiTestExpect(page.ScrollPosition > 0, "jumping to the last section didn't scroll");
+        page.ShowSection("multiworld");
+        await UiTestWaitAsync(0.1);
+        UiTestExpect(page.ScrollPosition == 0, "jumping to the first section didn't scroll back to the top");
         host.ShowTool(AP_Atlas.UI.Tool.Connections);
     }
 
@@ -717,7 +811,7 @@ public partial class MainTrackerWindow
     {
         var host = (AP_Atlas.UI.IPropertiesHost)this;
         var order = string.Join(",", _activityBar.Order.Select(t => t.Title));
-        UiTestExpect(order == "Map Tracker,Key Items,Logic Tracker,Item History,Hints,Cheese Tracker,Sphere Tracker,Multiworlds,Map Packs", $"the activity bar's order is {order}");
+        UiTestExpect(order == "Map Tracker,Key Items,Logic Tracker,Item History,Hints,Cheese Tracker,Sphere Tracker,Multiworlds,Map Packs,Settings", $"the activity bar's order is {order}");
         UiTestExpect(_activityBar.CaptionOf(AP_Atlas.UI.Tool.MapTracker) == "SLOT" && _activityBar.CaptionOf(AP_Atlas.UI.Tool.CheeseTracker) == "MULTIWORLD" && _activityBar.CaptionOf(AP_Atlas.UI.Tool.MapPacks) == "ATLAS",
             "the groups aren't captioned as designed");
         var noIcon = AP_Atlas.UI.Tool.All.Where(t => !AP_Atlas.UI.LucideIcons.Names.Contains(t.Icon) || _activityBar.ButtonOf(t).Icon == null).Select(t => t.Title).ToList();
