@@ -5,16 +5,29 @@ public class LoggerTests
     [Fact]
     public void A_message_too_long_is_cut_saying_how_much()
     {
+        // The log file keeps up to MaxMessageLength; the window shows up to MaxShownLength of that.
         string marker = "cut-test-" + Guid.NewGuid().ToString("N")[..8] + " ";
         var shown = new List<string>();
+        var written = new List<string>();
+        var oldEcho = Logger.Echo;
         void OnLine(string line, string level) { if (line.Contains(marker)) lock (shown) shown.Add(line); }
         Logger.OnLogMessage += OnLine;
+        Logger.Echo = line => { if (line.Contains(marker)) lock (written) written.Add(line); };
         try { Logger.LogInfo(marker + new string('m', 100_000)); }
-        finally { Logger.OnLogMessage -= OnLine; }
-        string line = Assert.Single(shown);
+        finally
+        {
+            Logger.OnLogMessage -= OnLine;
+            Logger.Echo = oldEcho;
+        }
         int kept = Logger.MaxMessageLength - marker.Length;
-        Assert.Contains(marker + new string('m', kept) + $"… ({100_000 - kept:N0} more characters)", line);
-        Assert.DoesNotContain(new string('m', kept + 1), line);
+        string inFile = Assert.Single(written);
+        Assert.Contains(marker + new string('m', kept) + $"… ({100_000 - kept:N0} more characters)", inFile);
+        Assert.DoesNotContain(new string('m', kept + 1), inFile);
+        int keptShown = Logger.MaxShownLength - marker.Length;
+        string inWindow = Assert.Single(shown);
+        Assert.Contains(marker + new string('m', keptShown) + "… (", inWindow);
+        Assert.EndsWith(" more characters in the log file)\n", inWindow);
+        Assert.DoesNotContain(new string('m', keptShown + 1), inWindow);
     }
 
     [Fact]

@@ -67,7 +67,8 @@
     Where a rule names a number, the file may do it only that many times: one helper does it, everything else uses it.
     Libraries whose internals Atlas relies on are pinned (MoonSharp, Archipelago.MultiClient.Net): update one only with
     the checks CONTRIBUTING lists for it.
-    It also checks that no source file, script or doc holds a stray control character, and that every script in the
+    It also checks that no source file, script or doc holds a stray control character or an invisible one (a zero-width
+    space, a direction override), and that every script in the
     Godot project has its .uid file (Godot makes one per script; it's committed
     with the script, or every fresh copy of the project gets new ones). CI runs this before Godot's import, so it checks
     what was committed.
@@ -207,17 +208,20 @@ foreach ($script in $godotScripts) {
 }
 
 # No stray control characters (anything below a space but tab and line breaks) in the code, the scripts or the docs: one
-# slipped into this file once (a "\b" a tool turned into a backspace), and silently broke a rule's pattern.
+# slipped into this file once (a "\b" a tool turned into a backspace), and silently broke a rule's pattern. No invisible
+# format characters either (Unicode's Cf: a zero-width space, a direction override): a tool once wrote one into the code for
+# an escape, and they're how "Trojan Source" hides code from a reviewer. A file's leading byte order mark isn't one (it's
+# read past).
 # The files git tracks: what's committed, as CI sees it (and quick to list).
 $textFiles = @(git -C $repo ls-files -- '*.cs' '*.ps1' '*.py' '*.md' '*.json' '*.csproj' '*.props' '*.yml' '*.txt' '*.gd' '*.tscn' '*.godot' '*.cfg')
 foreach ($relative in $textFiles) {
     $path = Join-Path $repo $relative
     if (-not (Test-Path -LiteralPath $path)) { continue }
     $content = [System.IO.File]::ReadAllText($path)
-    $stray = [regex]::Match($content, '[\x00-\x08\x0B\x0C\x0E-\x1F]')
+    $stray = [regex]::Match($content, '[\x00-\x08\x0B\x0C\x0E-\x1F]|\p{Cf}')
     if (-not $stray.Success) { continue }
     $line = ($content.Substring(0, $stray.Index) -split "`n").Count
-    Write-Host ("GUARD: $relative has a stray control character (0x{0:X2}) on line $line." -f [int][char]$stray.Value) -ForegroundColor Red
+    Write-Host ("GUARD: $relative has a stray control or invisible character (U+{0:X4}) on line $line." -f [int][char]$stray.Value) -ForegroundColor Red
     $broken++
 }
 

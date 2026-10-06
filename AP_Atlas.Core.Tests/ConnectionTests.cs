@@ -106,6 +106,81 @@ public class DataPackageStoreTests
     }
 
     [Fact]
+    public async Task Names_too_long_to_show_are_cut_where_the_library_keeps_them_and_in_the_store()
+    {
+        // An apworld's names reach Atlas as the server sends them. One too long is cut to NameLimits.MaxName: the start of
+        // the name, "…" and a hash, so two names that differ only after the cut stay apart.
+        using var dir = new TempFolder();
+        var store = new DataPackageStore(dir.Path);
+        string longItem = "Sword of " + new string('x', 100_000), otherItem = "Sword of " + new string('x', 99_999) + "y";
+        await using var server = new FakeArchipelagoServer();
+        server.Games["Test Game"] = new FakeGame(Checksum,
+            new Dictionary<string, long> { [longItem] = 1000, [otherItem] = 1002, ["Shield"] = 1001 },
+            new Dictionary<string, long> { ["Cave of " + new string('y', 100_000)] = 2000, ["Boss"] = 2001 });
+
+        var first = await LogInAsync(server, store);
+        string? item = first.Items.GetItemName(1000, "Test Game"), other = first.Items.GetItemName(1002, "Test Game");
+        string? location = first.Locations.GetLocationNameFromId(2000, "Test Game"), shield = first.Items.GetItemName(1001, "Test Game");
+        await CloseAsync(first);
+        Assert.Equal(NameLimits.MaxName, item?.Length);
+        Assert.StartsWith("Sword of xxx", item);
+        Assert.Equal(NameLimits.MaxName, other?.Length);
+        Assert.NotEqual(item, other);
+        Assert.Equal(NameLimits.MaxName, location?.Length);
+        Assert.Equal("Shield", shield);
+        Assert.True(store.TryGet("Test Game", Checksum, out var stored));
+        Assert.All(stored.ItemLookup.Keys.Concat(stored.LocationLookup.Keys), name => Assert.True(name.Length <= NameLimits.MaxName));
+
+        // The next connection reads the cut names from the store, without asking the server again.
+        var second = await LogInAsync(server, store);
+        Assert.Equal(item, second.Items.GetItemName(1000, "Test Game"));
+        await CloseAsync(second);
+        Assert.Equal(1, server.Count("GetDataPackage"));
+    }
+
+    [Fact]
+    public void A_file_stored_with_names_too_long_has_them_cut_as_it_is_read()
+    {
+        // A file kept before names were cut (or written by hand): what it hands the library is cut all the same.
+        using var dir = new TempFolder();
+        var store = new DataPackageStore(dir.Path);
+        string file = Path.Combine(dir.Path, "Test Game", Checksum + ".json");
+        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+        File.WriteAllText(file, new JObject
+        {
+            ["Game"] = "Test Game",
+            ["Data"] = new JObject
+            {
+                ["item_name_to_id"] = new JObject { ["Sword of " + new string('x', 10_000)] = 1000 },
+                ["location_name_to_id"] = new JObject { ["Boss"] = 2001 },
+                ["checksum"] = Checksum
+            }
+        }.ToString());
+        Assert.True(store.TryGet("Test Game", Checksum, out var data));
+        string name = Assert.Single(data.ItemLookup.Keys);
+        Assert.Equal(NameLimits.MaxName, name.Length);
+        Assert.Equal(1000, data.ItemLookup[name]);
+    }
+
+    [Fact]
+    public void A_name_too_long_is_cut_without_splitting_a_character()
+    {
+        Assert.Equal("Sword", NameLimits.Cap("Sword"));
+        Assert.Null(NameLimits.Cap(null));
+        string longest = new('a', NameLimits.MaxName);
+        Assert.Same(longest, NameLimits.Cap(longest));
+        // A character outside the basic plane (two halves) right at the cut: never half of it.
+        string atCut = new string('a', NameLimits.MaxName - 10) + char.ConvertFromUtf32(0x1F600) + new string('b', 100);
+        string cut = NameLimits.Cap(atCut);
+        Assert.True(cut.Length <= NameLimits.MaxName);
+        Assert.False(char.IsHighSurrogate(cut[cut.IndexOf('…') - 1]));
+        // A game whose names all fit is the same object, untouched.
+        var data = Data(Checksum);
+        Assert.Same(data, NameLimits.Capped(data, out bool changed));
+        Assert.False(changed);
+    }
+
+    [Fact]
     public void A_file_holding_another_game_or_version_is_never_used()
     {
         using var dir = new TempFolder();

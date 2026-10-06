@@ -72,7 +72,8 @@ New code that doesn't need Godot belongs in `AP_Atlas.Core`, with tests. The vis
   | Running Lua | `PackScriptHost`, where a pack's scripts run under limits |
   | Reading a zip (a map pack, an apworld) | `SafeZip`: `ReadText`, `ReadTextBytes` or `ReadImage`, never `ZipFile.OpenRead` or `entry.Open()`. Its limits hold however a zip lies about its files |
   | Decoding an image | `PackImages.DecodeImage`, which checks the size its header gives against an `ImageBudget` before any memory is set aside for it |
-  | Rich text (BBCode) | `SafeRichText` (`Markup`, `Append`), with outside text escaped (`Bbcode.Escape`, or a helper that does). Plain text goes in a `Label` |
+  | Rich text (BBCode) | `SafeRichText` (`Markup`, `Append`), with outside text escaped (`Bbcode.Escape`, or a helper that does). Plain text goes in a `Label`. A paragraph over 300 characters wraps at spaces (Godot's "word smart" wrapping takes time that grows with the square of a paragraph), and `Bbcode.Safe` gives long runs of text breaks: leave its AutowrapMode alone |
+  | Names from a server (items, locations, entrances) | The library's lookups, which Atlas fills with names cut to `NameLimits.MaxName`; cut any other name a server sends with `NameLimits.Cap` |
   | Logging | `Logger.LogInfo(message, color)` and friends: the message is plain text, shown as written; its colour is an argument, never markup in it |
   | Reading a program's output | `BoundedLineReader` (or its `ForEachAsync`), with `AnswerLimit` for answers and `LogLimit` for log lines, never `ReadLine` or `BeginOutputReadLine` |
   | Saving a file | `SafeFile`. It keeps a backup and survives a crash mid-save. The few places that write files directly (the log, a crash report, an export the user chose) are listed in the guard rails |
@@ -112,7 +113,9 @@ New code that doesn't need Godot belongs in `AP_Atlas.Core`, with tests. The vis
   - A new limit, or a change to one, is checked against the real corpus first (`ATLAS_SELFTEST_PACKS`): real packs must stay far below it. Note the corpus figure next to the limit, as `SafeZip` and `ImageBudget` do.
   - A new image format goes into `ImageHeader` first, read the way its decoder reads it, with a test for a file that tries to show the check a smaller size than its decoder would use.
   - A regular expression over their text must run in linear time. Use `RegexOptions.NonBacktracking`, or a scanner where the pattern needs a backreference or a lookaround. Never `InfiniteMatchTimeout`: every pattern has `RegexDefaults`' limit, and the guard rails check.
+  - Their text can be any length: a megabyte-long name once froze the window for minutes. Show it through `SafeRichText`, or cut it (`NameLimits.Cap`, `Logger.Shown`, the text client's `MaxChatLine`) before it reaches a label, and check a new view with the UI test's long-text scenario.
   - Their text is shown as written. Never put it into markup unescaped: Godot opens files named in rich text tags, and for a network path that means connecting to another computer. A new tag of Atlas's own goes into `Bbcode.Safe`'s allowlist, with a test; never a tag that takes a path.
+- **Invisible characters:** write a zero-width space, a byte order mark or a direction override as an escape in a string, never as the character itself. The guard rails refuse Unicode format characters in every tracked file: they hide code from a reviewer.
 - **Godot's `.uid` files:** Godot makes one next to each script (`Foo.cs.uid`) when it opens or imports the project. Commit it with the script; the guard rails check.
 - **Third-party code, data or art:**
   - Use only things under a license compatible with MIT (MIT, BSD, Apache-2.0, OFL for fonts, and so on), and credit them in [CREDITS.md](CREDITS.md). Anything that ships in Atlas also goes in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

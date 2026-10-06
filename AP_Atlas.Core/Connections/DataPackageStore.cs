@@ -50,7 +50,8 @@ namespace AP_Atlas.Core.Connections
                         return false;
                     }
                     MarkUsed(path);
-                    data = stored;
+                    // Names too long to show are cut (NameLimits), whoever stored them.
+                    data = NameLimits.Capped(stored, out _);
                     return true;
                 }
                 catch (JsonException ex)
@@ -67,11 +68,15 @@ namespace AP_Atlas.Core.Connections
             }
         }
 
-        /// <summary>Keeps a game's names as a server sent them. Names without a usable checksum aren't kept.</summary>
+        /// <summary>
+        /// Keeps a game's names as a server sent them, with any too long to show cut (NameLimits). Names without a usable
+        /// checksum aren't kept.
+        /// </summary>
         public void Save(string game, GameData? data)
         {
             string? path = data == null ? null : PathFor(game, data.Checksum);
             if (path == null) return;
+            data = NameLimits.Capped(data!, out _);
             // A name of its own, so a write that fails halfway never leaves a damaged file under the real name.
             string temp = $"{path}.{Guid.NewGuid():N}.tmp";
             lock (_gate)

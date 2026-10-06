@@ -27,7 +27,7 @@ MainTrackerWindow (the shell)
 - **`AP_Atlas.Core/`**: everything that doesn't need Godot. It has no Godot reference, so it can't touch the window from a worker thread, and its tests run with plain `dotnet test`.
   - `SafeFile`, `Logger`, `Async`, `AtlasVersion`, `Secrets`.
   - `SafeZip`, `ImageHeader` and `ImageBudget`: reading zips and images that come from outside Atlas (see "Files from outside Atlas", below).
-  - `Bbcode`: escaping text from outside Atlas for rich text, and the allowlist every piece of markup passes (`Safe`).
+  - `Bbcode`: escaping text from outside Atlas for rich text, and the allowlist every piece of markup passes (`Safe`), which also gives a long run of text breaks (a zero-width space every 64 characters) and takes linear time, whatever the text.
   - `BoundedLineReader`: reading a program's output a line at a time, with a limit on how much of a line is kept.
   - `LuaText` (stripping a pack script's comments in linear time) and `RegexDefaults` (every regular expression's time limit).
   - `Deadline` (when a wait ends) and `SteadyClock` (when something happened in this session). Both measure with a monotonic clock, so setting the PC's clock (a time sync after a wrong start-up time) can't stretch a wait, end one early or lift a limit. The PC's clock is only for times that are saved, shown or sent; a saved time enters the steady clock once, as it loads (`SteadyClock.FromSaved`).
@@ -43,6 +43,7 @@ MainTrackerWindow (the shell)
   - `Connections/`:
     - `SessionManager`: every connection to an Archipelago server (connecting one at a time, the login time limit, drops, careful reconnects, closing), and the room's text: one connection per multiworld team receives it and passes each line to every slot of the team (`SessionManager.Text.cs`).
     - `AtlasSessions`: the only place sessions are made; each keeps the games' names in `DataPackageStore` (the data folder, below), and gives its connection's thread back when it ends (`Finished`).
+    - `NameLimits`: a name a server sends (an item, a location, a hint's entrance) is cut to 500 characters, keeping it apart from the rest (the start, "…" and a hash). The library makes its names from a game's data package and then hands the package to Atlas's store; the store's provider cuts the names and puts a lookup made from them in the library's place (`LibraryCache.ReplaceNames`), in the same call.
   - `Testing/FakeArchipelagoServer` (internal): a fake Archipelago server on the test computer, for the unit tests and the UI test. Atlas never starts it otherwise.
   - `Testing/FakeCheeseServer` (internal): a stand-in for the Cheese Tracker site on the test computer, for the self-test and the UI test. The real site is never contacted.
   - `Testing/FakeLogicEngine` (internal) and `fake_engine.py`: a fake logic engine in a stand-in Archipelago folder, answering the engine's requests from simple rules, for the unit tests and the UI test. Atlas never sets one up otherwise; the UI test runs it on a Python already on the computer (`AtlasEngine.TestPython`, which only the UI test sets).
@@ -181,7 +182,9 @@ Map packs and apworlds are zips from outside Atlas, and both a zip's headers and
 
 **No pattern runs away.** A regular expression that backtracks can take hours on one crafted input.
 - Patterns over large outside text run in linear time: an apworld's source (`GameOfApworld`, `RegexOptions.NonBacktracking`) and a pack's scripts' comments (`LuaText`, a scanner, because the pattern needs a backreference, which the non-backtracking engine lacks).
-- Every regular expression has a 2-second limit besides. `RegexDefaults` sets it as `AP_Atlas.Core` loads (a module initializer), before any code makes one; .NET reads the default once, and libraries' patterns get it too.
+- Every regular expression has a 2-second limit besides.
+
+Text from outside can be any length, and a long paragraph was the slowest thing Atlas could be given: a megabyte-long item name froze the window for five minutes. A long paragraph of rich text wraps at spaces, with breaks in long runs (`SafeRichText`, `Bbcode.Safe`); a server's names are cut at 500 characters (`NameLimits`); the text client shows a line up to 4,000 characters and lays out about that much new text per frame; the logs show a message up to 4,000 (`Logger.Shown`; the file keeps 64,000). The UI test's long-text scenario sends megabytes of each and checks no frame holds more than 150 ms of work. `RegexDefaults` sets it as `AP_Atlas.Core` loads (a module initializer), before any code makes one; .NET reads the default once, and libraries' patterns get it too.
 - The self-test checks the limit is in effect in Atlas, and that crafted inputs take well under a second, which falling back to the limit couldn't.
 
 ## Safety rules the code enforces
@@ -205,7 +208,7 @@ Map packs and apworlds are zips from outside Atlas, and both a zip's headers and
 | `SafeZip` | Reading a zip (opening one to read, or unpacking one of its files). Making a zip is allowed anywhere. |
 | `AtlasEngine` | Unpacking a zip into a folder: only the engine's hash-checked downloads. |
 | `PackImages.DecodeImage` (and the visual check, for its own screenshots) | Decoding an image: its size is checked against an `ImageBudget` first. |
-| `SafeRichText` (and the self-test's check that its probe works) | Rich text that reads BBCode: only Atlas's own tags get through. |
+| `SafeRichText` (and the self-test's check that its probe works) | Rich text that reads BBCode: only Atlas's own tags get through. A paragraph over 300 characters wraps at spaces: Godot's "word smart" wrapping takes time that grows with the square of a paragraph's length. |
 | nowhere | Markup in a log message: messages are plain text, and a line's colour is an argument. |
 | `BoundedLineReader` | Reading a program's output: a line is kept only up to a limit. |
 | `RegexDefaults` | Setting regular expressions' time limit; nowhere may opt out (`InfiniteMatchTimeout`). |
@@ -213,7 +216,7 @@ Map packs and apworlds are zips from outside Atlas, and both a zip's headers and
 | nowhere | An empty catch that doesn't say why on its line. |
 | a line that says why (`// wall clock: …`), and the tests | Timing by the PC's clock. In memory, a wait is a `Deadline` and a moment `SteadyClock.UtcNow`; the wall clock is for times that are saved, shown or sent. |
 
-The build treats every warning as an error, and the guard rails fail on a stray control character in any file in the repository. MoonSharp and Archipelago.MultiClient.Net are pinned at the versions whose insides Atlas was checked against. The number of classes without nullable checks can only go down. A pre-push hook (`.githooks/pre-push`) runs the guard rails, the build, formatting and the unit tests before anything reaches CI.
+The build treats every warning as an error, and the guard rails fail on a stray control character, or an invisible one (a zero-width space, a direction override), in any file in the repository. MoonSharp and Archipelago.MultiClient.Net are pinned at the versions whose insides Atlas was checked against. The number of classes without nullable checks can only go down. A pre-push hook (`.githooks/pre-push`) runs the guard rails, the build, formatting and the unit tests before anything reaches CI.
 
 Downloads that become code are pinned:
 - The engine's Python, pip, Archipelago and Universal Tracker are each checked against a fixed SHA-256.

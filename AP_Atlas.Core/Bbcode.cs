@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -32,26 +33,71 @@ public static partial class Bbcode
     private static partial Regex ColorName();
 
     /// <summary>
-    /// BBCode with every tag but Atlas's own made inert. Atlas's own: b, i, u, s and code, color, bgcolor and url (each
-    /// with or without "="), and lb and rb. Any other "[" becomes "[lb]", so what follows shows as text: a tag Godot
-    /// would load a file for, a size or a table, or a tag a later Godot adds.
+    /// The longest run of text without a place to break a line (a space, a zero-width space) that rich text gets: a longer
+    /// one gets a zero-width space every this many characters. Godot breaks a run too wide for its line one character at
+    /// a time, in time that grows with the square of the run: in a narrow column (a text client that isn't showing, a
+    /// small window) 2,000 characters without a space held up the window for 3 seconds, and 30,000 for 5 minutes. No
+    /// word comes near this; a long link gets breaks it doesn't show.
+    /// </summary>
+    public const int MaxRun = 64;
+
+    /// <summary>
+    /// BBCode with every tag but Atlas's own made inert, and no run of text too long to lay out (<see cref="MaxRun"/>).
+    /// Atlas's own tags: b, i, u, s and code, color, bgcolor and url (each with or without "="), and lb and rb. Any other
+    /// "[" becomes "[lb]", so what follows shows as text: a tag Godot would load a file for, a size or a table, or a tag a
+    /// later Godot adds. It takes linear time, whatever the text.
     /// </summary>
     public static string Safe(string? bbcode)
     {
         if (string.IsNullOrEmpty(bbcode)) return "";
         StringBuilder? safe = null;
-        int copied = 0;
-        for (int open = bbcode.IndexOf('['); open >= 0; open = bbcode.IndexOf('[', open + 1))
+        int copied = 0, run = 0;
+        // Godot takes a tag to run from "[" to the next "]": the next "]" after the last one found serves every "[" before it.
+        int close = -1;
+        for (int i = 0; i < bbcode.Length; i++)
         {
-            // Godot takes a tag to run from "[" to the next "]".
-            int close = bbcode.IndexOf(']', open + 1);
-            if (close >= 0 && OwnTag().IsMatch(bbcode.AsSpan(open + 1, close - open - 1))) continue;
-            safe ??= new StringBuilder(bbcode.Length + 16);
-            safe.Append(bbcode, copied, open - copied).Append("[lb]");
-            copied = open + 1;
+            char c = bbcode[i];
+            if (c == '[')
+            {
+                if (close != int.MaxValue && close < i)
+                {
+                    close = bbcode.IndexOf(']', i + 1);
+                    if (close < 0) close = int.MaxValue; // no "]" after this point: no more tags
+                }
+                if (close != int.MaxValue && OwnTag().IsMatch(bbcode.AsSpan(i + 1, close - i - 1)))
+                {
+                    // An own tag shows nothing, except [lb] and [rb], which show one bracket.
+                    if (close - i == 3 && bbcode[i + 2] == 'b' && (bbcode[i + 1] == 'l' || bbcode[i + 1] == 'r')) Shown(i);
+                    i = close;
+                    continue;
+                }
+                Shown(i);
+                safe ??= new StringBuilder(bbcode.Length + 16);
+                safe.Append(bbcode, copied, i - copied).Append("[lb]");
+                copied = i + 1;
+            }
+            else if (char.IsWhiteSpace(c) || c == ZeroWidthSpace) run = 0;
+            // A low surrogate or a combining mark belongs to the character before it: it neither counts nor takes a break.
+            else if (!char.IsLowSurrogate(c) && CharUnicodeInfo.GetUnicodeCategory(c) is not (UnicodeCategory.NonSpacingMark or UnicodeCategory.SpacingCombiningMark or UnicodeCategory.EnclosingMark))
+                Shown(i);
         }
         return safe == null ? bbcode : safe.Append(bbcode, copied, bbcode.Length - copied).ToString();
+
+        // A character shown from position "at" on: once the run is full, a zero-width space goes before it.
+        void Shown(int at)
+        {
+            if (run >= MaxRun)
+            {
+                safe ??= new StringBuilder(bbcode.Length + 16);
+                safe.Append(bbcode, copied, at - copied).Append(ZeroWidthSpace);
+                copied = at;
+                run = 0;
+            }
+            run++;
+        }
     }
+
+    private const char ZeroWidthSpace = '\u200B';
 
     [GeneratedRegex(@"^(?:/?(?:b|i|u|s|code|color|bgcolor|url)|(?:color|bgcolor|url)=[^\[\]]*|lb|rb)$", RegexOptions.CultureInvariant)]
     private static partial Regex OwnTag();

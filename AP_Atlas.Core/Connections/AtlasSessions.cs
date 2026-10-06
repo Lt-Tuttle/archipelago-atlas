@@ -121,6 +121,11 @@ namespace AP_Atlas.Core.Connections
         private static readonly Type? CacheType = Library.GetType("Archipelago.MultiClient.Net.DataPackage.DataPackageCache");
         private static readonly Type? ProviderInterface = Library.GetType("Archipelago.MultiClient.Net.DataPackage.IFileSystemDataPackageProvider");
         private static readonly FieldInfo? ProviderField = CacheType?.GetFields(InstanceFields).Where(f => f.FieldType == ProviderInterface).ToArray() is [var only] ? only : null;
+        // Where the library keeps each game's names as it uses them, and how it makes them from a data package: a game whose
+        // names Atlas had to cut (NameLimits) gets them made again from the cut ones.
+        private static readonly FieldInfo? LookupsField = CacheType?.GetField("inMemoryCache", InstanceFields);
+        private static readonly ConstructorInfo? LookupConstructor =
+            Library.GetType("Archipelago.MultiClient.Net.DataPackage.GameDataLookup")?.GetConstructor(new[] { typeof(GameData) });
 
         /// <summary>Why this version of the library can't be kept inside Atlas's folder, or null when it can.</summary>
         internal static string? Problem { get; } = FindProblem();
@@ -129,6 +134,8 @@ namespace AP_Atlas.Core.Connections
         {
             if (CacheType == null || ProviderInterface == null) return "its data cache has moved";
             if (ProviderField == null) return "its data cache is set up differently";
+            if (LookupsField == null || !typeof(System.Collections.IDictionary).IsAssignableFrom(LookupsField.FieldType) || LookupConstructor == null)
+                return "its data cache keeps the games' names differently";
             var methods = ProviderInterface.GetMethods();
             bool expected = methods.Length == 2
                 && methods.Any(m => m.Name == "TryGetDataPackage" && m.ReturnType == typeof(bool) && Parameters(m) == "String,String,GameData&")
@@ -145,7 +152,18 @@ namespace AP_Atlas.Core.Connections
             if (ProviderField!.GetValue(cache) != null) throw Unsupported("the session's data cache was already set up");
             var provider = (StoreProvider)DispatchProxy.Create(ProviderInterface!, typeof(StoreProvider));
             provider.Store = store;
+            provider.Cache = cache;
             ProviderField.SetValue(cache, provider);
+        }
+
+        /// <summary>
+        /// Puts a game's names, made from <paramref name="data"/>, in the session's data cache in place of the ones it made
+        /// from the server's data package. It's called while the library stores that package, on the same thread, just after
+        /// the library made its own: nothing has read them yet.
+        /// </summary>
+        internal static void ReplaceNames(object cache, string game, GameData data)
+        {
+            if (LookupsField!.GetValue(cache) is System.Collections.IDictionary lookups) lookups[game] = LookupConstructor!.Invoke(new object[] { data });
         }
 
         internal static DataPackageStore? StoreOf(ArchipelagoSession session) =>
@@ -190,6 +208,9 @@ namespace AP_Atlas.Core.Connections
     {
         internal DataPackageStore? Store { get; set; }
 
+        /// <summary>The session's data cache this answers for.</summary>
+        internal object? Cache { get; set; }
+
         protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
         {
             var store = Store;
@@ -200,12 +221,23 @@ namespace AP_Atlas.Core.Connections
                     args[2] = data;
                     return found;
                 case "SaveDataPackageToFile" when store != null && args is { Length: 2 }:
-                    store.Save(args[0] as string ?? "", args[1] as GameData);
+                    Save(store, args[0] as string ?? "", args[1] as GameData);
                     return null;
                 default:
                     // Not reached (the interface was checked). Answering "nothing stored" makes the library ask the server.
                     return targetMethod?.ReturnType == typeof(bool) ? false : null;
             }
+        }
+
+        // The library made the names it uses from this package just before: names too long to show are cut there too.
+        private void Save(DataPackageStore store, string game, GameData? sent)
+        {
+            if (sent != null)
+            {
+                sent = NameLimits.Capped(sent, out bool cut);
+                if (cut && Cache != null) LibraryCache.ReplaceNames(Cache, game, sent);
+            }
+            store.Save(game, sent);
         }
     }
 }

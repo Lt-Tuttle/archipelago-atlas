@@ -48,7 +48,7 @@ Development toward the first public beta, 0.1.0.
     - The guard rails keep each protection in its one place: calling, compiling and making functions for map pack scripts, closing server connections, reading zips (only through `SafeZip`), decoding images (only after their size is checked), and rich text that reads markup (only `SafeRichText`). Log messages can't carry markup, a program's output is read only a bounded line at a time, and no regular expression goes without a time limit. Only the engine's setup unpacks a zip into a folder, and only its hash-checked downloads.
     - They also allow no forced memory collections, threads of its own, unexplained silent failures, or looking up your folders outside the install search you agree to. Whole-file saves are allowed only where SafeFile isn't needed.
     - The libraries whose insides Atlas relies on are pinned, and the nullable-check count can only go down.
-    - No wait or limit is timed by the PC's clock (a line that rightly uses it, for a time that's saved, shown or sent, says why on the line). No file in the repository may hold a stray control character: one once slipped into the guard script and quietly broke a rule's pattern.
+    - No wait or limit is timed by the PC's clock (a line that rightly uses it, for a time that's saved, shown or sent, says why on the line). No file in the repository may hold a stray control character, or an invisible one (a zero-width space, a direction override): a control character once slipped into the guard script and quietly broke a rule's pattern, and invisible ones hide code from a reviewer ("Trojan Source"). The one found in the code is now written as an escape.
     - A pre-push hook runs the quick checks before anything reaches CI.
     - Dead code stops the build: a private member nothing uses, or a private field nothing reads. What it found is gone, with an empty startup class and an offline cache nothing wrote.
   - Microsoft's async analyzers check every build. An unobserved task, `async void`, a blocking wait, or `ContinueWith` without a scheduler fails it.
@@ -154,6 +154,13 @@ Development toward the first public beta, 0.1.0.
 - **Dependencies:** Archipelago.MultiClient.Net 6.7.1 and Newtonsoft.Json 13.0.4 now come from NuGet, instead of copied DLLs.
 
 ### Security
+- **No text from outside Atlas can freeze its window.** A game's names, another player's chat, a hint's entrance, a log line quoting any of them: each was laid out whole, in time that grew with the square of its length.
+  - A megabyte-long item name froze Atlas for five minutes. 8,000 characters of another player's chat, or of `!players` in a big room, took five seconds in a short text client.
+  - A paragraph of rich text longer than 300 characters now wraps at spaces, not with Godot's "word smart" wrapping, which breaks words too wide for a line in time that grows with the square of the paragraph's length: 8,000 characters went from 4.9 seconds to 0.16. Shorter text wraps as before, so a server's address still breaks to fit a narrow column. A run of more than 64 characters without a space gets invisible breaks (zero-width spaces), so it still wraps.
+  - A game's item and location names, and a hint's entrance, are cut at 500 characters as they arrive: the start, "…" and a short hash, so names stay apart. Across the 83 official games the longest name is 111 characters.
+  - The text client shows a line up to 4,000 characters (it was 32,000) and lays out about that much new text per frame; the logs show a message up to 4,000 characters, and the log file keeps up to 64,000.
+  - Making text safe for rich text (`Bbcode.Safe`) takes linear time, whatever the text: for a million "[" before one "]", it used to search the rest of the text from each.
+  - The UI test sends a megabyte of names, a hint's entrance and chat lines of 100,000 characters, and checks that no frame holds more than 150 ms of work. Their arrival now takes 68 ms, and each view under 20 ms.
 - **Text from outside Atlas can't make it open a file, or reach another computer.**
   - Godot's rich text reads the path in an `[img]` or `[font]` tag and opens files beside it. A network path there would have made Windows connect to the computer it names, offering it your Windows sign-in.
   - Text from outside could carry such a tag into Atlas's logs or the Map Packs tab: a map pack's name or author, another player's chat line, a server's message, or a zip's file names.

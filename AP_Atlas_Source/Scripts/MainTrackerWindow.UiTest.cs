@@ -87,6 +87,8 @@ public partial class MainTrackerWindow
             EveryToolShowsItsViewAsync);
         await ScenarioAsync("Bursts: 40 items and 40 chat lines arriving together reach the slot once each, at most one update of the window in each frame they arrive over (not 80)",
             BurstIsOneUpdateAsync);
+        await ScenarioAsync("Long text: a game's names and a hint's entrance of a megabyte, and a chat line of 100,000 characters without a space, hold up no frame for 150 ms, shown or not (names are cut to 500 characters; a long run of text gets breaks)",
+            LongTextHoldsUpNothingAsync);
         await ScenarioAsync("Room text: one connection per multiworld receives the room's text and every slot's text client shows each line once, named from that slot's view; a command typed into a quiet slot gets its answer; new hints show in the slots they concern; when the text slot leaves, another takes over",
             RoomTextReachesEverySlotAsync);
         await ScenarioAsync("Moving a slot's panel: out of the window and docked elsewhere, the slot keeps its connection, views and updates, and shows what arrived meanwhile",
@@ -441,6 +443,71 @@ public partial class MainTrackerWindow
         }
     }
 
+    private async Task LongTextHoldsUpNothingAsync()
+    {
+        // Text from outside that took minutes to lay out: a game's item and location named with a megabyte each (an apworld's
+        // names reach Atlas as the server sends them), a hint whose entrance is a megabyte, and a chat line of 100,000
+        // characters without a space. They arrive while the text client isn't showing, laid out in a narrow column, which
+        // is where a long run of text was slowest; then every view, and the text client, show them.
+        string longItem = "Sword of " + new string('x', 1_000_000), longLocation = "Cave of " + new string('y', 1_000_000);
+        await using var server = new FakeArchipelagoServer();
+        // Its own checksum: a game version's names are kept by checksum, and the other scenarios' Test Game has other names.
+        server.Games["Test Game"] = new FakeGame("10a6a6e510a6a6e510a6a6e510a6a6e510a6a6e5",
+            new Dictionary<string, long> { [longItem] = 1000, ["Shield"] = 1001 }, new Dictionary<string, long> { [longLocation] = 2000, ["Chest"] = 2001 });
+        var profile = new MultiworldProfile { Name = "UI test (long text)", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Tester");
+        _profiles.Add(profile);
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        try
+        {
+            await OnConnectSlotPressedAsync("Tester", profile);
+            var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
+            await UiTestWaitAsync(0.5);
+            AP_Atlas.Core.HitchMonitor.ResetWorst();
+            // One chat line without a space, one of ordinary words: laid out with Godot's "word smart" wrapping, 8,000
+            // characters of either took about 5 seconds.
+            string longLine = new string('w', 100_000), longWords = string.Concat(Enumerable.Repeat("words ", 20_000));
+            await server.BroadcastAsync(FakeArchipelagoServer.ReceivedItems(0, new[] { 1000L }));
+            await server.BroadcastAsync(FakeArchipelagoServer.ItemSend(1, 1, 1000, 2000));
+            await server.AddHintsAsync(FakeArchipelagoServer.Hint(1, 1, 2000, 1000, entrance: "Gate of " + new string('z', 1_000_000)));
+            await server.BroadcastAsync(server.Chat(longLine), server.Chat(longWords));
+            await UiTestWaitForAsync(() => slot.Session.Items.AllItemsReceived.Count == 1 && slot.Model.CurrentHints?.Length == 1 &&
+                slot.ChatHistory.Any(e => e.APMessage?.ToString().Contains(longLine[..1000]) == true) &&
+                slot.ChatHistory.Any(e => e.APMessage?.ToString().Contains(longWords[..1000]) == true) ? slot : null, "the item, the hint and the chat lines");
+            await UiTestWaitAsync(0.5);
+            var steps = new List<(string What, double WorkMs, string Report)> { ("arriving", AP_Atlas.Core.HitchMonitor.WorstWorkMs, AP_Atlas.Core.HitchMonitor.WorstWorkReport) };
+
+            // The names Atlas uses are cut, and stay apart: the start of the name, "…" and a hash.
+            int max = AP_Atlas.Core.Connections.NameLimits.MaxName;
+            string? item = slot.Session.Items.GetItemName(1000, "Test Game"), location = slot.Session.Locations.GetLocationNameFromId(2000, "Test Game");
+            string? entrance = slot.Model.CurrentHints?[0].Entrance;
+            UiTestExpect(item?.Length == max && item.StartsWith("Sword of xxx", StringComparison.Ordinal) && location?.Length == max &&
+                location.StartsWith("Cave of yyy", StringComparison.Ordinal) && entrance?.Length == max && entrance.StartsWith("Gate of zzz", StringComparison.Ordinal),
+                $"names from outside weren't cut to {max} characters: the item's has {item?.Length}, the location's {location?.Length}, the entrance's {entrance?.Length}");
+
+            foreach (var tool in new[] { AP_Atlas.UI.Tool.ItemHistory, AP_Atlas.UI.Tool.Hints, AP_Atlas.UI.Tool.LogicTracker, AP_Atlas.UI.Tool.KeyItems, AP_Atlas.UI.Tool.MapTracker })
+            {
+                AP_Atlas.Core.HitchMonitor.ResetWorst();
+                host.ShowTool(tool);
+                await UiTestWaitAsync(0.5);
+                steps.Add((tool.Title, AP_Atlas.Core.HitchMonitor.WorstWorkMs, AP_Atlas.Core.HitchMonitor.WorstWorkReport));
+            }
+            AP_Atlas.Core.HitchMonitor.ResetWorst();
+            ShowTextClient(slot);
+            await UiTestWaitAsync(0.5);
+            steps.Add(("the text client", AP_Atlas.Core.HitchMonitor.WorstWorkMs, AP_Atlas.Core.HitchMonitor.WorstWorkReport));
+            GD.Print("UITEST INFO Long text: the worst frame's work " + string.Join(", ", steps.Select(s => $"{s.What} {s.WorkMs:0} ms")));
+            var slowest = steps.MaxBy(s => s.WorkMs);
+            UiTestExpect(slowest.WorkMs < 150, $"a frame's work took {slowest.WorkMs:0} ms ({slowest.What}), garbage collection left out (the guard is 150 ms): {slowest.Report}");
+        }
+        finally
+        {
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+            DeleteProfile(profile);
+        }
+    }
+
     private async Task BurstIsOneUpdateAsync()
     {
         await using var server = new FakeArchipelagoServer();
@@ -694,8 +761,8 @@ public partial class MainTrackerWindow
             // The System Log and the Debug Log, quoting it.
             LogToSystem("A line quoting " + hostile, "orange");
             LogToDebug("A debug line quoting " + hostile, "Tester");
-            await UiTestWaitForAsync(() => _consoleOutput.GetParsedText().Contains("A line quoting " + hostile) &&
-                _debugLogConsole.GetParsedText().Contains("A debug line quoting " + hostile) ? slot : null, "the logs to show the lines as written");
+            await UiTestWaitForAsync(() => _consoleOutput.GetParsedText().Replace(ZeroWidthSpace, "").Contains("A line quoting " + hostile) &&
+                _debugLogConsole.GetParsedText().Replace(ZeroWidthSpace, "").Contains("A debug line quoting " + hostile) ? slot : null, "the logs to show the lines as written");
 
             // A map pack's details: its manifest is the pack author's text.
             string pack = System.IO.Path.Combine(dir, "uitest_markup_pack.zip");
@@ -1423,13 +1490,18 @@ public partial class MainTrackerWindow
     /// <summary>Thrown by a scenario that can't run here (it reports SKIP instead of PASS or FAIL).</summary>
     private sealed class UiTestSkip(string reason) : Exception(reason);
 
-    /// <summary>Whether a panel's labels hold this text (BBCode included).</summary>
+    /// <summary>
+    /// Whether a panel's labels hold this text (BBCode included), leaving out the zero-width spaces Bbcode.Safe puts in a
+    /// long run of text, which a reader doesn't see.
+    /// </summary>
     private static bool PanelShows(Node panel, string text) =>
-        panel.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().Any(label => label.Text.Contains(text));
+        panel.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().Any(label => label.Text.Replace(ZeroWidthSpace, "").Contains(text));
 
-    /// <summary>Whether a panel's labels show this text, as read on screen (BBCode applied).</summary>
+    /// <summary>Whether a panel's labels show this text, as read on screen (BBCode applied; zero-width spaces left out).</summary>
     private static bool PanelShowsText(Node panel, string text) =>
-        panel.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().Any(label => label.GetParsedText().Contains(text));
+        panel.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().Any(label => label.GetParsedText().Replace(ZeroWidthSpace, "").Contains(text));
+
+    private static readonly string ZeroWidthSpace = ((char)0x200B).ToString();
 
     /// <summary>The one view showing in the content area, or null if none or several are.</summary>
     private Control? ShownContent()

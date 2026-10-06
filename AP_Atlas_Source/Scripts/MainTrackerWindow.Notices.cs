@@ -159,6 +159,6 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         // Plain text, shown as written: slot names and messages can hold text from outside Atlas.
         string time = AP_Atlas.Core.Logger.DisplayClock().ToString("HH:mm:ss");
         string prefix = string.IsNullOrEmpty(slotName) ? "" : AP_Atlas.Core.Bbcode.Colored($"[{slotName}]", "orange") + " ";
-        _debugLog?.Append($"{prefix}{AP_Atlas.Core.Bbcode.Colored($"[{time}]", "gray")} {AP_Atlas.Core.Bbcode.Escape(msg)}\n");
+        _debugLog?.Append($"{prefix}{AP_Atlas.Core.Bbcode.Colored($"[{time}]", "gray")} {AP_Atlas.Core.Bbcode.Escape(AP_Atlas.Core.Logger.Shown(msg))}\n");
     }
 }

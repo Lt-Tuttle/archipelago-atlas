@@ -469,6 +469,9 @@ namespace AP_Atlas.Core
 
         private void OnHints(Hint[] hints)
         {
+            // An entrance is a name from the apworld, sent as text: one too long to show is cut, like the game's other names.
+            foreach (var hint in hints ?? Array.Empty<Hint>())
+                if (hint != null) hint.Entrance = AP_Atlas.Core.Connections.NameLimits.Cap(hint.Entrance);
             lock (_queueLock) _incomingHints = hints ?? Array.Empty<Hint>();
             Schedule(SlotChange.Hints);
         }

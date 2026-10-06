@@ -81,6 +81,16 @@ namespace AP_Atlas.Core
         private static string Bounded(string message) =>
             message == null || message.Length <= MaxMessageLength ? message : message[..MaxMessageLength] + $"… ({message.Length - MaxMessageLength:N0} more characters)";
 
+        /// <summary>
+        /// The most of one message the window's logs show, in characters (the log file keeps up to <see cref="MaxMessageLength"/>):
+        /// laying a line out takes the window about 20 ms per thousand characters.
+        /// </summary>
+        public const int MaxShownLength = 4_000;
+
+        /// <summary>A message as the window's logs show it: cut at <see cref="MaxShownLength"/>, saying how much the log file has besides.</summary>
+        public static string Shown(string message) =>
+            message == null || message.Length <= MaxShownLength ? message : message[..MaxShownLength] + $"… ({message.Length - MaxShownLength:N0} more characters in the log file)";
+
         private static string Line(string level, string message) => $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [{level}] {message}";
 
         private static void AppendToFile(string line)
@@ -140,21 +150,21 @@ namespace AP_Atlas.Core
         {
             message = Bounded(message);
             WriteLog("INFO", message);
-            OnLogMessage?.Invoke($"{Stamp()} {Bbcode.Colored(message, color)}\n", "INFO");
+            OnLogMessage?.Invoke($"{Stamp()} {Bbcode.Colored(Shown(message), color)}\n", "INFO");
         }
 
         public static void LogWarning(string message)
         {
             message = Bounded(message);
             WriteLog("WARN", message);
-            OnLogMessage?.Invoke($"{Stamp()} {Bbcode.Colored("WARN: " + message, "yellow")}\n", "WARN");
+            OnLogMessage?.Invoke($"{Stamp()} {Bbcode.Colored("WARN: " + Shown(message), "yellow")}\n", "WARN");
         }
 
         public static void LogError(string message)
         {
             message = Bounded(message);
             WriteLog("ERROR", message);
-            OnLogMessage?.Invoke($"{Stamp()} {Bbcode.Colored("ERROR: " + message, "red")}\n", "ERROR");
+            OnLogMessage?.Invoke($"{Stamp()} {Bbcode.Colored("ERROR: " + Shown(message), "red")}\n", "ERROR");
         }
 
         // When a line was logged, as the window shows it.

@@ -117,16 +117,21 @@ public partial class SlotTrackerControl : MarginContainer
         _chatRefresh?.Request();
     }
 
-    /// <summary>Draws the lines not shown yet, for about 6 ms; the rest continue next frame.</summary>
+    // Characters given to the text client's lines in this frame's slice: Godot lays them out after the slice, at the end of
+    // the frame, so the slice counts them as well as its own time.
+    private int _sliceChars;
+
+    /// <summary>Draws the lines not shown yet, for about 6 ms or <see cref="MaxChatLine"/> characters; the rest continue next frame.</summary>
     private void ShowNewChatLinesNow()
     {
         using var __perf = AP_Atlas.Core.PerfMonitor.Measure($"[{_slotName}] Text client lines");
         long until = System.Diagnostics.Stopwatch.GetTimestamp() + ChatSliceTicks;
         bool drew = false;
+        _sliceChars = 0;
         foreach (var entry in Model.Chat)
         {
             if (entry.Sequence <= _shownSequence) continue;
-            if (drew && System.Diagnostics.Stopwatch.GetTimestamp() > until)
+            if (drew && (System.Diagnostics.Stopwatch.GetTimestamp() > until || _sliceChars >= MaxChatLine))
             {
                 _chatRefresh.ContinueNextFrame();
                 break;
@@ -151,6 +156,7 @@ public partial class SlotTrackerControl : MarginContainer
     /// <summary>Renders one of Atlas's own lines (BBCode).</summary>
     private void ShowSystemLine(string bbcodeText)
     {
+        _sliceChars += bbcodeText.Length;
         var panel = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         var style = new StyleBoxFlat
         {
@@ -214,11 +220,12 @@ public partial class SlotTrackerControl : MarginContainer
     }
 
     /// <summary>
-    /// The most of one line the text client shows, in characters. A longer line (another player's chat message of a
-    /// megabyte, say) is cut, with a note of how much, so laying it out can't hold up the window. The longest lines a
-    /// server sends (!players in a 1,000-player room) come to about 19,000.
+    /// The most of one line the text client shows, in characters, and about the most new text it lays out in one frame
+    /// (at least one line; the rest waits for the next frame). A longer line (another player's chat message of a megabyte,
+    /// say) is cut, with a note of how much: laying a line out takes the window about 20 ms per thousand characters. The
+    /// longest lines a server sends, !players in a room of a few hundred players, are cut too.
     /// </summary>
-    internal const int MaxChatLine = 32_000;
+    internal const int MaxChatLine = 4_000;
 
     private void AppendMessageToChat(LogMessage msg)
     {
@@ -334,6 +341,7 @@ public partial class SlotTrackerControl : MarginContainer
     /// <summary>Adds a line (BBCode with links) to the text client.</summary>
     private void AppendChatLine(string text)
     {
+        _sliceChars += text.Length;
         var panel = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         var style = new StyleBoxFlat
         {

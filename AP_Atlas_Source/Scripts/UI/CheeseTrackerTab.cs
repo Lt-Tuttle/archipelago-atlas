@@ -1214,7 +1214,7 @@ namespace AP_Atlas.UI
         /// <summary>Rich text in the same font as the labels around it.</summary>
         private SafeRichText Rich()
         {
-            var rtl = new SafeRichText { FitContent = true, ScrollActive = false, AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            var rtl = new SafeRichText { FitContent = true, ScrollActive = false, SizeFlagsHorizontal = SizeFlags.ExpandFill };
             var font = GetThemeFont("font", "Label");
             if (font != null) rtl.AddThemeFontOverride("normal_font", font);
             return rtl;

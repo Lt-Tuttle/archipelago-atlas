@@ -64,9 +64,11 @@ namespace AP_Atlas.Core
             }
 
             // SafeRichText, set and appended to: nothing is opened, the tags show as text, and Atlas's own tags still work.
+            // (A long run of text, like the probe's path, gets zero-width spaces a reader doesn't see: left out here.)
+            string Unbroken(string text) => text.Replace(((char)0x200B).ToString(), "");
             var safe = new AP_Atlas.UI.SafeRichText { Markup = "[color=lime]own[/color] " + hostile };
             safe.Append("\n" + hostile);
-            string shown = safe.GetParsedText();
+            string shown = Unbroken(safe.GetParsedText());
             safe.Free();
             Expect(!Opened(), "SafeRichText let Godot open a file named in the text");
             Expect(shown.StartsWith("own [img]" + png + "[/img] [font=") && shown.Contains("\n[img]"), $"the text doesn't show as written: '{shown}'");
@@ -77,7 +79,7 @@ namespace AP_Atlas.Core
             Logger.OnLogMessage += OnLog;
             try { Logger.LogInfo("A pack named " + hostile, "orange"); }
             finally { Logger.OnLogMessage -= OnLog; }
-            Expect(line != null && Bbcode.Safe(line) == line && line.Contains("A pack named [lb]img]"), $"a log line keeps the text's tags: {line}");
+            Expect(line != null && Unbroken(Bbcode.Safe(line)) == line && line.Contains("A pack named [lb]img]"), $"a log line keeps the text's tags: {line}");
 
             // The probe works: rich text that reads BBCode without SafeRichText opens the file.
             var raw = new Godot.RichTextLabel { BbcodeEnabled = true };

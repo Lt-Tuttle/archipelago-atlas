@@ -65,6 +65,57 @@ public class BbcodeTests
     [InlineData("a [ b", "a [lb] b")]
     public void Every_other_tag_is_made_text(string bbcode, string safe) => Assert.Equal(safe, Bbcode.Safe(bbcode));
 
+    private static readonly string Break = ((char)0x200B).ToString();
+
+    [Fact]
+    public void A_long_run_without_a_space_gets_a_break_every_MaxRun_characters()
+    {
+        string run = new('x', 200);
+        string safe = Bbcode.Safe(run);
+        // The same text, with a zero-width space before the 65th, 129th and 193rd character.
+        Assert.Equal(run, safe.Replace(Break, ""));
+        Assert.Equal(3, safe.Split(Break).Length - 1);
+        Assert.All(safe.Split(Break), part => Assert.True(part.Length <= Bbcode.MaxRun));
+        Assert.Equal(safe, Bbcode.Safe(safe));
+        // Spaces end a run, so words never get breaks; markup doesn't count toward one.
+        string words = string.Join(" ", Enumerable.Repeat("word", 100));
+        Assert.Equal(words, Bbcode.Safe(words));
+        string tagged = "[color=red]" + new string('y', Bbcode.MaxRun) + "[/color][b]z[/b]";
+        Assert.Equal("[color=red]" + new string('y', Bbcode.MaxRun) + "[/color][b]" + Break + "z[/b]", Bbcode.Safe(tagged));
+    }
+
+    [Fact]
+    public void Breaks_never_split_a_tag_or_a_character()
+    {
+        // Escaped brackets show one each, so they're a run too: breaks go between whole [lb] tags.
+        string brackets = Bbcode.Safe(Bbcode.Escape(new string('[', 1000)));
+        Assert.Equal(Bbcode.Escape(new string('[', 1000)), brackets.Replace(Break, ""));
+        Assert.Equal(1000 / Bbcode.MaxRun, brackets.Split(Break).Length - 1);
+        Assert.All(brackets.Split(Break).Skip(1), part => Assert.StartsWith("[lb]", part));
+        // A character outside the basic plane is two halves; one with an accent added is two characters too.
+        string emoji = string.Concat(Enumerable.Repeat(char.ConvertFromUtf32(0x1F600), 200));
+        string accented = string.Concat(Enumerable.Repeat("e" + (char)0x0301, 200));
+        foreach (string text in new[] { emoji, accented })
+        {
+            string safe = Bbcode.Safe(text);
+            Assert.Equal(text, safe.Replace(Break, ""));
+            Assert.Equal(200 / Bbcode.MaxRun, safe.Split(Break).Length - 1);
+            Assert.All(safe.Split(Break).Skip(1), part => Assert.False(char.IsLowSurrogate(part[0]) || part[0] == (char)0x0301));
+        }
+    }
+
+    [Fact]
+    public void Crafted_markup_is_made_safe_in_linear_time()
+    {
+        // A million "[" with no "]" after them, then the same before one "]": each "[" once searched the rest of the text.
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        string open = new('[', 1_000_000);
+        Assert.Equal(Bbcode.Escape(open), Bbcode.Safe(open).Replace(Break, ""));
+        Assert.Equal(Bbcode.Escape(open) + "]", Bbcode.Safe(open + "]").Replace(Break, ""));
+        Assert.Equal(1_000_000, Bbcode.Safe(new string('x', 1_000_000)).Replace(Break, "").Length);
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(2), $"took {stopwatch.Elapsed.TotalSeconds:0.0} s");
+    }
+
     [Fact]
     public void Anything_safe_stays_safe()
     {

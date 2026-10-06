@@ -155,7 +155,7 @@ namespace AP_Atlas.Core.PopTracker
         /// <summary>UTF-8, or Windows-1252-ish text (some packs save scripts that way).</summary>
         private static string DecodeText(byte[] bytes)
         {
-            try { return new UTF8Encoding(false, true).GetString(bytes).TrimStart('﻿'); }
+            try { return new UTF8Encoding(false, true).GetString(bytes).TrimStart('\uFEFF'); }
             catch (DecoderFallbackException) { return Encoding.Latin1.GetString(bytes); }
         }
 

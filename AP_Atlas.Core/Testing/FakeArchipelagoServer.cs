@@ -668,14 +668,14 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
     /// A hint, as the server keeps it in a slot's hint list (`_read_hints_{team}_{slot}`). Its status is Archipelago's
     /// HintStatus: 0 unspecified, 10 no priority, 20 avoid, 30 priority (a found hint's is 40).
     /// </summary>
-    public static JObject Hint(int finder, int receiver, long location, long item, bool found = false, int flags = 1, int status = 0) => new()
+    public static JObject Hint(int finder, int receiver, long location, long item, bool found = false, int flags = 1, int status = 0, string entrance = "") => new()
     {
         ["receiving_player"] = receiver,
         ["finding_player"] = finder,
         ["location"] = location,
         ["item"] = item,
         ["found"] = found,
-        ["entrance"] = "",
+        ["entrance"] = entrance,
         ["item_flags"] = flags,
         ["status"] = found ? 40 : status,
         ["class"] = "Hint"
