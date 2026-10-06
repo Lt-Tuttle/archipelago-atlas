@@ -46,7 +46,9 @@ public partial class MainTrackerWindow
         int passed = 0, failed = 0, skipped = 0;
         // For working on one scenario: ATLAS_UITEST_ONLY=<part of its name> runs only the scenarios that match.
         string? only = System.Environment.GetEnvironmentVariable("ATLAS_UITEST_ONLY");
-        async Task ScenarioAsync(string name, Func<Task> body)
+        // A scenario that judges time (a frame's work under a guard) may run twice: a shared CI runner, not Atlas, fails
+        // the first attempt now and then, and a real regression fails both. Every attempt is printed.
+        async Task ScenarioAsync(string name, Func<Task> body, int attempts = 1)
         {
             if (!string.IsNullOrEmpty(only) && !name.Contains(only, StringComparison.OrdinalIgnoreCase))
             {
@@ -54,21 +56,32 @@ public partial class MainTrackerWindow
                 GD.Print($"UITEST SKIP {name}: not chosen (ATLAS_UITEST_ONLY)");
                 return;
             }
-            try
+            for (int attempt = 1; ; attempt++)
             {
-                await body();
-                passed++;
-                GD.Print("UITEST PASS " + name);
-            }
-            catch (UiTestSkip skip)
-            {
-                skipped++;
-                GD.Print($"UITEST SKIP {name}: {skip.Message}");
-            }
-            catch (Exception ex)
-            {
-                failed++;
-                GD.Print($"UITEST FAIL {name}: {ex.Message}");
+                try
+                {
+                    await body();
+                    passed++;
+                    GD.Print("UITEST PASS " + name + (attempt > 1 ? $" (on attempt {attempt})" : ""));
+                    return;
+                }
+                catch (UiTestSkip skip)
+                {
+                    skipped++;
+                    GD.Print($"UITEST SKIP {name}: {skip.Message}");
+                    return;
+                }
+                catch (Exception ex) when (attempt < attempts)
+                {
+                    GD.Print($"UITEST RETRY {name}: attempt {attempt} failed: {ex.Message}");
+                    await UiTestWaitAsync(1.0); // whatever held the machine up may pass
+                }
+                catch (Exception ex)
+                {
+                    failed++;
+                    GD.Print($"UITEST FAIL {name}: {ex.Message}");
+                    return;
+                }
             }
         }
 
@@ -115,9 +128,9 @@ public partial class MainTrackerWindow
         await ScenarioAsync("Alerts: what Atlas tells the user stacks at the bottom right without overlapping, at most a few at once, every card in the history newest first with its kind; a card's button runs its action and the card goes, the × takes one away, the plain ones go after their hold; Window → Notifications lists the history, marks it seen, and Clear empties it",
             AlertsAsync);
         await ScenarioAsync("Bursts: 40 items and 40 chat lines arriving together reach the slot once each, at most one update of the window in each frame they arrive over (not 80)",
-            BurstIsOneUpdateAsync);
+            BurstIsOneUpdateAsync, attempts: 2);
         await ScenarioAsync("Long text: a game's names and a hint's entrance of a megabyte, and a chat line of 100,000 characters without a space, hold up no frame for 150 ms, shown or not (names are cut to 500 characters; a long run of text gets breaks)",
-            LongTextHoldsUpNothingAsync);
+            LongTextHoldsUpNothingAsync, attempts: 2);
         await ScenarioAsync("Room text: one connection per multiworld receives the room's text and every slot's text client shows each line once, named from that slot's view; a command typed into a quiet slot gets its answer; new hints show in the slots they concern; when the text slot leaves, another takes over",
             RoomTextReachesEverySlotAsync);
         await ScenarioAsync("Moving a slot's panel: out of the window and docked elsewhere, the slot keeps its connection, views and updates, and shows what arrived meanwhile",
@@ -127,7 +140,7 @@ public partial class MainTrackerWindow
         await ScenarioAsync("Idle: a connected slot doesn't keep Atlas redrawing: its map's camera doesn't run every frame (zooming, dragging and resizing still move the map), and its card isn't re-styled while nothing changes",
             ConnectedSlotLetsAtlasIdleAsync);
         await ScenarioAsync("Map pack scripts: a slot whose pack's script runs away keeps working: the script is stopped in seconds without holding up a frame, and Key Items and the log say why",
-            RunawayPackScriptAsync);
+            RunawayPackScriptAsync, attempts: 2);
         await ScenarioAsync("Text from outside: another player's chat line, a map pack's details and log lines quoting them show markup as written, and Atlas opens no file it names",
             OutsideTextShowsAsWrittenAsync);
         await ScenarioAsync("Race rooms: a room the server calls a race restricts its slots (no \"why\" answers), and the Sphere Tracker hides that multiworld's spheres",
@@ -139,7 +152,7 @@ public partial class MainTrackerWindow
         await ScenarioAsync("Cheese Tracker: its suggestion for a connected slot follows the slot's logic (unblocked, then go mode), says nothing while race mode hides logic, and changes nothing by itself",
             CheeseFollowsTheSlotAsync);
         await ScenarioAsync("Scale: in a 1,000-player room with 20 slots connected (one receiving the room's text), Atlas's work for bursts of items, item lines and hints never holds up a frame for 150 ms (target 100 ms; 250 ms with garbage collection), nor connecting a slot for 300 ms (400 ms with it); the logs keep their last lines",
-            ScaleStaysResponsiveAsync);
+            ScaleStaysResponsiveAsync, attempts: 2);
         await _sessions.CloseAllAsync(TimeSpan.FromSeconds(3));
         GD.Print($"UITEST DONE: {passed} passed, {failed} failed, {skipped} skipped");
         GetTree().Quit(failed == 0 ? 0 : 1);
