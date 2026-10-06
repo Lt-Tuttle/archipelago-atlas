@@ -30,7 +30,10 @@ MainTrackerWindow (the shell)
   - `YamlExclusions`.
   - The Cheese Tracker client, models, table rules, advisor and key store (`CheeseTracker/`).
   - The Sphere Tracker parser, models and tables (`Spheres/`).
-  - `EngineDownloader` (`Engine/`).
+  - `Engine/`:
+    - `EngineDownloader`.
+    - `EngineProcess`: one logic engine process. One request at a time; only an answer carrying the request's id counts (a late answer, or a line the engine printed, never does); a reader of its own reads and parses its output off the main thread; a bridge that couldn't load ("boot_failed") or an engine that ended fails the waiting request at once; stopping it kills its whole process tree.
+    - `ProcessJob`: engine processes close with Atlas, and setup can tell which run from an engine folder.
   - `Connections/`:
     - `SessionManager`: every connection to an Archipelago server (connecting one at a time, the login time limit, drops, careful reconnects, closing), and the room's text: one connection per multiworld team receives it and passes each line to every slot of the team (`SessionManager.Text.cs`).
     - `AtlasSessions`: the only place sessions are made; each keeps the games' names in `DataPackageStore` (the data folder, below), and gives its connection's thread back when it ends (`Finished`).
@@ -47,7 +50,7 @@ MainTrackerWindow (the shell)
 | `MainTrackerWindow*.cs` | **The shell**, in partial files:<br>• `MainTrackerWindow.cs`: the fields, startup (`_Ready`), shutdown and the Properties host.<br>• `.Layout`: the panels, theme and fonts.<br>• `.Notices`: toasts, failure notices and the logs.<br>• `.Connections`: connecting, careful reconnects and open sessions.<br>• `.Profiles`: the multiworld editor.<br>• `.Sidebar`: the slot cards.<br>• `.Views`: the tabs, explorer, content stage and terminal.<br>• `.Windows`: the Pack Doctor, Cheese, Sphere, Privacy, engine and race-mode windows. |
 | `Core/SlotTrackerControl*.cs` | **Everything about one connected slot**, in partial files:<br>• `SlotTrackerControl.cs`: startup, its session events and the queries Properties uses.<br>• `.Race`: race mode.<br>• `.Apworld`: matching the seed's apworld version.<br>• `.MapPack`: the pack, game names, its index and the pack's scripts.<br>• `.Logic`: the logic engine.<br>• `.LogicView`, `.History`, `.Chat`: its views. |
 | `Core/` | **Infrastructure:**<br>• `DataManager` (settings and profiles), `CrashGuard`, `GodotLog` (Godot's own errors and warnings, into Atlas's log).<br>• `SlotModel`: one connected slot apart from its views: the session and its events, the text client's lines, hints and goal, its logic (`SlotLogic`), race mode and exclusions, logic as the slot shows it (race mode and exclusions applied), and the questions Atlas asks the server about it. It tells its views at most once per frame what changed. Services read it; views read the slot's panel, which forwards to it.<br>• `SlotLogic`: the slot's logic engine (started, restarted after a failure, paused while the engine is updated) and what's in logic, worked out item by item. Each engine run is numbered, so an answer or a failure from an engine since stopped is ignored.<br>• `Annotations` (notes, flags, special items, exclusions), `RaceRules`, `ThemeColors`, `Inspect`.<br>• `ExternalLinks`: the only way to open links and folders.<br>• `Permissions`: what the user allowed. |
-| `Core/Engine/` | **The Atlas Engine:**<br>• `AtlasEngine`: setup of the portable engine (Python, Archipelago, Universal Tracker, packages), health checks, rollback, and the user's own install with their consent.<br>• `EngineInstall`, `ProcessJob` (engine processes close with Atlas).<br>• `ApworldSources`: apworld versions, matched to each seed.<br>• `SeedVerifier`, `GameSweep`.<br>• `Python/`: the bridge (`atlas_bridge.py`) and the portable runner. |
+| `Core/Engine/` | **The Atlas Engine:**<br>• `AtlasEngine`: setup of the portable engine (Python, Archipelago, Universal Tracker, packages), health checks, rollback, and the user's own install with their consent.<br>• `EngineInstall`: where an engine lives and how to start its components.<br>• `ApworldSources`: apworld versions, matched to each seed.<br>• `SeedVerifier`, `GameSweep`.<br>• `Python/`: the bridge (`atlas_bridge.py`) and the portable runner. |
 | `Core/PopTracker/` | **Map packs:**<br>• `PopTrackerPackLoader` reads pack zips: their structure and an index of their images.<br>• `PackImages`: a pack's images, decoded only while a slot or the Pack Doctor window uses the pack (the pack used last keeps them; others are freed at once). The Pack Doctor learns which images decode, and their sizes, without keeping them.<br>• `PackScriptHost` runs pack Lua in a sandbox.<br>• `PackIndex`, `LuaMappingReader`, `GameNames`.<br>• The Pack Doctor (`PackDoctor`, `PackDoctorService`, `PackFixes`: local fixes with undo).<br>• Key Items (`ProgressionTrackerControl`). |
 | `Core/CheeseTracker/` | **Cheese Tracker:** the service: rooms and linking, opt-in automation (the client and rules are in `AP_Atlas.Core`). |
 | `Core/Spheres/` | **Sphere Tracker:** the service that reads the host's spheretracker.de room (the parser and tables are in `AP_Atlas.Core`). |
@@ -91,7 +94,8 @@ Atlas reads or writes outside this folder only with the user's permission. Nothi
   - Background work hands results back with `Ui.Defer`.
   - A save of settings or profiles that arrives from another thread moves to the main thread and is logged as a mistake.
   - The Pack Doctor reads a snapshot (`PackDoctor.Prepare`), then analyses it on a worker thread.
-  - The logic engine's pipes change only under its request lock.
+  - A logic engine's output is read by its own reader (`EngineProcess`), off the main thread.
+  - A slot's pack scripts run on a background queue (`PackScriptRunner`), one piece of work at a time; the queue keeps the scripts it started, so items fed while they start reach them.
 - **No failure goes unseen:** work nobody awaits (button handlers, background checks, closing connections) starts with `Async.Fire(task, "what it's doing")`. A failure is logged with that description and, unless the work is routine, shown to the user in plain words. There's no `async void` and no discarded task (`_ = …`): the guard rails reject both.
 
 ## How things talk to each other
@@ -117,8 +121,12 @@ Atlas reads or writes outside this folder only with the user's permission. Nothi
   - Size and time limits; no redirects (downloads follow a few https redirects).
   - GitHub calls go through `GitHubApi`, which honours its rate-limit headers and uses ETags.
   - **Atlas never requests an archipelago.gg room page**, because that wakes the room.
-- **The logic engine:** a Python process per slot, speaking JSON lines over stdin/stdout. Engines run in a kill-on-close job object, so they never outlive Atlas.
-- **Map pack scripts:** Lua in MoonSharp, sandboxed, on a per-slot script queue.
+- **The logic engine:** a Python process per slot, speaking JSON lines over stdin and stdout (`EngineProcess`). Engines run in a kill-on-close job object, so they never outlive Atlas.
+  - Each request carries an id, and each answer echoes it.
+  - Standard output is Atlas's channel: answers only. The runner (`atlas_run.py`) and the bridge send everything else that prints (worlds as they load, the tracker) to standard error, which Atlas logs; components write answers with `send()`.
+  - A bridge that can't load says so with `{"event": "boot_failed"}`.
+  - The bridge's request loop dispatches to `handle_init`, `handle_update` and `handle_explain`, with a slot's state in a `Slot`. What it can't do but carries on without, it notes on standard error.
+- **Map pack scripts:** Lua in MoonSharp, sandboxed, on a per-slot script queue (`PackScriptRunner`).
 
 ## Safety rules the code enforces
 

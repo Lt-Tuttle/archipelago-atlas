@@ -328,6 +328,38 @@ namespace AP_Atlas.Core
         }
 
         /// <summary>
+        /// A slot's pack scripts start on a background queue, and the main thread hears they're running only later. Items
+        /// that arrive meanwhile are queued behind the start: they must reach the scripts (they used to be dropped, so Key
+        /// Items showed less than the slot had). Here five items arrive right after the start, and the main thread doesn't
+        /// hear the scripts started until the test lets it.
+        /// </summary>
+        private static async Task PackScriptsGetItemsThatArriveWhileTheyStart()
+        {
+            string zip = Scratch("selftest_scripts.zip");
+            AP_Atlas.Core.Testing.FakeMapPack.Write(zip, "Self-test scripted pack", "Self Test Game S", initLua: """
+                Archipelago:AddItemHandler("count swords", function(index, item_id, item_name, player_number)
+                    local sword = Tracker:FindObjectForCode("sword")
+                    sword.AcquiredCount = sword.AcquiredCount + 1
+                end)
+                """);
+            var pack = PopTracker.PopTrackerPackLoader.InspectZipPack(zip) ?? throw new InvalidOperationException("the test pack wasn't read");
+            var mainThread = new System.Collections.Concurrent.ConcurrentQueue<Action>();
+            string? warned = null;
+            var runner = new PopTracker.PackScriptRunner(mainThread.Enqueue, message => warned = message);
+            PopTracker.PackScriptHost? started = null;
+            runner.Start(pack, 1, 0, new Newtonsoft.Json.Linq.JObject(), Array.Empty<(long, string, int)>(), Array.Empty<(long, string)>(), (host, _) => started = host);
+            runner.FeedItems(Enumerable.Range(0, 5).Select(i => (i, 1000L, "Sword", 1)).ToList());
+            for (int i = 0; i < 250 && !runner.Idle; i++) await Task.Delay(20);
+            Expect(runner.Idle, "the pack's scripts never finished their work");
+            Expect(started == null, "the main thread heard the scripts started before the test let it");
+            while (mainThread.TryDequeue(out var work)) work();
+            Expect(warned == null, "a piece of script work failed: " + warned);
+            Expect(started != null && started.Errors.Count == 0, "the scripts didn't start cleanly: " + string.Join("; ", started?.Errors ?? new List<string>()));
+            int count = started?.StateOf("sword")?.Count ?? -1;
+            Expect(count == 5, $"the scripts saw {count} of the 5 items that arrived while they started");
+        }
+
+        /// <summary>
         /// The Pack Doctor analyses a snapshot taken on the main thread: a fix edited while an analysis runs doesn't change
         /// it under the analysis, and the next snapshot sees the edit. The pack's own mapping is linked as usual.
         /// </summary>

@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using AP_Atlas.Core.Testing;
+using Newtonsoft.Json.Linq;
 
 namespace AP_Atlas.Core.Tests;
 
@@ -51,6 +53,53 @@ internal static class TestEnvironment
         }
         throw new FileNotFoundException("Couldn't find " + System.IO.Path.Combine(parts) + " above the test folder.");
     }
+}
+
+/// <summary>The fake logic engine as the tests use it: a small world, its requests, and how Atlas starts an engine.</summary>
+internal static class FakeEngines
+{
+    /// <summary>Three locations: one open, one behind the Sword (or a glitch), one (excluded) behind both. The goal needs both.</summary>
+    public static FakeLogicEngine SmallWorld(TempFolder dir)
+    {
+        string engineDir = System.IO.Path.Combine(dir.Path, "engine");
+        var engine = new FakeLogicEngine(System.IO.Path.Combine(engineDir, "archipelago"));
+        File.Copy(TestEnvironment.RepoFile("AP_Atlas_Source", "Scripts", "Core", "Engine", "Python", "atlas_run.py"), System.IO.Path.Combine(engineDir, "atlas_run.py"));
+        engine.Pool.AddRange(new[] { new FakeItem(1000, "Sword", 1), new FakeItem(1001, "Shield", 1), new FakeItem(1002, "Rupee", 0) });
+        engine.Locations.AddRange(new[] { new FakeLocation(2000, "Cave Chest"), new FakeLocation(2001, "Locked Door", 1000), new FakeLocation(2002, "Tower Top", 1000, 1001) });
+        engine.Goal = new long[] { 1000, 1001 };
+        engine.Excluded.Add(2002);
+        engine.Glitched.Add(2001);
+        engine.DataChecksum = "feedface";
+        engine.Apply();
+        return engine;
+    }
+
+    /// <summary>How Atlas starts the engine in portable mode: python -u -X utf8 atlas_run.py &lt;root&gt; UltimateBridge.</summary>
+    public static ProcessStartInfo StartInfo(string python, FakeLogicEngine engine)
+    {
+        string engineDir = System.IO.Path.GetDirectoryName(engine.Root)!;
+        var info = new ProcessStartInfo(python)
+        {
+            WorkingDirectory = engine.Root,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        foreach (string arg in new[] { "-u", "-X", "utf8", System.IO.Path.Combine(engineDir, "atlas_run.py"), engine.Root, "UltimateBridge" }) info.ArgumentList.Add(arg);
+        info.Environment["TEMP"] = System.IO.Path.Combine(engineDir, "temp");
+        info.Environment["TMP"] = System.IO.Path.Combine(engineDir, "temp");
+        return info;
+    }
+
+    public static JObject Init(params long[] locations) =>
+        new() { ["action"] = "init", ["game"] = "Test Game", ["player_name"] = "Tester", ["slot"] = 1, ["slot_data"] = new JObject(), ["all_locations"] = new JArray(locations) };
+
+    public static JObject Update(long[] items, params long[] missing) =>
+        new() { ["action"] = "update", ["items"] = new JArray(items), ["missing_locations"] = new JArray(missing) };
+
+    public static long[] Ids(JToken? list) => list?.Select(id => (long)id).ToArray() ?? Array.Empty<long>();
 }
 
 /// <summary>What the tests save with SafeFile.</summary>

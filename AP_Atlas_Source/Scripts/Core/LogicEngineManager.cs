@@ -65,7 +65,7 @@ public class LogicEngineManager
     /// <summary>Points a stopped manager at another engine (the user switched engines or finished setup).</summary>
     public void SetInstall(AP_Atlas.Core.EngineSetup.EngineInstall install)
     {
-        if (_engineProcess == null || _engineProcess.HasExited) _install = install;
+        if (_engine is not { Running: true }) _install = install;
     }
 
     /// <summary>Why the last start failed (code: world_missing, yaml_needed, generation_failed, ut_disabled, no_engine, no_response, crashed), or null.</summary>
@@ -86,22 +86,13 @@ public class LogicEngineManager
     /// <summary>The installed apworld's declared version, if it declares one.</summary>
     public string LastWorldVersion { get; private set; }
 
-    private System.Diagnostics.Process _engineProcess;
-    private StreamWriter _engineWriter;
-    private StreamReader _engineReader;
-
-    // A ReadLineAsync that outlived a timed-out request. StreamReader allows only one outstanding read,
-    // so the next request must keep awaiting this task rather than starting another.
-    private Task<string> _pendingRead;
-
-    // Every request carries an id that the bridge echoes back, so a late reply to a timed-out
-    // request is discarded instead of being mistaken for the answer to the next one.
-    private int _nextRequestId = 0;
+    // The running engine: requests one at a time, each answer matched to its request by id (EngineProcess).
+    private AP_Atlas.Core.EngineSetup.EngineProcess _engine;
 
     public async Task<bool> StartEngineAsync(string game, string playerName, int slot, Dictionary<string, object> slotData, IEnumerable<long> allLocations = null, string yamlPath = null,
         string apworldOverride = null, string expectedChecksum = null)
     {
-        if (_engineProcess != null && !_engineProcess.HasExited) return true;
+        if (_engine is { Running: true }) return true;
         LastStartError = null;
         LastGoalReachable = null;
         LastApworldOverride = null;
@@ -117,39 +108,13 @@ public class LogicEngineManager
         try
         {
             _logger($"Starting the logic bridge ({_install.Describe()})...");
-            _stopping = false;
-            _engineProcess = new System.Diagnostics.Process { StartInfo = _install.StartInfo("UltimateBridge"), EnableRaisingEvents = true };
-            var started = _engineProcess;
-            _engineProcess.Exited += (_, _) =>
+            var engine = AP_Atlas.Core.EngineSetup.EngineProcess.Start(_install.StartInfo("UltimateBridge"), _install.Root, _logger);
+            _engine = engine;
+            // Only this engine's own ending counts: one since replaced (or stopped by Atlas) says nothing.
+            engine.Exited += code =>
             {
-                if (_stopping || !ReferenceEquals(started, _engineProcess)) return;
-                int code = -1;
-                try { code = started.ExitCode; } catch { }
-                _logger($"The logic engine process exited unexpectedly (exit code {code}).");
-                EngineExited?.Invoke(code);
+                if (ReferenceEquals(engine, _engine)) EngineExited?.Invoke(code);
             };
-            // stderr must be drained continuously: if its pipe buffer fills, the bridge blocks on its next log write.
-            _engineProcess.ErrorDataReceived += (_, e) =>
-            {
-                if (!string.IsNullOrWhiteSpace(e.Data)) _logger("PYTHON: " + e.Data);
-            };
-            _engineProcess.Start();
-            AP_Atlas.Core.EngineSetup.ProcessJob.Track(_engineProcess, _install.Root);
-            _engineProcess.BeginErrorReadLine();
-
-            // Under the request lock: a request still running against a stopped engine finishes first, so it can't read
-            // (and throw away) this engine's replies.
-            await _requestLock.WaitAsync();
-            try
-            {
-                _engineWriter = _engineProcess.StandardInput;
-                _engineReader = _engineProcess.StandardOutput;
-                _pendingRead = null;
-            }
-            finally
-            {
-                _requestLock.Release();
-            }
 
             var initReq = new Dictionary<string, object>
             {
@@ -166,14 +131,15 @@ public class LogicEngineManager
             };
 
             // Loading every game and rebuilding the world can take a while on a slow disk or a big install.
-            var response = await SendRequestAsync(initReq, 180000);
+            var answer = await engine.AskAsync(JObject.FromObject(initReq), TimeSpan.FromMinutes(3));
+            var response = answer.Reply;
             if (response == null)
             {
-                bool crashed = _engineProcess?.HasExited == true;
-                LastStartError = new EngineStartError
+                LastStartError = answer.Failure switch
                 {
-                    Code = crashed ? "crashed" : "no_response",
-                    Message = crashed ? "The engine closed while starting (see the slot's debug log)." : "The engine didn't answer within 3 minutes."
+                    AP_Atlas.Core.EngineSetup.EngineFailure.TimedOut => new EngineStartError { Code = "no_response", Message = "The engine didn't answer within 3 minutes." },
+                    AP_Atlas.Core.EngineSetup.EngineFailure.CouldNotLoad => new EngineStartError { Code = "error", Message = "The engine couldn't load: " + answer.Why + ". The slot's debug log has the details." },
+                    _ => new EngineStartError { Code = "crashed", Message = "The engine closed while starting (see the slot's debug log)." }
                 };
                 _logger("Logic Engine Start Failed: " + LastStartError.Message);
                 StopEngine();
@@ -242,7 +208,8 @@ public class LogicEngineManager
     public async Task<List<long>> GetReachableLocationsAsync(List<long> itemIds, IEnumerable<long> missingLocations = null)
     {
         LastQueryFailure = null;
-        if (_engineProcess == null || _engineProcess.HasExited)
+        var engine = _engine;
+        if (engine is not { Running: true })
         {
             LastQueryFailure = "the logic engine isn't running";
             return null;
@@ -260,17 +227,18 @@ public class LogicEngineManager
                 updateReq["missing_locations"] = new List<long>(missingLocations);
             }
 
-            // A big world on a slow PC can take a while; a second, longer wait picks up a late answer.
-            var response = await SendRequestAsync(updateReq, 30000);
-            if (response == null && _engineProcess != null && !_engineProcess.HasExited)
+            // A big world on a slow PC can take a while; asking again, with a longer wait, gets an answer once it's done.
+            var answer = await engine.AskAsync(JObject.FromObject(updateReq), TimeSpan.FromSeconds(30));
+            if (answer.Failure == AP_Atlas.Core.EngineSetup.EngineFailure.TimedOut)
             {
                 _logger("GetReachableLocationsAsync: no answer within 30 seconds; asking again.");
-                response = await SendRequestAsync(updateReq, 90000);
+                answer = await engine.AskAsync(JObject.FromObject(updateReq), TimeSpan.FromSeconds(90));
             }
+            var response = answer.Reply;
             if (response == null)
             {
-                LastQueryFailure = _engineProcess == null || _engineProcess.HasExited ? "the logic engine stopped" : "the logic engine stopped answering";
-                _logger("GetReachableLocationsAsync: " + LastQueryFailure + ".");
+                LastQueryFailure = answer.Failure == AP_Atlas.Core.EngineSetup.EngineFailure.TimedOut ? "the logic engine stopped answering" : "the logic engine stopped";
+                _logger("GetReachableLocationsAsync: " + LastQueryFailure + " (" + answer.Why + ").");
                 return null;
             }
 
@@ -312,8 +280,6 @@ public class LogicEngineManager
 
     /// <summary>Raised (on a process thread) when the engine process exits without being stopped by Atlas.</summary>
     public event Action<int> EngineExited;
-
-    private bool _stopping;
 
     /// <summary>
     /// Reads games' item and location name tables from the local Archipelago install (offline). Runs a short-lived
@@ -378,7 +344,9 @@ public class LogicEngineManager
         }
         finally
         {
-            try { if (process != null && !process.HasExited) process.Kill(); } catch { }
+            // The whole tree: anything the component started ends with it.
+            try { if (process != null && !process.HasExited) process.Kill(entireProcessTree: true); }
+            catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException) { } // it ended meanwhile
             process?.Dispose();
         }
     }
@@ -386,7 +354,8 @@ public class LogicEngineManager
     /// <summary>Asks the bridge why a location is or isn't in logic for the current items. Null if the engine isn't running or timed out.</summary>
     public async Task<LogicExplanation> ExplainLocationAsync(long locationId, bool analyze = true)
     {
-        if (_engineProcess == null || _engineProcess.HasExited) return null;
+        var engine = _engine;
+        if (engine is not { Running: true }) return null;
         try
         {
             var req = new Dictionary<string, object>
@@ -396,7 +365,7 @@ public class LogicEngineManager
                 { "analyze", analyze },
                 { "budget", 6.0 }
             };
-            var response = await SendRequestAsync(req, 15000);
+            var response = (await engine.AskAsync(JObject.FromObject(req), TimeSpan.FromSeconds(15))).Reply;
             if (response == null) return null;
             if (response["trace"] != null) _logger("ExplainLocationAsync: bridge error: " + response["error"] + "\n" + response["trace"]);
             return response.ToObject<LogicExplanation>();
@@ -408,106 +377,12 @@ public class LogicEngineManager
         }
     }
 
-    // One request at a time: the bridge answers in order over a single pipe, and an explain issued while a
-    // logic update is in flight must not read the update's reply.
-    private readonly System.Threading.SemaphoreSlim _requestLock = new System.Threading.SemaphoreSlim(1, 1);
-
-    /// <summary>Writes one request line and waits for the matching response. Returns null on timeout or if the bridge exits.</summary>
-    private async Task<JObject> SendRequestAsync(Dictionary<string, object> request, int timeoutMs)
-    {
-        await _requestLock.WaitAsync();
-        try
-        {
-            if (_engineProcess == null || _engineWriter == null || _engineReader == null) return null;
-            return await SendRequestLockedAsync(request, timeoutMs);
-        }
-        catch (Exception ex) when (ex is System.IO.IOException or ObjectDisposedException)
-        {
-            // The engine stopped or crashed mid-request: that's no answer, not a failure of the caller.
-            _logger("The logic engine stopped during a request: " + ex.Message);
-            return null;
-        }
-        finally
-        {
-            _requestLock.Release();
-        }
-    }
-
-    private async Task<JObject> SendRequestLockedAsync(Dictionary<string, object> request, int timeoutMs)
-    {
-        int id = ++_nextRequestId;
-        request["id"] = id;
-        await _engineWriter.WriteLineAsync(Newtonsoft.Json.JsonConvert.SerializeObject(request));
-        await _engineWriter.FlushAsync();
-
-        var timeoutTask = Task.Delay(timeoutMs);
-        while (true)
-        {
-            _pendingRead ??= _engineReader.ReadLineAsync();
-            var completedTask = await Task.WhenAny(_pendingRead, timeoutTask);
-            if (completedTask == timeoutTask) return null; // leave _pendingRead for the next request
-
-            string line = await _pendingRead;
-            _pendingRead = null;
-            if (line == null) return null; // bridge exited
-
-            line = line.Trim();
-            if (!(line.StartsWith("{") && line.EndsWith("}")))
-            {
-                if (!string.IsNullOrEmpty(line)) _logger("PYTHON: " + line);
-                continue;
-            }
-
-            JObject response;
-            using var __perf = AP_Atlas.Core.PerfMonitor.Measure("Logic engine answers (reading)");
-            try { response = JObject.Parse(line); }
-            catch (Exception)
-            {
-                _logger("PYTHON: " + line);
-                continue;
-            }
-
-            // Responses without an id (e.g. a bridge boot failure) can't be stale, so accept them.
-            var responseId = response["id"];
-            if (responseId != null && responseId.Type == JTokenType.Integer && (int)responseId != id)
-            {
-                _logger($"Discarding stale bridge response for request {responseId} (waiting for {id}).");
-                continue;
-            }
-            return response;
-        }
-    }
-
+    /// <summary>Stops the engine (its whole process tree). A request waiting on it ends as unanswered. Any thread.</summary>
     public void StopEngine()
     {
-        _stopping = true;
-        var process = _engineProcess;
-        _engineProcess = null;
-        if (process == null) return;
-        // Kill first: a request waiting on this engine then reads the end of its output and gives up.
-        try { if (!process.HasExited) process.Kill(); } catch { }
-        // The pipes are cleared, and the process disposed, once no request is using them.
-        AP_Atlas.Core.Async.Fire(ReleasePipesAsync(process, _engineWriter), "stopping the logic engine", tellUser: false);
-    }
-
-    private async Task ReleasePipesAsync(System.Diagnostics.Process process, System.IO.StreamWriter writer)
-    {
-        await _requestLock.WaitAsync();
-        try
-        {
-            // A new engine may have started meanwhile: clear only this one's pipes.
-            if (ReferenceEquals(_engineWriter, writer))
-            {
-                _engineWriter = null;
-                _engineReader = null;
-                _pendingRead = null;
-            }
-        }
-        finally
-        {
-            _requestLock.Release();
-        }
-        try { process.Dispose(); } catch { }
+        var engine = _engine;
+        _engine = null;
+        engine?.Stop();
     }
 
     /// <summary>Whether this engine can run logic (program files and the Universal Tracker are present).</summary>

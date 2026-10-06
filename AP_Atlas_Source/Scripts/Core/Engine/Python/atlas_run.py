@@ -55,6 +55,10 @@ def keep_files_in_engine_folder():
 
 def main():
     root, component = os.path.abspath(sys.argv[1]), sys.argv[2]
+    # Atlas's channel is this process's own standard output (sys.__stdout__), written only by the component's
+    # answers. Anything else that prints (a world as it loads, the tracker) goes to standard error, which Atlas logs,
+    # so it can never be taken for an answer.
+    sys.stdout = sys.stderr
     os.chdir(root)
     sys.path.insert(0, root)
     sys.argv = [os.path.join(root, 'Launcher.py')]
@@ -71,8 +75,8 @@ def main():
         if c.display_name == component and c.func is not None:
             c.func()
             return
-    print(json.dumps({'error': 'The ' + component + ' component is not installed in this engine.'}))
-    sys.stdout.flush()
+    sys.__stdout__.write(json.dumps({'event': 'boot_failed', 'error': 'The ' + component + ' component is not installed in this engine.'}) + '\n')
+    sys.__stdout__.flush()
 
 
 main()

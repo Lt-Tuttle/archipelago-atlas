@@ -113,6 +113,7 @@ namespace AP_Atlas.Core
             Test("Hitch reports: a measured step's time leaves out garbage collection pauses (listed on their own)", StepTimesLeaveOutCollections);
             Test("Map packs: images are decoded only while a pack is used, kept for the pack released last, then freed; the Pack Doctor needs none", PackImagesOnlyWhileUsed);
             await TestAsync("Pack Doctor: checking a pack nobody uses finds its images that don't decode, without keeping any", PackDoctorChecksUnusedPacksImages);
+            await TestAsync("Pack scripts: items that arrive while a pack's scripts start reach them", PackScriptsGetItemsThatArriveWhileTheyStart);
             await TestAsync("Pack Doctor: an analysis reads its own snapshot, never the fixes as they change", PackDoctorReadsASnapshot);
             await TestAsync("Settings saved from a background thread are written on the main thread, and the log says so", OffThreadSavesMoveToTheMainThread);
 

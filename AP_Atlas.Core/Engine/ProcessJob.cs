@@ -1,4 +1,3 @@
-#nullable disable
 using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -17,7 +16,7 @@ namespace AP_Atlas.Core.EngineSetup
         // Live engine processes by the engine folder they run from, so setup can make sure none is using files it replaces.
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, (Process Process, string Root)> _live = new();
 
-        private static string Norm(string root) => string.IsNullOrEmpty(root) ? "" : System.IO.Path.GetFullPath(root).TrimEnd('\\', '/').ToLowerInvariant();
+        private static string Norm(string? root) => string.IsNullOrEmpty(root) ? "" : System.IO.Path.GetFullPath(root).TrimEnd('\\', '/').ToLowerInvariant();
 
         /// <summary>Engine processes still running from this engine folder.</summary>
         public static int RunningUnder(string root)
@@ -53,7 +52,7 @@ namespace AP_Atlas.Core.EngineSetup
         }
 
         /// <summary>Ties a process to Atlas's lifetime and, with engineRoot, records which engine folder it runs from.</summary>
-        public static void Track(Process process, string engineRoot = null)
+        public static void Track(Process? process, string? engineRoot = null)
         {
             if (process == null) return;
             if (engineRoot != null)
@@ -132,7 +131,7 @@ namespace AP_Atlas.Core.EngineSetup
         }
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-        private static extern IntPtr CreateJobObject(IntPtr lpJobAttributes, string lpName);
+        private static extern IntPtr CreateJobObject(IntPtr lpJobAttributes, string? lpName);
 
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool SetInformationJobObject(IntPtr hJob, int infoType, IntPtr lpJobObjectInfo, uint cbJobObjectInfoLength);

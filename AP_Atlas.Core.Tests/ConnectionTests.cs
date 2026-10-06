@@ -352,15 +352,16 @@ public class EngineRunnerTests
             """);
         File.WriteAllText(Path.Combine(archipelago, "worlds", "__init__.py"), "");
         File.WriteAllText(Path.Combine(archipelago, "worlds", "LauncherComponents.py"), """
-            import json, tempfile
+            import json, sys, tempfile
             class Component:
                 def __init__(self, display_name, func):
                     self.display_name, self.func = display_name, func
             def probe():
                 import Utils
                 from Utils import cache_path
-                print(json.dumps({"direct": cache_path("common.json"), "inside": Utils.load_data_package_for_checksum("G", "c"),
-                                  "temp": tempfile.mkdtemp(prefix="probe_")}))
+                # Answers go to Atlas's channel, the process's own standard output (the runner sends prints elsewhere).
+                sys.__stdout__.write(json.dumps({"direct": cache_path("common.json"), "inside": Utils.load_data_package_for_checksum("G", "c"),
+                                                 "temp": tempfile.mkdtemp(prefix="probe_")}) + "\n")
             components = [Component("AtlasProbe", probe)]
             """);
 

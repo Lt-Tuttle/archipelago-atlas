@@ -1,13 +1,16 @@
 # The Archipelago Atlas: a fake logic engine, for Atlas's tests only (Testing/FakeLogicEngine.cs sets it up).
 #
 # It stands in for the UltimateBridge component (Scripts/Core/Engine/Python/atlas_bridge.py) and speaks the same
-# protocol: one JSON object per line on stdin and stdout, each reply carrying its request's id. Instead of rebuilding a
-# real world it answers from simple rules: an item pool, the items each location needs, and the items the goal needs.
-# It reads the rules again for every request, so a test can change them while the engine runs. It can also misbehave
-# on purpose: crash on an item, answer late, or send a log line and a late answer to an earlier request first.
-# Everything it receives, and every crash, goes into a journal the test reads. It reads and writes only its own folder.
+# protocol: one JSON object per line on stdin and on its own standard output (sys.__stdout__: atlas_run.py sends
+# whatever else prints to standard error), each reply carrying its request's id. Instead of rebuilding a real world it
+# answers from simple rules: an item pool, the items each location needs, and the items the goal needs. It reads the
+# rules again for every request, so a test can change them while the engine runs. It can also misbehave on purpose:
+# crash on an item, answer late, fail to load, start a process of its own, or send a log line, a late answer to an
+# earlier request and a reply-like line without an id first. Everything it receives, and every crash, goes into a
+# journal the test reads. It reads and writes only its own folder.
 import json
 import os
+import subprocess
 import sys
 import time
 
@@ -43,8 +46,16 @@ def crashes_so_far():
 
 
 def send(reply):
-    sys.stdout.write(json.dumps(reply) + '\n')
-    sys.stdout.flush()
+    channel = sys.__stdout__
+    channel.write(json.dumps(reply) + '\n')
+    channel.flush()
+
+
+def scribble(text):
+    # A line on Atlas's channel that isn't an answer, as code printing there by mistake would write.
+    channel = sys.__stdout__
+    channel.write(text + '\n')
+    channel.flush()
 
 
 def versions():
@@ -107,6 +118,18 @@ def explain(req, items, rules):
 
 def serve(*args):
     note({'event': 'start'})
+    # As worlds do while they load: printed, so it goes to standard error (atlas_run.py keeps the channel for answers).
+    print('Fake engine: printed as a world loads')
+    rules = read_rules()
+    if rules.get('boot_error'):
+        # As the real bridge does when the tracker can't be imported: it says so, and ends.
+        send({'event': 'boot_failed', 'error': rules['boot_error'], 'trace': 'Traceback: ' + rules['boot_error']})
+        return
+    if rules.get('spawn_child'):
+        # A process of its own (as a world could start one): stopping the engine must end it too.
+        child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(600)'],
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        note({'event': 'child', 'child_pid': child.pid})
     started = False
     missing = set()
     last_items = None
@@ -130,8 +153,9 @@ def serve(*args):
         if delay:
             time.sleep(delay)
         if rules.get('chatter') and rid is not None:
-            print('Fake engine: thinking about request ' + str(rid))
+            scribble('Fake engine: thinking about request ' + str(rid))
             send({'id': rid - 1, 'reachable': [], 'excluded': [], 'glitched': [], 'goal': None})
+            scribble(json.dumps({'reachable': [], 'excluded': [], 'glitched': [], 'goal': None}))
         if action == 'init':
             reply = start(req, rules)
             if reply.get('status') == 'ready':

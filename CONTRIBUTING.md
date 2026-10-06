@@ -82,7 +82,8 @@ New code that doesn't need Godot belongs in `AP_Atlas.Core`, with tests. The vis
   - a node that runs every frame and changes what's shown, such as a `Camera2D` left processing;
   - a timer that re-applies the same value where setting it always redraws, such as `AddThemeColorOverride` with the same colour.
   - Set such values only when they change. The UI test's "Idle" scenario checks a connected slot.
-- **Updating Archipelago.MultiClient.Net:** `AtlasSessions` relies on the library's internal data cache. The unit tests check that, and that the library reaches nothing else on the PC. If they fail, look at what changed before using the new version.
+- **Updating Archipelago.MultiClient.Net:** `AtlasSessions` relies on the library's internal data cache, and on how a connection's send loop ends once it's woken (see `LibraryThreads`). The unit tests check both, and that the library reaches nothing else on the PC. If they fail, look at what changed before using the new version.
+- **The logic engine's channel:** an engine's standard output carries answers only, each with its request's id; Atlas takes nothing else for an answer. Bridge components write answers with `send()`, and everything that prints goes to standard error (the runner and `protect_channel()` see to it), which Atlas logs. A bridge that can't load says so with `{"event": "boot_failed"}`.
 - **Godot's `.uid` files:** Godot makes one next to each script (`Foo.cs.uid`) when it opens or imports the project. Commit it with the script; the guard rails check.
 - **Third-party code, data or art:**
   - Use only things under a license compatible with MIT (MIT, BSD, Apache-2.0, OFL for fonts, and so on), and credit them in [CREDITS.md](CREDITS.md). Anything that ships in Atlas also goes in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

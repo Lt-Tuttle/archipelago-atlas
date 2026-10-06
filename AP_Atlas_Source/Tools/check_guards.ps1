@@ -72,7 +72,7 @@ foreach ($rule in $rules) {
 # Nullable checks: classes whose files still start with "#nullable disable" predate them and are annotated as they're
 # reworked. Counted by class (the file name up to its first dot), so splitting a class into partial files doesn't
 # change the count. This number only goes down: lower it when a class is migrated.
-$nullableOptOutLimit = 56
+$nullableOptOutLimit = 55
 $optedOut = @($files | Where-Object { (Get-Content -LiteralPath $_.FullName -TotalCount 1) -eq '#nullable disable' } |
     ForEach-Object { $_.Name.Split('.')[0] } | Sort-Object -Unique).Count
 if ($optedOut -gt $nullableOptOutLimit) {

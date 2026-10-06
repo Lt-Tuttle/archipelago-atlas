@@ -9,14 +9,15 @@ namespace AP_Atlas.Core.Testing;
 /// A small PopTracker map pack for tests, written as a real pack zip: a manifest, two tiles in its tracker's item grid
 /// ("sword", and "shield" whose image can't be decoded), two maps ("World" with a 64×32 background, "Broken" whose background can't be decoded), and
 /// two pins on World, one inside its image and one outside. Its PNGs are written here (real ones, any decoder reads
-/// them), so it needs no Godot.
+/// them), so it needs no Godot. It can also carry scripts (an init.lua).
 /// </summary>
 internal static class FakeMapPack
 {
     /// <summary>The World map's background size.</summary>
     public const int MapWidth = 64, MapHeight = 32;
 
-    public static void Write(string zipPath, string name, string game)
+    /// <param name="initLua">The pack's scripts/init.lua, or null for a pack without scripts.</param>
+    public static void Write(string zipPath, string name, string game, string? initLua = null)
     {
         if (File.Exists(zipPath)) File.Delete(zipPath);
         using var zip = ZipFile.Open(zipPath, ZipArchiveMode.Create);
@@ -41,6 +42,7 @@ internal static class FakeMapPack
         Bytes("pack/images/sword.png", Png(8, 8));
         Bytes("pack/images/world.png", Png(MapWidth, MapHeight));
         Bytes("pack/images/broken.png", new byte[] { 1, 2, 3, 4 });
+        if (initLua != null) Text("pack/scripts/init.lua", initLua);
     }
 
     /// <summary>A PNG of one colour (Atlas purple), RGBA, 8 bits per channel.</summary>

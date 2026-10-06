@@ -19,8 +19,9 @@ internal sealed record FakeLocation(long Id, string Name, params long[] Needs);
 /// A fake logic engine for tests: fake_engine.py in a stand-in Archipelago folder. Atlas starts it the way it starts the
 /// real engine (atlas_run.py runs its UltimateBridge component, with the engine folder's environment), and it answers
 /// the same requests (start a slot, what's in logic, why) from the rules set here instead of a real world. It can also
-/// misbehave on purpose: crash on an item, answer late, or send a log line and a stale answer first. It writes every
-/// request it gets to a journal, which the test reads. It touches nothing outside its folder and never goes online.
+/// misbehave on purpose: crash on an item, answer late, fail to load, start a process of its own, or send a log line, a
+/// stale answer and an answer-like line without an id first. It writes every request it gets to a journal, which the
+/// test reads. It touches nothing outside its folder (bar a process that sleeps until it's stopped) and never goes online.
 /// Used by the unit tests and by Atlas's UI test (ATLAS_UITEST); Atlas itself never sets one up.
 /// </summary>
 internal sealed class FakeLogicEngine
@@ -93,8 +94,17 @@ internal sealed class FakeLogicEngine
     /// <summary>How long the engine waits before answering, in seconds, by request (init, update, explain).</summary>
     public Dictionary<string, double> Delays { get; } = new();
 
-    /// <summary>Before each answer, the engine prints a log line and then a late answer to the request before.</summary>
+    /// <summary>
+    /// Before each answer, the engine writes a log line, a late answer to the request before, and an answer-like line
+    /// without an id, all on Atlas's channel.
+    /// </summary>
     public bool Chatter { get; set; }
+
+    /// <summary>The engine can't load (as when the tracker won't import): it says so with this error, and ends. Null: it loads.</summary>
+    public string? BootError { get; set; }
+
+    /// <summary>When it starts, the engine starts a process of its own that sleeps (as a world could): stopping the engine must end it too.</summary>
+    public bool SpawnChild { get; set; }
 
     /// <summary>Writes the rules. The engine reads them for every request, so changes apply to the next one.</summary>
     public void Apply()
@@ -110,7 +120,9 @@ internal sealed class FakeLogicEngine
             ["start_error"] = StartError is { } error ? new JObject { ["code"] = error.Code, ["message"] = error.Message } : JValue.CreateNull(),
             ["crash"] = CrashOnItem is { } item ? new JObject { ["on_item"] = item, ["times"] = CrashTimes } : JValue.CreateNull(),
             ["delays"] = JObject.FromObject(Delays),
-            ["chatter"] = Chatter
+            ["chatter"] = Chatter,
+            ["boot_error"] = BootError,
+            ["spawn_child"] = SpawnChild
         };
         // Replaced whole, so the engine never reads half a file. It may be reading the old one this moment: then retry.
         string temp = _rules + ".tmp";
@@ -154,6 +166,9 @@ internal sealed class FakeLogicEngine
     /// <summary>How many times an engine process started, and how many crashed on purpose.</summary>
     public int Starts => Journal().Count(entry => (string?)entry["event"] == "start");
     public int Crashes => Journal().Count(entry => (string?)entry["event"] == "crash");
+
+    /// <summary>The process ids of the processes the engine started of its own (<see cref="SpawnChild"/>), oldest first.</summary>
+    public IReadOnlyList<int> Children => Journal().Where(entry => (string?)entry["event"] == "child").Select(entry => (int)entry["child_pid"]!).ToList();
 
     private void Write(string relative, string text) => File.WriteAllText(Path.Combine(Root, relative), text.ReplaceLineEndings("\n"));
 }

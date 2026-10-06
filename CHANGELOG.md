@@ -158,6 +158,14 @@ Development toward the first public beta, 0.1.0.
   - Once Atlas had opened more connections than the PC has processor cores (reconnects included), logins and other background work (logic, map packs) could wait seconds for a free thread. In a test, one login took 10 seconds.
   - Each connection now gives its thread back when it ends, and Atlas makes room for one thread per open connection. In the same test, every login takes a few milliseconds, however many came before.
 - **A login that ran out of time** but connected later and was then refused was left open on the server. It's now closed.
+- **Key Items:** items that arrived while a map pack's scripts were starting never reached the scripts, so Key Items could show less than the slot had until it reconnected. They now reach them.
+- **The logic engine:**
+  - An answer now counts only if it carries its question's number. Before, any line the engine wrote without one was taken as the answer, so a game printing something at the wrong moment could look like "nothing is in logic".
+  - What the games print goes to the engine's log, never onto the line Atlas reads answers from.
+  - An engine that can't load (a broken tracker install, say) is reported at once, instead of after 3 minutes.
+  - Stopping an engine also stops any program it started.
+  - Its answers are read off the main thread, so a burst of them takes less time from the window.
+  - The engine now logs what it couldn't do (a version it couldn't read, a game's goal it can't check) instead of skipping it silently.
 - **A log file that can't be written** (its folder deleted while Atlas runs, a full disk) is now reported once, not on every line, and logging carries on when it can.
 - **Files held by another program:**
   - If an antivirus or sync tool (OneDrive, Dropbox) was reading your settings or profiles at the moment Atlas read them, Atlas took the file for damaged and put its older backup in its place. Your latest changes were lost.

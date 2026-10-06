@@ -27,6 +27,8 @@ public class FakeLogicEngineTests
 
         var ready = await bridge.AskAsync(Init(2000, 2001, 2002), ct);
         Assert.Equal("ready", (string?)ready["status"]);
+        // What the engine printed went to its error output: Atlas's channel carries answers only.
+        Assert.DoesNotContain("Fake engine: printed as a world loads", bridge.Lines);
         Assert.Equal(new[] { "1000 Sword 1", "1001 Shield 1", "1002 Rupee 0" },
             ready["item_pool"]!.Select(item => $"{item["id"]} {item["name"]} {item["flags"]}"));
         Assert.Equal(new long[] { 3, 3, 0, 0 }, new[] { "expected", "got", "missing", "extra" }.Select(field => (long)ready["yaml"]![field]!));
@@ -94,7 +96,8 @@ public class FakeLogicEngineTests
         Assert.Equal(1, engine.Crashes);
 
         // It crashed as often as it was told to (once): a new engine answers the same request. Asked to chatter, it
-        // first prints a log line and a late answer to the request before, then the answer.
+        // first writes a log line, a late answer to the request before and an answer-like line without an id, then
+        // the answer.
         engine.Chatter = true;
         engine.Apply();
         await using (var second = Bridge.Start(python, engine))
@@ -104,9 +107,10 @@ public class FakeLogicEngineTests
             var answer = await second.AskAsync(Update(new long[] { 1000, 1001 }, 2000, 2001, 2002), ct);
             Assert.Equal(new long[] { 2000, 2001, 2002 }, Ids(answer["reachable"]));
             var extra = second.Lines.Skip(before).SkipLast(1).ToList();
-            Assert.Equal(2, extra.Count);
+            Assert.Equal(3, extra.Count);
             Assert.Equal("Fake engine: thinking about request 2", extra[0]);
             Assert.Equal(1, (int)JObject.Parse(extra[1])["id"]!);
+            Assert.Null(JObject.Parse(extra[2])["id"]);
         }
         Assert.Equal(1, engine.Crashes);
         Assert.Equal(2, engine.Starts);
@@ -126,29 +130,13 @@ public class FakeLogicEngineTests
         }
     }
 
-    /// <summary>Three locations: one open, one behind the Sword (or a glitch), one (excluded) behind both. The goal needs both.</summary>
-    private static FakeLogicEngine SmallWorld(TempFolder dir)
-    {
-        string engineDir = Path.Combine(dir.Path, "engine");
-        var engine = new FakeLogicEngine(Path.Combine(engineDir, "archipelago"));
-        File.Copy(TestEnvironment.RepoFile("AP_Atlas_Source", "Scripts", "Core", "Engine", "Python", "atlas_run.py"), Path.Combine(engineDir, "atlas_run.py"));
-        engine.Pool.AddRange(new[] { new FakeItem(1000, "Sword", 1), new FakeItem(1001, "Shield", 1), new FakeItem(1002, "Rupee", 0) });
-        engine.Locations.AddRange(new[] { new FakeLocation(2000, "Cave Chest"), new FakeLocation(2001, "Locked Door", 1000), new FakeLocation(2002, "Tower Top", 1000, 1001) });
-        engine.Goal = new long[] { 1000, 1001 };
-        engine.Excluded.Add(2002);
-        engine.Glitched.Add(2001);
-        engine.DataChecksum = "feedface";
-        engine.Apply();
-        return engine;
-    }
+    private static FakeLogicEngine SmallWorld(TempFolder dir) => FakeEngines.SmallWorld(dir);
 
-    private static JObject Init(params long[] locations) =>
-        new() { ["action"] = "init", ["game"] = "Test Game", ["player_name"] = "Tester", ["slot"] = 1, ["slot_data"] = new JObject(), ["all_locations"] = new JArray(locations) };
+    private static JObject Init(params long[] locations) => FakeEngines.Init(locations);
 
-    private static JObject Update(long[] items, params long[] missing) =>
-        new() { ["action"] = "update", ["items"] = new JArray(items), ["missing_locations"] = new JArray(missing) };
+    private static JObject Update(long[] items, params long[] missing) => FakeEngines.Update(items, missing);
 
-    private static long[] Ids(JToken? list) => list?.Select(id => (long)id).ToArray() ?? Array.Empty<long>();
+    private static long[] Ids(JToken? list) => FakeEngines.Ids(list);
 
     /// <summary>The engine run as Atlas runs it in portable mode: python -u -X utf8 atlas_run.py &lt;root&gt; UltimateBridge.</summary>
     private sealed class Bridge : IAsyncDisposable
@@ -163,20 +151,7 @@ public class FakeLogicEngineTests
 
         public static Bridge Start(string python, FakeLogicEngine engine)
         {
-            string engineDir = Path.GetDirectoryName(engine.Root)!;
-            var info = new ProcessStartInfo(python)
-            {
-                WorkingDirectory = engine.Root,
-                RedirectStandardInput = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-            foreach (string arg in new[] { "-u", "-X", "utf8", Path.Combine(engineDir, "atlas_run.py"), engine.Root, "UltimateBridge" }) info.ArgumentList.Add(arg);
-            info.Environment["TEMP"] = Path.Combine(engineDir, "temp");
-            info.Environment["TMP"] = Path.Combine(engineDir, "temp");
-            var process = Process.Start(info)!;
+            var process = Process.Start(FakeEngines.StartInfo(python, engine))!;
             process.ErrorDataReceived += (_, _) => { }; // drained, so a chatty engine can't block on a full pipe
             process.BeginErrorReadLine();
             return new Bridge(process);

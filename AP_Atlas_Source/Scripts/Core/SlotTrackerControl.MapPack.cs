@@ -178,48 +178,29 @@ public partial class SlotTrackerControl : MarginContainer
     /// <summary>The options and data the server sent this slot at login.</summary>
     public Dictionary<string, object> SlotDataSnapshot => _slotData;
     /// <summary>The pack's scripts running for this slot (null until ready, or if the pack has none).</summary>
-    public AP_Atlas.Core.PopTracker.PackScriptHost PackScripts { get; private set; }
+    public AP_Atlas.Core.PopTracker.PackScriptHost PackScripts => _scripts?.Scripts;
 
-    private System.Threading.Tasks.Task _scriptQueue = System.Threading.Tasks.Task.CompletedTask;
+    // One per slot, so a restart queues behind work still running on the previous scripts.
+    private AP_Atlas.Core.PopTracker.PackScriptRunner _scripts;
     private int _scriptItemsQueued;
     private readonly HashSet<long> _scriptLocationsQueued = new HashSet<long>();
-    /// <summary>Runs work on the scripts' background queue, in order (scripts aren't thread-safe).</summary>
-    private void QueueScriptWork(Action work, Action onMainThread = null)
-    {
-        _scriptQueue = _scriptQueue.ContinueWith(_ =>
-        {
-            try { work(); }
-            catch (Exception ex) { AP_Atlas.Core.Logger.LogWarning($"[{_slotName}] Pack script: {ex.Message}"); }
-            if (onMainThread != null) AP_Atlas.UI.Ui.Defer(this, () => onMainThread());
-        }, System.Threading.Tasks.TaskScheduler.Default);
-    }
+
     /// <summary>Starts the pack's scripts: init, the clear handler with this slot's options, then every item and check so far.</summary>
     private void StartPackScripts()
     {
         if (Pack == null || Session == null) return;
-        var pack = Pack;
-        int me = PlayerSlot, team = Team;
         var slotData = Newtonsoft.Json.Linq.JToken.FromObject(_slotData ?? new Dictionary<string, object>());
         var items = Session.Items.AllItemsReceived.Select(i => (i.ItemId, i.ItemName, Player: i.Player?.Slot ?? 0)).ToList();
         var locations = Session.Locations.AllLocationsChecked.Select(id => (Id: id, Name: Session.Locations.GetLocationNameFromId(id) ?? "")).ToList();
         _scriptItemsQueued = items.Count;
         _scriptLocationsQueued.Clear();
         foreach (var l in locations) _scriptLocationsQueued.Add(l.Id);
-        AP_Atlas.Core.PopTracker.PackScriptHost host = null;
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        QueueScriptWork(() =>
+        _scripts ??= new AP_Atlas.Core.PopTracker.PackScriptRunner(work => AP_Atlas.UI.Ui.Defer(this, () => work()),
+            message => AP_Atlas.Core.Logger.LogWarning($"[{_slotName}] {message}"));
+        _scripts.Start(Pack, PlayerSlot, Team, slotData, items, locations, (host, ms) =>
         {
-            host = AP_Atlas.Core.PopTracker.PackScriptHost.Load(pack);
-            if (host == null) return;
-            host.Initialize();
-            host.Clear(me, team, slotData);
-            for (int i = 0; i < items.Count; i++) host.ApplyItem(i, items[i].ItemId, items[i].ItemName, items[i].Player);
-            foreach (var (id, name) in locations) host.ApplyLocation(id, name);
-        }, () =>
-        {
-            PackScripts = host;
             if (host == null) { AppendDebugLog($"[MapTracker] The pack has no scripts/init.lua; Key Items use the pack's item mappings only."); return; }
-            AppendDebugLog($"[MapTracker] Ran the pack's scripts in {sw.ElapsedMilliseconds} ms: {host.Errors.Count} error(s)" +
+            AppendDebugLog($"[MapTracker] Ran the pack's scripts in {ms} ms: {host.Errors.Count} error(s)" +
                            (host.UnsupportedApis.Count > 0 ? $", unsupported APIs: {string.Join(", ", host.UnsupportedApis)}" : ""));
             foreach (var e in host.Errors) AppendDebugLog("[MapTracker] Pack script error: " + e);
             UpdateKeyItemsUI();
@@ -229,20 +210,20 @@ public partial class SlotTrackerControl : MarginContainer
     /// <summary>Feeds items received since the scripts last saw the list.</summary>
     private void FeedNewItemsToScripts()
     {
-        if (Pack == null || Session == null) return;
+        if (Pack == null || Session == null || _scripts == null) return;
         var all = Session.Items.AllItemsReceived;
         if (all.Count <= _scriptItemsQueued) return;
         var fresh = all.Skip(_scriptItemsQueued).Select((i, n) => (Index: _scriptItemsQueued + n, i.ItemId, i.ItemName, Player: i.Player?.Slot ?? 0)).ToList();
         _scriptItemsQueued = all.Count;
-        QueueScriptWork(() => { foreach (var f in fresh) PackScripts?.ApplyItem(f.Index, f.ItemId, f.ItemName, f.Player); }, UpdateKeyItemsUI);
+        _scripts.FeedItems(fresh, UpdateKeyItemsUI);
     }
     private void FeedNewChecksToScripts()
     {
-        if (Pack == null || Session == null) return;
+        if (Pack == null || Session == null || _scripts == null) return;
         var fresh = Session.Locations.AllLocationsChecked.Where(id => _scriptLocationsQueued.Add(id))
             .Select(id => (Id: id, Name: Session.Locations.GetLocationNameFromId(id) ?? "")).ToList();
         if (fresh.Count == 0) return;
-        QueueScriptWork(() => { foreach (var (id, name) in fresh) PackScripts?.ApplyLocation(id, name); });
+        _scripts.FeedLocations(fresh);
     }
     /// <summary>A tile's state from the pack's scripts, or null when they aren't running.</summary>
     public AP_Atlas.Core.PopTracker.PackScriptHost.TileState ScriptStateOf(string code)
@@ -250,14 +231,14 @@ public partial class SlotTrackerControl : MarginContainer
         var host = PackScripts;
         if (host == null || !host.Cleared) return null;
         // StateOf reads the scripts' objects; serialize with the queue by only reading when it's idle.
-        if (!_scriptQueue.IsCompleted) return null;
+        if (!_scripts.Idle) return null;
         return host.StateOf(code);
     }
     /// <summary>The seed's settings as the pack shows them (its settings grid plus anything set from slot data).</summary>
     public List<AP_Atlas.Core.PopTracker.PackScriptHost.SettingInfo> SeedSettings()
     {
         var host = PackScripts;
-        if (host == null || !host.Cleared || !_scriptQueue.IsCompleted) return new List<AP_Atlas.Core.PopTracker.PackScriptHost.SettingInfo>();
+        if (host == null || !host.Cleared || !_scripts.Idle) return new List<AP_Atlas.Core.PopTracker.PackScriptHost.SettingInfo>();
         var settingCodes = (EffectivePack ?? Pack).ItemGridGroups.Where(g => g.LooksLikeSettings).SelectMany(g => g.Rows.SelectMany(r => r));
         return host.Settings(settingCodes);
     }
