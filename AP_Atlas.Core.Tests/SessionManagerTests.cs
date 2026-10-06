@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using AP_Atlas.Core.Connections;
 using AP_Atlas.Core.Testing;
+using Archipelago.MultiClient.Net.Exceptions;
 
 namespace AP_Atlas.Core.Tests;
 
@@ -340,5 +341,82 @@ public sealed partial class SessionManagerTests : IDisposable
         // Each login reached the server only after the one before it was answered.
         Assert.Equal(new[] { "Connect", "Connected", "Connect", "Connected", "Connect", "Connected" }, server.Timeline.Select(t => t.What.Split(' ')[0]));
         await manager.CloseAllAsync(TimeSpan.FromSeconds(5));
+    }
+
+    private static int MinWorkerThreads()
+    {
+        ThreadPool.GetMinThreads(out int workers, out _);
+        return workers;
+    }
+
+    [Fact]
+    public async Task A_connection_holds_a_thread_only_while_it_is_open()
+    {
+        await using var server = Server("Alice", "Bob", "Carol");
+        var manager = Manager();
+        manager.AutoReconnect = false;
+        var dropped = new List<SlotId>();
+        manager.Dropped += (slot, _) => { lock (dropped) dropped.Add(slot); };
+        int before = LibraryThreads.Holding;
+
+        var slots = await ConnectAll(manager, server, "p1", "Alice", "Bob", "Carol");
+
+        // Each open connection's send loop blocks a pool thread: the pool's minimum covers them.
+        Assert.Equal(before + 3, LibraryThreads.Holding);
+        Assert.Equal(LibraryThreads.Baseline + before + 3, MinWorkerThreads());
+
+        // However a connection ends, Atlas finishes it and its thread goes back. Closed by Atlas:
+        await Disconnect(manager, slots[0].Slot);
+        Assert.Equal(before + 2, LibraryThreads.Holding);
+        // Closed by the server (its room shut down): the library reports it. Nothing checks for dead connections meanwhile.
+        await server.CloseClientAsync("Bob");
+        await WaitFor(() => { lock (dropped) return dropped.Contains(slots[1].Slot); }, "Bob's drop to be reported");
+        Assert.Equal(before + 1, LibraryThreads.Holding);
+        // Cut off: only the check for dead connections notices.
+        server.DropClient("Carol");
+        await WaitFor(() => LibraryThreads.Holding == before, "Carol's thread to go back", manager);
+        Assert.Equal(LibraryThreads.Baseline + before, MinWorkerThreads());
+    }
+
+    [Fact]
+    public async Task A_finished_connections_send_loop_ends_quietly()
+    {
+        await using var server = Server();
+        var manager = Manager();
+        var errors = new List<string>();
+        manager.SocketError += (_, message) => { lock (errors) errors.Add(message); };
+        var slot = (await Connect(manager, Login(server))).Slot!;
+        var ended = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        slot.Session.Socket.ErrorReceived += (error, _) =>
+        {
+            if (error is ArchipelagoSocketClosedException) ended.TrySetResult();
+        };
+        // After a send the loop pauses for 20 ms; then it blocks its thread until the next packet.
+        await Task.Delay(200, Ct);
+
+        await Disconnect(manager, slot.Slot);
+
+        // Woken, the loop found its connection closed and ended: the library reports that as a closed socket.
+        await ended.Task.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+        await Settle();
+        // Which isn't news to the user.
+        lock (errors) Assert.Empty(errors);
+    }
+
+    [Fact]
+    public async Task A_login_that_connects_after_its_time_limit_is_closed_even_when_refused()
+    {
+        await using var server = Server();
+        server.HandshakeDelay = TimeSpan.FromSeconds(2.5); // past the login's time limit
+        var manager = Manager();
+        int before = LibraryThreads.Holding;
+
+        var result = await Connect(manager, Login(server, "Nobody"));
+
+        Assert.Equal(ConnectOutcome.TimedOut, result.Outcome);
+        // It connects after all and is refused: its connection is closed then, and its thread goes back.
+        await WaitFor(() => server.Count("Connect") == 1, "the late login");
+        await WaitFor(() => server.ClosesReceived == 1, "the late, refused login to be closed");
+        await WaitFor(() => LibraryThreads.Holding == before, "its thread to go back");
     }
 }

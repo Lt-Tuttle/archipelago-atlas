@@ -154,6 +154,10 @@ Development toward the first public beta, 0.1.0.
 - **Deleting a multiworld** while one of its slots was waiting to reconnect could bring that slot back, for a multiworld that no longer existed. Deleting now calls off its reconnects.
 - **Deleting a multiworld** while one of its slots was still logging in left that slot connected and shown, for a multiworld that no longer existed. The login is now closed when it finishes.
 - **Deleting a multiworld** whose slot was showing in a tool now shows "Select a connected slot" there, instead of an empty area.
+- **Slow logins after many connections:** the connection library keeps one of Atlas's background threads busy for each connection, and kept it after the connection closed.
+  - Once Atlas had opened more connections than the PC has processor cores (reconnects included), logins and other background work (logic, map packs) could wait seconds for a free thread. In a test, one login took 10 seconds.
+  - Each connection now gives its thread back when it ends, and Atlas makes room for one thread per open connection. In the same test, every login takes a few milliseconds, however many came before.
+- **A login that ran out of time** but connected later and was then refused was left open on the server. It's now closed.
 - **A log file that can't be written** (its folder deleted while Atlas runs, a full disk) is now reported once, not on every line, and logging carries on when it can.
 - **Files held by another program:**
   - If an antivirus or sync tool (OneDrive, Dropbox) was reading your settings or profiles at the moment Atlas read them, Atlas took the file for damaged and put its older backup in its place. Your latest changes were lost.

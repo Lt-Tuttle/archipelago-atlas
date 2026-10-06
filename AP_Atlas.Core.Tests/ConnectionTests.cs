@@ -36,6 +36,13 @@ public class DataPackageStoreTests
         return session;
     }
 
+    /// <summary>Closes a session as SessionManager does: its connection, then its thread (see AtlasSessions.Finished).</summary>
+    private static async Task CloseAsync(ArchipelagoSession session)
+    {
+        await session.Socket.DisconnectAsync();
+        AtlasSessions.Finished(session);
+    }
+
     private static GameData Data(string checksum) => new()
     {
         Checksum = checksum,
@@ -54,13 +61,13 @@ public class DataPackageStoreTests
         // The session reads Atlas's store: the library's own cache (in %LocalAppData%) was never set up.
         Assert.Same(store, AtlasSessions.StoreOf(first));
         Assert.Equal("Sword", first.Items.GetItemName(1000, "Test Game"));
-        await first.Socket.DisconnectAsync();
+        await CloseAsync(first);
         Assert.Equal(1, server.Count("GetDataPackage"));
         Assert.Equal(Path.Combine(dir.Path, "Test Game", Checksum + ".json"), Assert.Single(Directory.GetFiles(dir.Path, "*", SearchOption.AllDirectories)));
 
         var second = await LogInAsync(server, store);
         Assert.Equal("Cave Chest", second.Locations.GetLocationNameFromId(2000, "Test Game"));
-        await second.Socket.DisconnectAsync();
+        await CloseAsync(second);
         Assert.Equal(1, server.Count("GetDataPackage")); // the second connection read the store instead of asking again
     }
 
@@ -70,11 +77,11 @@ public class DataPackageStoreTests
         using var dir = new TempFolder();
         var store = new DataPackageStore(dir.Path);
         await using (var server = ServerWithOneGame())
-            await (await LogInAsync(server, store)).Socket.DisconnectAsync();
+            await CloseAsync(await LogInAsync(server, store));
 
         await using var updated = ServerWithOneGame(NewChecksum);
         var session = await LogInAsync(updated, store);
-        await session.Socket.DisconnectAsync();
+        await CloseAsync(session);
         Assert.Equal(1, updated.Count("GetDataPackage"));
         Assert.True(store.TryGet("Test Game", Checksum, out _));
         Assert.True(store.TryGet("Test Game", NewChecksum, out _));
@@ -92,7 +99,7 @@ public class DataPackageStoreTests
 
         var session = await LogInAsync(server, store);
         Assert.Equal("Shield", session.Items.GetItemName(1001, "Test Game"));
-        await session.Socket.DisconnectAsync();
+        await CloseAsync(session);
         Assert.Equal(1, server.Count("GetDataPackage"));
         Assert.True(store.TryGet("Test Game", Checksum, out var data));
         Assert.Equal(2001, data.LocationLookup["Boss"]);

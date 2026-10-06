@@ -253,12 +253,12 @@ namespace AP_Atlas.Core.Connections
         /// </summary>
         public void CheckForDrops()
         {
-            List<SlotId> dropped;
+            List<KeyValuePair<ArchipelagoSession, ConnectedSlot>> gone;
             var switchOn = new List<ConnectedSlot>();
             lock (_lock)
             {
                 if (_closing) return;
-                var gone = _loggedIn.Where(entry => !IsOpen(entry.Key)).ToList();
+                gone = _loggedIn.Where(entry => !IsOpen(entry.Key)).ToList();
                 foreach (var (session, _) in gone)
                 {
                     _loggedIn.Remove(session);
@@ -266,10 +266,10 @@ namespace AP_Atlas.Core.Connections
                 }
                 foreach (var (session, _) in gone)
                     if (EndText(session) is { } next) switchOn.Add(next);
-                dropped = gone.Select(entry => entry.Value.Slot).ToList();
             }
+            foreach (var (session, _) in gone) AtlasSessions.Finished(session);
             SwitchOnText(switchOn);
-            foreach (var slot in dropped) OnDropped(slot, "no close from the server");
+            foreach (var (_, slot) in gone) OnDropped(slot.Slot, "no close from the server");
         }
 
         /// <summary>
@@ -346,7 +346,7 @@ namespace AP_Atlas.Core.Connections
                     lock (checksums) foreach (var entry in info.DataPackageChecksums) checksums[entry.Key] = entry.Value;
             }
             session.Socket.PacketReceived += OnPacket;
-            session.Socket.ErrorReceived += (_, message) => Raise(() => SocketError?.Invoke(login.Slot, message), "reporting a socket error");
+            session.Socket.ErrorReceived += (_, message) => OnSocketError(session, login.Slot, message);
             session.Socket.SocketClosed += reason => OnSocketClosed(session, reason);
 
             var attempt = TryLogInAsync(session, login, text);
@@ -427,13 +427,16 @@ namespace AP_Atlas.Core.Connections
             }
         }
 
+        /// <summary>
+        /// A login that timed out may still connect and finish later: its connection is closed then, however the login
+        /// ended (a refused login's connection is still open).
+        /// </summary>
         private async Task CloseWhenDoneAsync(Task<LoginResult> attempt, ArchipelagoSession session)
         {
             LoginResult late = await attempt.ConfigureAwait(false);
-            if (!late.Successful) return;
             lock (_lock) _open.Add(session); // so CloseAsync closes it (it was forgotten when the attempt timed out)
             await CloseAsync(session).ConfigureAwait(false);
-            Logger.LogDebug("A login that finished after its time limit was closed.");
+            if (late.Successful) Logger.LogDebug("A login that finished after its time limit was closed.");
         }
 
         // =====================================================================
@@ -441,8 +444,9 @@ namespace AP_Atlas.Core.Connections
         // =====================================================================
 
         /// <summary>
-        /// Forgets a session, then closes its socket with a close frame. Safe to call more than once, and on a socket that
-        /// never opened or already broke (there's nothing to close then, which isn't a failure).
+        /// Forgets a session, then closes its socket with a close frame, and gives its thread back
+        /// (<see cref="AtlasSessions.Finished"/>). Safe to call more than once, and on a socket that never opened or
+        /// already broke (there's nothing to close then, which isn't a failure).
         /// </summary>
         private async Task CloseAsync(ArchipelagoSession session)
         {
@@ -464,6 +468,7 @@ namespace AP_Atlas.Core.Connections
             {
                 Logger.LogDebug("A server connection had nothing left to close: " + ex.Message);
             }
+            AtlasSessions.Finished(session);
         }
 
         private void OnSocketClosed(ArchipelagoSession session, string reason)
@@ -476,8 +481,17 @@ namespace AP_Atlas.Core.Connections
                 _open.Remove(session);
                 switchOn = EndText(session);
             }
+            AtlasSessions.Finished(session);
             if (switchOn != null) SwitchOnText(new[] { switchOn });
             OnDropped(slot.Slot, string.IsNullOrWhiteSpace(reason) ? "the server closed the connection" : reason);
+        }
+
+        private void OnSocketError(ArchipelagoSession session, SlotId slot, string message)
+        {
+            // A connection Atlas is done with reports a closed socket when its send loop ends (AtlasSessions.Finished): not news.
+            lock (_lock)
+                if (!_open.Contains(session)) return;
+            Raise(() => SocketError?.Invoke(slot, message), "reporting a socket error");
         }
 
         private void OnDropped(SlotId slot, string reason)

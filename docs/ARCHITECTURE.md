@@ -33,7 +33,7 @@ MainTrackerWindow (the shell)
   - `EngineDownloader` (`Engine/`).
   - `Connections/`:
     - `SessionManager`: every connection to an Archipelago server (connecting one at a time, the login time limit, drops, careful reconnects, closing), and the room's text: one connection per multiworld team receives it and passes each line to every slot of the team (`SessionManager.Text.cs`).
-    - `AtlasSessions`: the only place sessions are made; each keeps the games' names in `DataPackageStore` (the data folder, below).
+    - `AtlasSessions`: the only place sessions are made; each keeps the games' names in `DataPackageStore` (the data folder, below), and gives its connection's thread back when it ends (`Finished`).
   - `Testing/FakeArchipelagoServer` (internal): a fake Archipelago server on the test computer, for the unit tests and the UI test. Atlas never starts it otherwise.
   - `Testing/FakeCheeseServer` (internal): a stand-in for the Cheese Tracker site on the test computer, for the self-test and the UI test. The real site is never contacted.
   - `Testing/FakeLogicEngine` (internal) and `fake_engine.py`: a fake logic engine in a stand-in Archipelago folder, answering the engine's requests from simple rules, for the unit tests and the UI test. Atlas never sets one up otherwise; the UI test runs it on a Python already on the computer (`AtlasEngine.TestPython`, which only the UI test sets).
@@ -97,7 +97,8 @@ Atlas reads or writes outside this folder only with the user's permission. Nothi
 ## How things talk to each other
 
 - **Archipelago servers:** websockets through MultiClient.Net, compressed, all through `SessionManager`:
-  - One connection at a time; a login has 10 seconds, and one that finishes later is closed.
+  - One connection at a time; a login has 10 seconds, and one that finishes later is closed (refused or not).
+  - **Threads:** the library's send loop blocks a thread pool thread for as long as its connection is open, and closing the connection doesn't wake it. `AtlasSessions` raises the pool's minimum by one per open connection, and `SessionManager` calls `AtlasSessions.Finished` whenever a session ends (closed, dropped, found dead, or a late login): one more queued packet wakes the loop, which finds its connection closed and ends without sending it. Its "socket closed" error isn't passed on.
   - A drop is noticed from the socket's close, or by a check twice a second (a server that died sends none).
   - Reconnects wait 15 s, 30 s, 1, 2, 5 and 10 minutes (±20%), then stop; a refusal stops them at once.
   - Closing Atlas sends every session a close frame. Session events arrive on network threads and move to the main thread with `Ui.Defer(owner, …)`, which skips the work if its owner (a slot, window or tab) was closed meanwhile, and logs a failure.

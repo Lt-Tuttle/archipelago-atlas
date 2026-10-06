@@ -20,7 +20,8 @@ internal sealed record FakeGame(string Checksum, Dictionary<string, long> Items,
 /// <summary>
 /// A small Archipelago server for tests, on this computer only (loopback): it greets each client with the room's info,
 /// answers data package requests and logins as a real server does, and records what clients send. It can also
-/// misbehave on purpose: stay silent, answer slowly, refuse connections, or drop every client without a close.
+/// misbehave on purpose: stay silent, answer slowly, refuse connections, drop clients without a close, or close one
+/// properly as a room that shuts down.
 /// Nothing leaves the computer, and nothing reaches a real server. Used by the unit tests and by Atlas's UI test
 /// (ATLAS_UITEST); Atlas itself never starts it.
 /// </summary>
@@ -84,6 +85,9 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
 
     /// <summary>How long to wait before answering a login.</summary>
     public TimeSpan LoginDelay { get; set; }
+
+    /// <summary>How long to wait before answering a new connection's websocket handshake (a slow server).</summary>
+    public TimeSpan HandshakeDelay { get; set; }
 
     /// <summary>
     /// Tell the room a client joined this long before answering its login (0: just after, as a real server does). The
@@ -168,6 +172,22 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
         foreach (var client in clients) Reset(client);
     }
 
+    /// <summary>Closes one slot's connections properly (with a close frame), as a server does when its room shuts down.</summary>
+    public async Task CloseClientAsync(string slotName)
+    {
+        List<(WebSocket Socket, SemaphoreSlim Sending)> sockets;
+        lock (_sockets)
+            lock (_clients)
+                sockets = _sockets.Where(entry => _clients.TryGetValue(entry.Socket, out var client) && NameOf(client.Team, client.Slot) == slotName).ToList();
+        foreach (var (socket, sending) in sockets)
+        {
+            await sending.WaitAsync();
+            try { await socket.CloseOutputAsync(WebSocketCloseStatus.EndpointUnavailable, "The room shut down.", CancellationToken.None); }
+            catch (Exception ex) when (ex is WebSocketException or ObjectDisposedException or IOException or InvalidOperationException) { } // already gone
+            finally { sending.Release(); }
+        }
+    }
+
     private static void Reset(TcpClient client)
     {
         try
@@ -198,6 +218,7 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
             try
             {
                 var stream = client.GetStream();
+                if (HandshakeDelay > TimeSpan.Zero) await Task.Delay(HandshakeDelay, _stop.Token);
                 if (!await HandshakeAsync(stream, RefuseConnections, _stop.Token)) return;
                 using var socket = WebSocket.CreateFromStream(stream, new WebSocketCreationOptions { IsServer = true, KeepAliveInterval = TimeSpan.Zero });
                 using var sending = new SemaphoreSlim(1, 1);

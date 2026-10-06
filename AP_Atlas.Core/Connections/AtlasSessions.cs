@@ -2,15 +2,19 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
+using System.Threading;
 using Archipelago.MultiClient.Net;
 using Archipelago.MultiClient.Net.Models;
+using Archipelago.MultiClient.Net.Packets;
 
 namespace AP_Atlas.Core.Connections
 {
     /// <summary>
     /// Where Atlas creates its Archipelago sessions (a guard rail keeps it the only place). Every session keeps the games'
     /// names in Atlas's <see cref="DataPackageStore"/>: left alone, the connection library would read and write
-    /// %LocalAppData%\Archipelago\Cache, outside Atlas's folder, on every connection.
+    /// %LocalAppData%\Archipelago\Cache, outside Atlas's folder, on every connection. And every session's connection
+    /// gives its thread back once Atlas is done with it (<see cref="Finished"/>, <see cref="LibraryThreads"/>).
     /// </summary>
     /// <remarks>
     /// The library has no setting for this, so Atlas fills in the one part it would otherwise create itself: a session's
@@ -32,11 +36,81 @@ namespace AP_Atlas.Core.Connections
         private static ArchipelagoSession Prepared(ArchipelagoSession session, DataPackageStore store)
         {
             LibraryCache.Attach(session, store);
+            LibraryThreads.Watch(session);
             return session;
         }
 
         /// <summary>The store a session keeps its names in, or null if it has none (the library would use its own).</summary>
         public static DataPackageStore? StoreOf(ArchipelagoSession session) => LibraryCache.StoreOf(session);
+
+        /// <summary>
+        /// Atlas is done with a session whose connection has closed (closed by Atlas, dropped, or never logged in): its
+        /// thread goes back to the pool. Safe to call more than once, and for a session that never connected.
+        /// </summary>
+        public static void Finished(ArchipelagoSession session) => LibraryThreads.Release(session);
+    }
+
+    /// <summary>
+    /// The connection library and the thread pool. While its connection is open, each session's send loop waits for its
+    /// next packet by blocking a thread pool thread, and closing the connection doesn't wake it (checked in 6.7.1), so
+    /// every connection Atlas ever opened would keep a thread for good. Once those use up the pool's minimum (the
+    /// processor count), Atlas's background work (logins, logic, map packs) waits while .NET slowly adds threads: on the
+    /// fake server, a login took 10 seconds once 40 connections had been opened. So:
+    /// <list type="bullet">
+    /// <item>the pool's minimum grows by one for each open connection, so those threads are never missed;</item>
+    /// <item>a finished connection's loop is woken with one more packet: it finds its connection closed and ends without
+    /// sending it (its library reports a closed socket, which <see cref="SessionManager"/> doesn't pass on).</item>
+    /// </list>
+    /// </summary>
+    internal static class LibraryThreads
+    {
+        private static readonly object Lock = new();
+        // Connections whose send loop holds a thread: opened, not finished. Weak, so a session that's dropped without
+        // being finished isn't kept in memory (its thread stays counted, the safe way round).
+        private static readonly ConditionalWeakTable<ArchipelagoSession, object> Running = new();
+        private static int _running;
+        private static int _baseline = -1;
+
+        /// <summary>How many connections' send loops hold a thread now (for tests).</summary>
+        internal static int Holding
+        {
+            get { lock (Lock) return _running; }
+        }
+
+        /// <summary>The pool's own minimum, before Atlas added to it (-1 until a connection first opened; for tests).</summary>
+        internal static int Baseline
+        {
+            get { lock (Lock) return _baseline; }
+        }
+
+        // The library starts the loop just after it raises SocketOpened.
+        internal static void Watch(ArchipelagoSession session) => session.Socket.SocketOpened += () => Count(session, opened: true);
+
+        internal static void Release(ArchipelagoSession session)
+        {
+            if (session.Socket.Connected)
+            {
+                // Not closed after all: its loop may still send, so its thread stays counted.
+                Logger.LogDebug("A connection Atlas was done with was still open; its thread stays in use.");
+                return;
+            }
+            if (!Count(session, opened: false)) return;
+            // The packet is never sent (the loop checks its connection first), so the task never finishes: nothing waits on it.
+            Async.Fire(() => session.Socket.SendPacketAsync(new BouncePacket()), "ending a closed connection's send loop", tellUser: false);
+        }
+
+        private static bool Count(ArchipelagoSession session, bool opened)
+        {
+            lock (Lock)
+            {
+                if (opened ? !Running.TryAdd(session, Lock) : !Running.Remove(session)) return false;
+                _running += opened ? 1 : -1;
+                ThreadPool.GetMinThreads(out int workers, out int io);
+                if (_baseline < 0) _baseline = workers;
+                ThreadPool.SetMinThreads(_baseline + _running, io);
+                return true;
+            }
+        }
     }
 
     /// <summary>The connection library's internal file cache, and putting Atlas's store in its place.</summary>
