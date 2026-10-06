@@ -82,6 +82,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     {
         using var __perf = AP_Atlas.Core.PerfMonitor.Measure("Refresh context views");
 
+        RefreshSlotPicker();
         _propertiesPanel?.OnSelectedSlotChanged(_currentSelectedSlot);
         UpdateSidebarHighlighting();
         RefreshTerminalView();

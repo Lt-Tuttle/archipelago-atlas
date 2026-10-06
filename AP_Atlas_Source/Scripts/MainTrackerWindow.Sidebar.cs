@@ -119,6 +119,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     /// </summary>
     private void UpdateSidebar()
     {
+        RefreshSlotPicker(); // the slots changed: a connected one, an ended one
         if (_activeSessionsList == null) return;
         string layout = SidebarLayout();
         if (layout == _sidebarLayout && _activeSessionsList.GetChildCount() > 0)

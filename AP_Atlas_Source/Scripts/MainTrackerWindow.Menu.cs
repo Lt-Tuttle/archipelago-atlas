@@ -30,6 +30,8 @@ public partial class MainTrackerWindow
         Add("file.exit", "File", "Exit", "", GracefulShutdown);
 
         Add("multiworld.new", "Multiworld", "New Multiworld…", "Ctrl+N", OnAddProfilePressed);
+        Add("slot.next", "Multiworld", "Next Slot", "Ctrl+Tab", () => CycleSlot(1));
+        Add("slot.previous", "Multiworld", "Previous Slot", "Ctrl+Shift+Tab", () => CycleSlot(-1));
 
         Add(AP_Atlas.UI.CommandPalette.OwnCommandId, "View", "Command Palette…", "Ctrl+Shift+P", OpenCommandPalette);
         Add("view.chat", "View", "Chat", "", () => ShowTerminalTab(0));
@@ -90,7 +92,7 @@ public partial class MainTrackerWindow
         menus["File"].AddSeparator();
         AddCommandItems(menus["File"], "file.exit");
 
-        AddCommandItems(menus["Multiworld"], "multiworld.new");
+        AddCommandItems(menus["Multiworld"], "multiworld.new", "slot.next", "slot.previous");
         menus["Multiworld"].AddSeparator();
         AddMultiworldSettings(menus["Multiworld"]);
 

@@ -93,6 +93,8 @@ public partial class MainTrackerWindow
             CommandPaletteAsync);
         await ScenarioAsync("Activity bar: every tool in its group, in order, with a shipped icon and its key in the tooltip; pressing a button shows the tool, switching a tool any other way lights its button and names it in the header; the engine button opens the engine window",
             ActivityBarAsync);
+        await ScenarioAsync("Slot picker: the tool header lists the connected slots with the selected one chosen; picking one shows its view, Ctrl+Tab and Ctrl+Shift+Tab go through them around the end, a slot selected elsewhere shows as picked, a tool that isn't per slot hides it, and a slot that ends leaves it",
+            SlotPickerAsync);
         await ScenarioAsync("Bursts: 40 items and 40 chat lines arriving together reach the slot once each, at most one update of the window in each frame they arrive over (not 80)",
             BurstIsOneUpdateAsync);
         await ScenarioAsync("Long text: a game's names and a hint's entrance of a megabyte, and a chat line of 100,000 characters without a space, hold up no frame for 150 ms, shown or not (names are cut to 500 characters; a long run of text gets breaks)",
@@ -590,6 +592,72 @@ public partial class MainTrackerWindow
         about.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
         await UiTestWaitAsync(0.2);
         host.ShowTool(AP_Atlas.UI.Tool.Connections);
+    }
+
+    private async Task SlotPickerAsync()
+    {
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        await using var server = new FakeArchipelagoServer();
+        server.Slots.Clear();
+        server.Slots.AddRange(new[] { "Alice", "Bob" });
+        server.Games["Test Game"] = new FakeGame("0123456789abcdef0123456789abcdef01234567",
+            new Dictionary<string, long> { ["Sword"] = 1000 }, new Dictionary<string, long> { ["Cave Chest"] = 2000 });
+        var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.AddRange(new[] { "Alice", "Bob" });
+        _profiles.Add(profile);
+        try
+        {
+            await OnConnectSlotPressedAsync("Alice", profile);
+            var alice = await UiTestWaitForAsync(() => SlotView(profile.Id, "Alice"), "Alice's view");
+            await OnConnectSlotPressedAsync("Bob", profile);
+            var bob = await UiTestWaitForAsync(() => SlotView(profile.Id, "Bob"), "Bob's view");
+            host.ShowTool(AP_Atlas.UI.Tool.MapTracker);
+            await UiTestWaitAsync(0.05);
+            var picker = _slotPicker!;
+            string Listed() => string.Join(", ", Enumerable.Range(0, picker.ItemCount).Select(i => picker.GetItemText(i)));
+            UiTestExpect(picker.Visible && picker.ItemCount == 2 && picker.GetItemText(0).StartsWith("Alice", StringComparison.Ordinal) && picker.GetItemText(1).StartsWith("Bob", StringComparison.Ordinal),
+                $"the picker shows {picker.ItemCount} slots ({Listed()})");
+            UiTestExpect(_currentSelectedSlot == bob && picker.Selected == 1, "the picker doesn't show the slot that connected last as the one picked");
+
+            // Picking a slot shows its view, as its card would.
+            picker.Select(0);
+            picker.EmitSignal(OptionButton.SignalName.ItemSelected, 0);
+            await UiTestWaitAsync(0.05);
+            UiTestExpect(_currentSelectedSlot == alice && ShownContent() == alice.MapTracker, "picking Alice didn't show her map");
+
+            // Ctrl+Tab and Ctrl+Shift+Tab go through the slots, around the end.
+            await PressAsync("Ctrl+Tab");
+            UiTestExpect(_currentSelectedSlot == bob && picker.Selected == 1, "Ctrl+Tab didn't select the next slot");
+            await PressAsync("Ctrl+Tab");
+            UiTestExpect(_currentSelectedSlot == alice, "Ctrl+Tab didn't go around to the first slot");
+            await PressAsync("Ctrl+Shift+Tab");
+            UiTestExpect(_currentSelectedSlot == bob, "Ctrl+Shift+Tab didn't select the previous slot");
+
+            // A slot selected elsewhere shows as picked; a tool that isn't per slot hides the picker; a slot that ends leaves it.
+            host.SelectSlot(alice);
+            await UiTestWaitAsync(0.05);
+            UiTestExpect(picker.Selected == 0, "the picker doesn't follow a slot selected elsewhere");
+            host.ShowTool(AP_Atlas.UI.Tool.MapPacks);
+            await UiTestWaitAsync(0.05);
+            UiTestExpect(!picker.Visible, "the picker shows on a tool that isn't per slot");
+            host.ShowTool(AP_Atlas.UI.Tool.Hints);
+            // A slot the user disconnects keeps its card (its Connect button connects it again), so it stays pickable too.
+            host.DisconnectSlot(profile.Id, "Bob");
+            await UiTestWaitForAsync(() => !_sessions.IsLoggedIn(new SlotId(profile.Id, "Bob")) ? this : null, "Bob to disconnect");
+            await UiTestWaitAsync(0.2);
+            UiTestExpect(picker.Visible && picker.ItemCount == 2 && picker.Selected == 0, $"after Bob disconnected the picker shows {picker.ItemCount} slots ({Listed()}), picked {picker.Selected}");
+            // Deleting the multiworld ends its slots: nothing is left to pick.
+            DeleteProfile(profile);
+            await UiTestWaitForAsync(() => !IsInstanceValid(alice) || alice.Ended ? this : null, "Alice to end");
+            await UiTestWaitAsync(0.2);
+            UiTestExpect(!picker.Visible && picker.ItemCount == 0, $"after the multiworld was deleted the picker still shows {picker.ItemCount} slots ({Listed()})");
+        }
+        finally
+        {
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+            if (_profiles.Contains(profile)) DeleteProfile(profile);
+        }
     }
 
     private async Task ActivityBarAsync()
