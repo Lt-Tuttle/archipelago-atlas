@@ -46,6 +46,12 @@
       - Decoding an image: only PackImages.DecodeImage, which takes the image's size from its header and checks it against
         an ImageBudget first (a decoder sets aside width x height x 4 bytes from the header alone), and the visual check,
         for its own screenshots.
+      - Rich text that reads BBCode: only SafeRichText, which lets only Atlas's own tags through (Bbcode.Safe). Godot opens
+        the files named in [img] and [font] tags, and for a network path that means connecting to another computer with
+        the user's Windows sign-in. Text from outside Atlas is escaped too (Bbcode.Escape); the self-test and the UI test
+        show it never makes Atlas open a file. The self-test's check that its detection works is the one other use.
+      - Markup in a log message: nowhere. Messages are plain text, escaped for the window (they often quote outside text),
+        so a tag in one would show as text; a line's colour is an argument (Logger.LogInfo(message, color)).
       - An empty catch that doesn't say why on the same line: nowhere. A failure is logged, handled, or explained.
     Where a rule names a number, the file may do it only that many times: one helper does it, everything else uses it.
     Libraries whose internals Atlas relies on are pinned (MoonSharp, Archipelago.MultiClient.Net): update one only with
@@ -97,7 +103,8 @@ $rules = @(
     @{ Name = 'Saving a whole file without SafeFile'; Pattern = '(?<!\w)File\.(WriteAll|AppendAll)\w*\s*\('
        Allowed = @('AP_Atlas.Core\Logger.cs', 'AP_Atlas.Core\Connections\DataPackageStore.cs', 'AP_Atlas.Core\Testing\FakeLogicEngine.cs',
                    'AP_Atlas_Source\Scripts\Core\CrashGuard.cs', 'AP_Atlas_Source\Scripts\Core\Annotations.cs', 'AP_Atlas_Source\Scripts\Core\Engine\AtlasEngine.cs',
-                   'AP_Atlas_Source\Scripts\Core\SelfTest.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.Reliability.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.Safety.cs') },
+                   'AP_Atlas_Source\Scripts\Core\SelfTest.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.Reliability.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.Safety.cs',
+                   'AP_Atlas_Source\Scripts\MainTrackerWindow.UiTest.cs') },
     @{ Name = 'Reading a zip without SafeZip'
        Pattern = 'ZipFile\.Open(Read)?(Async)?\s*\((?![^)]*ZipArchiveMode\.Create)|new\s+(System\.IO\.Compression\.)?ZipArchive\s*\((?![^)]*ZipArchiveMode\.Create)|ZipArchive\.CreateAsync\s*\((?![^)]*ZipArchiveMode\.Create)|(?<!CreateEntry\([^()]*\))\.Open(Async)?\s*\(\s*\)'
        Allowed = @('AP_Atlas.Core\SafeZip.cs'); Max = 2 },
@@ -105,7 +112,12 @@ $rules = @(
        Allowed = @('AP_Atlas_Source\Scripts\Core\Engine\AtlasEngine.cs'); Max = 3 },
     @{ Name = 'Decoding an image without checking its size first (use PackImages.DecodeImage)'; Pattern = 'Load(Png|Jpg|Webp|Bmp|Tga|Svg|Ktx|Exr|Dds)FromBuffer\s*\(|\bImage\.LoadFromFile\s*\('
        Allowed = @('AP_Atlas_Source\Scripts\Core\PopTracker\PackImages.cs', 'AP_Atlas_Source\Scripts\MainTrackerWindow.VisualCheck.cs'); Max = 3 },
-    @{ Name = 'An empty catch that doesn''t say why'; Pattern = 'catch(\s*\([^)]*\))?\s*\{\s*\}(?!\s*//)'; Allowed = @() }
+    @{ Name = 'Rich text that reads BBCode outside SafeRichText (outside text could make Godot open a file)'
+       Pattern = 'BbcodeEnabled\s*=(?!\s*false\b)|\bSetUseBbcode\s*\(|\bAppendText\s*\(|\bParseBbcode\s*\('
+       Allowed = @('AP_Atlas_Source\Scripts\UI\SafeRichText.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.Safety.cs'); Max = 2 },
+    @{ Name = 'Markup in a log message (messages are plain text, shown as written: give the line''s colour as an argument)'
+       Pattern = '\b(LogToSystem|LogToDebug|LogInfo|LogWarning|LogError|LogDebug|_logAction|AppendDebugLog)\s*\(.*\[/?(color|bgcolor|b|i|u|s|url|code)[=\]]'; Allowed = @() },
+    @{ Name = 'An empty catch that doesn''t say why'; Pattern ='catch(\s*\([^)]*\))?\s*\{\s*\}(?!\s*//)'; Allowed = @() }
 )
 
 $files = $roots | ForEach-Object { Get-ChildItem -Path $_ -Recurse -Filter '*.cs' -File } |

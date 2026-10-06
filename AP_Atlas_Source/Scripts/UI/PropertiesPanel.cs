@@ -285,7 +285,7 @@ namespace AP_Atlas.UI
             };
         }
 
-        private static string Esc(string s) => (s ?? "").Replace("[", "[lb]");
+        private static string Esc(string s) => Bbcode.Escape(s);
 
         private static string Hex(Color c) => "#" + c.ToHtml(false);
 
@@ -307,16 +307,15 @@ namespace AP_Atlas.UI
 
         private RichTextLabel MakeRichText(string bbcode)
         {
-            var rtl = new RichTextLabel
+            var rtl = new SafeRichText
             {
-                BbcodeEnabled = true,
                 FitContent = true,
                 ScrollActive = false,
                 AutowrapMode = TextServer.AutowrapMode.WordSmart,
                 SizeFlagsHorizontal = SizeFlags.ExpandFill,
                 SelectionEnabled = false,
                 MetaUnderlined = false,
-                Text = bbcode
+                Markup = bbcode
             };
             // Use the font Labels resolve to, so values match their labels ([code] blocks keep the mono font).
             var labelFont = _kindLabel?.GetThemeFont("font");

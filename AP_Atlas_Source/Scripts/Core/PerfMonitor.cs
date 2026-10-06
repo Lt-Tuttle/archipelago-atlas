@@ -210,9 +210,8 @@ namespace AP_Atlas.Core
             double measured = scopes.Where(s => s.Depth == 0).Sum(s => s.Ms);
 
             var report = new System.Text.StringBuilder();
-            report.Append($"[color=orange]UI hitch: frame took {frameMs:0} ms");
+            report.Append($"UI hitch: frame took {frameMs:0} ms");
             if (!string.IsNullOrEmpty(action)) report.Append($" after \"{action}\"");
-            report.Append("[/color]");
             foreach (var s in scopes.Where(s => s.Ms >= MinReportedScopeMs || s.Bytes >= 1048576))
                 report.Append($"\n    {new string(' ', s.Depth * 2)}{s.Label}{(s.Count > 1 ? $" (x{s.Count})" : "")}: {s.Ms:0} ms" +
                               (s.Bytes >= 1048576 ? $", {s.Bytes / 1048576.0:0.0} MB allocated" : ""));

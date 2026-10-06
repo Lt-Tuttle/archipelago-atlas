@@ -55,9 +55,9 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         bottomMenuBtn.AddThemeColorOverride("font_color", Colors.LightGray);
         var extraItems = new System.Collections.Generic.Dictionary<string, System.Action> {
             { "Copy System Log", () => DisplayServer.ClipboardSet(_consoleOutput.GetParsedText()) },
-            { "Clear System Log", () => _consoleOutput.Text = "" },
+            { "Clear System Log", () => _consoleOutput.Clear() },
             { "Copy Debug Log", () => DisplayServer.ClipboardSet(_debugLogConsole.GetParsedText()) },
-            { "Clear Debug Log", () => _debugLogConsole.Text = "" }
+            { "Clear Debug Log", () => _debugLogConsole.Clear() }
         };
         AttachFontMenuPopup(bottomMenuBtn,
             () => _appSettings.ConsoleFontSize,
@@ -71,12 +71,12 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _terminalStage.AddThemeStyleboxOverride("panel", contentStyle);
         bottomWrapper.AddChild(_terminalStage);
         _sysLogVBox = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        _consoleOutput = new RichTextLabel { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, ScrollFollowing = true, SelectionEnabled = true, BbcodeEnabled = true };
+        _consoleOutput = new AP_Atlas.UI.SafeRichText { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, ScrollFollowing = true, SelectionEnabled = true };
         _sysLogVBox.AddChild(_consoleOutput);
         _systemLog = new AP_Atlas.UI.LogPane(_consoleOutput);
         _terminalStage.AddChild(_sysLogVBox);
         _debugLogVBox = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        _debugLogConsole = new RichTextLabel { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, ScrollFollowing = true, SelectionEnabled = true, BbcodeEnabled = true };
+        _debugLogConsole = new AP_Atlas.UI.SafeRichText { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, ScrollFollowing = true, SelectionEnabled = true };
         _debugLogVBox.AddChild(_debugLogConsole);
         _debugLog = new AP_Atlas.UI.LogPane(_debugLogConsole);
         _terminalStage.AddChild(_debugLogVBox);

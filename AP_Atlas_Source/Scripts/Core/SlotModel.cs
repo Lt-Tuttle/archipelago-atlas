@@ -102,7 +102,7 @@ namespace AP_Atlas.Core
             Session = connected.Session;
             SlotData = connected.Login.SlotData ?? new Dictionary<string, object>();
             DataChecksums = connected.DataChecksums;
-            AddSystemMessage($"[color=lime]Connected to {Game} as {SlotName}![/color]");
+            AddSystemMessage(Bbcode.Colored($"Connected to {Game} as {SlotName}!", "lime"));
 
             // Session hooks (network threads).
             Session.Socket.SocketClosed += OnSocketClosed;
@@ -244,7 +244,7 @@ namespace AP_Atlas.Core
                 _raceAnnounced = true;
                 string what = LogicHidden ? "all logic information is hidden" : "logic explanations are disabled";
                 string why = IsRaceRoom ? "this room is in race mode" : "race mode is set to Always On";
-                Logger.LogInfo($"[color=orange][{SlotName}] Race mode: {what} ({why}).[/color]");
+                Logger.LogInfo($"[{SlotName}] Race mode: {what} ({why}).", "orange");
             }
             else if (!restricted) _raceAnnounced = false;
             Logic.ForgetExplanations();
@@ -547,7 +547,7 @@ namespace AP_Atlas.Core
                 foreach (var h in hints)
                     if (h.FindingPlayer == me && !h.Found) _hintedLocations.Add(h.LocationId);
             }
-            if (closed != null) AddEntry(new ChatEntry { SystemMessage = $"[color=red]Connection lost: {closed}[/color]", Sequence = _nextSequence++ });
+            if (closed != null) AddEntry(new ChatEntry { SystemMessage = Bbcode.Colored($"Connection lost: {closed}", "red"), Sequence = _nextSequence++ });
             if (goalReached && !GoalCompleted)
             {
                 GoalCompleted = true;

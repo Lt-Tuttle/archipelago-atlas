@@ -38,6 +38,54 @@ namespace AP_Atlas.Core
             Expect(ExternalLinks.CheckFolder(Path.Combine(dir, "missing"), out _) != null, "a missing folder was accepted");
         }
 
+        /// <summary>
+        /// Text from outside Atlas is shown as written, never read as markup that opens a file. Godot opens the files named
+        /// in [img] and [font] tags (first the path's .remap, which this test plants: a .remap Godot reads names a resource,
+        /// and Godot logs failing to load it), and for a network path that means connecting to another computer with the
+        /// user's Windows sign-in. Through SafeRichText and through the log, no file is opened; rich text reading BBCode
+        /// without SafeRichText opens it, which shows the probe works.
+        /// </summary>
+        private static void OutsideTextIsNeverMarkup()
+        {
+            string dir = Scratch("markup_probe");
+            Directory.CreateDirectory(dir);
+            string id = Guid.NewGuid().ToString("N")[..8];
+            string png = Path.Combine(dir, "probe.png").Replace('\\', '/');
+            string ttf = Path.Combine(dir, "probe.ttf").Replace('\\', '/');
+            File.WriteAllText(png + ".remap", "[remap]\npath=\"res://atlas_probe_img_" + id + ".tres\"\n");
+            File.WriteAllText(ttf + ".remap", "[remap]\npath=\"res://atlas_probe_font_" + id + ".tres\"\n");
+            string hostile = "[img]" + png + "[/img] [font=" + ttf + "]x[/font]";
+            string log = Path.Combine(DataManager.GetDataDirectory(), "logs", "atlas_log.txt");
+            bool Opened()
+            {
+                // No log yet means Godot reported nothing.
+                string text = File.Exists(log) ? File.ReadAllText(log) : "";
+                return text.Contains("atlas_probe_img_" + id) || text.Contains("atlas_probe_font_" + id);
+            }
+
+            // SafeRichText, set and appended to: nothing is opened, the tags show as text, and Atlas's own tags still work.
+            var safe = new AP_Atlas.UI.SafeRichText { Markup = "[color=lime]own[/color] " + hostile };
+            safe.Append("\n" + hostile);
+            string shown = safe.GetParsedText();
+            safe.Free();
+            Expect(!Opened(), "SafeRichText let Godot open a file named in the text");
+            Expect(shown.StartsWith("own [img]" + png + "[/img] [font=") && shown.Contains("\n[img]"), $"the text doesn't show as written: '{shown}'");
+
+            // The log: the line for the window shows the message as written.
+            string line = null;
+            void OnLog(string text, string level) => line ??= text;
+            Logger.OnLogMessage += OnLog;
+            try { Logger.LogInfo("A pack named " + hostile, "orange"); }
+            finally { Logger.OnLogMessage -= OnLog; }
+            Expect(line != null && Bbcode.Safe(line) == line && line.Contains("A pack named [lb]img]"), $"a log line keeps the text's tags: {line}");
+
+            // The probe works: rich text that reads BBCode without SafeRichText opens the file.
+            var raw = new Godot.RichTextLabel { BbcodeEnabled = true };
+            raw.Text = hostile;
+            raw.Free();
+            Expect(Opened(), "the probe didn't see Godot open the file (has Godot changed how it loads [img] and [font]?)");
+        }
+
         private static void PasswordsSavedEncrypted()
         {
             string path = Path.Combine(DataManager.GetDataDirectory(), "profiles.json");

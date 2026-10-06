@@ -95,6 +95,7 @@ namespace AP_Atlas.Core
             await TestAsync("Sphere Tracker: only a room the host created, for this multiworld; nothing in race mode; never stuck", SpheresHostRoomOnly);
             await TestAsync("Sphere Tracker: a page too large isn't retried on its own, large pages are read less often, a stalled one is cut off", SpheresLargePagesAndStalls);
             Test("Links: only https web pages and existing folders are opened, never files or network shares", LinksOpenSafely);
+            Test("Text from outside is shown as written, never read as markup that opens a file (or reaches another computer)", OutsideTextIsNeverMarkup);
             Test("Room passwords are saved encrypted, never as plain text (older files are converted)", PasswordsSavedEncrypted);
             Test("Permissions: Always allow is kept and can be taken back; Allow once lasts the session", PermissionsAreKeptAndRevocable);
             await TestAsync("Downloads: the wrong file or a too-large one is never kept; redirects only to web addresses", DownloadsAreChecked);

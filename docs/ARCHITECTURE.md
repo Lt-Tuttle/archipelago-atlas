@@ -27,6 +27,7 @@ MainTrackerWindow (the shell)
 - **`AP_Atlas.Core/`**: everything that doesn't need Godot. It has no Godot reference, so it can't touch the window from a worker thread, and its tests run with plain `dotnet test`.
   - `SafeFile`, `Logger`, `Async`, `AtlasVersion`, `Secrets`.
   - `SafeZip`, `ImageHeader` and `ImageBudget`: reading zips and images that come from outside Atlas (see "Files from outside Atlas", below).
+  - `Bbcode`: escaping text from outside Atlas for rich text, and the allowlist every piece of markup passes (`Safe`).
   - `PoliteHttp` and `GitHubApi`.
   - `YamlExclusions`.
   - The Cheese Tracker client, models, table rules, advisor and key store (`CheeseTracker/`).
@@ -158,6 +159,15 @@ Map packs and apworlds are zips from outside Atlas, and both a zip's headers and
   - `ImageBudget` refuses an image over 16,384 a side, or one that would take the pack's images past 2 GB (one budget per decoding of a pack). A file whose size can't be read isn't decoded either.
   - The real corpus (43 packs, 6,750 images) has a longest side of 12,560, at most 821 MB of images in a pack, 3.7 MB of text and 210 MB of image files; the corpus check (`ATLAS_SELFTEST_PACKS`) would fail if any were refused.
 
+**Text from outside Atlas** (a pack's names, a server's or another player's messages, a site's data, a zip's file names) is shown as written, never read as markup:
+- Godot's rich text reads the paths in `[img]`, `[font]` and `[dropcap]` tags with its resource loader, which opens files beside the path first (`path.remap`). A network path there would make Windows connect to the computer it names, offering it the user's Windows sign-in.
+- **Only `SafeRichText` (UI) reads BBCode.** Its markup passes `Bbcode.Safe`, an allowlist: Atlas's own tags (`b`, `i`, `u`, `s`, `code`, `color`, `bgcolor`, `url`, `lb`, `rb`) work, and any other `[` becomes `[lb]` and shows as text. That covers file tags, sizes, tables, and tags a later Godot adds. Its `Text` is hidden by a nested type, so `label.Text = …` doesn't compile; markup goes in through `Markup` or `Append`.
+- **Outside text is escaped where it's put into markup** (`Bbcode.Escape`, or helpers that do: `Bbcode.Colored`, Properties' `Esc`, `Link` and `Colored`, the Cheese Tracker tab's `Colored`, the text client's `EscapeBBCode`). Escaping is what keeps outside text from adding Atlas's own tags, such as a fake link.
+- **Log messages are plain text.** `Logger` escapes them for the window, and a line's colour is an argument (`LogInfo(message, color)`), never markup in the message.
+- **Tests:**
+  - The self-test plants `probe.png.remap` and `probe.ttf.remap`. It shows Godot reads them through rich text that isn't `SafeRichText`, so the probe works, and never through `SafeRichText` or the log.
+  - The UI test sends a chat line, a map pack's details and log lines naming the probe, with tags of Atlas's own, through the real window.
+
 ## Safety rules the code enforces
 
 `Tools/check_guards.ps1` runs in CI and fails the build if any of these slip:
@@ -179,6 +189,8 @@ Map packs and apworlds are zips from outside Atlas, and both a zip's headers and
 | `SafeZip` | Reading a zip (opening one to read, or unpacking one of its files). Making a zip is allowed anywhere. |
 | `AtlasEngine` | Unpacking a zip into a folder: only the engine's hash-checked downloads. |
 | `PackImages.DecodeImage` (and the visual check, for its own screenshots) | Decoding an image: its size is checked against an `ImageBudget` first. |
+| `SafeRichText` (and the self-test's check that its probe works) | Rich text that reads BBCode: only Atlas's own tags get through. |
+| nowhere | Markup in a log message: messages are plain text, and a line's colour is an argument. |
 | `PackScriptHost` (its compiler, which needs a big stack) and the self-test | Starting a thread of its own. |
 | nowhere | An empty catch that doesn't say why on its line. |
 

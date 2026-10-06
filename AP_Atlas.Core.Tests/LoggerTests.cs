@@ -32,7 +32,8 @@ public class LoggerTests
             Assert.DoesNotContain("before the folder", file);
             lock (echoed) Assert.Contains(echoed, l => l.Contains("before the folder"));
             lock (echoed) Assert.DoesNotContain(echoed, l => l.Contains("from Godot"));
-            lock (shown) Assert.Contains(shown, l => l.Contains("[12:00:00]") && l.Contains("after the folder"));
+            // The window's line (BBCode) shows the time and the message as written: their "[" escaped.
+            lock (shown) Assert.Contains(shown, l => l.Contains(Bbcode.Escape("[12:00:00]")) && l.Contains("after the folder"));
             lock (shown) Assert.DoesNotContain(shown, l => l.Contains("from Godot"));
         }
         finally

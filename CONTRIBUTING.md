@@ -72,6 +72,8 @@ New code that doesn't need Godot belongs in `AP_Atlas.Core`, with tests. The vis
   | Running Lua | `PackScriptHost`, where a pack's scripts run under limits |
   | Reading a zip (a map pack, an apworld) | `SafeZip`: `ReadText`, `ReadTextBytes` or `ReadImage`, never `ZipFile.OpenRead` or `entry.Open()`. Its limits hold however a zip lies about its files |
   | Decoding an image | `PackImages.DecodeImage`, which checks the size its header gives against an `ImageBudget` before any memory is set aside for it |
+  | Rich text (BBCode) | `SafeRichText` (`Markup`, `Append`), with outside text escaped (`Bbcode.Escape`, or a helper that does). Plain text goes in a `Label` |
+  | Logging | `Logger.LogInfo(message, color)` and friends: the message is plain text, shown as written; its colour is an argument, never markup in it |
   | Saving a file | `SafeFile`. It keeps a backup and survives a crash mid-save. The few places that write files directly (the log, a crash report, an export the user chose) are listed in the guard rails |
   | Closing a server connection | `SessionManager` (a connection still opening is closed as it opens; its thread is given back) |
   | Background work | `Task.Run` or async code, never a thread of its own |
@@ -106,6 +108,7 @@ New code that doesn't need Godot belongs in `AP_Atlas.Core`, with tests. The vis
   - Read them through `SafeZip` and `PackImages.DecodeImage`. A refused file is an `InvalidDataException` with a message for the user: show it (a pack's load issues, a script stop, a status line), and carry on with the rest.
   - A new limit, or a change to one, is checked against the real corpus first (`ATLAS_SELFTEST_PACKS`): real packs must stay far below it. Note the corpus figure next to the limit, as `SafeZip` and `ImageBudget` do.
   - A new image format goes into `ImageHeader` first, read the way its decoder reads it, with a test for a file that tries to show the check a smaller size than its decoder would use.
+  - Their text is shown as written. Never put it into markup unescaped: Godot opens files named in rich text tags, and for a network path that means connecting to another computer. A new tag of Atlas's own goes into `Bbcode.Safe`'s allowlist, with a test; never a tag that takes a path.
 - **Godot's `.uid` files:** Godot makes one next to each script (`Foo.cs.uid`) when it opens or imports the project. Commit it with the script; the guard rails check.
 - **Third-party code, data or art:**
   - Use only things under a license compatible with MIT (MIT, BSD, Apache-2.0, OFL for fonts, and so on), and credit them in [CREDITS.md](CREDITS.md). Anything that ships in Atlas also goes in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

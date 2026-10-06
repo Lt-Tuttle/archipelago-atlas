@@ -162,12 +162,11 @@ public partial class SlotTrackerControl : MarginContainer
         };
         panel.AddThemeStyleboxOverride("panel", style);
 
-        var lbl = new RichTextLabel
+        var lbl = new AP_Atlas.UI.SafeRichText
         {
-            BbcodeEnabled = true,
             FitContent = true,
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
-            Text = bbcodeText
+            Markup = bbcodeText
         };
 
         int fontSize = _appSettings.ConsoleFontSize;
@@ -269,7 +268,7 @@ public partial class SlotTrackerControl : MarginContainer
         return string.IsNullOrEmpty(alias) ? $"Slot: {slot}" : alias;
     }
 
-    private static string EscapeBBCode(string text) => (text ?? "").Replace("[", "[lb]");
+    private static string EscapeBBCode(string text) => AP_Atlas.Core.Bbcode.Escape(text);
 
     /// <summary>Text in the colour the server gave it (white when none).</summary>
     private static string TextBBCode(string text, Archipelago.MultiClient.Net.Colors.PaletteColor? color) =>
@@ -328,13 +327,12 @@ public partial class SlotTrackerControl : MarginContainer
         };
         panel.AddThemeStyleboxOverride("panel", style);
 
-        var lbl = new RichTextLabel
+        var lbl = new AP_Atlas.UI.SafeRichText
         {
-            BbcodeEnabled = true,
             FitContent = true,
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
             MetaUnderlined = false,
-            Text = text
+            Markup = text
         };
         lbl.MetaClicked += meta => OnChatLinkClicked(meta.AsString());
         lbl.MetaHoverStarted += _ => { lbl.MetaUnderlined = true; lbl.MouseDefaultCursorShape = CursorShape.PointingHand; };

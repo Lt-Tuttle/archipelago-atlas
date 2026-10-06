@@ -17,11 +17,11 @@ namespace AP_Atlas.UI
         // Trimmed in steps, not a line at a time: removing the first line shifts all the others.
         private const int TrimStep = 200;
 
-        private readonly RichTextLabel _view;
+        private readonly SafeRichText _view;
         private readonly ConcurrentQueue<string> _queue = new();
         private int _scheduled;
 
-        public LogPane(RichTextLabel view) => _view = view;
+        public LogPane(SafeRichText view) => _view = view;
 
         /// <summary>Adds text (BBCode, ending in a line break) at the end of this frame. Any thread.</summary>
         public void Append(string text)
@@ -36,7 +36,7 @@ namespace AP_Atlas.UI
             var text = new StringBuilder();
             while (_queue.TryDequeue(out var line)) text.Append(line);
             if (text.Length == 0) return;
-            _view.AppendText(text.ToString());
+            _view.Append(text.ToString());
             int extra = _view.GetParagraphCount() - Lines;
             if (extra < TrimStep) return;
             for (int i = 0; i < extra; i++) _view.RemoveParagraph(0, noInvalidate: i < extra - 1);

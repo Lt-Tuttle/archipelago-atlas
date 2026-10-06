@@ -31,7 +31,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     private Button _deleteButton;
     private Label _statusLabel;
     private Control _connectingOverlay;
-    private RichTextLabel _consoleOutput;
+    private AP_Atlas.UI.SafeRichText _consoleOutput;
     private AP_Atlas.UI.LogPane _systemLog, _debugLog;
     private Label _globalStatusLabel;
     private HBoxContainer _menuHbox;
@@ -58,7 +58,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     private AP_Atlas.UI.SphereTrackerTab _sphereTab;
     private MultiworldProfile _selectedProfile = null;
     private VSplitContainer _contentSplit;
-    private RichTextLabel _debugLogConsole;
+    private AP_Atlas.UI.SafeRichText _debugLogConsole;
 
     // Set when _Ready subscribes to the shared services, so _ExitTree undoes exactly what _Ready did.
     private bool _subscribed;
@@ -304,7 +304,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 case RaceInfoId: ShowRaceModeInfo(); return;
             }
             RefreshRaceMenu();
-            LogToSystem($"[color=orange]Race mode: {DescribeRaceMode()}[/color]");
+            LogToSystem($"Race mode: {DescribeRaceMode()}", "orange");
             UpdateSidebar();
         };
         settingsMenu.AddChild(raceMenu);

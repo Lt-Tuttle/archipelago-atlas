@@ -273,7 +273,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             DataManager.SaveProfiles(_profiles);
             _saveButton.Modulate = Colors.White;
             RefreshProfileList();
-            LogToSystem($"[color=green]Profile '{_selectedProfile.Name}' saved.[/color]");
+            LogToSystem($"Profile '{_selectedProfile.Name}' saved.", "green");
             string cheeseLink = _cheeseInput.Text.Trim();
             if (cheeseLink != (_selectedProfile.CheeseTrackerUrl ?? "")) LinkCheeseFromEditor(_selectedProfile, cheeseLink);
         }
@@ -286,7 +286,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         if (error != null)
         {
             ShowToast("Cheese Tracker: " + error, Colors.Salmon);
-            LogToSystem("[color=salmon]Cheese Tracker: " + error + "[/color]");
+            LogToSystem("Cheese Tracker: " + error, "salmon");
         }
         else ShowToast(string.IsNullOrWhiteSpace(text) ? $"{profile.Name} is no longer linked to Cheese Tracker" : $"{profile.Name} is linked to Cheese Tracker", Colors.Gray);
         if (_selectedProfile == profile && _cheeseInput != null) _cheeseInput.Text = profile.CheeseTrackerUrl ?? "";

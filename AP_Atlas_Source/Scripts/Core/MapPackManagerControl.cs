@@ -19,7 +19,8 @@ namespace AP_Atlas.Core
         public event Action OnDataRefreshed;
         private VBoxContainer _packListVBox;
         private PanelContainer _selectedPackRow;
-        private Action<string> _logAction;
+        // Writes a line to the System Log: plain text, and its colour (null for none).
+        private Action<string, string> _logAction;
         private Action _showOverlayAction;
         private Action _hideOverlayAction;
         private Func<HashSet<string>> _getActiveGamesFunc;
@@ -29,7 +30,7 @@ namespace AP_Atlas.Core
         private MarginContainer _inspectorContainer;
         public Control SidebarContent { get; private set; }
 
-        public MapPackManagerControl(Action<string> logAction, Action showOverlayAction, Action hideOverlayAction, Func<HashSet<string>> getActiveGamesFunc, Func<List<ArchipelagoSession>> getActiveSessionsFunc = null)
+        public MapPackManagerControl(Action<string, string> logAction, Action showOverlayAction, Action hideOverlayAction, Func<HashSet<string>> getActiveGamesFunc, Func<List<ArchipelagoSession>> getActiveSessionsFunc = null)
         {
             _logAction = logAction;
             _showOverlayAction = showOverlayAction;
@@ -142,7 +143,8 @@ namespace AP_Atlas.Core
                 _selectedPackRow.AddThemeStyleboxOverride("panel", PackRowStyle(true));
         }
 
-        private void ShowPackDetails(string zipPath)
+        /// <summary>Shows a pack's details in the inspector (internal for the UI test).</summary>
+        internal void ShowPackDetails(string zipPath)
         {
             foreach (Node n in _inspectorContainer.GetChildren()) n.QueueFree();
             var pack = PopTrackerPackLoader.InspectZipPack(zipPath, null);
@@ -169,10 +171,10 @@ namespace AP_Atlas.Core
                 }
             }
 
-            var richText = new RichTextLabel { BbcodeEnabled = true, SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
-            string txt = $"[b]Game:[/b] {pack.Manifest.GameName}\n";
-            txt += $"[b]Author:[/b] {pack.Manifest.Author}\n";
-            txt += $"[b]Version:[/b] {pack.Manifest.GetActualVersion()}\n\n";
+            var richText = new AP_Atlas.UI.SafeRichText { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
+            string txt = $"[b]Game:[/b] {Bbcode.Escape(pack.Manifest.GameName)}\n";
+            txt += $"[b]Author:[/b] {Bbcode.Escape(pack.Manifest.Author)}\n";
+            txt += $"[b]Version:[/b] {Bbcode.Escape(pack.Manifest.GetActualVersion())}\n\n";
 
             txt += $"[b]--- METADATA ---[/b]\n";
             txt += $"[color=lime]Key Items Extracted:[/color] {pack.ItemsByCode.Count}\n";
@@ -186,7 +188,7 @@ namespace AP_Atlas.Core
                 int needs = report.NeedsReview.Count();
                 txt += report.Names == null
                     ? "[color=orange]No name list for this game yet (connect a slot or set the Archipelago install path).[/color]\n"
-                    : $"[color=gray]Checked against {report.Names.Game} names from the {report.Names.Source}.[/color]\n";
+                    : Bbcode.Colored($"Checked against {report.Names.Game} names from the {report.Names.Source}.", "gray") + "\n";
                 txt += $"[color=cyan]Key Items tiles linked:[/color] {report.TilesLinked} / {report.TilesTotal}\n";
                 txt += $"[color=cyan]Pin sections linked:[/color] {report.SectionsLinked} / {report.SectionsTotal}\n";
                 txt += $"[color=cyan]Game locations on a map:[/color] {report.ApLocationsPlaced} / {report.ApLocationsTotal}\n";
@@ -204,10 +206,10 @@ namespace AP_Atlas.Core
             txt += $"\n[b]--- MAP LIST ---[/b]\n";
             foreach (var map in pack.Maps.Values)
             {
-                txt += $" - {map.Name} [color=gray]({map.Id})[/color]\n";
+                txt += $" - {Bbcode.Escape(map.Name)} " + Bbcode.Colored($"({map.Id})", "gray") + "\n";
             }
 
-            richText.Text = txt;
+            richText.Markup = txt;
             vbox.AddChild(richText);
 
             vbox.AddChild(new HSeparator());
@@ -236,10 +238,10 @@ namespace AP_Atlas.Core
                     }
                     catch (Exception ex)
                     {
-                        _logAction($"[color=red]Couldn't delete the map pack: {ex.Message}[/color]");
+                        _logAction($"Couldn't delete the map pack: {ex.Message}", "red");
                         return;
                     }
-                    _logAction($"Deleted the map pack {Path.GetFileName(zipPath)}.");
+                    _logAction($"Deleted the map pack {Path.GetFileName(zipPath)}.", null);
                     RefreshPackList();
                     foreach (Node n in _inspectorContainer.GetChildren()) n.QueueFree();
                     _inspectorContainer.AddChild(new Label { Text = "Select a map pack to view details.", HorizontalAlignment = HorizontalAlignment.Center });
@@ -311,7 +313,7 @@ namespace AP_Atlas.Core
         {
             if (string.IsNullOrEmpty(update.DownloadUrl) || AP_Atlas.Core.ExternalLinks.CheckWeb(update.DownloadUrl, out _) != null)
             {
-                _logAction($"[color=lime]{update.Pack} {update.Latest} is available[/color] (you have {update.Current}); its versions file has no download page Atlas can open.");
+                _logAction($"{update.Pack} {update.Latest} is available (you have {update.Current}); its versions file has no download page Atlas can open.", "lime");
                 return;
             }
             string host = new Uri(update.DownloadUrl).Host;
@@ -327,14 +329,14 @@ namespace AP_Atlas.Core
         {
             PopTrackerManifest manifest;
             try { manifest = ReadManifest(zipPath); }
-            catch (Exception ex) { _logAction($"[color=red]Couldn't read the pack: {ex.Message}[/color]"); return; }
-            if (manifest == null) { _logAction("[color=red]This pack has no manifest.json.[/color]"); return; }
-            if (string.IsNullOrEmpty(manifest.VersionsUrl)) { _logAction($"[color=yellow]{manifest.Name} doesn't publish updates (its manifest has no versions_url).[/color]"); return; }
-            _logAction($"Checking {manifest.Name} for updates…");
+            catch (Exception ex) { _logAction($"Couldn't read the pack: {ex.Message}", "red"); return; }
+            if (manifest == null) { _logAction("This pack has no manifest.json.", "red"); return; }
+            if (string.IsNullOrEmpty(manifest.VersionsUrl)) { _logAction($"{manifest.Name} doesn't publish updates (its manifest has no versions_url).", "yellow"); return; }
+            _logAction($"Checking {manifest.Name} for updates…", null);
             var (update, problem) = await CheckPackUpdateAsync(manifest);
             if (!GodotObject.IsInstanceValid(this)) return;
-            if (problem != null) _logAction($"[color=orange]Couldn't check {manifest.Name} for updates: {problem}[/color]");
-            else if (update == null) _logAction($"[color=green]{manifest.Name} is up to date (v{manifest.GetActualVersion()}).[/color]");
+            if (problem != null) _logAction($"Couldn't check {manifest.Name} for updates: {problem}", "orange");
+            else if (update == null) _logAction($"{manifest.Name} is up to date (v{manifest.GetActualVersion()}).", "green");
             else OfferDownloadPage(update);
         }
         private string _packListSignature;
@@ -376,14 +378,14 @@ namespace AP_Atlas.Core
                     var loading = new Label { Text = $"Reading {uncached.Count} map pack(s)...", HorizontalAlignment = HorizontalAlignment.Center };
                     loading.AddThemeColorOverride("font_color", Colors.Gray);
                     _packListVBox.AddChild(loading);
-                    _logAction($"[color=gray]Reading {uncached.Count} map pack(s) in the background...[/color]");
+                    _logAction($"Reading {uncached.Count} map pack(s) in the background...", "gray");
                     var sw = System.Diagnostics.Stopwatch.StartNew();
                     await Task.Run(() =>
                     {
                         foreach (var f in uncached) PopTrackerPackLoader.InspectZipPack(f, null);
                     });
                     if (!GodotObject.IsInstanceValid(this)) return;
-                    _logAction($"[color=gray]Map packs ready ({sw.ElapsedMilliseconds} ms).[/color]");
+                    _logAction($"Map packs ready ({sw.ElapsedMilliseconds} ms).", "gray");
                 }
                 _packListSignature = PackFolderSignature(files);
                 using (PerfMonitor.Measure("Build map pack list"))
@@ -585,7 +587,7 @@ namespace AP_Atlas.Core
             }
             var installed = InstalledPackGames();
             var missing = games.Where(g => !installed.Any(i => PopTrackerPackLoader.IsGameNameMatch(i, g))).OrderBy(g => g).ToList();
-            foreach (var g in games.Except(missing)) _logAction($"[color=green]{g} already has a map pack.[/color]");
+            foreach (var g in games.Except(missing)) _logAction($"{g} already has a map pack.", "green");
             if (missing.Count == 0) return;
 
             var results = new List<(string Game, List<PackCandidate> Candidates, string Problem)>();
@@ -722,7 +724,7 @@ namespace AP_Atlas.Core
             if (!GodotObject.IsInstanceValid(this)) return;
             if (release.Unknown)
             {
-                _logAction($"[color=orange]Couldn't read {repo}'s releases: {release.Message}[/color]");
+                _logAction($"Couldn't read {repo}'s releases: {release.Message}", "orange");
                 return;
             }
             string where = "github.com/" + repo, url = null, fileName = null, text;
@@ -769,25 +771,25 @@ namespace AP_Atlas.Core
             if (!r.Ok)
             {
                 PoliteHttp.TryDelete(temp);
-                if (GodotObject.IsInstanceValid(this)) _logAction($"[color=red]Couldn't download the pack: {r.Message}[/color]");
+                if (GodotObject.IsInstanceValid(this)) _logAction($"Couldn't download the pack: {r.Message}", "red");
                 return;
             }
             string problem = CheckPackZip(temp);
             if (problem != null)
             {
                 PoliteHttp.TryDelete(temp);
-                if (GodotObject.IsInstanceValid(this)) _logAction($"[color=red]The download from {where} wasn't installed: {problem}.[/color]");
+                if (GodotObject.IsInstanceValid(this)) _logAction($"The download from {where} wasn't installed: {problem}.", "red");
                 return;
             }
             try { File.Move(temp, dest, true); }
             catch (Exception ex)
             {
                 PoliteHttp.TryDelete(temp);
-                if (GodotObject.IsInstanceValid(this)) _logAction($"[color=red]Couldn't install the pack: {ex.Message}[/color]");
+                if (GodotObject.IsInstanceValid(this)) _logAction($"Couldn't install the pack: {ex.Message}", "red");
                 return;
             }
             if (!GodotObject.IsInstanceValid(this)) return;
-            _logAction($"[color=lime]Installed {safeName} from {where}.[/color]");
+            _logAction($"Installed {safeName} from {where}.", "lime");
             await RefreshPackListAsync();
         }
 
@@ -836,10 +838,10 @@ namespace AP_Atlas.Core
             if (!GodotObject.IsInstanceValid(this)) return;
             if (checkedCount == 0)
             {
-                _logAction("[color=orange]None of the installed packs publish updates (no versions_url in their manifests).[/color]");
+                _logAction("None of the installed packs publish updates (no versions_url in their manifests).", "orange");
                 return;
             }
-            _logAction($"Update check: {updates.Count} update(s) among {checkedCount} pack(s)" + (problems.Count > 0 ? $"; {problems.Count} couldn't be checked." : "."));
+            _logAction($"Update check: {updates.Count} update(s) among {checkedCount} pack(s)" + (problems.Count > 0 ? $"; {problems.Count} couldn't be checked." : "."), null);
             var dialog = new AcceptDialog { Title = "Map pack updates", OkButtonText = "Close", MinSize = new Vector2I(640, 300) };
             var box = new VBoxContainer();
             box.AddThemeConstantOverride("separation", 8);
@@ -883,7 +885,7 @@ namespace AP_Atlas.Core
                 string problem = CheckPackZip(path);
                 if (problem != null)
                 {
-                    _logAction($"[color=red]{System.IO.Path.GetFileName(path)} wasn't installed: {problem}.[/color]");
+                    _logAction($"{System.IO.Path.GetFileName(path)} wasn't installed: {problem}.", "red");
                     return;
                 }
                 string destDir = System.IO.Path.Combine(DataManager.GetDataDirectory(), "packs");
@@ -897,12 +899,12 @@ namespace AP_Atlas.Core
                         string temp = destPath + ".importing";
                         System.IO.File.Copy(path, temp, true);
                         System.IO.File.Move(temp, destPath, true);
-                        _logAction($"[color=lime]Installed the map pack {System.IO.Path.GetFileName(path)}.[/color]");
+                        _logAction($"Installed the map pack {System.IO.Path.GetFileName(path)}.", "lime");
                         RefreshPackList();
                     }
                     catch (Exception ex)
                     {
-                        _logAction($"[color=red]Couldn't install the pack: {ex.Message}[/color]");
+                        _logAction($"Couldn't install the pack: {ex.Message}", "red");
                     }
                 }
                 if (System.IO.File.Exists(destPath))

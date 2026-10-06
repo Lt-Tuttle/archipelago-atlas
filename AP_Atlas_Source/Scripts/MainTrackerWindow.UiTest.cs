@@ -93,6 +93,8 @@ public partial class MainTrackerWindow
             ConnectedSlotLetsAtlasIdleAsync);
         await ScenarioAsync("Map pack scripts: a slot whose pack's script runs away keeps working: the script is stopped in seconds without holding up a frame, and Key Items and the log say why",
             RunawayPackScriptAsync);
+        await ScenarioAsync("Text from outside: another player's chat line, a map pack's details and log lines quoting them show markup as written, and Atlas opens no file it names",
+            OutsideTextShowsAsWrittenAsync);
         await ScenarioAsync("Race rooms: a room the server calls a race restricts its slots (no \"why\" answers), and the Sphere Tracker hides that multiworld's spheres",
             RaceRoomRestrictsAsync);
         await ScenarioAsync("Logic: the slot's logic follows its items and checks step by step; after an engine crash, an engine update or a restart it's rebuilt from scratch on a new engine; race mode can hide it",
@@ -505,6 +507,62 @@ public partial class MainTrackerWindow
         }
     }
 
+    /// <summary>
+    /// Text from outside Atlas that names a file in markup (another player's chat line, a map pack's details, a log line
+    /// quoting either) shows as written, and Atlas opens no file. Godot would open the path's .remap first, which this
+    /// test plants: reading it shows in the log (the resource it names can't be loaded).
+    /// </summary>
+    private async Task OutsideTextShowsAsWrittenAsync()
+    {
+        string dir = System.IO.Path.Combine(DataManager.GetDataDirectory(), "markup_probe");
+        System.IO.Directory.CreateDirectory(dir);
+        string id = System.Guid.NewGuid().ToString("N")[..8];
+        string png = System.IO.Path.Combine(dir, "probe.png").Replace('\\', '/');
+        await System.IO.File.WriteAllTextAsync(png + ".remap", "[remap]\npath=\"res://atlas_probe_" + id + ".tres\"\n");
+        // A tag that opens a file (which SafeRichText stops on its own), and tags of Atlas's own (which only escaping stops):
+        // the text shows exactly as written only if it was escaped too.
+        string hostile = "[img]" + png + "[/img] [b]bold[/b] [url=0]a link[/url]";
+        string log = System.IO.Path.Combine(DataManager.GetDataDirectory(), "logs", "atlas_log.txt");
+        bool Opened() => System.IO.File.Exists(log) && System.IO.File.ReadAllText(log).Contains("atlas_probe_" + id);
+
+        await using var server = new FakeArchipelagoServer();
+        server.Games["Test Game"] = new FakeGame("0123456789abcdef0123456789abcdef01234567",
+            new Dictionary<string, long> { ["Sword"] = 1000 }, new Dictionary<string, long> { ["Cave Chest"] = 2000 });
+        var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Tester");
+        _profiles.Add(profile);
+        try
+        {
+            await OnConnectSlotPressedAsync("Tester", profile);
+            var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
+            ShowTextClient(slot);
+
+            // Another player's chat line.
+            await server.BroadcastAsync(server.Chat("look at " + hostile));
+            await UiTestWaitForAsync(() => PanelShowsText(this, "look at " + hostile) ? slot : null, "the chat line to show as written");
+
+            // The System Log and the Debug Log, quoting it.
+            LogToSystem("A line quoting " + hostile, "orange");
+            LogToDebug("A debug line quoting " + hostile, "Tester");
+            await UiTestWaitForAsync(() => _consoleOutput.GetParsedText().Contains("A line quoting " + hostile) &&
+                _debugLogConsole.GetParsedText().Contains("A debug line quoting " + hostile) ? slot : null, "the logs to show the lines as written");
+
+            // A map pack's details: its manifest is the pack author's text.
+            string pack = System.IO.Path.Combine(dir, "uitest_markup_pack.zip");
+            FakeMapPack.Write(pack, "UI test markup pack", "Game " + hostile);
+            _packManagerPanel.ShowPackDetails(pack);
+            UiTestExpect(PanelShowsText(_packManagerPanel, "Game: Game " + hostile), "the pack's details don't show its game as written");
+
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(!Opened(), "Atlas opened a file named in text from outside");
+        }
+        finally
+        {
+            DeleteProfile(profile);
+        }
+    }
+
     private async Task PackImagesFollowTheirUsersAsync()
     {
         string packs = AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory();
@@ -674,7 +732,8 @@ public partial class MainTrackerWindow
             GD.Print($"UITEST INFO Runaway script: stopped and shown in {clock.Elapsed.TotalSeconds:0.0} s; the worst frame took {worst:0} ms");
             UiTestExpect(note.Contains("scripts were stopped: the item handler (for Cursed Gem) was still running after") && note.Contains("stuck in a loop"),
                 $"Key Items says: {note}");
-            UiTestExpect(warnings.Any(line => line.Contains("[Tester] The map pack's scripts were stopped: the item handler (for Cursed Gem)")),
+            // The window's line (BBCode) shows the message as written: its "[" escaped.
+            UiTestExpect(warnings.Any(line => line.Contains(AP_Atlas.Core.Bbcode.Escape("[Tester] The map pack's scripts were stopped: the item handler (for Cursed Gem)"))),
                 "the log doesn't say the pack's scripts were stopped");
             UiTestExpect(worst < 150, $"a frame took {worst:0} ms while the script ran away: {AP_Atlas.Core.HitchMonitor.WorstFrameReport}");
 

@@ -11,7 +11,10 @@ namespace AP_Atlas.Core
         // Set after a failed write, so a log file that can't be written (its folder deleted, a full disk) is reported
         // once, not on every line; cleared when a write works again.
         private static bool _fileFailing;
-        /// <summary>A line for the window's logs (BBCode, level). Raised on whichever thread logged it.</summary>
+        /// <summary>
+        /// A line for the window's logs (BBCode, level). Raised on whichever thread logged it. Messages are plain text: they
+        /// often hold text from outside Atlas (a pack's or a server's), so it's escaped here and shows as written.
+        /// </summary>
         public static event Action<string, string> OnLogMessage;
 
         /// <summary>The time shown on log lines in Atlas's window. The visual check fixes it, so its pictures don't change with the clock.</summary>
@@ -122,23 +125,27 @@ namespace AP_Atlas.Core
             catch { } // nowhere safe to report it from inside Godot's error reporting; the console already has the line
         }
 
-        public static void LogInfo(string message)
+        /// <summary>Logs plain text (shown as written), in the window in a colour if given ("orange", "#8A2BE2").</summary>
+        public static void LogInfo(string message, string color = null)
         {
             WriteLog("INFO", message);
-            OnLogMessage?.Invoke($"[color=gray][{DisplayClock():HH:mm:ss}][/color] {message}\n", "INFO");
+            OnLogMessage?.Invoke($"{Stamp()} {Bbcode.Colored(message, color)}\n", "INFO");
         }
 
         public static void LogWarning(string message)
         {
             WriteLog("WARN", message);
-            OnLogMessage?.Invoke($"[color=gray][{DisplayClock():HH:mm:ss}][/color] [color=yellow]WARN: {message}[/color]\n", "WARN");
+            OnLogMessage?.Invoke($"{Stamp()} {Bbcode.Colored("WARN: " + message, "yellow")}\n", "WARN");
         }
 
         public static void LogError(string message)
         {
             WriteLog("ERROR", message);
-            OnLogMessage?.Invoke($"[color=gray][{DisplayClock():HH:mm:ss}][/color] [color=red]ERROR: {message}[/color]\n", "ERROR");
+            OnLogMessage?.Invoke($"{Stamp()} {Bbcode.Colored("ERROR: " + message, "red")}\n", "ERROR");
         }
+
+        // When a line was logged, as the window shows it.
+        private static string Stamp() => Bbcode.Colored($"[{DisplayClock():HH:mm:ss}]", "gray");
 
         public static void LogDebug(string message)
         {

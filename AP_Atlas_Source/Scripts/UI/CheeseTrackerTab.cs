@@ -50,7 +50,7 @@ namespace AP_Atlas.UI
         private Label _title, _subtitle, _problemLabel, _countLabel;
         private HBoxContainer _headerButtons, _problemRow;
         private Button _accountButton, _tryNow;
-        private RichTextLabel _summaryText;
+        private SafeRichText _summaryText;
         private HBoxContainer _checksBar, _slotsBar;
         private LineEdit _search;
         private MenuButton _statusMenu, _availabilityMenu, _ownerMenu, _gameMenu;
@@ -679,7 +679,7 @@ namespace AP_Atlas.UI
             var unified = stat.GroupBy(r => Unified(r.Game)).ToDictionary(g => g.Key, g => g.Count());
             var order = new[] { "bk", "soft_bk", "incomplete", "all_checks", "goal", "done" };
             string counts = string.Join(Colored(" · ", Muted), order.Where(unified.ContainsKey).Select(id => Colored($"{unified[id]} {UnifiedLabel(id)}", UnifiedColor(id))));
-            _summaryText.Text = Colored($"{Plural(stat.Count, "slot")} · {Plural(players, "player")} · {Plural(games, "game")} · {done}/{total} checks" + (total > 0 ? $" ({100.0 * done / total:0}%)" : ""), Colors.LightGray) +
+            _summaryText.Markup = Colored($"{Plural(stat.Count, "slot")} · {Plural(players, "player")} · {Plural(games, "game")} · {done}/{total} checks" + (total > 0 ? $" ({100.0 * done / total:0}%)" : ""), Colors.LightGray) +
                                 (counts.Length > 0 ? "   " + counts : "");
 
             string barsSignature = string.Join(",", unified.OrderBy(kv => kv.Key).Select(kv => kv.Key + kv.Value)) + "|" +
@@ -720,7 +720,7 @@ namespace AP_Atlas.UI
             }
         }
 
-        private static string Colored(string text, Color c) => $"[color=#{c.ToHtml(false)}]{(text ?? "").Replace("[", "[lb]")}[/color]";
+        private static string Colored(string text, Color c) => Bbcode.Colored(text, "#" + c.ToHtml(false));
 
         // =====================================================================
         // Table
@@ -1030,7 +1030,7 @@ namespace AP_Atlas.UI
             var facts = Rich();
             string owner = string.IsNullOrEmpty(g.OwnerName) ? Colored("unclaimed", Muted) : Colored(g.OwnerName + (g.OwnerAway ? " (away)" : ""), g.OwnerAway ? Warn : Colors.LightGray);
             int level = CheeseTable.ActivityLevel(g, row.Tracker, now);
-            facts.Text = (g.IsComplete ? "" : Colored(CtStatus.Label(g.Progression), AP_Atlas.UI.CheeseColors.Of(g.Progression)) + Colored(" · ", Muted)) +
+            facts.Markup = (g.IsComplete ? "" : Colored(CtStatus.Label(g.Progression), AP_Atlas.UI.CheeseColors.Of(g.Progression)) + Colored(" · ", Muted)) +
                          Colored(CtStatus.Label(g.Completion), AP_Atlas.UI.CheeseColors.Of(g.Completion)) + Colored("   Owner: ", Muted) + owner +
                          Colored("   Availability: ", Muted) + Colored(CtStatus.Label(g.Availability), Colors.LightGray) +
                          (string.IsNullOrEmpty(g.OwnerName) ? "" : Colored("   Ping: ", Muted) + Colored(CtStatus.Label(CheeseTable.EffectivePing(row)), PingColor(CheeseTable.EffectivePing(row)))) +
@@ -1179,7 +1179,7 @@ namespace AP_Atlas.UI
             }
             var list = Rich();
             list.SelectionEnabled = true;
-            list.Text = string.Join("\n", lines);
+            list.Markup = string.Join("\n", lines);
             _details.AddChild(list);
             var copy = new HFlowContainer();
             copy.AddChild(DetailButton("Copy all", "Copy these hints as text", () =>
@@ -1212,9 +1212,9 @@ namespace AP_Atlas.UI
         };
 
         /// <summary>Rich text in the same font as the labels around it.</summary>
-        private RichTextLabel Rich()
+        private SafeRichText Rich()
         {
-            var rtl = new RichTextLabel { BbcodeEnabled = true, FitContent = true, ScrollActive = false, AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            var rtl = new SafeRichText { FitContent = true, ScrollActive = false, AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill };
             var font = GetThemeFont("font", "Label");
             if (font != null) rtl.AddThemeFontOverride("normal_font", font);
             return rtl;

@@ -12,7 +12,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     /// <summary>The Pack Doctor found things to review (or an update replaced fixes): log it and offer to open it.</summary>
     private void OnPackReviewSuggested(string packKey, string message)
     {
-        LogToSystem($"[color=orange]{message}[/color]");
+        LogToSystem(message, "orange");
         if (!AP_Atlas.Core.PopTracker.PackDoctorService.Reports.TryGetValue(packKey, out var report) || report?.Pack == null) return;
         string path = report.Pack.SourcePath;
         ShowToast(message, Godot.Colors.Orange, "Review", () => OpenPackDoctor(path));

@@ -83,10 +83,10 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         string problem = AP_Atlas.Core.EngineSetup.AtlasEngine.ProblemWith(engine);
         if (problem == null)
         {
-            LogToSystem($"[color=gray]Logic engine: {engine.Describe()}.[/color]");
+            LogToSystem($"Logic engine: {engine.Describe()}.", "gray");
             return;
         }
-        LogToSystem($"[color=orange]Logic engine: {problem}[/color] Settings → Atlas Engine sets it up.");
+        LogToSystem($"Logic engine: {problem} Settings → Atlas Engine sets it up.", "orange");
         AP_Atlas.UI.Ui.Defer(this, () => ShowToast("Logic needs the Atlas Engine. Atlas can set it up for you: about 55 MB to download (160 MB on disk), no installer.", Godot.Colors.Orange, "Set up", OpenEngineSetup));
     }
     private void ShowToast(string message, Godot.Color color) => ShowToast(message, color, null, null);
@@ -145,16 +145,18 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         tween.TweenProperty(toastPanel, "modulate", new Godot.Color(1, 1, 1, 0), 0.5f).SetTrans(Tween.TransitionType.Cubic);
         tween.TweenCallback(Callable.From(() => canvas.QueueFree()));
     }
-    private void LogToSystem(string bbcode)
+    /// <summary>A line in the System Log: plain text, shown as written, in a colour if given ("orange", "#8A2BE2").</summary>
+    private void LogToSystem(string message, string color = null)
     {
-        AP_Atlas.Core.Logger.LogInfo(bbcode);
+        AP_Atlas.Core.Logger.LogInfo(message, color);
     }
     private void LogToDebug(string msg, string slotName = "")
     {
         // Slot debug lines (engine starts, failures) go to the log file too, for diagnosing problems after the fact.
         AP_Atlas.Core.Logger.LogDebug(string.IsNullOrEmpty(slotName) ? msg : $"[{slotName}] {msg}");
+        // Plain text, shown as written: slot names and messages can hold text from outside Atlas.
         string time = AP_Atlas.Core.Logger.DisplayClock().ToString("HH:mm:ss");
-        string prefix = string.IsNullOrEmpty(slotName) ? "[color=gray]" : $"[color=orange][{slotName}][/color] [color=gray]";
-        _debugLog?.Append($"{prefix}[{time}][/color] {msg}\n");
+        string prefix = string.IsNullOrEmpty(slotName) ? "" : AP_Atlas.Core.Bbcode.Colored($"[{slotName}]", "orange") + " ";
+        _debugLog?.Append($"{prefix}{AP_Atlas.Core.Bbcode.Colored($"[{time}]", "gray")} {AP_Atlas.Core.Bbcode.Escape(msg)}\n");
     }
 }

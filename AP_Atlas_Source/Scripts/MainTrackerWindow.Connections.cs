@@ -34,13 +34,13 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             // What changed during the session (slot stats, links) is kept even if nothing else saved the profiles.
             DataManager.SaveProfiles(_profiles);
             if (_globalStatusLabel != null) _globalStatusLabel.Text = "Disconnecting sessions...";
-            LogToSystem("[color=yellow]Shutting down... Disconnecting active slots...[/color]");
+            LogToSystem("Shutting down... Disconnecting active slots...", "yellow");
             // Close every session (connected slots and any still connecting) with a proper close frame, so the server
             // drops them at once instead of waiting for a timeout.
             if (_sessions != null)
             {
                 var (count, inTime) = await _sessions.CloseAllAsync(TimeSpan.FromSeconds(3));
-                if (count > 0 && inTime) LogToSystem($"[color=yellow]Closed {count} server connection(s).[/color]");
+                if (count > 0 && inTime) LogToSystem($"Closed {count} server connection(s).", "yellow");
                 else if (count > 0) AP_Atlas.Core.Logger.LogWarning("Some server connections did not confirm closing within 3 seconds; the OS closes them as the app exits.");
             }
         }
@@ -69,7 +69,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _sessions.ReconnectStopped += (slot, refusal) => AP_Atlas.UI.Ui.Defer(this, () => OnReconnectStopped(slot, refusal));
         _sessions.SocketError += (slot, message) => AP_Atlas.UI.Ui.Defer(this, () =>
         {
-            LogToSystem("[color=red]Socket Error (" + slot.SlotName + "):[/color] " + message);
+            LogToSystem("Socket Error (" + slot.SlotName + "): " + message, "red");
             if (_globalStatusLabel != null) _globalStatusLabel.Text = "Socket Error: " + message;
         });
     }
@@ -79,7 +79,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     private void OnSessionDropped(SlotId slot, string reason)
     {
         if (_shuttingDown) return;
-        LogToSystem($"[color=yellow]Connection to {slot.SlotName} dropped ({reason}).[/color]");
+        LogToSystem($"Connection to {slot.SlotName} dropped ({reason}).", "yellow");
         if (_globalStatusLabel != null) _globalStatusLabel.Text = "Disconnected: " + slot.SlotName;
         UpdateSidebar();
         if (_sessions.AutoReconnect) return;
@@ -90,7 +90,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     private void OnReconnectScheduled(SlotId slot, int attempt, int tries, TimeSpan wait)
     {
         if (_shuttingDown) return;
-        LogToSystem($"[color=orange]Reconnecting {slot.SlotName} in {wait.TotalSeconds:0} s[/color] (try {attempt} of {tries}).");
+        LogToSystem($"Reconnecting {slot.SlotName} in {wait.TotalSeconds:0} s (try {attempt} of {tries}).", "orange");
         if (attempt == 1) ShowToast($"Connection to {slot.SlotName} lost. Reconnecting automatically…", Godot.Colors.Orange);
     }
 
@@ -104,7 +104,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             return;
         }
         BuildSlotTracker(profile, connected);
-        LogToSystem($"[color=lime]Reconnected {connected.Slot.SlotName}.[/color]");
+        LogToSystem($"Reconnected {connected.Slot.SlotName}.", "lime");
         ShowToast($"Reconnected {connected.Slot.SlotName}.", Godot.Colors.LimeGreen);
     }
 
@@ -114,12 +114,12 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         if (refusal != null)
         {
             // The server answered and refused (slot gone, wrong password, room changed): retrying won't help.
-            LogToSystem($"[color=red]Stopped reconnecting {slot.SlotName}: the server refused the login ({refusal}).[/color]");
+            LogToSystem($"Stopped reconnecting {slot.SlotName}: the server refused the login ({refusal}).", "red");
             ShowToast($"{slot.SlotName} can't reconnect: {refusal}", Godot.Colors.Salmon);
         }
         else
         {
-            LogToSystem($"[color=orange]Stopped trying to reconnect {slot.SlotName} after {_sessions.ReconnectTries} tries over about 20 minutes.[/color] Reconnect it when the server is back.");
+            LogToSystem($"Stopped trying to reconnect {slot.SlotName} after {_sessions.ReconnectTries} tries over about 20 minutes. Reconnect it when the server is back.", "orange");
             var profile = ProfileById(slot.ProfileId);
             if (profile != null)
                 ShowToast($"{slot.SlotName} couldn't reconnect. The server may be down or the room closed.", Godot.Colors.Orange, "Try again", () => OnConnectSlotPressed(slot.SlotName, profile));
@@ -132,7 +132,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         if (_sessions != null) AP_Atlas.Core.Async.Fire(_sessions.DisconnectAsync(new SlotId(profileId, slotName)), "closing a server connection", tellUser: false);
         if (_terminalStage == null) return;
         if (ActiveSlotNodes().OfType<SlotTrackerControl>().Any(slot => slot.ProfileId == profileId && slot.SlotName == slotName))
-            LogToSystem("[color=yellow]Disconnected slot: " + slotName + "[/color]");
+            LogToSystem("Disconnected slot: " + slotName, "yellow");
         DataManager.SaveProfiles(_profiles);
         AP_Atlas.UI.Ui.Defer(this, UpdateSidebar);
     }
@@ -238,7 +238,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _statusLabel.Text = "Status: Connecting to " + slotName + "...";
         _statusLabel.AddThemeColorOverride("font_color", Colors.Yellow);
         if (_globalStatusLabel != null) _globalStatusLabel.Text = "Connecting to " + profile.ServerUrl + " as " + slotName + "...";
-        LogToSystem("[color=cyan]Attempting to connect to " + profile.ServerUrl + " as " + slotName + "...[/color]");
+        LogToSystem("Attempting to connect to " + profile.ServerUrl + " as " + slotName + "...", "cyan");
         _connectingSlots.Add(SlotKey(profile.Id, slotName));
         UpdateSidebar();
         var login = new SlotLogin(new SlotId(profile.Id, slotName), profile.ServerUrl, string.IsNullOrEmpty(profile.Password) ? null : profile.Password);
@@ -276,22 +276,22 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             case ConnectOutcome.TimedOut:
                 _statusLabel.Text = "Status: Connection Timeout";
                 if (_globalStatusLabel != null) _globalStatusLabel.Text = "Connection Timeout (" + slotName + ")";
-                LogToSystem("[color=red]Connection timed out for " + slotName + ":[/color] " + result.Message);
+                LogToSystem("Connection timed out for " + slotName + ": " + result.Message, "red");
                 break;
             case ConnectOutcome.Refused:
                 _statusLabel.Text = "Status: Failed to connect:\n" + result.Message;
                 if (_globalStatusLabel != null) _globalStatusLabel.Text = "Connection Failed (" + slotName + ")";
-                LogToSystem("[color=red]The server refused the login for " + slotName + ":[/color] " + result.Message);
+                LogToSystem("The server refused the login for " + slotName + ": " + result.Message, "red");
                 break;
             case ConnectOutcome.Unreachable:
                 _statusLabel.Text = "Status: Failed to connect:\n" + result.Message;
                 if (_globalStatusLabel != null) _globalStatusLabel.Text = "Connection Failed (" + slotName + ")";
-                LogToSystem("[color=orange]Couldn't reach the server for " + slotName + ":[/color] " + result.Message);
+                LogToSystem("Couldn't reach the server for " + slotName + ": " + result.Message, "orange");
                 break;
             default:
                 _statusLabel.Text = "Status: Connection Error:\n" + result.Message;
                 if (_globalStatusLabel != null) _globalStatusLabel.Text = "Connection Error";
-                LogToSystem("[color=red]Couldn't connect " + slotName + ":[/color] " + result.Message);
+                LogToSystem("Couldn't connect " + slotName + ": " + result.Message, "red");
                 break;
         }
     }
@@ -304,7 +304,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _statusLabel.Text = "Status: Connected successfully as " + slotName + "!";
         _statusLabel.AddThemeColorOverride("font_color", Colors.Green);
         if (_globalStatusLabel != null) _globalStatusLabel.Text = "Booting Engine for " + slotName + "...";
-        LogToSystem("[color=lime]Successfully authenticated as " + slotName + ".[/color]");
+        LogToSystem("Successfully authenticated as " + slotName + ".", "lime");
         foreach (Node n in ActiveSlotNodes())
         {
             if (n is SlotTrackerControl oldSlot && oldSlot.ProfileId == profile.Id && oldSlot.SlotName == slotName)
