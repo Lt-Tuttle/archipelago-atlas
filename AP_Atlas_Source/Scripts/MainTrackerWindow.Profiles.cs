@@ -316,7 +316,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     }
     /// <summary>
     /// Deletes a multiworld: its connections close (and no automatic reconnect brings one back), its Cheese Tracker link
-    /// and sphere room are forgotten, and its slots' views go.
+    /// and sphere room are forgotten, its slots' views go, and so do its logic engine pools.
     /// </summary>
     private void DeleteProfile(MultiworldProfile profile)
     {
@@ -335,6 +335,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 slot.QueueFree();
             }
         }
+        EnginePools.Forget(profileId);
         RefreshProfileList();
         if (_selectedProfile == profile) SelectProfile(null);
         UpdateSidebar();

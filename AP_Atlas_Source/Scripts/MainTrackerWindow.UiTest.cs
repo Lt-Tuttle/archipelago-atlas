@@ -77,6 +77,10 @@ public partial class MainTrackerWindow
             ConnectingThroughTheWindowAsync);
         await ScenarioAsync("Deleting a multiworld while one of its slots connects: the connection is closed, and no slot is left for it",
             DeletingWhileConnectingLeavesNothingAsync);
+        await ScenarioAsync("Ended slots are freed: a slot a dropped connection replaced, and a deleted multiworld's slot, leave nothing that keeps their model, session or view in memory",
+            EndedSlotsAreFreedAsync);
+        await ScenarioAsync("Ended slots with logic are freed: a deleted multiworld's engine stops, its engine pool is forgotten, and its slot's model and logic leave memory",
+            EndedSlotsLogicIsFreedAsync);
         await ScenarioAsync("Moving views: the Cheese and Sphere tabs and Properties keep following their events when moved to another parent (docking, pop-outs), and stop while out of the window",
             ViewsKeepTheirEventsWhenMovedAsync);
         await ScenarioAsync("Tools: every tool's tab shows its own view, and each slot tool the connected slot's view (or asks for a slot when none is connected)",
@@ -177,6 +181,122 @@ public partial class MainTrackerWindow
         await UiTestWaitAsync(0.3);
         UiTestExpect(SlotView(profile.Id, "Tester") == null, "a slot was built for the deleted multiworld");
         UiTestExpect(!_sessions.IsLoggedIn(slot), "the deleted multiworld's slot stayed connected");
+    }
+
+    /// <summary>
+    /// A slot that ends leaves nothing that keeps it in memory: no event, cache, timer, closure or queued work holds its
+    /// model, session or view. Multiworlds run for days, so a slot that leaked on every reconnect, or a deleted
+    /// multiworld that stayed, would grow Atlas without end. Checked after a dropped connection (its view is replaced)
+    /// and after deleting the multiworld.
+    /// </summary>
+    private async Task EndedSlotsAreFreedAsync()
+    {
+        await using var server = new FakeArchipelagoServer();
+        server.Games["Test Game"] = new FakeGame("0123456789abcdef0123456789abcdef01234567",
+            new Dictionary<string, long> { ["Sword"] = 1000 }, new Dictionary<string, long> { ["Cave Chest"] = 2000 });
+        var ended = await ConnectDropAndDeleteAsync(server);
+        // Their last queued work runs, the freed views go at the end of a frame, and then everything left is collected.
+        await UiTestWaitAsync(1.0);
+        for (int i = 0; i < 3; i++)
+        {
+            System.GC.Collect();
+            System.GC.WaitForPendingFinalizers();
+            await UiTestWaitAsync(0.1);
+        }
+        foreach (var (what, weak) in ended)
+            UiTestExpect(!weak.IsAlive, $"{what} is still in memory after it ended");
+    }
+
+    // Apart from the scenario, so only weak references come back: an async method keeps its own locals until it ends.
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private async Task<List<(string What, System.WeakReference Weak)>> ConnectDropAndDeleteAsync(FakeArchipelagoServer server)
+    {
+        var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Tester");
+        _profiles.Add(profile);
+        var ended = new List<(string What, System.WeakReference Weak)>();
+        await OnConnectSlotPressedAsync("Tester", profile);
+        var first = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
+        ShowTextClient(first);
+        await server.BroadcastAsync(FakeArchipelagoServer.ReceivedItems(0, new long[] { 1000 }), server.Chat("before the drop"));
+        await UiTestWaitForAsync(() => PanelShows(first, "before the drop") ? first : null, "the slot to show a line");
+        ended.Add(("the slot model a dropped connection replaced", new System.WeakReference(first.Model)));
+        ended.Add(("the slot view a dropped connection replaced", new System.WeakReference(first)));
+
+        // The server drops everyone: Atlas builds a new view and model for the slot.
+        server.DropClients();
+        var second = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester") is { } view && view != first ? view : null, "the slot to reconnect");
+        ShowTextClient(second);
+        ended.Add(("a deleted multiworld's slot model", new System.WeakReference(second.Model)));
+        ended.Add(("a deleted multiworld's session", new System.WeakReference(second.Session)));
+        ended.Add(("a deleted multiworld's slot view", new System.WeakReference(second)));
+
+        DeleteProfile(profile);
+        await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester") == null ? this : null, "the deleted multiworld's slot to go");
+        return ended;
+    }
+
+    /// <summary>
+    /// A deleted multiworld's slot with logic leaves nothing behind: its engine stops (it was the engine's last slot),
+    /// its multiworld's engine pool is forgotten, and neither its model nor its logic stays in memory.
+    /// </summary>
+    private async Task EndedSlotsLogicIsFreedAsync()
+    {
+        var engine = StartFakeEngine(UiTestPython());
+        try
+        {
+            await using var server = LogicWorldServer();
+            var (profileId, ended) = await ConnectLogicAndDeleteAsync(server);
+            await UiTestWaitAsync(1.0);
+            for (int i = 0; i < 3; i++)
+            {
+                System.GC.Collect();
+                System.GC.WaitForPendingFinalizers();
+                await UiTestWaitAsync(0.1);
+            }
+            foreach (var (what, weak) in ended)
+                UiTestExpect(!weak.IsAlive, $"{what} is still in memory after it ended");
+            UiTestExpect(EnginePools.CountFor(profileId) == 0, "the deleted multiworld's engine pool is still kept");
+            var running = engine.StartedPids.Where(UiTestProcessRuns).ToList();
+            UiTestExpect(running.Count == 0, $"the deleted multiworld's engine is still running (process {string.Join(", ", running)})");
+        }
+        finally
+        {
+            AtlasEngine.TestPython = null;
+        }
+    }
+
+    // Apart from the scenario, so only weak references come back (see ConnectDropAndDeleteAsync).
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private async Task<(string ProfileId, List<(string What, System.WeakReference Weak)> Ended)> ConnectLogicAndDeleteAsync(FakeArchipelagoServer server)
+    {
+        var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Tester");
+        _profiles.Add(profile);
+        await OnConnectSlotPressedAsync("Tester", profile);
+        var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
+        await UiTestWaitForAsync(() => slot.LogicSettled && slot.IsLocationInLogic(2000) == true ? slot : null, "the slot's logic to start");
+        UiTestExpect(EnginePools.CountFor(profile.Id) == 1, "the slot's multiworld has no engine pool");
+        var ended = new List<(string What, System.WeakReference Weak)>
+        {
+            ("a deleted multiworld's slot model, with logic", new System.WeakReference(slot.Model)),
+            ("its slot's logic", new System.WeakReference(slot.Model.Logic)),
+        };
+        DeleteProfile(profile);
+        await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester") == null ? this : null, "the deleted multiworld's slot to go");
+        return (profile.Id, ended);
+    }
+
+    private static bool UiTestProcessRuns(int pid)
+    {
+        try
+        {
+            using var process = System.Diagnostics.Process.GetProcessById(pid);
+            return !process.HasExited;
+        }
+        catch (ArgumentException) { return false; } // no such process: it ended
     }
 
     private async Task ViewsKeepTheirEventsWhenMovedAsync()

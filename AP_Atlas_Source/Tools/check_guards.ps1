@@ -30,7 +30,8 @@
         would bypass the limits or the way failures are handled.
       - Closing a server connection: only SessionManager's DisconnectAsync (a connection still opening is closed as it
         opens), and giving back a connection's thread (AtlasSessions.Finished) only in SessionManager.
-      - Forcing a garbage collection, which pauses all of Atlas: only in the self-test.
+      - Forcing a garbage collection, which pauses all of Atlas: only in the self-test, and the UI test's check that ended
+        slots are freed.
       - Starting a thread of its own: only PackScriptHost's compiler thread, which needs a big stack, and the self-test's
         check that it does (Task.Run and async code share the pool Atlas sizes for its connections).
       - Looking up the user's own folders (Documents, AppData, Program Files, the temp folder): only AtlasEngine's install
@@ -98,7 +99,7 @@ $rules = @(
     @{ Name = 'Closing a server connection outside SessionManager.DisconnectAsync'; Pattern = '\.Socket\.DisconnectAsync\s*\('; Allowed = @('AP_Atlas.Core\Connections\SessionManager.cs'); Max = 1 },
     @{ Name = 'Giving back a connection''s thread outside SessionManager'; Pattern = 'AtlasSessions\.Finished\s*\('; Allowed = @('AP_Atlas.Core\Connections\SessionManager.cs') },
     @{ Name = 'Forcing a garbage collection (it pauses all of Atlas)'; Pattern = '\bGC\.Collect\s*\('
-       Allowed = @('AP_Atlas_Source\Scripts\Core\SelfTest.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.Reliability.cs') },
+       Allowed = @('AP_Atlas_Source\Scripts\Core\SelfTest.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.Reliability.cs', 'AP_Atlas_Source\Scripts\MainTrackerWindow.UiTest.cs') },
     @{ Name = 'Starting a thread of its own (use Task.Run or async code)'; Pattern = 'new\s+(System\.Threading\.)?Thread\s*\('
        Allowed = @('AP_Atlas_Source\Scripts\Core\PopTracker\PackScriptHost.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.Reliability.cs'); Max = 1 },
     @{ Name = 'Looking up the user''s own folders'; Pattern = 'GetFolderPath\s*\(|\bSpecialFolder\.|GetTempPath\s*\(|GetTempFileName\s*\('

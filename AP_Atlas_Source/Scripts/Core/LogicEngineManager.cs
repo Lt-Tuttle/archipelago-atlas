@@ -77,6 +77,22 @@ public static class EnginePools
             return pool;
         }
     }
+
+    /// <summary>
+    /// Forgets a deleted multiworld's pools. Its slots have left them (each engine stopped with its last slot), and
+    /// nothing would use them again: kept, they would pile up over a long session.
+    /// </summary>
+    public static void Forget(string multiworld)
+    {
+        lock (Lock)
+            foreach (var key in Pools.Keys.Where(key => key.Multiworld == multiworld).ToList()) Pools.Remove(key);
+    }
+
+    /// <summary>How many pools a multiworld has (for the UI test).</summary>
+    internal static int CountFor(string multiworld)
+    {
+        lock (Lock) return Pools.Keys.Count(key => key.Multiworld == multiworld);
+    }
 }
 
 public class LogicEngineManager

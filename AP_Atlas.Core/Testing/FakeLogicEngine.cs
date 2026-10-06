@@ -176,6 +176,9 @@ internal sealed class FakeLogicEngine
 
     /// <summary>How many times an engine process started, and how many crashed on purpose.</summary>
     public int Starts => Journal().Count(entry => (string?)entry["event"] == "start");
+
+    /// <summary>The process ids of the engines started so far.</summary>
+    public IReadOnlyList<int> StartedPids => Journal().Where(entry => (string?)entry["event"] == "start").Select(entry => (int)entry["pid"]!).ToList();
     public int Crashes => Journal().Count(entry => (string?)entry["event"] == "crash");
 
     /// <summary>The process ids of the processes the engine started of its own (<see cref="SpawnChild"/>), oldest first.</summary>

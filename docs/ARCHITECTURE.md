@@ -61,7 +61,7 @@ MainTrackerWindow (the shell)
 | `UI/` | **Windows and views:**<br>• Properties, Hints, Map Tracker, the Cheese and Sphere tabs.<br>• The Pack Doctor and Atlas Engine windows.<br>• Privacy, the permission dialog, shared dialogs, the tab strip.<br>• `TreeSubscriptions`: a view's event subscriptions, made while it's in the window (also after a move) and removed while it isn't.<br>• `ViewRefresh`: a view's refresh that runs only while the view shows, at most once a frame; asked for while hidden, it runs when the view shows. Every slot view, the hints, the map's colors and the Sphere tab use it.<br>• `LogPane`: writes to the System Log and Debug Log from any thread, once per frame, keeping their last lines.<br>• `Tool`: every tool (id, title, scope: the app, a multiworld or a slot), in tab order; a slot tool names the slot's view of it. |
 | `Core/SelfTest*.cs` | **The self-test:** run with `Tools/run_selftest.ps1`. |
 | `MainTrackerWindow.VisualCheck.cs` | **The visual check:** pictures of the main screens, compared with an earlier run; run with `Tools/run_visualcheck.ps1`. |
-| `MainTrackerWindow.UiTest.cs` | **The UI test:** drives the window the way a user would, against the fake Archipelago server (connecting, a dropped connection, disconnecting), and runs a slot's logic on the fake logic engine (items and checks, a crash, an engine update, a restart); `Tools/run_selftest.ps1` runs it after the self-test. |
+| `MainTrackerWindow.UiTest.cs` | **The UI test:** drives the window the way a user would, against the fake Archipelago server (connecting, a dropped connection, disconnecting), and runs a slot's logic on the fake logic engine (items and checks, a crash, an engine update, a restart). It also checks, with weak references and forced collections, that a slot that ends leaves nothing in memory. `Tools/run_selftest.ps1` runs it after the self-test. |
 
 ## Where data lives
 
@@ -125,7 +125,7 @@ Atlas reads or writes outside this folder only with the user's permission. Nothi
   - Size and time limits; no redirects (downloads follow a few https redirects).
   - GitHub calls go through `GitHubApi`, which honours its rate-limit headers and uses ETags.
   - **Atlas never requests an archipelago.gg room page**, because that wakes the room.
-- **The logic engine:** a few Python processes per multiworld, shared by its slots (`EnginePools`, `EnginePool`), speaking JSON lines over stdin and stdout (`EngineProcess`). Engines run in a kill-on-close job object, so they never outlive Atlas.
+- **The logic engine:** a few Python processes per multiworld, shared by its slots (`EnginePools`, `EnginePool`), speaking JSON lines over stdin and stdout (`EngineProcess`). Engines run in a kill-on-close job object, so they never outlive Atlas. Deleting a multiworld forgets its pools (`EnginePools.Forget`).
   - A request names its slot with `key`; the bridge keeps each slot's world apart (`slots[key]`), and `drop` frees one. Slots of one multiworld can share an engine because they share the seed's apworld versions (a seed's apworld is swapped in per game, process-wide).
   - The bridge empties the Universal Tracker's class-level world cache (`cached_multiworlds`) before each start and after a drop: it's shared by every slot in the process and would otherwise keep every world.
   - `SlotLogic` restarts a slot whose engine was lost; only a loss its own request caused counts toward pausing its logic.

@@ -58,6 +58,7 @@ Development toward the first public beta, 0.1.0.
   - A footprint check: the self-test and the visual check give Atlas empty stand-ins for your user folders and temp folder, and fail if anything is written to them. CI runs it on every push.
   - Unit tests read the whole connection library and fail if it can reach files, folders, the registry or other programs anywhere except its data cache, which Atlas replaces. A library update that reaches further can't ship unnoticed.
   - A fake Archipelago server for tests, on the test computer only.
+  - The UI test checks that a slot leaves nothing in memory once it ends: one a dropped connection replaced, and a deleted multiworld's slot with its logic. Their models, sessions, views and logic are collected, their engine stops, and their engine pool goes. Multiworlds run for days, so a slot leaking on every reconnect would grow Atlas without end.
   - A UI test (`ATLAS_UITEST`): Atlas builds its window and drives it the way a user would, against the fake server: connecting a slot, a dropped connection coming back, disconnecting. `run_selftest.ps1` runs it after the self-test, and CI runs that.
   - Views are ready to be moved (for docking and pop-outs): the Cheese Tracker and Sphere Tracker tabs and Properties follow their events whenever they're in the window, including after a move, and never while out of it. Before, a move would have stopped them updating, because they subscribed only once. The UI test moves each one and counts the events' listeners.
   - So is a slot's own panel (its text client): it ends only when the slot is replaced or deleted, not when it leaves the window, so moving it keeps its engine, views and connection. The UI test moves it while items and messages arrive.
@@ -187,6 +188,7 @@ Development toward the first public beta, 0.1.0.
   - An image you choose for a Pack Doctor fix is checked the same way before it's copied.
 
 ### Fixed
+- **A deleted multiworld's logic engine pools** stayed in memory for the rest of the session: a small object each, but one more for every multiworld deleted. They're now forgotten with the multiworld.
 - **Files outside Atlas's folder:** three things Atlas didn't ask for wrote outside its folder. Everything now stays inside it.
   - **The connection library** kept every game's names (data packages) in Archipelago's shared cache, `%LocalAppData%\Archipelago\Cache`, and read and wrote it on every connection. Atlas now keeps them in its own folder (`datapackage_cache`). A server still sends each game's names only once per version, and versions unused for three months are removed.
   - **Godot** kept a log, with a copy of every line Atlas logs, and a shader cache in `%APPDATA%\Godot\app_userdata\The Archipelago Atlas`. Both are off, and Godot's own errors and warnings now go to Atlas's log. Godot still creates that folder, empty, when it starts; it has no setting to stop that.
