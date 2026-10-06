@@ -112,6 +112,8 @@ public partial class MainTrackerWindow
             HomeAsync);
         await ScenarioAsync("Help: the guide opens on its first topic with a topic per section; a topic shows its section, What's new the changelog, Credits & disclaimer the author and the credits, Licences Atlas's licence; a second Help command uses the same window at its topic; Home's What's new card lists the newest changes and leads here",
             HelpAsync);
+        await ScenarioAsync("Alerts: what Atlas tells the user stacks at the bottom right without overlapping, at most a few at once, every card in the history newest first with its kind; a card's button runs its action and the card goes, the × takes one away, the plain ones go after their hold; Window → Notifications lists the history, marks it seen, and Clear empties it",
+            AlertsAsync);
         await ScenarioAsync("Bursts: 40 items and 40 chat lines arriving together reach the slot once each, at most one update of the window in each frame they arrive over (not 80)",
             BurstIsOneUpdateAsync);
         await ScenarioAsync("Long text: a game's names and a hint's entrance of a megabyte, and a chat line of 100,000 characters without a space, hold up no frame for 150 ms, shown or not (names are cut to 500 characters; a long run of text gets breaks)",
@@ -313,6 +315,11 @@ public partial class MainTrackerWindow
         await UiTestWaitAsync(0.3);
         help.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
 
+        _commands.Run("window.notifications");
+        var notifications = await UiTestWaitForAsync(() => GetChildren().OfType<AP_Atlas.UI.NotificationsDialog>().FirstOrDefault(), "the Notifications window");
+        await UiTestWaitAsync(0.3);
+        notifications.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
+
         _commands.Run(AP_Atlas.UI.CommandPalette.OwnCommandId);
         var palette = await UiTestWaitForAsync(() => GetChildren().OfType<AP_Atlas.UI.CommandPalette>().FirstOrDefault(p => p.Visible), "the command palette");
         await UiTestWaitAsync(0.3);
@@ -328,6 +335,7 @@ public partial class MainTrackerWindow
             ("a closed Keyboard Shortcuts dialog", new System.WeakReference(shortcuts)),
             ("a closed About dialog", new System.WeakReference(about)),
             ("a closed Help window", new System.WeakReference(help)),
+            ("a closed Notifications window", new System.WeakReference(notifications)),
             ("a closed command palette", new System.WeakReference(palette)),
         };
     }
@@ -930,6 +938,51 @@ public partial class MainTrackerWindow
             help.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
             await UiTestWaitAsync(0.2);
         }
+    }
+
+    private async Task AlertsAsync()
+    {
+        var feed = _alerts ?? throw new InvalidOperationException("The alert feed wasn't built.");
+        int before = feed.Log.Entries.Count;
+        var mine = new List<Control>();
+        for (int i = 0; i < AP_Atlas.UI.AlertFeed.MostShown + 2; i++) mine.Add(feed.Show($"alert {i}", Colors.Orange, null, null));
+        await UiTestWaitAsync(0.2);
+        // At most the few newest show, stacked without overlapping; every one is in the history, newest first, with its kind.
+        var shown = feed.Cards.Where(mine.Contains).ToList();
+        UiTestExpect(shown.Count == AP_Atlas.UI.AlertFeed.MostShown && feed.Cards.Count <= AP_Atlas.UI.AlertFeed.MostShown, $"{feed.Cards.Count} cards show at once ({shown.Count} of this scenario's); the most is {AP_Atlas.UI.AlertFeed.MostShown}");
+        var rects = feed.Cards.Select(c => c.GetGlobalRect()).OrderBy(r => r.Position.Y).ToList();
+        for (int i = 1; i < rects.Count; i++)
+            UiTestExpect(rects[i - 1].End.Y <= rects[i].Position.Y + 0.5f, $"cards overlap: one ends at {rects[i - 1].End.Y}, the next starts at {rects[i].Position.Y}");
+        UiTestExpect(rects.Count == 0 || rects[^1].End.X <= GetViewport().GetVisibleRect().Size.X && rects[^1].End.Y <= GetViewport().GetVisibleRect().Size.Y, "a card is off the window");
+        UiTestExpect(feed.Log.Entries.Count == before + AP_Atlas.UI.AlertFeed.MostShown + 2 && feed.Log.Entries[0].Message == $"alert {AP_Atlas.UI.AlertFeed.MostShown + 1}"
+            && feed.Log.Entries[0].Kind == AP_Atlas.Core.AlertKind.Warning, "the history isn't every card, newest first, with its kind");
+        // A card with a button: pressing it runs the action and the card goes. The × takes a card away too.
+        bool ran = false;
+        var withAction = feed.Show("do it", Colors.LightGreen, "Do", () => ran = true);
+        await UiTestWaitAsync(0.1);
+        feed.ActionButtonOf(withAction)!.EmitSignal(BaseButton.SignalName.Pressed);
+        await UiTestWaitAsync(0.7);
+        UiTestExpect(ran && !feed.Cards.Contains(withAction) && !GodotObject.IsInstanceValid(withAction), "the card's button didn't run its action, or the card stayed");
+        var closed = feed.Show("close me", Colors.Salmon, null, null);
+        await UiTestWaitAsync(0.1);
+        feed.CloseButtonOf(closed).EmitSignal(BaseButton.SignalName.Pressed);
+        await UiTestWaitAsync(0.7);
+        UiTestExpect(!feed.Cards.Contains(closed), "the × didn't take the card away");
+        // The plain cards go by themselves after their hold.
+        await UiTestWaitAsync(AP_Atlas.UI.AlertFeed.Hold + 0.8);
+        UiTestExpect(!feed.Cards.Any(mine.Contains), $"{feed.Cards.Count(mine.Contains)} cards stayed past their hold");
+        // The Notifications window lists the history newest first, marks it seen; Clear empties it.
+        UiTestExpect(feed.Log.Unseen > 0, "nothing counts as unseen before the window opens");
+        _commands!.Run("window.notifications");
+        var dialog = await UiTestWaitForAsync(() => GetChildren().OfType<AP_Atlas.UI.NotificationsDialog>().FirstOrDefault(), "the Notifications window");
+        var rows = Rows(dialog.FindChildren("*", nameof(Tree), true, false).OfType<Tree>().First());
+        UiTestExpect(rows.Count == feed.Log.Entries.Count && rows[0][2] == "close me" && rows[0][1] == "Error" && feed.Log.Unseen == 0,
+            $"the window shows {rows.Count} rows (the log has {feed.Log.Entries.Count}), the first \"{(rows.Count > 0 ? rows[0][2] : "")}\", unseen {feed.Log.Unseen}");
+        dialog.EmitSignal(AcceptDialog.SignalName.CustomAction, "clear");
+        await UiTestWaitAsync(0.1);
+        UiTestExpect(feed.Log.Entries.Count == 0 && dialog.RowCount == 0, "Clear didn't empty the history");
+        dialog.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
+        await UiTestWaitAsync(0.2);
     }
 
     private async Task WindowPartsAsync()

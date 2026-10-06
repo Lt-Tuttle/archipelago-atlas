@@ -39,6 +39,20 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.SphereTracker);
     }
     /// <summary>Opens the Atlas Engine setup window.</summary>
+    /// <summary>Window → Notifications: everything the alert feed said this session; the open window is brought back if there is one.</summary>
+    private void OpenNotifications()
+    {
+        var open = GetChildren().OfType<AP_Atlas.UI.NotificationsDialog>().FirstOrDefault();
+        if (open != null)
+        {
+            open.GrabFocus();
+            return;
+        }
+        var dialog = new AP_Atlas.UI.NotificationsDialog(_alertLog, text => Tr(text));
+        AddChild(dialog);
+        dialog.PopupCentered();
+    }
+
     /// <summary>Help: the guide, what's new, the credits and the licences, at a topic; the open window is brought back if there is one.</summary>
     private void OpenHelp(string pageId)
     {

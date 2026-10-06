@@ -92,63 +92,9 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         AP_Atlas.UI.Ui.Defer(this, () => ShowToast("Logic needs the Atlas Engine. Atlas can set it up for you: about 55 MB to download (160 MB on disk), no installer.", Godot.Colors.Orange, "Set up", OpenEngineSetup));
     }
     private void ShowToast(string message, Godot.Color color) => ShowToast(message, color, null, null);
-    /// <summary>A toast; with an action it shows a button and stays up longer.</summary>
-    private void ShowToast(string message, Godot.Color color, string actionText, System.Action action)
-    {
-        var toastPanel = new PanelContainer();
-        var style = new StyleBoxFlat
-        {
-            BgColor = new Godot.Color(0.1f, 0.1f, 0.1f, 0.9f),
-            BorderWidthTop = 1,
-            BorderWidthBottom = 1,
-            BorderWidthLeft = 1,
-            BorderWidthRight = 1,
-            BorderColor = color,
-            CornerRadiusTopLeft = 8,
-            CornerRadiusTopRight = 8,
-            CornerRadiusBottomLeft = 8,
-            CornerRadiusBottomRight = 8,
-            ContentMarginLeft = 20,
-            ContentMarginRight = 20,
-            ContentMarginTop = 10,
-            ContentMarginBottom = 10
-        };
-        toastPanel.AddThemeStyleboxOverride("panel", style);
-        var hbox = new HBoxContainer();
-        hbox.AddThemeConstantOverride("separation", 10);
-        var circle = new ColorRect { CustomMinimumSize = new Godot.Vector2(10, 10), Color = color, SizeFlagsVertical = SizeFlags.ShrinkCenter };
-        var label = new Label { Text = message };
-        hbox.AddChild(circle);
-        hbox.AddChild(label);
-        var canvas = new CanvasLayer { Layer = 100 };
-        if (action != null)
-        {
-            var button = new Button { Text = actionText ?? "Open", FocusMode = FocusModeEnum.None };
-            button.Pressed += () => { action(); canvas.QueueFree(); };
-            hbox.AddChild(button);
-        }
-        toastPanel.AddChild(hbox);
-        canvas.AddChild(toastPanel);
-        AddChild(canvas);
-        toastPanel.Modulate = new Godot.Color(1, 1, 1, 0);
-        SetFontSizeRecursive(toastPanel, _appSettings.GlobalFontSize);
-        // Wait a frame to let Godot calculate the minimum size
-        CallDeferred(nameof(AnimateToast), toastPanel, canvas, action != null ? 10.0f : 3.0f);
-    }
-    private void AnimateToast(PanelContainer toastPanel, CanvasLayer canvas, float hold)
-    {
-        var winSize = GetWindow().Size;
-        var panelSize = toastPanel.Size;
-        // Position at bottom-right, slightly offset
-        toastPanel.Position = new Godot.Vector2(winSize.X - panelSize.X - 20, winSize.Y - panelSize.Y - 20);
-        var tween = CreateTween();
-        tween.TweenProperty(toastPanel, "modulate", new Godot.Color(1, 1, 1, 1), 0.3f).SetTrans(Tween.TransitionType.Cubic);
-        tween.TweenInterval(hold);
-        // The visual check's pictures must not depend on the moment they're taken: its toasts stay up.
-        if (VisualCheckRequested) return;
-        tween.TweenProperty(toastPanel, "modulate", new Godot.Color(1, 1, 1, 0), 0.5f).SetTrans(Tween.TransitionType.Cubic);
-        tween.TweenCallback(Callable.From(() => canvas.QueueFree()));
-    }
+    /// <summary>A card on the alert feed (and a line in its history); with an action it shows a button and stays up longer.</summary>
+    private void ShowToast(string message, Godot.Color color, string actionText, System.Action action) => _alerts.Show(message, color, actionText, action);
+
     /// <summary>A line in the System Log: plain text, shown as written, in a colour if given ("orange", "#8A2BE2").</summary>
     private void LogToSystem(string message, string color = null)
     {

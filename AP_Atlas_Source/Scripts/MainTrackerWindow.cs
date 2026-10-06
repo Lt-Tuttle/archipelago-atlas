@@ -38,6 +38,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     private AppSettings _appSettings;
     /// <summary>The tool whose tab is showing.</summary>
     private AP_Atlas.UI.Tool _currentTool = AP_Atlas.UI.Tool.Home;
+    private readonly AP_Atlas.Core.AlertLog _alertLog = new();
+    private AP_Atlas.UI.AlertFeed _alerts;
     /// <summary>The views of the tools that aren't per slot: the view, its explorer content and title, and what to do when it's shown.</summary>
     private Dictionary<AP_Atlas.UI.Tool, (Control View, Control Explorer, string ExplorerTitle, Action Shown)> _toolViews = new();
     private int _currentTerminalTab = 0;
@@ -120,6 +122,9 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             "tidying the stored game names", tellUser: false);
         GetWindow().Title = "The Archipelago Atlas " + AP_Atlas.Core.AtlasVersion.Display;
         _appSettings = DataManager.LoadSettings();
+        // The alert feed: what Atlas tells the user, stacked at the bottom right, kept for Window → Notifications.
+        _alerts = new AP_Atlas.UI.AlertFeed(_alertLog, text => Tr(text), () => _appSettings.GlobalFontSize, VisualCheckRequested);
+        AddChild(_alerts);
         AP_Atlas.Core.ThemeColors.SetAccent(_appSettings.ThemeAccentColor);
         AP_Atlas.Core.RaceRules.Initialize(_appSettings);
         AP_Atlas.Core.EngineSetup.AtlasEngine.Initialize(_appSettings);

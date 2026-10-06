@@ -58,6 +58,7 @@ public partial class MainTrackerWindow
         Add("tools.sphere-settings", "Tools", "Sphere Tracker Settings…", "", () => ShowSphereTab(AP_Atlas.UI.SphereTrackerTab.SettingsView));
         Add("tools.privacy", "Tools", "Privacy & Permissions…", "", OpenPrivacy);
 
+        Add("window.notifications", "Window", "Notifications…", "", OpenNotifications);
         Add("window.full-screen", "Window", "Full Screen", "F11", ToggleFullScreen);
 
         Add("help.guide", "Help", "Guide", "", () => OpenHelp(null));
@@ -118,6 +119,8 @@ public partial class MainTrackerWindow
         menus["Tools"].AddSeparator();
         AddCommandItems(menus["Tools"], "tools.engine", "tools.cheese-settings", "tools.sphere-settings", "tools.privacy");
 
+        AddCommandItems(menus["Window"], "window.notifications");
+        menus["Window"].AddSeparator();
         AddCommandItems(menus["Window"], "window.full-screen");
 
         AddCommandItems(menus["Help"], "help.guide", "help.whats-new");
