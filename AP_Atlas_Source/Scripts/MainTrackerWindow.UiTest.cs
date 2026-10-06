@@ -986,9 +986,11 @@ public partial class MainTrackerWindow
             UiTestExpect(sidebarRebuilds == 0, $"the sidebar was rebuilt {sidebarRebuilds} times while slots connected");
             UiTestExpect(sphereRedraws == 0, $"the Sphere Tracker tab, not showing, redrew {sphereRedraws} times while slots connected");
             // Only what shows does work: the hints views aren't showing, and only the selected slot's text client draws, a
-            // slice of lines per frame.
+            // slice of lines per frame. A slice draws for about 6 ms; with its last line and the scroll, a frame's share takes
+            // 8 to 20 ms here and on CI, and 50 ms once on a CI runner twice as slow as usual. Drawing a burst in one go
+            // (about 1 ms a line) takes 100 ms or more, so 60 ms tells the two apart.
             UiTestExpect(hintRefreshes.Runs == 0, $"hints views that weren't showing refreshed {hintRefreshes.Runs} times");
-            UiTestExpect(chatLines.Runs > 0 && chatLines.WorstFrameMs < 25,
+            UiTestExpect(chatLines.Runs > 0 && chatLines.WorstFrameMs < 60,
                 $"drawing text client lines took {chatLines.WorstFrameMs:0} ms of one frame ({chatLines.Runs} runs, at most {chatLines.MostRunsInFrame} in a frame)");
             // The log views keep their last lines (the log file keeps everything).
             for (int i = 0; i < AP_Atlas.UI.LogPane.Lines + 500; i++) AP_Atlas.Core.Logger.LogInfo($"UI test line {i}");
