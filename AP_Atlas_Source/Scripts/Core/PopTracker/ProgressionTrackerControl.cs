@@ -49,6 +49,15 @@ namespace AP_Atlas.Core.PopTracker
 
         public void RefreshMarkers() => RenderActiveMode();
 
+        /// <summary>What the view says while logic has no items for it (race mode, the engine's problem, starting); set by the owner.</summary>
+        public Func<string, string> EmptyState { get; set; }
+
+        /// <summary>The text mode has its empty state to show (no items known yet), not items.</summary>
+        public bool ShowingEmptyState => _logicEngine == null || _logicEngine.LastItemPool == null || _logicEngine.LastItemPool.Count == 0;
+
+        /// <summary>The text mode's rows, for tests.</summary>
+        public Tree TextTree => _textTree;
+
         /// <summary>Filters the view to one item so it's easy to spot.</summary>
         public void RevealItem(string itemName)
         {
@@ -585,15 +594,14 @@ namespace AP_Atlas.Core.PopTracker
             int collectedProgression = 0;
             int totalProgression = 0;
 
-            if (_logicEngine == null)
+            if (ShowingEmptyState)
             {
-                _logger?.Invoke("[Key Items] ERROR: _logicEngine is null!");
-                return;
-            }
-
-            if (_logicEngine.LastItemPool == null)
-            {
-                _logger?.Invoke("[Key Items] ERROR: _logicEngine.LastItemPool is null!");
+                // Nothing to list yet: say why, as the Logic Tracker does.
+                var note = _textTree.CreateItem(root);
+                note.SetText(0, EmptyState?.Invoke("No items known yet.") ?? "Waiting for the logic engine…");
+                note.SetCustomColor(0, ThemeColors.TextSubtle);
+                note.SetExpandRight(0, true);
+                for (int c = 0; c < _textTree.Columns; c++) note.SetSelectable(c, false);
                 return;
             }
 

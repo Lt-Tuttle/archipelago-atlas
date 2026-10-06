@@ -30,6 +30,9 @@ namespace AP_Atlas.Core
         private MarginContainer _inspectorContainer;
         public Control SidebarContent { get; private set; }
 
+        /// <summary>The page's text size (the content setting); the window sets it.</summary>
+        public Func<int> FontSize { get; set; } = () => 14;
+
         public MapPackManagerControl(Action<string, string> logAction, Action showOverlayAction, Action hideOverlayAction, Func<HashSet<string>> getActiveGamesFunc, Func<List<ArchipelagoSession>> getActiveSessionsFunc = null)
         {
             _logAction = logAction;
@@ -154,8 +157,10 @@ namespace AP_Atlas.Core
             _inspectorContainer.AddChild(vbox);
 
             var title = new Label { Text = pack.Manifest.Name };
-            title.AddThemeFontSizeOverride("font_size", 24);
+            title.SetMeta("font_size_ratio", 1.7f);
             vbox.AddChild(title);
+            // Built after the window sized this page: sized once the rows are in.
+            AP_Atlas.UI.Ui.NextFrame(this, () => MainTrackerWindow.SetFontSizeRecursive(vbox, FontSize()));
 
             ArchipelagoSession activeSession = null;
             if (_getActiveSessionsFunc != null)
@@ -402,6 +407,7 @@ namespace AP_Atlas.Core
         private void BuildPackRows(string[] files)
         {
             foreach (Node n in _packListVBox.GetChildren()) n.QueueFree();
+            AP_Atlas.UI.Ui.NextFrame(this, () => MainTrackerWindow.SetFontSizeRecursive(_packListVBox, FontSize()));
 
             if (files.Length == 0)
             {
@@ -426,32 +432,32 @@ namespace AP_Atlas.Core
                     var infoVBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
 
                     var titleLbl = new Label { Text = manifest.Name };
-                    titleLbl.AddThemeFontSizeOverride("font_size", 16);
+                    titleLbl.SetMeta("font_size_ratio", 1.15f);
                     titleLbl.AddThemeColorOverride("font_color", ThemeColors.Text);
                     infoVBox.AddChild(titleLbl);
 
                     var detailLbl = new Label { Text = $"Game: {manifest.GameName} | v{manifest.GetActualVersion()}" };
-                    detailLbl.AddThemeFontSizeOverride("font_size", 12);
+                    detailLbl.SetMeta("font_size_ratio", 0.85f);
                     detailLbl.AddThemeColorOverride("font_color", ThemeColors.TextMuted);
                     infoVBox.AddChild(detailLbl);
 
                     var capsHbox = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
                     capsHbox.AddThemeConstantOverride("separation", 15);
                     var itemIndicator = new Label { Text = $"Items: {pack.ItemsByCode.Count}" };
-                    itemIndicator.AddThemeFontSizeOverride("font_size", 11);
+                    itemIndicator.SetMeta("font_size_ratio", 0.8f);
                     itemIndicator.AddThemeColorOverride("font_color", pack.ItemsByCode.Count > 0 ? ThemeColors.Success : ThemeColors.TextSubtle);
                     capsHbox.AddChild(itemIndicator);
                     var mapIndicator = new Label { Text = $"Maps: {pack.Maps.Count}" };
-                    mapIndicator.AddThemeFontSizeOverride("font_size", 11);
+                    mapIndicator.SetMeta("font_size_ratio", 0.8f);
                     mapIndicator.AddThemeColorOverride("font_color", pack.Maps.Count > 0 ? ThemeColors.Success : ThemeColors.TextSubtle);
                     capsHbox.AddChild(mapIndicator);
                     var locIndicator = new Label { Text = $"Locs: {pack.Locations.Count}" };
-                    locIndicator.AddThemeFontSizeOverride("font_size", 11);
+                    locIndicator.SetMeta("font_size_ratio", 0.8f);
                     locIndicator.AddThemeColorOverride("font_color", pack.Locations.Count > 0 ? ThemeColors.Success : ThemeColors.TextSubtle);
                     capsHbox.AddChild(locIndicator);
                     // Pack Doctor status (filled in when a check finishes).
                     var doctorBadge = new Label { Name = "DoctorBadge" };
-                    doctorBadge.AddThemeFontSizeOverride("font_size", 11);
+                    doctorBadge.SetMeta("font_size_ratio", 0.8f);
                     doctorBadge.SetMeta("pack_key", PackFixes.KeyFor(pack));
                     capsHbox.AddChild(doctorBadge);
                     UpdateDoctorBadge(doctorBadge);

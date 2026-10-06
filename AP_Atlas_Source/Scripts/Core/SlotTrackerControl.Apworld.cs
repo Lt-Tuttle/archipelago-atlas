@@ -264,6 +264,8 @@ public partial class SlotTrackerControl : MarginContainer
         dialog.PopupCentered(new Vector2I(900, 600));
     }
 
+    private string _shownEmptyState;
+
     private void SyncLogicViews()
     {
         if (!GodotObject.IsInstanceValid(this)) return;
@@ -271,6 +273,10 @@ public partial class SlotTrackerControl : MarginContainer
         bool problem = !LogicHidden && !Model.Logic.Running && EngineProblem != null;
         if (_mapTracker != null) _mapTracker.LogicHidden = LogicHidden || !Model.Logic.Running;
         if (_logicTree != null) _logicTree.Visible = !LogicHidden && !problem;
+        // Key Items repeats the empty state only when it changes (this runs on every logic change; a burst brings many).
+        string emptyState = _progressionTracker != null && _progressionTracker.ShowingEmptyState ? LogicEmptyState("") : null;
+        if (emptyState != null && emptyState != _shownEmptyState) _progressionTracker.RefreshMarkers();
+        _shownEmptyState = emptyState;
         if (_logicFlaggedOnly != null) _logicFlaggedOnly.Visible = !LogicHidden && !problem;
         if (_logicNotice == null) return;
         _logicNotice.Visible = LogicHidden || problem;
@@ -310,6 +316,19 @@ public partial class SlotTrackerControl : MarginContainer
                 AddButton("Atlas Engine…", "Open the engine setup and run a health check", () => OpenEngineSetup?.Invoke());
                 break;
         }
+    }
+
+    /// <summary>
+    /// What a logic view says while it has nothing to list: hidden by race mode, the engine's problem, that it's starting,
+    /// or <paramref name="whileRunning"/> once it runs. The Logic Tracker and Key Items say the same thing.
+    /// </summary>
+    public string LogicEmptyState(string whileRunning)
+    {
+        if (LogicHidden) return "Logic is hidden by race mode.";
+        if (Model.Logic.Running) return whileRunning;
+        if (EngineProblem != null) return EngineProblemText(EngineProblem).Replace("\n", " ");
+        if (Model.Logic.Booting) return "Starting the logic engine…";
+        return "Waiting for the logic engine…";
     }
 
     private string EngineProblemText(EngineStartError e)

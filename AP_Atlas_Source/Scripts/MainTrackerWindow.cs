@@ -341,6 +341,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 return sessions;
             }
         );
+        _packManagerPanel.FontSize = () => _appSettings.ContentFontSize;
         _packManagerPanel.Visible = false;
         _packManagerPanel.OpenDoctor = path => OpenPackDoctor(path);
         _packManagerPanel.OnDataRefreshed += () =>

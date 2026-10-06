@@ -307,6 +307,8 @@ namespace AP_Atlas.UI
             else if (slot.EngineRunning)
             {
                 Row("In logic now", Colored(slot.ActiveLogicCount.ToString(), slot.ActiveLogicCount > 0 ? Good : Muted));
+                if (slot.GoalInLogic is bool goal)
+                    Row("Goal", goal ? Colored("In logic now: go mode!", Good) : Colored("Not yet in logic", Muted), "Whether the goal can be completed with what the slot has now");
                 var checkedSet = new HashSet<long>(s.Locations.AllLocationsChecked);
                 int glitched = slot.LogicEngine.LastGlitchedLocations.Count(id => !checkedSet.Contains(id));
                 if (glitched > 0) Row("Sequence breaks", Colored(glitched.ToString(), Warn), "Reachable only with the game's glitch/sequence-break logic");

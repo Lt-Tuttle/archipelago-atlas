@@ -131,6 +131,8 @@ public partial class MainTrackerWindow
             UiKitAsync);
         await ScenarioAsync("Tables: a click on a column's title sorts by it (the column's own first direction, then the other; the arrow says which), typed words narrow the rows, a column hides and shows, pinned rows stay on top, the rows export as TSV, Markdown, Discord parts and a CSV file, the sort and the hidden columns are saved, and unchanged rows are updated in place with the selection kept",
             TablesAsync);
+        await ScenarioAsync("Confirmations and empty states: deleting a slot or a multiworld asks first and cancelling keeps them; without the logic engine, Key Items and the Logic Tracker both say what logic needs; go mode isn't claimed while unknown",
+            ConfirmationsAndEmptyStatesAsync);
         await ScenarioAsync("Bursts: 40 items and 40 chat lines arriving together reach the slot once each, at most one update of the window in each frame they arrive over (not 80)",
             BurstIsOneUpdateAsync, attempts: 2);
         await ScenarioAsync("Long text: a game's names and a hint's entrance of a megabyte, and a chat line of 100,000 characters without a space, hold up no frame for 150 ms, shown or not (names are cut to 500 characters; a long run of text gets breaks)",
@@ -1118,6 +1120,60 @@ public partial class MainTrackerWindow
         await UiTestWaitAsync(0.1);
     }
 
+    private async Task ConfirmationsAndEmptyStatesAsync()
+    {
+        await using var server = new FakeArchipelagoServer();
+        server.Games["Test Game"] = new FakeGame("0123456789abcdef0123456789abcdef01234567",
+            new Dictionary<string, long> { ["Sword"] = 1000 }, new Dictionary<string, long> { ["Cave Chest"] = 2000 });
+        var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Tester");
+        profile.Slots.Add("Other");
+        _profiles.Add(profile);
+        try
+        {
+            // Without the engine, the logic views say so (the same words), and nothing claims go mode.
+            await OnConnectSlotPressedAsync("Tester", profile);
+            var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
+            await UiTestWaitForAsync(() => slot.EngineProblem != null ? slot : null, "the engine's problem");
+            var textTree = slot.ProgressionTracker.TextTree;
+            string? keyItems = await UiTestWaitForAsync(() => textTree.GetRoot()?.GetFirstChild()?.GetText(0) is { Length: > 0 } text ? text : null, "the Key Items empty state");
+            UiTestExpect(keyItems.StartsWith("Logic needs the Atlas Engine", StringComparison.Ordinal), $"Key Items says \"{keyItems}\" without the engine");
+            UiTestExpect(slot.LogicNoticeShown?.StartsWith("Logic needs the Atlas Engine", StringComparison.Ordinal) == true, $"the Logic Tracker says \"{slot.LogicNoticeShown}\" without the engine");
+            ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.LogicTracker);
+            await UiTestWaitAsync(0.2);
+            UiTestExpect(!slot.GoModeShown && slot.GoalInLogic == null, "go mode is claimed while logic is unknown");
+
+            // Deleting a slot asks first; cancelling keeps it, confirming removes it.
+            SelectProfile(profile);
+            await UiTestWaitAsync(0.1);
+            Button DeleteButtonOf(string name) => _slotsListVBox!.FindChildren("*", nameof(Button), true, false).OfType<Button>()
+                .Where(b => b.TooltipText == "Delete Slot").ElementAt(profile.Slots.IndexOf(name));
+            ConfirmationDialog? Dialog(string title) => GetChildren().OfType<ConfirmationDialog>().FirstOrDefault(d => d.Title == title);
+            DeleteButtonOf("Other").EmitSignal(BaseButton.SignalName.Pressed);
+            var ask = await UiTestWaitForAsync(() => Dialog("Delete slot"), "the slot delete confirmation");
+            ask.EmitSignal(AcceptDialog.SignalName.Canceled);
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(profile.Slots.Contains("Other") && Dialog("Delete slot") == null, "cancelling the slot delete didn't keep the slot");
+            DeleteButtonOf("Other").EmitSignal(BaseButton.SignalName.Pressed);
+            ask = await UiTestWaitForAsync(() => Dialog("Delete slot"), "the slot delete confirmation again");
+            ask.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(!profile.Slots.Contains("Other") && profile.Slots.Contains("Tester"), "confirming the slot delete didn't remove that slot alone");
+            // Deleting the multiworld asks first; cancelling keeps it.
+            _deleteButton!.EmitSignal(BaseButton.SignalName.Pressed);
+            var askProfile = await UiTestWaitForAsync(() => Dialog("Delete multiworld"), "the multiworld delete confirmation");
+            askProfile.EmitSignal(AcceptDialog.SignalName.Canceled);
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(_profiles.Contains(profile) && SlotView(profile.Id, "Tester") != null, "cancelling the multiworld delete didn't keep it");
+        }
+        finally
+        {
+            DeleteProfile(profile);
+        }
+        await UiTestWaitAsync(0.2);
+    }
+
     private async Task WindowPartsAsync()
     {
         var host = (AP_Atlas.UI.IPropertiesHost)this;
@@ -1958,6 +2014,7 @@ public partial class MainTrackerWindow
 
             // Nothing received yet: only the chest.
             ExpectLogic(slot, "with nothing received", inLogic: new long[] { 2000 }, outOfLogic: new long[] { 2001, 2002, 2003 }, goal: false, active: 1);
+            await ExpectGoModeAsync(slot, false, "with nothing received");
             await ExpectTreeAsync(slot, "with nothing received", "── Base Logic (Starting Reachable) ──", "Cave Chest");
 
             // The Sword, which the server marks as progression: one step, opening the door.
@@ -1976,6 +2033,7 @@ public partial class MainTrackerWindow
             await server.BroadcastAsync(FakeArchipelagoServer.ReceivedItems(1, new long[] { 1001 }));
             await UiTestWaitForAsync(() => slot.LogicSettled && slot.IsLocationInLogic(2002) == true ? slot : null, "the Shield to open the tower");
             ExpectLogic(slot, "with the Sword and the Shield", inLogic: new long[] { 2000, 2001, 2002 }, outOfLogic: new long[] { 2003 }, goal: true, active: 3);
+            await ExpectGoModeAsync(slot, true, "with the Sword and the Shield");
             UiTestExpect(slot.UnlockStepOf(2002) == (2, 3, "Shield") && slot.LogicStepCount == 2, $"the tower's step is {slot.UnlockStepOf(2002)} of {slot.LogicStepCount}");
             await ExpectTreeAsync(slot, "with the Sword and the Shield", "── Base Logic (Starting Reachable) ──", "Cave Chest", "── Unlocked by: Sword (1 checks) ──", "Locked Door",
                 "── Unlocked by: Shield (1 checks) ──", "Tower Top");
@@ -2341,6 +2399,14 @@ public partial class MainTrackerWindow
     }
 
     /// <summary>Checks what the slot reports as in logic, its goal, and how many checks it has left in logic.</summary>
+    /// <summary>Go mode reaches the user: the Logic Tracker's label (while it shows) and the slot card's footer say it exactly when the goal is in logic.</summary>
+    private async Task ExpectGoModeAsync(SlotTrackerControl slot, bool goal, string when)
+    {
+        await UiTestWaitForAsync(() => slot.GoModeShown == goal ? slot : null, $"the Logic Tracker's go mode label {when} (expected {(goal ? "shown" : "hidden")})");
+        await UiTestWaitForAsync(() => _activeSessionsList.FindChildren("StatusFooter", nameof(Label), true, false).OfType<Label>().FirstOrDefault(l => l.Text.Contains("Go mode") == goal),
+            $"the slot card's footer {when} (expected go mode {(goal ? "said" : "not said")})");
+    }
+
     private static void ExpectLogic(SlotTrackerControl slot, string when, long[] inLogic, long[] outOfLogic, bool goal, int active)
     {
         foreach (long id in inLogic) UiTestExpect(slot.IsLocationInLogic(id) == true, $"location {id} isn't in logic {when}");

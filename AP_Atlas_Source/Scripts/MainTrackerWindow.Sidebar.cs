@@ -336,13 +336,11 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                     if (name != null) col.Name = name;
                     col.AddThemeConstantOverride("separation", 0);
                     var lblTitle = new Label { Text = title, HorizontalAlignment = HorizontalAlignment.Center };
-                    lblTitle.SetMeta("font_size_ratio", 0.55);
-                    lblTitle.AddThemeFontSizeOverride("font_size", 9);
+                    lblTitle.SetMeta("font_size_ratio", 0.6);
                     lblTitle.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextSubtle);
                     col.AddChild(lblTitle);
                     var lblVal = new Label { Text = val, HorizontalAlignment = HorizontalAlignment.Center };
-                    lblVal.SetMeta("font_size_ratio", 0.65);
-                    lblVal.AddThemeFontSizeOverride("font_size", 10);
+                    lblVal.SetMeta("font_size_ratio", 0.72);
                     lblVal.AddThemeColorOverride("font_color", valColor);
                     col.AddChild(lblVal);
                     statsHBox.AddChild(col);
@@ -371,8 +369,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                     HorizontalAlignment = HorizontalAlignment.Left,
                     SizeFlagsHorizontal = SizeFlags.ExpandFill
                 };
-                statusFooter.SetMeta("font_size_ratio", 0.50);
-                statusFooter.AddThemeFontSizeOverride("font_size", 8);
+                statusFooter.SetMeta("font_size_ratio", 0.6);
                 var gameNameFooter = new Label
                 {
                     Name = "GameName",
@@ -381,18 +378,16 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                     SizeFlagsHorizontal = SizeFlags.ExpandFill
                 };
                 gameNameFooter.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextSubtle);
-                gameNameFooter.SetMeta("font_size_ratio", 0.50);
-                gameNameFooter.AddThemeFontSizeOverride("font_size", 8);
+                gameNameFooter.SetMeta("font_size_ratio", 0.6);
                 var cheeseBadge = new Label { Name = "CheeseBadge", HorizontalAlignment = HorizontalAlignment.Center, MouseFilter = MouseFilterEnum.Pass, Visible = false };
-                cheeseBadge.SetMeta("font_size_ratio", 0.50);
-                cheeseBadge.AddThemeFontSizeOverride("font_size", 8);
+                cheeseBadge.SetMeta("font_size_ratio", 0.6);
                 footerHBox.AddChild(statusFooter);
                 footerHBox.AddChild(cheeseBadge);
                 footerHBox.AddChild(gameNameFooter);
                 UpdateCheeseBadge(cheeseBadge, profile.Id, slotName);
                 if (isConnected)
                 {
-                    statusFooter.Text = session.RaceRestricted ? "● Live · Race mode" : "● Live";
+                    statusFooter.Text = LiveText(session);
                     statusFooter.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Success);
                 }
                 else if (isConnecting)
@@ -417,11 +412,12 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             }
             _activeSessionsList.AddChild(new HSeparator { CustomMinimumSize = new Godot.Vector2(0, 5) });
         }
-        SetFontSizeRecursive(_activeSessionsList, SlotListFontSize);
+        SetFontSizeRecursive(_activeSessionsList, _appSettings.SlotsFontSize);
     }
 
-    /// <summary>The text size of the slot lists (the sidebar's and a multiworld's). Fixed: font sizes are reworked with the new shell.</summary>
-    private const int SlotListFontSize = 16;
+    /// <summary>A live slot's footer: race mode when it applies, else go mode when the goal is in logic.</summary>
+    private static string LiveText(SlotTrackerControl slot) =>
+        slot == null ? "● Live" : slot.RaceRestricted ? "● Live · Race mode" : slot.GoalInLogic == true ? "● Live · Go mode!" : "● Live";
     private void UpdateSlotStatuses()
     {
         using var __perf = AP_Atlas.Core.PerfMonitor.Measure("Update slot status lights");
@@ -581,7 +577,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                                 {
                                     if (isConnected)
                                     {
-                                        statusFooter.Text = activeSlot != null && activeSlot.RaceRestricted ? "● Live · Race mode" : "● Live";
+                                        statusFooter.Text = LiveText(activeSlot);
                                         SetFontColor(statusFooter, AP_Atlas.Core.ThemeColors.Success);
                                     }
                                     else if (isConnecting)

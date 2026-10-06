@@ -154,10 +154,11 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 var style = new StyleBoxFlat { BgColor = new Godot.Color(AP_Atlas.Core.ThemeColors.SurfaceDeep, 0.95f), CornerRadiusTopLeft = 10, CornerRadiusTopRight = 10, CornerRadiusBottomLeft = 10, CornerRadiusBottomRight = 10, BorderWidthBottom = 2, BorderWidthTop = 2, BorderWidthLeft = 2, BorderWidthRight = 2, BorderColor = AP_Atlas.Core.ThemeColors.BorderSoft };
                 popup.AddThemeStyleboxOverride("panel", style);
                 var lbl = new Label { Name = "MessageLabel", HorizontalAlignment = HorizontalAlignment.Center };
-                lbl.AddThemeFontSizeOverride("font_size", 28);
+                lbl.SetMeta("font_size_ratio", 2.0f);
                 lbl.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Pending);
                 var popupCenter = new CenterContainer { Name = "CenterContainer" };
                 popupCenter.AddChild(lbl);
+                SetFontSizeRecursive(lbl, _appSettings.GlobalFontSize);
                 popup.AddChild(popupCenter);
                 _connectingOverlay.AddChild(popup);
                 var canvas = new CanvasLayer { Layer = 50 };

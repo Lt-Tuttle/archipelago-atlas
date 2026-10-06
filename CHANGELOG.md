@@ -231,6 +231,11 @@ Development toward the first public beta, 0.1.0.
   - An image you choose for a Pack Doctor fix is checked the same way before it's copied.
 
 ### Fixed
+- **Deleting a slot asks first** (as deleting a multiworld and a map pack did), and the multiworld's confirmation says what goes with it.
+- **Go mode is shown:** the slot's card says "Go mode!", the Logic Tracker says it above its list, and Properties has a Goal row, once the goal is in logic.
+- **Key Items said nothing while logic wasn't running;** it now says what the Logic Tracker says (the engine's problem, race mode, or that the engine is starting).
+- **Text sizes follow the settings everywhere:** the slot cards took a fixed size instead of the Slots setting, and the Map Packs page, the connecting overlay, the Multiworlds page's title and the map's empty state had pixel sizes of their own.
+- **The map's empty state** named a "Map Pack Manager in the main sidebar"; it names the Map Packs page (Ctrl+0).
 - **A burst arriving at the wrong moment updated a slot's views many times in one frame.** A deferred call made while a frame's deferred calls are running joins the same pass, so items and lines landing right then were applied in as many updates as they arrived in (18 in one test run). A slot's views now update once a frame, whatever the timing; what arrives after the update waits for the next frame.
 - **Setting the PC's clock no longer changes how long Atlas waits.** Atlas timed its waits by the PC's clock, which a time sync can move by hours (when a PC starts with the wrong time, say).
   - Put back, the clock held things up for as long as it moved: requests to a site, reading Cheese Tracker and spheretracker.de, the Refresh buttons, and the warning that a file couldn't be saved, which stayed silent.

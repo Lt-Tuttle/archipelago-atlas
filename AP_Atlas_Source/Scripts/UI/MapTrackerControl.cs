@@ -223,11 +223,11 @@ namespace AP_Atlas.UI
             var emptyVBox = new VBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
             emptyVBox.AddThemeConstantOverride("separation", 20);
             _emptyStateContainer.AddChild(emptyVBox);
-            var emptyLbl = new Label { Text = "No Map Pack Installed", HorizontalAlignment = HorizontalAlignment.Center };
-            emptyLbl.AddThemeFontSizeOverride("font_size", 28);
+            var emptyLbl = new Label { Text = "No map pack installed", HorizontalAlignment = HorizontalAlignment.Center };
+            emptyLbl.SetMeta("font_size_ratio", 2.0f);
             emptyVBox.AddChild(emptyLbl);
-            var emptySubLbl = new Label { Text = "We could not find a PopTracker map pack for this game.\nGo to the Map Pack Manager in the main sidebar to download one.", HorizontalAlignment = Godot.HorizontalAlignment.Center };
-            emptySubLbl.AddThemeColorOverride("font_color", Colors.Gray);
+            var emptySubLbl = new Label { Text = "Atlas has no PopTracker map pack for this game.\nInstall one on the Map Packs page (Ctrl+0).", HorizontalAlignment = Godot.HorizontalAlignment.Center };
+            emptySubLbl.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextSubtle);
             emptyVBox.AddChild(emptySubLbl);
             AddChild(_emptyStateContainer);
 

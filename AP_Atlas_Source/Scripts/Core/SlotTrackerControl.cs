@@ -36,6 +36,12 @@ public partial class SlotTrackerControl : MarginContainer
     /// <summary>Whether this slot's goal can be completed with what it has now (go mode). Null: not known.</summary>
     public bool? GoalInLogic => Model.Logic.GoalInLogic;
 
+    /// <summary>The Logic Tracker says the goal is in logic (go mode).</summary>
+    public bool GoModeShown => _goModeLabel != null && _goModeLabel.Visible;
+
+    /// <summary>What the Logic Tracker shows instead of its list (race mode, an engine problem), or null while the list shows.</summary>
+    public string LogicNoticeShown => _logicNotice != null && _logicNotice.Visible ? _logicNoticeText.Text : null;
+
     /// <summary>The server says this slot reached its goal (its goal message, or a status check after connecting).</summary>
     public bool GoalCompleted => Model.GoalCompleted;
 
@@ -74,7 +80,7 @@ public partial class SlotTrackerControl : MarginContainer
     private Action<string> _appendDebugLog;
 
     // --- Logic Tracker view ---
-    private Label _engineStatusLabel;
+    private Label _engineStatusLabel, _goModeLabel;
     private Tree _logicTree;
 
     // --- Item History view ---
@@ -129,6 +135,8 @@ public partial class SlotTrackerControl : MarginContainer
         _progressionTracker.ScriptState = ScriptStateOf;
         _progressionTracker.SeedSettings = SeedSettings;
         _progressionTracker.ScriptStopReason = () => PackScripts?.StopReason;
+        _progressionTracker.EmptyState = LogicEmptyState;
+        _progressionTracker.RefreshMarkers(); // the empty state shows from the start, not after the first item
         _progressionTracker.MarkerLookup = name =>
         {
             var a = AP_Atlas.Core.Annotations.Get(AnnotationKey, AP_Atlas.Core.Annotations.ItemKey(FindItemId(name)));

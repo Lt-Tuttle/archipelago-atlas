@@ -441,7 +441,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         var rightVbox = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
         _connectionPanel.AddChild(rightVbox);
         var title = new Label { Text = "Multiworld Details", HorizontalAlignment = HorizontalAlignment.Center };
-        title.AddThemeFontSizeOverride("font_size", 24);
+        title.SetMeta("font_size_ratio", 1.7f);
         rightVbox.AddChild(title);
         rightVbox.AddChild(new HSeparator());
         _nameInput = new LineEdit { PlaceholderText = "Profile Name", SizeFlagsHorizontal = SizeFlags.ExpandFill };

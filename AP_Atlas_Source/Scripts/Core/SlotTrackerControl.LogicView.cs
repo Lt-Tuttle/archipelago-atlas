@@ -35,6 +35,9 @@ public partial class SlotTrackerControl : MarginContainer
         _logicFlaggedOnly = new Button { ToggleMode = true, Text = "Flagged / special only", TooltipText = "Show only checks you flagged, noted or marked special." };
         _logicFlaggedOnly.Toggled += _ => ApplyAllLogicMarkers();
         toolbar.AddChild(_logicFlaggedOnly);
+        _goModeLabel = new Label { Text = "GO MODE: your goal is in logic", Visible = false, TooltipText = "Everything the goal needs is reachable with what this slot has now" };
+        _goModeLabel.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Success);
+        toolbar.AddChild(_goModeLabel);
         _engineStatusLabel = new Label { Text = "Engine: Offline", SizeFlagsHorizontal = SizeFlags.ExpandFill, HorizontalAlignment = HorizontalAlignment.Right };
         toolbar.AddChild(_engineStatusLabel);
 
@@ -175,6 +178,7 @@ public partial class SlotTrackerControl : MarginContainer
     {
         using var __perf = AP_Atlas.Core.PerfMonitor.Measure($"[{_slotName}] Logic Tracker refresh");
         if (_logicTree == null || Session == null) return;
+        if (_goModeLabel != null) _goModeLabel.Visible = !LogicHidden && Model.Logic.GoalInLogic == true;
 
         var steps = Model.Logic.Steps;
         bool full = forceFull || _logicTree.GetRoot() == null || _logicRenderedRun != Model.Logic.Run || _logicRenderedSteps > steps.Count ||
@@ -196,7 +200,7 @@ public partial class SlotTrackerControl : MarginContainer
         if (steps.Count == 0)
         {
             _logicPlaceholder ??= _logicTree.CreateItem(root);
-            _logicPlaceholder.SetText(1, Model.Logic.Running ? "No reachable checks found yet." : "Waiting for Logic Engine...");
+            _logicPlaceholder.SetText(1, LogicEmptyState("No reachable checks found yet."));
             _logicPlaceholder.SetCustomColor(1, AP_Atlas.Core.ThemeColors.TextSubtle);
             return;
         }

@@ -47,6 +47,8 @@ Key Items (Ctrl+2) shows the progression items you've received. The Visual view 
 
 ## Logic Tracker
 
+- Once everything your goal needs is reachable, the Logic Tracker says **GO MODE** above its list, your slot's card says "Go mode!", and Properties shows a Goal row.
+
 The Logic Tracker (Ctrl+3) lists the slot's locations in the order they came into logic: Order, Location and Unlocked By (the item that opened it), from Archipelago's own logic running in the Atlas Engine. Properties explains any location: the items that open it, its access rule and the path to it.
 
 The banner above the table says how far the logic can be trusted. It's exact when the slot's apworld matches the version the seed was made with; when it doesn't, Atlas can find and use that version (Fix automatically, which asks before looking anything up on GitHub and downloads only from sources you trust), or you can give it the apworld file the seed's host shared (Choose apworld file…), the YAML the seed was generated with (Link YAML…), or the GitHub project the apworld comes from (Add a source…).

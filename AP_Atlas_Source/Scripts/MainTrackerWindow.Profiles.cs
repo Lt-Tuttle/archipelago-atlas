@@ -210,13 +210,20 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             delBtn.Modulate = AP_Atlas.Core.ThemeColors.Danger;
             delBtn.Pressed += () =>
             {
-                DisconnectSlot(_selectedProfile.Id, lineEdit.Text);
-                _selectedProfile.ActiveSlots.Remove(lineEdit.Text);
-                _selectedProfile.Slots.RemoveAt(index);
-                MarkDirty();
-                PopulateSlotsList();
-                RefreshProfileListStyles();
-                UpdateSidebar();
+                var profile = _selectedProfile;
+                string slotName = lineEdit.Text;
+                AP_Atlas.UI.Dialogs.Confirm(this, Tr("Delete slot"),
+                    string.Format(Tr("Remove the slot {0} from {1}? If it's connected, its connection closes."), slotName, profile.Name), Tr("Delete"), () =>
+                    {
+                        if (_selectedProfile != profile || index >= profile.Slots.Count) return;
+                        DisconnectSlot(profile.Id, slotName);
+                        profile.ActiveSlots.Remove(slotName);
+                        profile.Slots.RemoveAt(index);
+                        MarkDirty();
+                        PopulateSlotsList();
+                        RefreshProfileListStyles();
+                        UpdateSidebar();
+                    });
             };
             row.AddChild(delBtn);
             _slotsListVBox.AddChild(row);
@@ -230,7 +237,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             btnRow.AddChild(_connectAllBtn);
             _slotsListVBox.AddChild(btnRow);
         }
-        SetFontSizeRecursive(_slotsListVBox, SlotListFontSize);
+        SetFontSizeRecursive(_slotsListVBox, _appSettings.SlotsFontSize);
         UpdateSlotStatuses(); // Force immediate update of lights
     }
     /// <summary>A slot card's Cheese Tracker badge: the slot's status there, or a suggestion from Atlas's logic that's ready.</summary>
@@ -296,22 +303,13 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         if (_selectedProfile != null)
         {
             var profile = _selectedProfile;
-            var confirmDialog = new ConfirmationDialog
-            {
-                Title = "Delete Profile",
-                DialogText = $"Are you sure you want to delete the profile '{profile.Name}' and all its slots?",
-                Transient = true,
-                Exclusive = true
-            };
-            confirmDialog.Confirmed += () =>
-            {
-                DeleteProfile(profile);
-                ShowToast("Profile Deleted", AP_Atlas.Core.ThemeColors.Warning);
-                confirmDialog.QueueFree();
-            };
-            confirmDialog.Canceled += () => confirmDialog.QueueFree();
-            AddChild(confirmDialog);
-            confirmDialog.PopupCentered();
+            AP_Atlas.UI.Dialogs.Confirm(this, Tr("Delete multiworld"),
+                string.Format(Tr("Delete the multiworld {0} and its {1} slot(s)? Its connections close, and its Cheese Tracker and sphere room links are forgotten."), profile.Name, profile.Slots.Count),
+                Tr("Delete"), () =>
+                {
+                    DeleteProfile(profile);
+                    ShowToast(Tr("Multiworld deleted"), AP_Atlas.Core.ThemeColors.Warning);
+                });
         }
     }
     /// <summary>
