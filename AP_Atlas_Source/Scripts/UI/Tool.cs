@@ -72,12 +72,13 @@ namespace AP_Atlas.UI
         public static readonly Tool Hints = new("hints", "Hints", ToolScope.Slot, ToolGroup.Slot, "lightbulb") { SlotView = slot => slot.HintsView };
         public static readonly Tool CheeseTracker = new("cheese-tracker", "Cheese Tracker", ToolScope.Multiworld, ToolGroup.Multiworld, "users");
         public static readonly Tool SphereTracker = new("sphere-tracker", "Sphere Tracker", ToolScope.Multiworld, ToolGroup.Multiworld, "orbit");
+        public static readonly Tool Home = new("home", "Home", ToolScope.App, ToolGroup.Atlas, "house");
         public static readonly Tool Connections = new("connections", "Multiworlds", ToolScope.App, ToolGroup.Atlas, "globe");
-        public static readonly Tool MapPacks = new("map-packs", "Map Packs", ToolScope.App, ToolGroup.Atlas, "package");
+        public static readonly Tool MapPacks = new("map-packs", "Map Packs", ToolScope.App, ToolGroup.Atlas, "package") { DefaultKey = "Ctrl+0" };
         public static readonly Tool Settings = new("settings", "Settings", ToolScope.App, ToolGroup.Atlas, "settings") { DefaultKey = "Ctrl+," };
 
         /// <summary>Every tool, in the activity bar's order, top to bottom (Ctrl+1 to Ctrl+9).</summary>
-        public static IReadOnlyList<Tool> All { get; } = new[] { MapTracker, KeyItems, LogicTracker, ItemHistory, Hints, CheeseTracker, SphereTracker, Connections, MapPacks, Settings };
+        public static IReadOnlyList<Tool> All { get; } = new[] { MapTracker, KeyItems, LogicTracker, ItemHistory, Hints, CheeseTracker, SphereTracker, Home, Connections, MapPacks, Settings };
 
         /// <summary>The tool's place in <see cref="All"/>.</summary>
         public int Index

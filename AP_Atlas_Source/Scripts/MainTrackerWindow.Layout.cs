@@ -15,25 +15,6 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         img.LoadSvgFromString(svgString);
         return ImageTexture.CreateFromImage(img);
     }
-    private void BuildLandingPage()
-    {
-        _landingPage = new CenterContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        var vbox = new VBoxContainer { Alignment = BoxContainer.AlignmentMode.Begin };
-        vbox.AddThemeConstantOverride("separation", 8);
-        _landingPage.AddChild(vbox);
-        var logo = new TextureRect
-        {
-            Texture = GD.Load<Texture2D>("res://Assets/Graphics/icon.png"),
-            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
-            CustomMinimumSize = new Godot.Vector2(400, 400)
-        };
-        vbox.AddChild(logo);
-        var title = new Label { Text = "The Archipelago Atlas", HorizontalAlignment = HorizontalAlignment.Center };
-        title.AddThemeFontSizeOverride("font_size", 32);
-        vbox.AddChild(title);
-        _contentStage.AddChild(_landingPage);
-        SwapContentView(_landingPage);
-    }
     private TabBar _bottomTabs;
     private PanelContainer _bottomContent;
     private VBoxContainer _sysLogVBox;

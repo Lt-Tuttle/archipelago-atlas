@@ -45,14 +45,9 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     private void SwapContentView(Control target)
     {
         if (_contentStage == null) return;
-        bool hasTarget = target != null;
         foreach (Node n in _contentStage.GetChildren())
         {
-            if (n is Control c)
-            {
-                if (c == _landingPage) c.Visible = !hasTarget;
-                else c.Visible = (c == target);
-            }
+            if (n is Control c) c.Visible = (c == target);
         }
     }
     private void RefreshTerminalView()

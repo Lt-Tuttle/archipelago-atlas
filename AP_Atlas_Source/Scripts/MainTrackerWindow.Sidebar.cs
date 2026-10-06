@@ -119,6 +119,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     /// </summary>
     private void UpdateSidebar()
     {
+        // Home follows the slots while it shows (a slot connected or ended, a multiworld added or deleted); this never runs on a timer.
+        if (_currentTool == AP_Atlas.UI.Tool.Home) _homePage?.Refresh();
         RefreshSlotPicker(); // the slots changed: a connected one, an ended one
         if (_activeSessionsList == null) return;
         string layout = SidebarLayout();

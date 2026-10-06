@@ -73,6 +73,11 @@ public partial class MainTrackerWindow
         }
 
         await UiTestWaitAsync(1.0); // the window settles, as on a first run
+        await ScenarioAsync("Startup: Atlas opens on Home", () =>
+        {
+            UiTestExpect(ShownContent() == _homePage && _activityBar.Selected == AP_Atlas.UI.Tool.Home, $"Atlas opened on {ShownContent()?.Name ?? "nothing"}");
+            return Task.CompletedTask;
+        });
         await ScenarioAsync("Connecting: a slot logs in through the window and gets its view; a dropped connection comes back by itself with a new view; disconnecting closes it for good",
             ConnectingThroughTheWindowAsync);
         await ScenarioAsync("Deleting a multiworld while one of its slots connects: the connection is closed, and no slot is left for it",
@@ -103,6 +108,8 @@ public partial class MainTrackerWindow
             KeyboardShortcutsAsync);
         await ScenarioAsync("Privacy & permissions: a section of the Settings page lists every permission Atlas can ask for with its state (asks each time, allowed until Atlas closes, always allowed, not until Atlas restarts) and every trusted apworld source; a kept answer and a trusted source can be taken back, which is saved; the section is found by its words",
             PrivacyAsync);
+        await ScenarioAsync("Home: Ctrl+8 shows it on its own; every tool has a card with a line and every link is https; the checklist ticks the engine as it is and nothing else in a fresh folder, then a multiworld and a pack once they exist; a tip shows and Next tip goes around; the multiworld is listed and one click connects its slot, ticks the step and says Connected; a tool's card shows the tool",
+            HomeAsync);
         await ScenarioAsync("Bursts: 40 items and 40 chat lines arriving together reach the slot once each, at most one update of the window in each frame they arrive over (not 80)",
             BurstIsOneUpdateAsync);
         await ScenarioAsync("Long text: a game's names and a hint's entrance of a megabyte, and a chat line of 100,000 characters without a space, hold up no frame for 150 ms, shown or not (names are cut to 500 characters; a long run of text gets breaks)",
@@ -503,6 +510,7 @@ public partial class MainTrackerWindow
             [AP_Atlas.UI.Tool.CheeseTracker] = _cheeseTab,
             [AP_Atlas.UI.Tool.SphereTracker] = _sphereTab,
             [AP_Atlas.UI.Tool.Settings] = _settingsPage!,
+            [AP_Atlas.UI.Tool.Home] = _homePage!,
         };
         var slotViews = new Dictionary<AP_Atlas.UI.Tool, Func<SlotTrackerControl, Control>>
         {
@@ -514,7 +522,7 @@ public partial class MainTrackerWindow
         };
         UiTestExpect(ownViews.Count + slotViews.Count == AP_Atlas.UI.Tool.All.Count, "a tool is missing from this test's table");
 
-        // Atlas opens on its welcome page with Connections as the current tab, so start from another tab, as a user would.
+        // Atlas opens on Home, so start from another tab, as a user would.
         host.ShowTool(AP_Atlas.UI.Tool.MapPacks);
         // No slot connected: the tools that aren't per slot show their own view, and the slot tools ask for a slot.
         foreach (var tool in AP_Atlas.UI.Tool.All)
@@ -565,8 +573,8 @@ public partial class MainTrackerWindow
         UiTestExpect(tools.GetItemText(0) == "Map Tracker" && ShortcutShown(tools, 0) == "Ctrl+1", $"the Tools menu's first item is \"{tools.GetItemText(0)}\" with \"{ShortcutShown(tools, 0)}\"");
 
         host.ShowTool(AP_Atlas.UI.Tool.Connections);
-        await PressAsync("Ctrl+9");
-        UiTestExpect(ShownContent() == _packManagerPanel, "Ctrl+9 didn't show Map Packs");
+        await PressAsync("Ctrl+0");
+        UiTestExpect(ShownContent() == _packManagerPanel, "Ctrl+0 didn't show Map Packs");
         await PressAsync("Ctrl+7");
         UiTestExpect(ShownContent() == _sphereTab, "Ctrl+7 didn't show the Sphere Tracker");
         // A rebind in the settings takes over at once (as a user might type it), and the old key means nothing.
@@ -576,7 +584,7 @@ public partial class MainTrackerWindow
             await PressAsync("Ctrl+F6");
             UiTestExpect(ShownContent() == _packManagerPanel, "a rebound key (Ctrl+F6) didn't show Map Packs");
             host.ShowTool(AP_Atlas.UI.Tool.SphereTracker);
-            await PressAsync("Ctrl+9");
+            await PressAsync("Ctrl+0");
             UiTestExpect(ShownContent() == _sphereTab, "the old key still works after a rebind");
             await PressAsync("F1");
             var shortcuts = await UiTestWaitForAsync(() => GetChildren().OfType<AcceptDialog>().FirstOrDefault(d => d.Title == "Keyboard Shortcuts"), "the shortcuts dialog");
@@ -607,8 +615,8 @@ public partial class MainTrackerWindow
         UiTestExpect(page.SearchHasFocus, "the search box isn't ready to type into");
         UiTestExpect(_midLeftSidebar.Visible && page.SectionList.Visible, "the explorer doesn't list the sections");
         // The tools' keys still work while the search box has the focus.
-        await PressAsync("Ctrl+9");
-        UiTestExpect(ShownContent() == _packManagerPanel, "Ctrl+9 didn't switch tools while the search box had the focus");
+        await PressAsync("Ctrl+0");
+        UiTestExpect(ShownContent() == _packManagerPanel, "Ctrl+0 didn't switch tools while the search box had the focus");
         host.ShowTool(AP_Atlas.UI.Tool.Settings);
 
         // Each kind of row changes its setting at once and saves it.
@@ -702,12 +710,12 @@ public partial class MainTrackerWindow
         ShowSettings("keyboard");
         await UiTestWaitAsync(0.1);
         UiTestExpect(ShownContent() == page && page.ScrollPosition > 0, "the keyboard section didn't show");
-        UiTestExpect(capture.Key == "Ctrl+9" && capture.Text == "Ctrl+9" && reset.Disabled && !conflict.Visible, $"Map Packs' row shows \"{capture.Text}\", reset {(reset.Disabled ? "off" : "on")}, conflict {conflict.Visible}");
+        UiTestExpect(capture.Key == "Ctrl+0" && capture.Text == "Ctrl+0" && reset.Disabled && !conflict.Visible, $"Map Packs' row shows \"{capture.Text}\", reset {(reset.Disabled ? "off" : "on")}, conflict {conflict.Visible}");
         try
         {
             // Press the key's button, then a key: the command runs on it at once, the menus and the bar show it, and it's saved.
             capture.EmitSignal(BaseButton.SignalName.Pressed);
-            UiTestExpect(capture.Capturing && capture.Text != "Ctrl+9", "pressing the key's button didn't start waiting for a key");
+            UiTestExpect(capture.Capturing && capture.Text != "Ctrl+0", "pressing the key's button didn't start waiting for a key");
             capture.EmitSignal(Control.SignalName.GuiInput, AP_Atlas.UI.CommandKeys.ToEvent("Ctrl+F6")!);
             UiTestExpect(!capture.Capturing && capture.Key == "Ctrl+F6" && _appSettings.KeyBindings.GetValueOrDefault("tool.map-packs") == "Ctrl+F6"
                 && DataManager.LoadSettings().KeyBindings.GetValueOrDefault("tool.map-packs") == "Ctrl+F6", "the pressed key wasn't taken, or wasn't saved");
@@ -717,7 +725,7 @@ public partial class MainTrackerWindow
             await PressAsync("Ctrl+F6");
             UiTestExpect(ShownContent() == _packManagerPanel, "the new key doesn't run the command");
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
-            await PressAsync("Ctrl+9");
+            await PressAsync("Ctrl+0");
             UiTestExpect(ShownContent() == _connectionPanel, "the old key still runs the command");
             host.ShowTool(AP_Atlas.UI.Tool.Settings);
 
@@ -729,8 +737,8 @@ public partial class MainTrackerWindow
 
             // Reset: the default key again, the rebind forgotten.
             reset.EmitSignal(BaseButton.SignalName.Pressed);
-            UiTestExpect(!_appSettings.KeyBindings.ContainsKey("tool.map-packs") && capture.Key == "Ctrl+9" && reset.Disabled && !conflict.Visible && !otherConflict.Visible
-                && ShortcutShown(tools, item) == "Ctrl+9", "the reset didn't bring the default key back");
+            UiTestExpect(!_appSettings.KeyBindings.ContainsKey("tool.map-packs") && capture.Key == "Ctrl+0" && reset.Disabled && !conflict.Visible && !otherConflict.Visible
+                && ShortcutShown(tools, item) == "Ctrl+0", "the reset didn't bring the default key back");
 
             // Backspace: no key at all.
             capture.EmitSignal(BaseButton.SignalName.Pressed);
@@ -738,7 +746,7 @@ public partial class MainTrackerWindow
             UiTestExpect(capture.Key == "" && capture.Text == "None" && _appSettings.KeyBindings.GetValueOrDefault("tool.map-packs") == "" && ShortcutShown(tools, item) == "",
                 $"Backspace didn't take the key away: \"{capture.Text}\", menu \"{ShortcutShown(tools, item)}\"");
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
-            await PressAsync("Ctrl+9");
+            await PressAsync("Ctrl+0");
             UiTestExpect(ShownContent() == _connectionPanel, "a key taken away still runs the command");
             host.ShowTool(AP_Atlas.UI.Tool.Settings);
             reset.EmitSignal(BaseButton.SignalName.Pressed);
@@ -746,12 +754,12 @@ public partial class MainTrackerWindow
             // Escape keeps the key; a modifier on its own isn't a key; losing the focus ends the wait.
             capture.EmitSignal(BaseButton.SignalName.Pressed);
             capture.EmitSignal(Control.SignalName.GuiInput, AP_Atlas.UI.CommandKeys.ToEvent("Escape")!);
-            UiTestExpect(!capture.Capturing && capture.Key == "Ctrl+9" && !_appSettings.KeyBindings.ContainsKey("tool.map-packs"), "Escape didn't keep the key as it was");
+            UiTestExpect(!capture.Capturing && capture.Key == "Ctrl+0" && !_appSettings.KeyBindings.ContainsKey("tool.map-packs"), "Escape didn't keep the key as it was");
             capture.EmitSignal(BaseButton.SignalName.Pressed);
             capture.EmitSignal(Control.SignalName.GuiInput, new InputEventKey { Pressed = true, Keycode = Key.Ctrl, CtrlPressed = true });
-            UiTestExpect(capture.Capturing && capture.Key == "Ctrl+9", "a modifier on its own was taken as the key");
+            UiTestExpect(capture.Capturing && capture.Key == "Ctrl+0", "a modifier on its own was taken as the key");
             capture.EmitSignal(Control.SignalName.FocusExited);
-            UiTestExpect(!capture.Capturing && capture.Text == "Ctrl+9", "losing the focus didn't end the wait");
+            UiTestExpect(!capture.Capturing && capture.Text == "Ctrl+0", "losing the focus didn't end the wait");
 
             // The rows are found by the command's words; the F1 list leads here.
             page.Search("map packs");
@@ -817,6 +825,63 @@ public partial class MainTrackerWindow
             _appSettings.ApprovedApworldSources.RemoveAll(s => s == Source);
             DataManager.SaveSettings(_appSettings);
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
+        }
+    }
+
+    private async Task HomeAsync()
+    {
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        var home = _homePage ?? throw new InvalidOperationException("Home wasn't built.");
+        host.ShowTool(AP_Atlas.UI.Tool.MapPacks);
+        await PressAsync("Ctrl+8");
+        UiTestExpect(ShownContent() == home && _activityBar.Selected == AP_Atlas.UI.Tool.Home && !_midLeftSidebar.Visible, "Ctrl+8 didn't show Home on its own");
+        // Every tool but Home has a card with a line of its own; every link is https, and the Discord one is the official invite.
+        var noBlurb = AP_Atlas.UI.Tool.All.Where(t => t != AP_Atlas.UI.Tool.Home && AP_Atlas.UI.HomePage.Blurb(t).Length == 0).Select(t => t.Title).ToList();
+        UiTestExpect(noBlurb.Count == 0, $"tools without a card line: {string.Join(", ", noBlurb)}");
+        UiTestExpect(home.Links.Count > 0 && home.Links.All(l => l.Url.StartsWith("https://", StringComparison.Ordinal)) && home.Links.Any(l => l.Url == "https://discord.gg/8Z65BR2"),
+            "a link isn't https, or the Discord one is missing");
+        // The checklist reads Atlas's state: nothing done in a fresh folder (the engine step follows the engine).
+        UiTestExpect(home.StepDone("engine") == AP_Atlas.Core.EngineSetup.AtlasEngine.Current.CanLaunch, "the engine step doesn't follow the engine");
+        UiTestExpect(!home.StepDone("multiworld") && !home.StepDone("connect") && !home.StepDone("pack") && !home.StepDone("cheese"),
+            $"steps done before anything happened: {string.Join(", ", home.StepIds.Where(home.StepDone))}");
+        UiTestExpect(home.RecentProfileIds.Count == 0, "multiworlds listed while there are none");
+        // A tip shows; Next tip shows the next one, around the end.
+        int tip = home.TipIndex;
+        UiTestExpect(tip >= 0 && home.TipText.Contains(AP_Atlas.UI.HomePage.Tips[tip]), "no tip shows");
+        home.NextTip();
+        UiTestExpect(home.TipIndex == (tip + 1) % AP_Atlas.UI.HomePage.Tips.Length && home.TipText.Contains(AP_Atlas.UI.HomePage.Tips[home.TipIndex]), "Next tip didn't show the next one");
+
+        await using var server = new FakeArchipelagoServer();
+        server.Games["Test Game"] = new FakeGame("0123456789abcdef0123456789abcdef01234567",
+            new Dictionary<string, long> { ["Sword"] = 1000 }, new Dictionary<string, long> { ["Cave Chest"] = 2000 });
+        var profile = new MultiworldProfile { Name = "Home test", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Tester");
+        _profiles.Add(profile);
+        string zip = System.IO.Path.Combine(AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory(), "uitest_home_pack.zip");
+        FakeMapPack.Write(zip, "Home test pack", "Test Game");
+        try
+        {
+            // A multiworld and a pack: their steps tick when Home shows again, and the multiworld is listed with a Connect button.
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+            host.ShowTool(AP_Atlas.UI.Tool.Home);
+            UiTestExpect(home.StepDone("multiworld") && home.StepDone("pack") && !home.StepDone("connect"),
+                $"after a multiworld and a pack, the steps done are {string.Join(", ", home.StepIds.Where(home.StepDone))}");
+            UiTestExpect(home.RecentProfileIds.SequenceEqual(new[] { profile.Id }) && !home.ConnectButtonOf(profile.Id).Disabled, "the new multiworld isn't listed with a Connect button");
+            // One click connects its slot; the step ticks and the button says so.
+            home.ConnectButtonOf(profile.Id).EmitSignal(BaseButton.SignalName.Pressed);
+            await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
+            await UiTestWaitForAsync(() => home.StepDone("connect") ? home : null, "the connect step's tick");
+            UiTestExpect(home.ConnectButtonOf(profile.Id).Disabled && home.ConnectButtonOf(profile.Id).Text == "Connected", "a connected multiworld's button still offers to connect");
+            // A tool's card shows the tool.
+            home.ToolCardOf(AP_Atlas.UI.Tool.MapPacks).EmitSignal(BaseButton.SignalName.Pressed);
+            UiTestExpect(ShownContent() == _packManagerPanel, "the Map Packs card didn't show Map Packs");
+        }
+        finally
+        {
+            AP_Atlas.Core.SafeFile.Delete(zip);
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+            DeleteProfile(profile);
         }
     }
 
@@ -941,7 +1006,7 @@ public partial class MainTrackerWindow
     {
         var host = (AP_Atlas.UI.IPropertiesHost)this;
         var order = string.Join(",", _activityBar.Order.Select(t => t.Title));
-        UiTestExpect(order == "Map Tracker,Key Items,Logic Tracker,Item History,Hints,Cheese Tracker,Sphere Tracker,Multiworlds,Map Packs,Settings", $"the activity bar's order is {order}");
+        UiTestExpect(order == "Map Tracker,Key Items,Logic Tracker,Item History,Hints,Cheese Tracker,Sphere Tracker,Home,Multiworlds,Map Packs,Settings", $"the activity bar's order is {order}");
         UiTestExpect(_activityBar.CaptionOf(AP_Atlas.UI.Tool.MapTracker) == "SLOT" && _activityBar.CaptionOf(AP_Atlas.UI.Tool.CheeseTracker) == "MULTIWORLD" && _activityBar.CaptionOf(AP_Atlas.UI.Tool.MapPacks) == "ATLAS",
             "the groups aren't captioned as designed");
         var noIcon = AP_Atlas.UI.Tool.All.Where(t => !AP_Atlas.UI.LucideIcons.Names.Contains(t.Icon) || _activityBar.ButtonOf(t).Icon == null).Select(t => t.Title).ToList();

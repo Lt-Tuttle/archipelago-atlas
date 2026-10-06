@@ -45,7 +45,7 @@ public partial class MainTrackerWindow
         Add("view.status-bar", "View", "Status Bar", "", () => TogglePart("view.status-bar"));
         Add("view.focus-mode", "View", "Focus Mode", "F9", ToggleFocusMode);
 
-        // The tools, Ctrl+1 to Ctrl+9 in the tool list's order; a later tool brings its own key (Settings: Ctrl+,).
+        // The tools, Ctrl+1 to Ctrl+9 in the tool list's order; a later tool brings its own key (Map Packs: Ctrl+0, Settings: Ctrl+,).
         int number = 1;
         foreach (var tool in AP_Atlas.UI.Tool.All)
         {

@@ -14,7 +14,6 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     private PanelContainer _terminalStage;
     private VBoxContainer _activeSessionsList;
     private Control _connectionPanel;
-    private Control _landingPage;
     private AP_Atlas.Core.MapPackManagerControl _packManagerPanel;
     // Connection Tab
     private VBoxContainer _profileListContainer;
@@ -38,7 +37,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     private PanelContainer _globalStatusBar;
     private AppSettings _appSettings;
     /// <summary>The tool whose tab is showing.</summary>
-    private AP_Atlas.UI.Tool _currentTool = AP_Atlas.UI.Tool.Connections;
+    private AP_Atlas.UI.Tool _currentTool = AP_Atlas.UI.Tool.Home;
     /// <summary>The views of the tools that aren't per slot: the view, its explorer content and title, and what to do when it's shown.</summary>
     private Dictionary<AP_Atlas.UI.Tool, (Control View, Control Explorer, string ExplorerTitle, Action Shown)> _toolViews = new();
     private int _currentTerminalTab = 0;
@@ -368,7 +367,9 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             [AP_Atlas.UI.Tool.SphereTracker] = (_sphereTab, _sphereTab.SidebarContent, "Sphere Tracker", _sphereTab.OnShown),
             [AP_Atlas.UI.Tool.Settings] = (settingsPage, settingsPage.SectionList, "Sections", settingsPage.OnShown),
         };
-        BuildLandingPage();
+        var homePage = BuildHomePage();
+        _contentStage.AddChild(homePage);
+        _toolViews[AP_Atlas.UI.Tool.Home] = (homePage, null, "", homePage.OnShown);
         ReportEngineAtStartup();
         OfferToDeletePlainTextPasswordCopies();
         var statusTimer = new Godot.Timer { WaitTime = 0.5f, Autostart = true };
@@ -380,7 +381,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         RefreshProfileList();
         SelectProfile(null);
         UpdateSidebar();
-        SwapContentView(null);
+        ShowTool(AP_Atlas.UI.Tool.Home);
         _uiReady = true;
         foreach (var (msg, color) in _pendingNotices) ShowToast(msg, color);
         _pendingNotices.Clear();
