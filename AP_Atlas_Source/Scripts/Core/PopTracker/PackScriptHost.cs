@@ -1,12 +1,15 @@
 #nullable disable
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using MoonSharp.Interpreter;
+using MoonSharp.Interpreter.Debugging;
 using MoonSharp.Interpreter.Loaders;
 using Newtonsoft.Json.Linq;
 
@@ -17,7 +20,9 @@ namespace AP_Atlas.Core.PopTracker
     /// sandbox, so tile states (items and seed-setting indicators) come out exactly as the pack defines them, for
     /// any game. The sandbox has no file, network or OS access; scripts can only read the pack's own files.
     /// Every PopTracker API the scripts touch is emulated; anything unknown is a harmless no-op that's recorded,
-    /// so the Pack Doctor can report it. Not thread-safe: call from one thread at a time.
+    /// so the Pack Doctor can report it. Each piece of the scripts' work runs under limits (<see cref="ScriptLimits"/>):
+    /// work that runs away is stopped, and the scripts with it, so a broken pack can't freeze or crash Atlas.
+    /// Not thread-safe: call from one thread at a time.
     /// </summary>
     public sealed class PackScriptHost
     {
@@ -50,8 +55,27 @@ namespace AP_Atlas.Core.PopTracker
         /// <summary>The scripts' print() output (capped).</summary>
         public List<string> Log { get; } = new List<string>();
 
+        /// <summary>
+        /// Why the scripts were stopped for good (null while they run): a piece of their work went over a limit, or broke
+        /// the script engine. Stopped scripts do nothing, and tiles fall back to the pack's item mappings.
+        /// </summary>
+        public string StopReason => _stopReason;
+        public bool Stopped => _stopReason != null;
+        private volatile string _stopReason;
+
+        /// <summary>The limits each piece of work runs under (set before <see cref="Initialize"/>).</summary>
+        public ScriptLimits Limits { get; set; } = ScriptLimits.Default;
+
+        /// <summary>The most any one piece of work has taken so far (each measure on its own), and the work that took the most steps.</summary>
+        public (long Steps, long Memory, TimeSpan Time) Peak { get; private set; }
+        public string PeakWork { get; private set; }
+
         private readonly Dictionary<string, string> _files = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private Script _script;
+        private readonly Watchdog _watchdog = new Watchdog();
+        // The pack's scripts, compiled before the watchdog is attached (see Initialize), or why they don't compile.
+        private readonly Dictionary<string, DynValue> _compiled = new Dictionary<string, DynValue>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, string> _compileErrors = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         private readonly List<DynValue> _clearHandlers = new List<DynValue>();
         private readonly List<DynValue> _itemHandlers = new List<DynValue>();
@@ -143,20 +167,29 @@ namespace AP_Atlas.Core.PopTracker
         /// <summary>Runs scripts/init.lua (which loads the rest, including the autotracking handlers).</summary>
         public bool Initialize()
         {
-            if (Initialized) return Errors.Count == 0;
+            if (Initialized) return Errors.Count == 0 && _stopReason == null;
             Initialized = true;
-            // Sandbox: no io/os (except clock/time), no file loading except the pack's own files via require/loadfile.
-            _script = new Script(CoreModules.Preset_SoftSandbox | CoreModules.LoadMethods);
+            // Sandbox: no io/os (except clock/time), no file loading except the pack's own files via require/LoadScript. No
+            // json or dynamic modules: PopTracker has neither, and both can overflow Atlas's stack in one call (json.serialize
+            // on a table that holds itself, dynamic.eval on deeply nested code).
+            _script = new Script((CoreModules.Preset_SoftSandbox | CoreModules.LoadMethods) & ~(CoreModules.Json | CoreModules.Dynamic));
             _script.Options.ScriptLoader = new PackLoader(this);
             _script.Options.DebugPrint = s => { if (Log.Count < 500) Log.Add(s); };
+            WrapLibrary();
             InstallApi();
-            return Run("scripts/init.lua", () => _script.DoString(ResolveFile("scripts/init.lua"), null, "scripts/init.lua"));
+            GuardLibrary();
+            // Every script is compiled before the watchdog is attached: with a debugger attached, MoonSharp writes out all
+            // the code loaded so far each time a file loads (for the debugger to show), which takes seconds for a big pack.
+            CompileScripts();
+            _script.AttachDebugger(_watchdog);
+            bool ran = false;
+            Work("init.lua", () => ran = RunScript("scripts/init.lua"));
+            return ran && _stopReason == null;
         }
 
         /// <summary>Calls the clear handlers with the slot's data, as PopTracker does on connect.</summary>
-        public void Clear(int playerNumber, int teamNumber, JToken slotData)
+        public void Clear(int playerNumber, int teamNumber, JToken slotData) => Work("the clear handler", () =>
         {
-            if (_script == null) return;
             _archipelago["PlayerNumber"] = playerNumber;
             _archipelago["TeamNumber"] = teamNumber;
             // Read-tracking tables: each option the script reads is noted, and credited to the next tile it sets.
@@ -168,27 +201,28 @@ namespace AP_Atlas.Core.PopTracker
                 foreach (var h in _clearHandlers)
                 {
                     _pendingReads.Clear();
-                    Run("clear handler", () => _script.Call(h, data));
+                    Run("clear handler", () => CallLua(h, data));
                 }
             }
             finally { _inClear = false; }
             _pendingReads.Clear();
             Cleared = true;
-        }
+        });
 
         /// <summary>Feeds received items (index is the item's position in the received list, from 1).</summary>
-        public void ApplyItem(int index, long itemId, string itemName, int fromPlayer)
-        {
-            if (_script == null) return;
-            foreach (var h in _itemHandlers) Run("item handler", () => _script.Call(h, index, itemId, itemName ?? "", fromPlayer));
-        }
+        public void ApplyItem(int index, long itemId, string itemName, int fromPlayer) =>
+            Work($"the item handler (for {(string.IsNullOrEmpty(itemName) ? "item " + itemId : itemName)})", () =>
+            {
+                foreach (var h in _itemHandlers) Run("item handler", () => CallLua(h, index, itemId, itemName ?? "", fromPlayer));
+            });
 
-        public void ApplyLocation(long locationId, string locationName)
-        {
-            if (_script == null) return;
-            foreach (var h in _locationHandlers) Run("location handler", () => _script.Call(h, locationId, locationName ?? ""));
-        }
+        public void ApplyLocation(long locationId, string locationName) =>
+            Work($"the location handler (for {(string.IsNullOrEmpty(locationName) ? "location " + locationId : locationName)})", () =>
+            {
+                foreach (var h in _locationHandlers) Run("location handler", () => CallLua(h, locationId, locationName ?? ""));
+            });
 
+        /// <summary>Runs Lua, recording a Lua error (the scripts carry on). Anything else (a stop) goes on up to <see cref="Work"/>.</summary>
         private bool Run(string what, Action action)
         {
             try
@@ -200,12 +234,335 @@ namespace AP_Atlas.Core.PopTracker
             {
                 AddError($"{what}: {ex.DecoratedMessage ?? ex.Message}");
             }
-            catch (Exception ex)
-            {
-                AddError($"{what}: {ex.Message}");
-            }
             return false;
         }
+
+        /// <summary>
+        /// Calls Lua from Atlas's side (a handler, a watch, a custom item's function). A failure that isn't a Lua error means
+        /// the interpreter itself failed with its stacks left mid-call: it's marked, so nothing on the way out takes it for a
+        /// failure of Atlas's own code and lets the scripts carry on.
+        /// </summary>
+        private DynValue CallLua(DynValue function, params object[] args)
+        {
+            try { return _script.Call(function, args); }
+            catch (Exception ex) when (ex is not InterpreterException && ex is not ScriptStopped && ex is not InterpreterBroke)
+            {
+                throw new InterpreterBroke(ex);
+            }
+        }
+
+        // =====================================================================
+        // Compiling
+        // =====================================================================
+
+        private void CompileScripts()
+        {
+            foreach (var file in _files)
+            {
+                if (!file.Key.EndsWith(".lua", StringComparison.OrdinalIgnoreCase)) continue;
+                try { _compiled[file.Key] = _script.LoadString(file.Value, null, file.Key); }
+                catch (InterpreterException ex) { _compileErrors[file.Key] = ex.DecoratedMessage ?? ex.Message; }
+            }
+        }
+
+        /// <summary>
+        /// A pack script as PopTracker would find it (the variant's override first, then the base file), compiled: null if
+        /// it isn't in the pack, or if it doesn't compile (then <paramref name="compileError"/> says why).
+        /// </summary>
+        private DynValue Compiled(string path, out string compileError)
+        {
+            compileError = null;
+            path = path.Replace('\\', '/').TrimStart('/');
+            foreach (var key in string.IsNullOrEmpty(Variant) ? new[] { path } : new[] { Variant + "/" + path, path })
+            {
+                if (_compiled.TryGetValue(key, out var chunk)) return chunk;
+                if (_compileErrors.TryGetValue(key, out compileError)) return null;
+            }
+            return null;
+        }
+
+        /// <summary>Runs one of the pack's scripts, recording why if it can't (not there, doesn't compile, a Lua error).</summary>
+        private bool RunScript(string path)
+        {
+            var chunk = Compiled(path, out string compileError);
+            if (chunk == null)
+            {
+                AddError(compileError != null ? $"{path}: {compileError}" : $"LoadScript: '{path}' isn't in the pack");
+                return false;
+            }
+            return Run(path, () => CallLua(chunk));
+        }
+
+        // =====================================================================
+        // Limits
+        // =====================================================================
+
+        /// <summary>
+        /// How much one piece of the scripts' work (running init.lua, the clear handlers, one item, one check, one read) may
+        /// do before the scripts are stopped. Far above what real packs need: across the 40-pack corpus, run as slots run
+        /// them (ATLAS_SELFTEST_PACKS reports each pack), the busiest piece of work took 1.5 million steps, the most memory
+        /// 91 MB, and the longest 0.2 s.
+        /// </summary>
+        public sealed class ScriptLimits
+        {
+            /// <summary>Lua steps (instructions). MoonSharp runs 30-40 million a second on a desktop PC.</summary>
+            public long Steps { get; init; } = 50_000_000;
+            /// <summary>Memory the work may allocate, in bytes (garbage included: MoonSharp allocates as it runs).</summary>
+            public long Memory { get; init; } = 1L << 30;
+            /// <summary>How long the work may take: a backstop for steps that each take long (big string work).</summary>
+            public TimeSpan Time { get; init; } = TimeSpan.FromSeconds(10);
+
+            public static ScriptLimits Default { get; } = new ScriptLimits();
+        }
+
+        private int _workDepth;
+
+        /// <summary>
+        /// Runs one piece of the scripts' work under the limits (anything it does in turn is part of it). False once the
+        /// scripts are stopped: this work went over a limit or broke the script engine, or earlier work did.
+        /// </summary>
+        private bool Work(string what, Action action)
+        {
+            if (_script == null || _stopReason != null) return false;
+            if (_workDepth > 0)
+            {
+                action();
+                return true;
+            }
+            _workDepth++;
+            _watchdog.Begin(what, Limits);
+            try { action(); }
+            catch (Exception ex) { Stop(what, ex); }
+            finally
+            {
+                _workDepth--;
+                // Swallowed on the way out (table.sort drops errors that aren't Lua's), but the work still went over.
+                if (_watchdog.Stop != null) StopWith(_watchdog.Stop);
+                NotePeak(what);
+            }
+            return _stopReason == null;
+        }
+
+        /// <summary>What ended a piece of work early: a limit, a Lua error nothing caught, or the script engine failing.</summary>
+        private void Stop(string what, Exception ex)
+        {
+            for (var e = ex; e != null; e = e.InnerException)
+            {
+                if (e is ScriptStopped) { StopWith(e.Message); return; }
+            }
+            var cause = ex is InterpreterBroke ? ex.InnerException : ex;
+            if (cause is InterpreterException lua)
+            {
+                AddError($"{what}: {lua.DecoratedMessage ?? lua.Message}");
+                return;
+            }
+            StopWith(cause switch
+            {
+                // MoonSharp's stacks are fixed arrays: recursion in Lua that never ends fills them.
+                IndexOutOfRangeException when ThrownBy(cause) == typeof(Script).Assembly => $"{what} called itself too deeply",
+                InsufficientExecutionStackException => $"{what} called itself too deeply",
+                OutOfMemoryException => $"{what} ran out of memory",
+                _ => $"{what} broke the script engine ({cause.GetType().Name}: {cause.Message})"
+            });
+        }
+
+        /// <summary>The library that threw: the exception's first frame outside .NET's own (where its throw helpers are).</summary>
+        private static System.Reflection.Assembly ThrownBy(Exception ex) =>
+            new StackTrace(ex).GetFrames().Select(f => f.GetMethod()?.DeclaringType?.Assembly).FirstOrDefault(a => a != typeof(object).Assembly);
+
+        private void StopWith(string reason)
+        {
+            if (_stopReason == null) _stopReason = reason;
+        }
+
+        private void NotePeak(string what)
+        {
+            var peak = Peak;
+            var time = _watchdog.Elapsed;
+            if (_watchdog.Steps > peak.Steps) PeakWork = what;
+            Peak = (Math.Max(peak.Steps, _watchdog.Steps), Math.Max(peak.Memory, _watchdog.MemoryUsed), time > peak.Time ? time : peak.Time);
+        }
+
+        /// <summary>
+        /// Sees every Lua step the scripts take, wherever it runs (in pcall, a coroutine, a sort's comparison, or Lua that a
+        /// callback of Atlas's calls), through MoonSharp's debugger hook, and stops work that goes over a limit. MoonSharp's
+        /// own limit (a coroutine's AutoYieldCounter) can't: Lua run from callbacks isn't counted, and each coroutine costs
+        /// 2 MB of stacks. A stop is an exception Lua can't catch, and it's sticky: if something swallows it (table.sort
+        /// does), the next step throws it again, and the end of the work checks for it.
+        /// </summary>
+        private sealed class Watchdog : IDebugger
+        {
+            private ScriptLimits _limits = ScriptLimits.Default;
+            private string _work;
+            private long _memoryAtStart, _clockAtStart, _clockLimit;
+
+            public long Steps { get; private set; }
+            /// <summary>Why the current work was stopped, once it was.</summary>
+            public string Stop { get; private set; }
+
+            public void Begin(string work, ScriptLimits limits)
+            {
+                _work = work;
+                _limits = limits;
+                Steps = 0;
+                Stop = null;
+                _memoryAtStart = GC.GetAllocatedBytesForCurrentThread();
+                _clockAtStart = Stopwatch.GetTimestamp();
+                _clockLimit = (long)(limits.Time.TotalSeconds * Stopwatch.Frequency);
+            }
+
+            public long MemoryUsed => GC.GetAllocatedBytesForCurrentThread() - _memoryAtStart;
+            public long MemoryLeft => _limits.Memory - MemoryUsed;
+            public TimeSpan Elapsed => Stopwatch.GetElapsedTime(_clockAtStart);
+
+            public bool IsPauseRequested()
+            {
+                if (Stop != null) throw new ScriptStopped(Stop);
+                long steps = ++Steps;
+                if (steps > _limits.Steps) Trip($"was still running after {_limits.Steps:N0} steps, so it may be stuck in a loop");
+                if ((steps & 3) == 0)
+                {
+                    // Recursion through callbacks (a script loading itself, a sort comparing with itself) uses this thread's
+                    // stack, and running out of it would end Atlas. Each level runs at least one step, so at most 4 new levels
+                    // come between two checks: far less than the room the check keeps.
+                    if (!RuntimeHelpers.TryEnsureSufficientExecutionStack()) Trip("called itself too deeply");
+                    if ((steps & 15) == 0 && MemoryUsed > _limits.Memory) Trip($"used over {_limits.Memory >> 20:N0} MB of memory");
+                    if ((steps & 1023) == 0 && Stopwatch.GetTimestamp() - _clockAtStart > _clockLimit) Trip($"took over {_limits.Time.TotalSeconds:0.#} seconds");
+                }
+                return false;
+            }
+
+            /// <summary>Stops the work before a single step builds something bigger than its memory has left.</summary>
+            public void GuardSize(double bytes)
+            {
+                if (bytes > MemoryLeft) Trip($"asked for over {_limits.Memory >> 20:N0} MB of memory at once");
+            }
+
+            private void Trip(string why)
+            {
+                Stop = $"{_work} {why}";
+                throw new ScriptStopped(Stop);
+            }
+
+            // The rest of the debugger interface: nothing to show, never pause.
+            public DebuggerCaps GetDebuggerCaps() => 0;
+            public void SetDebugService(DebugService debugService) { }
+            public void SetSourceCode(SourceCode sourceCode) { }
+            public void SetByteCode(string[] byteCode) { }
+            public bool SignalRuntimeException(ScriptRuntimeException ex) => false;
+            public DebuggerAction GetAction(int ip, SourceRef sourceref) => new DebuggerAction { Action = DebuggerAction.ActionType.Run };
+            public void SignalExecutionEnded() { }
+            public void Update(WatchType watchType, IEnumerable<WatchItem> items) { }
+            public List<DynamicExpression> GetWatchItems() => new List<DynamicExpression>();
+            public void RefreshBreakpoints(IEnumerable<SourceRef> refs) { }
+        }
+
+        /// <summary>A piece of work went over a limit. Not a Lua error, so pcall can't catch it.</summary>
+        private sealed class ScriptStopped : Exception
+        {
+            public ScriptStopped(string reason) : base(reason) { }
+        }
+
+        /// <summary>The script engine itself failed in Lua that Atlas's code called (its stacks are left mid-call).</summary>
+        private sealed class InterpreterBroke : Exception
+        {
+            public InterpreterBroke(Exception inner) : base(inner.Message, inner) { }
+        }
+
+        /// <summary>
+        /// Library functions that could hurt Atlas in a single step, which the watchdog (between steps) can't catch:
+        /// collectgarbage forces a full collection of all of Atlas's memory, pausing everything (no pack in the corpus uses
+        /// it), and string.rep and table.concat build their whole result at once. Each is replaced by a checked version.
+        /// </summary>
+        private void GuardLibrary()
+        {
+            _script.Globals["collectgarbage"] = Callback(args => (args.Count > 0 ? args[0].CastToString() : null) switch
+            {
+                "count" => DynValue.NewNumber(GC.GetTotalMemory(false) / 1024.0),
+                "isrunning" => DynValue.True,
+                _ => DynValue.NewNumber(0)
+            });
+            // Both build their result in a buffer, then copy it out: 2 bytes a character, twice.
+            var strings = _script.Globals.Get("string").Table;
+            strings["rep"] = Checked(strings.Get("rep"), args =>
+            {
+                if (args.Count < 2 || args[0].Type != DataType.String || args[1].CastToNumber() is not double n || n < 1) return;
+                double separator = args.Count > 2 && args[2].Type == DataType.String ? args[2].String.Length : 0;
+                _watchdog.GuardSize((args[0].String.Length + separator) * n * 4);
+            });
+            var tables = _script.Globals.Get("table").Table;
+            tables["concat"] = Checked(tables.Get("concat"), args =>
+            {
+                if (args.Count < 1 || args[0].Type != DataType.Table) return;
+                var list = args[0].Table;
+                double separator = args.Count > 1 && args[1].Type == DataType.String ? args[1].String.Length : 0;
+                int first = args.Count > 2 && args[2].CastToNumber() is double i ? (int)i : 1;
+                int last = args.Count > 3 && args[3].CastToNumber() is double j ? (int)j : list.Length;
+                double characters = 0;
+                for (int k = first; k <= last; k++)
+                {
+                    var value = list.Get(k);
+                    if (value.Type == DataType.String) characters += value.String.Length + separator;
+                    else if (value.Type == DataType.Number) characters += 24 + separator;
+                    else break; // concat itself reports it
+                }
+                _watchdog.GuardSize(characters * 4);
+            });
+        }
+
+        /// <summary>A library function, checked before it runs.</summary>
+        private static DynValue Checked(DynValue original, Action<CallbackArguments> check)
+        {
+            var run = original.Callback.ClrCallback;
+            return DynValue.NewCallback((context, arguments) =>
+            {
+                check(arguments);
+                return run(context, arguments);
+            });
+        }
+
+        /// <summary>
+        /// MoonSharp's library throws .NET exceptions for some arguments where Lua raises an error (math.random(1e20),
+        /// string.format("%c", -1), os.date of a time out of range), and those get past pcall with the interpreter's stacks
+        /// left mid-call. Each library function is wrapped so that its own failures are Lua errors, as in Lua: pcall can
+        /// catch them, the interpreter unwinds, and the scripts carry on.
+        /// </summary>
+        private void WrapLibrary()
+        {
+            var globals = _script.Globals;
+            foreach (var pair in globals.Pairs.ToList())
+            {
+                if (pair.Value.Type == DataType.ClrFunction) globals.Set(pair.Key, AsLuaErrors(pair.Value));
+                else if (pair.Value.Type == DataType.Table && pair.Value.Table != globals)
+                {
+                    var library = pair.Value.Table;
+                    foreach (var member in library.Pairs.ToList())
+                        if (member.Value.Type == DataType.ClrFunction) library.Set(member.Key, AsLuaErrors(member.Value));
+                }
+            }
+        }
+
+        /// <summary>
+        /// A library function whose own .NET failures are Lua errors. A failure from Lua it ran in turn (a sort's comparison)
+        /// passes through untouched: there the interpreter itself failed, or a limit stopped the work.
+        /// </summary>
+        private static DynValue AsLuaErrors(DynValue function)
+        {
+            var run = function.Callback.ClrCallback;
+            return DynValue.NewCallback((context, arguments) =>
+            {
+                try { return run(context, arguments); }
+                catch (Exception ex) when (ex is not InterpreterException && ex is not ScriptStopped && ex is not InterpreterBroke)
+                {
+                    if (FromLua(ex)) throw;
+                    throw new ScriptRuntimeException($"{ex.GetType().Name}: {ex.Message}");
+                }
+            }, function.Callback.Name);
+        }
+
+        /// <summary>Whether an exception came out of Lua: one of MoonSharp's processing loops ran between where it was thrown and here.</summary>
+        private static bool FromLua(Exception ex) =>
+            new StackTrace(ex).GetFrames().Any(f => f.GetMethod() is { Name: "Processing_Loop" } method && method.DeclaringType?.Assembly == typeof(Script).Assembly);
 
         private void AddError(string message)
         {
@@ -216,10 +573,10 @@ namespace AP_Atlas.Core.PopTracker
         // Reading results
         // =====================================================================
 
-        /// <summary>The state of the object a code names, or null if no pack object provides it.</summary>
+        /// <summary>The state of the object a code names, or null if no pack object provides it (or the scripts were stopped).</summary>
         public TileState StateOf(string code)
         {
-            if (_script == null || string.IsNullOrEmpty(code)) return null;
+            if (_script == null || _stopReason != null || string.IsNullOrEmpty(code)) return null;
             if (Pack.ItemsByCode.TryGetValue(code, out var def))
             {
                 var o = Obj(def);
@@ -231,11 +588,17 @@ namespace AP_Atlas.Core.PopTracker
                     Touched = o.Touched
                 };
             }
-            var lua = FindLuaItem(code);
-            if (lua == null) return null;
-            var provided = CallField(lua, "ProvidesCodeFunc", DynValue.NewTable(lua), DynValue.NewString(code));
-            int n = provided.Type == DataType.Number ? (int)provided.Number : provided.Type == DataType.Boolean && provided.Boolean ? 1 : 0;
-            return new TileState { Active = n > 0, Stage = n, Count = n, Touched = true };
+            // A custom item's own functions say: Lua, so it's work like any other.
+            TileState state = null;
+            Work($"reading '{code}'", () =>
+            {
+                var lua = FindLuaItem(code);
+                if (lua == null) return;
+                var provided = CallField(lua, "ProvidesCodeFunc", DynValue.NewTable(lua), DynValue.NewString(code));
+                int n = provided.Type == DataType.Number ? (int)provided.Number : provided.Type == DataType.Boolean && provided.Boolean ? 1 : 0;
+                state = new TileState { Active = n > 0, Stage = n, Count = n, Touched = true };
+            });
+            return _stopReason == null ? state : null;
         }
 
         // =====================================================================
@@ -268,13 +631,7 @@ namespace AP_Atlas.Core.PopTracker
 
             // ScriptHost
             var host = ApiTable("ScriptHost");
-            host["LoadScript"] = Callback(args =>
-            {
-                string path = args.Count > 1 ? args[1].CastToString() : null;
-                string code = path == null ? null : ResolveFile(path);
-                if (code == null) { AddError($"LoadScript: '{path}' isn't in the pack"); return DynValue.False; }
-                return Run(path, () => _script.DoString(code, null, path)) ? DynValue.True : DynValue.False;
-            });
+            host["LoadScript"] = Callback(args => RunScript(args.Count > 1 ? args[1].CastToString() ?? "" : "") ? DynValue.True : DynValue.False);
             host["CreateLuaItem"] = Callback(_ => DynValue.NewTable(CreateLuaItem()));
             host["AddWatchForCode"] = Callback(args =>
             {
@@ -313,6 +670,15 @@ namespace AP_Atlas.Core.PopTracker
 
             g["LayoutManager"] = ApiTable("LayoutManager");
             g["JsonConvert"] = ApiTable("JsonConvert");
+
+            // require: the pack's modules, compiled at the start like the rest of its scripts.
+            g["__require_clr_impl"] = Callback(args =>
+            {
+                string name = args.Count > 0 ? args[0].CastToString() : null;
+                string file = name == null ? null : _script.Options.ScriptLoader.ResolveModuleName(name, _script.Globals);
+                if (file == null) throw new ScriptRuntimeException($"module '{name}' not found");
+                return Compiled(file, out string compileError) ?? throw new ScriptRuntimeException(compileError ?? $"module '{name}' isn't a Lua script");
+            });
         }
 
         /// <summary>A table whose unknown members are no-op functions, recorded as unsupported.</summary>
@@ -320,7 +686,7 @@ namespace AP_Atlas.Core.PopTracker
         {
             var t = new Table(_script);
             var meta = new Table(_script);
-            meta["__index"] = DynValue.NewCallback((ctx, args) =>
+            meta["__index"] = Callback(args =>
             {
                 string key = args.Count > 1 ? args[1].CastToString() : "?";
                 UnsupportedApis.Add($"{name}.{key}");
@@ -330,9 +696,21 @@ namespace AP_Atlas.Core.PopTracker
             return t;
         }
 
-        private DynValue Callback(Func<CallbackArguments, DynValue> f) => DynValue.NewCallback((ctx, args) => f(args));
+        /// <summary>
+        /// A function of Atlas's that the scripts can call. If it fails, that's a Lua error at the script's call, as a
+        /// library function's would be: pcall can catch it, and the interpreter unwinds. A stop, or the interpreter failing
+        /// in Lua the function called in turn, passes through untouched.
+        /// </summary>
+        private static DynValue Callback(Func<CallbackArguments, DynValue> f) => DynValue.NewCallback((context, arguments) =>
+        {
+            try { return f(arguments); }
+            catch (Exception ex) when (ex is not InterpreterException && ex is not ScriptStopped && ex is not InterpreterBroke)
+            {
+                throw new ScriptRuntimeException($"{ex.GetType().Name}: {ex.Message}");
+            }
+        });
 
-        private DynValue NoOp(DynValue result = null) => DynValue.NewCallback((ctx, args) => result ?? DynValue.Nil);
+        private static DynValue NoOp(DynValue result = null) => Callback(_ => result ?? DynValue.Nil);
 
         private Table MakeTable(Dictionary<string, object> values)
         {
@@ -405,14 +783,14 @@ namespace AP_Atlas.Core.PopTracker
             var proxy = new Table(_script);
             var meta = new Table(_script);
             var obj = o;
-            meta["__index"] = DynValue.NewCallback((ctx, args) =>
+            meta["__index"] = Callback(args =>
             {
                 string key = args[1].CastToString();
-                if (key == "Set") return DynValue.NewCallback((c, a) => { SetField(obj, a[1].CastToString(), a[2]); return DynValue.Nil; });
-                if (key == "Get") return DynValue.NewCallback((c, a) => obj.Fields.TryGetValue(a[1].CastToString() ?? "", out var v) ? v : DynValue.Nil);
+                if (key == "Set") return Callback(a => { SetField(obj, a[1].CastToString(), a[2]); return DynValue.Nil; });
+                if (key == "Get") return Callback(a => obj.Fields.TryGetValue(a[1].CastToString() ?? "", out var v) ? v : DynValue.Nil);
                 return key != null && obj.Fields.TryGetValue(key, out var value) ? value : DynValue.Nil;
             });
-            meta["__newindex"] = DynValue.NewCallback((ctx, args) =>
+            meta["__newindex"] = Callback(args =>
             {
                 SetField(obj, args[1].CastToString(), args[2]);
                 return DynValue.Nil;
@@ -468,7 +846,7 @@ namespace AP_Atlas.Core.PopTracker
                 foreach (var code in codes.Append("*"))
                 {
                     if (!_watches.TryGetValue(code, out var list)) continue;
-                    foreach (var fn in list.ToList()) Run($"watch for {code}", () => _script.Call(fn, code));
+                    foreach (var fn in list.ToList()) Run($"watch for {code}", () => CallLua(fn, code));
                 }
             }
             finally { _watchDepth--; }
@@ -510,7 +888,7 @@ namespace AP_Atlas.Core.PopTracker
             var props = new Table(_script);
             var meta = new Table(_script);
             var methods = new Table(_script);
-            methods["Set"] = DynValue.NewCallback((ctx, args) =>
+            methods["Set"] = Callback(args =>
             {
                 var self = args[0].Table;
                 var key = args[1];
@@ -519,7 +897,7 @@ namespace AP_Atlas.Core.PopTracker
                 CallField(self, "PropertyChangedFunc", DynValue.NewTable(self), key, value);
                 return DynValue.Nil;
             });
-            methods["Get"] = DynValue.NewCallback((ctx, args) => props.Get(args[1]));
+            methods["Get"] = Callback(args => props.Get(args[1]));
             meta["__index"] = DynValue.NewTable(methods);
             item.MetaTable = meta;
             _luaItems.Add(item);
@@ -540,7 +918,7 @@ namespace AP_Atlas.Core.PopTracker
         {
             var fn = t.RawGet(field);
             if (fn == null || (fn.Type != DataType.Function && fn.Type != DataType.ClrFunction)) return DynValue.Nil;
-            try { return _script.Call(fn, args); }
+            try { return CallLua(fn, args); }
             catch (InterpreterException ex) { AddError($"{field}: {ex.DecoratedMessage ?? ex.Message}"); return DynValue.Nil; }
         }
 
@@ -576,7 +954,7 @@ namespace AP_Atlas.Core.PopTracker
                 return c;
             }
 
-            meta["__index"] = DynValue.NewCallback((ctx, args) =>
+            meta["__index"] = Callback(args =>
             {
                 var key = args[1];
                 string name = key.Type == DataType.Number ? ((long)key.Number).ToString() : key.CastToString();
@@ -588,19 +966,19 @@ namespace AP_Atlas.Core.PopTracker
                 if (value != null && value is not JObject && value is not JArray && _pendingReads.Count < 200) _pendingReads.Add(full);
                 return value == null && !overlay.ContainsKey(name) ? DynValue.Nil : Child(name, value);
             });
-            meta["__newindex"] = DynValue.NewCallback((ctx, args) =>
+            meta["__newindex"] = Callback(args =>
             {
                 string name = args[1].Type == DataType.Number ? ((long)args[1].Number).ToString() : args[1].CastToString();
                 if (name != null) overlay[name] = args[2];
                 return DynValue.Nil;
             });
-            meta["__len"] = DynValue.NewCallback((ctx, args) => DynValue.NewNumber(token is JArray arr ? arr.Count : 0));
+            meta["__len"] = Callback(args => DynValue.NewNumber(token is JArray arr ? arr.Count : 0));
             // pairs/ipairs walk the data without counting as reads (dumping slot_data shouldn't credit anything).
             DynValue Iterator(bool arrayOnly)
             {
                 var entries = Entries().Where(e => !arrayOnly || e.Key.Type == DataType.Number).ToList();
                 int index = 0;
-                var next = DynValue.NewCallback((ctx, args) =>
+                var next = Callback(args =>
                 {
                     if (index >= entries.Count) return DynValue.Nil;
                     var e = entries[index++];
@@ -608,8 +986,8 @@ namespace AP_Atlas.Core.PopTracker
                 });
                 return DynValue.NewTuple(next, DynValue.NewTable(proxy), DynValue.Nil);
             }
-            meta["__pairs"] = DynValue.NewCallback((ctx, args) => Iterator(false));
-            meta["__ipairs"] = DynValue.NewCallback((ctx, args) => Iterator(true));
+            meta["__pairs"] = Callback(args => Iterator(false));
+            meta["__ipairs"] = Callback(args => Iterator(true));
             proxy.MetaTable = meta;
             return DynValue.NewTable(proxy);
         }
@@ -664,7 +1042,7 @@ namespace AP_Atlas.Core.PopTracker
         public List<SettingInfo> Settings(IEnumerable<string> settingCodes)
         {
             var result = new List<SettingInfo>();
-            if (_script == null) return result;
+            if (_script == null || _stopReason != null) return result;
             var seen = new HashSet<PopTrackerItem>();
             var codes = (settingCodes ?? Enumerable.Empty<string>()).ToList();
             foreach (var def in _setInClear.Where(d => _optionByObject.ContainsKey(d)))

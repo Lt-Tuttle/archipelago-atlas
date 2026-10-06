@@ -128,6 +128,7 @@ public partial class SlotTrackerControl : MarginContainer
         _progressionTracker.ItemPicked += name => Inspect(ItemTargetByName(name));
         _progressionTracker.ScriptState = ScriptStateOf;
         _progressionTracker.SeedSettings = SeedSettings;
+        _progressionTracker.ScriptStopReason = () => PackScripts?.StopReason;
         _progressionTracker.MarkerLookup = name =>
         {
             var a = AP_Atlas.Core.Annotations.Get(AnnotationKey, AP_Atlas.Core.Annotations.ItemKey(FindItemId(name)));

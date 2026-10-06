@@ -91,6 +91,8 @@ public partial class MainTrackerWindow
             PackImagesFollowTheirUsersAsync);
         await ScenarioAsync("Idle: a connected slot doesn't keep Atlas redrawing: its map's camera doesn't run every frame (zooming, dragging and resizing still move the map), and its card isn't re-styled while nothing changes",
             ConnectedSlotLetsAtlasIdleAsync);
+        await ScenarioAsync("Map pack scripts: a slot whose pack's script runs away keeps working: the script is stopped in seconds without holding up a frame, and Key Items and the log say why",
+            RunawayPackScriptAsync);
         await ScenarioAsync("Race rooms: a room the server calls a race restricts its slots (no \"why\" answers), and the Sphere Tracker hides that multiworld's spheres",
             RaceRoomRestrictsAsync);
         await ScenarioAsync("Logic: the slot's logic follows its items and checks step by step; after an engine crash, an engine update or a restart it's rebuilt from scratch on a new engine; race mode can hide it",
@@ -624,6 +626,76 @@ public partial class MainTrackerWindow
         {
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
             DeleteProfile(profile);
+            AP_Atlas.Core.SafeFile.Delete(zip);
+        }
+    }
+
+    private async Task RunawayPackScriptAsync()
+    {
+        string zip = System.IO.Path.Combine(AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory(), "uitest_runaway_pack.zip");
+        FakeMapPack.Write(zip, "UI test runaway pack", "Test Game", initLua: """
+            Archipelago:AddItemHandler("test", function(index, item_id, item_name, player_number)
+                if item_id == 1001 then
+                    while true do end
+                end
+                local sword = Tracker:FindObjectForCode("sword")
+                sword.AcquiredCount = sword.AcquiredCount + 1
+            end)
+            """);
+        await using var server = new FakeArchipelagoServer();
+        // Its own checksum: other scenarios' Test Game (the same checksum, so the same names) has no Cursed Gem.
+        server.Games["Test Game"] = new FakeGame("feedfacefeedfacefeedfacefeedfacefeedface",
+            new Dictionary<string, long> { ["Sword"] = 1000, ["Cursed Gem"] = 1001 }, new Dictionary<string, long> { ["Cave Chest"] = 2000 });
+        var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Tester");
+        _profiles.Add(profile);
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        var warnings = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        void Logged(string line, string level) => warnings.Enqueue(line);
+        AP_Atlas.Core.Logger.OnLogMessage += Logged;
+        try
+        {
+            await OnConnectSlotPressedAsync("Tester", profile);
+            var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
+            ShowTextClient(slot);
+            host.ShowTool(AP_Atlas.UI.Tool.KeyItems);
+            await UiTestWaitForAsync(() => slot.PackScripts, "the pack's scripts to start");
+            await server.BroadcastAsync(FakeArchipelagoServer.ReceivedItems(0, new long[] { 1000 }));
+            await UiTestWaitForAsync(() => slot.ScriptStateOf("sword")?.Count == 1 ? slot : null, "the scripts to count the sword");
+
+            // The cursed gem sends the item handler into a loop, on the scripts' own thread: the window keeps drawing, and
+            // the limits stop it in seconds.
+            AP_Atlas.Core.HitchMonitor.ResetWorst();
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            await server.BroadcastAsync(FakeArchipelagoServer.ReceivedItems(1, new long[] { 1001 }));
+            string note = await UiTestWaitForAsync(() => slot.ProgressionTracker.ShownScriptNote, "Key Items to say the pack's scripts were stopped", seconds: 60);
+            double worst = AP_Atlas.Core.HitchMonitor.WorstFrameMs;
+            GD.Print($"UITEST INFO Runaway script: stopped and shown in {clock.Elapsed.TotalSeconds:0.0} s; the worst frame took {worst:0} ms");
+            UiTestExpect(note.Contains("scripts were stopped: the item handler (for Cursed Gem) was still running after") && note.Contains("stuck in a loop"),
+                $"Key Items says: {note}");
+            UiTestExpect(warnings.Any(line => line.Contains("[Tester] The map pack's scripts were stopped: the item handler (for Cursed Gem)")),
+                "the log doesn't say the pack's scripts were stopped");
+            UiTestExpect(worst < 150, $"a frame took {worst:0} ms while the script ran away: {AP_Atlas.Core.HitchMonitor.WorstFrameReport}");
+
+            // Properties says why the seed settings are gone.
+            AP_Atlas.Core.Inspector.Inspect(AP_Atlas.Core.InspectTarget.ForSlot(profile.Id, "Tester"));
+            await UiTestWaitForAsync(() => PanelShowsText(_propertiesPanel, "The map pack's scripts were stopped, so they can't show this seed's options: the item handler (for Cursed Gem)")
+                ? slot : null, "Properties to say why the seed settings are gone");
+
+            // The slot carries on: its tiles come from the pack's item list (the scripts' state is gone), and what arrives
+            // still reaches it.
+            UiTestExpect(slot.ScriptStateOf("sword") == null, "a stopped pack's tiles still come from its scripts");
+            await server.BroadcastAsync(FakeArchipelagoServer.ReceivedItems(2, new long[] { 1000 }));
+            await server.BroadcastAsync(server.Chat("still here"));
+            await UiTestWaitForAsync(() => PanelShows(slot, "still here") && slot.Session?.Items.AllItemsReceived.Count == 3 ? slot : null,
+                "the slot to keep receiving after its scripts were stopped");
+        }
+        finally
+        {
+            AP_Atlas.Core.Logger.OnLogMessage -= Logged;
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+            if (_profiles.Contains(profile)) DeleteProfile(profile);
             AP_Atlas.Core.SafeFile.Delete(zip);
         }
     }

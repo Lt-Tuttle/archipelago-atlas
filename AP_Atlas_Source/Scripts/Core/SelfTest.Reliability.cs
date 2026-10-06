@@ -360,6 +360,162 @@ namespace AP_Atlas.Core
         }
 
         /// <summary>
+        /// A pack's scripts run under limits. Each way a piece of their work can run away is stopped and says why: a loop
+        /// (alone, in pcall, in a sort's comparison), recursion through Atlas's own functions (which would end Atlas: .NET
+        /// can't catch a stack overflow), through a sort (which drops errors that aren't Lua's) or in Lua alone, memory
+        /// (growing, or asked for at once by string.rep or table.concat), and time. The scripts stay stopped: later items do
+        /// nothing and their tiles fall back to the pack's item list. A slot's runner says why once, on the main thread, the
+        /// Pack Doctor reports it, and the limits as they ship stop a loop in seconds.
+        /// </summary>
+        private static async Task PackScriptsThatRunAwayAreStopped()
+        {
+            string zip = Scratch("selftest_runaway.zip");
+            void WritePack(string gem) => AP_Atlas.Core.Testing.FakeMapPack.Write(zip, "Self-test runaway pack", "Self Test Game R", initLua: $$"""
+                Archipelago:AddItemHandler("test", function(index, item_id, item_name, player_number)
+                    if item_id == 1002 then error("ran after the stop") end
+                    if item_id == 1001 then
+                        {{gem}}
+                    end
+                    local sword = Tracker:FindObjectForCode("sword")
+                    sword.AcquiredCount = sword.AcquiredCount + 1
+                end)
+                """, files: new Dictionary<string, string>
+            {
+                ["scripts/again.lua"] = "ScriptHost:LoadScript('scripts/again.lua')",
+                ["scripts/itself.lua"] = "require('scripts.itself')",
+                ["scripts/deep.lua"] = "local function f() return 1 + f() end f()",
+            });
+            var small = new PopTracker.PackScriptHost.ScriptLimits { Steps = 2_000_000, Memory = 64L << 20, Time = TimeSpan.FromSeconds(30) };
+            var cases = new (string Name, string Gem, string Stop, PopTracker.PackScriptHost.ScriptLimits Limits)[]
+            {
+                ("a loop", "while true do end", "stuck in a loop", small),
+                ("a loop in pcall", "pcall(function() while true do end end)", "stuck in a loop", small),
+                ("a loop in a sort's comparison", "table.sort({ 3, 1, 2 }, function(a, b) while true do end end)", "stuck in a loop", small),
+                ("recursion through Atlas's own functions", "ScriptHost:LoadScript('scripts/again.lua')", "called itself too deeply", small),
+                ("recursion through a sort", "local function f() table.sort({ 2, 1 }, function(a, b) f() return a < b end) end f()", "called itself too deeply", small),
+                ("recursion in Lua", "local function f() return 1 + f() end f()", "called itself too deeply", small),
+                ("recursion in Lua that Atlas's functions run", "ScriptHost:LoadScript('scripts/deep.lua')", "called itself too deeply", small),
+                ("recursion in Lua that a library function runs", "string.gsub('a', 'a', function() local function r() return 1 + r() end return r() end)", "called itself too deeply", small),
+                ("a module that requires itself", "require('scripts.itself')", "called itself too deeply", small),
+                ("growing memory", "local t, n = {}, 0 while true do n = n + 1 t[n] = { n } end", "used over 64 MB of memory",
+                    new PopTracker.PackScriptHost.ScriptLimits { Steps = 20_000_000, Memory = 64L << 20, Time = TimeSpan.FromSeconds(30) }),
+                ("one huge string", "local s = string.rep('x', 100000000)", "asked for over 64 MB of memory at once", small),
+                ("a huge string from a table", "local s = string.rep('x', 1000000) local t = {} for i = 1, 100 do t[i] = s end local all = table.concat(t)",
+                    "asked for over 64 MB of memory at once", small),
+                ("time", "while true do end", "took over 0.3 seconds",
+                    new PopTracker.PackScriptHost.ScriptLimits { Steps = 1_000_000_000, Memory = 64L << 20, Time = TimeSpan.FromMilliseconds(300) }),
+            };
+            foreach (var c in cases)
+            {
+                WritePack(c.Gem);
+                var host = PopTracker.PackScriptHost.Load(PopTracker.PopTrackerPackLoader.InspectZipPack(zip) ?? throw new InvalidOperationException("the test pack wasn't read"));
+                host.Limits = c.Limits;
+                int before = -1;
+                var clock = System.Diagnostics.Stopwatch.StartNew();
+                await Task.Run(() =>
+                {
+                    host.Initialize();
+                    host.Clear(1, 0, new Newtonsoft.Json.Linq.JObject());
+                    host.ApplyItem(0, 1000, "Sword", 1);
+                    before = host.StateOf("sword")?.Count ?? -1;
+                    host.ApplyItem(1, 1001, "Cursed Gem", 1);
+                    host.ApplyItem(2, 1000, "Sword", 1);
+                    host.ApplyItem(3, 1002, "Broken Item", 1);
+                });
+                Expect(before == 1, $"{c.Name}: the scripts didn't count the sword before running away ({before})");
+                Expect(host.StopReason?.StartsWith("the item handler (for Cursed Gem) ") == true && host.StopReason.Contains(c.Stop), $"{c.Name}: {host.StopReason ?? "not stopped"}");
+                Expect(host.StateOf("sword") == null && host.Settings(new[] { "sword" }).Count == 0, $"{c.Name}: a stopped pack's tiles still came from its scripts");
+                Expect(!host.Errors.Any(e => e.Contains("ran after the stop")), $"{c.Name}: stopped scripts still ran later items");
+                Expect(clock.Elapsed < TimeSpan.FromSeconds(20), $"{c.Name}: stopping took {clock.Elapsed.TotalSeconds:0.0} s");
+            }
+
+            // init.lua's own work: Initialize says the scripts didn't start.
+            AP_Atlas.Core.Testing.FakeMapPack.Write(zip, "Self-test runaway pack", "Self Test Game R", initLua: "while true do end");
+            var init = PopTracker.PackScriptHost.Load(PopTracker.PopTrackerPackLoader.InspectZipPack(zip)!);
+            init.Limits = small;
+            bool started = await Task.Run(() => init.Initialize());
+            Expect(!started && init.StopReason?.StartsWith("init.lua was still running after ") == true, $"init.lua's loop: {init.StopReason ?? "not stopped"}");
+            // The Pack Doctor says so (its scripts run with the limits as they ship).
+            var report = await Task.Run(() => PopTracker.PackDoctor.Analyze(PopTracker.PackDoctor.Prepare(PopTracker.PopTrackerPackLoader.InspectZipPack(zip)!, null)));
+            Expect(!report.ScriptsRan && report.Findings.Any(f => f.Key == "script:stopped" && f.Detail.Contains("Stopped because init.lua was still running after")),
+                "the Pack Doctor doesn't report the stopped scripts: " + string.Join("; ", report.Findings.Where(f => f.Category == "Scripts").Select(f => f.Title)));
+
+            // A slot's runner, with the limits as they ship: stopped in seconds, said once (a second runaway item does nothing).
+            WritePack("while true do end");
+            var pack = PopTracker.PopTrackerPackLoader.InspectZipPack(zip)!;
+            var mainThread = new System.Collections.Concurrent.ConcurrentQueue<Action>();
+            var stops = new List<string>();
+            var runner = new PopTracker.PackScriptRunner(mainThread.Enqueue, _ => { }, stops.Add);
+            var timer = System.Diagnostics.Stopwatch.StartNew();
+            runner.Start(pack, 1, 0, new Newtonsoft.Json.Linq.JObject(), Array.Empty<(long, string, int)>(), Array.Empty<(long, string)>(), (_, _) => { });
+            runner.FeedItems(new List<(int, long, string, int)> { (0, 1001L, "Cursed Gem", 1) });
+            runner.FeedItems(new List<(int, long, string, int)> { (1, 1001L, "Cursed Gem", 1) });
+            for (int i = 0; i < 1500 && !runner.Idle; i++) await Task.Delay(20);
+            Expect(runner.Idle, "the runner's scripts were never stopped");
+            while (mainThread.TryDequeue(out var work)) work();
+            Expect(stops.Count == 1 && stops[0].Contains("stuck in a loop"), $"the runner said: {string.Join(" | ", stops)}");
+            Print($"  The limits as they ship stopped a loop in {timer.Elapsed.TotalSeconds:0.0} s.");
+        }
+
+        /// <summary>
+        /// The pack's scripts are compiled once, before the limits' watchdog is attached (with it attached, each compile writes
+        /// out all the code loaded so far): require and LoadScript use them, and a script that doesn't compile or isn't there
+        /// is an error init.lua carries on past (even through require, in pcall). A Lua error isn't a stop, nor is a failure
+        /// in one of Atlas's own functions, or a .NET failure of MoonSharp's library on an odd argument: both are Lua errors at
+        /// the script's call, as in Lua. Library functions that could hurt Atlas in one step are safe: collectgarbage
+        /// collects nothing, and the json and dynamic modules aren't there.
+        /// </summary>
+        private static async Task PackScriptsUseTheirOwnCompiledFiles()
+        {
+            string zip = Scratch("selftest_modules.zip");
+            AP_Atlas.Core.Testing.FakeMapPack.Write(zip, "Self-test modules pack", "Self Test Game M", initLua: """
+                local helper = require("scripts.helper")
+                ScriptHost:LoadScript("scripts/other.lua")
+                local broken = ScriptHost:LoadScript("scripts/broken.lua")
+                local missing = ScriptHost:LoadScript("scripts/missing.lua")
+                local required = pcall(require, "scripts.broken")
+                local failed = pcall(ScriptHost:CreateLuaItem().Set, nil, "key", 1)
+                local odd = pcall(math.random, 1e20) or pcall(string.format, "%c", -1) or pcall(os.date, "*t", 1e20)
+                local memory = collectgarbage("count")
+                for i = 1, 100 do collectgarbage() end
+                local sword = Tracker:FindObjectForCode("sword")
+                sword.AcquiredCount = helper.answer
+                Tracker:FindObjectForCode("shield").Active = OTHER == true and not broken and not missing and not required and not failed
+                    and not odd and type(memory) == "number" and json == nil and dynamic == nil
+                Archipelago:AddItemHandler("test", function(index, item_id)
+                    if item_id == 1002 then error("a broken item") end
+                    if item_id == 1003 then local c = string.format("%c", -1) end
+                    sword.AcquiredCount = sword.AcquiredCount + 1
+                end)
+                """, files: new Dictionary<string, string>
+            {
+                ["scripts/helper.lua"] = "return { answer = 42 }",
+                ["scripts/other.lua"] = "OTHER = true",
+                ["scripts/broken.lua"] = "this is not lua",
+            });
+            var host = PopTracker.PackScriptHost.Load(PopTracker.PopTrackerPackLoader.InspectZipPack(zip) ?? throw new InvalidOperationException("the test pack wasn't read"));
+            int collections = GC.CollectionCount(2);
+            bool started = await Task.Run(() => host.Initialize());
+            collections = GC.CollectionCount(2) - collections;
+            Expect(started && !host.Stopped, $"init.lua didn't run: {host.StopReason ?? string.Join("; ", host.Errors)}");
+            Expect(host.StateOf("sword")?.Count == 42, $"require didn't give the pack's module (sword {host.StateOf("sword")?.Count})");
+            Expect(host.StateOf("shield")?.Active == true, "other.lua didn't run, a broken or missing script counted as loaded (or required), a failing function of Atlas's " +
+                "or the library's didn't fail as a Lua error, collectgarbage(\"count\") isn't a number, or json or dynamic is there");
+            Expect(host.Errors.Any(e => e.StartsWith("scripts/broken.lua: ")) && host.Errors.Contains("LoadScript: 'scripts/missing.lua' isn't in the pack"),
+                "the broken and missing scripts weren't reported: " + string.Join("; ", host.Errors));
+            Expect(collections < 50, $"collectgarbage() collected Atlas's memory ({collections} full collections for 100 calls)");
+            await Task.Run(() =>
+            {
+                host.ApplyItem(0, 1002, "Broken Item", 1);
+                host.ApplyItem(1, 1003, "Odd Item", 1);
+                host.ApplyItem(2, 1000, "Sword", 1);
+            });
+            Expect(!host.Stopped && host.Errors.Any(e => e.Contains("a broken item")) && host.Errors.Any(e => e.Contains("OverflowException")) && host.StateOf("sword")?.Count == 43,
+                $"a Lua error or a library's .NET failure stopped the scripts, or wasn't recorded: {host.StopReason}; sword {host.StateOf("sword")?.Count}; " + string.Join("; ", host.Errors));
+            Expect(host.Peak.Steps > 0 && host.PeakWork != null, "the busiest piece of work wasn't measured");
+        }
+
+        /// <summary>
         /// The Pack Doctor analyses a snapshot taken on the main thread: a fix edited while an analysis runs doesn't change
         /// it under the analysis, and the next snapshot sees the edit. The pack's own mapping is linked as usual.
         /// </summary>

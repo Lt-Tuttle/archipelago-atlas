@@ -26,7 +26,9 @@ namespace AP_Atlas.Core
         public static bool Requested => System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST") == "1";
 
         private static readonly List<string> _results = new List<string>();
-        private static int _failures, _passes;
+        private static int _failures, _passes, _skips;
+        // For working on a few checks: ATLAS_SELFTEST_ONLY=<part of a check's name> runs only the checks that match.
+        private static readonly string _only = System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_ONLY");
 
         /// <summary>
         /// Why the data folder isn't safe for a test run, or null when it is. Tests need ATLAS_DATA_DIR set to an empty scratch
@@ -114,6 +116,8 @@ namespace AP_Atlas.Core
             Test("Map packs: images are decoded only while a pack is used, kept for the pack released last, then freed; the Pack Doctor needs none", PackImagesOnlyWhileUsed);
             await TestAsync("Pack Doctor: checking a pack nobody uses finds its images that don't decode, without keeping any", PackDoctorChecksUnusedPacksImages);
             await TestAsync("Pack scripts: items that arrive while a pack's scripts start reach them", PackScriptsGetItemsThatArriveWhileTheyStart);
+            await TestAsync("Pack scripts: work that runs away is stopped, wherever it runs, and the scripts with it", PackScriptsThatRunAwayAreStopped);
+            await TestAsync("Pack scripts: modules come from the pack, compiled once; library functions that could hurt Atlas are safe", PackScriptsUseTheirOwnCompiledFiles);
             await TestAsync("Pack Doctor: an analysis reads its own snapshot, never the fixes as they change", PackDoctorReadsASnapshot);
             await TestAsync("Settings saved from a background thread are written on the main thread, and the log says so", OffThreadSavesMoveToTheMainThread);
 
@@ -135,7 +139,12 @@ namespace AP_Atlas.Core
             if (!string.IsNullOrWhiteSpace(seeds))
                 await TestAsync("Logic matches real seeds (no game worse than the baseline)", () => SeedRegression(seeds, ap));
 
-            Print($"SELFTEST DONE: {_passes} passed, {_failures} failed");
+            if (!string.IsNullOrEmpty(_only) && _passes + _failures == 0)
+            {
+                _failures++;
+                Print($"SELFTEST FAIL no check's name contains \"{_only}\" (ATLAS_SELFTEST_ONLY)");
+            }
+            Print($"SELFTEST DONE: {_passes} passed, {_failures} failed" + (_skips > 0 ? $", {_skips} skipped" : ""));
             try { File.WriteAllLines(Path.Combine(dataDir, "selftest_results.txt"), _results); } catch { }
             return _failures == 0 ? 0 : 1;
         }
@@ -152,14 +161,23 @@ namespace AP_Atlas.Core
 
         private static void Test(string name, Action body)
         {
+            if (Skipped(name)) return;
             try { body(); _passes++; Print("SELFTEST PASS " + name); }
             catch (Exception ex) { _failures++; Print($"SELFTEST FAIL {name}: {ex.Message}"); }
         }
 
         private static async Task TestAsync(string name, Func<Task> body)
         {
+            if (Skipped(name)) return;
             try { await body(); _passes++; Print("SELFTEST PASS " + name); }
             catch (Exception ex) { _failures++; Print($"SELFTEST FAIL {name}: {ex.Message}"); }
+        }
+
+        private static bool Skipped(string name)
+        {
+            if (string.IsNullOrEmpty(_only) || name.Contains(_only, StringComparison.OrdinalIgnoreCase)) return false;
+            _skips++;
+            return true;
         }
 
         private static void Expect(bool condition, string what)
@@ -544,6 +562,21 @@ namespace AP_Atlas.Core
                     catch (Exception ex) { entry.Note = "the Pack Doctor crashed: " + ex.GetType().Name + ": " + ex.Message; }
                 }
                 else entry.Note = "its game isn't installed in the engine (loader checked only)";
+                // The pack's scripts, run as a slot runs them: the limits must never stop a real pack.
+                try
+                {
+                    var names = game == null ? null : PopTracker.GameNames.Best(game);
+                    var (scripts, fed) = await Task.Run(() => RunScriptsLikeASlot(pack, names));
+                    if (scripts != null)
+                    {
+                        entry.ScriptSteps = scripts.Peak.Steps;
+                        entry.ScriptsStopped = scripts.StopReason;
+                        Print($"  {key}: scripts ran {fed}; the busiest piece of work, {scripts.PeakWork ?? "none"}, took {scripts.Peak.Steps:N0} steps; " +
+                              $"the most memory {scripts.Peak.Memory / 1048576.0:0.0} MB, the longest {scripts.Peak.Time.TotalMilliseconds:0} ms; {scripts.Errors.Count} script error(s)" +
+                              (scripts.Stopped ? $" · STOPPED: {scripts.StopReason}" : ""));
+                    }
+                }
+                catch (Exception ex) { entry.Note = "the pack's scripts crashed Atlas's host: " + ex.GetType().Name + ": " + ex.Message; }
                 now[key] = entry;
                 Print($"  {key}: {(game ?? pack.Manifest?.GameName ?? "?")} · {entry.Maps} maps, {entry.Pins} pins, {entry.LoadIssues} load issues" +
                       (entry.SectionsPct >= 0 ? $" · checks linked {entry.SectionsPct}%, tiles {entry.TilesPct}%, locations placed {entry.PlacedPct}%, {entry.Problems} problems" : "") +
@@ -575,11 +608,32 @@ namespace AP_Atlas.Core
                 if (was.TilesPct >= 0 && cur.TilesPct >= 0 && cur.TilesPct < was.TilesPct - 1) worse.Add($"{kv.Key} links fewer tiles ({was.TilesPct}% → {cur.TilesPct}%)");
                 if (was.PlacedPct >= 0 && cur.PlacedPct >= 0 && cur.PlacedPct < was.PlacedPct - 1) worse.Add($"{kv.Key} places fewer locations ({was.PlacedPct}% → {cur.PlacedPct}%)");
                 if (cur.LoadIssues > was.LoadIssues) worse.Add($"{kv.Key} has more load issues ({was.LoadIssues} → {cur.LoadIssues})");
+                if (cur.ScriptsStopped != null) worse.Add($"{kv.Key}: Atlas stopped its scripts ({cur.ScriptsStopped})");
             }
             Expect(worse.Count == 0, "map packs got worse: " + string.Join("; ", worse));
         }
 
         private static int Pct(int part, int total) => total <= 0 ? -1 : (int)Math.Round(100.0 * part / total);
+
+        /// <summary>
+        /// Runs a pack's scripts as a slot does: init.lua, the clear handler (with no options), every item and check of the
+        /// game (its names from the engine, else the ids the pack maps), then every tile's state and the seed settings.
+        /// </summary>
+        private static (PopTracker.PackScriptHost Host, string Fed) RunScriptsLikeASlot(PopTracker.LoadedPack pack, PopTracker.GameNameTable names)
+        {
+            var host = PopTracker.PackScriptHost.Load(pack);
+            if (host == null) return (null, null);
+            var clock = Stopwatch.StartNew();
+            host.Initialize();
+            host.Clear(1, 0, new Newtonsoft.Json.Linq.JObject());
+            var items = names?.Items.Count > 0 ? names.Items.Select(kv => (Id: kv.Value, Name: kv.Key)).ToList() : pack.ItemMapping.Keys.Select(id => (Id: id, Name: "")).ToList();
+            for (int i = 0; i < items.Count; i++) host.ApplyItem(i, items[i].Id, items[i].Name, 1);
+            var checks = names?.Locations.Count > 0 ? names.Locations.Select(kv => (Id: kv.Value, Name: kv.Key)).ToList() : pack.LocationMappingById.Keys.Select(id => (Id: id, Name: "")).ToList();
+            foreach (var (id, name) in checks) host.ApplyLocation(id, name);
+            foreach (var code in pack.ItemsByCode.Keys) host.StateOf(code);
+            host.Settings(pack.ItemGridGroups.Where(g => g.LooksLikeSettings).SelectMany(g => g.Rows.SelectMany(r => r)));
+            return (host, $"{items.Count} items and {checks.Count} checks in {clock.ElapsedMilliseconds} ms");
+        }
 
         public class PackBaselineEntry
         {
@@ -594,6 +648,10 @@ namespace AP_Atlas.Core
             public int Problems { get; set; }
             public bool ScriptsRan { get; set; }
             public string Note { get; set; }
+            /// <summary>The most steps one piece of the pack's scripts' work took when run as a slot runs them.</summary>
+            public long ScriptSteps { get; set; }
+            /// <summary>Why Atlas stopped the pack's scripts (null: it didn't).</summary>
+            public string ScriptsStopped { get; set; }
         }
 
         public class SeedBaselineEntry

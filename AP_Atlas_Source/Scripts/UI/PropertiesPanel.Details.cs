@@ -353,7 +353,8 @@ namespace AP_Atlas.UI
 
             BuildSpecialProgress(slot);
             BuildFlaggedList(slot);
-            BuildSeedSettings(slot.SeedSettings(), slot.PackScripts != null, Newtonsoft.Json.Linq.JToken.FromObject(slot.SlotDataSnapshot ?? new Dictionary<string, object>()), live: true);
+            BuildSeedSettings(slot.SeedSettings(), slot.PackScripts != null, Newtonsoft.Json.Linq.JToken.FromObject(slot.SlotDataSnapshot ?? new Dictionary<string, object>()), live: true,
+                scriptsStopped: slot.PackScripts?.StopReason);
 
             Section("Room");
             if (room != null)
@@ -416,7 +417,7 @@ namespace AP_Atlas.UI
         // =====================================================================
 
         // Offline slots: scripts run once per saved slot data, in the background.
-        private static readonly Dictionary<string, (DateTime Saved, List<PackScriptHost.SettingInfo> Settings)> _offlineSettings = new();
+        private static readonly Dictionary<string, (DateTime Saved, List<PackScriptHost.SettingInfo> Settings, string Stopped)> _offlineSettings = new();
 
         private void BuildOfflineSeedSettings(string profileId, string slotName)
         {
@@ -425,7 +426,7 @@ namespace AP_Atlas.UI
             string key = profileId + "|" + slotName;
             if (_offlineSettings.TryGetValue(key, out var cached) && cached.Saved == saved.Saved)
             {
-                BuildSeedSettings(cached.Settings, true, saved.SlotData, live: false, savedAt: saved.Saved);
+                BuildSeedSettings(cached.Settings, true, saved.SlotData, live: false, savedAt: saved.Saved, scriptsStopped: cached.Stopped);
                 return;
             }
             Section("Seed settings");
@@ -435,29 +436,31 @@ namespace AP_Atlas.UI
             {
                 var pack = PopTrackerPackLoader.LoadPackForGame(saved.Game, null);
                 var host = pack == null ? null : PackScriptHost.Load(pack);
-                if (host == null) return new List<PackScriptHost.SettingInfo>();
+                if (host == null) return (Settings: new List<PackScriptHost.SettingInfo>(), Stopped: (string)null);
                 host.Initialize();
                 host.Clear(0, 0, saved.SlotData);
                 var codes = PackFixes.Effective(pack).ItemGridGroups.Where(g => g.LooksLikeSettings).SelectMany(g => g.Rows.SelectMany(r => r));
-                return host.Settings(codes);
-            }), list =>
+                return (Settings: host.Settings(codes), Stopped: host.StopReason);
+            }), result =>
             {
-                list ??= new List<PackScriptHost.SettingInfo>();
+                var list = result.Settings ?? new List<PackScriptHost.SettingInfo>();
                 Ui.Defer(this, () =>
                 {
-                    _offlineSettings[key] = (saved.Saved, list);
+                    _offlineSettings[key] = (saved.Saved, list, result.Stopped);
                     current(() => Render(keepScroll: true));
                 });
             }, $"reading {saved.Game}'s saved options with its map pack");
         }
 
-        private void BuildSeedSettings(List<PackScriptHost.SettingInfo> settings, bool scriptsRan, Newtonsoft.Json.Linq.JToken slotData, bool live, DateTime? savedAt = null)
+        private void BuildSeedSettings(List<PackScriptHost.SettingInfo> settings, bool scriptsRan, Newtonsoft.Json.Linq.JToken slotData, bool live, DateTime? savedAt = null,
+            string scriptsStopped = null)
         {
             Section("Seed settings");
             if (!live && savedAt != null) AddHint($"From this slot's options as of {savedAt:yyyy-MM-dd HH:mm}.");
             if (settings.Count == 0)
             {
-                AddHint(scriptsRan ? "The map pack doesn't show any of this seed's options." : "Shown once the map pack's script has read this slot's options.");
+                AddHint(scriptsStopped != null ? $"The map pack's scripts were stopped, so they can't show this seed's options: {scriptsStopped}."
+                    : scriptsRan ? "The map pack doesn't show any of this seed's options." : "Shown once the map pack's script has read this slot's options.");
             }
             foreach (var s in settings.OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase))
             {

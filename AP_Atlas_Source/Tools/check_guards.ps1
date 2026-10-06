@@ -24,6 +24,8 @@
       - Changing how many engines a multiworld's slots share (EnginePools.TestMaxEngines): only the UI test.
       - Sending chat or commands, or changing a connection's tags: only SessionManager, which keeps one connection per
         multiworld team receiving the room's text, and switches a slot's text on before its command (so the answer arrives).
+      - Running Lua (MoonSharp): only PackScriptHost, where each piece of a pack's scripts' work runs under limits (work
+        that runs away is stopped, not left to freeze or crash Atlas).
     It also checks that every script in the Godot project has its .uid file (Godot makes one per script; it's committed
     with the script, or every fresh copy of the project gets new ones). CI runs this before Godot's import, so it checks
     what was committed.
@@ -53,7 +55,8 @@ $rules = @(
     @{ Name = 'Running the engine on another Python'; Pattern = '\bTestPython\s*=(?!=)'; Allowed = @('AP_Atlas_Source\Scripts\MainTrackerWindow.UiTest.cs') },
     @{ Name = 'Changing how many engines a multiworld runs'; Pattern = '\bTestMaxEngines\s*=(?!=)'; Allowed = @('AP_Atlas_Source\Scripts\MainTrackerWindow.UiTest.cs') },
     @{ Name = 'Sending chat or changing a connection''s tags outside SessionManager'; Pattern = 'new\s+(SayPacket|ConnectUpdatePacket)\b|\.UpdateConnectionOptions\s*\('
-       Allowed = @('AP_Atlas.Core\Connections\SessionManager.Text.cs') }
+       Allowed = @('AP_Atlas.Core\Connections\SessionManager.Text.cs') },
+    @{ Name = 'Running Lua outside PackScriptHost'; Pattern = 'using\s+MoonSharp|MoonSharp\.Interpreter\.'; Allowed = @('AP_Atlas_Source\Scripts\Core\PopTracker\PackScriptHost.cs') }
 )
 
 $files = $roots | ForEach-Object { Get-ChildItem -Path $_ -Recurse -Filter '*.cs' -File } |

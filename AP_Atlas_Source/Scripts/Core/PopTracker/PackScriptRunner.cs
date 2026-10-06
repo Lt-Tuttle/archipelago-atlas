@@ -10,7 +10,8 @@ namespace AP_Atlas.Core.PopTracker
     /// once with the slot's options and what it has so far, then fed each new item and check as it arrives.
     /// </summary>
     /// <remarks>
-    /// The queue keeps the scripts it started, and later work runs on those. Items that arrive while the scripts start are
+    /// The queue keeps the scripts it started, and later work runs on those. If the scripts are stopped (a piece of their
+    /// work went over its limits), later work does nothing, and the owner hears why once. Items that arrive while the scripts start are
     /// queued behind the start and reach the scripts once they're running, even before the main thread hears they are
     /// (it used to look them up there, so those items were lost).
     /// </remarks>
@@ -18,16 +19,20 @@ namespace AP_Atlas.Core.PopTracker
     {
         private readonly Action<Action> _toMainThread;
         private readonly Action<string> _warn;
+        private readonly Action<string>? _stopped;
         private Task _queue = Task.CompletedTask;
-        // The scripts as the queue sees them: set by the queue's own start work, read only by queue work after it.
+        // The scripts as the queue sees them, and whether their stop was reported: set and read only by queue work.
         private PackScriptHost? _queued;
+        private bool _stopReported;
 
         /// <param name="toMainThread">Hands a callback to the main thread (skipped if the slot ended meanwhile).</param>
         /// <param name="warn">Says that a piece of script work failed.</param>
-        public PackScriptRunner(Action<Action> toMainThread, Action<string> warn)
+        /// <param name="stopped">Says why the scripts were stopped, once, on the main thread.</param>
+        public PackScriptRunner(Action<Action> toMainThread, Action<string> warn, Action<string>? stopped = null)
         {
             _toMainThread = toMainThread;
             _warn = warn;
+            _stopped = stopped;
         }
 
         /// <summary>The running scripts, once the main thread has heard they started (null before, or for a pack without scripts).</summary>
@@ -49,9 +54,13 @@ namespace AP_Atlas.Core.PopTracker
             {
                 host = PackScriptHost.Load(pack);
                 _queued = host;
+                _stopReported = false;
                 if (host == null) return;
                 host.Initialize();
                 host.Clear(player, team, slotData);
+                // Which options the seed settings reflect is read here, not on the main thread when Key Items first shows
+                // them: it scans all the pack's scripts (0.7 s for the biggest pack in the corpus).
+                host.OptionPathsByCode();
                 for (int i = 0; i < items.Count; i++) host.ApplyItem(i, items[i].ItemId, items[i].ItemName, items[i].Player);
                 foreach (var (id, name) in locations) host.ApplyLocation(id, name);
             }, () =>
@@ -81,6 +90,11 @@ namespace AP_Atlas.Core.PopTracker
             {
                 try { work(); }
                 catch (Exception ex) { _warn("Pack script: " + ex.Message); }
+                if (_queued?.StopReason is string reason && !_stopReported)
+                {
+                    _stopReported = true;
+                    _toMainThread(() => _stopped?.Invoke(reason));
+                }
                 if (onMainThread != null) _toMainThread(onMainThread);
             }, TaskScheduler.Default);
         }

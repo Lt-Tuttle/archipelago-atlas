@@ -37,7 +37,7 @@ You need:
 |---|---|
 | Build | `dotnet build AP_Atlas_Source/AP_Atlas.sln` |
 | Run | `Launch_The_Archipelago_Atlas.bat` |
-| Self-test and UI test | `AP_Atlas_Source/Tools/run_selftest.ps1` (builds, then runs the self-test and the UI test, each in a new, empty scratch folder; never your real data). Set `ATLAS_SELFTEST_SETUP=1` to also set up the portable engine from nothing (about 55 MB of downloads), after changing engine setup |
+| Self-test and UI test | `AP_Atlas_Source/Tools/run_selftest.ps1` (builds, then runs the self-test and the UI test, each in a new, empty scratch folder; never your real data). Set `ATLAS_SELFTEST_SETUP=1` to also set up the portable engine from nothing (about 55 MB of downloads), after changing engine setup. While working on a few checks, `ATLAS_SELFTEST_ONLY` and `ATLAS_UITEST_ONLY` (part of a check's or scenario's name) run only those |
 | Guard rails | `AP_Atlas_Source/Tools/check_guards.ps1` |
 | Unit tests | `dotnet test --solution AP_Atlas_Source/AP_Atlas.sln` (`AP_Atlas.Core.Tests`: fast, no Godot) |
 | Formatting | `dotnet format whitespace AP_Atlas_Source/AP_Atlas.sln` (C# files use CRLF line endings) |
@@ -68,6 +68,7 @@ New code that doesn't need Godot belongs in `AP_Atlas.Core`, with tests. The vis
   | Secrets | `Secrets` |
   | Work nobody awaits (button handlers, background checks) | `Async.Fire(task, "what it's doing")`, never `async void` or `_ = …` |
   | Updating the window from another thread, or later | `Ui.Defer(owner, …)`, never `Callable.From(…).CallDeferred()` |
+  | Running Lua | `PackScriptHost`, where a pack's scripts run under limits |
   | A view following an event | A `TreeSubscriptions` child (`AddChild(new TreeSubscriptions().On(subscribe, unsubscribe))`), never `+=` in `_Ready`: it follows the view in and out of the window, so the view can be moved |
 
   The guard rails enforce the riskiest of these in CI.
@@ -84,6 +85,11 @@ New code that doesn't need Godot belongs in `AP_Atlas.Core`, with tests. The vis
   - Set such values only when they change. The UI test's "Idle" scenario checks a connected slot.
 - **Updating Archipelago.MultiClient.Net:** `AtlasSessions` relies on the library's internal data cache, and on how a connection's send loop ends once it's woken (see `LibraryThreads`). The unit tests check both, and that the library reaches nothing else on the PC. If they fail, look at what changed before using the new version.
 - **The logic engine's channel:** an engine's standard output carries answers only, each with its request's id; Atlas takes nothing else for an answer. Bridge components write answers with `send()`, and everything that prints goes to standard error (the runner and `protect_channel()` see to it), which Atlas logs. A bridge that can't load says so with `{"event": "boot_failed"}`.
+- **Map pack scripts:** each piece of a pack's scripts' work runs under limits (see `ScriptLimits` in `PackScriptHost`). Keep it that way when adding to the PopTracker API:
+  - Make each function the scripts can call with `Callback`, so its failures are Lua errors.
+  - Call Lua from C# only through `CallLua`.
+  - A library function that can build something big in one call (as `string.rep` can) needs a check before it runs.
+  - The self-tests "Pack scripts: work that runs away is stopped…" cover each way a script can run away. The corpus check (`ATLAS_SELFTEST_PACKS`) shows that real packs stay far below the limits.
 - **Godot's `.uid` files:** Godot makes one next to each script (`Foo.cs.uid`) when it opens or imports the project. Commit it with the script; the guard rails check.
 - **Third-party code, data or art:**
   - Use only things under a license compatible with MIT (MIT, BSD, Apache-2.0, OFL for fonts, and so on), and credit them in [CREDITS.md](CREDITS.md). Anything that ships in Atlas also goes in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

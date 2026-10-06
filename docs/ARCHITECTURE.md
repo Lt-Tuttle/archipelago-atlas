@@ -96,7 +96,7 @@ Atlas reads or writes outside this folder only with the user's permission. Nothi
   - A save of settings or profiles that arrives from another thread moves to the main thread and is logged as a mistake.
   - The Pack Doctor reads a snapshot (`PackDoctor.Prepare`), then analyses it on a worker thread.
   - A logic engine's output is read by its own reader (`EngineProcess`), off the main thread.
-  - A slot's pack scripts run on a background queue (`PackScriptRunner`), one piece of work at a time; the queue keeps the scripts it started, so items fed while they start reach them.
+  - A slot's pack scripts run on a background queue (`PackScriptRunner`), one piece of work at a time; the queue keeps the scripts it started, so items fed while they start reach them. Reading which options the seed settings reflect (a scan of all the pack's scripts) happens there too, when they start.
 - **No failure goes unseen:** work nobody awaits (button handlers, background checks, closing connections) starts with `Async.Fire(task, "what it's doing")`. A failure is logged with that description and, unless the work is routine, shown to the user in plain words. There's no `async void` and no discarded task (`_ = …`): the guard rails reject both.
 
 ## How things talk to each other
@@ -132,6 +132,14 @@ Atlas reads or writes outside this folder only with the user's permission. Nothi
   - A bridge that can't load says so with `{"event": "boot_failed"}`.
   - The bridge's request loop dispatches to `handle_init`, `handle_update` and `handle_explain`, with a slot's state in a `Slot`. What it can't do but carries on without, it notes on standard error.
 - **Map pack scripts:** Lua in MoonSharp, sandboxed, on a per-slot script queue (`PackScriptRunner`).
+  - Each piece of work (init.lua, the clear handlers, one item or check, one read) runs under `ScriptLimits`: 50 million steps, 1 GB allocated and 10 s, and recursion is stopped while the thread still has stack to spare. The 40-pack corpus check (`ATLAS_SELFTEST_PACKS`) runs every pack as a slot does and reports each pack's busiest piece of work; the most is 1.5 million steps.
+  - A `Watchdog`, attached as MoonSharp's debugger, sees every step wherever it runs: in pcall, a coroutine, a sort's comparison, or Lua that one of Atlas's functions calls. MoonSharp's own limit (a coroutine's `AutoYieldCounter`) misses Lua run from callbacks, and each coroutine allocates 2 MB.
+  - A stop is an exception Lua can't catch. It's sticky, because `table.sort` drops errors that aren't Lua's: the next step throws it again, and the end of the work checks it. It stops the scripts for good, and `StopReason` says why. Lua errors are only recorded, and the scripts carry on.
+  - The pack's scripts are compiled before the watchdog is attached: with a debugger attached, every compile writes out all the code loaded so far (5 s for a pack of 755 files). `require` and `ScriptHost:LoadScript` use the compiled chunks.
+  - Atlas's functions for the scripts are made with `Callback` (a failure is a Lua error at the script's call), and Atlas calls Lua through `CallLua` (a failure that isn't a Lua error means the interpreter broke, and stops the scripts).
+  - MoonSharp's library throws .NET exceptions for some arguments where Lua raises an error (`math.random(1e20)`, `string.format("%c", -1)`, `os.date` of a time out of range). Each library function is wrapped so its own failures are Lua errors; a failure from Lua it ran in turn (a sort's comparison) is left alone.
+  - `collectgarbage`, `string.rep` and `table.concat` are checked versions; the `json` and `dynamic` modules aren't loaded.
+  - Not yet guarded: code nested thousands of levels deep can overflow MoonSharp's compiler before any of this runs (step 6e).
 
 ## Safety rules the code enforces
 
@@ -146,6 +154,7 @@ Atlas reads or writes outside this folder only with the user's permission. Nothi
 | `AtlasSessions` | Creating an Archipelago session. |
 | `SessionManager` | Connecting one. Sending chat or commands, and changing a connection's tags. |
 | `AtlasEngine`, `EngineInstall` (and the self-test) | Starting a program. |
+| `PackScriptHost` | Running Lua (MoonSharp): each piece of a pack's scripts' work runs under its limits. |
 
 Downloads that become code are pinned:
 - The engine's Python, pip, Archipelago and Universal Tracker are each checked against a fixed SHA-256.

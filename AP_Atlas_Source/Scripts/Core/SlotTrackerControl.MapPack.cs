@@ -196,7 +196,7 @@ public partial class SlotTrackerControl : MarginContainer
         _scriptLocationsQueued.Clear();
         foreach (var l in locations) _scriptLocationsQueued.Add(l.Id);
         _scripts ??= new AP_Atlas.Core.PopTracker.PackScriptRunner(work => AP_Atlas.UI.Ui.Defer(this, () => work()),
-            message => AP_Atlas.Core.Logger.LogWarning($"[{_slotName}] {message}"));
+            message => AP_Atlas.Core.Logger.LogWarning($"[{_slotName}] {message}"), PackScriptsStopped);
         _scripts.Start(Pack, PlayerSlot, Team, slotData, items, locations, (host, ms) =>
         {
             if (host == null) { AppendDebugLog($"[MapTracker] The pack has no scripts/init.lua; Key Items use the pack's item mappings only."); return; }
@@ -206,6 +206,14 @@ public partial class SlotTrackerControl : MarginContainer
             UpdateKeyItemsUI();
             StateChanged?.Invoke();
         });
+    }
+    /// <summary>The pack's scripts were stopped (a piece of their work went over its limits): the log and Key Items say why.</summary>
+    private void PackScriptsStopped(string reason)
+    {
+        AppendDebugLog($"[MapTracker] The pack's scripts were stopped: {reason}. Key Items use the pack's item mappings only.");
+        AP_Atlas.Core.Logger.LogWarning($"[{_slotName}] The map pack's scripts were stopped: {reason}.");
+        UpdateKeyItemsUI();
+        StateChanged?.Invoke();
     }
     /// <summary>Feeds items received since the scripts last saw the list.</summary>
     private void FeedNewItemsToScripts()

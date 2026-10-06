@@ -144,6 +144,10 @@ namespace AP_Atlas.Core.PopTracker
             var toolbar = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
             AddChild(toolbar);
 
+            _scriptNote = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill, Visible = false };
+            _scriptNote.AddThemeColorOverride("font_color", Colors.Orange);
+            AddChild(_scriptNote);
+
             // View Mode Segmented Control
             var viewHBox = new HBoxContainer();
             viewHBox.AddThemeConstantOverride("separation", 0);
@@ -320,6 +324,7 @@ namespace AP_Atlas.Core.PopTracker
         {
             using var __perf = AP_Atlas.Core.PerfMonitor.Measure("Key Items refresh");
             string filter = _searchBox.Text.ToLowerInvariant();
+            UpdateScriptNote();
 
             if (_isVisualMode && _pack != null)
             {
@@ -403,6 +408,23 @@ namespace AP_Atlas.Core.PopTracker
 
         /// <summary>The seed's settings as the pack shows them. Set by the owner.</summary>
         public Func<List<PackScriptHost.SettingInfo>> SeedSettings { get; set; }
+
+        /// <summary>Why the pack's scripts were stopped (null while they run, or for a pack without any). Set by the owner.</summary>
+        public Func<string> ScriptStopReason { get; set; }
+
+        private Label _scriptNote;
+
+        /// <summary>The note Key Items shows about the pack's scripts, or null when none shows.</summary>
+        public string ShownScriptNote => _scriptNote is { Visible: true } ? _scriptNote.Text : null;
+
+        /// <summary>Says so when the pack's scripts were stopped: tiles then come from the pack's item list alone.</summary>
+        private void UpdateScriptNote()
+        {
+            string reason = ScriptStopReason?.Invoke();
+            _scriptNote.Visible = reason != null;
+            if (reason != null)
+                _scriptNote.Text = $"This map pack's scripts were stopped: {reason}. Key Items still shows your items from the pack's item list, but not what its scripts work out (stages, counts and seed settings).";
+        }
 
         /// <summary>
         /// The pack's settings grid(s), lit from the seed's options by the pack's own scripts. Shown only when the

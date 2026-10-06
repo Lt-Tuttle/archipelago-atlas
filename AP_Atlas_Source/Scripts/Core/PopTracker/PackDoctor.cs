@@ -268,7 +268,19 @@ namespace AP_Atlas.Core.PopTracker
             }
             host.Initialize();
             if (slotData?.SlotData != null) host.Clear(0, 0, slotData.SlotData);
-            report.ScriptsRan = host.Errors.Count == 0;
+            report.ScriptsRan = host.Errors.Count == 0 && !host.Stopped;
+            if (host.Stopped)
+            {
+                add(new Finding
+                {
+                    Key = "script:stopped",
+                    Category = "Scripts",
+                    Severity = FindingSeverity.Problem,
+                    Title = "Atlas stopped the pack's scripts",
+                    Detail = $"Stopped because {host.StopReason}.\nAtlas stops a pack's scripts when a piece of their work runs far longer, deeper or bigger than a real pack's, " +
+                             "so a broken script can't freeze or crash it. Key Items fall back to the pack's item mappings."
+                });
+            }
 
             foreach (var e in host.Errors)
             {

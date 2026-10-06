@@ -150,6 +150,13 @@ Development toward the first public beta, 0.1.0.
 - **Archipelago's Python packages** install only as the exact files in Atlas's hash list (`--require-hashes`).
 - **A world's own requirements** can no longer point pip at another package index or local files.
 - **Deeply nested JSON** is refused instead of overflowing the stack (Newtonsoft.Json 13).
+- **Map pack scripts can't freeze or crash Atlas.**
+  - Each piece of a pack's scripts' work (starting up, one item, one check) runs under limits: 50 million steps, 1 GB of memory, 10 seconds, and recursion that stops well before Atlas's stack runs out.
+  - Work that goes over is stopped, and the pack's scripts with it. Key Items carries on from the pack's item list and says why, as do the log, Properties and the Pack Doctor.
+  - The limits are far above what real packs use: across 40 packs, the busiest piece of work took 1.5 million steps, 91 MB and 0.2 seconds.
+  - Before, a script stuck in a loop kept one of Atlas's threads busy for good, and some scripts could end Atlas outright: one that loaded itself, say, or saved a table that holds itself as JSON.
+  - A library call MoonSharp fails with a .NET error, where Lua raises an error (`math.random(1e20)`, say), is now a Lua error too: a script can catch it, and it never ends the scripts.
+  - Library functions that could hurt Atlas in one call are made safe. `collectgarbage` does nothing (it paused all of Atlas for a full memory collection). `string.rep` and `table.concat` check the size of what they'd build. The `json` and `dynamic` modules, which PopTracker doesn't have, are gone.
 
 ### Fixed
 - **Files outside Atlas's folder:** three things Atlas didn't ask for wrote outside its folder. Everything now stays inside it.
@@ -164,6 +171,7 @@ Development toward the first public beta, 0.1.0.
   - Each connection now gives its thread back when it ends, and Atlas makes room for one thread per open connection. In the same test, every login takes a few milliseconds, however many came before.
 - **A login that ran out of time** but connected later and was then refused was left open on the server. It's now closed.
 - **Key Items:** items that arrived while a map pack's scripts were starting never reached the scripts, so Key Items could show less than the slot had until it reconnected. They now reach them.
+- **Key Items with a big map pack:** the first time Key Items showed a pack's seed settings, it scanned all the pack's scripts on the main thread, holding up the window (0.7 s for the biggest pack in the test corpus). The scan now runs when the scripts start, in the background.
 - **The logic engine:**
   - An answer now counts only if it carries its question's number. Before, any line the engine wrote without one was taken as the answer, so a game printing something at the wrong moment could look like "nothing is in logic".
   - What the games print goes to the engine's log, never onto the line Atlas reads answers from.
