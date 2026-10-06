@@ -342,7 +342,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             _globalStatusBar.AddThemeStyleboxOverride("panel", statusStyle);
             _globalStatusLabel?.AddThemeColorOverride("font_color", textOnAccent);
         }
-        if (_workspaceSwitcher != null) _workspaceSwitcher.ApplyStyle(12, AP_Atlas.Core.ThemeColors.Accent);
+        _activityBar?.ApplyAccent(AP_Atlas.Core.ThemeColors.Accent);
         if (_bottomTabs != null) ApplyTabBarStyle(_bottomTabs, 8);
         ApplyUIScale();
     }
@@ -370,7 +370,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         SetThemeFontSizeIfChanged(this.Theme, "PopupMenu", globalSize);
         SetThemeFontSizeIfChanged(this.Theme, "MenuButton", globalSize);
         if (_menuHbox != null) SetFontSizeRecursive(_menuHbox, globalSize);
-        if (_workspaceSwitcher != null) _workspaceSwitcher.SetFontSize(globalSize);
+        if (_toolTitle != null) SetFontSizeOverride(_toolTitle, "font_size", globalSize);
         if (_bottomTabs != null) SetFontSizeOverride(_bottomTabs, "font_size", globalSize);
         if (_globalStatusBar != null) SetFontSizeRecursive(_globalStatusBar, globalSize);
         if (_sidebarTitle != null) SetFontSizeOverride(_sidebarTitle, "font_size", globalSize);

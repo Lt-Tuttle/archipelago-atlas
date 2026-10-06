@@ -6,7 +6,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Archipelago.MultiClient.Net;
 
-/// <summary>The multiworld profile editor on the Connections tab.</summary>
+/// <summary>The multiworld profile editor on the Multiworlds page.</summary>
 public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
 {
     private void MarkDirty()

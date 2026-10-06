@@ -12,6 +12,7 @@ The Archipelago Atlas exists thanks to the projects and people below. Each entry
 | Newtonsoft.Json 13.0.4 | James Newton-King | https://github.com/JamesNK/Newtonsoft.Json/releases | MIT |
 | MoonSharp 2.0.0 | Marco Mastropaolo (parts from KopiLua) | https://github.com/moonsharp-devs/moonsharp/releases | BSD 3-Clause |
 | Google Sans and Google Sans Code fonts | The Google Sans Project Authors (Google) | https://github.com/googlefonts/googlesans, https://github.com/googlefonts/googlesans-code | SIL OFL 1.1 |
+| Lucide icons 1.52.0 | Lucide Icons and Contributors | https://github.com/lucide-icons/lucide/releases | ISC |
 | Feather icons | Cole Bemis | https://github.com/feathericons/feather/releases | MIT |
 
 Atlas's icon is AI-generated, drawn in the style of [Archipelago](https://archipelago.gg)'s logo (Archipelago is MIT-licensed).

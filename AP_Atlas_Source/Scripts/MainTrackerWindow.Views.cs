@@ -192,9 +192,6 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         }
         SwapContentView(_noSlotPlaceholder);
     }
-    /// <summary>A tab was picked in the tab bar.</summary>
-    private void ChangeGlobalTab(int tab) => ShowTool(AP_Atlas.UI.Tool.All[tab]);
-
     /// <summary>Shows a tool: its own view, or for a slot tool the selected slot's view of it.</summary>
     private void ShowTool(AP_Atlas.UI.Tool tool)
     {
@@ -202,6 +199,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         using var _ = AP_Atlas.Core.PerfMonitor.Measure($"Switch to {tool.Title} tab");
 
         _currentTool = tool;
+        _activityBar?.Select(tool);
+        if (_toolTitle != null) _toolTitle.Text = Tr(tool.Title);
         if (_toolViews.TryGetValue(tool, out var own))
         {
             SwapSidebar(own.ExplorerTitle, own.Explorer);

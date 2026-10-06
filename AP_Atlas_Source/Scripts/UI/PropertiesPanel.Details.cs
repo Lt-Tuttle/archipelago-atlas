@@ -384,10 +384,10 @@ namespace AP_Atlas.UI
 
         private void BuildOverviewOfConnections()
         {
-            Section("Connections");
+            Section("Multiworlds");
             if (_host.Profiles.Count == 0)
             {
-                AddHint("No multiworld profiles yet. Add one on the Connections tab.");
+                AddHint("No multiworlds yet. Add one on the Multiworlds page.");
                 return;
             }
             foreach (var p in _host.Profiles)

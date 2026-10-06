@@ -154,7 +154,7 @@ namespace AP_Atlas.UI
             foreach (Node child in _linksBox.GetChildren()) child.QueueFree();
             if (profiles.Count == 0)
             {
-                _linksBox.AddChild(Text("No multiworlds yet: add one on the Connections tab.", Colors.Gray));
+                _linksBox.AddChild(Text("No multiworlds yet: add one on the Multiworlds page.", Colors.Gray));
                 return;
             }
             foreach (var profile in profiles)

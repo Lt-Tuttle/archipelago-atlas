@@ -91,6 +91,8 @@ public partial class MainTrackerWindow
             MenuBarAndKeysAsync);
         await ScenarioAsync("Command palette: Ctrl+Shift+P opens it ready to type, it lists every command with its key, a typed word narrows it to the commands whose words start that way, Enter runs the pick and closes it, Escape only closes it",
             CommandPaletteAsync);
+        await ScenarioAsync("Activity bar: every tool in its group, in order, with a shipped icon and its key in the tooltip; pressing a button shows the tool, switching a tool any other way lights its button and names it in the header; the engine button opens the engine window",
+            ActivityBarAsync);
         await ScenarioAsync("Bursts: 40 items and 40 chat lines arriving together reach the slot once each, at most one update of the window in each frame they arrive over (not 80)",
             BurstIsOneUpdateAsync);
         await ScenarioAsync("Long text: a game's names and a hint's entrance of a megabyte, and a chat line of 100,000 characters without a space, hold up no frame for 150 ms, shown or not (names are cut to 500 characters; a long run of text gets breaks)",
@@ -514,7 +516,7 @@ public partial class MainTrackerWindow
         {
             host.ShowTool(tool);
             await UiTestWaitAsync(0.05);
-            UiTestExpect(_workspaceSwitcher.CurrentTab == tool.Index, $"the tab bar isn't on {tool.Title}");
+            UiTestExpect(_activityBar.Selected == tool, $"the activity bar isn't on {tool.Title}");
             Control expected = ownViews.TryGetValue(tool, out var own) ? own : _noSlotPlaceholder;
             UiTestExpect(ShownContent() == expected, $"{tool.Title} shows {ShownContent()?.Name ?? "nothing"} without a slot");
         }
@@ -555,13 +557,13 @@ public partial class MainTrackerWindow
         var missing = _commands!.All.Select(c => c.Id).Where(id => !placed.Contains(id)).ToList();
         UiTestExpect(missing.Count == 0, $"commands in no menu: {string.Join(", ", missing)}");
         var tools = menus[3].GetPopup();
-        UiTestExpect(tools.GetItemText(2) == "Map Tracker" && ShortcutShown(tools, 2) == "Ctrl+3", $"the Tools menu's third item is \"{tools.GetItemText(2)}\" with \"{ShortcutShown(tools, 2)}\"");
+        UiTestExpect(tools.GetItemText(0) == "Map Tracker" && ShortcutShown(tools, 0) == "Ctrl+1", $"the Tools menu's first item is \"{tools.GetItemText(0)}\" with \"{ShortcutShown(tools, 0)}\"");
 
         host.ShowTool(AP_Atlas.UI.Tool.Connections);
-        await PressAsync("Ctrl+2");
-        UiTestExpect(ShownContent() == _packManagerPanel, "Ctrl+2 didn't show Map Packs");
         await PressAsync("Ctrl+9");
-        UiTestExpect(ShownContent() == _sphereTab, "Ctrl+9 didn't show the Sphere Tracker");
+        UiTestExpect(ShownContent() == _packManagerPanel, "Ctrl+9 didn't show Map Packs");
+        await PressAsync("Ctrl+7");
+        UiTestExpect(ShownContent() == _sphereTab, "Ctrl+7 didn't show the Sphere Tracker");
         // A rebind in the settings takes over at once (as a user might type it), and the old key means nothing.
         _appSettings.KeyBindings["tool.map-packs"] = "ctrl+f6";
         try
@@ -569,12 +571,12 @@ public partial class MainTrackerWindow
             await PressAsync("Ctrl+F6");
             UiTestExpect(ShownContent() == _packManagerPanel, "a rebound key (Ctrl+F6) didn't show Map Packs");
             host.ShowTool(AP_Atlas.UI.Tool.SphereTracker);
-            await PressAsync("Ctrl+2");
+            await PressAsync("Ctrl+9");
             UiTestExpect(ShownContent() == _sphereTab, "the old key still works after a rebind");
             await PressAsync("F1");
             var shortcuts = await UiTestWaitForAsync(() => GetChildren().OfType<AcceptDialog>().FirstOrDefault(d => d.Title == "Keyboard Shortcuts"), "the shortcuts dialog");
             var rows = Rows(shortcuts.FindChildren("*", nameof(Tree), true, false).OfType<Tree>().First());
-            UiTestExpect(rows.Any(r => r[0] == "Map Packs" && r[1] == "Ctrl+F6") && rows.Any(r => r[0] == "Map Tracker" && r[1] == "Ctrl+3"),
+            UiTestExpect(rows.Any(r => r[0] == "Map Packs" && r[1] == "Ctrl+F6") && rows.Any(r => r[0] == "Map Tracker" && r[1] == "Ctrl+1"),
                 "the shortcuts list doesn't show the keys as they are now");
             shortcuts.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
         }
@@ -590,6 +592,37 @@ public partial class MainTrackerWindow
         host.ShowTool(AP_Atlas.UI.Tool.Connections);
     }
 
+    private async Task ActivityBarAsync()
+    {
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        var order = string.Join(",", _activityBar.Order.Select(t => t.Title));
+        UiTestExpect(order == "Map Tracker,Key Items,Logic Tracker,Item History,Hints,Cheese Tracker,Sphere Tracker,Multiworlds,Map Packs", $"the activity bar's order is {order}");
+        UiTestExpect(_activityBar.CaptionOf(AP_Atlas.UI.Tool.MapTracker) == "SLOT" && _activityBar.CaptionOf(AP_Atlas.UI.Tool.CheeseTracker) == "MULTIWORLD" && _activityBar.CaptionOf(AP_Atlas.UI.Tool.MapPacks) == "ATLAS",
+            "the groups aren't captioned as designed");
+        var noIcon = AP_Atlas.UI.Tool.All.Where(t => !AP_Atlas.UI.LucideIcons.Names.Contains(t.Icon) || _activityBar.ButtonOf(t).Icon == null).Select(t => t.Title).ToList();
+        UiTestExpect(noIcon.Count == 0, $"tools without a shipped icon: {string.Join(", ", noIcon)}");
+        UiTestExpect(_activityBar.ButtonOf(AP_Atlas.UI.Tool.Hints).TooltipText.Contains("Ctrl+5"), $"the Hints button's tooltip is \"{_activityBar.ButtonOf(AP_Atlas.UI.Tool.Hints).TooltipText}\"");
+
+        // Pressing a button shows the tool; switching a tool any other way lights its button and names it in the header.
+        host.ShowTool(AP_Atlas.UI.Tool.Connections);
+        _activityBar.ButtonOf(AP_Atlas.UI.Tool.MapPacks).EmitSignal(BaseButton.SignalName.Pressed);
+        await UiTestWaitAsync(0.05);
+        UiTestExpect(ShownContent() == _packManagerPanel && _activityBar.Selected == AP_Atlas.UI.Tool.MapPacks, "pressing the Map Packs button didn't show Map Packs");
+        await PressAsync("Ctrl+7");
+        UiTestExpect(ShownContent() == _sphereTab && _activityBar.Selected == AP_Atlas.UI.Tool.SphereTracker
+            && _activityBar.ButtonOf(AP_Atlas.UI.Tool.SphereTracker).ButtonPressed && !_activityBar.ButtonOf(AP_Atlas.UI.Tool.MapPacks).ButtonPressed,
+            "Ctrl+7 didn't light the Sphere Tracker's button alone");
+        UiTestExpect(_toolTitle.Text == "Sphere Tracker", $"the tool header says \"{_toolTitle.Text}\"");
+
+        // The engine button opens the engine window.
+        _activityBar.EngineButton.EmitSignal(BaseButton.SignalName.Pressed);
+        var engine = await UiTestWaitForAsync(() => GetTree().Root.GetChildren().OfType<AP_Atlas.UI.AtlasEngineWindow>().FirstOrDefault(), "the Atlas Engine window");
+        await UiTestWaitAsync(0.3);
+        engine.EmitSignal(Window.SignalName.CloseRequested);
+        await UiTestWaitAsync(0.3);
+        host.ShowTool(AP_Atlas.UI.Tool.Connections);
+    }
+
     private async Task CommandPaletteAsync()
     {
         var host = (AP_Atlas.UI.IPropertiesHost)this;
@@ -601,7 +634,7 @@ public partial class MainTrackerWindow
         UiTestExpect(input.HasFocus(), "the palette's typing box isn't focused");
         int listed = Rows(tree).Count, expected = _commands!.All.Count - 1;
         UiTestExpect(listed == expected, $"the palette lists {listed} commands, not every command but itself ({expected})");
-        UiTestExpect(Rows(tree).Any(r => r[0] == "Map Tracker" && r[1] == "Ctrl+3"), "the palette doesn't show a command's key");
+        UiTestExpect(Rows(tree).Any(r => r[0] == "Map Tracker" && r[1] == "Ctrl+1"), "the palette doesn't show a command's key");
 
         void Type(string text)
         {

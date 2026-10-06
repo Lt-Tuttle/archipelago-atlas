@@ -323,7 +323,7 @@ namespace AP_Atlas.UI
             }
             if (profiles.Count == 0)
             {
-                var none = new Label { Text = "No multiworlds yet (Connections tab).", AutowrapMode = TextServer.AutowrapMode.WordSmart };
+                var none = new Label { Text = "No multiworlds yet (the Multiworlds page).", AutowrapMode = TextServer.AutowrapMode.WordSmart };
                 none.AddThemeColorOverride("font_color", Muted);
                 SidebarContent.AddChild(none);
                 SidebarContent.AddChild(new HSeparator());
@@ -579,7 +579,7 @@ namespace AP_Atlas.UI
                                        "the room names its creator, and Atlas takes it at once when that's the multiworld's organizer on Cheese Tracker, otherwise only if you confirm the creator is the host. " +
                                        "The room stays hidden while race mode applies, and Atlas reads it only while this tab shows it, at most every 10 minutes; " +
                                        "it never asks spheretracker.de to refresh a room.", Colors.LightGray));
-            if (profiles.Count == 0) _settingsBox.AddChild(Text("No multiworlds yet: add one on the Connections tab.", Muted));
+            if (profiles.Count == 0) _settingsBox.AddChild(Text("No multiworlds yet: add one on the Multiworlds page.", Muted));
             foreach (var profile in profiles)
             {
                 var p = profile;

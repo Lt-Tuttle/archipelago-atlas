@@ -12,25 +12,41 @@ namespace AP_Atlas.UI
         Slot
     }
 
+    /// <summary>The group a tool sits in on the activity bar, top to bottom: the slot tools, the multiworld tools, Atlas's own pages.</summary>
+    public enum ToolGroup
+    {
+        Slot,
+        Multiworld,
+        Atlas
+    }
+
     /// <summary>
-    /// One of Atlas's tools. Today each is a tab; in the new shell they become panels that can be docked and popped out.
+    /// One of Atlas's tools: a button on the activity bar, an item in the Tools menu (Ctrl+1 to Ctrl+9, in the bar's order),
+    /// and the view the content area shows. In the new shell they become panels that can be docked and popped out.
     /// A slot tool shows the selected slot's own view; the window registers the views of the others.
     /// </summary>
     public sealed class Tool
     {
-        private Tool(string id, string title, ToolScope scope)
+        private Tool(string id, string title, ToolScope scope, ToolGroup group, string icon)
         {
             Id = id;
             Title = title;
             Scope = scope;
+            Group = group;
+            Icon = icon;
         }
 
-        /// <summary>A stable name for the tool (for saved layouts and settings; never shown).</summary>
+        /// <summary>A stable name for the tool (for saved layouts, settings and key bindings; never shown).</summary>
         public string Id { get; }
 
         public string Title { get; }
 
         public ToolScope Scope { get; }
+
+        public ToolGroup Group { get; }
+
+        /// <summary>The tool's icon on the activity bar: a Lucide icon Atlas ships (<see cref="LucideIcons"/>).</summary>
+        public string Icon { get; }
 
         /// <summary>A slot tool's view in a connected slot.</summary>
         public Func<SlotTrackerControl, Control?>? SlotView { get; private init; }
@@ -40,25 +56,25 @@ namespace AP_Atlas.UI
 
         public string ExplorerTitle { get; private init; } = "";
 
-        public static readonly Tool Connections = new("connections", "Connections", ToolScope.App);
-        public static readonly Tool MapPacks = new("map-packs", "Map Packs", ToolScope.App);
-        public static readonly Tool MapTracker = new("map-tracker", "Map Tracker", ToolScope.Slot)
+        public static readonly Tool MapTracker = new("map-tracker", "Map Tracker", ToolScope.Slot, ToolGroup.Slot, "map")
         {
             SlotView = slot => slot.MapTracker,
             SlotExplorer = slot => slot.MapTracker?.SidebarContent,
             ExplorerTitle = "Maps"
         };
-        public static readonly Tool KeyItems = new("key-items", "Key Items", ToolScope.Slot) { SlotView = slot => slot.ProgressionTracker };
-        public static readonly Tool LogicTracker = new("logic-tracker", "Logic Tracker", ToolScope.Slot) { SlotView = slot => slot.LogicTrackerView };
-        public static readonly Tool ItemHistory = new("item-history", "Item History", ToolScope.Slot) { SlotView = slot => slot.ItemHistoryView };
-        public static readonly Tool Hints = new("hints", "Hints", ToolScope.Slot) { SlotView = slot => slot.HintsView };
-        public static readonly Tool CheeseTracker = new("cheese-tracker", "Cheese Tracker", ToolScope.Multiworld);
-        public static readonly Tool SphereTracker = new("sphere-tracker", "Sphere Tracker", ToolScope.Multiworld);
+        public static readonly Tool KeyItems = new("key-items", "Key Items", ToolScope.Slot, ToolGroup.Slot, "key-round") { SlotView = slot => slot.ProgressionTracker };
+        public static readonly Tool LogicTracker = new("logic-tracker", "Logic Tracker", ToolScope.Slot, ToolGroup.Slot, "route") { SlotView = slot => slot.LogicTrackerView };
+        public static readonly Tool ItemHistory = new("item-history", "Item History", ToolScope.Slot, ToolGroup.Slot, "logs") { SlotView = slot => slot.ItemHistoryView };
+        public static readonly Tool Hints = new("hints", "Hints", ToolScope.Slot, ToolGroup.Slot, "lightbulb") { SlotView = slot => slot.HintsView };
+        public static readonly Tool CheeseTracker = new("cheese-tracker", "Cheese Tracker", ToolScope.Multiworld, ToolGroup.Multiworld, "users");
+        public static readonly Tool SphereTracker = new("sphere-tracker", "Sphere Tracker", ToolScope.Multiworld, ToolGroup.Multiworld, "orbit");
+        public static readonly Tool Connections = new("connections", "Multiworlds", ToolScope.App, ToolGroup.Atlas, "globe");
+        public static readonly Tool MapPacks = new("map-packs", "Map Packs", ToolScope.App, ToolGroup.Atlas, "package");
 
-        /// <summary>Every tool, in tab order.</summary>
-        public static IReadOnlyList<Tool> All { get; } = new[] { Connections, MapPacks, MapTracker, KeyItems, LogicTracker, ItemHistory, Hints, CheeseTracker, SphereTracker };
+        /// <summary>Every tool, in the activity bar's order, top to bottom (Ctrl+1 to Ctrl+9).</summary>
+        public static IReadOnlyList<Tool> All { get; } = new[] { MapTracker, KeyItems, LogicTracker, ItemHistory, Hints, CheeseTracker, SphereTracker, Connections, MapPacks };
 
-        /// <summary>The tool's place in <see cref="All"/> (its tab).</summary>
+        /// <summary>The tool's place in <see cref="All"/>.</summary>
         public int Index
         {
             get

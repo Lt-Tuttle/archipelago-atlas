@@ -21,7 +21,7 @@ namespace AP_Atlas.Core
         Map,
         /// <summary>An installed map pack (zip).</summary>
         Pack,
-        /// <summary>A multiworld profile on the Connections tab.</summary>
+        /// <summary>A multiworld profile on the Multiworlds page.</summary>
         Profile,
     }
 

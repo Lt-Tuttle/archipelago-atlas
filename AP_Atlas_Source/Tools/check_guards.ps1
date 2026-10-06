@@ -185,7 +185,7 @@ foreach ($pin in $pinned) {
 # reworked. Counted by class (the file name up to its first dot), so splitting a class into partial files doesn't
 # change the count. This number only goes down, and must match: lower it in the same change that migrates a class, so
 # the progress can't be undone later.
-$nullableOptOutLimit = 55
+$nullableOptOutLimit = 54
 $optedOut = @($files | Where-Object { (Get-Content -LiteralPath $_.FullName -TotalCount 1) -eq '#nullable disable' } |
     ForEach-Object { $_.Name.Split('.')[0] } | Sort-Object -Unique).Count
 if ($optedOut -gt $nullableOptOutLimit) {

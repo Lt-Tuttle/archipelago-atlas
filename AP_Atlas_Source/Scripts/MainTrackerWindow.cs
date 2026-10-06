@@ -42,7 +42,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     /// <summary>The views of the tools that aren't per slot: the view, its explorer content and title, and what to do when it's shown.</summary>
     private Dictionary<AP_Atlas.UI.Tool, (Control View, Control Explorer, string ExplorerTitle, Action Shown)> _toolViews = new();
     private int _currentTerminalTab = 0;
-    private AP_Atlas.UI.WrappingTabStrip _workspaceSwitcher;
+    private AP_Atlas.UI.ActivityBar _activityBar;
+    private Label _toolTitle;
     private PanelContainer _midLeftSidebar;
     private StyleBoxFlat _midLeftStyle;
     private StyleBoxFlat _contentStageStyle;
@@ -182,10 +183,15 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         var appWorkspaceHBox = new HBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
         appWorkspaceHBox.AddThemeConstantOverride("separation", 8);
         interiorMargin.AddChild(appWorkspaceHBox);
+        // --- 0. THE ACTIVITY BAR: every tool, in its group; the lit one is the tool the content area shows ---
+        _activityBar = new AP_Atlas.UI.ActivityBar(text => Tr(text), tool => _commands.ShortcutOf("tool." + tool.Id));
+        _activityBar.ToolPressed += tool => ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(tool);
+        _activityBar.EnginePressed += OpenEngineSetup;
+        appWorkspaceHBox.AddChild(_activityBar);
         _mainSplit = new HSplitContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, SplitOffsets = new[] { _appSettings.MainSplitOffset } };
         _mainSplit.Dragged += (offset) => { _appSettings.MainSplitOffset = (int)offset; DataManager.SaveSettingsSoon(_appSettings); };
         _mainSplit.AddThemeConstantOverride("separation", 8);
-        interiorMargin.AddChild(_mainSplit);
+        appWorkspaceHBox.AddChild(_mainSplit);
         // --- 1. FAR LEFT SLOTS SIDEBAR ---
         _sidebar = new PanelContainer { SizeFlagsVertical = SizeFlags.ExpandFill, CustomMinimumSize = new Godot.Vector2(400, 0) };
         _sidebar.AddThemeStyleboxOverride("panel", GetVSCodePanelStyle());
@@ -243,13 +249,12 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _midLeftVBox.AddChild(_midLeftContent);
         // --- 4. CENTER STAGE AND BOTTOM TABS ---
         // --- 5. GLOBAL TAB BAR ---
+        // The tool header: which tool the content area shows (the activity bar switches it).
         var globalTabHBox = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        // Never scrolls: tabs tighten their padding when space runs short and wrap only as a last resort.
-        _workspaceSwitcher = new AP_Atlas.UI.WrappingTabStrip { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        _workspaceSwitcher.ApplyStyle(12, AP_Atlas.Core.ThemeColors.Accent);
-        foreach (var tool in AP_Atlas.UI.Tool.All) _workspaceSwitcher.AddTab(tool.Title);
-        _workspaceSwitcher.TabSelected += ChangeGlobalTab;
-        globalTabHBox.AddChild(_workspaceSwitcher);
+        _toolTitle = new Label { SizeFlagsHorizontal = SizeFlags.ExpandFill, VerticalAlignment = VerticalAlignment.Center };
+        _toolTitle.AddThemeColorOverride("font_color", Colors.LightGray);
+        _toolTitle.AddThemeConstantOverride("margin_left", 8);
+        globalTabHBox.AddChild(_toolTitle);
         var contentMenuBtn = new Button { Text = "...", Flat = true, FocusMode = FocusModeEnum.None };
         contentMenuBtn.AddThemeColorOverride("font_color", Colors.LightGray);
         AttachFontMenuPopup(contentMenuBtn,
@@ -350,7 +355,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         BuildConnectionTab();
         _toolViews = new Dictionary<AP_Atlas.UI.Tool, (Control, Control, string, Action)>
         {
-            [AP_Atlas.UI.Tool.Connections] = (_connectionPanel, _connectionSidebarContent, "Connections", null),
+            [AP_Atlas.UI.Tool.Connections] = (_connectionPanel, _connectionSidebarContent, "Multiworlds", null),
             [AP_Atlas.UI.Tool.MapPacks] = (_packManagerPanel, _packManagerPanel.SidebarContent, "Packs", null),
             [AP_Atlas.UI.Tool.CheeseTracker] = (_cheeseTab, _cheeseTab.SidebarContent, "Cheese Tracker", _cheeseTab.OnShown),
             [AP_Atlas.UI.Tool.SphereTracker] = (_sphereTab, _sphereTab.SidebarContent, "Sphere Tracker", _sphereTab.OnShown),
@@ -435,7 +440,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
 
     void AP_Atlas.UI.IPropertiesHost.ShowTool(AP_Atlas.UI.Tool tool)
     {
-        if (_workspaceSwitcher.CurrentTab != tool.Index) _workspaceSwitcher.CurrentTab = tool.Index;
+        _activityBar?.Select(tool);
         if (_currentTool != tool) ShowTool(tool);
     }
 

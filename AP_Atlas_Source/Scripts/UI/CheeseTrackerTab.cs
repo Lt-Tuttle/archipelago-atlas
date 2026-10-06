@@ -493,7 +493,7 @@ namespace AP_Atlas.UI
             }
             if (profiles.Count == 0)
             {
-                var none = new Label { Text = "No multiworlds yet (Connections tab).", AutowrapMode = TextServer.AutowrapMode.WordSmart };
+                var none = new Label { Text = "No multiworlds yet (the Multiworlds page).", AutowrapMode = TextServer.AutowrapMode.WordSmart };
                 none.AddThemeColorOverride("font_color", Muted);
                 SidebarContent.AddChild(none);
             }
@@ -549,7 +549,7 @@ namespace AP_Atlas.UI
             if (_view == MineView && linked.Count == 0)
             {
                 ShowMessage("No multiworld is linked to Cheese Tracker yet.",
-                    "Link one from the explorer on the left (or the multiworld's field on the Connections tab) to see everyone's status here.",
+                    "Link one from the explorer on the left (or the multiworld's field on the Multiworlds page) to see everyone's status here.",
                     _profiles().Take(6).Select(p => ($"Link {p.Name}…", (Action)(() => CheeseDialogs.Link(this, _cheese, p, _toast, Refresh)))).ToList());
                 return;
             }

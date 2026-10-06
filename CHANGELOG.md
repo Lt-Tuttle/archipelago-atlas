@@ -102,6 +102,10 @@ Development toward the first public beta, 0.1.0.
   - Six menus: File · Multiworld · View · Tools · Window · Help. Every plain action is one command, run from its menu item or its key; the command palette will run the same commands.
   - Keys: Ctrl+1 to Ctrl+9 show the tools in order, Ctrl+N starts a new multiworld, F11 is full screen, F1 lists every command and its key (Help → Keyboard Shortcuts).
   - A command palette, Ctrl+Shift+P (View → Command Palette…): type a few letters, pick a command, Enter runs it. A typed word matches the start of a word in a command's name or its menu, so "map p" finds Map Packs and not Map Tracker.
+- **An activity bar** on the far left, in place of the row of tabs: every tool as an icon, in three captioned groups: the slot tools (Map Tracker, Key Items, Logic Tracker, Item History, Hints), the multiworld tools (Cheese Tracker, Sphere Tracker), and at the bottom Atlas's own pages (Multiworlds, Map Packs) with a button for the Atlas Engine window. The lit button is the tool the content area shows, whichever way it was switched, and the header above the content names it. Each button's tooltip gives the tool's key.
+  - The tools' keys follow the bar, top to bottom: Ctrl+1 is the Map Tracker, Ctrl+9 Map Packs. The Connections page is now called Multiworlds.
+  - The icons are Lucide's (ISC; credited in `THIRD_PARTY_NOTICES.md` and `CREDITS.md`).
+  - The UI test checks the bar's order and captions, that every tool has a shipped icon and its key in its tooltip, that a button shows its tool, that a tool switched any other way lights its button and names itself in the header, and that the engine button opens the engine window.
   - Keys can be rebound: `KeyBindings` in settings.json, a command's id → its key (or "" for none); the shortcuts list shows each id. A Settings page for this is coming.
   - Help → About names the version, what Atlas is and isn't, and who made it. Help → Atlas on GitHub opens the project.
   - The UI test checks that every command is in a menu with its key shown, that the keys and a rebind work at once, and that the menu bar never runs a stale key itself.
