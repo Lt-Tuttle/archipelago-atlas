@@ -79,6 +79,7 @@ New code that doesn't need Godot belongs in `AP_Atlas.Core`, with tests. The vis
 
   The guard rails enforce the riskiest of these, locally before each push and in CI. A rule with a number allows only that many uses in its file: one helper does the job, and everything else calls it.
 - **Warnings are errors:** any compiler, analyzer, MSBuild or NuGet warning stops the build (`Directory.Build.props`). Fix the cause rather than silencing it. A NuGet warning about a known vulnerability means updating that package.
+  - So does dead code: a private member nothing uses, or a private field nothing reads (IDE0051, IDE0052). A member only a serializer uses (it's set by name, so nothing calls it) gets `[SuppressMessage("Style", "IDE0051", Justification = "…")]` saying so.
 - **Null checks:**
   - Nullable reference checks are on, and new code keeps them on.
   - Files that start with `#nullable disable` predate the checks. When you rework one, annotate it and remove that line, then lower the limit in `Tools/check_guards.ps1`.

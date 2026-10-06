@@ -90,7 +90,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     private string SidebarLayout()
     {
         var layout = new System.Text.StringBuilder();
-        layout.Append(_appSettings.ScaleSidebar).Append('|').Append(AP_Atlas.Core.ThemeColors.Accent.ToHtml()).Append('|');
+        layout.Append(AP_Atlas.Core.ThemeColors.Accent.ToHtml()).Append('|');
         foreach (var profile in _profiles)
         {
             layout.Append(profile.Id).Append('\u0001').Append(profile.Name).Append('\u0002');
@@ -414,9 +414,11 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             }
             _activeSessionsList.AddChild(new HSeparator { CustomMinimumSize = new Godot.Vector2(0, 5) });
         }
-        int sidebarSize = (int)(16 * _appSettings.ScaleSidebar);
-        SetFontSizeRecursive(_activeSessionsList, sidebarSize);
+        SetFontSizeRecursive(_activeSessionsList, SlotListFontSize);
     }
+
+    /// <summary>The text size of the slot lists (the sidebar's and a multiworld's). Fixed: font sizes are reworked with the new shell.</summary>
+    private const int SlotListFontSize = 16;
     private void UpdateSlotStatuses()
     {
         using var __perf = AP_Atlas.Core.PerfMonitor.Measure("Update slot status lights");

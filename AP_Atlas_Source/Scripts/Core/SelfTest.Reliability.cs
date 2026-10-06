@@ -573,6 +573,34 @@ namespace AP_Atlas.Core
         }
 
         /// <summary>
+        /// A settings file from an older Atlas loads: settings Atlas no longer has (the per-area Scale* overrides, the map's
+        /// old split and font size) are ignored, the rest are read, and nothing is taken for damage (no backup put back).
+        /// </summary>
+        private static Task OlderSettingsStillLoad()
+        {
+            string path = Path.Combine(DataManager.GetDataDirectory(), "settings.json");
+            var recovered = new List<string>();
+            void OnRecovered(string file, string what) => recovered.Add($"{Path.GetFileName(file)} {what}");
+            SafeFile.Recovered += OnRecovered;
+            try
+            {
+                File.WriteAllText(path, """
+                    { "SlotsFontSize": 18, "ScaleSidebar": 1.5, "ScaleContent": 2.0, "ScaleConsole": 1.25, "ScaleStatusBar": 0.8,
+                      "MapSplitOffset": 400, "MapFontSize": 20, "ThemeAccentColor": "#123456" }
+                    """);
+                var settings = DataManager.LoadSettings();
+                Expect(settings.SlotsFontSize == 18 && settings.ThemeAccentColor == "#123456", "an older settings file's settings weren't read");
+                Expect(recovered.Count == 0, "an older settings file was taken for damage: " + string.Join("; ", recovered));
+            }
+            finally
+            {
+                SafeFile.Recovered -= OnRecovered;
+                DataManager.SaveSettings(new AppSettings());
+            }
+            return Task.CompletedTask;
+        }
+
+        /// <summary>
         /// The Pack Doctor analyses a snapshot taken on the main thread: a fix edited while an analysis runs doesn't change
         /// it under the analysis, and the next snapshot sees the edit. The pack's own mapping is linked as usual.
         /// </summary>

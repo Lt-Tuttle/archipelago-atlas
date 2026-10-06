@@ -18,7 +18,7 @@ namespace AP_Atlas.Core.Testing;
 /// prior owner, and /api/user/self needs the key. It can also fail the next request on purpose. It records every request.
 /// The real site is never contacted. Used by the self-test and the UI test; Atlas itself never starts it.
 /// </summary>
-internal sealed class FakeCheeseServer : IDisposable
+internal sealed class FakeCheeseServer : IAsyncDisposable
 {
     /// <summary>The id of the tracker it serves.</summary>
     public const string TrackerId = "AbCdEfGhIjKlMnOpQrStUw";
@@ -226,9 +226,14 @@ internal sealed class FakeCheeseServer : IDisposable
     }
 
     /// <summary>Stops listening; requests in progress end at once.</summary>
-    public void Dispose()
+    /// <summary>Stops the server, and waits (up to 5 seconds) for its requests and its accept loop to end.</summary>
+    public async ValueTask DisposeAsync()
     {
-        _stop.Cancel();
+        await _stop.CancelAsync();
         _listener.Stop();
+        Task[] running;
+        lock (_serving) running = _serving.Append(_accepting).ToArray();
+        await Task.WhenAny(Task.WhenAll(running), Task.Delay(TimeSpan.FromSeconds(5)));
+        _stop.Dispose();
     }
 }

@@ -7,5 +7,7 @@
          say) stops the build, here and in CI. Fix the cause; don't silence it. -->
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <MSBuildTreatWarningsAsErrors>true</MSBuildTreatWarningsAsErrors>
+    <!-- The code-style rules .editorconfig makes warnings (dead private members) are checked in every build too. -->
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
   </PropertyGroup>
 </Project>

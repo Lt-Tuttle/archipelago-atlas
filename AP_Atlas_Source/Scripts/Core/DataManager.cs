@@ -20,10 +20,6 @@ public class AppSettings
     public int ContentFontSize { get; set; } = 14;
     public int ConsoleFontSize { get; set; } = 14;
     public int GlobalFontSize { get; set; } = 14;
-    public float ScaleSidebar { get; set; } = 1.0f;
-    public float ScaleContent { get; set; } = 1.0f;
-    public float ScaleConsole { get; set; } = 1.0f;
-    public float ScaleStatusBar { get; set; } = 1.0f;
     public string ThemeAccentColor { get; set; } = "#8A2BE2";
     public string ArchipelagoInstallationPath { get; set; } = "";
     /// <summary>"Portable" (Atlas's own engine) or "Existing" (the install above). Empty until the user chooses.</summary>
@@ -42,8 +38,6 @@ public class AppSettings
     public int SplitContentOffset { get; set; } = 0;
 
     // Map Tracker State
-    public int MapSplitOffset { get; set; } = 350;
-    public int MapFontSize { get; set; } = 15;
     public float MapNodeScale { get; set; } = 1.0f;
     /// <summary>How the map shows checks your seed excludes: 0 show, 1 dim, 2 hide.</summary>
     public int MapExcludedMode { get; set; } = 1;
@@ -151,6 +145,7 @@ public class MultiworldProfile
 
     /// <summary>Older files kept the password in plain text: it's read once, then saved encrypted.</summary>
     [JsonProperty("Password")]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0051", Justification = "Json.NET sets it when it reads an older profile")]
     private string LegacyPassword
     {
         set
@@ -175,28 +170,6 @@ public class MultiworldProfile
 
     // Legacy support
     public string SlotName { get; set; } = "";
-}
-
-public class OfflineLocation
-{
-    public long Id { get; set; }
-    public string Name { get; set; }
-    public bool IsChecked { get; set; }
-}
-
-public class OfflineCircle
-{
-    public int CircleId { get; set; }
-    public List<OfflineLocation> Locations { get; set; } = new List<OfflineLocation>();
-}
-
-public class OfflineSlotCache
-{
-    public string ProfileId { get; set; }
-    public string SlotName { get; set; }
-    public string Game { get; set; }
-    public List<OfflineCircle> Circles { get; set; } = new List<OfflineCircle>();
-    public List<string> ChatHistory { get; set; } = new List<string>();
 }
 
 public static class DataManager
@@ -407,20 +380,6 @@ public static class DataManager
         AP_Atlas.Core.Logger.LogDebug(System.Environment.StackTrace);
         AP_Atlas.UI.Ui.Defer(null, save, $"saving the {what}");
         return true;
-    }
-
-    public static void SaveOfflineCache(OfflineSlotCache cache)
-    {
-        string filename = $"offline_{cache.ProfileId}_{cache.SlotName}.json";
-        foreach (char c in Path.GetInvalidFileNameChars()) filename = filename.Replace(c, '_');
-        Save(Path.Combine(GetDataDirectory(), filename), cache);
-    }
-
-    public static OfflineSlotCache LoadOfflineCache(string profileId, string slotName)
-    {
-        string filename = $"offline_{profileId}_{slotName}.json";
-        foreach (char c in Path.GetInvalidFileNameChars()) filename = filename.Replace(c, '_');
-        return AP_Atlas.Core.SafeFile.ReadJson<OfflineSlotCache>(Path.Combine(GetDataDirectory(), filename), () => null);
     }
 
     // =====================================================================

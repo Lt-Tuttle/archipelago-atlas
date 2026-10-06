@@ -946,8 +946,6 @@ namespace AP_Atlas.UI
 
         private void Run(System.Threading.Tasks.Task<string> change, string success = null) => CheeseDialogs.Run(this, change, _toast, success, QueueRefresh);
 
-        private const int MenuShowInProperties = 50, MenuOpenCheese = 51, MenuOpenArchipelago = 52, MenuCopyName = 53;
-
         private void ShowRowMenu()
         {
             var row = SelectedRow();

@@ -121,6 +121,7 @@ namespace AP_Atlas.Core
             await TestAsync("Pack scripts: code nested deeper than Atlas compiles is refused, never compiled; every loader compiles that way, with room to spare", PackScriptsCompileSafely);
             await TestAsync("Pack Doctor: an analysis reads its own snapshot, never the fixes as they change", PackDoctorReadsASnapshot);
             await TestAsync("Settings saved from a background thread are written on the main thread, and the log says so", OffThreadSavesMoveToTheMainThread);
+            await TestAsync("Settings saved by an older Atlas still load: settings it no longer has are ignored, never taken for damage", OlderSettingsStillLoad);
 
             string ap = System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_AP");
             if (!string.IsNullOrWhiteSpace(ap))

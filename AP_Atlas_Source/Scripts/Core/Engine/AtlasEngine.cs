@@ -537,13 +537,6 @@ namespace AP_Atlas.Core.EngineSetup
             return steps;
         }
 
-        private static string FirstLine(string s)
-        {
-            if (string.IsNullOrWhiteSpace(s)) return "unknown error";
-            var lines = s.Trim().Split('\n');
-            return lines[^1].Trim();
-        }
-
         private static string Size(string dir)
         {
             try

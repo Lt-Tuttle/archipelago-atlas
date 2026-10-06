@@ -230,8 +230,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             btnRow.AddChild(_connectAllBtn);
             _slotsListVBox.AddChild(btnRow);
         }
-        int contentSize = (int)(16 * _appSettings.ScaleContent);
-        SetFontSizeRecursive(_slotsListVBox, contentSize);
+        SetFontSizeRecursive(_slotsListVBox, SlotListFontSize);
         UpdateSlotStatuses(); // Force immediate update of lights
     }
     /// <summary>A slot card's Cheese Tracker badge: the slot's status there, or a suggestion from Atlas's logic that's ready.</summary>

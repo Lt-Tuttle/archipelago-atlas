@@ -987,7 +987,7 @@ public partial class MainTrackerWindow
         StartFakeEngine(UiTestPython());
         await using var server = LogicWorldServer();
         // The multiworld's Cheese Tracker page: the slot is on it, marked BK.
-        using var site = new FakeCheeseServer(new CtTracker
+        await using var site = new FakeCheeseServer(new CtTracker
         {
             Id = 1,
             TrackerId = FakeCheeseServer.TrackerId,

@@ -49,6 +49,7 @@ Development toward the first public beta, 0.1.0.
     - They also allow no forced memory collections, threads of its own, unexplained silent failures, or looking up your folders outside the install search you agree to. Whole-file saves are allowed only where SafeFile isn't needed.
     - The libraries whose insides Atlas relies on are pinned, and the nullable-check count can only go down.
     - A pre-push hook runs the quick checks before anything reaches CI.
+    - Dead code stops the build: a private member nothing uses, or a private field nothing reads. What it found is gone, with an empty startup class and an offline cache nothing wrote.
   - Microsoft's async analyzers check every build. An unobserved task, `async void`, a blocking wait, or `ContinueWith` without a scheduler fails it.
   - Code that doesn't need Godot lives in its own library, `AP_Atlas.Core`, with xUnit tests that run with `dotnet test` (and in CI). The version is set once, in `Directory.Build.props`.
   - Nullable reference checks for all new code. Older files are annotated as they're reworked, and the guard rails keep their number from growing.
@@ -215,6 +216,7 @@ Development toward the first public beta, 0.1.0.
 - **Memory:** an unused, hidden menu was created at startup and kept for the whole session. Godot now reports nothing left over when Atlas closes.
 - **Window icon:** Atlas's Windows icon setting was in the wrong section, so Godot ignored it and used the PNG.
 - **Running from source:** Godot no longer imports the files in Atlas's data folder (it had left 160 `.import` files there).
+- **Slot lists' text size:** a size setting from an older version, which no screen could change any more, could keep the slot lists' text larger or smaller than everything else. They now use the standard size. Six settings nothing read any more are gone; an older settings file still loads, and the next save drops them.
 - **GitHub failures:** a rate-limited or failed GitHub check was cached as "no apworlds" or "not found" (for up to 7 days). Now only real answers are kept.
 - **Map pack updates:** the update check missed updates published in PopTracker's versions format.
 - **One engine crash counted twice:** a crash shows both as a failed answer and as the engine's process ending, and each could count as a failure. Logic then restarted after 10 seconds instead of 2, and two crashes could pause it (it pauses after four failures in ten minutes). Each crash now counts once.

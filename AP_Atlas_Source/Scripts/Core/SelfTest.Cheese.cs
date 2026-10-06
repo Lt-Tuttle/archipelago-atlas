@@ -227,7 +227,7 @@ namespace AP_Atlas.Core
             CheeseClient.ResetForTests();
             try
             {
-                using var server = new FakeCheeseServer();
+                await using var server = new FakeCheeseServer();
                 var client = new CheeseClient(server.Site);
 
                 server.FailNext(503, "120");
@@ -268,7 +268,7 @@ namespace AP_Atlas.Core
         {
             CheeseClient.Spacing = TimeSpan.Zero;
             CheeseClient.ResetForTests();
-            using var server = new FakeCheeseServer();
+            await using var server = new FakeCheeseServer();
             var settings = new AppSettings { CheeseInstanceUrl = server.Site };
             var profile = new MultiworldProfile { Name = "Test MW", Slots = new List<string> { "Me" } };
             profile.SavedStats["Me"] = new SlotStats { GameName = "Clique", SlotNumber = 1 };
@@ -304,8 +304,8 @@ namespace AP_Atlas.Core
         {
             CheeseClient.Spacing = TimeSpan.Zero;
             CheeseClient.ResetForTests();
-            using var server = new FakeCheeseServer();
-            using var otherSite = new FakeCheeseServer();
+            await using var server = new FakeCheeseServer();
+            await using var otherSite = new FakeCheeseServer();
             var settings = new AppSettings { CheeseInstanceUrl = server.Site };
             var profile = new MultiworldProfile { Name = "Test MW", Slots = new List<string> { "Me", "Friend", "Open" } };
             profile.SavedStats["Me"] = new SlotStats { GameName = "Clique", SlotNumber = 1 };
