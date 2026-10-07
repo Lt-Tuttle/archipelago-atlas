@@ -13,6 +13,20 @@ public partial class MainTrackerWindow
     private const int MinFontSize = 8, MaxFontSize = 32;
 
     /// <summary>The accent colours the page offers, the default first.</summary>
+    /// <summary>Recolours what's cheap to recolour for the new theme (the frame, headings, lists), remembers it, and says a restart finishes it.</summary>
+    private void ApplyTheme(string key)
+    {
+        if (_appSettings.Theme == key) return;
+        _appSettings.Theme = key;
+        DataManager.SaveSettings(_appSettings);
+        AP_Atlas.Core.ThemeColors.SetPalette(AP_Atlas.Core.ThemeColors.PaletteForSetting(key));
+        SetupModernTheme();
+        AP_Atlas.UI.Kit.RecolourHeadings(GetTree().Root);
+        RefreshProfileListStyles();
+        UpdateSidebar();
+        ShowToast(Tr("Theme changed. Restart Atlas for it to reach everything."), AP_Atlas.Core.ThemeColors.Info);
+    }
+
     internal static readonly (string Name, string Hex)[] AccentPresets =
     {
         ("Atlas Purple (default)", AP_Atlas.Core.ThemeColors.DefaultAccentHex),
@@ -70,6 +84,10 @@ public partial class MainTrackerWindow
         page.AddAction("multiworld", "race-info", "What does race mode change?", "", "Show", ShowRaceModeInfo);
 
         page.AddSection("appearance", "Appearance");
+        page.AddChoice("appearance", "theme", "Theme", "Dark, Light or High contrast, or Windows's light or dark mode. The window's frame, headings and lists change at once; everything takes the new colours after a restart.",
+            AP_Atlas.Core.ThemeColors.ThemeChoices.Select(choice => choice.Title).ToArray(),
+            () => Math.Max(0, Array.FindIndex(AP_Atlas.Core.ThemeColors.ThemeChoices, choice => choice.Key == _appSettings.Theme)),
+            index => ApplyTheme(AP_Atlas.Core.ThemeColors.ThemeChoices[index].Key));
         page.AddChoice("appearance", "accent", "Accent colour", "Headings, selections, the status bar and the lit activity bar button.",
             AccentPresets.Select(preset => preset.Name).ToArray(),
             () => Array.FindIndex(AccentPresets, preset => string.Equals(preset.Hex, _appSettings.ThemeAccentColor, StringComparison.OrdinalIgnoreCase)),

@@ -347,7 +347,7 @@ namespace AP_Atlas.UI
             titleLabel.AddThemeColorOverride("font_color", ThemeColors.Text);
             box.AddChild(titleLabel);
 
-            string badge = string.IsNullOrEmpty(badgeText) ? "" : $"[bgcolor={Hex(badgeColor.Darkened(0.55f))}][color={Hex(badgeColor)}] {Esc(badgeText)} [/color][/bgcolor]  ";
+            string badge = string.IsNullOrEmpty(badgeText) ? "" : $"[bgcolor={Hex(ThemeColors.Current.IsDark ? badgeColor.Darkened(0.55f) : badgeColor.Lightened(0.75f))}][color={Hex(badgeColor)}] {Esc(badgeText)} [/color][/bgcolor]  ";
             box.AddChild(MakeRichText(badge + (subtitleBbcode ?? "")));
             _content.AddChild(box);
             _plainText.AppendLine(title);

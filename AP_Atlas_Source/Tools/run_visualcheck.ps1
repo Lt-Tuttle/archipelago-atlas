@@ -37,6 +37,7 @@
 param(
     [string]$Godot = $env:ATLAS_GODOT,
     [string]$Baseline,
+    [string]$Theme,
     [string]$OutDir,
     [switch]$NoBuild,
     [int]$TimeoutMinutes = 5,
@@ -97,6 +98,8 @@ $psi.CreateNoWindow = $true
 $psi.EnvironmentVariables['ATLAS_DATA_DIR'] = $data
 $psi.EnvironmentVariables['ATLAS_VISUALCHECK'] = $OutDir
 if ($Baseline) { $psi.EnvironmentVariables['ATLAS_VISUALCHECK_BASELINE'] = $Baseline }
+# The theme pictured: dark unless asked (never the PC's Windows mode, so two machines take the same pictures).
+if ($Theme) { $psi.EnvironmentVariables['ATLAS_VISUALCHECK_THEME'] = $Theme } elseif ($psi.EnvironmentVariables.ContainsKey('ATLAS_VISUALCHECK_THEME')) { $psi.EnvironmentVariables.Remove('ATLAS_VISUALCHECK_THEME') }
 foreach ($name in 'ATLAS_SELFTEST', 'ATLAS_SELFTEST_AP') {
     if ($psi.EnvironmentVariables.ContainsKey($name)) { $psi.EnvironmentVariables.Remove($name) }
 }

@@ -21,6 +21,8 @@ public class AppSettings
     public int ConsoleFontSize { get; set; } = 14;
     public int GlobalFontSize { get; set; } = 14;
     public string ThemeAccentColor { get; set; } = "#8A2BE2";
+    /// <summary>"follow" (Windows's light or dark mode), "dark", "light" or "high-contrast".</summary>
+    public string Theme { get; set; } = "follow";
     public string ArchipelagoInstallationPath { get; set; } = "";
     /// <summary>"Portable" (Atlas's own engine) or "Existing" (the install above). Empty until the user chooses.</summary>
     public string EngineMode { get; set; } = "";
@@ -303,6 +305,7 @@ public static class DataManager
         settings.CheeseTabView ??= "";
         settings.SphereTabView ??= "";
         settings.Tables ??= new Dictionary<string, TablePrefs>();
+        if (string.IsNullOrWhiteSpace(settings.Theme)) settings.Theme = "follow";
         foreach (var key in new List<string>(settings.Tables.Keys))
         {
             settings.Tables[key] ??= new TablePrefs();

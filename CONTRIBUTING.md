@@ -42,7 +42,7 @@ You need:
 | Pre-push checks | Turn them on once per clone: `git config core.hooksPath .githooks`. Every push then first runs the guard rails, the build, formatting and the unit tests (about a minute), and stops if one fails. Never skip them (`--no-verify`) |
 | Unit tests | `dotnet test --solution AP_Atlas_Source/AP_Atlas.sln` (`AP_Atlas.Core.Tests`: fast, no Godot) |
 | Formatting | `dotnet format whitespace AP_Atlas_Source/AP_Atlas.sln` (C# files use CRLF line endings) |
-| Visual check | `AP_Atlas_Source/Tools/run_visualcheck.ps1 [-Baseline <folder>]` (pictures of the main screens, as a new user sees them; with `-Baseline`, a `.diff.png` marks every changed pixel) |
+| Visual check | `AP_Atlas_Source/Tools/run_visualcheck.ps1 [-Baseline <folder>] [-Theme dark|light|high-contrast]` (pictures of the main screens, as a new user sees them; with `-Baseline`, a `.diff.png` marks every changed pixel) |
 
 CI runs the build, formatting, guard rails, unit tests and self-test on every push and pull request.
 
@@ -51,7 +51,7 @@ The repository holds three .NET projects:
 - `AP_Atlas.Core/`: code that doesn't need Godot (saving, logging, the web client, parsers). It can't touch the window, so it's safe on any thread.
 - `AP_Atlas.Core.Tests/`: its xUnit tests.
 
-New code that doesn't need Godot belongs in `AP_Atlas.Core`, with tests. The visual check needs a graphics card, so run it yourself before and after any change to how Atlas looks, and compare on the same PC.
+New code that doesn't need Godot belongs in `AP_Atlas.Core`, with tests. The visual check needs a graphics card, so run it yourself, in each theme (`-Theme`, against that theme's baseline), before and after any change to how Atlas looks, and compare on the same PC.
 
 ## Writing code
 

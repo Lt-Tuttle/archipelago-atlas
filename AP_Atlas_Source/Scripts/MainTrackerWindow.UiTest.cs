@@ -686,6 +686,18 @@ public partial class MainTrackerWindow
         UiTestExpect(_appSettings.ThemeAccentColor == AP_Atlas.Core.ThemeColors.DefaultAccentHex && AP_Atlas.Core.ThemeColors.Accent == new Color(AP_Atlas.Core.ThemeColors.DefaultAccentHex),
             "the accent didn't go back to the default");
 
+        // The theme: picking one recolours the frame at once and is saved; "Follow Windows" takes the PC's mode.
+        var theme = (OptionButton)page.ControlOf("theme");
+        int light = Array.FindIndex(AP_Atlas.Core.ThemeColors.ThemeChoices, choice => choice.Key == "light");
+        theme.Select(light);
+        theme.EmitSignal(OptionButton.SignalName.ItemSelected, light);
+        UiTestExpect(ReferenceEquals(AP_Atlas.Core.ThemeColors.Current, AP_Atlas.Core.Palette.Light) && _appSettings.Theme == "light" && DataManager.LoadSettings().Theme == "light"
+            && Theme!.GetStylebox("panel", "PanelContainer") is StyleBoxFlat lightPanel && lightPanel.BgColor == AP_Atlas.Core.Palette.Light.SurfacePanel,
+            "picking the Light theme didn't take the light palette, restyle the window, or save");
+        theme.Select(0);
+        theme.EmitSignal(OptionButton.SignalName.ItemSelected, 0);
+        UiTestExpect(_appSettings.Theme == "follow" && ReferenceEquals(AP_Atlas.Core.ThemeColors.Current, AP_Atlas.Core.ThemeColors.PaletteForSetting("follow")), "the theme didn't go back to following Windows");
+
         var fontSize = (SpinBox)page.ControlOf("menu-font-size");
         UiTestExpect((int)fontSize.Value == _appSettings.GlobalFontSize, "the font size row doesn't show the setting");
         fontSize.Value = 16;

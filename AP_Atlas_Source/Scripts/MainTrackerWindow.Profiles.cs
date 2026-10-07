@@ -11,7 +11,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
 {
     private void MarkDirty()
     {
-        _saveButton.Modulate = AP_Atlas.Core.ThemeColors.Pending;
+        _saveButton.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Pending); // unsaved changes
     }
     private void RefreshProfileList()
     {
@@ -77,7 +77,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     private void SelectProfile(MultiworldProfile profile)
     {
         _selectedProfile = profile;
-        _saveButton.Modulate = AP_Atlas.Core.ThemeColors.Text;
+        _saveButton.RemoveThemeColorOverride("font_color");
         if (profile == null)
         {
             _nameInput.Text = "";
@@ -278,7 +278,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             // An automatic reconnect waiting for one of its slots uses the new address and password.
             _sessions?.UpdateLogins(_selectedProfile.Id, _selectedProfile.ServerUrl, string.IsNullOrEmpty(_selectedProfile.Password) ? null : _selectedProfile.Password);
             DataManager.SaveProfiles(_profiles);
-            _saveButton.Modulate = AP_Atlas.Core.ThemeColors.Text;
+            _saveButton.RemoveThemeColorOverride("font_color");
             RefreshProfileList();
             LogToSystem($"Profile '{_selectedProfile.Name}' saved.", "green");
             string cheeseLink = _cheeseInput.Text.Trim();

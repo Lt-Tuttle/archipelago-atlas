@@ -101,6 +101,8 @@ When a seed was made with another version of a game's apworld, Atlas finds that 
 
 Settings (Ctrl+,) holds every setting in sections the explorer lists, and a search box that finds a setting by any word of its name, description or section: Multiworld (automatic reconnects, each seed's apworld version, race mode), Appearance (the accent colour, the font sizes), Window (which parts show, the bottom pane's tabs), Tools (the engine, Cheese Tracker and Sphere Tracker settings), Privacy & permissions, Keyboard, and Data (Atlas's data folder). Each setting applies and is saved as you change it.
 
+Under **Appearance**: the theme (Follow Windows, Dark, Light, High contrast; a change restyles the window at once and reaches everything after a restart), the accent colour, and a text size for each part of the window.
+
 ## Keyboard shortcuts
 
 Every command's key is listed under Help → Keyboard Shortcuts (F1) and can be changed in Settings → Keyboard: press the key's button, then the key you want; Backspace means no key, Escape keeps it, and a reset brings Atlas's key back. The defaults:

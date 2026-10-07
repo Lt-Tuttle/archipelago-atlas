@@ -313,6 +313,48 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             ContentMarginTop = 16,
             ContentMarginBottom = 16
         });
+        // Every control's text colours from the palette: Godot's own defaults are white, which vanish on a light theme.
+        var text = AP_Atlas.Core.ThemeColors.Text;
+        var muted = AP_Atlas.Core.ThemeColors.TextSubtle;
+        var disabled = AP_Atlas.Core.ThemeColors.Disabled;
+        foreach (string type in new[] { "Label", "Button", "CheckBox", "CheckButton", "OptionButton", "MenuButton", "LinkButton", "LineEdit", "TextEdit", "Tree", "ItemList", "PopupMenu", "TabBar", "TabContainer", "RichTextLabel", "SpinBox", "ProgressBar", "AcceptDialog", "Window" })
+        {
+            theme.SetColor("font_color", type, text);
+            theme.SetColor("font_disabled_color", type, disabled);
+        }
+        foreach (string type in new[] { "Button", "CheckBox", "CheckButton", "OptionButton", "MenuButton", "LinkButton" })
+        {
+            theme.SetColor("font_hover_color", type, text);
+            theme.SetColor("font_focus_color", type, text);
+            theme.SetColor("font_hover_pressed_color", type, textOnAccent);
+            theme.SetColor("font_pressed_color", type, textOnAccent);
+        }
+        theme.SetColor("font_disabled_color", "Button", new Godot.Color(text, 0.35f));
+        theme.SetColor("placeholder_color", "LineEdit", muted);
+        theme.SetColor("placeholder_color", "TextEdit", muted);
+        theme.SetColor("font_selected_color", "LineEdit", text);
+        theme.SetColor("default_color", "RichTextLabel", text);
+        theme.SetColor("font_selected_color", "Tree", text);
+        theme.SetColor("font_selected_color", "ItemList", text);
+        theme.SetColor("font_hover_color", "PopupMenu", text);
+        theme.SetColor("font_accelerator_color", "PopupMenu", muted);
+        theme.SetColor("font_selected_color", "TabBar", text);
+        theme.SetColor("font_unselected_color", "TabBar", muted);
+        theme.SetColor("font_hovered_color", "TabBar", text);
+        theme.SetColor("font_selected_color", "TabContainer", text);
+        theme.SetColor("font_unselected_color", "TabContainer", muted);
+        theme.SetColor("font_hovered_color", "TabContainer", text);
+        theme.SetColor("title_color", "Window", text);
+        theme.SetColor("title_color", "AcceptDialog", text);
+        theme.SetColor("guide_color", "Tree", AP_Atlas.Core.ThemeColors.BorderSoft);
+        theme.SetColor("title_button_color", "Tree", text);
+        theme.SetStylebox("panel", "Tree", new StyleBoxFlat { BgColor = AP_Atlas.Core.ThemeColors.SurfaceSunken, BorderColor = AP_Atlas.Core.ThemeColors.Border, BorderWidthTop = 1, BorderWidthBottom = 1, BorderWidthLeft = 1, BorderWidthRight = 1, ContentMarginLeft = 4, ContentMarginRight = 4, ContentMarginTop = 4, ContentMarginBottom = 4 });
+        theme.SetStylebox("panel", "ItemList", new StyleBoxFlat { BgColor = AP_Atlas.Core.ThemeColors.SurfaceSunken, BorderColor = AP_Atlas.Core.ThemeColors.Border, BorderWidthTop = 1, BorderWidthBottom = 1, BorderWidthLeft = 1, BorderWidthRight = 1, ContentMarginLeft = 4, ContentMarginRight = 4, ContentMarginTop = 4, ContentMarginBottom = 4 });
+        theme.SetStylebox("normal", "TextEdit", new StyleBoxFlat { BgColor = AP_Atlas.Core.ThemeColors.Input, BorderColor = AP_Atlas.Core.ThemeColors.BorderSoft, BorderWidthTop = 1, BorderWidthBottom = 1, BorderWidthLeft = 1, BorderWidthRight = 1, ContentMarginLeft = 6, ContentMarginRight = 6, ContentMarginTop = 4, ContentMarginBottom = 4 });
+        theme.SetStylebox("normal", "RichTextLabel", new StyleBoxFlat { BgColor = AP_Atlas.Core.ThemeColors.SurfaceSunken, ContentMarginLeft = 4, ContentMarginRight = 4, ContentMarginTop = 4, ContentMarginBottom = 4 });
+        theme.SetStylebox("panel", "AcceptDialog", new StyleBoxFlat { BgColor = AP_Atlas.Core.ThemeColors.SurfacePanel, BorderColor = AP_Atlas.Core.ThemeColors.BorderSoft, BorderWidthTop = 1, BorderWidthBottom = 1, BorderWidthLeft = 1, BorderWidthRight = 1, ContentMarginLeft = 12, ContentMarginRight = 12, ContentMarginTop = 12, ContentMarginBottom = 12 });
+        // An embedded window's title strip is drawn by its border's top edge, so that edge takes a surface colour, not the line's.
+        theme.SetStylebox("embedded_border", "Window", new StyleBoxFlat { BgColor = AP_Atlas.Core.ThemeColors.SurfacePanel, BorderColor = AP_Atlas.Core.ThemeColors.SurfaceRaised, BorderWidthTop = 28, BorderWidthBottom = 1, BorderWidthLeft = 1, BorderWidthRight = 1, ExpandMarginTop = 28, ExpandMarginLeft = 1, ExpandMarginRight = 1, ExpandMarginBottom = 1 });
         this.Theme = theme;
         // Popups and windows (dialogs, the Pack Doctor) live under the root, not this control, so share the theme there too.
         if (IsInsideTree()) GetTree().Root.Theme = theme;

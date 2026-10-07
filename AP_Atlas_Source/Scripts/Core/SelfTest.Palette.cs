@@ -14,14 +14,19 @@ namespace AP_Atlas.Core
         {
             Expect(Math.Abs(ThemeColors.Contrast(Colors.White, Colors.Black) - 21) < 0.01 && Math.Abs(ThemeColors.Contrast(Colors.Gray, Colors.Gray) - 1) < 0.01,
                 "the contrast measure is off (white on black is 21 to 1, a colour on itself 1 to 1)");
-            var palette = ThemeColors.Current;
-            foreach (var (surfaceName, surface) in palette.Surfaces)
+            foreach (var palette in Palette.All)
             {
-                foreach (var (name, color, min) in palette.TextColors)
+                foreach (var (surfaceName, surface) in palette.Surfaces)
                 {
-                    double contrast = ThemeColors.Contrast(color, surface);
-                    Expect(contrast >= min, $"{palette.Name}: {name} on {surfaceName} reads at {contrast:0.0} to 1; it needs {min:0.0}");
+                    foreach (var (name, color, min) in palette.TextColors)
+                    {
+                        double contrast = ThemeColors.Contrast(color, surface);
+                        Expect(contrast >= min, $"{palette.Name}: {name} on {surfaceName} reads at {contrast:0.0} to 1; it needs {min:0.0}");
+                    }
                 }
+                // Headings and links take the accent, lightened or darkened for the palette's surfaces.
+                var heading = palette.IsDark ? new Color(ThemeColors.DefaultAccentHex).Lightened(0.2f) : new Color(ThemeColors.DefaultAccentHex).Darkened(0.15f);
+                Expect(ThemeColors.Contrast(heading, palette.Surface) >= 3.0, $"{palette.Name}: a heading in the default accent reads at {ThemeColors.Contrast(heading, palette.Surface):0.0} to 1");
             }
             foreach (var (name, hex) in global::MainTrackerWindow.AccentPresets)
             {

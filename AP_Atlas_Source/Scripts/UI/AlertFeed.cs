@@ -87,7 +87,9 @@ namespace AP_Atlas.UI
             var row = new HBoxContainer();
             row.AddThemeConstantOverride("separation", 10);
             row.AddChild(new ColorRect { CustomMinimumSize = new Vector2(10, 10), Color = color, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter });
-            row.AddChild(new Label { Text = AP_Atlas.Core.Logger.Shown(message) });
+            var text = new Label { Text = AP_Atlas.Core.Logger.Shown(message) };
+            text.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Text);
+            row.AddChild(text);
             Button? actionButton = null;
             if (action != null)
             {

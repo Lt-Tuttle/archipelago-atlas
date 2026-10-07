@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using Godot;
 
 namespace AP_Atlas.Core
@@ -30,8 +32,33 @@ namespace AP_Atlas.Core
             AccentChanged?.Invoke();
         }
 
-        /// <summary>The palette in use: Dark, the only one until Phase 2.8 adds the others.</summary>
-        public static Palette Current { get; } = Palette.Dark;
+        /// <summary>The palette in use (Dark until <see cref="SetPalette"/> is called at startup from the theme setting).</summary>
+        public static Palette Current { get; private set; } = Palette.Dark;
+
+        /// <summary>Raised on the main thread after the palette changes (the window rebuilds its theme).</summary>
+        public static event Action? PaletteChanged;
+
+        /// <summary>The setting's names, as the Settings page offers them, in order.</summary>
+        public static readonly (string Key, string Title)[] ThemeChoices =
+        {
+            ("follow", "Follow Windows"), ("dark", "Dark"), ("light", "Light"), ("high-contrast", "High contrast")
+        };
+
+        /// <summary>The palette a theme setting means: "follow" takes Windows's light or dark mode (dark where Godot can't tell).</summary>
+        public static Palette PaletteForSetting(string? theme) => theme switch
+        {
+            "dark" => Palette.Dark,
+            "light" => Palette.Light,
+            "high-contrast" => Palette.HighContrast,
+            _ => DisplayServer.IsDarkModeSupported() && !DisplayServer.IsDarkMode() ? Palette.Light : Palette.Dark
+        };
+
+        public static void SetPalette(Palette palette)
+        {
+            if (ReferenceEquals(palette, Current)) return;
+            Current = palette;
+            PaletteChanged?.Invoke();
+        }
 
         // ---- The accent's derived colours ----
 
@@ -44,11 +71,11 @@ namespace AP_Atlas.Core
         /// <summary>Black or white, whichever reads better on <paramref name="background"/>.</summary>
         public static Color TextOn(Color background) => Contrast(Colors.White, background) >= Contrast(Colors.Black, background) ? Colors.White : Colors.Black;
 
-        /// <summary>Headings and section titles: the accent, lightened to read on the dark surfaces.</summary>
-        public static Color Heading => Accent.Lightened(0.2f);
+        /// <summary>Headings and section titles: the accent, lightened to read on dark surfaces, darkened on light ones.</summary>
+        public static Color Heading => Current.IsDark ? Accent.Lightened(0.2f) : Accent.Darkened(0.15f);
 
         /// <summary>Links in rich text (Properties' jumps).</summary>
-        public static Color Link => Accent.Lightened(0.35f);
+        public static Color Link => Current.IsDark ? Accent.Lightened(0.35f) : Accent.Darkened(0.05f);
 
         // ---- Text ----
 
@@ -167,6 +194,9 @@ namespace AP_Atlas.Core
     public sealed class Palette
     {
         public string Name { get; init; } = "";
+
+        /// <summary>Dark surfaces with light text (the accent is lightened for headings), or the other way round.</summary>
+        public bool IsDark { get; init; } = true;
         public Color Text { get; init; }
         public Color TextMuted { get; init; }
         public Color TextSubtle { get; init; }
@@ -221,9 +251,16 @@ namespace AP_Atlas.Core
             ("Surface", Surface), ("SurfacePanel", SurfacePanel), ("SurfaceSunken", SurfaceSunken), ("SurfaceDeep", SurfaceDeep)
         };
 
+        /// <summary>Every palette Atlas ships, as the Settings page offers them.</summary>
+        public static IReadOnlyList<Palette> All => new[] { Dark, Light, HighContrast };
+
+        /// <summary>A palette by its name, or Dark.</summary>
+        public static Palette Named(string? name) => All.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)) ?? Dark;
+
         public static readonly Palette Dark = new()
         {
             Name = "Dark",
+            IsDark = true,
             Text = Colors.White,
             TextMuted = Colors.LightGray,
             TextSubtle = Colors.Gray,
@@ -260,6 +297,92 @@ namespace AP_Atlas.Core
             BorderSoft = new Color("#444444"),
             RowEven = new Color("#16161C"),
             RowOdd = new Color("#1F1F27")
+        };
+
+        /// <summary>Light surfaces with dark text; every colour darkened until it reads on white.</summary>
+        public static readonly Palette Light = new()
+        {
+            Name = "Light",
+            IsDark = false,
+            Text = new Color("#1E1E24"),
+            TextMuted = new Color("#45454E"),
+            TextSubtle = new Color("#66666F"),
+            Disabled = new Color("#7E7E88"),
+            Success = new Color("#1B7A3A"),
+            Warning = new Color("#9A5A00"),
+            Error = new Color("#B4261E"),
+            Info = new Color("#1A63C2"),
+            Pending = new Color("#7A6200"),
+            Danger = new Color("#B4261E"),
+            Progress = new Color("#0B6F82"),
+            LogicHidden = new Color("#3A69A8"),
+            Player = new Color("#7A5500"),
+            You = new Color("#B0178E"),
+            Location = new Color("#1B7A3A"),
+            Progression = new Color("#7B3E9E"),
+            Useful = new Color("#4A50B5"),
+            Trap = new Color("#B4261E"),
+            Filler = new Color("#0B6F82"),
+            Hinted = new Color("#0A68B4"),
+            HintPriority = new Color("#7A6200"),
+            HintNoPriority = new Color("#4A50B5"),
+            HintedOutOfLogic = new Color("#6A1B9A"),
+            HintedNeutral = new Color("#7A5BB8"),
+            Surface = new Color("#FAFAFB"),
+            SurfacePanel = new Color("#F0F0F3"),
+            SurfaceRaised = new Color("#E4E4E9"),
+            SurfaceSunken = new Color("#FFFFFF"),
+            SurfaceDeep = new Color("#F4F4F7"),
+            Control = new Color("#E2E2E7"),
+            ControlHover = new Color("#D3D3DA"),
+            Input = new Color("#FFFFFF"),
+            Border = new Color("#CBCBD3"),
+            BorderSoft = new Color("#B9B9C3"),
+            RowEven = new Color("#FFFFFF"),
+            RowOdd = new Color("#F2F2F6")
+        };
+
+        /// <summary>Black surfaces, white text, pure colours and white borders, for low vision and bright rooms.</summary>
+        public static readonly Palette HighContrast = new()
+        {
+            Name = "High contrast",
+            IsDark = true,
+            Text = Colors.White,
+            TextMuted = Colors.White,
+            TextSubtle = new Color("#E0E0E0"),
+            Disabled = new Color("#A8A8A8"),
+            Success = new Color("#4DFF88"),
+            Warning = new Color("#FFD400"),
+            Error = new Color("#FF6B6B"),
+            Info = new Color("#5CD6FF"),
+            Pending = new Color("#FFFF33"),
+            Danger = new Color("#FF6B6B"),
+            Progress = new Color("#33E8FF"),
+            LogicHidden = new Color("#9DBFFF"),
+            Player = new Color("#FFFF33"),
+            You = new Color("#FF7DFF"),
+            Location = new Color("#8CFF8C"),
+            Progression = new Color("#EBB3FF"),
+            Useful = new Color("#B8C4FF"),
+            Trap = new Color("#FF6B6B"),
+            Filler = new Color("#8CFFFF"),
+            Hinted = new Color("#5CD6FF"),
+            HintPriority = new Color("#FFD400"),
+            HintNoPriority = new Color("#B8C4FF"),
+            HintedOutOfLogic = new Color("#D98CFF"),
+            HintedNeutral = new Color("#C0A8FF"),
+            Surface = Colors.Black,
+            SurfacePanel = new Color("#0A0A0A"),
+            SurfaceRaised = new Color("#1C1C1C"),
+            SurfaceSunken = Colors.Black,
+            SurfaceDeep = Colors.Black,
+            Control = new Color("#222222"),
+            ControlHover = new Color("#3A3A3A"),
+            Input = Colors.Black,
+            Border = Colors.White,
+            BorderSoft = Colors.White,
+            RowEven = Colors.Black,
+            RowOdd = new Color("#161616")
         };
     }
 }
