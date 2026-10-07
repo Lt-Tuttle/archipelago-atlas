@@ -107,6 +107,12 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         if (VisualCheckRequested && !VisualCheckAllowed()) return;
         // The UI test, too, refuses a real data folder before anything in it is read or written.
         if (UiTestRequested && !UiTestAllowed()) return;
+        // The data folder first: nothing below reads or writes before it's settled (a folder that can't be written asks).
+        SettleDataFolder(ContinueStartup);
+    }
+
+    private void ContinueStartup()
+    {
         if (!AP_Atlas.Core.CrashGuard.TryAcquireInstance())
         {
             OS.Alert("The Archipelago Atlas is already running from this folder.\n\nOnly one copy can use the same data at a time, " +
@@ -124,6 +130,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         AP_Atlas.Core.Logger.OnLogMessage += OnLogMessageReceived;
         AP_Atlas.Core.Annotations.Changed += OnAnnotationsChanged;
         AP_Atlas.Core.Logger.LogInfo($"The Archipelago Atlas {AP_Atlas.Core.AtlasVersion.Full} started.");
+        LogDataFolder();
         // Games' names nobody has used for three months (older versions pile up as games update).
         var dataPackages = DataManager.DataPackages;
         AP_Atlas.Core.Async.Fire(System.Threading.Tasks.Task.Run(() => dataPackages.RemoveUnused(System.TimeSpan.FromDays(90))),
@@ -407,6 +414,12 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _uiReady = true;
         foreach (var (msg, color) in _pendingNotices) ShowToast(msg, color);
         _pendingNotices.Clear();
+        if (FirstRunSelfCheck)
+        {
+            // The release build's check: the window came up on the fallback folder; that's all it asks.
+            AP_Atlas.UI.Ui.Defer(this, () => GetTree().Quit(0));
+            return;
+        }
         StartUpdateChecks();
         StartCrashReports();
         if (VisualCheckRequested) AP_Atlas.UI.Ui.Defer(this, RunVisualCheck);

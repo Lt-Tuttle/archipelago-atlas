@@ -223,8 +223,14 @@ public static class DataManager
     private static string _dataDir;
 
     /// <summary>
-    /// Where Atlas keeps everything (PortableData next to the program). ATLAS_DATA_DIR overrides it, which the
-    /// self-test uses so it never touches real data.
+    /// Settles the data folder (the window does it first thing, from <see cref="AP_Atlas.Core.DataFolder"/>): the portable
+    /// folder, or the one the user chose when it can't be written. Before anything reads or writes.
+    /// </summary>
+    public static void SetDataDirectory(string folder) => _dataDir = Path.GetFullPath(folder);
+
+    /// <summary>
+    /// Where Atlas keeps everything (PortableData next to the program, unless the window settled another folder first).
+    /// ATLAS_DATA_DIR overrides it, which the self-test uses so it never touches real data.
     /// </summary>
     public static string GetDataDirectory()
     {

@@ -137,6 +137,8 @@ public partial class MainTrackerWindow
             MultiworldsPageAsync);
         await ScenarioAsync("Updates: nothing is asked of GitHub without the permission and the daily setting; with them, one read a day finds a newer version of the channel (an unchanged list is confirmed, never sent again) and offers it as a card with its notes; a download whose hash doesn't match the release's SHA256SUMS is refused and nothing is staged, a good one is staged ready for a restart; the swap moves the installed files aside and the release's in (PortableData untouched), the supervisor puts the previous version back when the new Atlas ends before its window and the Atlas put back says so, a started one confirms the note; a folder Atlas can't write to is said so",
             UpdatesWithoutGodotErrorsAsync);
+        await ScenarioAsync("Data folder: a program folder that can't be written to needs a choice (the override and a writable folder don't, and nothing outside Atlas's folder is touched then); the dialog names the folder and the problem, Continue takes the local app data folder by default and makes it, another folder that can't be used is refused with the reason and the dialog stays, a usable one is taken and remembered in the pointer file, and Quit chooses nothing",
+            DataFolderAsync);
         await ScenarioAsync("Crash reports: a problem last time is offered as a card; the dialog shows the whole report as it would be sent, with the user's name, paths, the server, the slot and an e-mail replaced by marks; Send once posts a Sentry envelope to the project (scrubbed, with the note) and the file isn't offered again; with Always send, the next is sent without asking; Don't send dismisses it and nothing is posted; Help → Report a problem writes a scrubbed zip in Atlas's folder and uploads nothing; a build without an address offers nothing",
             CrashReportsAsync);
         await ScenarioAsync("Customization: a custom accent of any colour recolours Atlas, is saved, and its headings and links still read (the preset choice says Custom); colour-blind-safe colours are the theme's other palette, held to the contrast rule, saved and undone; the zoom choice, Ctrl+= and Ctrl+- scale the window and are saved; the pin shape is saved and every map redraws, a diamond being a square on its corner; the page Atlas opens on is saved and the last tool shown is remembered for it",
@@ -3058,6 +3060,69 @@ public partial class MainTrackerWindow
             godotErrors = AP_Atlas.Core.GodotLog.Errors - godotErrors;
         }
         UiTestExpect(godotErrors == 0, $"Godot reported {godotErrors} error(s) (the log file has them)");
+    }
+
+    private async Task DataFolderAsync()
+    {
+        string data = DataManager.GetDataDirectory();
+        string program = System.IO.Path.Combine(data, "uitest-program"), local = System.IO.Path.Combine(data, "uitest-localappdata");
+        System.IO.Directory.CreateDirectory(program);
+        await System.IO.File.WriteAllTextAsync(System.IO.Path.Combine(program, AP_Atlas.Core.DataFolder.PortableName), "a file where the folder should be");
+        TestLocalAppData = local;
+        try
+        {
+            var resolution = AP_Atlas.Core.DataFolder.Resolve(null, program, local, AP_Atlas.Core.DataFolder.Probe);
+            UiTestExpect(resolution.Source == AP_Atlas.Core.DataFolder.Source.NeedsChoice && resolution.Problem != null && !System.IO.Directory.Exists(local),
+                "a program folder that can't be written didn't ask, or something outside was touched before asking");
+            string fallback = AP_Atlas.Core.DataFolder.DefaultFallback(local), pointer = AP_Atlas.Core.DataFolder.PointerPath(local);
+            string? decided = null;
+            bool? remembered = null;
+            bool quit = false;
+            AP_Atlas.UI.DataFolderDialog Open()
+            {
+                decided = null;
+                remembered = null;
+                var dialog = new AP_Atlas.UI.DataFolderDialog(resolution.Problem!, resolution.Portable, fallback, pointer, AP_Atlas.Core.DataFolder.Probe,
+                    (folder, chosen) => { decided = folder; remembered = chosen; }, () => quit = true, text => Tr(text));
+                AddChild(dialog);
+                dialog.PopupCentered(new Vector2I(660, 0));
+                return dialog;
+            }
+            // The default: the local app data folder, made, nothing remembered.
+            var dialog = Open();
+            string text = string.Join(" ", dialog.FindChildren("*", nameof(Label), true, false).OfType<Label>().Select(l => l.Text));
+            UiTestExpect(text.Contains(resolution.Portable) && text.Contains(resolution.Problem!), "the dialog doesn't name the folder that can't be used and why");
+            dialog.EmitSignal(AcceptDialog.SignalName.Confirmed);
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(decided == fallback && remembered == false && System.IO.Directory.Exists(fallback) && !System.IO.File.Exists(pointer), $"Continue didn't take the local app data folder ({decided}, remembered {remembered})");
+            // Another folder that can't be used: refused with the reason, the dialog stays. A usable one: taken, to be remembered.
+            dialog = Open();
+            dialog.UseAnother = true;
+            dialog.AnotherPath = System.IO.Path.Combine(program, AP_Atlas.Core.DataFolder.PortableName, "inside");
+            dialog.EmitSignal(AcceptDialog.SignalName.Confirmed);
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(decided == null && GodotObject.IsInstanceValid(dialog) && dialog.Problem.Length > 0, $"a folder that can't be used was taken, or the dialog closed ({dialog.Problem})");
+            string chosen = System.IO.Path.Combine(data, "uitest-chosen");
+            dialog.AnotherPath = chosen;
+            dialog.EmitSignal(AcceptDialog.SignalName.Confirmed);
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(decided == chosen && remembered == true, $"a usable folder wasn't taken ({decided}, remembered {remembered})");
+            AP_Atlas.Core.DataFolder.WritePointer(local, chosen);
+            var again = AP_Atlas.Core.DataFolder.Resolve(null, program, local, AP_Atlas.Core.DataFolder.Probe);
+            UiTestExpect(again.Source == AP_Atlas.Core.DataFolder.Source.Chosen && again.Path == chosen, "the remembered folder isn't taken on the next start");
+            // Quit chooses nothing.
+            dialog = Open();
+            dialog.EmitSignal(AcceptDialog.SignalName.Canceled);
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(quit && decided == null, "Quit decided something");
+        }
+        finally
+        {
+            TestLocalAppData = null;
+            foreach (var open in GetChildren().OfType<AP_Atlas.UI.DataFolderDialog>().ToList()) open.QueueFree();
+            foreach (string folder in new[] { program, local, System.IO.Path.Combine(data, "uitest-chosen") })
+                if (System.IO.Directory.Exists(folder)) System.IO.Directory.Delete(folder, recursive: true);
+        }
     }
 
     private async Task CrashReportsAsync()

@@ -249,6 +249,40 @@ else {
         if ((Test-Footprint $outside) -gt 0) { Stop-Build 5 "The self-check ($($case.Name)) wrote outside Atlas's folder." }
         Write-Host "  $($case.Name): $($case.Expect)" -ForegroundColor Green
     }
+
+    # 5c. A program folder Atlas can't write to (a deny rule on a copy, as Program Files would): the build takes the local
+    # app data folder by itself (ATLAS_FIRSTRUN_SELFCHECK) and comes up, with its data in the stand-in for that folder.
+    Write-Host "Checking that the exported build comes up from a folder it can't write to..."
+    $roRoot = Join-Path $stagingRoot 'selfcheck-readonly'
+    if (Test-Path -LiteralPath $roRoot) { Remove-Item -LiteralPath $roRoot -Recurse -Force }
+    $roInstall = Join-Path $roRoot 'TheArchipelagoAtlas'
+    Copy-Item -LiteralPath $staging -Destination $roInstall -Recurse
+    $roInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $roInfo.FileName = Join-Path $roInstall 'TheArchipelagoAtlas.exe'
+    $roInfo.Arguments = '--headless'
+    $roInfo.WorkingDirectory = $roInstall
+    $roInfo.UseShellExecute = $false
+    $roInfo.CreateNoWindow = $true
+    $roInfo.EnvironmentVariables['ATLAS_FIRSTRUN_SELFCHECK'] = '1'
+    $roOutside = Set-StandInUserFolders $roInfo $roRoot
+    $roUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+    & icacls $roInstall /deny "${roUser}:(CI)(WD,AD,DC)" | Out-Null
+    try {
+        $ro = [System.Diagnostics.Process]::Start($roInfo)
+        if (-not $ro.WaitForExit(180000)) {
+            try { $ro.Kill() } catch { }
+            Stop-Build 5 "The read-only self-check's Atlas didn't exit within 3 minutes."
+        }
+        $roLog = Join-Path $roOutside "AppData\Local\The Archipelago Atlas\PortableData\logs\atlas_log.txt"
+        if ($ro.ExitCode -ne 0) { Stop-Build 5 "The read-only self-check's Atlas exited with code $($ro.ExitCode). Log: $roLog" }
+        if (-not (Test-Path -LiteralPath $roLog)) { Stop-Build 5 "The read-only self-check didn't put its data in the local app data folder ($roLog is missing)." }
+        if (-not (Get-Content -Raw -LiteralPath $roLog).Contains('DATA FOLDER FALLBACK')) { Stop-Build 5 "The read-only self-check's log doesn't say the data went to the fallback folder." }
+        if (Test-Path -LiteralPath (Join-Path $roInstall 'PortableData')) { Stop-Build 5 'The read-only self-check wrote into the folder it must not.' }
+        Write-Host '  read-only folder: DATA FOLDER FALLBACK' -ForegroundColor Green
+    }
+    finally {
+        & icacls $roInstall /remove:d $roUser | Out-Null
+    }
 }
 
 # 6. The documents, then the zip and its checksum.

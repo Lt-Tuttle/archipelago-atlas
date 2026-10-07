@@ -40,7 +40,9 @@
       - Starting a thread of its own: only PackScriptHost's compiler thread, which needs a big stack, and the self-test's
         check that it does (Task.Run and async code share the pool Atlas sizes for its connections).
       - Looking up the user's own folders (Documents, AppData, Program Files, the temp folder): only AtlasEngine's install
-        search, which runs only after the user agrees. Atlas keeps everything in its own folder.
+        search, which runs only after the user agrees, and the data folder's fallback (MainTrackerWindow.DataFolder.cs),
+        which looks at the local app data folder only when Atlas's own folder can't be written to, and asks before
+        using it. Atlas keeps everything in its own folder.
       - Saving a whole file without SafeFile: only where it's checked to be safe (the log, a crash report, an export the
         user chose, files the engine setup regenerates, a store that writes a temporary file and moves it, the tests).
         Atlas's own data goes through SafeFile, which keeps a backup and survives a crash mid-save.
@@ -126,7 +128,7 @@ $rules = @(
     @{ Name = 'Starting a thread of its own (use Task.Run or async code)'; Pattern = 'new\s+(System\.Threading\.)?Thread\s*\('
        Allowed = @('AP_Atlas_Source\Scripts\Core\PopTracker\PackScriptHost.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.Reliability.cs'); Max = 1 },
     @{ Name = 'Looking up the user''s own folders'; Pattern = 'GetFolderPath\s*\(|\bSpecialFolder\.|GetTempPath\s*\(|GetTempFileName\s*\('
-       Allowed = @('AP_Atlas_Source\Scripts\Core\Engine\AtlasEngine.cs') },
+       Allowed = @('AP_Atlas_Source\Scripts\Core\Engine\AtlasEngine.cs', 'AP_Atlas_Source\Scripts\MainTrackerWindow.DataFolder.cs') },
     @{ Name = 'Saving a whole file without SafeFile'; Pattern = '(?<!\w)File\.(WriteAll|AppendAll)\w*\s*\('
        Allowed = @('AP_Atlas.Core\Logger.cs', 'AP_Atlas.Core\Connections\DataPackageStore.cs', 'AP_Atlas.Core\Testing\FakeLogicEngine.cs',
                    'AP_Atlas_Source\Scripts\UI\AtlasTable.cs', 'AP_Atlas_Source\Scripts\Core\CrashGuard.cs', 'AP_Atlas_Source\Scripts\Core\Annotations.cs', 'AP_Atlas_Source\Scripts\Core\Engine\AtlasEngine.cs',

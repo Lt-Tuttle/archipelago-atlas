@@ -207,8 +207,9 @@ public partial class MainTrackerWindow
             });
 
         page.AddSection("data", "Data");
-        page.AddAction("data", "data-folder", "Atlas's data folder", "Your multiworlds, settings, logs, map packs and the engine live here, and nowhere else.", "Open folder",
-            () => _commands!.Run("file.data-folder"));
+        page.AddAction("data", "data-folder", "Atlas's data folder",
+            "Your multiworlds, settings, logs, map packs and the engine live in " + DataManager.GetDataDirectory() + ", and nowhere else." + (_dataFolderWhy == null ? "" : " " + _dataFolderWhy),
+            "Open folder", () => _commands!.Run("file.data-folder"));
         return page;
     }
 
