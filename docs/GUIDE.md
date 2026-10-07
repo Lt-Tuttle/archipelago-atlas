@@ -6,7 +6,7 @@ Atlas is an unofficial community tool: it isn't affiliated with or endorsed by t
 
 ## Home
 
-Atlas opens on Home (Ctrl+8). It has:
+Atlas opens on Home (Ctrl+8). Its header carries Atlas's icon and wordmark, which take the theme's colours and your accent. It has:
 
 - **Getting started:** the steps to a working Atlas, each with a tick once it's done and a button that does it: set up the Atlas Engine, add a multiworld, connect a slot, install a map pack, and link Cheese Tracker if your multiworld uses it.
 - **Your multiworlds:** the ones you've played most recently, each with a Connect button that connects every slot of it in turn.

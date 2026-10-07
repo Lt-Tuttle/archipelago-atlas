@@ -39,7 +39,11 @@ namespace AP_Atlas.UI
             };
             _text.MetaHoverStarted += _ => _text.MouseDefaultCursorShape = Control.CursorShape.PointingHand;
             _text.MetaHoverEnded += _ => _text.MouseDefaultCursorShape = Control.CursorShape.Arrow;
-            AddChild(_text);
+            var box = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, SizeFlagsVertical = Control.SizeFlags.ExpandFill };
+            box.AddThemeConstantOverride("separation", 10);
+            box.AddChild(Wordmark.Make(56, tr("The Archipelago Atlas")));
+            box.AddChild(_text);
+            AddChild(box);
 
             AddButton(tr("Copy System Info"), false, "copy");
             AddButton(tr("Guide"), false, "guide");

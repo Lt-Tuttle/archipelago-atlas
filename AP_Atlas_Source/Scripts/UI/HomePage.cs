@@ -113,7 +113,7 @@ namespace AP_Atlas.UI
             body.AddThemeConstantOverride("separation", 22);
             margin.AddChild(body);
 
-            // The header: the icon until the wordmark is chosen, the name and what Atlas is.
+            // The header: the icon, the wordmark and what Atlas is.
             var header = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
             header.AddThemeConstantOverride("separation", 18);
             header.AddChild(new TextureRect
@@ -125,10 +125,8 @@ namespace AP_Atlas.UI
             });
             var titles = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ShrinkCenter };
             titles.AddThemeConstantOverride("separation", 4);
-            var title = new Label { Text = _tr("The Archipelago Atlas") };
-            title.SetMeta("font_size_ratio", 2.0f);
-            title.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Accent.Lightened(0.2f));
-            titles.AddChild(title);
+            _wordmark = Wordmark.Make(80, _tr("The Archipelago Atlas"));
+            titles.AddChild(_wordmark);
             titles.AddChild(Kit.Text(_tr("Maps, logic, hints and the trackers your group uses, in one window."), AP_Atlas.Core.ThemeColors.TextMuted));
             header.AddChild(titles);
             body.AddChild(header);
@@ -263,6 +261,17 @@ namespace AP_Atlas.UI
 
         /// <summary>Whether a step showed as done the last time Home read Atlas's state.</summary>
         public bool StepDone(string id) => StepOf(id).LastDone;
+
+        private TextureRect? _wordmark;
+
+        /// <summary>The header's wordmark.</summary>
+        public TextureRect? WordmarkRect => _wordmark;
+
+        /// <summary>Redraws the wordmark for a new accent or theme.</summary>
+        public void RefreshWordmark()
+        {
+            if (_wordmark != null) Wordmark.Refresh(_wordmark);
+        }
 
         public Button StepButtonOf(string id) => StepOf(id).Button;
 

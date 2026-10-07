@@ -376,6 +376,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         DataManager.SaveSettings(_appSettings);
         SetupModernTheme();
         AP_Atlas.UI.Kit.RecolourHeadings(GetTree().Root);
+        _homePage?.RefreshWordmark();
         RefreshProfileListStyles();
         UpdateSidebar();
     }

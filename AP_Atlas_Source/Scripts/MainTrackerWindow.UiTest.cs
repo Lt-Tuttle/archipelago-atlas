@@ -1037,7 +1037,11 @@ public partial class MainTrackerWindow
         AddChild(heading);
         var headings = GetTree().Root.FindChildren("*", nameof(Label), true, false).OfType<Label>().Where(l => l.HasMeta("kit_heading")).ToList();
         UiTestExpect(headings.Count >= 6 && headings.All(l => l.GetThemeColor("font_color") == AP_Atlas.Core.ThemeColors.Heading), $"of {headings.Count} kit headings, not every one wears the heading colour");
+        var wordmark = _homePage?.WordmarkRect ?? throw new InvalidOperationException("Home has no wordmark");
+        var wordmarkBefore = wordmark.Texture;
+        UiTestExpect(wordmarkBefore != null && wordmark.CustomMinimumSize.Y == 80 && wordmarkBefore.GetHeight() == 160, $"Home's wordmark isn't drawn at 80 px (twice that for sharpness): {wordmarkBefore?.GetSize()}");
         ApplyAccent("#FFD700");
+        UiTestExpect(wordmark.Texture != null && !ReferenceEquals(wordmark.Texture, wordmarkBefore), "the wordmark didn't follow the accent");
         var changed = AP_Atlas.Core.ThemeColors.Heading;
         UiTestExpect(AP_Atlas.Core.ThemeColors.Accent == new Color("#FFD700") && changed != new Color(AP_Atlas.Core.ThemeColors.DefaultAccentHex).Lightened(0.2f)
             && headings.All(l => l.GetThemeColor("font_color") == changed), "after an accent change, not every kit heading follows it");

@@ -28,6 +28,8 @@
     <EmbeddedResource Include="..\CREDITS.md" LogicalName="Docs.CREDITS.md" />
     <EmbeddedResource Include="..\THIRD_PARTY_NOTICES.md" LogicalName="Docs.THIRD_PARTY_NOTICES.md" />
     <EmbeddedResource Include="..\LICENSE" LogicalName="Docs.LICENSE" />
+    <EmbeddedResource Include="..\docs\wordmark\wordmark-dark.svg" LogicalName="Docs.wordmark-dark.svg" />
+    <EmbeddedResource Include="..\docs\wordmark\wordmark-light.svg" LogicalName="Docs.wordmark-light.svg" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="AP_Atlas" />

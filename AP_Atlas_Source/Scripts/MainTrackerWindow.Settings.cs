@@ -22,9 +22,10 @@ public partial class MainTrackerWindow
         AP_Atlas.Core.ThemeColors.SetPalette(AP_Atlas.Core.ThemeColors.PaletteForSetting(key));
         SetupModernTheme();
         AP_Atlas.UI.Kit.RecolourHeadings(GetTree().Root);
+        _homePage?.RefreshWordmark();
         RefreshProfileListStyles();
         UpdateSidebar();
-        ShowToast(Tr("Theme changed. Restart Atlas for it to reach everything."), AP_Atlas.Core.ThemeColors.Info);
+        ShowToast(Tr("Theme changed. Restart Atlas to apply it everywhere."), AP_Atlas.Core.ThemeColors.Info);
     }
 
     internal static readonly (string Name, string Hex)[] AccentPresets =
