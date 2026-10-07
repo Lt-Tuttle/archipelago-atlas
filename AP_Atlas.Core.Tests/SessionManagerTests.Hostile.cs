@@ -13,9 +13,9 @@ namespace AP_Atlas.Core.Tests;
 /// </summary>
 public sealed partial class SessionManagerTests
 {
-    private async Task<(SessionManager Manager, ConnectedSlot Slot, List<string> Errors)> ConnectedAsync(FakeArchipelagoServer server)
+    private async Task<(SessionManager Manager, ConnectedSlot Slot, List<string> Errors)> ConnectedAsync(FakeArchipelagoServer server, SessionManagerOptions? options = null)
     {
-        var manager = Manager();
+        var manager = Manager(options);
         var errors = new List<string>();
         manager.SocketError += (_, message) => { lock (errors) errors.Add(message); };
         var result = await Connect(manager, Login(server));
@@ -156,7 +156,9 @@ public sealed partial class SessionManagerTests
             package["data"]!["games"] = sent;
             return package;
         };
-        var (manager, slot, errors) = await ConnectedAsync(server);
+        // The login waits while the library asks for a thousand games' names (it sends them before it reads on): a slow machine
+        // (CI's) took longer than the quick tests' 2 s.
+        var (manager, slot, errors) = await ConnectedAsync(server, new SessionManagerOptions { LoginTimeout = TimeSpan.FromSeconds(15), ReconnectDelays = new[] { TimeSpan.FromSeconds(1) }, Jitter = 0 });
 
         // The library asks for each game's names in a packet of its own: at most MaxGames, each once.
         await WaitFor(() => server.Count("GetDataPackage") >= ServerPackets.MaxGames, "the data package requests", manager);
