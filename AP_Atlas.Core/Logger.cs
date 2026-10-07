@@ -7,6 +7,9 @@ namespace AP_Atlas.Core
     public static class Logger
     {
         private static string _logFilePath;
+
+        /// <summary>The log file Atlas writes now (null before the data folder is known).</summary>
+        public static string CurrentLogPath => _logFilePath;
         private static readonly object _fileLock = new object();
         // Set after a failed write, so a log file that can't be written (its folder deleted, a full disk) is reported
         // once, not on every line; cleared when a write works again.
@@ -174,6 +177,17 @@ namespace AP_Atlas.Core
         {
             WriteLog("DEBUG", Bounded(message));
             // Debug does not typically go to UI console unless verbosity is high
+        }
+
+        /// <summary>The level of <see cref="LogDiagnostic"/> lines, as <see cref="OnLogMessage"/> names it.</summary>
+        public const string DiagnosticLevel = "DIAG";
+
+        /// <summary>A diagnostic (a frame hitch and what ran in it): the log file and the Debug Log, never the System Log.</summary>
+        public static void LogDiagnostic(string message)
+        {
+            message = Bounded(message);
+            WriteLog(DiagnosticLevel, message);
+            OnLogMessage?.Invoke($"{Stamp()} {Bbcode.Colored(Shown(message), "gray")}\n", DiagnosticLevel);
         }
     }
 }

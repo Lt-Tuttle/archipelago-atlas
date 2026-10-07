@@ -33,6 +33,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     private AP_Atlas.UI.SafeRichText _consoleOutput;
     private AP_Atlas.UI.LogPane _systemLog, _debugLog;
     private Label _globalStatusLabel;
+    /// <summary>The status bar's right end: how many slots are connected.</summary>
+    private Label _statusConnectedLabel;
     private HBoxContainer _menuHbox;
     private PanelContainer _globalStatusBar;
     private AppSettings _appSettings;
@@ -311,8 +313,10 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _globalStatusBar.AddThemeStyleboxOverride("panel", statusStyle);
         var statusHBox = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         _globalStatusBar.AddChild(statusHBox);
-        _globalStatusLabel = new Label { Text = "Ready", SizeFlagsHorizontal = SizeFlags.ExpandFill, HorizontalAlignment = HorizontalAlignment.Left };
+        _globalStatusLabel = new Label { Text = Tr("Ready"), SizeFlagsHorizontal = SizeFlags.ExpandFill, HorizontalAlignment = HorizontalAlignment.Left };
         statusHBox.AddChild(_globalStatusLabel);
+        _statusConnectedLabel = new Label { Text = "", HorizontalAlignment = HorizontalAlignment.Right };
+        statusHBox.AddChild(_statusConnectedLabel);
         rootVbox.AddChild(_globalStatusBar);
         BuildBottomPanel();
         ApplyWindowParts(); // the parts the user hid last time stay hidden
@@ -386,7 +390,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         statusTimer.Timeout += UpdateSlotStatuses;
         AddChild(statusTimer);
         // Reports long frames (with what caused them) to the System Log and status bar.
-        AddChild(new AP_Atlas.Core.HitchMonitor(msg => { if (_globalStatusLabel != null) _globalStatusLabel.Text = msg; }));
+        AddChild(new AP_Atlas.Core.HitchMonitor(OnHitch));
         SetupModernTheme();
         RefreshProfileList();
         SelectProfile(null);

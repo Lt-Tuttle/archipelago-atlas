@@ -37,7 +37,7 @@ public partial class MainTrackerWindow
         Add(AP_Atlas.UI.CommandPalette.OwnCommandId, "View", "Command Palette…", "Ctrl+Shift+P", OpenCommandPalette);
         Add("view.chat", "View", "Chat", "", () => ShowTerminalTab(0));
         Add("view.system-log", "View", "System Log", "", () => ShowTerminalTab(1));
-        Add("view.debug-log", "View", "Debug Log", "", () => ShowTerminalTab(2));
+        Add("view.debug-log", "View", "Debug Log", "", () => ShowTerminalTab(2), () => _appSettings.DeveloperMode); // the palette lists it in developer mode
         Add("view.slots-panel", "View", "Slots Panel", "", () => TogglePart("view.slots-panel"));
         Add("view.explorer", "View", "Explorer", "", () => TogglePart("view.explorer"));
         Add("view.properties-panel", "View", "Properties Panel", "", () => TogglePart("view.properties-panel"));
@@ -79,6 +79,9 @@ public partial class MainTrackerWindow
     private void Add(string id, string menu, string title, string shortcut, Action run) =>
         _commands!.Add(new AP_Atlas.Core.Command(id, menu, title, shortcut, run));
 
+    private void Add(string id, string menu, string title, string shortcut, Action run, Func<bool> enabled) =>
+        _commands!.Add(new AP_Atlas.Core.Command(id, menu, title, shortcut, run) { Enabled = enabled });
+
     /// <summary>Builds the menu bar at the top of the window, from the commands and the stateful settings items.</summary>
     private void BuildMenuBar(Container rootVbox)
     {
@@ -112,7 +115,7 @@ public partial class MainTrackerWindow
 
         AddCommandItems(menus["View"], AP_Atlas.UI.CommandPalette.OwnCommandId);
         menus["View"].AddSeparator();
-        AddCommandItems(menus["View"], "view.chat", "view.system-log", "view.debug-log");
+        AddCommandItems(menus["View"], "view.chat", "view.system-log", "view.debug-log"); // the Debug Log's item is greyed outside developer mode
         menus["View"].AddSeparator();
         AddCommandCheckItems(menus["View"], PartShown, "view.slots-panel", "view.explorer", "view.properties-panel", "view.bottom-pane", "view.status-bar");
         menus["View"].AddSeparator();
@@ -157,6 +160,8 @@ public partial class MainTrackerWindow
                 popup.AboutToPopup += () => popup.SetItemChecked(popup.GetItemIndex(itemId), isOn(id));
             }
             items[itemId] = id;
+            // A command that can't run now (the Debug Log outside developer mode) shows greyed, as the menu opens.
+            popup.AboutToPopup += () => popup.SetItemDisabled(popup.GetItemIndex(itemId), !command.Enabled());
             string shortcut = _commands.ShortcutOf(id);
             if (shortcut.Length > 0 && AP_Atlas.UI.CommandKeys.ToShortcut(shortcut) is { } key)
                 popup.SetItemShortcut(popup.GetItemIndex(itemId), key, false);

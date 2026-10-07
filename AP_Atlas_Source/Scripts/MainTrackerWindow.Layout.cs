@@ -33,6 +33,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         bottomHeader.AddChild(_bottomTabs);
         bottomHeader.AddChild(new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill }); // Spacer
         var bottomMenuBtn = new Button { Text = "...", Flat = true, FocusMode = FocusModeEnum.None };
+        _bottomMenuBtn = bottomMenuBtn;
         bottomMenuBtn.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextMuted);
         var extraItems = new System.Collections.Generic.Dictionary<string, System.Action> {
             { "Copy System Log", () => DisplayServer.ClipboardSet(_consoleOutput.GetParsedText()) },
@@ -43,7 +44,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         AttachFontMenuPopup(bottomMenuBtn,
             () => _appSettings.ConsoleFontSize,
             (newSize) => { _appSettings.ConsoleFontSize = newSize; ApplyUIScale(); DataManager.SaveSettings(_appSettings); },
-            extraItems
+            extraItems,
+            item => !item.Contains("Debug Log") || _appSettings.DeveloperMode // the Debug Log's items are for developer mode
         );
         bottomHeader.AddChild(bottomMenuBtn);
         _terminalStage = new PanelContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
@@ -75,8 +77,15 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     private HBoxContainer _sidebarHeaderBox;
     private HBoxContainer _midLeftHeaderBox;
     private HBoxContainer _propsHeaderBox;
-    private void AttachFontMenuPopup(Button menuBtn, System.Func<int> getFontSize, System.Action<int> setFontSize, System.Collections.Generic.Dictionary<string, System.Action> extraItems = null)
+    private Button _bottomMenuBtn;
+
+    /// <summary>
+    /// A "..." menu: the font size, then <paramref name="extraItems"/> as buttons; <paramref name="itemShown"/> says, as
+    /// the menu opens, which of them show now.
+    /// </summary>
+    private void AttachFontMenuPopup(Button menuBtn, System.Func<int> getFontSize, System.Action<int> setFontSize, System.Collections.Generic.Dictionary<string, System.Action> extraItems = null, System.Func<string, bool> itemShown = null)
     {
+        var itemButtons = new System.Collections.Generic.List<(string Item, Button Button)>();
         var popup = new PopupPanel { Transient = true };
         var customPopupStyle = new StyleBoxFlat
         {
@@ -127,6 +136,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             foreach (var kvp in extraItems)
             {
                 var btn = new Button { Text = kvp.Key, Flat = true, Alignment = HorizontalAlignment.Left };
+                itemButtons.Add((kvp.Key, btn));
                 var action = kvp.Value;
                 btn.Pressed += () =>
                 {
@@ -143,6 +153,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         {
             popup.Position = new Godot.Vector2I((int)localBtn.GlobalPosition.X - 180, (int)localBtn.GlobalPosition.Y + 20);
             valLbl.Text = $"{getFontSize()}px";
+            foreach (var (item, button) in itemButtons) button.Visible = itemShown?.Invoke(item) ?? true;
             popup.Popup();
         };
     }
@@ -364,6 +375,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             var statusStyle = new StyleBoxFlat { BgColor = accentColor, ContentMarginLeft = 10, ContentMarginRight = 10, ContentMarginTop = 2, ContentMarginBottom = 2 };
             _globalStatusBar.AddThemeStyleboxOverride("panel", statusStyle);
             _globalStatusLabel?.AddThemeColorOverride("font_color", textOnAccent);
+            _statusConnectedLabel?.AddThemeColorOverride("font_color", textOnAccent);
         }
         _activityBar?.ApplyAccent(AP_Atlas.Core.ThemeColors.Accent);
         if (_bottomTabs != null) ApplyTabBarStyle(_bottomTabs, 8);

@@ -129,6 +129,8 @@ public partial class MainTrackerWindow
             AlertsAsync);
         await ScenarioAsync("UI kit: a button from the kit runs its action once per press, honours enabled and keeps its tooltip; its text lines take the palette's colours; every heading from it wears the accent's heading colour and follows an accent change, wherever it is; the alert feed names a card's kind from the palette",
             UiKitAsync);
+        await ScenarioAsync("Developer mode: off, the Debug Log tab, its command, the Debug Log's menu items and the hitch warnings on the status bar are hidden, and a diagnostic line reaches the Debug Log and the file, never the System Log; on, each shows; the status bar's right end counts the connected slots, and a hidden tab that was current gives way to Chat",
+            DeveloperModeAsync);
         await ScenarioAsync("Customization: a custom accent of any colour recolours Atlas, is saved, and its headings and links still read (the preset choice says Custom); colour-blind-safe colours are the theme's other palette, held to the contrast rule, saved and undone; the zoom choice, Ctrl+= and Ctrl+- scale the window and are saved; the pin shape is saved and every map redraws, a diamond being a square on its corner; the page Atlas opens on is saved and the last tool shown is remembered for it",
             CustomizationAsync);
         await ScenarioAsync("Tables: a click on a column's title sorts by it (the column's own first direction, then the other; the arrow says which), typed words narrow the rows, a column hides and shows, pinned rows stay on top, the rows export as TSV, Markdown, Discord parts and a CSV file, the sort and the hidden columns are saved, and unchanged rows are updated in place with the selection kept",
@@ -713,11 +715,12 @@ public partial class MainTrackerWindow
         slots.ButtonPressed = true;
         UiTestExpect(_sidebar.Visible && _appSettings.ShowSlotsPanel, "the slots panel didn't come back");
 
-        var debugTab = (CheckButton)page.ControlOf("debug-log-tab");
-        debugTab.ButtonPressed = false;
-        UiTestExpect(_bottomTabs.IsTabHidden(2) && !DataManager.LoadSettings().ShowDebugLogTab, "hiding the Debug Log tab didn't take, or wasn't saved");
-        debugTab.ButtonPressed = true;
-        UiTestExpect(!_bottomTabs.IsTabHidden(2), "the Debug Log tab didn't come back");
+        var developer = (CheckButton)page.ControlOf("developer-mode");
+        UiTestExpect(!developer.ButtonPressed && _bottomTabs.IsTabHidden(2), "developer mode is on, or the Debug Log tab shows, to begin with");
+        developer.ButtonPressed = true;
+        UiTestExpect(!_bottomTabs.IsTabHidden(2) && DataManager.LoadSettings().DeveloperMode, "developer mode didn't show the Debug Log tab, or wasn't saved");
+        developer.ButtonPressed = false;
+        UiTestExpect(_bottomTabs.IsTabHidden(2) && !_appSettings.DeveloperMode, "the Debug Log tab didn't go away with developer mode");
 
         // A setting changed elsewhere shows as it is when the page shows again.
         _commands!.Run("view.status-bar");
@@ -1020,6 +1023,79 @@ public partial class MainTrackerWindow
 
     /// <summary>A test input for the custom accent: near black, which no heading could wear as it is (not a colour Atlas draws with).</summary>
     private const string NearBlackHex = "#101010";
+
+    private async Task DeveloperModeAsync()
+    {
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        var page = _settingsPage ?? throw new InvalidOperationException("The Settings page wasn't built.");
+        var developer = (CheckButton)page.ControlOf("developer-mode");
+        UiTestExpect(!_appSettings.DeveloperMode && _bottomTabs.IsTabHidden(2), "developer mode is on to begin with");
+
+        // Off: the command is refused, the menu items are hidden, a hitch leaves the status bar alone.
+        UiTestExpect(!_commands!.Run("view.debug-log"), "the Debug Log command ran with developer mode off");
+        var viewMenu = _menuHbox.GetChildren().OfType<MenuButton>().First(m => m.Text == "View").GetPopup();
+        int debugItem = Enumerable.Range(0, viewMenu.ItemCount).First(i => viewMenu.GetItemText(i) == Tr("Debug Log"));
+        viewMenu.EmitSignal(PopupMenu.SignalName.AboutToPopup);
+        UiTestExpect(viewMenu.IsItemDisabled(debugItem), "the View menu's Debug Log item isn't greyed with developer mode off");
+        Button MenuItem(string text) => _bottomMenuBtn.FindChildren("*", nameof(Button), true, false).OfType<Button>().First(b => b.Text == text);
+        var popup = _bottomMenuBtn.GetChildren().OfType<PopupPanel>().First();
+        _bottomMenuBtn.EmitSignal(BaseButton.SignalName.Pressed);
+        UiTestExpect(!MenuItem("Copy Debug Log").Visible && !MenuItem("Clear Debug Log").Visible && MenuItem("Copy System Log").Visible, "the Debug Log's menu items show with developer mode off");
+        popup.Hide();
+        string status = _globalStatusLabel.Text;
+        OnHitch("Hitch 200 ms: a probe");
+        UiTestExpect(_globalStatusLabel.Text == status, "a hitch reached the status bar with developer mode off");
+
+        // A diagnostic line: the Debug Log and the file, never the System Log.
+        string probe = "diagnostic probe " + Guid.NewGuid().ToString("N");
+        AP_Atlas.Core.Logger.LogDiagnostic(probe);
+        await UiTestWaitAsync(0.2);
+        UiTestExpect(_debugLogConsole.GetParsedText().Contains(probe) && !_consoleOutput.GetParsedText().Contains(probe), "a diagnostic line reached the System Log, or missed the Debug Log");
+        string logFile = AP_Atlas.Core.Logger.CurrentLogPath;
+        UiTestExpect(logFile != null && (await System.IO.File.ReadAllTextAsync(logFile)).Contains(probe), "a diagnostic line didn't reach the log file");
+
+        // On: the tab, the command, the menu items and the hitch warnings.
+        developer.ButtonPressed = true;
+        UiTestExpect(_appSettings.DeveloperMode && !_bottomTabs.IsTabHidden(2), "developer mode didn't show the Debug Log tab");
+        UiTestExpect(_commands.Run("view.debug-log") && _currentTerminalTab == 2 && _debugLogVBox.Visible, "the Debug Log command didn't show the Debug Log");
+        viewMenu.EmitSignal(PopupMenu.SignalName.AboutToPopup);
+        UiTestExpect(!viewMenu.IsItemDisabled(debugItem), "the View menu's Debug Log item stays greyed in developer mode");
+        _bottomMenuBtn.EmitSignal(BaseButton.SignalName.Pressed);
+        UiTestExpect(MenuItem("Copy Debug Log").Visible && MenuItem("Clear Debug Log").Visible, "the Debug Log's menu items don't show in developer mode");
+        popup.Hide();
+        OnHitch("Hitch 200 ms: a probe");
+        UiTestExpect(_globalStatusLabel.Text == "Hitch 200 ms: a probe", "a hitch didn't reach the status bar in developer mode");
+        ShowStatus(Tr("Ready"));
+
+        // Off again while the Debug Log is current: Chat takes its place.
+        developer.ButtonPressed = false;
+        UiTestExpect(_bottomTabs.IsTabHidden(2) && _currentTerminalTab == 0, "hiding the Debug Log while it was current didn't give way to Chat");
+
+        // The status bar's right end counts the connected slots.
+        UiTestExpect(_statusConnectedLabel.Text == "", $"the status bar counts slots while none is connected: \"{_statusConnectedLabel.Text}\"");
+        await using var server = new FakeArchipelagoServer();
+        server.Games["Test Game"] = new FakeGame("0123456789abcdef0123456789abcdef01234567",
+            new Dictionary<string, long> { ["Sword"] = 1000 }, new Dictionary<string, long> { ["Cave Chest"] = 2000 });
+        var profile = new MultiworldProfile { Name = "UI test count", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Tester");
+        _profiles.Add(profile);
+        int statusMark = _statusShown.Count;
+        await OnConnectSlotPressedAsync("Tester", profile);
+        var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
+        var statuses = _statusShown.Skip(statusMark).ToList();
+        UiTestExpect(statuses.Contains(Tr("Connecting {0}…").Replace("{0}", "Tester")) && statuses.Contains(Tr("{0} connected; starting its logic…").Replace("{0}", "Tester")),
+            $"the status bar didn't say the slot was connecting, then connected: {string.Join(" | ", statuses)}");
+        UiTestExpect(!statuses.Any(s => s.Contains("Booting") || s.Contains("Socket") || s.StartsWith("[") || s.Contains("Error")), $"the status bar speaks in code: {string.Join(" | ", statuses)}");
+        int connected = ActiveSlotNodes().OfType<SlotTrackerControl>().Count();
+        string expected = connected == 1 ? Tr("1 slot connected") : Tr("{0} slots connected").Replace("{0}", connected.ToString());
+        UiTestExpect(_statusConnectedLabel.Text == expected, $"the status bar says \"{_statusConnectedLabel.Text}\" with {connected} slot(s) connected");
+        DeleteProfile(profile);
+        await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester") == null ? this : null, "the slot to end");
+        int left = ActiveSlotNodes().OfType<SlotTrackerControl>().Count();
+        UiTestExpect(_statusConnectedLabel.Text == (left == 0 ? "" : left == 1 ? Tr("1 slot connected") : Tr("{0} slots connected").Replace("{0}", left.ToString())), $"the count didn't follow the slot's end: \"{_statusConnectedLabel.Text}\"");
+        host.ShowTool(AP_Atlas.UI.Tool.Home);
+    }
 
     private async Task CustomizationAsync()
     {
@@ -1460,8 +1536,8 @@ public partial class MainTrackerWindow
         var input = palette.FindChildren("*", nameof(LineEdit), true, false).OfType<LineEdit>().First();
         var tree = palette.FindChildren("*", nameof(Tree), true, false).OfType<Tree>().First();
         UiTestExpect(input.HasFocus(), "the palette's typing box isn't focused");
-        int listed = Rows(tree).Count, expected = _commands!.All.Count - 1;
-        UiTestExpect(listed == expected, $"the palette lists {listed} commands, not every command but itself ({expected})");
+        int listed = Rows(tree).Count, expected = _commands!.All.Count(c => c.Enabled()) - 1; // the Debug Log waits for developer mode
+        UiTestExpect(listed == expected, $"the palette lists {listed} commands, not every command that can run but itself ({expected})");
         UiTestExpect(Rows(tree).Any(r => r[0] == "Map Tracker" && r[1] == "Ctrl+1"), "the palette doesn't show a command's key");
 
         void Type(string text)

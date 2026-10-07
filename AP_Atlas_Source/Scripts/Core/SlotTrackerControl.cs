@@ -238,8 +238,8 @@ public partial class SlotTrackerControl : MarginContainer
     private void SetStatus(string msg)
     {
         string clean = msg.Replace("Status: ", "");
-        if (_engineStatusLabel != null) _engineStatusLabel.Text = "Engine: " + clean;
-        _updateGlobalStatus?.Invoke($"[{_slotName}] {clean}");
+        if (_engineStatusLabel != null) _engineStatusLabel.Text = clean;
+        _updateGlobalStatus?.Invoke($"{_slotName}: {clean}");
     }
 
     // =====================================================================

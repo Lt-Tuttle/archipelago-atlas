@@ -38,7 +38,7 @@ public partial class SlotTrackerControl : MarginContainer
         _goModeLabel = new Label { Text = "GO MODE: your goal is in logic", Visible = false, TooltipText = "Everything the goal needs is reachable with what this slot has now" };
         _goModeLabel.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Success);
         toolbar.AddChild(_goModeLabel);
-        _engineStatusLabel = new Label { Text = "Engine: Offline", SizeFlagsHorizontal = SizeFlags.ExpandFill, HorizontalAlignment = HorizontalAlignment.Right };
+        _engineStatusLabel = new Label { Text = "Logic not running", SizeFlagsHorizontal = SizeFlags.ExpandFill, HorizontalAlignment = HorizontalAlignment.Right };
         toolbar.AddChild(_engineStatusLabel);
 
         // Shown when the logic can't be trusted as exact: the rebuilt world or the apworld doesn't match the seed.

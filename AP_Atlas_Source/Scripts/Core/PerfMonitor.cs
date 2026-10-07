@@ -241,14 +241,14 @@ namespace AP_Atlas.Core
             _previousScopes = new List<PerfMonitor.FrameScope>(); // already reported
             if (worst) WorstFrameReport = report.ToString();
             if (worstWork) WorstWorkReport = report.ToString();
-            Logger.LogWarning(report.ToString());
+            Logger.LogDiagnostic(report.ToString());
 
             double now = Time.GetTicksMsec() / 1000.0;
             if (now - _lastStatusTime < StatusCooldownSec) return;
             _lastStatusTime = now;
             var top = scopes.Where(s => s.Depth == 0).OrderByDescending(s => s.Ms).FirstOrDefault();
             string cause = top.Label != null ? $"{top.Label} ({top.Ms:0} ms)" : (gcs.Count > 0 ? "garbage collection / layout" : "layout/rendering");
-            _setStatus?.Invoke($"Hitch {frameMs:0} ms: {cause}. Details in System Log.");
+            _setStatus?.Invoke($"Hitch {frameMs:0} ms: {cause}. Details in the Debug Log.");
         }
     }
 }

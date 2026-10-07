@@ -44,7 +44,7 @@ public partial class MainTrackerWindow
     {
         if (_bottomTabs == null) return;
         _bottomTabs.SetTabHidden(1, !_appSettings.ShowSystemLogTab);
-        _bottomTabs.SetTabHidden(2, !_appSettings.ShowDebugLogTab);
+        _bottomTabs.SetTabHidden(2, !_appSettings.DeveloperMode); // the Debug Log is for developer mode
         if (_bottomTabs.IsTabHidden(_bottomTabs.CurrentTab)) ShowTerminalTab(0);
     }
 

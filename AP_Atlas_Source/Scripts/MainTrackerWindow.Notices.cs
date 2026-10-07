@@ -12,8 +12,34 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     private void OnLogMessageReceived(string msg, string level)
     {
         // Log lines can arrive from other threads (and while Atlas is closing, after the views are freed: then they're dropped).
-        _systemLog?.Append(msg);
+        // Diagnostics (frame hitches) are for the Debug Log; the System Log is what Atlas did, in plain words.
+        if (level != AP_Atlas.Core.Logger.DiagnosticLevel) _systemLog?.Append(msg);
         _debugLog?.Append(msg);
+    }
+
+    /// <summary>The status bar's message: plain words about what Atlas is doing or just did.</summary>
+    private void ShowStatus(string text)
+    {
+        if (_globalStatusLabel != null) _globalStatusLabel.Text = text;
+        if (UiTestRequested && _statusShown.Count < 10000) _statusShown.Add(text); // the UI test reads every message, not just the last
+    }
+
+    /// <summary>Every status bar message shown, in order (the UI test only).</summary>
+    private readonly List<string> _statusShown = new();
+
+    /// <summary>A frame hitch, from the hitch monitor: the status bar says so in developer mode; the Debug Log has it either way.</summary>
+    private void OnHitch(string message)
+    {
+        if (_appSettings != null && _appSettings.DeveloperMode) ShowStatus(message);
+    }
+
+    /// <summary>The status bar's right end: how many slots are connected (nothing while none is).</summary>
+    private void ShowConnectedCount()
+    {
+        if (_statusConnectedLabel == null) return;
+        int connected = ActiveSlotNodes().OfType<SlotTrackerControl>().Count();
+        string text = connected == 0 ? "" : connected == 1 ? Tr("1 slot connected") : Tr("{0} slots connected").Replace("{0}", connected.ToString());
+        if (_statusConnectedLabel.Text != text) _statusConnectedLabel.Text = text;
     }
     private bool _uiReady;
     private readonly List<(string, Godot.Color)> _pendingNotices = new List<(string, Godot.Color)>();

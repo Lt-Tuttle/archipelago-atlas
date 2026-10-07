@@ -120,7 +120,8 @@ public class AppSettings
     public bool ShowBottomPane { get; set; } = true;
     public bool ShowStatusBar { get; set; } = true;
     public bool ShowSystemLogTab { get; set; } = true;
-    public bool ShowDebugLogTab { get; set; } = true;
+    /// <summary>Shows Atlas's diagnostics: the Debug Log tab, frame hitch warnings on the status bar, the Debug Log's menu items.</summary>
+    public bool DeveloperMode { get; set; } = false;
 }
 public class SlotStats
 {

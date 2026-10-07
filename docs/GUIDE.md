@@ -20,7 +20,7 @@ Atlas opens on Home (Ctrl+8) unless Settings → Behaviour → Open on says othe
 - The **Slots panel** lists every connected slot as a card with its status. Click a card to make that slot the one the slot tools show. Ctrl+Tab and Ctrl+Shift+Tab go through the connected slots, and the picker in the tool header does the same.
 - The **explorer**, beside the content, is the tool's own list: the maps of a pack, the multiworlds, the packs, the Settings sections.
 - **Properties**, on the right, shows everything about whatever you last selected anywhere: a location, an item, a player, a hint, a map, a pack or a multiworld. It keeps a history (◀ ▶, also Alt+Left and Alt+Right), ⌂ shows the selected slot's summary, and ⧉ (Ctrl+Shift+C) copies everything shown.
-- The **bottom pane** holds Chat (the text client: the room's messages, and a line to type commands such as `!hint`), the System Log (what Atlas did, and any trouble it met) and the Debug Log (Atlas's own diagnostics).
+- The **bottom pane** holds Chat (the text client: the room's messages, and a line to type commands such as `!hint`), the System Log (what Atlas did, and any trouble it met) and, in developer mode (Settings → Advanced), the Debug Log (Atlas's own diagnostics). The status bar under it says what Atlas is doing and how many slots are connected.
 - The **View** menu shows or hides each part, and remembers it. **Focus mode** (F9) leaves the content and its header alone, with the menu bar; F9 again brings everything back. F11 is full screen.
 - The **command palette** (Ctrl+Shift+P) lists every command in the menus: type a few letters of its name and press Enter.
 - **Tables** (Hints, Cheese Tracker, Sphere Tracker, Notifications, the shortcuts list) all work the same way: click a column's title to sort by it (again to turn the order; the arrow says which), right-click a title to hide or show columns, type words in the search box to narrow the rows (each word must start a word of a cell), and use Export to copy the rows shown as TSV for a spreadsheet, as a Markdown table, as Discord messages (split to fit), or to save them as a CSV file. Right-click a row for its actions and Copy row. The sort and the hidden columns are remembered per table.
@@ -99,11 +99,13 @@ When a seed was made with another version of a game's apworld, Atlas finds that 
 
 ## Settings
 
-Settings (Ctrl+,) holds every setting in sections the explorer lists, and a search box that finds a setting by any word of its name, description or section: Multiworld (automatic reconnects, each seed's apworld version, race mode), Appearance (the theme, the colours, the zoom, the font sizes, the map's pins), Behaviour (what Atlas opens on), Window (which parts show, the bottom pane's tabs), Tools (the engine, Cheese Tracker and Sphere Tracker settings), Privacy & permissions, Keyboard, and Data (Atlas's data folder). Each setting applies and is saved as you change it.
+Settings (Ctrl+,) holds every setting in sections the explorer lists, and a search box that finds a setting by any word of its name, description or section: Multiworld (automatic reconnects, each seed's apworld version, race mode), Appearance (the theme, the colours, the zoom, the font sizes, the map's pins), Behaviour (what Atlas opens on), Window (which parts show, the bottom pane's tabs), Tools (the engine, Cheese Tracker and Sphere Tracker settings), Privacy & permissions, Keyboard, Advanced (developer mode) and Data (Atlas's data folder). Each setting applies and is saved as you change it.
 
 Under **Appearance**: the theme (Follow Windows, Dark, Light, High contrast; a change restyles the window at once and reaches everything after a restart); colour-blind-safe colours (blue for in logic, connected and done, orange for out of logic and errors, with the hint and item kinds told apart the same way, so nothing rests on red against green; also after a restart); the accent colour, a preset or any colour you pick (headings and links are lightened or darkened as needed, so they always read); the zoom of the whole window (also Ctrl+= and Ctrl+-, and Reset Zoom in the View menu); a text size for each part of the window; and the shape of the Map Tracker's pins (round, square or diamond).
 
 Under **Behaviour**: what Atlas opens on: Home, the tool you had open when it closed, or Multiworlds.
+
+Under **Advanced**: developer mode, which shows Atlas's diagnostics: the Debug Log tab, frame hitch warnings on the status bar and the Debug Log's menu items. Everything is written to the log file either way.
 
 ## Keyboard shortcuts
 
@@ -135,7 +137,7 @@ Online, Atlas reaches the archipelago.gg rooms you connect to; Cheese Tracker (y
 
 ## Troubleshooting
 
-- **The logs:** the System Log tab shows what Atlas did; the Debug Log its diagnostics. The log files are in `PortableData/logs` (File → Open Atlas's Data Folder), and a crash leaves a report there too.
+- **The logs:** the System Log tab shows what Atlas did; the Debug Log (developer mode, under Settings → Advanced) its diagnostics. The log files are in `PortableData/logs` (File → Open Atlas's Data Folder), and a crash leaves a report there too.
 - **Logic says "needs the engine":** set up the Atlas Engine (Home, or the bar's bottom button).
 - **A pack looks wrong for the game:** open it in the Pack Doctor from Map Packs; it says what it found and lets you fix it locally.
 - **A slot won't reconnect:** after a few tries over about 20 minutes Atlas stops on purpose. Connect it again from the Multiworlds page; if the room's port changed, update the server address.

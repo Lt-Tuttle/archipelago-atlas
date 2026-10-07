@@ -175,13 +175,6 @@ public partial class MainTrackerWindow
                 DataManager.SaveSettings(_appSettings);
                 ApplyConsoleTabs();
             });
-        page.AddToggle("window", "debug-log-tab", "Debug Log tab", "In the bottom pane: Atlas's own diagnostics.",
-            () => _appSettings.ShowDebugLogTab, on =>
-            {
-                _appSettings.ShowDebugLogTab = on;
-                DataManager.SaveSettings(_appSettings);
-                ApplyConsoleTabs();
-            });
 
         page.AddSection("tools", "Tools");
         page.AddAction("tools", "engine", "Atlas Engine", "The logic engine: its install, version and mode.", "Open…", OpenEngineSetup);
@@ -200,6 +193,16 @@ public partial class MainTrackerWindow
             page.AddKey("keyboard", "key." + bound.Id, bound.Title, bound.Menu,
                 () => _commands.ShortcutOf(bound.Id), () => bound.DefaultShortcut, key => SetKeyBinding(bound.Id, key), () => ConflictsOf(bound.Id));
         }
+
+        page.AddSection("advanced", "Advanced");
+        page.AddToggle("advanced", "developer-mode", "Developer mode",
+            "Shows Atlas's diagnostics: the Debug Log tab in the bottom pane, frame hitch warnings on the status bar and the Debug Log's menu items. Everything is written to the log file either way.",
+            () => _appSettings.DeveloperMode, on =>
+            {
+                _appSettings.DeveloperMode = on;
+                DataManager.SaveSettings(_appSettings);
+                ApplyConsoleTabs();
+            });
 
         page.AddSection("data", "Data");
         page.AddAction("data", "data-folder", "Atlas's data folder", "Your multiworlds, settings, logs, map packs and the engine live here, and nowhere else.", "Open folder",

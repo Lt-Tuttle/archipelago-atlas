@@ -149,14 +149,14 @@ namespace AP_Atlas.Core
             {
                 // Never start an engine whose files may be changing; setup's Changed event brings us back.
                 Problem = Paused();
-                Status = "Paused (engine update)";
+                Status = "Logic paused while the engine updates";
                 Notify();
                 return;
             }
             if (Session.Locations.AllLocations.Count == 0)
             {
                 _log("InitializeLogicEngine: 0 locations detected (TextOnly client). Skipping engine.");
-                Status = "No Locations (TextOnly)";
+                Status = "Nothing to track (text only)";
                 Loaded = true;
                 Notify();
                 return;
@@ -166,7 +166,7 @@ namespace AP_Atlas.Core
             Booting = true;
             Problem = null;
             Engine.SetInstall(AtlasEngine.Resolve(_settings));
-            Status = "Booting Engine...";
+            Status = "Starting the logic engine…";
             Notify();
             try
             {
@@ -203,7 +203,7 @@ namespace AP_Atlas.Core
                 if (_disposed || run != _run) return;
                 _log("Logic Engine Init Error: " + ex.Message);
                 Problem = new EngineStartError { Code = "error", Message = ex.Message };
-                Status = "Engine Error";
+                Status = "Engine error";
                 Loaded = true;
             }
             finally
@@ -280,7 +280,7 @@ namespace AP_Atlas.Core
             if (ApworldMatchesSeed == false)
             {
                 string version = Engine.LastWorldVersion != null ? $" (version {Engine.LastWorldVersion})" : "";
-                Status = "Running (apworld differs from the seed's)";
+                Status = "Logic running (apworld differs from the seed's)";
                 Logger.LogWarning($"[{slot}] The installed {game} apworld{version} isn't the one this seed was generated with: its data " +
                     $"(checksum {Short(localChecksum)}) differs from the server's ({Short(serverChecksum)}). " +
                     "Atlas will look for the seed's version.");
@@ -290,11 +290,11 @@ namespace AP_Atlas.Core
             if (match == false)
             {
                 int missing = info!["missing"]?.ToObject<int>() ?? 0, extra = info["extra"]?.ToObject<int>() ?? 0;
-                Status = $"Running (world differs: {missing} missing, {extra} extra)";
+                Status = $"Logic running (world differs: {missing} missing, {extra} extra)";
                 Logger.LogWarning($"[{slot}] The rebuilt world doesn't match the server ({missing} locations missing, {extra} extra). Logic may be off. " +
                     "Linking the YAML used to generate the seed, or matching the game's apworld version, usually fixes this.");
             }
-            else Status = "Engine Running";
+            else Status = "Logic running";
         }
 
         /// <summary>A checksum's first 8 characters, for messages.</summary>
@@ -302,14 +302,14 @@ namespace AP_Atlas.Core
 
         private static string ProblemStatus(EngineStartError e) => e.Code switch
         {
-            "no_engine" => "Not Set Up",
-            "world_missing" => "Game Not Installed",
-            "yaml_needed" => "YAML Needed",
-            "generation_failed" => "World Rebuild Failed",
-            "ut_disabled" => "Disabled By Game",
-            "no_response" => "No Response",
-            "crashed" => "Engine Crashed",
-            _ => "Engine Error"
+            "no_engine" => "Logic needs the Atlas Engine",
+            "world_missing" => "The game isn't installed in the engine",
+            "yaml_needed" => "Logic needs the player's YAML",
+            "generation_failed" => "The world couldn't be rebuilt",
+            "ut_disabled" => "Logic is disabled by the game",
+            "no_response" => "The engine didn't answer",
+            "crashed" => "The engine crashed",
+            _ => "Engine error"
         };
 
         // =====================================================================
@@ -484,7 +484,7 @@ namespace AP_Atlas.Core
             {
                 // Stopped for an engine update, not a crash: wait for the update instead of counting a failure.
                 Problem = Paused();
-                Status = "Paused (engine update)";
+                Status = "Logic paused while the engine updates";
                 Notify();
                 return;
             }
@@ -499,7 +499,7 @@ namespace AP_Atlas.Core
             else
             {
                 Problem = new EngineStartError { Code = "crashed", Message = $"The logic engine stopped {failures} times in 10 minutes ({reason}). Logic is paused so it can't show anything wrong. The slot's Debug Log has details." };
-                Status = "Engine Paused (repeated failures)";
+                Status = "Logic paused after repeated failures";
                 Logger.LogError($"[{slot}] The logic engine failed {failures} times in 10 minutes ({reason}); logic is paused.");
             }
             Notify();
@@ -510,7 +510,7 @@ namespace AP_Atlas.Core
         {
             string slot = _model.SlotName;
             Problem = new EngineStartError { Code = "restarting", Message = $"The logic engine stopped ({reason}). Restarting it in {seconds} s; logic will be rebuilt from scratch." };
-            Status = "Restarting…";
+            Status = "Restarting the logic engine…";
             Logger.LogWarning($"[{slot}] The logic engine stopped ({reason}); restarting in {seconds} s.");
             Async.Fire(RestartLaterAsync(_run, seconds), $"restarting logic for {slot}");
         }
@@ -538,7 +538,7 @@ namespace AP_Atlas.Core
                 if (wasActive || Problem != null)
                 {
                     Problem = Paused();
-                    Status = "Paused (engine update)";
+                    Status = "Logic paused while the engine updates";
                     Notify();
                 }
             }, $"pausing {_model.SlotName}'s logic for an engine update");
