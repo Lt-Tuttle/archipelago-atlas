@@ -44,14 +44,21 @@ namespace AP_Atlas.Core
             ("follow", "Follow Windows"), ("dark", "Dark"), ("light", "Light"), ("high-contrast", "High contrast")
         };
 
-        /// <summary>The palette a theme setting means: "follow" takes Windows's light or dark mode (dark where Godot can't tell).</summary>
-        public static Palette PaletteForSetting(string? theme) => theme switch
+        /// <summary>
+        /// The palette a theme setting means: "follow" takes Windows's light or dark mode (dark where Godot can't tell);
+        /// with <paramref name="colourBlindSafe"/>, that theme's colour-blind-safe palette.
+        /// </summary>
+        public static Palette PaletteForSetting(string? theme, bool colourBlindSafe = false)
         {
-            "dark" => Palette.Dark,
-            "light" => Palette.Light,
-            "high-contrast" => Palette.HighContrast,
-            _ => DisplayServer.IsDarkModeSupported() && !DisplayServer.IsDarkMode() ? Palette.Light : Palette.Dark
-        };
+            var palette = theme switch
+            {
+                "dark" => Palette.Dark,
+                "light" => Palette.Light,
+                "high-contrast" => Palette.HighContrast,
+                _ => DisplayServer.IsDarkModeSupported() && !DisplayServer.IsDarkMode() ? Palette.Light : Palette.Dark
+            };
+            return colourBlindSafe ? palette.ColourBlindSafe : palette;
+        }
 
         public static void SetPalette(Palette palette)
         {
@@ -72,10 +79,27 @@ namespace AP_Atlas.Core
         public static Color TextOn(Color background) => Contrast(Colors.White, background) >= Contrast(Colors.Black, background) ? Colors.White : Colors.Black;
 
         /// <summary>Headings and section titles: the accent, lightened to read on dark surfaces, darkened on light ones.</summary>
-        public static Color Heading => Current.IsDark ? Accent.Lightened(0.2f) : Accent.Darkened(0.15f);
+        public static Color Heading => HeadingFor(Accent, Current);
 
         /// <summary>Links in rich text (Properties' jumps).</summary>
-        public static Color Link => Current.IsDark ? Accent.Lightened(0.35f) : Accent.Darkened(0.05f);
+        public static Color Link => LinkFor(Accent, Current);
+
+        /// <summary>The heading colour for an accent on a palette: lightened or darkened until it reads at 3 to 1 on the surface, whatever the accent (the user can pick any).</summary>
+        public static Color HeadingFor(Color accent, Palette palette) =>
+            Readable(palette.IsDark ? accent.Lightened(0.2f) : accent.Darkened(0.15f), palette.Surface, 3.0, palette.IsDark);
+
+        /// <summary>The link colour for an accent on a palette: text, so 4.5 to 1 on the surface.</summary>
+        public static Color LinkFor(Color accent, Palette palette) =>
+            Readable(palette.IsDark ? accent.Lightened(0.35f) : accent.Darkened(0.05f), palette.Surface, 4.5, palette.IsDark);
+
+        /// <summary>The colour, lightened (for a dark surface) or darkened (for a light one) a step at a time until it reads on the surface.</summary>
+        public static Color Readable(Color colour, Color surface, double minContrast, bool lighten)
+        {
+            var readable = colour;
+            for (int step = 0; step < 40 && Contrast(readable, surface) < minContrast; step++)
+                readable = lighten ? readable.Lightened(0.1f) : readable.Darkened(0.1f);
+            return readable;
+        }
 
         // ---- Text ----
 
@@ -191,7 +215,7 @@ namespace AP_Atlas.Core
     }
 
     /// <summary>One set of the palette's colours. <see cref="Dark"/> is Atlas's; Phase 2.8 adds the others.</summary>
-    public sealed class Palette
+    public sealed record Palette
     {
         public string Name { get; init; } = "";
 
@@ -251,8 +275,59 @@ namespace AP_Atlas.Core
             ("Surface", Surface), ("SurfacePanel", SurfacePanel), ("SurfaceSunken", SurfaceSunken), ("SurfaceDeep", SurfaceDeep)
         };
 
-        /// <summary>Every palette Atlas ships, as the Settings page offers them.</summary>
-        public static IReadOnlyList<Palette> All => new[] { Dark, Light, HighContrast };
+        /// <summary>Every palette Atlas ships: the three themes and each one's colour-blind-safe palette.</summary>
+        public static IReadOnlyList<Palette> All => new[] { Dark, Light, HighContrast, Dark.ColourBlindSafe, Light.ColourBlindSafe, HighContrast.ColourBlindSafe };
+
+        /// <summary>
+        /// This palette with colour-blind-safe state and kind colours (Okabe and Ito's set): blue for in logic, connected
+        /// and done, orange for out of logic and errors, yellow for warnings, bluish green and reddish purple for the
+        /// hint and item kinds, so no two meanings differ by red against green alone. Surfaces and text stay the same.
+        /// </summary>
+        public Palette ColourBlindSafe => Name.EndsWith(ColourBlindSafeSuffix, StringComparison.Ordinal) ? this
+            : IsDark && Surface == HighContrast.Surface ? this with
+            {
+                Name = Name + ColourBlindSafeSuffix,
+                Success = new Color("#7CC8FF"),
+                Danger = new Color("#FFB000"),
+                Error = new Color("#FFB000"),
+                Warning = new Color("#F0E442"),
+                Hinted = new Color("#35E0B0"),
+                HintedOutOfLogic = new Color("#F0A0D0"),
+                Progression = new Color("#F0A0D0"),
+                Useful = new Color("#7CC8FF"),
+                Trap = new Color("#FFB000"),
+                Filler = new Color("#35E0B0")
+            }
+            : IsDark ? this with
+            {
+                Name = Name + ColourBlindSafeSuffix,
+                Success = new Color("#56B4E9"),
+                Danger = new Color("#E69F00"),
+                Error = new Color("#E69F00"),
+                Warning = new Color("#F0E442"),
+                Hinted = new Color("#35C9A0"),
+                HintedOutOfLogic = new Color("#CC79A7"),
+                Progression = new Color("#CC79A7"),
+                Useful = new Color("#56B4E9"),
+                Trap = new Color("#E69F00"),
+                Filler = new Color("#35C9A0")
+            }
+            : this with
+            {
+                Name = Name + ColourBlindSafeSuffix,
+                Success = new Color("#0072B2"),
+                Danger = new Color("#C25400"),
+                Error = new Color("#C25400"),
+                Warning = new Color("#6F5A00"),
+                Hinted = new Color("#007A59"),
+                HintedOutOfLogic = new Color("#A0407F"),
+                Progression = new Color("#A0407F"),
+                Useful = new Color("#0072B2"),
+                Trap = new Color("#C25400"),
+                Filler = new Color("#007A59")
+            };
+
+        public const string ColourBlindSafeSuffix = " (colour-blind-safe)";
 
         /// <summary>A palette by its name, or Dark.</summary>
         public static Palette Named(string? name) => All.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)) ?? Dark;

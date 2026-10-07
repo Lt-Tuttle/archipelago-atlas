@@ -129,6 +129,8 @@ public partial class MainTrackerWindow
             AlertsAsync);
         await ScenarioAsync("UI kit: a button from the kit runs its action once per press, honours enabled and keeps its tooltip; its text lines take the palette's colours; every heading from it wears the accent's heading colour and follows an accent change, wherever it is; the alert feed names a card's kind from the palette",
             UiKitAsync);
+        await ScenarioAsync("Customization: a custom accent of any colour recolours Atlas, is saved, and its headings and links still read (the preset choice says Custom); colour-blind-safe colours are the theme's other palette, held to the contrast rule, saved and undone; the zoom choice, Ctrl+= and Ctrl+- scale the window and are saved; the pin shape is saved and every map redraws, a diamond being a square on its corner; the page Atlas opens on is saved and the last tool shown is remembered for it",
+            CustomizationAsync);
         await ScenarioAsync("Tables: a click on a column's title sorts by it (the column's own first direction, then the other; the arrow says which), typed words narrow the rows, a column hides and shows, pinned rows stay on top, the rows export as TSV, Markdown, Discord parts and a CSV file, the sort and the hidden columns are saved, and unchanged rows are updated in place with the selection kept",
             TablesAsync);
         await ScenarioAsync("Confirmations and empty states: deleting a slot or a multiworld asks first and cancelling keeps them; without the logic engine, Key Items and the Logic Tracker both say what logic needs; go mode isn't claimed while unknown",
@@ -1014,6 +1016,117 @@ public partial class MainTrackerWindow
         UiTestExpect(feed.Log.Entries.Count == 0 && dialog.RowCount == 0, "Clear didn't empty the history");
         dialog.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
         await UiTestWaitAsync(0.2);
+    }
+
+    /// <summary>A test input for the custom accent: near black, which no heading could wear as it is (not a colour Atlas draws with).</summary>
+    private const string NearBlackHex = "#101010";
+
+    private async Task CustomizationAsync()
+    {
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        var page = _settingsPage ?? throw new InvalidOperationException("The Settings page wasn't built.");
+        host.ShowTool(AP_Atlas.UI.Tool.Settings);
+
+        // A custom accent: any colour, saved once the picking settles; headings and links still read on the surface.
+        var picker = (ColorPickerButton)page.ControlOf("custom-accent");
+        picker.Color = new Color(NearBlackHex);
+        picker.EmitSignal(ColorPickerButton.SignalName.ColorChanged, picker.Color);
+        UiTestExpect(_appSettings.ThemeAccentColor != NearBlackHex, "the custom accent was applied before the picking settled");
+        await UiTestWaitAsync(0.6);
+        UiTestExpect(_appSettings.ThemeAccentColor == NearBlackHex && AP_Atlas.Core.ThemeColors.Accent == new Color(NearBlackHex) && DataManager.LoadSettings().ThemeAccentColor == NearBlackHex,
+            "a custom accent didn't recolour Atlas, or wasn't saved");
+        double headingContrast = AP_Atlas.Core.ThemeColors.Contrast(AP_Atlas.Core.ThemeColors.Heading, AP_Atlas.Core.ThemeColors.Current.Surface);
+        double linkContrast = AP_Atlas.Core.ThemeColors.Contrast(AP_Atlas.Core.ThemeColors.Link, AP_Atlas.Core.ThemeColors.Current.Surface);
+        UiTestExpect(headingContrast >= 3.0 && linkContrast >= 4.5, $"with a near-black accent, headings read at {headingContrast:0.0} to 1 and links at {linkContrast:0.0}");
+        var accent = (OptionButton)page.ControlOf("accent");
+        UiTestExpect(accent.Selected == AccentPresets.Length && accent.GetItemText(accent.Selected) == Tr("Custom"), "the preset choice doesn't say Custom for a custom accent");
+        accent.Select(0);
+        accent.EmitSignal(OptionButton.SignalName.ItemSelected, 0);
+        UiTestExpect(_appSettings.ThemeAccentColor == AP_Atlas.Core.ThemeColors.DefaultAccentHex && picker.Color == AP_Atlas.Core.ThemeColors.Accent, "the accent didn't go back to the default, or the picker doesn't show it");
+
+        // Colour-blind-safe colours: the theme's other palette (one of the palettes the self-test holds to the contrast rule), saved, and undone.
+        var safe = (CheckButton)page.ControlOf("colour-blind-safe");
+        var usualSuccess = AP_Atlas.Core.ThemeColors.Success;
+        var usualPalette = AP_Atlas.Core.ThemeColors.Current;
+        safe.ButtonPressed = true;
+        UiTestExpect(_appSettings.ColourBlindSafe && DataManager.LoadSettings().ColourBlindSafe
+            && AP_Atlas.Core.ThemeColors.Current.Name == usualPalette.Name + AP_Atlas.Core.Palette.ColourBlindSafeSuffix
+            && AP_Atlas.Core.Palette.All.Contains(AP_Atlas.Core.ThemeColors.Current)
+            && AP_Atlas.Core.ThemeColors.Success != usualSuccess && AP_Atlas.Core.ThemeColors.Text == usualPalette.Text,
+            "colour-blind-safe colours didn't take the theme's other palette, or weren't saved");
+        safe.ButtonPressed = false;
+        UiTestExpect(!_appSettings.ColourBlindSafe && ReferenceEquals(AP_Atlas.Core.ThemeColors.Current, usualPalette), "the usual colours didn't come back");
+
+        // Zoom: the choice scales the window at once and is saved; Ctrl+= and Ctrl+- step through the choices.
+        var zoom = (OptionButton)page.ControlOf("ui-zoom");
+        UiTestExpect(zoom.Selected == Array.IndexOf(ZoomSteps, 100) && Mathf.IsEqualApprox(GetWindow().ContentScaleFactor, 1f), "the zoom isn't 100% to begin with");
+        int step150 = Array.IndexOf(ZoomSteps, 150);
+        zoom.Select(step150);
+        zoom.EmitSignal(OptionButton.SignalName.ItemSelected, step150);
+        UiTestExpect(_appSettings.UiZoom == 150 && Mathf.IsEqualApprox(GetWindow().ContentScaleFactor, 1.5f) && DataManager.LoadSettings().UiZoom == 150, "picking 150% didn't scale the window, or wasn't saved");
+        await PressAsync("Ctrl+=");
+        UiTestExpect(_appSettings.UiZoom == 175 && Mathf.IsEqualApprox(GetWindow().ContentScaleFactor, 1.75f) && zoom.Selected == Array.IndexOf(ZoomSteps, 175), "Ctrl+= didn't zoom in a step, or the choice doesn't show it");
+        await PressAsync("Ctrl+-");
+        await PressAsync("Ctrl+-");
+        UiTestExpect(_appSettings.UiZoom == 125, $"two Ctrl+- didn't zoom out two steps (at {_appSettings.UiZoom}%)");
+        _appSettings.UiZoom = 130; // between two steps: a step down lands on the step below, a step up on the one above
+        ZoomBy(-1);
+        UiTestExpect(_appSettings.UiZoom == 125, $"from 130%, a step down went to {_appSettings.UiZoom}%");
+        _appSettings.UiZoom = 130;
+        ZoomBy(1);
+        UiTestExpect(_appSettings.UiZoom == 150, $"from 130%, a step up went to {_appSettings.UiZoom}%");
+        int step100 = Array.IndexOf(ZoomSteps, 100);
+        zoom.Select(step100);
+        zoom.EmitSignal(OptionButton.SignalName.ItemSelected, step100);
+        UiTestExpect(_appSettings.UiZoom == 100 && Mathf.IsEqualApprox(GetWindow().ContentScaleFactor, 1f), "the zoom didn't go back to 100%");
+
+        // The pin shape: saved, every map redraws; a diamond is a square turned on its corner, a round pin's corners are as wide as it is.
+        var markers = (OptionButton)page.ControlOf("map-markers");
+        int redraws = 0;
+        Action redrawn = () => redraws++;
+        AP_Atlas.UI.MapTrackerControl.DisplayOptionsChanged += redrawn;
+        try
+        {
+            markers.Select(2);
+            markers.EmitSignal(OptionButton.SignalName.ItemSelected, 2);
+        }
+        finally
+        {
+            AP_Atlas.UI.MapTrackerControl.DisplayOptionsChanged -= redrawn;
+        }
+        UiTestExpect(_appSettings.MapMarkerStyle == "diamond" && DataManager.LoadSettings().MapMarkerStyle == "diamond" && redraws == 1, "picking Diamond wasn't saved, or the maps weren't told to redraw");
+        var pin = new Button { Size = new Vector2(20, 20) };
+        AddChild(pin);
+        var style = new StyleBoxFlat();
+        AP_Atlas.UI.MapTrackerControl.ShapePin(style, pin, "diamond", 20);
+        UiTestExpect(style.CornerRadiusTopLeft == 0 && Mathf.IsEqualApprox(pin.Rotation, Mathf.Pi / 4) && pin.PivotOffset == new Vector2(10, 10), "a diamond pin isn't a square turned on its corner around its centre");
+        AP_Atlas.UI.MapTrackerControl.ShapePin(style, pin, "square", 20);
+        UiTestExpect(style.CornerRadiusTopLeft == 0 && pin.Rotation == 0f, "a square pin has rounded corners or is turned");
+        AP_Atlas.UI.MapTrackerControl.ShapePin(style, pin, "round", 20);
+        UiTestExpect(style.CornerRadiusTopLeft == 20 && style.CornerRadiusBottomRight == 20 && pin.Rotation == 0f, "a round pin's corners aren't as wide as the pin");
+        pin.QueueFree();
+        markers.Select(0);
+        markers.EmitSignal(OptionButton.SignalName.ItemSelected, 0);
+        UiTestExpect(_appSettings.MapMarkerStyle == "round", "the pins didn't go back to round");
+
+        // Where Atlas opens: the choice is saved; the last tool shown is remembered for "where I left off"; an unknown tool means Home.
+        var startup = (OptionButton)page.ControlOf("startup");
+        startup.Select(2);
+        startup.EmitSignal(OptionButton.SignalName.ItemSelected, 2);
+        UiTestExpect(_appSettings.StartupPage == "multiworlds" && DataManager.LoadSettings().StartupPage == "multiworlds" && StartupTool(_appSettings) == AP_Atlas.UI.Tool.Connections,
+            "picking Multiworlds wasn't saved, or doesn't open on Multiworlds");
+        startup.Select(1);
+        startup.EmitSignal(OptionButton.SignalName.ItemSelected, 1);
+        host.ShowTool(AP_Atlas.UI.Tool.Hints);
+        await UiTestWaitAsync(0.8);
+        UiTestExpect(_appSettings.LastTool == "hints" && DataManager.LoadSettings().LastTool == "hints" && StartupTool(_appSettings) == AP_Atlas.UI.Tool.Hints,
+            "the last tool shown wasn't remembered for where I left off");
+        UiTestExpect(StartupTool(new AppSettings { StartupPage = "last", LastTool = "no-such-tool" }) == AP_Atlas.UI.Tool.Home && StartupTool(new AppSettings()) == AP_Atlas.UI.Tool.Home,
+            "an unknown last tool, or the default, doesn't open on Home");
+        host.ShowTool(AP_Atlas.UI.Tool.Settings);
+        startup.Select(0);
+        startup.EmitSignal(OptionButton.SignalName.ItemSelected, 0);
+        UiTestExpect(_appSettings.StartupPage == "home", "opening on Home didn't come back");
     }
 
     private async Task UiKitAsync()

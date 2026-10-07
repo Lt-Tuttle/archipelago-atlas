@@ -23,6 +23,16 @@ public class AppSettings
     public string ThemeAccentColor { get; set; } = "#8A2BE2";
     /// <summary>"follow" (Windows's light or dark mode), "dark", "light" or "high-contrast".</summary>
     public string Theme { get; set; } = "follow";
+    /// <summary>The theme's colour-blind-safe palette (blue and orange in place of green and red) instead of its usual one.</summary>
+    public bool ColourBlindSafe { get; set; } = false;
+    /// <summary>The whole window's zoom, in percent (100 = as designed).</summary>
+    public int UiZoom { get; set; } = 100;
+    /// <summary>The Map Tracker's pin shape: "round", "square" or "diamond".</summary>
+    public string MapMarkerStyle { get; set; } = "round";
+    /// <summary>What Atlas opens on: "home", "last" (the tool shown when it closed) or "multiworlds".</summary>
+    public string StartupPage { get; set; } = "home";
+    /// <summary>The tool shown last (its id), for "last".</summary>
+    public string LastTool { get; set; } = "";
     public string ArchipelagoInstallationPath { get; set; } = "";
     /// <summary>"Portable" (Atlas's own engine) or "Existing" (the install above). Empty until the user chooses.</summary>
     public string EngineMode { get; set; } = "";
@@ -313,6 +323,10 @@ public static class DataManager
             settings.Tables[key].HiddenColumns ??= new List<string>();
         }
         if (settings.MapNodeScale <= 0 || float.IsNaN(settings.MapNodeScale)) settings.MapNodeScale = 1f;
+        settings.UiZoom = System.Math.Clamp(settings.UiZoom, 50, 200);
+        if (settings.MapMarkerStyle is not ("round" or "square" or "diamond")) settings.MapMarkerStyle = "round";
+        if (settings.StartupPage is not ("home" or "last" or "multiworlds")) settings.StartupPage = "home";
+        settings.LastTool ??= "";
         return settings;
     }
 

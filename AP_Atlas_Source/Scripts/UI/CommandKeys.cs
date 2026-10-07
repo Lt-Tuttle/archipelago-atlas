@@ -72,6 +72,7 @@ namespace AP_Atlas.UI
                 case ",": return Key.Comma;
                 case ".": return Key.Period;
                 case "-": return Key.Minus;
+                case "=": return Key.Equal;
                 case "+": return Key.Plus;
                 case "/": return Key.Slash;
                 case ";": return Key.Semicolon;

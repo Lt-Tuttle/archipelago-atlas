@@ -80,6 +80,9 @@ namespace AP_Atlas.UI
         /// <summary>Every tool, in the activity bar's order, top to bottom (Ctrl+1 to Ctrl+9).</summary>
         public static IReadOnlyList<Tool> All { get; } = new[] { MapTracker, KeyItems, LogicTracker, ItemHistory, Hints, CheeseTracker, SphereTracker, Home, Connections, MapPacks, Settings };
 
+        /// <summary>The tool with an id, or null for none (a setting from another version).</summary>
+        public static Tool? Named(string? id) => System.Linq.Enumerable.FirstOrDefault(All, tool => tool.Id == id);
+
         /// <summary>The tool's place in <see cref="All"/>.</summary>
         public int Index
         {

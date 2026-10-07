@@ -340,7 +340,11 @@ namespace AP_Atlas.UI
             {
                 var item = new HBoxContainer();
                 item.AddThemeConstantOverride("separation", 4);
-                item.AddChild(new ColorRect { Color = color, CustomMinimumSize = new Vector2(10, 10), SizeFlagsVertical = SizeFlags.ShrinkCenter });
+                var swatch = new Panel { CustomMinimumSize = new Vector2(10, 10), SizeFlagsVertical = SizeFlags.ShrinkCenter };
+                var swatchStyle = new StyleBoxFlat { BgColor = color };
+                ShapePin(swatchStyle, swatch, _appSettings.MapMarkerStyle, 10);
+                swatch.AddThemeStyleboxOverride("panel", swatchStyle);
+                item.AddChild(swatch);
                 var label = new Label { Text = text };
                 label.SetMeta("font_size_ratio", 0.85f);
                 label.AddThemeColorOverride("font_color", ThemeColors.TextMuted);
@@ -363,6 +367,26 @@ namespace AP_Atlas.UI
             _notInSeedDropdown.Selected = Math.Clamp(_appSettings.MapNotInSeedMode, 0, 2);
             _hideCheckedBox.ButtonPressed = _appSettings.MapHideChecked;
             _syncingDisplay = false;
+        }
+
+        /// <summary>Every map tracker draws its pins again (the pin shape setting changed).</summary>
+        public static void RedrawAll()
+        {
+            _displayVersion++;
+            DisplayOptionsChanged?.Invoke();
+        }
+
+        /// <summary>
+        /// Shapes a pin (or a legend swatch) for the pin shape setting: round (corners as wide as the pin), square, or a
+        /// diamond (a square turned on its corner, around its centre).
+        /// </summary>
+        internal static void ShapePin(StyleBoxFlat style, Control pin, string markerStyle, float size)
+        {
+            int radius = markerStyle is "square" or "diamond" ? 0 : (int)size;
+            style.CornerRadiusTopLeft = style.CornerRadiusTopRight = style.CornerRadiusBottomLeft = style.CornerRadiusBottomRight = radius;
+            pin.Rotation = markerStyle == "diamond" ? Mathf.Pi / 4 : 0f;
+            pin.PivotOffset = pin.Size / 2;
+            if (markerStyle == "diamond") pin.Resized += () => pin.PivotOffset = pin.Size / 2; // the canvas sizes pins as it lays them out
         }
 
         private void DisplayChanged()
@@ -774,6 +798,7 @@ namespace AP_Atlas.UI
                         btn.TooltipText += extra;
                     }
                 }
+                ShapePin(style, btn, _appSettings.MapMarkerStyle, size);
                 var hoverStyle = (StyleBoxFlat)style.Duplicate();
                 hoverStyle.BgColor = nodeColor.Lightened(0.2f);
                 var focusStyle = (StyleBoxFlat)style.Duplicate();

@@ -6,7 +6,7 @@ Atlas is an unofficial community tool: it isn't affiliated with or endorsed by t
 
 ## Home
 
-Atlas opens on Home (Ctrl+8). Its header carries Atlas's icon and wordmark, which take the theme's colours and your accent. It has:
+Atlas opens on Home (Ctrl+8) unless Settings → Behaviour → Open on says otherwise. Its header carries Atlas's icon and wordmark, which take the theme's colours and your accent. It has:
 
 - **Getting started:** the steps to a working Atlas, each with a tick once it's done and a button that does it: set up the Atlas Engine, add a multiworld, connect a slot, install a map pack, and link Cheese Tracker if your multiworld uses it.
 - **Your multiworlds:** the ones you've played most recently, each with a Connect button that connects every slot of it in turn.
@@ -37,7 +37,7 @@ Atlas connects to the room's server and nothing else for a connection. It never 
 
 The Map Tracker (Ctrl+1) shows the selected slot's checks on the game's map, from a PopTracker map pack (see Map Packs). The explorer lists the pack's maps, sorted A–Z or by most checks. Drag to pan and scroll to zoom.
 
-Each pin is coloured by what Atlas knows: checked, hinted, in logic, or not in logic. Click a pin and Properties shows its locations, with why each is or isn't in logic when the engine runs. Under Display: the pin size, whether excluded locations and locations not in this seed are shown, dimmed or hidden, and Hide checked pins.
+Each pin is coloured by what Atlas knows: checked, hinted, in logic, or not in logic (its shape, round, square or diamond, is under Settings → Appearance). Click a pin and Properties shows its locations, with why each is or isn't in logic when the engine runs. Under Display: the pin size, whether excluded locations and locations not in this seed are shown, dimmed or hidden, and Hide checked pins.
 
 Without a pack for the game, the Map Tracker says so and points you to Map Packs.
 
@@ -99,9 +99,11 @@ When a seed was made with another version of a game's apworld, Atlas finds that 
 
 ## Settings
 
-Settings (Ctrl+,) holds every setting in sections the explorer lists, and a search box that finds a setting by any word of its name, description or section: Multiworld (automatic reconnects, each seed's apworld version, race mode), Appearance (the accent colour, the font sizes), Window (which parts show, the bottom pane's tabs), Tools (the engine, Cheese Tracker and Sphere Tracker settings), Privacy & permissions, Keyboard, and Data (Atlas's data folder). Each setting applies and is saved as you change it.
+Settings (Ctrl+,) holds every setting in sections the explorer lists, and a search box that finds a setting by any word of its name, description or section: Multiworld (automatic reconnects, each seed's apworld version, race mode), Appearance (the theme, the colours, the zoom, the font sizes, the map's pins), Behaviour (what Atlas opens on), Window (which parts show, the bottom pane's tabs), Tools (the engine, Cheese Tracker and Sphere Tracker settings), Privacy & permissions, Keyboard, and Data (Atlas's data folder). Each setting applies and is saved as you change it.
 
-Under **Appearance**: the theme (Follow Windows, Dark, Light, High contrast; a change restyles the window at once and reaches everything after a restart), the accent colour, and a text size for each part of the window.
+Under **Appearance**: the theme (Follow Windows, Dark, Light, High contrast; a change restyles the window at once and reaches everything after a restart); colour-blind-safe colours (blue for in logic, connected and done, orange for out of logic and errors, with the hint and item kinds told apart the same way, so nothing rests on red against green; also after a restart); the accent colour, a preset or any colour you pick (headings and links are lightened or darkened as needed, so they always read); the zoom of the whole window (also Ctrl+= and Ctrl+-, and Reset Zoom in the View menu); a text size for each part of the window; and the shape of the Map Tracker's pins (round, square or diamond).
+
+Under **Behaviour**: what Atlas opens on: Home, the tool you had open when it closed, or Multiworlds.
 
 ## Keyboard shortcuts
 

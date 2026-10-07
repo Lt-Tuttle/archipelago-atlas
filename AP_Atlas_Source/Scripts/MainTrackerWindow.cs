@@ -124,7 +124,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _appSettings = DataManager.LoadSettings();
         // The visual check pictures one theme at a time (dark unless asked), never the PC's Windows mode.
         if (VisualCheckRequested) _appSettings.Theme = System.Environment.GetEnvironmentVariable("ATLAS_VISUALCHECK_THEME") is { Length: > 0 } theme ? theme : "dark";
-        AP_Atlas.Core.ThemeColors.SetPalette(AP_Atlas.Core.ThemeColors.PaletteForSetting(_appSettings.Theme));
+        AP_Atlas.Core.ThemeColors.SetPalette(AP_Atlas.Core.ThemeColors.PaletteForSetting(_appSettings.Theme, _appSettings.ColourBlindSafe));
+        ApplyZoom();
         // The alert feed: what Atlas tells the user, stacked at the bottom right, kept for Window → Notifications.
         _alerts = new AP_Atlas.UI.AlertFeed(_alertLog, text => Tr(text), () => _appSettings.GlobalFontSize, VisualCheckRequested);
         AddChild(_alerts);
@@ -390,7 +391,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         RefreshProfileList();
         SelectProfile(null);
         UpdateSidebar();
-        ShowTool(AP_Atlas.UI.Tool.Home);
+        ShowTool(StartupTool(_appSettings));
         _uiReady = true;
         foreach (var (msg, color) in _pendingNotices) ShowToast(msg, color);
         _pendingNotices.Clear();

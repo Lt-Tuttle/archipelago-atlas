@@ -18,8 +18,21 @@ public partial class MainTrackerWindow
     {
         if (_appSettings.Theme == key) return;
         _appSettings.Theme = key;
+        ApplyPalette();
+    }
+
+    /// <summary>Colour-blind-safe colours on or off: the theme's other palette, applied like a theme change.</summary>
+    private void ApplyColourBlindSafe(bool on)
+    {
+        if (_appSettings.ColourBlindSafe == on) return;
+        _appSettings.ColourBlindSafe = on;
+        ApplyPalette();
+    }
+
+    private void ApplyPalette()
+    {
         DataManager.SaveSettings(_appSettings);
-        AP_Atlas.Core.ThemeColors.SetPalette(AP_Atlas.Core.ThemeColors.PaletteForSetting(key));
+        AP_Atlas.Core.ThemeColors.SetPalette(AP_Atlas.Core.ThemeColors.PaletteForSetting(_appSettings.Theme, _appSettings.ColourBlindSafe));
         SetupModernTheme();
         AP_Atlas.UI.Kit.RecolourHeadings(GetTree().Root);
         _homePage?.RefreshWordmark();
@@ -38,6 +51,12 @@ public partial class MainTrackerWindow
         ("Master Sword Blue", "#32A0FF"),
         ("Bonfire Orange", "#FF781E"),
     };
+
+    /// <summary>The Map Tracker's pin shapes, as the page offers them.</summary>
+    private static readonly (string Key, string Title)[] MarkerStyles = { ("round", "Round"), ("square", "Square"), ("diamond", "Diamond") };
+
+    /// <summary>What Atlas opens on, as the page offers it.</summary>
+    private static readonly (string Key, string Title)[] StartupPages = { ("home", "Home"), ("last", "Where I left off"), ("multiworlds", "Multiworlds") };
 
     /// <summary>The race mode choices, in the order the page lists them.</summary>
     private static readonly AP_Atlas.Core.RaceModeSetting[] RaceModes =
@@ -89,10 +108,37 @@ public partial class MainTrackerWindow
             AP_Atlas.Core.ThemeColors.ThemeChoices.Select(choice => choice.Title).ToArray(),
             () => Math.Max(0, Array.FindIndex(AP_Atlas.Core.ThemeColors.ThemeChoices, choice => choice.Key == _appSettings.Theme)),
             index => ApplyTheme(AP_Atlas.Core.ThemeColors.ThemeChoices[index].Key));
+        page.AddToggle("appearance", "colour-blind-safe", "Colour-blind-safe colours",
+            "Blue for in logic, connected and done, orange for out of logic and errors, and the hint and item kinds told apart the same way, so nothing rests on red against green. Everything takes the new colours after a restart.",
+            () => _appSettings.ColourBlindSafe, ApplyColourBlindSafe);
+        // The presets, or "Custom" while the accent is one picked below.
         page.AddChoice("appearance", "accent", "Accent colour", "Headings, selections, the status bar and the lit activity bar button.",
-            AccentPresets.Select(preset => preset.Name).ToArray(),
-            () => Array.FindIndex(AccentPresets, preset => string.Equals(preset.Hex, _appSettings.ThemeAccentColor, StringComparison.OrdinalIgnoreCase)),
-            index => ApplyAccent(AccentPresets[index].Hex));
+            AccentPresets.Select(preset => preset.Name).Append("Custom").ToArray(),
+            () =>
+            {
+                int preset = Array.FindIndex(AccentPresets, preset => string.Equals(preset.Hex, _appSettings.ThemeAccentColor, StringComparison.OrdinalIgnoreCase));
+                return preset < 0 ? AccentPresets.Length : preset;
+            },
+            index =>
+            {
+                if (index < AccentPresets.Length) ApplyAccent(AccentPresets[index].Hex);
+            });
+        page.AddColour("appearance", "custom-accent", "Custom accent", "Any colour. Headings and links are lightened or darkened as needed, so they always read.",
+            () => AP_Atlas.Core.ThemeColors.Accent,
+            colour => ApplyAccent("#" + colour.ToHtml(false).ToUpperInvariant()));
+        page.AddChoice("appearance", "ui-zoom", "Zoom", "The whole window, text and pictures alike (Ctrl+= and Ctrl+- step through these).",
+            ZoomSteps.Select(step => step + "%").ToArray(),
+            () => Array.IndexOf(ZoomSteps, _appSettings.UiZoom),
+            index => SetZoom(ZoomSteps[index]));
+        page.AddChoice("appearance", "map-markers", "Map pins", "The shape of the Map Tracker's pins. Their size is under the map's Display options.",
+            MarkerStyles.Select(style => style.Title).ToArray(),
+            () => Math.Max(0, Array.FindIndex(MarkerStyles, style => style.Key == _appSettings.MapMarkerStyle)),
+            index =>
+            {
+                _appSettings.MapMarkerStyle = MarkerStyles[index].Key;
+                DataManager.SaveSettings(_appSettings);
+                AP_Atlas.UI.MapTrackerControl.RedrawAll();
+            });
         AddFontSizeSetting(page, "menu-font-size", "Menu and tab font size", "The menu bar, the tool header and the bottom pane's tabs (14 to begin with).",
             () => _appSettings.GlobalFontSize, size => _appSettings.GlobalFontSize = size);
         AddFontSizeSetting(page, "slots-font-size", "Slots panel font size", "The slot cards (14 to begin with).",
@@ -105,6 +151,16 @@ public partial class MainTrackerWindow
             () => _appSettings.PropertiesFontSize, size => _appSettings.PropertiesFontSize = size);
         AddFontSizeSetting(page, "console-font-size", "Bottom pane font size", "Chat and the logs (14 to begin with).",
             () => _appSettings.ConsoleFontSize, size => _appSettings.ConsoleFontSize = size);
+
+        page.AddSection("behaviour", "Behaviour");
+        page.AddChoice("behaviour", "startup", "Open on", "What Atlas shows when it starts: Home, the tool you had open when it closed, or Multiworlds.",
+            StartupPages.Select(choice => choice.Title).ToArray(),
+            () => Math.Max(0, Array.FindIndex(StartupPages, choice => choice.Key == _appSettings.StartupPage)),
+            index =>
+            {
+                _appSettings.StartupPage = StartupPages[index].Key;
+                DataManager.SaveSettings(_appSettings);
+            });
 
         page.AddSection("window", "Window");
         AddPartSetting(page, "slots-panel", "Slots panel", "The connected slots' cards, on the left.", "view.slots-panel");

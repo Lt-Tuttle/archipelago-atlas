@@ -379,7 +379,43 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _homePage?.RefreshWordmark();
         RefreshProfileListStyles();
         UpdateSidebar();
+        _settingsPage?.RefreshRows(); // the preset choice and the custom colour show the accent as it is now
     }
+    /// <summary>The zoom choices, in percent, as the Settings page and Ctrl+= / Ctrl+- step through them.</summary>
+    internal static readonly int[] ZoomSteps = { 75, 90, 100, 110, 125, 150, 175, 200 };
+
+    /// <summary>Scales the whole window (every control, text and picture) by the zoom setting.</summary>
+    private void ApplyZoom() => GetWindow().ContentScaleFactor = _appSettings.UiZoom / 100f;
+
+    private void SetZoom(int percent)
+    {
+        _appSettings.UiZoom = Math.Clamp(percent, 50, 200);
+        DataManager.SaveSettings(_appSettings);
+        ApplyZoom();
+        _settingsPage?.RefreshRows();
+    }
+
+    /// <summary>One zoom step up (+1) or down (-1); from between two steps, to the next one that way.</summary>
+    private void ZoomBy(int direction)
+    {
+        int index = Array.IndexOf(ZoomSteps, _appSettings.UiZoom);
+        if (index < 0)
+        {
+            int above = Array.FindIndex(ZoomSteps, step => step > _appSettings.UiZoom);
+            index = above < 0 ? ZoomSteps.Length : above; // the step above, so one down lands on the step below
+            if (direction > 0) index--;
+        }
+        SetZoom(ZoomSteps[Math.Clamp(index + direction, 0, ZoomSteps.Length - 1)]);
+    }
+
+    /// <summary>The tool Atlas opens on, as the startup setting says: Home, the tool shown when it closed, or Multiworlds.</summary>
+    internal static AP_Atlas.UI.Tool StartupTool(AppSettings settings) => settings.StartupPage switch
+    {
+        "multiworlds" => AP_Atlas.UI.Tool.Connections,
+        "last" => AP_Atlas.UI.Tool.Named(settings.LastTool) ?? AP_Atlas.UI.Tool.Home,
+        _ => AP_Atlas.UI.Tool.Home
+    };
+
     private void ApplyUIScale()
     {
         using var _ = AP_Atlas.Core.PerfMonitor.Measure("Apply font sizes (whole UI)");

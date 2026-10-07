@@ -34,6 +34,16 @@ namespace AP_Atlas.Core
                 double contrast = ThemeColors.Contrast(ThemeColors.TextOn(accent), accent);
                 Expect(contrast >= 4.5, $"text on the {name} accent reads at {contrast:0.0} to 1");
             }
+            // Any accent the user picks: its headings and links read on every palette's surface.
+            foreach (string hex in new[] { "#000000", "#FFFFFF", "#1E1E1E", "#808080", "#0000FF", "#FFFF00", ThemeColors.DefaultAccentHex })
+            {
+                foreach (var palette in Palette.All)
+                {
+                    double heading = ThemeColors.Contrast(ThemeColors.HeadingFor(new Color(hex), palette), palette.Surface);
+                    double link = ThemeColors.Contrast(ThemeColors.LinkFor(new Color(hex), palette), palette.Surface);
+                    Expect(heading >= 3.0 && link >= 4.5, $"{palette.Name}: with the accent {hex}, a heading reads at {heading:0.0} to 1 and a link at {link:0.0}");
+                }
+            }
         }
     }
 }

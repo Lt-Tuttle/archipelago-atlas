@@ -148,6 +148,7 @@ public sealed class Commands
         ["left"] = "Left",
         ["right"] = "Right",
         ["minus"] = "-",
+        ["equal"] = "=",
         ["plus"] = "+",
         ["comma"] = ",",
         ["period"] = ".",

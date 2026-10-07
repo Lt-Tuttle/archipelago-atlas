@@ -145,6 +145,20 @@ namespace AP_Atlas.UI
             AddRow(section, id, title, description, number, number, () => number.SetValueNoSignal(get()));
         }
 
+        /// <summary>
+        /// A colour, picked from Godot's own picker (no transparency). <paramref name="set"/> runs once the picking settles:
+        /// a drag through the picker changes the colour many times a second, and applying one restyles the window.
+        /// </summary>
+        public void AddColour(string section, string id, string title, string description, Func<Color> get, Action<Color> set)
+        {
+            var button = new ColorPickerButton { Color = get(), EditAlpha = false, CustomMinimumSize = new Vector2(110, 28) };
+            var settle = new Godot.Timer { WaitTime = 0.3, OneShot = true };
+            button.AddChild(settle);
+            settle.Timeout += () => set(button.Color);
+            button.ColorChanged += _ => settle.Start();
+            AddRow(section, id, title, description, button, button, () => button.Color = get());
+        }
+
         /// <summary>Something to open or do from here (a tool's own settings, a folder).</summary>
         public void AddAction(string section, string id, string title, string description, string buttonText, Action run)
         {
@@ -198,6 +212,9 @@ namespace AP_Atlas.UI
         /// </summary>
         public void AddBlock(string section, string id, string keywords, Control content, Action refresh) =>
             AddRow(section, id, "", keywords, content, content, refresh, below: true);
+
+        /// <summary>Every row shows its setting as it is now (after a change made elsewhere: a key, a command).</summary>
+        public void RefreshRows() => RefreshAll();
 
         private void RefreshAll()
         {

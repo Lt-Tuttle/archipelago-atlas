@@ -44,6 +44,9 @@ public partial class MainTrackerWindow
         Add("view.bottom-pane", "View", "Bottom Pane", "", () => TogglePart("view.bottom-pane"));
         Add("view.status-bar", "View", "Status Bar", "", () => TogglePart("view.status-bar"));
         Add("view.focus-mode", "View", "Focus Mode", "F9", ToggleFocusMode);
+        Add("view.zoom-in", "View", "Zoom In", "Ctrl+=", () => ZoomBy(1));
+        Add("view.zoom-out", "View", "Zoom Out", "Ctrl+-", () => ZoomBy(-1));
+        Add("view.zoom-reset", "View", "Reset Zoom", "", () => SetZoom(100));
 
         // The tools, Ctrl+1 to Ctrl+9 in the tool list's order; a later tool brings its own key (Map Packs: Ctrl+0, Settings: Ctrl+,).
         int number = 1;
@@ -114,6 +117,8 @@ public partial class MainTrackerWindow
         AddCommandCheckItems(menus["View"], PartShown, "view.slots-panel", "view.explorer", "view.properties-panel", "view.bottom-pane", "view.status-bar");
         menus["View"].AddSeparator();
         AddCommandItems(menus["View"], "view.focus-mode");
+        menus["View"].AddSeparator();
+        AddCommandItems(menus["View"], "view.zoom-in", "view.zoom-out", "view.zoom-reset");
 
         AddCommandItems(menus["Tools"], AP_Atlas.UI.Tool.All.Select(t => "tool." + t.Id).ToArray());
         menus["Tools"].AddSeparator();

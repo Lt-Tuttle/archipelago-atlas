@@ -8,6 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 Development toward the first public beta, 0.1.0.
 
 ### Added
+- **Customization:** a custom accent of any colour (headings and links stay readable), colour-blind-safe colours for each theme (blue and orange in place of green and red, held to the contrast rule like every palette), zoom for the whole window (Ctrl+= and Ctrl+-), the Map Tracker's pin shape, and what Atlas opens on (Home, where you left off, or Multiworlds).
 - **The wordmark:** "The Archipelago Atlas" in engraved small capitals with a map's scale bar, on Home and in About, recoloured for the theme and the accent (docs/wordmark holds the SVGs).
 - **Themes:** Dark, Light and High contrast, or Windows's light or dark mode (the default), under Settings → Appearance. Every colour of each theme is held to the accessibility contrast rule by the self-test.
 - **Every table works the same way:** click a column's title to sort (the arrow says which way), right-click a title to hide or show columns, type words to narrow the rows, and Export the rows shown as TSV, a Markdown table, Discord messages (split to fit) or a CSV file; right-click a row for its actions and Copy row. The sort and the hidden columns are remembered per table. Hints, Cheese Tracker, Sphere Tracker, Notifications and the shortcuts list.
