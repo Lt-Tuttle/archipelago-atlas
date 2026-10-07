@@ -76,7 +76,7 @@ namespace AP_Atlas.UI
             AddGroup(column, "MULTIWORLD", ToolGroup.Multiworld);
             column.AddChild(new Control { SizeFlagsVertical = SizeFlags.ExpandFill }); // Atlas's pages sit at the bottom
             AddGroup(column, "ATLAS", ToolGroup.Atlas);
-            _engine = MakeButton("cpu", _tr("Atlas Engine"));
+            _engine = MakeButton("cpu", _tr("Atlas Engine"), _tr("Atlas Engine"));
             _engine.Pressed += () => EnginePressed?.Invoke();
             column.AddChild(_engine);
             ApplyAccent(_accent);
@@ -90,7 +90,7 @@ namespace AP_Atlas.UI
             column.AddChild(label);
             foreach (var tool in Tool.All.Where(t => t.Group == group))
             {
-                var button = MakeButton(tool.Icon, Tooltip(tool));
+                var button = MakeButton(tool.Icon, Tooltip(tool), _tr(tool.Title)); // named for screen readers by its title
                 button.ToggleMode = true;
                 button.ButtonGroup = _group;
                 var shown = tool;
@@ -114,11 +114,12 @@ namespace AP_Atlas.UI
             foreach (var (tool, button) in _buttons) button.TooltipText = Tooltip(tool);
         }
 
-        private Button MakeButton(string icon, string tooltip)
+        private Button MakeButton(string icon, string tooltip, string accessibleName)
         {
             var button = new Button
             {
                 TooltipText = tooltip,
+                AccessibilityName = accessibleName,
                 CustomMinimumSize = new Vector2(Width - 8, 44),
                 FocusMode = FocusModeEnum.All,
                 ExpandIcon = true,

@@ -1440,7 +1440,6 @@ namespace AP_Atlas.UI
                 Text = flag > 0 ? "● " + Annotations.FlagLabel(flag) : "Flag ▾",
                 TooltipText = "Flag this (F toggles your last flag)",
                 Flat = false,
-                FocusMode = FocusModeEnum.None
             };
             mb.SetMeta("font_size_ratio", 0.9);
             if (flag > 0) mb.AddThemeColorOverride("font_color", Annotations.FlagColor(flag));
@@ -1501,7 +1500,6 @@ namespace AP_Atlas.UI
                         Text = f == 0 ? "None" : "● " + Annotations.FlagLabel(f),
                         ToggleMode = true,
                         ButtonPressed = flag == f,
-                        FocusMode = FocusModeEnum.None,
                         TooltipText = f == 0 ? "No flag" : $"Flag: {Annotations.FlagLabel(f)}"
                     };
                     b.SetMeta("font_size_ratio", 0.85);
@@ -1530,7 +1528,6 @@ namespace AP_Atlas.UI
                 {
                     Text = $"◆ Special for every {game} slot",
                     ButtonPressed = special != null,
-                    FocusMode = FocusModeEnum.None,
                     TooltipText = "Special marks belong to the game, so they apply in every multiworld (e.g. items needed to goal)."
                 };
                 check.AddThemeColorOverride("font_color", Annotations.SpecialColor);

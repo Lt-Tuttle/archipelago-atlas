@@ -14,7 +14,7 @@ public partial class MainTrackerWindow
     /// <summary>The picker, for the tool header. Hidden while a tool that isn't per slot shows, or no slot is connected.</summary>
     private OptionButton BuildSlotPicker()
     {
-        _slotPicker = new OptionButton { Visible = false, TooltipText = Tr("The slot the slot tools show (Ctrl+Tab: the next one)") };
+        _slotPicker = new OptionButton { Visible = false, TooltipText = Tr("The slot the slot tools show (Ctrl+Tab: the next one)"), AccessibilityName = Tr("Slot shown") };
         _slotPicker.ItemSelected += index =>
         {
             if (index >= 0 && index < _pickerSlots.Count) ((AP_Atlas.UI.IPropertiesHost)this).SelectSlot(_pickerSlots[(int)index]);

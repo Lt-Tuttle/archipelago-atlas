@@ -25,14 +25,14 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _bottomPane.AddThemeConstantOverride("separation", 0);
         var bottomHeader = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         _bottomPane.AddChild(bottomHeader);
-        _bottomTabs = new TabBar { SizeFlagsHorizontal = SizeFlags.ExpandFill, FocusMode = FocusModeEnum.None };
+        _bottomTabs = new TabBar { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         ApplyTabBarStyle(_bottomTabs, 8);
         _bottomTabs.AddTab("Chat");
         _bottomTabs.AddTab("System Log");
         _bottomTabs.AddTab("Debug Log");
         bottomHeader.AddChild(_bottomTabs);
         bottomHeader.AddChild(new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill }); // Spacer
-        var bottomMenuBtn = new Button { Text = "...", Flat = true, FocusMode = FocusModeEnum.None };
+        var bottomMenuBtn = new Button { Text = "...", Flat = true, AccessibilityName = Tr("More options") };
         _bottomMenuBtn = bottomMenuBtn;
         bottomMenuBtn.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextMuted);
         var extraItems = new System.Collections.Generic.Dictionary<string, System.Action> {
@@ -110,8 +110,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         var fontRow = new HBoxContainer();
         fontRow.AddThemeConstantOverride("separation", 10);
         var fontLbl = new Label { Text = "Font Size:" };
-        var minusBtn = new Button { Text = "-", CustomMinimumSize = new Godot.Vector2(28, 28), FocusMode = FocusModeEnum.None };
-        var plusBtn = new Button { Text = "+", CustomMinimumSize = new Godot.Vector2(28, 28), FocusMode = FocusModeEnum.None };
+        var minusBtn = new Button { Text = "-", CustomMinimumSize = new Godot.Vector2(28, 28), AccessibilityName = Tr("Smaller text") };
+        var plusBtn = new Button { Text = "+", CustomMinimumSize = new Godot.Vector2(28, 28), AccessibilityName = Tr("Larger text") };
         var valLbl = new Label { Text = $"{getFontSize()}px", CustomMinimumSize = new Godot.Vector2(40, 0), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
         minusBtn.Pressed += () =>
         {
@@ -163,7 +163,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         titleLabel = new Label { Name = "FixedHeaderTitle", Text = titleText, SizeFlagsHorizontal = SizeFlags.ExpandFill, HorizontalAlignment = HorizontalAlignment.Left };
         titleLabel.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextMuted);
         headerBox.AddChild(titleLabel);
-        menuBtn = new Button { Text = "...", Flat = true, FocusMode = FocusModeEnum.None };
+        menuBtn = new Button { Text = "...", Flat = true, AccessibilityName = Tr("More options") };
         menuBtn.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextMuted);
         AttachFontMenuPopup(menuBtn, getFontSize, setFontSize);
         headerBox.AddChild(menuBtn);
@@ -269,6 +269,10 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         // re-measure on Disabled changes, so a button created disabled with Godot's thinner default clipped its text.
         var btnDisabled = new StyleBoxFlat { BgColor = AP_Atlas.Core.ThemeColors.SurfaceRaised, CornerRadiusTopLeft = 4, CornerRadiusTopRight = 4, CornerRadiusBottomLeft = 4, CornerRadiusBottomRight = 4, ContentMarginLeft = 10, ContentMarginRight = 10, ContentMarginTop = 5, ContentMarginBottom = 5 };
         theme.SetStylebox("disabled", "Button", btnDisabled);
+        // The focus ring: the keyboard's place, drawn over the control's own look, for every control that can take the focus.
+        var focusRing = new StyleBoxFlat { DrawCenter = false, BorderColor = AP_Atlas.Core.ThemeColors.Heading, BorderWidthTop = 2, BorderWidthBottom = 2, BorderWidthLeft = 2, BorderWidthRight = 2, CornerRadiusTopLeft = 4, CornerRadiusTopRight = 4, CornerRadiusBottomLeft = 4, CornerRadiusBottomRight = 4, ContentMarginLeft = 10, ContentMarginRight = 10, ContentMarginTop = 5, ContentMarginBottom = 5 };
+        foreach (string focusable in new[] { "Button", "CheckBox", "CheckButton", "OptionButton", "MenuButton", "LinkButton", "LineEdit", "TextEdit", "Tree", "ItemList", "ColorPickerButton" })
+            theme.SetStylebox("focus", focusable, focusRing);
         theme.SetColor("font_disabled_color", "Button", new Godot.Color(1, 1, 1, 0.35f));
         theme.SetColor("font_pressed_color", "Button", textOnAccent);
         theme.SetColor("font_hover_pressed_color", "Button", textOnAccent);
@@ -276,7 +280,6 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         theme.SetStylebox("normal", "CheckBox", cbNormal);
         theme.SetStylebox("hover", "CheckBox", cbNormal);
         theme.SetStylebox("pressed", "CheckBox", cbNormal);
-        theme.SetStylebox("focus", "CheckBox", cbNormal);
         theme.SetStylebox("hover_pressed", "CheckBox", cbNormal);
         theme.SetStylebox("disabled", "CheckBox", cbNormal);
         var lineEdit = new StyleBoxFlat { BgColor = AP_Atlas.Core.ThemeColors.Input, CornerRadiusTopLeft = 2, CornerRadiusTopRight = 2, CornerRadiusBottomLeft = 2, CornerRadiusBottomRight = 2, ContentMarginLeft = 8, ContentMarginRight = 8, ContentMarginTop = 6, ContentMarginBottom = 6, BorderWidthBottom = 1, BorderColor = accentColor };

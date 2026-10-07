@@ -174,7 +174,7 @@ namespace AP_Atlas.UI
         /// <summary>A line of the explorer list: pressed, it shows a view; the shown view's line is lit.</summary>
         protected Control ExplorerButton(string text, string tooltip, string view, bool dim, int indent = 0, Action? afterShow = null)
         {
-            var button = new Button { Text = text, TooltipText = tooltip, Alignment = HorizontalAlignment.Left, ToggleMode = true, ButtonPressed = view == View, FocusMode = FocusModeEnum.None, ClipText = true, SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            var button = new Button { Text = text, TooltipText = tooltip, Alignment = HorizontalAlignment.Left, ToggleMode = true, ButtonPressed = view == View, ClipText = true, SizeFlagsHorizontal = SizeFlags.ExpandFill };
             if (dim && view != View) button.AddThemeColorOverride("font_color", ThemeColors.TextSubtle);
             button.Pressed += () =>
             {

@@ -266,7 +266,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _toolTitle.AddThemeConstantOverride("margin_left", 8);
         globalTabHBox.AddChild(_toolTitle);
         globalTabHBox.AddChild(BuildSlotPicker());
-        var contentMenuBtn = new Button { Text = "...", Flat = true, FocusMode = FocusModeEnum.None };
+        var contentMenuBtn = new Button { Text = "...", Flat = true, AccessibilityName = Tr("More options") };
         contentMenuBtn.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextMuted);
         AttachFontMenuPopup(contentMenuBtn,
             () => _appSettings.ContentFontSize,

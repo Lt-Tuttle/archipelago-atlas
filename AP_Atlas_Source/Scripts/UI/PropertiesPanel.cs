@@ -395,7 +395,6 @@ namespace AP_Atlas.UI
                 Text = (isCollapsed ? "▶  " : "▼  ") + title,
                 Flat = true,
                 Alignment = HorizontalAlignment.Left,
-                FocusMode = FocusModeEnum.None,
                 SizeFlagsHorizontal = SizeFlags.ExpandFill
             };
             header.AddThemeColorOverride("font_color", ThemeColors.Accent.Lightened(0.2f));

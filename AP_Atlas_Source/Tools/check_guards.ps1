@@ -219,6 +219,25 @@ elseif ($colourLiterals -lt $colourLiteralLimit) {
     $broken++
 }
 
+# Text the shell shows is translation-ready: it goes through Tr() where it's shown. The raw literals left in the shell
+# (Text = "...", TooltipText = "...", PlaceholderText = "...") can only go down.
+$rawTextLimit = 178
+$rawText = 0
+foreach ($file in $files) {
+    $inShell = $file.FullName -match '\\Scripts\\UI\\' -or $file.Name -like 'MainTrackerWindow*.cs'
+    if (-not $inShell -or $file.Name -like '*UiTest*' -or $file.Name -like '*VisualCheck*') { continue }
+    $content = [System.IO.File]::ReadAllText($file.FullName)
+    $rawText += [regex]::Matches($content, '\b(Text|TooltipText|PlaceholderText) = "').Count
+}
+if ($rawText -gt $rawTextLimit) {
+    Write-Host "GUARD: $rawText raw text literals are shown by the shell (Text = ""..."", TooltipText, PlaceholderText), more than the $rawTextLimit allowed. New text goes through Tr() where it's shown: Text = Tr(""..."")." -ForegroundColor Red
+    $broken++
+}
+elseif ($rawText -lt $rawTextLimit) {
+    Write-Host "GUARD: only $rawText raw text literals are left in the shell: lower the limit in check_guards.ps1 to $rawText, so it can't creep back up." -ForegroundColor Red
+    $broken++
+}
+
 # Godot's .uid files: one per script, committed with it.
 $godotScripts = Get-ChildItem -Path (Join-Path $repo 'AP_Atlas_Source\Scripts') -Recurse -Filter '*.cs' -File |
     Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' }

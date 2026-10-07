@@ -51,7 +51,7 @@ namespace AP_Atlas.UI
                 var title = Kit.Heading(string.IsNullOrEmpty(grid.Header) ? grid.LayoutKey : grid.Header);
                 if (grid.LooksLikeSettings) title.AddThemeColorOverride("font_color", Muted);
                 header.AddChild(title);
-                var show = new CheckButton { Text = grid.LooksLikeSettings ? "Seed settings (switch on to treat as items)" : "Items (switch off for seed settings)", ButtonPressed = !grid.LooksLikeSettings, FocusMode = Control.FocusModeEnum.None, TooltipText = "Items count toward Key Items. Seed settings are lit from the slot's options by the pack's script." };
+                var show = new CheckButton { Text = grid.LooksLikeSettings ? "Seed settings (switch on to treat as items)" : "Items (switch off for seed settings)", ButtonPressed = !grid.LooksLikeSettings, TooltipText = "Items count toward Key Items. Seed settings are lit from the slot's options by the pack's script." };
                 show.Toggled += on => SetGridHidden(subject, !on);
                 header.AddChild(show);
                 header.AddChild(new Label { Text = "Tile size" });

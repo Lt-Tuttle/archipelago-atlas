@@ -168,10 +168,10 @@ namespace AP_Atlas.UI
             toolbar.AddThemeConstantOverride("h_separation", 6);
             toolbar.AddThemeConstantOverride("v_separation", 4);
             _trackerPage.AddChild(toolbar);
-            _tablePicker = new OptionButton { FocusMode = FocusModeEnum.None, FitToLongestItem = false, TooltipText = "The tables on the host's room page" };
+            _tablePicker = new OptionButton { FitToLongestItem = false, TooltipText = "The tables on the host's room page", AccessibilityName = Tr("Table") };
             _tablePicker.ItemSelected += _ => RenderTable();
             toolbar.AddChild(_tablePicker);
-            _onlySlot = new Button { ToggleMode = true, ButtonPressed = true, FocusMode = FocusModeEnum.None, TooltipText = "Only the rows that name this slot" };
+            _onlySlot = new Button { ToggleMode = true, ButtonPressed = true, TooltipText = "Only the rows that name this slot", AccessibilityName = Tr("Only this slot") };
             _onlySlot.Toggled += _ => RenderTable();
             toolbar.AddChild(_onlySlot);
             toolbar.AddChild(_table.Take(_table.SearchBox));

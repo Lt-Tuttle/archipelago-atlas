@@ -185,7 +185,7 @@ namespace AP_Atlas.UI
             _gameMenu.GetPopup().AboutToPopup += BuildGameMenu;
             _gameMenu.GetPopup().IdPressed += OnGamePicked;
             toolbar.AddChild(_gameMenu);
-            _mineFirst = new Button { Text = "Mine first", ToggleMode = true, ButtonPressed = Settings.CheeseMineFirst, FocusMode = FocusModeEnum.None, TooltipText = "Your slots on top, before any column sort" };
+            _mineFirst = new Button { Text = "Mine first", ToggleMode = true, ButtonPressed = Settings.CheeseMineFirst, TooltipText = "Your slots on top, before any column sort" };
             _mineFirst.Toggled += on =>
             {
                 Settings.CheeseMineFirst = on;
@@ -193,7 +193,7 @@ namespace AP_Atlas.UI
                 RenderTable();
             };
             toolbar.AddChild(_mineFirst);
-            _percent = new Button { Text = "Checks %", ToggleMode = true, ButtonPressed = Settings.CheeseChecksAsPercent, FocusMode = FocusModeEnum.None, TooltipText = "Show checks as a percentage" };
+            _percent = new Button { Text = "Checks %", ToggleMode = true, ButtonPressed = Settings.CheeseChecksAsPercent, TooltipText = "Show checks as a percentage" };
             _percent.Toggled += on =>
             {
                 Settings.CheeseChecksAsPercent = on;
@@ -249,7 +249,7 @@ namespace AP_Atlas.UI
 
         private static MenuButton FilterMenu(string text, string tooltip)
         {
-            var menu = new MenuButton { Text = text + " ▾", Flat = false, FocusMode = FocusModeEnum.None, TooltipText = tooltip };
+            var menu = new MenuButton { Text = text + " ▾", Flat = false, TooltipText = tooltip };
             menu.SetMeta("base_text", text);
             return menu;
         }
@@ -851,7 +851,6 @@ namespace AP_Atlas.UI
                         Text = view.AutoOn ? "Updating automatically" : "Update automatically",
                         ToggleMode = true,
                         ButtonPressed = view.AutoOn,
-                        FocusMode = FocusModeEnum.None,
                         SizeFlagsHorizontal = SizeFlags.ShrinkBegin,
                         Disabled = !view.AutoOn && (view.Ownership != CheeseOwnership.You || view.CannotEdit != null),
                         TooltipText = "Atlas sets BK, Unblocked and Go mode from its logic while this slot is connected.\n" +
@@ -902,11 +901,11 @@ namespace AP_Atlas.UI
             _details.AddChild(Kit.Heading("Hints", 1f));
             var toggles = new HFlowContainer();
             toggles.AddThemeConstantOverride("h_separation", 4);
-            var received = new Button { Text = "In this world", ToggleMode = true, ButtonPressed = !_sentHints, FocusMode = FocusModeEnum.None, TooltipText = "Items in this slot's world that other slots need (what Cheese Tracker calls received hints)" };
-            var sent = new Button { Text = "For this slot", ToggleMode = true, ButtonPressed = _sentHints, FocusMode = FocusModeEnum.None, TooltipText = "This slot's items, in other worlds (sent hints)" };
+            var received = new Button { Text = "In this world", ToggleMode = true, ButtonPressed = !_sentHints, TooltipText = "Items in this slot's world that other slots need (what Cheese Tracker calls received hints)" };
+            var sent = new Button { Text = "For this slot", ToggleMode = true, ButtonPressed = _sentHints, TooltipText = "This slot's items, in other worlds (sent hints)" };
             received.Pressed += () => { _sentHints = false; Ui.Defer(this, RenderDetails); };
             sent.Pressed += () => { _sentHints = true; Ui.Defer(this, RenderDetails); };
-            var found = new Button { Text = "Include found and useless", ToggleMode = true, ButtonPressed = _includeFoundHints, FocusMode = FocusModeEnum.None };
+            var found = new Button { Text = "Include found and useless", ToggleMode = true, ButtonPressed = _includeFoundHints };
             found.Toggled += on => { _includeFoundHints = on; Ui.Defer(this, RenderDetails); };
             toggles.AddChild(received);
             toggles.AddChild(sent);

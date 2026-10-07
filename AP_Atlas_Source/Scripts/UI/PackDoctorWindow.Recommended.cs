@@ -163,7 +163,7 @@ namespace AP_Atlas.UI
                 panel.AddChild(row);
 
                 var fc = f;
-                var tick = new CheckBox { ButtonPressed = IsTicked(f), FocusMode = Control.FocusModeEnum.None, TooltipText = "Include in \"Apply selected\"" };
+                var tick = new CheckBox { ButtonPressed = IsTicked(f), TooltipText = "Include in \"Apply selected\"", AccessibilityName = "Include in Apply selected" };
                 tick.Toggled += on =>
                 {
                     if (on) { _recTicked.Add(fc.Key); _recUnticked.Remove(fc.Key); }

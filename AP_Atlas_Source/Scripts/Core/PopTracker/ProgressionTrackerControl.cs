@@ -211,11 +211,11 @@ namespace AP_Atlas.Core.PopTracker
             zoomLabel.AddThemeColorOverride("font_color", ThemeColors.TextMuted);
             _visualFooter.AddChild(zoomLabel);
 
-            var zoomMinus = new Button { Text = "-", CustomMinimumSize = new Vector2(24, 24), FocusMode = FocusModeEnum.None };
+            var zoomMinus = new Button { Text = "-", CustomMinimumSize = new Vector2(24, 24), AccessibilityName = Tr("Zoom out") };
             zoomMinus.Pressed += () => ChangeZoom(-0.25f);
             _visualFooter.AddChild(zoomMinus);
 
-            var zoomPlus = new Button { Text = "+", CustomMinimumSize = new Vector2(24, 24), FocusMode = FocusModeEnum.None };
+            var zoomPlus = new Button { Text = "+", CustomMinimumSize = new Vector2(24, 24), AccessibilityName = Tr("Zoom in") };
             zoomPlus.Pressed += () => ChangeZoom(0.25f);
             _visualFooter.AddChild(zoomPlus);
             AddChild(_visualFooter);

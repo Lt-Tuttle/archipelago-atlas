@@ -126,7 +126,6 @@ namespace AP_Atlas.UI
                 Text = view.AutoOn ? "Updating automatically" : "Update automatically",
                 ToggleMode = true,
                 ButtonPressed = view.AutoOn,
-                FocusMode = FocusModeEnum.None,
                 SizeFlagsHorizontal = SizeFlags.ShrinkBegin,
                 Disabled = !view.AutoOn && (view.Ownership != CheeseOwnership.You || view.CannotEdit != null),
                 TooltipText = "Atlas sets BK, Unblocked and Go mode from its logic while this slot is connected.\n" +
@@ -282,7 +281,7 @@ namespace AP_Atlas.UI
 
         private void AddCheesePingMenu(HFlowContainer flow, string profileId, string slotName, string current, bool enabled)
         {
-            var menu = new MenuButton { Text = "Ping ▾", TooltipText = "When others may ping you on Discord about this slot", Flat = false, Disabled = !enabled, FocusMode = FocusModeEnum.None };
+            var menu = new MenuButton { Text = "Ping ▾", TooltipText = "When others may ping you on Discord about this slot", Flat = false, Disabled = !enabled };
             menu.SetMeta("font_size_ratio", 0.9);
             var popup = menu.GetPopup();
             for (int i = 0; i < CtStatus.PingIds.Length; i++)
@@ -296,7 +295,7 @@ namespace AP_Atlas.UI
 
         private void AddCheeseCompletionMenu(HFlowContainer flow, string profileId, string slotName, CtGame row, bool enabled)
         {
-            var menu = new MenuButton { Text = "Completion ▾", TooltipText = "Cheese Tracker sets Goal and All checks itself; Done and Forfeit are yours to set", Flat = false, Disabled = !enabled, FocusMode = FocusModeEnum.None };
+            var menu = new MenuButton { Text = "Completion ▾", TooltipText = "Cheese Tracker sets Goal and All checks itself; Done and Forfeit are yours to set", Flat = false, Disabled = !enabled };
             menu.SetMeta("font_size_ratio", 0.9);
             var popup = menu.GetPopup();
             const int DoneId = 0, ForfeitId = 1, IncompleteId = 2;

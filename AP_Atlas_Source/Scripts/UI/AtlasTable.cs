@@ -149,11 +149,11 @@ namespace AP_Atlas.UI
             CountLabel = new Label { VerticalAlignment = VerticalAlignment.Center };
             CountLabel.AddThemeColorOverride("font_color", ThemeColors.TextSubtle);
             Toolbar.AddChild(CountLabel);
-            ColumnsMenu = new MenuButton { Text = tr("Columns") + " ▾", Flat = true, FocusMode = FocusModeEnum.None, TooltipText = tr("Show or hide columns (also a right-click on a column's title)") };
+            ColumnsMenu = new MenuButton { Text = tr("Columns") + " ▾", Flat = true, TooltipText = tr("Show or hide columns (also a right-click on a column's title)") };
             ColumnsMenu.GetPopup().AboutToPopup += () => FillColumnsMenu(ColumnsMenu.GetPopup());
             ColumnsMenu.GetPopup().IdPressed += id => ToggleColumn((int)id);
             Toolbar.AddChild(ColumnsMenu);
-            ExportMenu = new MenuButton { Text = tr("Export") + " ▾", Flat = true, FocusMode = FocusModeEnum.None, TooltipText = tr("Copy or save the rows shown, in their order") };
+            ExportMenu = new MenuButton { Text = tr("Export") + " ▾", Flat = true, TooltipText = tr("Copy or save the rows shown, in their order") };
             var export = ExportMenu.GetPopup();
             export.AddItem(tr("Copy as TSV (for a spreadsheet)"), (int)ExportFormat.Tsv);
             export.AddItem(tr("Copy as a Markdown table"), (int)ExportFormat.Markdown);

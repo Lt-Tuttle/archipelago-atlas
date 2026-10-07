@@ -135,6 +135,12 @@ Atlas never looks or writes outside its own folder, or goes online for something
 
 Online, Atlas reaches the archipelago.gg rooms you connect to; Cheese Tracker (your instance) and spheretracker.de (the host's room) for the multiworlds you link; GitHub for apworld releases, when you allow it; and python.org, pypa.io and PyPI when you set up the Atlas Engine. Every request is polite: capped, backed off when a site asks, and never repeated to wake a sleeping room.
 
+## Accessibility
+
+- **Keyboard:** Tab and Shift+Tab move between controls, and a ring in your accent colour shows which one has the focus; Enter or Space presses a button; Escape closes a dialog or a menu; the arrow keys move in lists and tables. Every command has a key you can change (Settings → Keyboard), and Ctrl+Shift+P finds any command by name.
+- **Screen readers:** Atlas names its controls for Windows's screen readers (Narrator, NVDA, JAWS), which Godot connects to by itself when one is running; a button that shows only a symbol says what it does.
+- **Colour and size:** no state is shown by colour alone: it's also said in words or a mark. High contrast and colour-blind-safe colours, any accent, the zoom and a text size for each part of the window are under Settings → Appearance.
+
 ## Troubleshooting
 
 - **The logs:** the System Log tab shows what Atlas did; the Debug Log (developer mode, under Settings → Advanced) its diagnostics. The log files are in `PortableData/logs` (File → Open Atlas's Data Folder), and a crash leaves a report there too.

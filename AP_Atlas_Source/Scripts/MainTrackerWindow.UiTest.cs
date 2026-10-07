@@ -131,6 +131,8 @@ public partial class MainTrackerWindow
             UiKitAsync);
         await ScenarioAsync("Developer mode: off, the Debug Log tab, its command, the Debug Log's menu items and the hitch warnings on the status bar are hidden, and a diagnostic line reaches the Debug Log and the file, never the System Log; on, each shows; the status bar's right end counts the connected slots, and a hidden tab that was current gives way to Chat",
             DeveloperModeAsync);
+        await ScenarioAsync("Accessibility: every button takes the keyboard focus (Tab reaches it, Enter presses it; a kit button can opt out beside a field), the theme draws a focus ring on every kind of control that takes the focus, Tab from the Settings search box moves on, a symbol-only kit button is named by its tooltip, and no button anywhere in the window shows only a symbol without a name for screen readers",
+            AccessibilityAsync);
         await ScenarioAsync("Customization: a custom accent of any colour recolours Atlas, is saved, and its headings and links still read (the preset choice says Custom); colour-blind-safe colours are the theme's other palette, held to the contrast rule, saved and undone; the zoom choice, Ctrl+= and Ctrl+- scale the window and are saved; the pin shape is saved and every map redraws, a diamond being a square on its corner; the page Atlas opens on is saved and the last tool shown is remembered for it",
             CustomizationAsync);
         await ScenarioAsync("Tables: a click on a column's title sorts by it (the column's own first direction, then the other; the arrow says which), typed words narrow the rows, a column hides and shows, pinned rows stay on top, the rows export as TSV, Markdown, Discord parts and a CSV file, the sort and the hidden columns are saved, and unchanged rows are updated in place with the selection kept",
@@ -1095,6 +1097,64 @@ public partial class MainTrackerWindow
         int left = ActiveSlotNodes().OfType<SlotTrackerControl>().Count();
         UiTestExpect(_statusConnectedLabel.Text == (left == 0 ? "" : left == 1 ? Tr("1 slot connected") : Tr("{0} slots connected").Replace("{0}", left.ToString())), $"the count didn't follow the slot's end: \"{_statusConnectedLabel.Text}\"");
         host.ShowTool(AP_Atlas.UI.Tool.Home);
+    }
+
+    private async Task AccessibilityAsync()
+    {
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        var page = _settingsPage ?? throw new InvalidOperationException("The Settings page wasn't built.");
+
+        // A kit button takes the focus and Enter presses it; one beside a field can opt out.
+        int presses = 0;
+        var button = AP_Atlas.UI.Kit.Button("Press", "What it does", () => presses++);
+        AddChild(button);
+        UiTestExpect(button.FocusMode == Control.FocusModeEnum.All, "a kit button refuses the keyboard focus");
+        button.GrabFocus();
+        UiTestExpect(button.HasFocus(), "a kit button couldn't take the focus");
+        await PressAsync("Enter"); // a button presses on the key's release, as a mouse button does
+        var release = AP_Atlas.UI.CommandKeys.ToEvent("Enter") ?? throw new InvalidOperationException("Enter isn't a key");
+        release.Pressed = false;
+        GetViewport().PushInput(release);
+        await UiTestWaitAsync(0.1);
+        UiTestExpect(presses == 1, $"Enter on a focused button ran it {presses} times, not once");
+        var quiet = AP_Atlas.UI.Kit.Button("Send", "Beside a field", () => { }, focusable: false);
+        UiTestExpect(quiet.FocusMode == Control.FocusModeEnum.None, "a kit button told not to take the focus takes it");
+        button.QueueFree();
+
+        // A symbol-only kit button is named by its tooltip; one with words isn't renamed.
+        var symbol = AP_Atlas.UI.Kit.Button("◀", "Back", () => { });
+        var worded = AP_Atlas.UI.Kit.Button("Back", "Go back", () => { });
+        UiTestExpect(symbol.AccessibilityName == "Back" && worded.AccessibilityName == "", "a symbol-only kit button isn't named by its tooltip, or a worded one is renamed");
+        UiTestExpect(AP_Atlas.UI.Kit.IsSymbolOnly("…") && AP_Atlas.UI.Kit.IsSymbolOnly("") && !AP_Atlas.UI.Kit.IsSymbolOnly("Fit") && !AP_Atlas.UI.Kit.IsSymbolOnly("+1"), "symbol-only text isn't told from words");
+
+        // The theme's focus ring, on every kind of control that takes the focus.
+        var theme = Theme ?? throw new InvalidOperationException("the window has no theme");
+        foreach (string type in new[] { "Button", "CheckBox", "CheckButton", "OptionButton", "MenuButton", "LineEdit", "TextEdit", "Tree", "ItemList" })
+        {
+            var ring = theme.HasStylebox("focus", type) ? theme.GetStylebox("focus", type) as StyleBoxFlat : null;
+            UiTestExpect(ring != null && !ring.DrawCenter && ring.BorderWidthTop >= 2 && ring.BorderColor.A > 0.9f, $"the theme draws no focus ring for {type}");
+        }
+
+        // Tab from the Settings search box moves the focus on.
+        host.ShowTool(AP_Atlas.UI.Tool.Settings);
+        await UiTestWaitAsync(0.1);
+        var search = page.FindChildren("*", nameof(LineEdit), true, false).OfType<LineEdit>().First();
+        search.GrabFocus();
+        var next = search.FindNextValidFocus();
+        UiTestExpect(next != null && next != search && next.FocusMode == Control.FocusModeEnum.All, $"Tab from the search box leads to {next?.Name ?? "nothing"}");
+
+        // No button anywhere shows only a symbol without a name; no button refuses the focus (the palette's list and the hint suggestions aren't buttons).
+        host.ShowTool(AP_Atlas.UI.Tool.Home);
+        ShowToast("An accessibility probe", AP_Atlas.Core.ThemeColors.Info); // an alert card's buttons are scanned too
+        await UiTestWaitAsync(0.1);
+        var buttons = GetTree().Root.FindChildren("*", nameof(BaseButton), true, false).OfType<BaseButton>().ToList();
+        GD.Print($"UITEST INFO Accessibility: {buttons.Count} buttons scanned ({buttons.Count(b => b is CheckButton)} toggles, {buttons.Count(b => b is OptionButton)} choices, {buttons.Count(b => string.IsNullOrEmpty(b.AccessibilityName))} without a name of their own)");
+        UiTestExpect(buttons.Count(b => b is CheckButton) >= 10, $"the scan sees only {buttons.Count(b => b is CheckButton)} toggles: the Settings page's rows aren't in it");
+        var unnamed = buttons.Where(b => AP_Atlas.UI.Kit.IsSymbolOnly((b as Button)?.Text ?? "") && string.IsNullOrEmpty(b.AccessibilityName))
+            .Select(b => $"{b.GetPath()} (text \"{(b as Button)?.Text}\", tooltip \"{b.TooltipText}\")").ToList();
+        UiTestExpect(unnamed.Count == 0, $"{unnamed.Count} buttons show only a symbol and have no name: {string.Join(", ", unnamed.Take(8))}");
+        var refusing = buttons.Where(b => b.FocusMode == Control.FocusModeEnum.None).Select(b => b.GetPath().ToString()).ToList();
+        UiTestExpect(refusing.Count == 0, $"{refusing.Count} buttons refuse the keyboard focus: {string.Join(", ", refusing.Take(8))}");
     }
 
     private async Task CustomizationAsync()

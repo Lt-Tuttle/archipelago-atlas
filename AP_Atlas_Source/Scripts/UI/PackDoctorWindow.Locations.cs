@@ -374,7 +374,6 @@ namespace AP_Atlas.UI
                 CustomMinimumSize = new Vector2(size, size),
                 Size = new Vector2(size, size),
                 TooltipText = $"{pin.FullPath}\n{linked} of {sections} linked" + (isMoved ? "\n(moved by you)" : ""),
-                FocusMode = Control.FocusModeEnum.None
             };
             var style = new StyleBoxFlat
             {

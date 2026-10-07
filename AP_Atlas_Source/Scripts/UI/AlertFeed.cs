@@ -93,7 +93,7 @@ namespace AP_Atlas.UI
             Button? actionButton = null;
             if (action != null)
             {
-                actionButton = new Button { Text = actionText ?? _tr("Open"), FocusMode = Control.FocusModeEnum.None };
+                actionButton = new Button { Text = actionText ?? _tr("Open") };
                 var run = action;
                 actionButton.Pressed += () =>
                 {
@@ -102,7 +102,7 @@ namespace AP_Atlas.UI
                 };
                 row.AddChild(actionButton);
             }
-            var close = new Button { Text = "×", Flat = true, FocusMode = Control.FocusModeEnum.None, TooltipText = _tr("Dismiss") };
+            var close = new Button { Text = "×", Flat = true, TooltipText = _tr("Dismiss"), AccessibilityName = _tr("Dismiss") };
             close.Pressed += () => Dismiss(card);
             row.AddChild(close);
             card.AddChild(row);
