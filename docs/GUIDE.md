@@ -145,6 +145,8 @@ Atlas never looks or writes outside its own folder, or goes online for something
 
 Online, Atlas reaches the archipelago.gg rooms you connect to; Cheese Tracker (your instance) and spheretracker.de (the host's room) for the multiworlds you link; GitHub for apworld releases, when you allow it; and python.org, pypa.io and PyPI when you set up the Atlas Engine. Every request is polite: capped, backed off when a site asks, and never repeated to wake a sleeping room.
 
+**Crash reports.** When Atlas has had a problem it couldn't recover from, the next start offers to send a report to Atlas's developer, through Sentry, a crash-reporting service. See the report shows the whole report exactly as it would be sent: what the code was doing, Atlas's version and the kind of PC, and nothing more; names, paths, servers, slots, chat and log lines are never included, and you can add a note. Send once sends this one, Always send keeps the permission (take it back here), Don't send keeps the report on your PC only. A build without a report address offers nothing.
+
 ## Accessibility
 
 - **Keyboard:** Tab and Shift+Tab move between controls, and a ring in your accent colour shows which one has the focus; Enter or Space presses a button; Escape closes a dialog or a menu; the arrow keys move in lists and tables. Every command has a key you can change (Settings → Keyboard), and Ctrl+Shift+P finds any command by name.
@@ -158,3 +160,5 @@ Online, Atlas reaches the archipelago.gg rooms you connect to; Cheese Tracker (y
 - **A pack looks wrong for the game:** open it in the Pack Doctor from Map Packs; it says what it found and lets you fix it locally.
 - **A slot won't reconnect:** after a few tries over about 20 minutes Atlas stops on purpose. If the multiworld has its room link (and you allowed the status read), a card offers the room's new port or says the room is asleep; otherwise connect the slot again from the Multiworlds page, after updating the server address if the room's port changed.
 - **Everything Atlas keeps** (multiworlds, settings, logs, packs, fixes, the engine) is in `PortableData`, next to Atlas; nothing is written anywhere else.
+
+**Report a problem.** Help → Report a Problem writes a zip in `PortableData/reports`: the end of the log, the update log, the newest crash reports and the system information, with paths, web and e-mail addresses, server and slot names replaced by marks, and a note saying what it holds. Atlas uploads nothing: open the zip, check it, then attach it to an issue on GitHub (the dialog opens the folder and the issues page).

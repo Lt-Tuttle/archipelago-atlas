@@ -9,5 +9,11 @@
     <MSBuildTreatWarningsAsErrors>true</MSBuildTreatWarningsAsErrors>
     <!-- The code-style rules .editorconfig makes warnings (dead private members) are checked in every build too. -->
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <!-- Where crash reports go when the user allows them (Sentry's DSN, a public value): set by the release build from the
+         SENTRY_DSN variable, or as a property; a build without one has no crash reporting. -->
+    <SentryDsn Condition="'$(SentryDsn)' == ''">$(SENTRY_DSN)</SentryDsn>
   </PropertyGroup>
+  <ItemGroup>
+    <AssemblyMetadata Include="SentryDsn" Value="$(SentryDsn)" />
+  </ItemGroup>
 </Project>

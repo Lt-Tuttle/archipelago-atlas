@@ -137,6 +137,8 @@ public partial class MainTrackerWindow
             MultiworldsPageAsync);
         await ScenarioAsync("Updates: nothing is asked of GitHub without the permission and the daily setting; with them, one read a day finds a newer version of the channel (an unchanged list is confirmed, never sent again) and offers it as a card with its notes; a download whose hash doesn't match the release's SHA256SUMS is refused and nothing is staged, a good one is staged ready for a restart; the swap moves the installed files aside and the release's in (PortableData untouched), the supervisor puts the previous version back when the new Atlas ends before its window and the Atlas put back says so, a started one confirms the note; a folder Atlas can't write to is said so",
             UpdatesWithoutGodotErrorsAsync);
+        await ScenarioAsync("Crash reports: a problem last time is offered as a card; the dialog shows the whole report as it would be sent, with the user's name, paths, the server, the slot and an e-mail replaced by marks; Send once posts a Sentry envelope to the project (scrubbed, with the note) and the file isn't offered again; with Always send, the next is sent without asking; Don't send dismisses it and nothing is posted; Help → Report a problem writes a scrubbed zip in Atlas's folder and uploads nothing; a build without an address offers nothing",
+            CrashReportsAsync);
         await ScenarioAsync("Customization: a custom accent of any colour recolours Atlas, is saved, and its headings and links still read (the preset choice says Custom); colour-blind-safe colours are the theme's other palette, held to the contrast rule, saved and undone; the zoom choice, Ctrl+= and Ctrl+- scale the window and are saved; the pin shape is saved and every map redraws, a diamond being a square on its corner; the page Atlas opens on is saved and the last tool shown is remembered for it",
             CustomizationAsync);
         await ScenarioAsync("Tables: a click on a column's title sorts by it (the column's own first direction, then the other; the arrow says which), typed words narrow the rows, a column hides and shows, pinned rows stay on top, the rows export as TSV, Markdown, Discord parts and a CSV file, the sort and the hidden columns are saved, and unchanged rows are updated in place with the selection kept; thousands of rows lay out only the ones on screen (a frame no longer than a few rows take), which the scroll bar, the wheel and the keys move through",
@@ -3056,6 +3058,116 @@ public partial class MainTrackerWindow
             godotErrors = AP_Atlas.Core.GodotLog.Errors - godotErrors;
         }
         UiTestExpect(godotErrors == 0, $"Godot reported {godotErrors} error(s) (the log file has them)");
+    }
+
+    private async Task CrashReportsAsync()
+    {
+        await using var site = new AP_Atlas.Core.Testing.FakeWebSite();
+        site.Answer = (path, _) => new AP_Atlas.Core.Testing.FakeWebSite.FullAnswer(path == "/api/42/envelope/" ? 200 : 404, System.Text.Encoding.UTF8.GetBytes("{\"id\":\"1\"}"), "application/json");
+        string user = System.Environment.UserName;
+        var profile = new MultiworldProfile { Name = "UI test (crash reports)", ServerUrl = "archipelago.gg:38281" };
+        profile.Slots.Clear();
+        profile.Slots.Add("Tester");
+        _profiles.Add(profile);
+        string logs = System.IO.Path.Combine(DataManager.GetDataDirectory(), "logs");
+        var planted = new List<string>();
+        string Plant()
+        {
+            System.IO.Directory.CreateDirectory(logs);
+            string path = System.IO.Path.Combine(logs, $"crash_uitest_{planted.Count + 1}.txt");
+            System.IO.File.WriteAllText(path, $"{DateTime.Now:O}\nUnhandled exception\n\nSystem.IO.IOException: {user} lost C:\\Users\\{user}\\Documents\\save.txt for Tester at archipelago.gg:38281 (mail {user}@example.com)\n   at MainTrackerWindow.Go() in C:\\Users\\{user}\\Atlas\\Scripts\\MainTrackerWindow.cs:line 7\n");
+            planted.Add(path);
+            return path;
+        }
+        Control? CardWith(string text) => _alerts.Cards.FirstOrDefault(card => card.FindChildren("*", nameof(Label), true, false).OfType<Label>().Any(label => label.Text.Contains(text)));
+        bool Mentions(string text) => text.Contains(user, StringComparison.OrdinalIgnoreCase) || text.Contains("Users\\") || text.Contains("Tester") || text.Contains("archipelago.gg") || text.Contains("@example.com");
+        TestSentryDsn = $"http://abc123@127.0.0.1:{new Uri(site.Site).Port}/42";
+        SetUpCrashReports();
+        var reports = _crashReports!;
+        AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.CrashReports, null, false);
+        AP_Atlas.Core.Permissions.DenyForSession(AP_Atlas.Core.Permissions.CrashReports);
+        try
+        {
+            UiTestExpect(reports.Available && reports.Pending().Count == 0, "with an address given, reporting should be available with nothing pending");
+            // 1. A problem last time: a card, then the dialog with the report as it would be sent; Send once posts it.
+            Plant();
+            await reports.OfferAsync();
+            var card = await UiTestWaitForAsync(() => CardWith("had a problem"), "the crash report card");
+            _alerts.ActionButtonOf(card)!.EmitSignal(BaseButton.SignalName.Pressed);
+            var dialog = await UiTestWaitForAsync(() => GetChildren().OfType<AP_Atlas.UI.CrashReportDialog>().FirstOrDefault(), "the crash report dialog");
+            string shown = dialog.FindChildren("*", nameof(TextEdit), true, false).OfType<TextEdit>().First().Text;
+            UiTestExpect(!Mentions(shown) && shown.Contains("<user>") && shown.Contains("<name>") && shown.Contains("<host>") && shown.Contains("<email>") && shown.Contains("\\\\save.txt"),
+                "the report shown still names the user, a path, the slot, the server or the e-mail, or lost the file's name: " + shown);
+            dialog.Note = $"I was {user}, connecting Tester";
+            dialog.EmitSignal(AcceptDialog.SignalName.Confirmed);
+            await UiTestWaitForAsync(() => site.Received.Count == 1 ? site : null, "the report to be posted");
+            var request = site.Received[0];
+            string body = System.Text.Encoding.UTF8.GetString(request.Body);
+            UiTestExpect(request.Method == "POST" && request.Path == "/api/42/envelope/" && request.Headers.TryGetValue("x-sentry-auth", out var auth) && auth.Contains("sentry_key=abc123")
+                && request.Headers.TryGetValue("content-type", out var type) && type == "application/x-sentry-envelope", "the report wasn't posted as a Sentry envelope with its key");
+            UiTestExpect(!Mentions(body) && body.Contains("I was <user>, connecting <name>") && body.Contains("\"release\":\"atlas@") && body.Contains("\"type\":\"event\""),
+                "the posted report isn't scrubbed, or lacks the note or the build: " + body);
+            await UiTestWaitForAsync(() => CardWith("was sent"), "the sent card");
+            UiTestExpect(reports.Pending().Count == 0 && AP_Atlas.Core.Permissions.IsAllowed(_appSettings, AP_Atlas.Core.Permissions.CrashReports)
+                && !AP_Atlas.Core.Permissions.IsAlwaysAllowed(_appSettings, AP_Atlas.Core.Permissions.CrashReports), "after Send once, the file is still pending or the permission isn't for this session only");
+            // 2. Always send: the next problem goes without a card or a dialog.
+            AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.CrashReports, null, true);
+            Plant();
+            await reports.OfferAsync();
+            await UiTestWaitForAsync(() => site.Received.Count == 2 ? site : null, "the second report, sent without asking");
+            await UiTestWaitAsync(0.3);
+            UiTestExpect(CardWith("had a problem") == null && GetChildren().OfType<AP_Atlas.UI.CrashReportDialog>().Any() == false && reports.Pending().Count == 0, "with Always send, a card or the dialog still appeared");
+            // 3. Don't send: dismissed, nothing posted, not offered again.
+            AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.CrashReports, null, false);
+            AP_Atlas.Core.Permissions.AllowForSession(AP_Atlas.Core.Permissions.CrashReports); // Send once earlier in the session: the next problem is still asked about
+            Plant();
+            await reports.OfferAsync();
+            card = await UiTestWaitForAsync(() => CardWith("had a problem"), "the third card");
+            _alerts.ActionButtonOf(card)!.EmitSignal(BaseButton.SignalName.Pressed);
+            dialog = await UiTestWaitForAsync(() => GetChildren().OfType<AP_Atlas.UI.CrashReportDialog>().FirstOrDefault(), "the third dialog");
+            dialog.EmitSignal(AcceptDialog.SignalName.Canceled);
+            await UiTestWaitAsync(0.5);
+            UiTestExpect(site.Received.Count == 2 && reports.Pending().Count == 0, "Don't send posted something, or left the file pending");
+            // Without the permission, nothing is sent even when the code asks.
+            await reports.SendAllAsync(new[] { planted[^1] }, null);
+            await UiTestWaitAsync(0.3);
+            UiTestExpect(site.Received.Count == 2, "a report was sent without the permission");
+            await reports.OfferAsync();
+            await UiTestWaitAsync(0.3);
+            UiTestExpect(CardWith("had a problem") == null, "a dismissed report was offered again");
+            // 4. Report a problem: a scrubbed zip in Atlas's folder, and nothing uploaded.
+            AP_Atlas.Core.Logger.LogInfo($"UI test marker: {user} at C:\\Users\\{user}\\marker.txt");
+            int posted = site.Received.Count;
+            _commands!.Run("help.report-problem");
+            var saved = await UiTestWaitForAsync(() => GetChildren().OfType<AcceptDialog>().FirstOrDefault(d => d.Title == Tr("Report a problem")), "the Report a problem dialog");
+            var zips = System.IO.Directory.GetFiles(reports.ReportsDir, "atlas-report-*.zip");
+            UiTestExpect(zips.Length == 1, $"{zips.Length} report zips were written");
+            using (var zip = AP_Atlas.Core.SafeZip.Open(zips[0]))
+            {
+                string log = zip.ReadText(zip.GetEntry("atlas_log.txt") ?? throw new InvalidOperationException("the bundle has no log"));
+                string system = zip.ReadText(zip.GetEntry("system.txt") ?? throw new InvalidOperationException("the bundle has no system information"));
+                UiTestExpect(log.Contains("UI test marker: <user> at <path>\\marker.txt") && !Mentions(log) && zip.GetEntry("README.txt") != null && system.Contains("Godot") && !Mentions(system),
+                    "the bundle's log isn't scrubbed, or the bundle lacks its parts");
+            }
+            UiTestExpect(site.Received.Count == posted, "Report a problem posted something");
+            saved.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
+            // 5. A build without an address: nothing is offered (the file stays for Report a problem).
+            TestSentryDsn = "";
+            SetUpCrashReports();
+            Plant();
+            await _crashReports!.OfferAsync();
+            await UiTestWaitAsync(0.3);
+            UiTestExpect(!_crashReports.Available && CardWith("had a problem") == null, "a build without an address offered a report");
+        }
+        finally
+        {
+            AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.CrashReports, null, false);
+            TestSentryDsn = null;
+            SetUpCrashReports();
+            foreach (var open in GetChildren().OfType<AP_Atlas.UI.CrashReportDialog>().ToList()) open.QueueFree();
+            foreach (string path in planted) System.IO.File.Delete(path);
+            DeleteProfile(profile);
+        }
     }
 
     private async Task UpdatesAsync()

@@ -19,6 +19,8 @@
         reconnects politely (the self-test may create one it never connects).
       - Listening to a session's packets ahead of the connection library: only ServerPackets, put there by AtlasSessions
         for every session, which makes what a server sends safe before anything reads it.
+      - Sending a crash report (Sentry's address and envelope): only the report sender (Reports/Sentry.cs,
+        CrashReporter.cs), through PoliteHttp, after the user saw the report and allowed it.
       - Starting a program: only the engine's launch points (EngineInstall.StartInfo, AtlasEngine.SetupStartInfo), which
         keep its temporary files and caches in Atlas's folder, the updater's (UpdateLauncher: the Atlas just installed,
         and the previous one as its supervisor), and the self-test.
@@ -99,6 +101,7 @@ $rules = @(
     @{ Name = 'Creating an Archipelago session outside AtlasSessions'; Pattern = 'ArchipelagoSessionFactory'; Allowed = @('AP_Atlas.Core\Connections\AtlasSessions.cs') },
     @{ Name = 'Listening to packets ahead of the connection library outside ServerPackets'; Pattern = 'PacketReceivedHandler'; Allowed = @('AP_Atlas.Core\Connections\ServerPackets.cs') },
     @{ Name = 'Installing the packet guard outside AtlasSessions'; Pattern = 'ServerPackets\.Install\s*\('; Allowed = @('AP_Atlas.Core\Connections\AtlasSessions.cs') },
+    @{ Name = 'Sending to Sentry outside the report sender'; Pattern = 'X-Sentry-Auth|/envelope/|ingest\.'; Allowed = @('AP_Atlas.Core\Reports\Sentry.cs', 'AP_Atlas.Core\Reports\CrashReporter.cs', 'AP_Atlas_Source\Scripts\MainTrackerWindow.UiTest.cs') },
     @{ Name = 'Connecting a session outside SessionManager'; Pattern = 'AtlasSessions\.Create\s*\(|TryConnectAndLogin|\.LoginAsync\s*\(|Session\w*\.ConnectAsync\s*\(\s*\)'
        Allowed = @('AP_Atlas.Core\Connections\SessionManager.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.Footprint.cs') },
     # Case-sensitive, so starting an engine process made at a launch point (process.Start()) isn't mistaken for one.

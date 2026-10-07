@@ -52,6 +52,17 @@ public sealed class FakeWebSite : IAsyncDisposable
         get { lock (_requests) return _requests.ToArray(); }
     }
 
+    /// <summary>One request as it came: its method, path, headers (names in lower case) and body.</summary>
+    public sealed record Request(string Method, string Path, IReadOnlyDictionary<string, string> Headers, byte[] Body);
+
+    private readonly List<Request> _received = new();
+
+    /// <summary>Every request, in order, with its body (a posted report).</summary>
+    public IReadOnlyList<Request> Received
+    {
+        get { lock (_received) return _received.ToArray(); }
+    }
+
     private async Task AcceptAsync()
     {
         while (!_stop.IsCancellationRequested)
@@ -93,6 +104,7 @@ public sealed class FakeWebSite : IAsyncDisposable
                 if (headerEnd < 0) return;
                 string[] requestLines = Encoding.ASCII.GetString(buffer.GetBuffer(), 0, headerEnd).Split("\r\n");
                 var parts = requestLines[0].Split(' ');
+                string method = parts.Length > 0 ? parts[0] : "GET";
                 string path = parts.Length > 1 ? parts[1] : "/";
                 var requestHeaders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 foreach (string line in requestLines.AsSpan(1))
@@ -100,7 +112,19 @@ public sealed class FakeWebSite : IAsyncDisposable
                     int colon = line.IndexOf(':');
                     if (colon > 0) requestHeaders[line.Substring(0, colon).Trim().ToLowerInvariant()] = line.Substring(colon + 1).Trim();
                 }
+                // The body, when the request says how long it is (a posted report), up to 16 MB.
+                int bodyStart = headerEnd + 4;
+                long bodyLength = requestHeaders.TryGetValue("content-length", out var lengthText) && long.TryParse(lengthText, out long length) ? Math.Min(length, 16L << 20) : 0;
+                while (buffer.Length < bodyStart + bodyLength)
+                {
+                    int n = await stream.ReadAsync(chunk, _stop.Token).ConfigureAwait(false);
+                    if (n <= 0) break;
+                    await buffer.WriteAsync(chunk.AsMemory(0, n), _stop.Token).ConfigureAwait(false);
+                }
+                byte[] requestBody = new byte[Math.Max(0, Math.Min(bodyLength, buffer.Length - bodyStart))];
+                Array.Copy(buffer.GetBuffer(), bodyStart, requestBody, 0, requestBody.Length);
                 lock (_requests) _requests.Add(path);
+                lock (_received) _received.Add(new Request(method, path, requestHeaders, requestBody));
                 int status;
                 byte[] payload;
                 string contentType = ContentType;

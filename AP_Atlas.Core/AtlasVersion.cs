@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Reflection;
 
 namespace AP_Atlas.Core
@@ -31,6 +32,15 @@ namespace AP_Atlas.Core
         public const string RepoUrl = "https://github.com/Lt-Tuttle/archipelago-atlas";
 
         public static string UserAgent => $"TheArchipelagoAtlas/{Display} (Archipelago tracker; +{RepoUrl})";
+
+        /// <summary>
+        /// Where crash reports go when the user allows them: Sentry's DSN, which the build bakes in (the SentryDsn property, or
+        /// the SENTRY_DSN variable in a release build), or "" in a build without one, where crash reporting isn't available.
+        /// </summary>
+        public static readonly string SentryDsn = Metadata("SentryDsn");
+
+        private static string Metadata(string key) =>
+            typeof(AtlasVersion).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().FirstOrDefault(a => a.Key == key)?.Value?.Trim() ?? "";
 
         private static string Read()
         {

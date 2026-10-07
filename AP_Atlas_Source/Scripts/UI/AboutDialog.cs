@@ -74,7 +74,8 @@ namespace AP_Atlas.UI
         /// <summary>The dialog's text as shown, without markup (for tests).</summary>
         public string ShownText => _text.GetParsedText();
 
-        private static string BuildSystemInfo(string engineLine, string commit)
+        /// <summary>The system information (versions, the renderer, the locale; nothing that names the PC), as About shows it and the problem report bundles it.</summary>
+        internal static string BuildSystemInfo(string engineLine, string commit)
         {
             var lines = new StringBuilder();
             lines.Append("The Archipelago Atlas ").Append(AP_Atlas.Core.AtlasVersion.Display).Append(commit.Length > 0 ? " (" + commit + ")" : "").Append('\n');

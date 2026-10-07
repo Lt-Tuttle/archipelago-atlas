@@ -140,6 +140,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         AP_Atlas.Core.ThemeColors.SetAccent(_appSettings.ThemeAccentColor);
         AP_Atlas.Core.RaceRules.Initialize(_appSettings);
         SetUpUpdates();
+        SetUpCrashReports();
         AP_Atlas.Core.EngineSetup.AtlasEngine.Initialize(_appSettings);
         AP_Atlas.Core.PopTracker.PackDoctorService.Initialize(_appSettings);
         AP_Atlas.Core.PopTracker.PackDoctorService.ReviewSuggested += OnPackReviewSuggested;
@@ -407,6 +408,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         foreach (var (msg, color) in _pendingNotices) ShowToast(msg, color);
         _pendingNotices.Clear();
         StartUpdateChecks();
+        StartCrashReports();
         if (VisualCheckRequested) AP_Atlas.UI.Ui.Defer(this, RunVisualCheck);
         if (UiTestRequested) AP_Atlas.UI.Ui.Defer(this, RunUiTest);
     }

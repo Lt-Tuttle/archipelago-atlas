@@ -107,6 +107,9 @@ jobs:
       # its SHA256SUMS.txt (Tools/build_release.ps1).
       - name: Build, test and package the release
         shell: pwsh
+        env:
+          # Where the build's crash reports go (a public value; the repository's Actions variable).
+          SENTRY_DSN: ${{ vars.SENTRY_DSN }}
         run: ./AP_Atlas_Source/Tools/build_release.ps1 -Version $env:ATLAS_VERSION -OutDir dist -Godot $env:ATLAS_GODOT -ScratchRoot $env:RUNNER_TEMP
 
       - name: Keep the build's output when it fails

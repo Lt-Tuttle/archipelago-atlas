@@ -43,6 +43,8 @@ param(
     [string]$Version,
     [string]$OutDir,
     [string]$Godot = $env:ATLAS_GODOT,
+    # Where crash reports go (Sentry's DSN, a public value), baked into the build; empty builds an Atlas that can't report.
+    [string]$SentryDsn = $env:SENTRY_DSN,
     [switch]$SkipTests,
     [string]$ScratchRoot = [System.IO.Path]::GetTempPath()
 )
@@ -114,6 +116,8 @@ $psi.CreateNoWindow = $true
 # The build's helpers end with the build instead.
 $psi.EnvironmentVariables['UseSharedCompilation'] = 'false'
 $psi.EnvironmentVariables['MSBUILDDISABLENODEREUSE'] = '1'
+# Directory.Build.props bakes SENTRY_DSN into the assemblies (AtlasVersion.SentryDsn).
+if ($SentryDsn) { $psi.EnvironmentVariables['SENTRY_DSN'] = $SentryDsn } else { $psi.EnvironmentVariables.Remove('SENTRY_DSN') }
 $proc = New-Object System.Diagnostics.Process
 $proc.StartInfo = $psi
 # Output is collected line by line as it arrives (not read to its end: a helper process holding the pipe open after Godot
@@ -169,6 +173,20 @@ if ((Get-IconHash $exe) -eq (Get-IconHash $template)) { Stop-Build 4 "The exe st
 # The assemblies carry the version with the commit they were built from (the .NET build writes it into their properties).
 $coreVersion = "$((Get-Item -LiteralPath (Join-Path $data 'AP_Atlas.Core.dll')).VersionInfo.ProductVersion)".Trim()
 if ($coreVersion -ne $Version -and -not $coreVersion.StartsWith("$Version+")) { Stop-Build 4 "AP_Atlas.Core.dll says it's version '$coreVersion', not $Version." }
+# The crash report address, when one was given, is in the assembly's metadata (as UTF-8 in its string heap).
+$coreBytes = [System.IO.File]::ReadAllBytes((Join-Path $data 'AP_Atlas.Core.dll'))
+$dsnBytes = [System.Text.Encoding]::UTF8.GetBytes("$SentryDsn")
+$dsnFound = $false
+if ($dsnBytes.Length -gt 0) {
+    for ($i = 0; $i -le $coreBytes.Length - $dsnBytes.Length; $i++) {
+        $match = $true
+        for ($j = 0; $j -lt $dsnBytes.Length -and $match; $j++) { if ($coreBytes[$i + $j] -ne $dsnBytes[$j]) { $match = $false } }
+        if ($match) { $dsnFound = $true; break }
+    }
+    if (-not $dsnFound) { Stop-Build 4 'The crash report address (SENTRY_DSN) was given but the build does not hold it.' }
+    Write-Host "Crash reports: on (the build holds the address)."
+}
+else { Write-Host 'Crash reports: off (no SENTRY_DSN; a release build needs one).' -ForegroundColor Yellow }
 $commit = if ($coreVersion -match '\+([0-9a-f]{7,})') { $Matches[1].Substring(0, 7) } else { 'no commit recorded' }
 
 # 5. The tests, on the build that ships.

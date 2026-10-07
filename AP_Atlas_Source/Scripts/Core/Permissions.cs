@@ -54,13 +54,19 @@ namespace AP_Atlas.Core
             "rather than sent again. Nothing is downloaded until you press Update, and a download is checked against the release's " +
             "SHA-256 before it's used. Settings \u2192 Updates turns the daily check off.");
 
-        public static IReadOnlyList<Kind> All { get; } = new[] { FindArchipelago, WriteArchipelago, GitHubLookups, RoomStatusReads, UpdateChecks };
+        public static readonly Kind CrashReports = new Kind("online.crash-report", "Send crash reports to Atlas's developer",
+            "When Atlas has had a problem it couldn't recover from, it offers to send a report to its developer through Sentry, a crash-reporting " +
+            "service: what the code was doing, Atlas's version and the kind of PC, and nothing more. You see the whole report first, as it would be " +
+            "sent. Names, paths, servers, slots, chat and log lines are never included. Reports stay in Atlas's logs folder either way.");
+
+        public static IReadOnlyList<Kind> All { get; } = new[] { FindArchipelago, WriteArchipelago, GitHubLookups, RoomStatusReads, UpdateChecks, CrashReports };
 
         /// <summary>Every place Atlas reaches online, in plain words: the privacy statement (Settings → Privacy &amp; permissions, About). A new site joins it.</summary>
         public const string WhereAtlasGoesOnline =
             "The archipelago.gg rooms you connect to, and a room's status page when you allow it (to fill in a multiworld from its link, or after a failed reconnect). Cheese Tracker (your instance) and spheretracker.de (the host's room) for the multiworlds you link. " +
             "GitHub for apworld releases, and for new versions of Atlas (once a day at most, and only to download one when you ask), when you allow it. " +
-            "python.org, pypa.io and PyPI when you set up the Atlas Engine. Nothing else, and nothing at startup.";
+            "python.org, pypa.io and PyPI when you set up the Atlas Engine. Sentry (sentry.io), only to send a crash report you've seen and allowed. " +
+            "Nothing else, and nothing at startup.";
 
         private static readonly HashSet<string> _deniedThisSession = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly HashSet<string> _allowedThisSession = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
