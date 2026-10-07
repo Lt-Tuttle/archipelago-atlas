@@ -44,11 +44,16 @@ namespace AP_Atlas.Core
             "projects (and may search GitHub for where your copy came from) to find the seed's version, without you pressing a button. " +
             "Downloads still need you to trust their source first.");
 
-        public static IReadOnlyList<Kind> All { get; } = new[] { FindArchipelago, WriteArchipelago, GitHubLookups };
+        public static readonly Kind RoomStatusReads = new Kind("online.room-status", "Read a room's status from archipelago.gg",
+            "Atlas reads the room's status page (api/room_status): the port the room runs on, its players and when it was last active. " +
+            "One small read when you fill in a multiworld from its room link, and one when a reconnect fails (at most every ten minutes), " +
+            "to say whether the room moved to another port or went to sleep. Atlas never requests the room's own page, which would wake a sleeping room.");
+
+        public static IReadOnlyList<Kind> All { get; } = new[] { FindArchipelago, WriteArchipelago, GitHubLookups, RoomStatusReads };
 
         /// <summary>Every place Atlas reaches online, in plain words: the privacy statement (Settings → Privacy &amp; permissions, About). A new site joins it.</summary>
         public const string WhereAtlasGoesOnline =
-            "The archipelago.gg rooms you connect to. Cheese Tracker (your instance) and spheretracker.de (the host's room) for the multiworlds you link. " +
+            "The archipelago.gg rooms you connect to, and a room's status page when you allow it (to fill in a multiworld from its link, or after a failed reconnect). Cheese Tracker (your instance) and spheretracker.de (the host's room) for the multiworlds you link. " +
             "GitHub for apworld releases, when you allow it. python.org, pypa.io and PyPI when you set up the Atlas Engine. Nothing else, and nothing at startup.";
 
         private static readonly HashSet<string> _deniedThisSession = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

@@ -140,6 +140,9 @@ public class MultiworldProfile
     public string Name { get; set; } = "New Multiworld";
     public string ServerUrl { get; set; } = "archipelago.gg:38281";
 
+    /// <summary>The room's link, as the host shared it (https://archipelago.gg/room/…), for the one status read Atlas makes about it; empty when none.</summary>
+    public string RoomLink { get; set; } = "";
+
     /// <summary>The room password, in memory only: profiles.json keeps it encrypted for this Windows account (PasswordProtected).</summary>
     [JsonIgnore] public string Password { get; set; } = "";
 

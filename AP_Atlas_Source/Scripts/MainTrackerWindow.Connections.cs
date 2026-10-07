@@ -126,7 +126,10 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             LogToSystem($"Stopped trying to reconnect {slot.SlotName} after {_sessions.ReconnectTries} tries over about 20 minutes. Reconnect it when the server is back.", "orange");
             var profile = ProfileById(slot.ProfileId);
             if (profile != null)
+            {
                 ShowToast($"{slot.SlotName} couldn't reconnect. The server may be down or the room closed.", AP_Atlas.Core.ThemeColors.Warning, "Try again", () => OnConnectSlotPressed(slot.SlotName, profile));
+                CheckRoomAfterFailure(profile, slot); // a moved port, or a room asleep, from one status read
+            }
         }
         UpdateSidebar();
     }
@@ -282,21 +285,25 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 _statusLabel.Text = "Status: Connection Timeout";
                 ShowStatus(Tr("{0}: the server didn't answer in time").Replace("{0}", slotName));
                 LogToSystem("Connection timed out for " + slotName + ": " + result.Message, "red");
+                ShowToast(Tr("{0}: the server didn't answer in time.").Replace("{0}", slotName), AP_Atlas.Core.ThemeColors.Error);
                 break;
             case ConnectOutcome.Refused:
                 _statusLabel.Text = "Status: Failed to connect:\n" + result.Message;
                 ShowStatus(Tr("{0}: the server refused the login").Replace("{0}", slotName));
                 LogToSystem("The server refused the login for " + slotName + ": " + result.Message, "red");
+                ShowToast(Tr("{0}: the server refused the login ({1}).").Replace("{0}", slotName).Replace("{1}", result.Message ?? ""), AP_Atlas.Core.ThemeColors.Error);
                 break;
             case ConnectOutcome.Unreachable:
                 _statusLabel.Text = "Status: Failed to connect:\n" + result.Message;
                 ShowStatus(Tr("{0}: couldn't reach the server").Replace("{0}", slotName));
                 LogToSystem("Couldn't reach the server for " + slotName + ": " + result.Message, "orange");
+                ShowToast(Tr("{0}: couldn't reach the server.").Replace("{0}", slotName), AP_Atlas.Core.ThemeColors.Error);
                 break;
             default:
                 _statusLabel.Text = "Status: Connection Error:\n" + result.Message;
                 ShowStatus(Tr("{0}: couldn't connect").Replace("{0}", slotName));
                 LogToSystem("Couldn't connect " + slotName + ": " + result.Message, "red");
+                ShowToast(Tr("{0}: couldn't connect ({1}).").Replace("{0}", slotName).Replace("{1}", result.Message ?? ""), AP_Atlas.Core.ThemeColors.Error);
                 break;
         }
     }

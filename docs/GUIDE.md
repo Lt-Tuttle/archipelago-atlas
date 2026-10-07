@@ -27,9 +27,11 @@ Atlas opens on Home (Ctrl+8) unless Settings → Behaviour → Open on says othe
 
 ## Multiworlds
 
-The Multiworlds page (Ctrl+9) holds your multiworlds: each has a name, a server address (as archipelago.gg shows it, for example `archipelago.gg:38281`), a password if the room has one, an optional Cheese Tracker link (the tracker's page, or the archipelago.gg room link), and the slots you play in it. Passwords are stored encrypted for your Windows account.
+The Multiworlds page (Ctrl+9) holds your multiworlds: each has a name, a room link, a server address (as archipelago.gg shows it, for example `archipelago.gg:38281`), a password if the room has one, an optional Cheese Tracker link (the tracker's page, or the archipelago.gg room link), and the slots you play in it. Passwords are stored encrypted for your Windows account.
 
-Connect a slot from its row, or every slot with Connect All Slots; Home's Connect does the same. A connected slot stays connected until you disconnect it or close Atlas. A dropped connection reconnects by itself: a few tries over about 20 minutes, then Atlas stops, so a closed room is never kept busy. You can turn automatic reconnects off in Settings → Multiworld.
+Paste the room link the host shared and press **Fill from link**: Atlas asks once to read the room's status page (never the room's page itself), then fills in the server address from the room's port and the slots from its players. What you type is kept as you type it, even when you select another multiworld; **Save Settings** writes it to disk at once (selecting another multiworld or closing Atlas does too). A slot's new name takes effect when you press Enter or leave its field, and its saved stats follow it.
+
+Connect a slot from its row, or every slot with Connect All Slots; Home's Connect does the same. A connection that fails says why as a card (the server refused the login, didn't answer in time, couldn't be reached). A connected slot stays connected until you disconnect it or close Atlas. A dropped connection reconnects by itself: a few tries over about 20 minutes, then Atlas stops, so a closed room is never kept busy. You can turn automatic reconnects off in Settings → Multiworld. When the reconnects give up and the multiworld has its room link, Atlas reads the room's status once (at most every ten minutes, and only if you allowed it): if the room moved to another port, a card offers to use it; if the room went to sleep, a card says so and opens the room page in your browser when you ask, which wakes it.
 
 Atlas connects to the room's server and nothing else for a connection. It never requests a room's web page (which would wake a sleeping room); open the room page yourself when you want to.
 
@@ -146,5 +148,5 @@ Online, Atlas reaches the archipelago.gg rooms you connect to; Cheese Tracker (y
 - **The logs:** the System Log tab shows what Atlas did; the Debug Log (developer mode, under Settings → Advanced) its diagnostics. The log files are in `PortableData/logs` (File → Open Atlas's Data Folder), and a crash leaves a report there too.
 - **Logic says "needs the engine":** set up the Atlas Engine (Home, or the bar's bottom button).
 - **A pack looks wrong for the game:** open it in the Pack Doctor from Map Packs; it says what it found and lets you fix it locally.
-- **A slot won't reconnect:** after a few tries over about 20 minutes Atlas stops on purpose. Connect it again from the Multiworlds page; if the room's port changed, update the server address.
+- **A slot won't reconnect:** after a few tries over about 20 minutes Atlas stops on purpose. If the multiworld has its room link (and you allowed the status read), a card offers the room's new port or says the room is asleep; otherwise connect the slot again from the Multiworlds page, after updating the server address if the room's port changed.
 - **Everything Atlas keeps** (multiworlds, settings, logs, packs, fixes, the engine) is in `PortableData`, next to Atlas; nothing is written anywhere else.

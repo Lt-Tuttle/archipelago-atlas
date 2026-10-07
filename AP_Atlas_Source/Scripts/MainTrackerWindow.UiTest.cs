@@ -133,6 +133,8 @@ public partial class MainTrackerWindow
             DeveloperModeAsync);
         await ScenarioAsync("Accessibility: every button takes the keyboard focus (Tab reaches it, Enter presses it; a kit button can opt out beside a field), the theme draws a focus ring on every kind of control that takes the focus, Tab from the Settings search box moves on, a symbol-only kit button is named by its tooltip, and no button anywhere in the window shows only a symbol without a name for screen readers",
             AccessibilityAsync);
+        await ScenarioAsync("Multiworlds page: a room link fills in the server address and the slots from the room's status page (asked first; never the room's page) and is kept; edits of a multiworld are kept when another is selected and written to disk; a slot's rename takes effect on Enter or on leaving the field, never per keystroke, and its saved stats follow it; after a reconnect gives up, one status read (at most every ten minutes) offers the room's new port, or says the room is asleep; a connection the server refuses shows as a card",
+            MultiworldsPageAsync);
         await ScenarioAsync("Customization: a custom accent of any colour recolours Atlas, is saved, and its headings and links still read (the preset choice says Custom); colour-blind-safe colours are the theme's other palette, held to the contrast rule, saved and undone; the zoom choice, Ctrl+= and Ctrl+- scale the window and are saved; the pin shape is saved and every map redraws, a diamond being a square on its corner; the page Atlas opens on is saved and the last tool shown is remembered for it",
             CustomizationAsync);
         await ScenarioAsync("Tables: a click on a column's title sorts by it (the column's own first direction, then the other; the arrow says which), typed words narrow the rows, a column hides and shows, pinned rows stay on top, the rows export as TSV, Markdown, Discord parts and a CSV file, the sort and the hidden columns are saved, and unchanged rows are updated in place with the selection kept",
@@ -1155,6 +1157,120 @@ public partial class MainTrackerWindow
         UiTestExpect(unnamed.Count == 0, $"{unnamed.Count} buttons show only a symbol and have no name: {string.Join(", ", unnamed.Take(8))}");
         var refusing = buttons.Where(b => b.FocusMode == Control.FocusModeEnum.None).Select(b => b.GetPath().ToString()).ToList();
         UiTestExpect(refusing.Count == 0, $"{refusing.Count} buttons refuse the keyboard focus: {string.Join(", ", refusing.Take(8))}");
+    }
+
+    private async Task MultiworldsPageAsync()
+    {
+        const string roomId = "AbCdEfGhIjKlMnOpQrStUw";
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        await using var site = new FakeWebSite();
+        int port = 40000;
+        string lastActivity = DateTime.UtcNow.ToString("R");
+        site.Respond = path => path == "/api/room_status/" + roomId
+            ? (200, $$"""{"tracker": "x", "players": [["Alice", "Bob"]], "last_port": {{port}}, "last_activity": "{{lastActivity}}", "timeout": 7200, "downloads": []}""")
+            : (404, "");
+        string roomLink = site.Site + "/room/" + roomId;
+        AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.RoomStatusReads, null, true);
+        var profile = new MultiworldProfile { Name = "Room test" };
+        profile.Slots.Add("Player1"); // as New Multiworld makes one
+        var other = new MultiworldProfile { Name = "Other" };
+        _profiles.Add(profile);
+        _profiles.Add(other);
+        RefreshProfileList();
+        host.ShowTool(AP_Atlas.UI.Tool.Connections);
+        try
+        {
+            // The room link fills in the server (the link's host and the room's port) and the slots (the room's players), and is kept.
+            SelectProfile(profile);
+            UiTestExpect(profile.Slots.Count == 1 && IsDefaultSlotName(profile.Slots[0]), "a new multiworld doesn't start with Atlas's placeholder slot");
+            _roomLinkInput.Text = roomLink;
+            _roomLinkInput.EmitSignal(LineEdit.SignalName.TextChanged, roomLink);
+            await FillFromRoomLinkAsync();
+            UiTestExpect(profile.ServerUrl == "127.0.0.1:40000" && _serverInput.Text == profile.ServerUrl, $"the server wasn't filled in from the room: \"{profile.ServerUrl}\"");
+            UiTestExpect(profile.Slots.SequenceEqual(new[] { "Alice", "Bob" }), $"the slots weren't filled in from the room's players: {string.Join(", ", profile.Slots)}");
+            UiTestExpect(profile.RoomLink == roomLink && site.Requests.Count == 1 && site.Requests[0] == "/api/room_status/" + roomId, $"the room link wasn't kept, or the site saw {string.Join(", ", site.Requests)}");
+            // A slot's row carries its name (the Connect All Slots row doesn't); the old rows go at the frame's end.
+            HBoxContainer[] SlotRows() => _slotsListVBox.GetChildren().OfType<HBoxContainer>().Where(row => !row.IsQueuedForDeletion() && row.HasMeta("slot_name")).ToArray();
+            UiTestExpect(SlotRows().Select(row => row.GetMeta("slot_name").AsString()).SequenceEqual(new[] { "Alice", "Bob" }), $"the slot rows don't show the room's players ({string.Join(", ", SlotRows().Select(row => row.GetMeta("slot_name").AsString()))})");
+            // A tracker link isn't a room link; nothing is read.
+            _roomLinkInput.Text = site.Site + "/tracker/" + roomId;
+            await FillFromRoomLinkAsync();
+            UiTestExpect(site.Requests.Count == 1 && _alertLog.Entries.Any(e => e.Message.Contains("room's own link")), "a tracker link was read as a room link, or the user wasn't told");
+
+            // Edits are kept when another multiworld is selected, and written to disk.
+            SelectProfile(profile);
+            _nameInput.Text = "Room test, edited";
+            _nameInput.EmitSignal(LineEdit.SignalName.TextChanged, _nameInput.Text);
+            UiTestExpect(profile.Name == "Room test, edited" && _dirty, "typing a name didn't reach the multiworld");
+            SelectProfile(other);
+            SelectProfile(profile);
+            UiTestExpect(_nameInput.Text == "Room test, edited" && !_dirty && DataManager.LoadProfiles().Any(p => p.Id == profile.Id && p.Name == "Room test, edited" && p.RoomLink == roomLink),
+                "the edited name was lost when another multiworld was selected, or wasn't written to disk");
+
+            // A slot's rename: not per keystroke; on Enter, with its saved stats; a duplicate is refused.
+            profile.SavedStats["Alice"] = new SlotStats { GameName = "Test Game" };
+            var aliceRow = SlotRows().First(row => row.GetMeta("slot_name").AsString() == "Alice");
+            var aliceEdit = aliceRow.GetChild<LineEdit>(0);
+            aliceEdit.Text = "Alicia";
+            aliceEdit.EmitSignal(LineEdit.SignalName.TextChanged, "Alicia");
+            UiTestExpect(profile.Slots[0] == "Alice", "a keystroke renamed the slot");
+            aliceEdit.EmitSignal(LineEdit.SignalName.TextSubmitted, "Alicia");
+            UiTestExpect(profile.Slots[0] == "Alicia" && profile.SavedStats.ContainsKey("Alicia") && !profile.SavedStats.ContainsKey("Alice") && aliceRow.GetMeta("slot_name").AsString() == "Alicia",
+                "Enter didn't rename the slot with its saved stats");
+            aliceEdit.Text = "Bob";
+            aliceEdit.EmitSignal(LineEdit.SignalName.FocusExited);
+            UiTestExpect(profile.Slots[0] == "Alicia" && aliceEdit.Text == "Alicia", "a duplicate name was taken, or the field wasn't put back");
+
+            // A connection the server refuses shows as a card.
+            await using var server = new FakeArchipelagoServer();
+            server.Games["Test Game"] = new FakeGame("0123456789abcdef0123456789abcdef01234567", new Dictionary<string, long> { ["Sword"] = 1000 }, new Dictionary<string, long> { ["Cave Chest"] = 2000 });
+            var refusedProfile = new MultiworldProfile { Name = "Refusing", ServerUrl = server.Url.ToString() };
+            refusedProfile.Slots.Clear();
+            refusedProfile.Slots.Add("Nobody");
+            _profiles.Add(refusedProfile);
+            int cards = _alertLog.Entries.Count;
+            await OnConnectSlotPressedAsync("Nobody", refusedProfile);
+            // The log keeps its newest card first: the cards since a count are at its front.
+            IEnumerable<AP_Atlas.Core.AlertEntry> CardsSince(int count) => _alertLog.Entries.Take(Math.Max(0, _alertLog.Entries.Count - count));
+            var refusedCard = await UiTestWaitForAsync(() => CardsSince(cards).FirstOrDefault(e => e.Message.Contains("Nobody")), "a card about the refused login");
+            UiTestExpect(refusedCard.Message.Contains("refused"), $"the refused login's card says \"{refusedCard.Message}\"");
+            DeleteProfile(refusedProfile);
+
+            // After a reconnect gives up: the room moved to another port, offered as a card whose action takes it.
+            port = 40123;
+            cards = _alertLog.Entries.Count;
+            OnReconnectStopped(new SlotId(profile.Id, "Alicia"), null);
+            Control? CardWith(string text) => _alerts.Cards.FirstOrDefault(card => card.FindChildren("*", nameof(Label), true, false).OfType<Label>().Any(label => label.Text.Contains(text))); // a card's message is a label
+            var moved = await UiTestWaitForAsync(() => CardWith("port 40123"), "the moved-port card");
+            var usePort = _alerts.ActionButtonOf(moved);
+            UiTestExpect(usePort != null && usePort.Text == "Use port 40123", $"the card's action is \"{usePort?.Text}\"");
+            UiTestExpect(site.Requests.Count == 2, $"the site saw {site.Requests.Count} requests, not one more");
+            OnReconnectStopped(new SlotId(profile.Id, "Alicia"), null);
+            // A read that shouldn't happen would only reach the site after the polite spacing between requests to one site, so the wait outlasts it.
+            await UiTestWaitAsync(AP_Atlas.Core.PoliteHttp.Spacing.TotalSeconds + 1);
+            UiTestExpect(site.Requests.Count == 2, "a second failure within ten minutes read the status again");
+            usePort!.EmitSignal(BaseButton.SignalName.Pressed);
+            await UiTestWaitAsync(0.3);
+            UiTestExpect(profile.ServerUrl == "127.0.0.1:40123" && DataManager.LoadProfiles().Any(p => p.Id == profile.Id && p.ServerUrl == "127.0.0.1:40123"), "taking the new port didn't change the server address, or wasn't saved");
+
+            // The room is asleep: said as a card that opens the room page (in the browser, on the user's click only).
+            lastActivity = DateTime.UtcNow.AddHours(-3).ToString("R"); // wall clock: the fake room's last activity is the server's own time, three hours ago
+            _roomChecks.Clear(); // ten minutes later
+            cards = _alertLog.Entries.Count;
+            OnReconnectStopped(new SlotId(profile.Id, "Alicia"), null);
+            var asleep = await UiTestWaitForAsync(() => CardWith("asleep"), "the asleep card");
+            var openPage = _alerts.ActionButtonOf(asleep);
+            UiTestExpect(openPage != null && openPage.Text == "Open the room page", $"the asleep card's action is \"{openPage?.Text}\"");
+            UiTestExpect(!site.Requests.Any(path => path.StartsWith("/room/", StringComparison.Ordinal)), "the room's page was requested");
+
+        }
+        finally
+        {
+            AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.RoomStatusReads, null, false);
+            if (_profiles.Contains(profile)) DeleteProfile(profile);
+            if (_profiles.Contains(other)) DeleteProfile(other);
+            host.ShowTool(AP_Atlas.UI.Tool.Home);
+        }
     }
 
     private async Task CustomizationAsync()

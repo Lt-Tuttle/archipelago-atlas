@@ -36,6 +36,7 @@ MainTrackerWindow (the shell)
   - `Markdown`: Atlas's own documents, from Markdown to the BBCode its rich text reads (Atlas's own tags only; links only to https pages); `Sections` splits a document at a heading level.
   - `AlertLog`: everything the alert feed told the user this session, newest first and capped, with what's unseen.
   - `Docs`: the documents built into Atlas (the guide, the changelog, the credits, the third-party notices, the licence), embedded from the repository's files as it's built, so there is one source.
+  - `Rooms/RoomStatus`: a room's status from archipelago.gg's small status API (the port, the players, the last activity, the timeout: whether it's asleep), `RoomLinks` to read it from a room link; the one thing Atlas reads about a room (never its page, which would wake it).
   - `WordmarkSvg`: the wordmark (`docs/wordmark`, embedded the same way) as SVG text with its three colours swapped for a theme's: the lettering, the quiet lines and the scale bar's filled segments.
   - `Deadline` (when a wait ends) and `SteadyClock` (when something happened in this session). Both measure with a monotonic clock, so setting the PC's clock (a time sync after a wrong start-up time) can't stretch a wait, end one early or lift a limit. The PC's clock is only for times that are saved, shown or sent; a saved time enters the steady clock once, as it loads (`SteadyClock.FromSaved`).
   - `PoliteHttp` and `GitHubApi`.

@@ -9,9 +9,152 @@ using Archipelago.MultiClient.Net;
 /// <summary>The multiworld profile editor on the Multiworlds page.</summary>
 public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
 {
+    private LineEdit _roomLinkInput;
+    private Button _fillFromRoomButton;
+    /// <summary>The selected multiworld has edits not yet written to disk.</summary>
+    private bool _dirty;
+    /// <summary>When each multiworld's room status was last read after a failed reconnect (the steady clock), so it's read at most every ten minutes.</summary>
+    private readonly Dictionary<string, DateTime> _roomChecks = new();
+    internal static readonly TimeSpan RoomCheckSpacing = TimeSpan.FromMinutes(10);
+
     private void MarkDirty()
     {
+        _dirty = true;
         _saveButton.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Pending); // unsaved changes
+    }
+
+    /// <summary>An edit of the selected multiworld, as typed: into the multiworld at once, written to disk on Save or when another is selected.</summary>
+    private void EditSelected(Action<MultiworldProfile> edit)
+    {
+        if (_selectedProfile == null) return;
+        edit(_selectedProfile);
+        MarkDirty();
+    }
+
+    /// <summary>Writes the selected multiworld's edits to disk (a waiting reconnect takes the new address and password).</summary>
+    private void SaveProfileEdits(bool announce)
+    {
+        if (_selectedProfile == null) return;
+        _sessions?.UpdateLogins(_selectedProfile.Id, _selectedProfile.ServerUrl, string.IsNullOrEmpty(_selectedProfile.Password) ? null : _selectedProfile.Password);
+        DataManager.SaveProfiles(_profiles);
+        _dirty = false;
+        _saveButton.RemoveThemeColorOverride("font_color");
+        RefreshProfileList();
+        if (announce) LogToSystem($"Profile '{_selectedProfile.Name}' saved.", "green");
+    }
+
+    /// <summary>A slot's new name, once typing is done (Enter, or leaving the field): the saved stats follow it; a duplicate or an empty name is refused.</summary>
+    private void CommitSlotRename(int index, HBoxContainer row, LineEdit lineEdit)
+    {
+        if (_selectedProfile == null || index >= _selectedProfile.Slots.Count) return;
+        string old = _selectedProfile.Slots[index];
+        string text = lineEdit.Text.Trim();
+        if (text.Length == 0 || text == old)
+        {
+            lineEdit.Text = old;
+            return;
+        }
+        if (_selectedProfile.Slots.Contains(text))
+        {
+            lineEdit.Text = old;
+            ShowToast(Tr("This multiworld already has a slot named {0}.").Replace("{0}", text), AP_Atlas.Core.ThemeColors.Warning);
+            return;
+        }
+        _selectedProfile.Slots[index] = text;
+        if (_selectedProfile.SavedStats.Remove(old, out var stats) && !_selectedProfile.SavedStats.ContainsKey(text)) _selectedProfile.SavedStats[text] = stats;
+        row.SetMeta("slot_name", text);
+        MarkDirty();
+        RefreshProfileListStyles();
+    }
+
+    private static bool IsDefaultSlotName(string name) => name is "Player1" or "New Slot";
+
+    private void FillFromRoomLink() => AP_Atlas.Core.Async.Fire(FillFromRoomLinkAsync(), "filling in a multiworld from its room link");
+
+    /// <summary>One read of the room's status page (with permission): the server address from its port, the slots from its players.</summary>
+    private async Task FillFromRoomLinkAsync()
+    {
+        var profile = _selectedProfile;
+        if (profile == null) return;
+        var room = AP_Atlas.Core.Rooms.RoomLinks.Parse(_roomLinkInput.Text, out string error);
+        if (room == null)
+        {
+            ShowToast(error, AP_Atlas.Core.ThemeColors.Error);
+            return;
+        }
+        string link = $"{room.Value.Site}/room/{room.Value.Id}";
+        if (!await AskRoomStatusAsync(link)) return;
+        var (status, readError) = await AP_Atlas.Core.Rooms.RoomLinks.ReadAsync(room.Value.Site, room.Value.Id);
+        if (!IsInstanceValid(this) || _selectedProfile != profile) return;
+        if (status == null)
+        {
+            ShowToast(Tr("The room's status couldn't be read: {0}").Replace("{0}", readError ?? ""), AP_Atlas.Core.ThemeColors.Error);
+            return;
+        }
+        profile.RoomLink = link;
+        _roomLinkInput.Text = link;
+        if (status.Port > 0)
+        {
+            profile.ServerUrl = status.ServerAddress(room.Value.Site);
+            _serverInput.Text = profile.ServerUrl;
+        }
+        if (status.Players.Count > 0)
+        {
+            // Atlas's own placeholder slots make way for the room's players; slots the user named stay (their saved stats with them).
+            if (profile.Slots.All(IsDefaultSlotName)) profile.Slots.Clear();
+            foreach (string name in status.Players)
+                if (!profile.Slots.Contains(name)) profile.Slots.Add(name);
+            PopulateSlotsList();
+        }
+        MarkDirty();
+        RefreshProfileListStyles();
+        ShowToast(Tr("Filled in from the room: {0}, {1} slots").Replace("{0}", profile.ServerUrl).Replace("{1}", status.Players.Count.ToString()), AP_Atlas.Core.ThemeColors.Info);
+    }
+
+    /// <summary>Asks to read a room's status (Allow once / Always allow / Don't allow), unless already allowed.</summary>
+    private Task<bool> AskRoomStatusAsync(string link)
+    {
+        var decided = new TaskCompletionSource<bool>();
+        AP_Atlas.UI.PermissionDialog.Ask(this, _appSettings, AP_Atlas.Core.Permissions.RoomStatusReads, null, link, allowed => decided.TrySetResult(allowed));
+        return decided.Task;
+    }
+
+    /// <summary>After a reconnect gave up: one status read (at most every ten minutes per multiworld) says whether the room moved to another port or is asleep.</summary>
+    private void CheckRoomAfterFailure(MultiworldProfile profile, AP_Atlas.Core.Connections.SlotId slot)
+    {
+        if (string.IsNullOrEmpty(profile.RoomLink)) return;
+        if (_roomChecks.TryGetValue(profile.Id, out var last) && AP_Atlas.Core.SteadyClock.UtcNow - last < RoomCheckSpacing) return;
+        _roomChecks[profile.Id] = AP_Atlas.Core.SteadyClock.UtcNow;
+        AP_Atlas.Core.Async.Fire(CheckRoomAfterFailureAsync(profile, slot), "checking a room's status after a failed reconnect", tellUser: false);
+    }
+
+    private async Task CheckRoomAfterFailureAsync(MultiworldProfile profile, AP_Atlas.Core.Connections.SlotId slot)
+    {
+        var room = AP_Atlas.Core.Rooms.RoomLinks.Parse(profile.RoomLink, out _);
+        if (room == null) return;
+        if (!await AskRoomStatusAsync(profile.RoomLink)) return;
+        var (status, _) = await AP_Atlas.Core.Rooms.RoomLinks.ReadAsync(room.Value.Site, room.Value.Id);
+        if (!IsInstanceValid(this) || _shuttingDown || status == null) return;
+        int savedPort = AP_Atlas.Core.Rooms.RoomStatus.PortOf(profile.ServerUrl);
+        if (status.Port > 0 && status.Port != savedPort)
+        {
+            string address = status.ServerAddress(room.Value.Site);
+            string port = status.Port.ToString();
+            ShowToast(Tr("{0}'s room moved to port {1}.").Replace("{0}", profile.Name).Replace("{1}", port), AP_Atlas.Core.ThemeColors.Warning, Tr("Use port {0}").Replace("{0}", port), () =>
+            {
+                profile.ServerUrl = address;
+                if (_selectedProfile == profile) _serverInput.Text = address;
+                _sessions?.UpdateLogins(profile.Id, address, string.IsNullOrEmpty(profile.Password) ? null : profile.Password);
+                DataManager.SaveProfiles(_profiles);
+                OnConnectSlotPressed(slot.SlotName, profile);
+            });
+        }
+        // The room's last activity is the server's own clock, so it's measured against the wall clock, not the steady one.
+        else if (status.IsAsleep(AP_Atlas.Core.Deadline.WallClock()))
+        {
+            ShowToast(Tr("{0}'s room is asleep. Open its page to wake it, then connect again.").Replace("{0}", profile.Name), AP_Atlas.Core.ThemeColors.Warning,
+                Tr("Open the room page"), () => AP_Atlas.Core.ExternalLinks.OpenWeb(profile.RoomLink));
+        }
     }
     private void RefreshProfileList()
     {
@@ -76,15 +219,21 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     }
     private void SelectProfile(MultiworldProfile profile)
     {
+        // Edits of the multiworld selected until now are kept: written to disk before another one takes its place.
+        if (_dirty && _selectedProfile != null && _selectedProfile != profile) SaveProfileEdits(announce: false);
         _selectedProfile = profile;
+        _dirty = false;
         _saveButton.RemoveThemeColorOverride("font_color");
         if (profile == null)
         {
             _nameInput.Text = "";
+            _roomLinkInput.Text = string.Empty;
             _serverInput.Text = "";
             _passwordInput.Text = "";
             _cheeseInput.Text = "";
             _nameInput.Editable = false;
+            _roomLinkInput.Editable = false;
+            _fillFromRoomButton.Disabled = true;
             _serverInput.Editable = false;
             _passwordInput.Editable = false;
             _cheeseInput.Editable = false;
@@ -94,10 +243,13 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             return;
         }
         _nameInput.Text = profile.Name;
+        _roomLinkInput.Text = profile.RoomLink ?? "";
         _serverInput.Text = profile.ServerUrl;
         _passwordInput.Text = profile.Password;
         _cheeseInput.Text = profile.CheeseTrackerUrl ?? "";
         _nameInput.Editable = true;
+        _roomLinkInput.Editable = true;
+        _fillFromRoomButton.Disabled = false;
         _serverInput.Editable = true;
         _passwordInput.Editable = true;
         _cheeseInput.Editable = true;
@@ -137,16 +289,9 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 SizeFlagsHorizontal = SizeFlags.ExpandFill,
                 PlaceholderText = "Slot Name (e.g. Player1)"
             };
-            lineEdit.TextChanged += (newText) =>
-            {
-                _selectedProfile.Slots[index] = newText;
-                row.SetMeta("slot_name", newText);
-                MarkDirty();
-            };
-            lineEdit.TextSubmitted += (newText) =>
-            {
-                OnConnectSlotPressed(newText, _selectedProfile);
-            };
+            // A rename takes effect once typing is done (Enter, or leaving the field), not on every keystroke.
+            lineEdit.TextSubmitted += _ => CommitSlotRename(index, row, lineEdit);
+            lineEdit.FocusExited += () => CommitSlotRename(index, row, lineEdit);
             // Clicking into a slot row shows that slot's details (saved stats, connection) in Properties.
             string rowProfileId = _selectedProfile.Id;
             lineEdit.FocusEntered += () =>
@@ -272,15 +417,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     {
         if (_selectedProfile != null)
         {
-            _selectedProfile.Name = _nameInput.Text;
-            _selectedProfile.ServerUrl = _serverInput.Text;
-            _selectedProfile.Password = _passwordInput.Text;
-            // An automatic reconnect waiting for one of its slots uses the new address and password.
-            _sessions?.UpdateLogins(_selectedProfile.Id, _selectedProfile.ServerUrl, string.IsNullOrEmpty(_selectedProfile.Password) ? null : _selectedProfile.Password);
-            DataManager.SaveProfiles(_profiles);
-            _saveButton.RemoveThemeColorOverride("font_color");
-            RefreshProfileList();
-            LogToSystem($"Profile '{_selectedProfile.Name}' saved.", "green");
+            SaveProfileEdits(announce: true);
             string cheeseLink = _cheeseInput.Text.Trim();
             if (cheeseLink != (_selectedProfile.CheeseTrackerUrl ?? "")) LinkCheeseFromEditor(_selectedProfile, cheeseLink);
         }
