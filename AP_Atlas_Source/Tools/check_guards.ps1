@@ -24,6 +24,8 @@
       - Starting a program: only the engine's launch points (EngineInstall.StartInfo, AtlasEngine.SetupStartInfo), which
         keep its temporary files and caches in Atlas's folder, the updater's (UpdateLauncher: the Atlas just installed,
         and the previous one as its supervisor), and the self-test.
+      - Standing in for the whole engine setup (AtlasEngine.TestSetUp): only the UI test, whose setup panel scenario
+        downloads nothing.
       - Running the engine on a Python other than the portable engine's own (AtlasEngine.TestPython): only the UI test,
         for its fake engine.
       - Changing how many engines a multiworld's slots share (EnginePools.TestMaxEngines): only the UI test.
@@ -112,6 +114,7 @@ $rules = @(
        Allowed = @('AP_Atlas_Source\Scripts\Core\Engine\AtlasEngine.cs', 'AP_Atlas_Source\Scripts\Core\Engine\EngineInstall.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.cs',
                    'AP_Atlas_Source\Scripts\Core\Updates\UpdateLauncher.cs') },
     @{ Name = 'Running the engine on another Python'; Pattern = '\bTestPython\s*=(?!=)'; Allowed = @('AP_Atlas_Source\Scripts\MainTrackerWindow.UiTest.cs') },
+    @{ Name = 'Standing in for the engine setup'; Pattern = '\bTestSetUp\s*=(?!=)'; Allowed = @('AP_Atlas_Source\Scripts\MainTrackerWindow.UiTest.cs') },
     @{ Name = 'Changing how many engines a multiworld runs'; Pattern = '\bTestMaxEngines\s*=(?!=)'; Allowed = @('AP_Atlas_Source\Scripts\MainTrackerWindow.UiTest.cs') },
     @{ Name = 'Sending chat or changing a connection''s tags outside SessionManager'; Pattern = 'new\s+(SayPacket|ConnectUpdatePacket)\b|\.UpdateConnectionOptions\s*\('
        Allowed = @('AP_Atlas.Core\Connections\SessionManager.Text.cs') },

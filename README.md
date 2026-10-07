@@ -25,7 +25,7 @@ A desktop companion for [Archipelago](https://archipelago.gg) multiworld randomi
 ## Download and run
 
 1. Download `TheArchipelagoAtlas-<version>-win-x64.zip` from the [latest release](https://github.com/Lt-Tuttle/archipelago-atlas/releases). `SHA256SUMS.txt` next to it lets you check the file.
-2. Unzip it anywhere you like. Atlas is portable: it keeps everything in its own `PortableData` folder, and nothing is installed.
+2. Unzip it into a folder of your own with a short path, such as `C:\Games\Atlas` (Windows limits a file's path to 259 characters, and the engine Atlas sets up goes a few folders deep). Atlas is portable: it keeps everything in its own `PortableData` folder, and nothing is installed.
 3. Run `The Archipelago Atlas.exe`. Home walks you through the first steps.
 
 Atlas needs Windows 10 or 11 (64-bit). Updates are offered inside Atlas, with your permission, and never installed without a click.

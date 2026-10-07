@@ -136,7 +136,7 @@ namespace AP_Atlas.UI
             var steps = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
             steps.AddThemeConstantOverride("separation", 8);
             body.AddChild(steps);
-            AddStep(steps, "engine", "Set up the Atlas Engine", "Maps, logic and hints need it: Archipelago itself, in Atlas's own folder. About 55 MB to download, no installer.",
+            AddStep(steps, "engine", "Set up the Atlas Engine", "Downloads Archipelago into Atlas's own folder, about 55 MB. Nothing else on your PC changes.",
                 "Set up…", hooks.EngineReady, hooks.SetUpEngine);
             AddStep(steps, "multiworld", "Add a multiworld", "Its server, its password and the slots you play.",
                 "Add…", () => hooks.Profiles().Count > 0, hooks.AddMultiworld);

@@ -132,6 +132,16 @@ namespace AP_Atlas.Core.EngineSetup
         /// <summary>Packages some bundled worlds import at load time without listing them in requirements.txt.</summary>
         private static readonly string[] ExtraRequirements = { "requests", "setuptools<81" };
 
+        /// <summary>
+        /// The one package Atlas unpacks itself instead of pip: setuptools' wheel carries test folders whose paths run to
+        /// 115 characters below site-packages, past Windows' 259-character limit from any ordinary Downloads folder, and
+        /// pip fails partway when one file can't be written. Archipelago needs the package (ModuleUpdate.py and some worlds
+        /// import pkg_resources), not its tests. pip still fetches the wheel against the lock's hashes; Atlas checks the
+        /// hash again and leaves these folders out.
+        /// </summary>
+        private const string UnpackedPackage = "setuptools";
+        private static readonly string[] UnpackedPackageSkips = { "pkg_resources/tests/", "setuptools/tests/" };
+
         // --- Paths ---
         public static string EngineDir => Path.Combine(DataManager.GetDataDirectory(), "engine");
         public static string PythonDir => Path.Combine(EngineDir, "python");
@@ -707,12 +717,42 @@ namespace AP_Atlas.Core.EngineSetup
         // --- Setup ---
 
         /// <summary>
+        /// What setup is doing now, in plain words ("Downloading Python…"), for the setup panel; the log keeps the detail.
+        /// Raised on the setup's thread.
+        /// </summary>
+        public static event Action<string> SetupStep;
+
+        /// <summary>Why the last setup stopped, in plain words, or null when it finished (or hasn't run).</summary>
+        public static string LastSetupProblem { get; private set; }
+
+        /// <summary>Test hook: stands in for the whole setup (the UI test's setup panel scenario; nothing is downloaded).</summary>
+        internal static Func<Action<string>, Action<float>, CancellationToken, Task<bool>> TestSetUp;
+
+        /// <summary>Logs a step and tells the panel about it.</summary>
+        private static void Stage(Action<string> log, string text)
+        {
+            log?.Invoke(text);
+            ReportStep(text);
+        }
+
+        /// <summary>Tells the panel what setup is doing (the UI test's pretend setup uses it too).</summary>
+        internal static void ReportStep(string text) => SetupStep?.Invoke(text);
+
+        /// <summary>
         /// Runs every step the engine still needs, then a health check. Updated parts are verified before they're
         /// swapped in; if the check fails afterwards, the previous working engine is restored.
         /// </summary>
         public static Task<bool> SetUpAsync(EngineInstall install, Action<string> log, Action<float> progress, CancellationToken ct) =>
             ExclusiveAsync(async () =>
             {
+                LastSetupProblem = null;
+                if (TestSetUp != null)
+                {
+                    bool pretend = await TestSetUp(log, progress, ct);
+                    if (!pretend) LastSetupProblem = "The pretend setup failed.";
+                    NotifyChanged();
+                    return pretend;
+                }
                 try
                 {
                     RecoverInterruptedUpdate();
@@ -727,6 +767,7 @@ namespace AP_Atlas.Core.EngineSetup
                     }
                     else if (!install.CanLaunch)
                     {
+                        LastSetupProblem = "Choose your Archipelago folder first.";
                         log("Choose your Archipelago folder first.");
                         return false;
                     }
@@ -737,16 +778,19 @@ namespace AP_Atlas.Core.EngineSetup
                     // Worlds that couldn't load for want of their own packages: install those, then verify again.
                     if (ok && install.Mode == EngineMode.Portable && await InstallWorldPackagesCoreAsync(install, log, ct, force: false))
                         ok = await CheckCommitOrRollBackAsync(install, log, ct);
+                    if (!ok) LastSetupProblem = ProblemWith(Current) ?? "The health check didn't pass (the log says what it found).";
                     return ok;
                 }
                 catch (OperationCanceledException)
                 {
+                    LastSetupProblem = "Cancelled.";
                     log("Cancelled. Nothing half-installed was kept.");
                     RecoverInterruptedUpdate();
                     return false;
                 }
                 catch (Exception ex)
                 {
+                    LastSetupProblem = ex.Message;
                     log("Setup stopped: " + ex.Message);
                     Logger.LogWarning("[Atlas Engine] " + ex);
                     RecoverInterruptedUpdate();
@@ -819,13 +863,21 @@ namespace AP_Atlas.Core.EngineSetup
             return false;
         }
 
+        /// <summary>Before anything downloads: a folder too deep for Windows' path limit is said now, not by pip partway through.</summary>
+        private static void EnsureDepth()
+        {
+            string problem = EnginePaths.DepthProblem(DataManager.GetDataDirectory());
+            if (problem != null) throw new Exception(problem);
+        }
+
         private static async Task InstallRuntimeCoreAsync(Action<string> log, Action<float> progress, CancellationToken ct)
         {
+            EnsureDepth();
             EnsureFreeSpace(EngineDir);
-            log($"Downloading Python {PythonVersion} from python.org…");
+            Stage(log, $"Downloading Python {PythonVersion} from python.org…");
             string zip = Path.Combine(DownloadsDir, Path.GetFileName(PythonUrl));
             await EngineDownloader.DownloadAsync(PythonUrl, zip, PythonSha256, Report(progress), ct);
-            log("Verified. Unpacking…");
+            Stage(log, "Verified. Unpacking Python…");
             string staging = PythonDir + ".new";
             DeleteDir(staging);
             await ZipFile.ExtractToDirectoryAsync(zip, staging, ct);
@@ -837,7 +889,7 @@ namespace AP_Atlas.Core.EngineSetup
             log($"Downloading pip {PipVersion} from PyPI…");
             string pipWheel = Path.Combine(DownloadsDir, Path.GetFileName(new Uri(PipWheelUrl).AbsolutePath));
             await EngineDownloader.DownloadAsync(PipWheelUrl, pipWheel, PipWheelSha256, null, ct);
-            log("Verified. Installing pip…");
+            Stage(log, "Verified. Installing pip…");
             string stagedExe = Path.Combine(staging, "python.exe");
             await ZipFile.ExtractToDirectoryAsync(pipWheel, Path.Combine(staging, "Lib", "site-packages"), overwriteFiles: true, ct);
             int code = await RunAsync(stagedExe, new[] { "-m", "pip", "install", "--no-index", "--no-deps", "--force-reinstall", "--no-warn-script-location", "--disable-pip-version-check", pipWheel },
@@ -859,10 +911,10 @@ namespace AP_Atlas.Core.EngineSetup
         private static async Task InstallArchipelagoCoreAsync(Action<string> log, Action<float> progress, CancellationToken ct)
         {
             EnsureFreeSpace(EngineDir);
-            log($"Downloading Archipelago {ArchipelagoVersion} from GitHub…");
+            Stage(log, $"Downloading Archipelago {ArchipelagoVersion} from GitHub…");
             string zip = Path.Combine(DownloadsDir, $"Archipelago-{ArchipelagoVersion}.zip");
             await EngineDownloader.DownloadAsync(ArchipelagoUrl, zip, ArchipelagoSha256, Report(progress), ct);
-            log("Verified. Unpacking…");
+            Stage(log, "Verified. Unpacking Archipelago…");
             string staging = ArchipelagoDir + ".new";
             DeleteDir(staging);
             await ZipFile.ExtractToDirectoryAsync(zip, staging, ct);
@@ -941,15 +993,55 @@ namespace AP_Atlas.Core.EngineSetup
             string locked = Regex.Match(lockText, @"requirements-signature:\s*([0-9A-Fa-f]+)").Groups[1].Value;
             if (!string.Equals(locked, PackagesSignature(), StringComparison.OrdinalIgnoreCase))
                 throw new Exception($"Atlas's package list was made for different requirements than this Archipelago's, so nothing was installed. Update Atlas, or report this (expected {locked}, found {PackagesSignature()}).");
-            log("Installing Archipelago's Python packages from PyPI (each file checked against Atlas's list of SHA-256 hashes)…");
+            EnsureDepth();
+            var (rest, unpacked) = EngineLock.Take(lockText, UnpackedPackage);
+            if (unpacked == null || unpacked.Hashes.Count == 0) throw new Exception($"Atlas's package list doesn't pin {UnpackedPackage}, so nothing was installed. Update Atlas, or report this.");
+            await UnpackPackageAsync(unpacked, log, ct);
+            Stage(log, "Installing Archipelago's Python packages from PyPI (each file checked against Atlas's list of SHA-256 hashes)…");
             string req = Path.Combine(EngineDir, "requirements-atlas.lock.txt");
-            await File.WriteAllTextAsync(req, lockText, ct);
+            await File.WriteAllTextAsync(req, rest, ct);
             int code = await RunAsync(PythonExe, new[] { "-m", "pip", "install", "--require-hashes", "--no-deps", "--only-binary=:all:", "-r", req, "--disable-pip-version-check", "--no-warn-script-location", "--retries", "5", "--timeout", "60" },
                 PythonDir, log, ct, TimeSpan.FromMinutes(15));
             if (code != 0) throw new Exception("Some packages couldn't be installed (see the log above).");
             State.PackagesSignature = PackagesSignature();
             SaveState();
             log("Packages ready.");
+        }
+
+        /// <summary>
+        /// Installs <see cref="UnpackedPackage"/> without its test folders: pip downloads the wheel (only a file matching
+        /// the lock's hashes), Atlas checks the hash again and unpacks it into site-packages through SafeZip, leaving
+        /// <see cref="UnpackedPackageSkips"/> out. What an earlier install left of the package is removed first.
+        /// </summary>
+        private static async Task UnpackPackageAsync(EngineLock.Block package, Action<string> log, CancellationToken ct)
+        {
+            Stage(log, $"Downloading {package.Name} {package.Version} from PyPI (checked against Atlas's list of SHA-256 hashes)…");
+            string req = Path.Combine(EngineDir, $"requirements-{package.Name}.lock.txt");
+            await File.WriteAllTextAsync(req, package.Text, ct);
+            Directory.CreateDirectory(DownloadsDir);
+            foreach (var old in Directory.GetFiles(DownloadsDir, $"{package.Name}-*.whl")) EngineDownloader.TryDelete(old);
+            int code = await RunAsync(PythonExe, new[] { "-m", "pip", "download", "--require-hashes", "--no-deps", "--only-binary=:all:", "-r", req, "-d", DownloadsDir, "--disable-pip-version-check", "--retries", "5", "--timeout", "60" },
+                PythonDir, log, ct, TimeSpan.FromMinutes(10));
+            string wheel = code == 0 ? Directory.GetFiles(DownloadsDir, $"{package.Name}-*.whl").FirstOrDefault() : null;
+            if (wheel == null) throw new Exception($"{package.Name} couldn't be downloaded (see the log above).");
+            string hash = EngineDownloader.Sha256Of(wheel);
+            if (!package.Hashes.Contains(hash)) throw new InvalidDataException($"{Path.GetFileName(wheel)} isn't a file Atlas's package list allows (SHA-256 {hash}).");
+            log($"Verified. Unpacking {package.Name} without its test folders (their paths are too long for Windows)…");
+            string sitePackages = Path.Combine(PythonDir, "Lib", "site-packages");
+            // The package's top-level folders and files from an earlier install go first: the unpack never overwrites.
+            using (var zip = SafeZip.Open(wheel))
+            {
+                foreach (string top in zip.Entries.Select(e => e.FullName.Split('/')[0]).Distinct())
+                {
+                    string path = Path.Combine(sitePackages, top);
+                    if (Directory.Exists(path)) Directory.Delete(path, true);
+                    else if (File.Exists(path)) File.Delete(path);
+                }
+            }
+            SafeZip.UnpackTo(wheel, sitePackages, SafeZip.TextLimit, SafeZip.TextTotal,
+                include: name => !UnpackedPackageSkips.Any(skip => name.StartsWith(skip, StringComparison.OrdinalIgnoreCase)));
+            EngineDownloader.TryDelete(wheel);
+            log($"{package.Name} {package.Version} ready.");
         }
 
         /// <summary>
@@ -1088,7 +1180,7 @@ namespace AP_Atlas.Core.EngineSetup
         {
             string worlds = install.WorldsDir ?? throw new Exception("The engine has no worlds folder.");
             RequireWriteConsent(install);
-            log($"Downloading Universal Tracker {TrackerVersion} from GitHub…");
+            Stage(log, $"Downloading Universal Tracker {TrackerVersion} from GitHub…");
             string temp = Path.Combine(DownloadsDir, "tracker.apworld");
             await EngineDownloader.DownloadAsync(TrackerUrl, temp, TrackerSha256, Report(progress), ct);
             await StopEnginesUsingAsync(install.Root, log, ct);
@@ -1208,7 +1300,7 @@ namespace AP_Atlas.Core.EngineSetup
 
         public static async Task<EngineCheckResult> RunCheckAsync(EngineInstall install, Action<string> log, CancellationToken ct)
         {
-            log?.Invoke("Starting the engine for a health check (loading every game takes a few seconds)…");
+            Stage(log, "Running the health check (loading every game takes a few seconds)…");
             InstallBridge(install);
             EngineCheckResult result = null;
             var errors = new StringBuilder();

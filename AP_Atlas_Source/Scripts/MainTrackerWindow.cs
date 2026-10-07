@@ -211,7 +211,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         // --- 0. THE ACTIVITY BAR: every tool, in its group; the lit one is the tool the content area shows ---
         _activityBar = new AP_Atlas.UI.ActivityBar(text => Tr(text), tool => _commands.ShortcutOf("tool." + tool.Id));
         _activityBar.ToolPressed += tool => ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(tool);
-        _activityBar.EnginePressed += OpenEngineSetup;
+        _activityBar.EnginePressed += () => OpenEngineWindow();
         appWorkspaceHBox.AddChild(_activityBar);
         _mainSplit = new HSplitContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, SplitOffsets = new[] { _appSettings.MainSplitOffset } };
         _mainSplit.Dragged += (offset) => { _appSettings.MainSplitOffset = (int)offset; DataManager.SaveSettingsSoon(_appSettings); };

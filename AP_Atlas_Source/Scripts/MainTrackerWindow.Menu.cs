@@ -56,7 +56,7 @@ public partial class MainTrackerWindow
             Add("tool." + shown.Id, "Tools", shown.Title, number <= 9 ? "Ctrl+" + number : shown.DefaultKey, () => ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(shown));
             number++;
         }
-        Add("tools.engine", "Tools", "Atlas Engine…", "", OpenEngineSetup);
+        Add("tools.engine", "Tools", "Atlas Engine…", "", () => OpenEngineWindow());
         Add("tools.cheese-settings", "Tools", "Cheese Tracker Settings…", "", OpenCheeseSettings);
         Add("tools.sphere-settings", "Tools", "Sphere Tracker Settings…", "", () => ShowSphereTab(AP_Atlas.UI.SphereTrackerTab.SettingsView));
         Add("tools.privacy", "Tools", "Privacy & Permissions…", "", OpenPrivacy);

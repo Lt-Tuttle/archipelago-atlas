@@ -38,23 +38,49 @@ namespace AP_Atlas.UI
         private Label _status;
         private RichTextLabel _log;
         private CancellationTokenSource _cts;
+        private VBoxContainer _logBox;
+        private Button _logToggle;
+        private Label _stage;
         private bool _busy;
         private Dictionary<string, List<string>> _localApworlds;
         private string _slotsSignature = "";
 
-        public static void Open(Node anyNode, AppSettings settings, Func<IEnumerable<SlotTrackerControl>> slots, Func<IEnumerable<string>> knownGames, int fontSize)
+        public static AtlasEngineWindow Open(Node anyNode, AppSettings settings, Func<IEnumerable<SlotTrackerControl>> slots, Func<IEnumerable<string>> knownGames, int fontSize)
         {
             if (_open != null && IsInstanceValid(_open))
             {
                 _open.GrabFocus();
                 _open.Render();
-                return;
+                return _open;
             }
             var w = new AtlasEngineWindow(settings, slots, knownGames, fontSize);
             _open = w;
             anyNode.GetTree().Root.AddChild(w);
             var screen = DisplayServer.ScreenGetSize();
             w.PopupCentered(new Vector2I(Math.Min(1200, (int)(screen.X * 0.7f)), (int)(screen.Y * 0.8f)));
+            return w;
+        }
+
+        /// <summary>Lines another run logged (the setup panel's), shown ahead of this window's own, with the log opened.</summary>
+        public void AppendLog(IEnumerable<string> lines)
+        {
+            foreach (string line in lines) Log(line);
+            ShowLog(true);
+        }
+
+        /// <summary>Whether the log pane is on screen (for tests).</summary>
+        public bool LogShown => _logBox.Visible;
+
+        private void ShowLog(bool shown)
+        {
+            _logBox.Visible = shown;
+            _logToggle.Text = shown ? "Hide log" : "Show log";
+            _logToggle.TooltipText = shown ? "Hide the setup's own lines" : "Show what the setup's programs print (for a problem report)";
+            if (_settings.EngineLogShown != shown)
+            {
+                _settings.EngineLogShown = shown;
+                DataManager.SaveSettingsSoon(_settings);
+            }
         }
 
         private AtlasEngineWindow(AppSettings settings, Func<IEnumerable<SlotTrackerControl>> slots, Func<IEnumerable<string>> knownGames, int fontSize)
@@ -113,7 +139,7 @@ namespace AP_Atlas.UI
             var setupRow = new HBoxContainer();
             setupRow.AddThemeConstantOverride("separation", 8);
             _setupAll = new Button { Text = "Set up everything", TooltipText = "Download and install whatever is missing, then run a health check" };
-            _setupAll.Pressed += () => RunOperation("Setting up the Atlas Engine", (log, progress, ct) => AtlasEngine.SetUpAsync(AtlasEngine.Current, log, progress, ct));
+            _setupAll.Pressed += () => WithDownloadPermission(() => RunOperation("Setting up the Atlas Engine", (log, progress, ct) => AtlasEngine.SetUpAsync(AtlasEngine.Current, log, progress, ct)));
             setupRow.AddChild(_setupAll);
             _cancel = new Button { Text = "Cancel", Disabled = true };
             _cancel.Pressed += () => _cts?.Cancel();
@@ -121,6 +147,9 @@ namespace AP_Atlas.UI
             _progress = new ProgressBar { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter, MaxValue = 1, Step = 0.001, Visible = false, ShowPercentage = false };
             setupRow.AddChild(_progress);
             page.AddChild(setupRow);
+            _stage = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, Visible = false };
+            _stage.AddThemeColorOverride("font_color", ThemeColors.TextMuted);
+            page.AddChild(_stage);
 
             page.AddChild(Header("Games"));
             page.AddChild(BuildSourcesRow());
@@ -154,23 +183,28 @@ namespace AP_Atlas.UI
             _slotsBox.AddThemeConstantOverride("separation", 4);
             page.AddChild(_slotsBox);
 
-            var logBox = new VBoxContainer { CustomMinimumSize = new Vector2(0, 160) };
-            split.AddChild(logBox);
+            // The log (what pip and Python print) is for a problem report, not for reading: hidden until asked for.
+            _logBox = new VBoxContainer { CustomMinimumSize = new Vector2(0, 160) };
+            split.AddChild(_logBox);
             var logHeader = new HBoxContainer();
             logHeader.AddChild(new Label { Text = "Log", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill });
             var copyLog = new Button { Text = "Copy log", Flat = true };
             copyLog.Pressed += () => DisplayServer.ClipboardSet(_log.GetParsedText());
             logHeader.AddChild(copyLog);
-            logBox.AddChild(logHeader);
+            _logBox.AddChild(logHeader);
             _log = new RichTextLabel { SizeFlagsVertical = Control.SizeFlags.ExpandFill, ScrollFollowing = true, SelectionEnabled = true, BbcodeEnabled = false };
             _log.AddThemeStyleboxOverride("normal", new StyleBoxFlat { BgColor = ThemeColors.SurfaceDeep, ContentMarginLeft = 8, ContentMarginTop = 6, ContentMarginRight = 8, ContentMarginBottom = 6 });
-            logBox.AddChild(_log);
+            _logBox.AddChild(_log);
 
             var footer = new HBoxContainer();
             root.AddChild(footer);
             _status = new Label { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart };
             _status.AddThemeColorOverride("font_color", Muted);
             footer.AddChild(_status);
+            _logToggle = new Button { Flat = true };
+            _logToggle.Pressed += () => ShowLog(!_logBox.Visible);
+            footer.AddChild(_logToggle);
+            ShowLog(_settings.EngineLogShown);
             var folder = new Button { Text = "Open engine folder", TooltipText = "Show the engine's files" };
             folder.Pressed += () =>
             {
@@ -183,6 +217,7 @@ namespace AP_Atlas.UI
             footer.AddChild(close);
 
             AtlasEngine.Changed += OnEngineChanged;
+            AtlasEngine.SetupStep += OnSetupStep;
             var timer = new Godot.Timer { WaitTime = 1.5, Autostart = true };
             timer.Timeout += RefreshSlotsIfChanged;
             AddChild(timer);
@@ -199,6 +234,7 @@ namespace AP_Atlas.UI
         public override void _ExitTree()
         {
             AtlasEngine.Changed -= OnEngineChanged;
+            AtlasEngine.SetupStep -= OnSetupStep;
             _cts?.Cancel();
             if (_open == this) _open = null;
         }
@@ -214,6 +250,22 @@ namespace AP_Atlas.UI
         }
 
         private void OnEngineChanged() => Ui.Defer(this, () => Render());
+
+        private void OnSetupStep(string text) => Ui.Defer(this, () =>
+        {
+            _stage.Text = text;
+            _stage.Visible = _busy;
+        });
+
+        /// <summary>
+        /// Downloads ask the engine permission first (once; "Always allow" is kept under Settings → Privacy &amp; permissions),
+        /// the way every other online action does. An install of the user's own downloads nothing here.
+        /// </summary>
+        private void WithDownloadPermission(Action run)
+        {
+            if (AtlasEngine.Current.Mode != EngineMode.Portable) { run(); return; }
+            PermissionDialog.Ask(this, _settings, AP_Atlas.Core.Permissions.EngineSetup, null, null, allowed => { if (allowed) run(); });
+        }
 
         // =====================================================================
         // Rendering
@@ -584,7 +636,12 @@ namespace AP_Atlas.UI
                 _ => "Health check"
             };
             // Every step runs through the engine's safe path: exclusive, verified, rolled back if the check fails.
-            void Run() => RunOperation(name, (log, p, ct) => AtlasEngine.RunStepAsync(install, id, log, p, ct));
+            void Run()
+            {
+                bool downloads = id is EngineStepId.Runtime or EngineStepId.Archipelago or EngineStepId.Packages or EngineStepId.Tracker;
+                if (downloads) WithDownloadPermission(() => RunOperation(name, (log, p, ct) => AtlasEngine.RunStepAsync(install, id, log, p, ct)));
+                else RunOperation(name, (log, p, ct) => AtlasEngine.RunStepAsync(install, id, log, p, ct));
+            }
             if (id == EngineStepId.Archipelago && install.Mode == EngineMode.Existing) { PickInstallFolder(); return; }
             var others = id == EngineStepId.Tracker ? install.FindAllTrackers() : new List<string>();
             if (install.Mode == EngineMode.Existing && others.Count > 0)
@@ -847,6 +904,7 @@ namespace AP_Atlas.UI
                     _busy = false;
                     _cancel.Disabled = true;
                     _progress.Visible = false;
+                    _stage.Visible = false;
                     if (failure != null) Log(name + " stopped: " + failure);
                     Render();
                     if (failure != null) SetStatus(name + " stopped: " + failure, Bad);

@@ -105,9 +105,10 @@ public sealed class SafeZip : IDisposable
     /// Unpacks a zip into a folder with the same care as reading one: refused as a zip64 zip, each file's bytes counted as
     /// they're written (no file past <paramref name="fileLimit"/>, nothing past <paramref name="totalLimit"/> in all), and
     /// no entry allowed to land outside the folder. For Atlas's own releases, after their hash was checked; a refusal
-    /// leaves what was unpacked for the caller to remove.
+    /// leaves what was unpacked for the caller to remove. <paramref name="include"/> (given an entry's name in the zip)
+    /// leaves entries out, such as a package's test folders whose paths would pass Windows' limit.
     /// </summary>
-    public static void UnpackTo(string zipPath, string folder, long fileLimit, long totalLimit)
+    public static void UnpackTo(string zipPath, string folder, long fileLimit, long totalLimit, Func<string, bool>? include = null)
     {
         string root = Path.GetFullPath(folder);
         Directory.CreateDirectory(root);
@@ -116,6 +117,7 @@ public sealed class SafeZip : IDisposable
         var buffer = new byte[81920];
         foreach (var entry in zip.Entries)
         {
+            if (include != null && !include(entry.FullName)) continue;
             string full = Path.GetFullPath(Path.Combine(root, entry.FullName.Replace('/', Path.DirectorySeparatorChar)));
             if (!full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException($"'{entry.FullName}' would land outside the folder");

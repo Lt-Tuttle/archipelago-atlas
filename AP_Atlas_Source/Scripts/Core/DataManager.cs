@@ -27,6 +27,8 @@ public class AppSettings
     public bool ColourBlindSafe { get; set; } = false;
     /// <summary>The whole window's zoom, in percent (100 = as designed).</summary>
     public int UiZoom { get; set; } = 100;
+    /// <summary>Whether the Atlas Engine window shows its log pane (pip's and Python's own lines); off until asked for.</summary>
+    public bool EngineLogShown { get; set; } = false;
     /// <summary>The Map Tracker's pin shape: "round", "square" or "diamond".</summary>
     public string MapMarkerStyle { get; set; } = "round";
     /// <summary>What Atlas opens on: "home", "last" (the tool shown when it closed) or "multiworlds".</summary>

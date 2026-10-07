@@ -93,7 +93,11 @@ A pack's own scripts run in a sandbox with no file, network or OS access, and un
 
 ## The Atlas Engine
 
-Logic, maps and hints need Archipelago's own code. The Atlas Engine is Atlas's portable copy: Python and Archipelago, in Atlas's own folder, each download pinned to an exact version and checked against a fixed hash. Set up everything (from the engine window, the bar's bottom button, or Home) downloads what's missing and runs a health check; Test every game rebuilds each installed game.
+Logic, maps and hints need Archipelago's own code. The Atlas Engine is Atlas's portable copy: Python and Archipelago, in Atlas's own folder, each download pinned to an exact version and checked against a fixed hash.
+
+**Setting it up** is one button: Set up on Home (or on a slot's "logic needs the engine" card, or Settings → Tools). Atlas asks once for the download (Allow once, Always allow or Don't allow; Settings → Privacy & permissions keeps the answer), then a small panel says what it's doing in plain words (downloading Python, unpacking Archipelago, installing its packages, running the health check) with a progress bar and Cancel. It ends with Ready, or with what went wrong and Try again; Show details opens the full engine window with the setup's own log.
+
+**The engine window** (Tools → Atlas Engine, or the bar's bottom button) is for managing the engine once it works: each part with its version, Set up everything, the games it can run and each slot's YAML. Its log (what Python and pip print) stays hidden behind Show log until you want it, for a problem report. Test every game rebuilds each installed game.
 
 Atlas can run logic on your own Archipelago install instead. That needs your consent: the engine window shows exactly what Atlas would add (its bridge apworld in the install's worlds folder) before anything is written, and Remove Atlas's files undoes it.
 
@@ -143,7 +147,7 @@ When race mode is on for a slot, Properties never asks the engine why a location
 
 Atlas never looks or writes outside its own folder, or goes online for something new, without asking: Allow once, Always allow or Don't allow, at the moment it comes up, with exactly what would happen spelled out. Settings → Privacy & permissions lists every permission Atlas can ask for with its state, every answer it keeps and every trusted apworld source, each with a button to take it back, and where Atlas goes online. Nothing searches your PC at startup.
 
-Online, Atlas reaches the archipelago.gg rooms you connect to; Cheese Tracker (your instance) and spheretracker.de (the host's room) for the multiworlds you link; GitHub for apworld releases, when you allow it; and python.org, pypa.io and PyPI when you set up the Atlas Engine. Every request is polite: capped, backed off when a site asks, and never repeated to wake a sleeping room.
+Online, Atlas reaches the archipelago.gg rooms you connect to; Cheese Tracker (your instance) and spheretracker.de (the host's room) for the multiworlds you link; GitHub for apworld releases, when you allow it; and python.org, pypa.io and PyPI when you set up the Atlas Engine (a permission of its own, asked before the first download). Every request is polite: capped, backed off when a site asks, and never repeated to wake a sleeping room.
 
 **Crash reports.** When Atlas has had a problem it couldn't recover from, the next start offers to send a report to Atlas's developer, through Sentry, a crash-reporting service. See the report shows the whole report exactly as it would be sent: what the code was doing, Atlas's version and the kind of PC, and nothing more; names, paths, servers, slots, chat and log lines are never included, and you can add a note. Send once sends this one, Always send keeps the permission (take it back here), Don't send keeps the report on your PC only. A build without a report address offers nothing.
 
@@ -157,6 +161,7 @@ Online, Atlas reaches the archipelago.gg rooms you connect to; Cheese Tracker (y
 
 - **The logs:** the System Log tab shows what Atlas did; the Debug Log (developer mode, under Settings → Advanced) its diagnostics. The log files are in `PortableData/logs` (File → Open Atlas's Data Folder), and a crash leaves a report there too.
 - **Logic says "needs the engine":** set up the Atlas Engine (Home, or the bar's bottom button).
+- **"Atlas's folder is too deep for Windows":** Windows limits a file's path to 259 characters, and the engine's packages go a few folders deep below Atlas. Atlas checks before it downloads anything and says so instead of failing partway. Move the whole Atlas folder (with `PortableData`) to a shorter path, such as `C:\Games\Atlas`, and set the engine up again.
 - **A pack looks wrong for the game:** open it in the Pack Doctor from Map Packs; it says what it found and lets you fix it locally.
 - **A slot won't reconnect:** after a few tries over about 20 minutes Atlas stops on purpose. If the multiworld has its room link (and you allowed the status read), a card offers the room's new port or says the room is asleep; otherwise connect the slot again from the Multiworlds page, after updating the server address if the room's port changed.
 - **Everything Atlas keeps** (multiworlds, settings, logs, packs, fixes, the engine) is in `PortableData`, next to Atlas; nothing is written anywhere else.

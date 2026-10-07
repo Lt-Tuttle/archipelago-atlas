@@ -77,7 +77,7 @@ public partial class MainTrackerWindow
         await VisualCheckWaitAsync(0.3);
 
         // The engine window opens before anything is allowed, so it never goes online.
-        await VisualCheckWindowAsync("engine", OpenEngineSetup, 1.5);
+        await VisualCheckWindowAsync("engine", () => OpenEngineWindow(), 1.5);
         // The guide as the Help window renders it (the documents built in, through Markdown).
         await VisualCheckWindowAsync("help_guide", () => OpenHelp(null), 1.0);
         await VisualCheckWindowAsync("about", ShowAbout, 1.0);

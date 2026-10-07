@@ -71,13 +71,40 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
 
     /// <summary>Settings → Privacy &amp; permissions: what the user allowed Atlas to do without asking, and trusted sources.</summary>
     private void OpenPrivacy() => ShowSettings("privacy");
+    /// <summary>
+    /// The short way to a working engine (Home's checklist, the "logic needs the engine" cards, Settings): the download
+    /// asks its permission once, then the setup panel shows the step it's on in plain words. An engine that already works
+    /// opens the full window instead, where its parts and games are managed.
+    /// </summary>
     public void OpenEngineSetup()
     {
-        AP_Atlas.UI.AtlasEngineWindow.Open(this, _appSettings,
+        var engine = AP_Atlas.Core.EngineSetup.AtlasEngine.Current;
+        if (engine.CanLaunch && AP_Atlas.Core.EngineSetup.AtlasEngine.ProblemWith(engine) == null)
+        {
+            OpenEngineWindow();
+            return;
+        }
+        if (engine.Mode != AP_Atlas.Core.EngineSetup.EngineMode.Portable)
+        {
+            OpenEngineWindow(); // an install of the user's own is chosen and checked there
+            return;
+        }
+        AP_Atlas.UI.PermissionDialog.Ask(this, _appSettings, AP_Atlas.Core.Permissions.EngineSetup, null, null, allowed =>
+        {
+            if (!allowed) return;
+            AP_Atlas.UI.EngineSetupPanel.Open(this, text => Tr(text), lines => OpenEngineWindow(lines));
+        });
+    }
+
+    /// <summary>The full engine window: every part, the games and the slots, with the log (Tools → Atlas Engine, the bar's bottom button).</summary>
+    public void OpenEngineWindow(IReadOnlyList<string> logLines = null)
+    {
+        var window = AP_Atlas.UI.AtlasEngineWindow.Open(this, _appSettings,
             () => ActiveSlotNodes().OfType<SlotTrackerControl>(),
             () => ActiveSlotNodes().OfType<SlotTrackerControl>().Select(s => s.Game)
                 .Concat(_profiles.SelectMany(p => p.SavedStats.Values.Select(st => st.GameName))),
             _appSettings.ContentFontSize);
+        if (logLines != null && logLines.Count > 0) window.AppendLog(logLines);
     }
     private static string DescribeRaceMode()
     {

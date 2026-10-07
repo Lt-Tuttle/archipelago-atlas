@@ -396,6 +396,11 @@ namespace AP_Atlas.Core
             }
             Expect(!lockText.Split('\n').Any(l => l.Length > 0 && !l.StartsWith("#") && !l.StartsWith("    --hash=sha256:") && !System.Text.RegularExpressions.Regex.IsMatch(l, @"^\S+==\S+ \\$")),
                 "the lock has a line that isn't an exact pin or a hash");
+            // The package Atlas unpacks itself (without its test folders) must be in the lock with its hashes, and taking
+            // it out must leave every other block for pip.
+            var (remaining, taken) = AP_Atlas.Core.EngineSetup.EngineLock.Take(lockText, "setuptools");
+            Expect(taken != null && taken.Hashes.Count > 0, "the lock doesn't pin setuptools with hashes (Atlas unpacks it itself)");
+            Expect(AP_Atlas.Core.EngineSetup.EngineLock.Blocks(remaining).Count == packages.Count - 1, "taking setuptools out of the lock lost other packages");
 
             var log = new List<string>();
             string safe = AtlasEngine.SafeWorldRequirements(string.Join("\n", new[]

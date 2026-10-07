@@ -139,6 +139,8 @@ public partial class MainTrackerWindow
             UpdatesWithoutGodotErrorsAsync);
         await ScenarioAsync("Data folder: a program folder that can't be written to needs a choice (the override and a writable folder don't, and nothing outside Atlas's folder is touched then); the dialog names the folder and the problem, Continue takes the local app data folder by default and makes it, another folder that can't be used is refused with the reason and the dialog stays, a usable one is taken and remembered in the pointer file, and Quit chooses nothing",
             DataFolderAsync);
+        await ScenarioAsync("Engine setup panel: the short setup asks the engine permission first and starts nothing until it's answered; the panel says the step it's on in plain words (never pip's lines), says why a run stopped with Try again and Show details, Try again runs it again, Show details opens the full window with its log (hidden by default otherwise), and Don't allow starts nothing",
+            EngineSetupPanelAsync);
         await ScenarioAsync("Crash reports: a problem last time is offered as a card; the dialog shows the whole report as it would be sent, with the user's name, paths, the server, the slot and an e-mail replaced by marks; Send once posts a Sentry envelope to the project (scrubbed, with the note) and the file isn't offered again; with Always send, the next is sent without asking; Don't send dismisses it and nothing is posted; Help → Report a problem writes a scrubbed zip in Atlas's folder and uploads nothing; a build without an address offers nothing",
             CrashReportsAsync);
         await ScenarioAsync("Customization: a custom accent of any colour recolours Atlas, is saved, and its headings and links still read (the preset choice says Custom); colour-blind-safe colours are the theme's other palette, held to the contrast rule, saved and undone; the zoom choice, Ctrl+= and Ctrl+- scale the window and are saved; the pin shape is saved and every map redraws, a diamond being a square on its corner; the page Atlas opens on is saved and the last tool shown is remembered for it",
@@ -325,7 +327,7 @@ public partial class MainTrackerWindow
         await UiTestWaitAsync(0.3);
         doctor.EmitSignal(Window.SignalName.CloseRequested);
 
-        OpenEngineSetup();
+        OpenEngineWindow();
         var engine = await UiTestWaitForAsync(() => GetTree().Root.GetChildren().OfType<AP_Atlas.UI.AtlasEngineWindow>().FirstOrDefault(), "the Atlas Engine window");
         await UiTestWaitAsync(0.3);
         engine.EmitSignal(Window.SignalName.CloseRequested);
@@ -3060,6 +3062,82 @@ public partial class MainTrackerWindow
             godotErrors = AP_Atlas.Core.GodotLog.Errors - godotErrors;
         }
         UiTestExpect(godotErrors == 0, $"Godot reported {godotErrors} error(s) (the log file has them)");
+    }
+
+    /// <summary>The short setup: the permission first, then the panel's plain-words steps, Try again and Show details; never pip's lines.</summary>
+    private async Task EngineSetupPanelAsync()
+    {
+        var kind = AP_Atlas.Core.Permissions.EngineSetup;
+        AP_Atlas.Core.Permissions.SetAlways(_appSettings, kind, null, false);
+        int runs = 0;
+        AP_Atlas.Core.EngineSetup.AtlasEngine.TestSetUp = async (log, progress, ct) =>
+        {
+            runs++;
+            log("pretend: pip would print this");
+            AP_Atlas.Core.EngineSetup.AtlasEngine.ReportStep("Downloading Python 3.12.10 from python.org…");
+            progress(0.5f);
+            await Task.Delay(150, ct);
+            AP_Atlas.Core.EngineSetup.AtlasEngine.ReportStep("Running the health check…");
+            await Task.Delay(100, ct);
+            return runs > 1; // the first run fails, Try again succeeds
+        };
+        try
+        {
+            UiTestExpect(!AP_Atlas.Core.EngineSetup.AtlasEngine.Current.CanLaunch, "the test's data folder has no engine, so the short setup applies");
+            ConfirmationDialog? Dialog() => GetChildren().OfType<ConfirmationDialog>().FirstOrDefault(d => d.Title == kind.Title);
+            AP_Atlas.UI.EngineSetupPanel? Panel() => GetChildren().OfType<AP_Atlas.UI.EngineSetupPanel>().FirstOrDefault();
+
+            // Allow once: the panel runs the setup and says what it's doing in plain words.
+            OpenEngineSetup();
+            var ask = await UiTestWaitForAsync(Dialog, "the engine permission dialog");
+            UiTestExpect(Panel() == null, "nothing starts before the permission is answered");
+            ask.EmitSignal(ConfirmationDialog.SignalName.Confirmed);
+            var panel = await UiTestWaitForAsync(Panel, "the setup panel");
+            await UiTestWaitForAsync(() => panel.StepText.StartsWith("Downloading Python") ? panel : null, "the panel's first step");
+            UiTestExpect(!panel.StepText.Contains("pretend"), "pip's lines don't reach the panel");
+            await UiTestWaitForAsync(() => panel.TryAgainShown ? panel : null, "the failed run's Try again");
+            UiTestExpect(panel.OutcomeText.Contains("pretend setup failed"), "the panel says why the setup stopped: " + panel.OutcomeText);
+            UiTestExpect(panel.DetailsShown, "Show details is offered after a failure");
+            UiTestExpect(runs == 1, "the setup ran once");
+
+            // Try again runs it again; this time it finishes.
+            panel.EmitSignal(AcceptDialog.SignalName.CustomAction, "try-again");
+            await UiTestWaitForAsync(() => panel.OutcomeText.Contains("is set up") ? panel : null, "the second run's Ready");
+            UiTestExpect(runs == 2 && !panel.TryAgainShown, "after success there's nothing to try again");
+
+            // Show details opens the full window with the run's lines, its log shown (it's hidden by default otherwise).
+            panel.EmitSignal(AcceptDialog.SignalName.CustomAction, "details");
+            var window = await UiTestWaitForAsync(() => GetTree().Root.GetChildren().OfType<AP_Atlas.UI.AtlasEngineWindow>().FirstOrDefault(), "the engine window");
+            await UiTestWaitAsync(0.2);
+            UiTestExpect(window.LogShown, "Show details opens the window's log");
+            window.EmitSignal(Window.SignalName.CloseRequested);
+            panel.EmitSignal(AcceptDialog.SignalName.Confirmed); // Close
+            await UiTestWaitAsync(0.2);
+            UiTestExpect(Panel() == null, "Close frees the panel");
+
+            _appSettings.EngineLogShown = false;
+            OpenEngineWindow();
+            var fresh = await UiTestWaitForAsync(() => GetTree().Root.GetChildren().OfType<AP_Atlas.UI.AtlasEngineWindow>().FirstOrDefault(), "the engine window again");
+            await UiTestWaitAsync(0.2);
+            UiTestExpect(!fresh.LogShown, "the window's log is hidden until asked for");
+            fresh.EmitSignal(Window.SignalName.CloseRequested);
+
+            // Don't allow: nothing starts, and the answer is kept for the session.
+            AP_Atlas.Core.Permissions.SetAlways(_appSettings, kind, null, false); // forgets "Allow once"
+            OpenEngineSetup();
+            var again = await UiTestWaitForAsync(Dialog, "the engine permission dialog, asked again");
+            again.EmitSignal(ConfirmationDialog.SignalName.Canceled);
+            await UiTestWaitAsync(0.4);
+            UiTestExpect(Panel() == null && runs == 2, "Don't allow starts nothing");
+            UiTestExpect(AP_Atlas.Core.Permissions.DeniedThisSession(kind), "the refusal is remembered for the session");
+        }
+        finally
+        {
+            AP_Atlas.Core.EngineSetup.AtlasEngine.TestSetUp = null;
+            AP_Atlas.Core.Permissions.AllowForSession(kind);
+            AP_Atlas.Core.Permissions.SetAlways(_appSettings, kind, null, false);
+            foreach (var p in GetChildren().OfType<AP_Atlas.UI.EngineSetupPanel>()) p.QueueFree();
+        }
     }
 
     private async Task DataFolderAsync()
