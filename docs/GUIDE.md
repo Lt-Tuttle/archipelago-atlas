@@ -41,6 +41,8 @@ Each pin is coloured by what Atlas knows: checked, hinted, in logic, or not in l
 
 Without a pack for the game, the Map Tracker says so and points you to Map Packs.
 
+- The map scrolls and zooms like a document: the wheel zooms around the cursor, any mouse button drags it, **Fit** (and −, +) are above the display options, and the view is remembered per map. The **legend** under the display options says what the pin colours mean; a pin's tooltip says its state and the checks it covers.
+
 ## Key Items
 
 Key Items (Ctrl+2) shows the progression items you've received. The Visual view is the pack's own item grid (when the pack has one), with each tile as the pack's scripts show it; the Text view lists the items. Collected and Missing filter the list, the search box narrows it, and Item Size changes the tiles. Seed settings the pack shows are read from the slot's options.

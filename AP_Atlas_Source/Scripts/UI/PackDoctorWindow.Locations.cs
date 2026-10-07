@@ -161,6 +161,7 @@ namespace AP_Atlas.UI
 
         private string _focusPinPath;
         private string _editorMapId;
+        /// <summary>The editor's zoom; 0 until the map was fitted once.</summary>
         private float _editorZoom = 0;
         private (long Id, string Name)? _placeLocation;
         private string _selectedPinPath;
@@ -205,10 +206,10 @@ namespace AP_Atlas.UI
             }
             picker.ItemSelected += i => { _editorMapId = ordered[(int)i].Id; _editorZoom = 0; _mapScrollPos = Vector2.Zero; _selectedPinPath = null; RenderCurrentTab(); };
             bar.AddChild(picker);
-            bar.AddChild(Kit.Button("−", "Zoom out (or mouse wheel)", () => ZoomAtCenter(1 / 1.25f)));
-            bar.AddChild(Kit.Button("+", "Zoom in (or mouse wheel)", () => ZoomAtCenter(1.25f)));
-            bar.AddChild(Kit.Button("Fit", "Fit the whole map in view", () => FitMap()));
-            bar.AddChild(Kit.Button("1:1", "Actual size", () => { _editorZoom = 1f; LayoutMapCanvas(); }));
+            bar.AddChild(Kit.Button("−", "Zoom out (or mouse wheel)", () => _mapCanvas?.ZoomAtCenter(1 / 1.25f)));
+            bar.AddChild(Kit.Button("+", "Zoom in (or mouse wheel)", () => _mapCanvas?.ZoomAtCenter(1.25f)));
+            bar.AddChild(Kit.Button("Fit", "Fit the whole map in view", () => _mapCanvas?.FitToView()));
+            bar.AddChild(Kit.Button("1:1", "Actual size", () => _mapCanvas?.SetZoom(1f)));
             if (_selectedPinPath != null)
                 bar.AddChild(Kit.Button("Go to selected", "Center on the selected pin", () => FocusPin(_selectedPinPath)));
             var find = new LineEdit { PlaceholderText = "Find a pin on this map…", CustomMinimumSize = new Vector2(260, 0), ClearButtonEnabled = true };
@@ -246,101 +247,58 @@ namespace AP_Atlas.UI
             var split = new HSplitContainer { SizeFlagsVertical = Control.SizeFlags.ExpandFill };
             root.AddChild(split);
 
-            var scroll = new ScrollContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, SizeFlagsVertical = Control.SizeFlags.ExpandFill, SizeFlagsStretchRatio = 2.2f };
-            split.AddChild(scroll);
+            var canvas = new MapCanvas { SizeFlagsStretchRatio = 2.2f };
+            split.AddChild(canvas);
             var side = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
             side.AddThemeConstantOverride("separation", 6);
             var sideScroll = new ScrollContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
             sideScroll.AddChild(side);
             split.AddChild(sideScroll);
 
-            _mapScroll = scroll;
+            _mapCanvas = canvas;
             var background = map.Background;
             _mapImgSize = background?.GetSize() ?? new Vector2(1600, 1000);
-            _mapPins.Clear();
-            float zoom = _editorZoom > 0 ? _editorZoom : 0.2f; // real fit happens once the view has its size
-            var canvas = new Control { CustomMinimumSize = _mapImgSize * zoom, MouseFilter = Control.MouseFilterEnum.Stop };
-            _mapCanvas = canvas;
-            scroll.AddChild(canvas);
-            _mapBg = null;
-            if (background != null)
-            {
-                _mapBg = new TextureRect
-                {
-                    Texture = background,
-                    ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
-                    StretchMode = TextureRect.StretchModeEnum.Scale,
-                    Size = _mapImgSize * zoom,
-                    MouseFilter = Control.MouseFilterEnum.Ignore
-                };
-                canvas.AddChild(_mapBg);
-            }
-            else
-            {
-                canvas.AddChild(new Label { Text = "This map has no usable background image. Pins are still shown at their positions.", Position = new Vector2(10, 10), MouseFilter = Control.MouseFilterEnum.Ignore });
-            }
-
+            canvas.SetMap(background, _mapImgSize);
             // Remember where the user was, so selecting a pin (which redraws the tab) doesn't jump the view.
-            scroll.GetHScrollBar().ValueChanged += v => { if (_mapScroll == scroll) _mapScrollPos.X = (float)v; };
-            scroll.GetVScrollBar().ValueChanged += v => { if (_mapScroll == scroll) _mapScrollPos.Y = (float)v; };
-
-            Vector2 panLast = Vector2.Zero;
-            canvas.GuiInput += ev =>
+            canvas.ViewChanged += () =>
             {
-                switch (ev)
+                if (_mapCanvas != canvas) return;
+                _editorZoom = canvas.Zoom;
+                _mapScrollPos = canvas.ScrollPosition;
+            };
+            // Placement: a left click on the empty map places the pending pin.
+            canvas.Clicked += at =>
+            {
+                if (_placeLocation == null) return;
+                var (id, name) = _placeLocation.Value;
+                PackFixes.Edit(_key, $"Place a pin for {name}", f =>
                 {
-                    // Wheel zooms around the cursor.
-                    case InputEventMouseButton wheel when wheel.Pressed && (wheel.ButtonIndex == MouseButton.WheelUp || wheel.ButtonIndex == MouseButton.WheelDown):
-                        ZoomAtMouse(wheel.ButtonIndex == MouseButton.WheelUp ? 1.2f : 1 / 1.2f);
-                        canvas.AcceptEvent();
-                        break;
-                    // Right or middle drag pans.
-                    case InputEventMouseButton pan when pan.ButtonIndex is MouseButton.Right or MouseButton.Middle:
-                        if (pan.Pressed) panLast = pan.GlobalPosition;
-                        canvas.AcceptEvent();
-                        break;
-                    case InputEventMouseMotion motion when (motion.ButtonMask & (MouseButtonMask.Right | MouseButtonMask.Middle)) != 0:
-                        var delta = motion.GlobalPosition - panLast;
-                        panLast = motion.GlobalPosition;
-                        scroll.ScrollHorizontal -= (int)delta.X;
-                        scroll.ScrollVertical -= (int)delta.Y;
-                        canvas.AcceptEvent();
-                        break;
-                    // Placement: a left click on the empty map places the pending pin.
-                    case InputEventMouseButton place when place.Pressed && place.ButtonIndex == MouseButton.Left && _placeLocation != null:
-                        var (id, name) = _placeLocation.Value;
-                        var at = place.Position / _editorZoom;
-                        PackFixes.Edit(_key, $"Place a pin for {name}", f =>
-                        {
-                            f.AddedPins.RemoveAll(p => p.Subject == "added:pin:" + id);
-                            f.AddedPins.Add(new AddedPin { Subject = "added:pin:" + id, Name = name, MapId = _editorMapId, X = at.X, Y = at.Y, ApLocationIds = new List<long> { id } });
-                        });
-                        _selectedPinPath = "atlas/" + name;
-                        _placeLocation = null;
-                        SetStatus($"Placed a pin for {name}.");
-                        break;
-                }
+                    f.AddedPins.RemoveAll(p => p.Subject == "added:pin:" + id);
+                    f.AddedPins.Add(new AddedPin { Subject = "added:pin:" + id, Name = name, MapId = _editorMapId, X = at.X, Y = at.Y, ApLocationIds = new List<long> { id } });
+                });
+                _selectedPinPath = "atlas/" + name;
+                _placeLocation = null;
+                SetStatus($"Placed a pin for {name}.");
             };
 
             var fixes = PackFixes.Get(_key);
             var added = new HashSet<string>(fixes.AddedPins.Select(p => p.PinPath));
             var moved = new HashSet<string>(fixes.Pins.Where(p => !p.Removed && p.MapId == _editorMapId).Select(p => p.PinPath));
             (PopTrackerLocation Pin, float X, float Y) selected = default;
+            var pins = new List<MapCanvas.Pin>();
             foreach (var (pin, x, y) in PinsOn(pack, _editorMapId))
             {
-                var b = PinButton(pin, added.Contains(pin.FullPath), moved.Contains(pin.FullPath));
-                canvas.AddChild(b);
-                _mapPins.Add((b, x, y));
+                pins.Add(new MapCanvas.Pin { Key = pin.FullPath + "@" + x + "," + y, X = x, Y = y, Control = PinButton(pin, added.Contains(pin.FullPath), moved.Contains(pin.FullPath)) });
                 if (pin.FullPath == _selectedPinPath) selected = (pin, x, y);
             }
+            canvas.SetPins(pins);
 
             // A pulsing ring makes the selected pin easy to spot at any zoom.
-            _selRing = null;
             if (selected.Pin != null)
             {
                 // Yellow ring with a dark outline (shadow) so it reads on light and dark maps alike.
-                _selRing = new Panel { MouseFilter = Control.MouseFilterEnum.Ignore, Size = new Vector2(PinScreenSize * 3.2f, PinScreenSize * 3.2f) };
-                _selRing.AddThemeStyleboxOverride("panel", new StyleBoxFlat
+                var ring = new Panel { Size = new Vector2(MapCanvas.FixedPinSize * 3.2f, MapCanvas.FixedPinSize * 3.2f) };
+                ring.AddThemeStyleboxOverride("panel", new StyleBoxFlat
                 {
                     BgColor = new Color(1f, 0.85f, 0.1f, 0.18f),
                     BorderColor = new Color("#FFD43B"),
@@ -355,131 +313,36 @@ namespace AP_Atlas.UI
                     CornerRadiusBottomLeft = 99,
                     CornerRadiusBottomRight = 99
                 });
-                _selRing.PivotOffset = _selRing.Size / 2;
-                _selRing.SetMeta("x", selected.X);
-                _selRing.SetMeta("y", selected.Y);
-                canvas.AddChild(_selRing);
-                canvas.MoveChild(_selRing, _mapBg == null ? 0 : 1); // under the pins
-                var tween = _selRing.CreateTween().SetLoops();
-                tween.TweenProperty(_selRing, "scale", new Vector2(1.35f, 1.35f), 0.6f).SetTrans(Tween.TransitionType.Sine);
-                tween.TweenProperty(_selRing, "scale", Vector2.One, 0.6f).SetTrans(Tween.TransitionType.Sine);
+                ring.PivotOffset = ring.Size / 2;
+                canvas.SetRing(new Vector2(selected.X, selected.Y), ring);
+                var tween = ring.CreateTween().SetLoops();
+                tween.TweenProperty(ring, "scale", new Vector2(1.35f, 1.35f), 0.6f).SetTrans(Tween.TransitionType.Sine);
+                tween.TweenProperty(ring, "scale", Vector2.One, 0.6f).SetTrans(Tween.TransitionType.Sine);
             }
-            LayoutMapCanvas();
 
             BuildPinInspector(side, pack);
 
-            // Once the view has its real size: fit if needed, then center on the selected pin or restore the last view.
+            // Once the view has its real size: fit if it never was, else the last view; centred on the selected pin when asked.
             bool center = _centerOnSelected && selected.Pin != null;
             _centerOnSelected = false;
-            SettleMapView(scroll, center, selected.X, selected.Y, _mapScrollPos);
+            float zoom = _editorZoom;
+            var scrollPos = _mapScrollPos;
+            Ui.NextFrame(this, () =>
+            {
+                if (_mapCanvas != canvas || !IsInstanceValid(canvas)) return;
+                if (zoom <= 0) canvas.FitToView();
+                else canvas.SetView((scrollPos + canvas.ViewSize / 2) / zoom, zoom);
+                if (center) canvas.CenterOn(new Vector2(selected.X, selected.Y), 1f);
+            });
             return root;
         }
 
-        private void SettleMapView(ScrollContainer scroll, bool center, float x, float y, Vector2 restore) => AP_Atlas.Core.Async.Fire(SettleMapViewAsync(scroll, center, x, y, restore), "positioning the map", tellUser: false);
+        // ---- Map view state (the canvas zooms and pans in place; the tab's rebuilds restore it) ----
 
-        private async Task SettleMapViewAsync(ScrollContainer scroll, bool center, float x, float y, Vector2 restore)
-        {
-            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
-            if (!IsInstanceValid(scroll) || _mapScroll != scroll) return;
-            if (_editorZoom <= 0) FitMap(apply: false);
-            if (center) _editorZoom = Math.Max(_editorZoom, 1.0f);
-            LayoutMapCanvas();
-            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
-            if (!IsInstanceValid(scroll)) return;
-            if (center)
-            {
-                scroll.ScrollHorizontal = (int)Math.Max(0, x * _editorZoom - scroll.Size.X / 2);
-                scroll.ScrollVertical = (int)Math.Max(0, y * _editorZoom - scroll.Size.Y / 2);
-            }
-            else
-            {
-                scroll.ScrollHorizontal = (int)restore.X;
-                scroll.ScrollVertical = (int)restore.Y;
-            }
-        }
-
-        // ---- Map view state (zoom and pan happen in place, without rebuilding the tab) ----
-
-        private const float PinScreenSize = 22f;
-        private ScrollContainer _mapScroll;
-        private Control _mapCanvas;
-        private TextureRect _mapBg;
-        private Panel _selRing;
+        private MapCanvas _mapCanvas;
         private Vector2 _mapImgSize;
         private Vector2 _mapScrollPos;
         private bool _centerOnSelected;
-        private readonly List<(Button B, float X, float Y)> _mapPins = new List<(Button, float, float)>();
-
-        /// <summary>Positions the background, pins and selection ring for the current zoom.</summary>
-        private void LayoutMapCanvas()
-        {
-            if (_mapCanvas == null || !IsInstanceValid(_mapCanvas)) return;
-            float z = _editorZoom > 0 ? _editorZoom : 0.2f;
-            _mapCanvas.CustomMinimumSize = _mapImgSize * z;
-            if (_mapBg != null && IsInstanceValid(_mapBg)) _mapBg.Size = _mapImgSize * z;
-            foreach (var (b, x, y) in _mapPins)
-            {
-                if (IsInstanceValid(b)) b.Position = new Vector2(x * z - PinScreenSize / 2, y * z - PinScreenSize / 2);
-            }
-            if (_selRing != null && IsInstanceValid(_selRing))
-            {
-                float x = (float)_selRing.GetMeta("x").AsDouble(), y = (float)_selRing.GetMeta("y").AsDouble();
-                _selRing.Position = new Vector2(x * z, y * z) - _selRing.Size / 2;
-            }
-        }
-
-        /// <summary>Zooms keeping the map point under the mouse in place.</summary>
-        private void ZoomAtMouse(float factor) => AP_Atlas.Core.Async.Fire(ZoomAtMouseAsync(factor), "zooming the map", tellUser: false);
-
-        private async Task ZoomAtMouseAsync(float factor)
-        {
-            if (_mapScroll == null || !IsInstanceValid(_mapScroll)) return;
-            var scroll = _mapScroll;
-            float oldZoom = _editorZoom > 0 ? _editorZoom : 0.2f;
-            float newZoom = Math.Clamp(oldZoom * factor, 0.05f, 6f);
-            if (Math.Abs(newZoom - oldZoom) < 0.0001f) return;
-            var anchor = scroll.GetLocalMousePosition();
-            var mapPoint = (new Vector2(scroll.ScrollHorizontal, scroll.ScrollVertical) + anchor) / oldZoom;
-            _editorZoom = newZoom;
-            LayoutMapCanvas();
-            // The scroll range grows on the next layout pass; scroll after it.
-            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
-            if (!IsInstanceValid(scroll)) return;
-            scroll.ScrollHorizontal = (int)Math.Max(0, mapPoint.X * newZoom - anchor.X);
-            scroll.ScrollVertical = (int)Math.Max(0, mapPoint.Y * newZoom - anchor.Y);
-        }
-
-        /// <summary>Zooms around the middle of the visible area (toolbar buttons).</summary>
-        private void ZoomAtCenter(float factor) => AP_Atlas.Core.Async.Fire(ZoomAtCenterAsync(factor), "zooming the map", tellUser: false);
-
-        private async Task ZoomAtCenterAsync(float factor)
-        {
-            if (_mapScroll == null || !IsInstanceValid(_mapScroll)) return;
-            var scroll = _mapScroll;
-            float oldZoom = _editorZoom > 0 ? _editorZoom : 0.2f;
-            float newZoom = Math.Clamp(oldZoom * factor, 0.05f, 6f);
-            var anchor = scroll.Size / 2;
-            var mapPoint = (new Vector2(scroll.ScrollHorizontal, scroll.ScrollVertical) + anchor) / oldZoom;
-            _editorZoom = newZoom;
-            LayoutMapCanvas();
-            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
-            if (!IsInstanceValid(scroll)) return;
-            scroll.ScrollHorizontal = (int)Math.Max(0, mapPoint.X * newZoom - anchor.X);
-            scroll.ScrollVertical = (int)Math.Max(0, mapPoint.Y * newZoom - anchor.Y);
-        }
-
-        /// <summary>Zoom so the whole map fits the visible area.</summary>
-        private void FitMap(bool apply = true)
-        {
-            if (_mapScroll == null || !IsInstanceValid(_mapScroll) || _mapImgSize.X <= 0) return;
-            var avail = _mapScroll.Size - new Vector2(16, 16);
-            if (avail.X <= 0 || avail.Y <= 0) return;
-            _editorZoom = Math.Clamp(Math.Min(avail.X / _mapImgSize.X, avail.Y / _mapImgSize.Y), 0.05f, 4f);
-            if (!apply) return;
-            LayoutMapCanvas();
-            _mapScroll.ScrollHorizontal = 0;
-            _mapScroll.ScrollVertical = 0;
-        }
 
         /// <summary>Selects a pin and centers the view on it, zoomed in enough to see it.</summary>
         private void FocusPin(string pinPath)
@@ -501,7 +364,7 @@ namespace AP_Atlas.UI
 
         private Button PinButton(PopTrackerLocation pin, bool isAdded, bool isMoved)
         {
-            const float size = PinScreenSize;
+            const float size = MapCanvas.FixedPinSize;
             int sections = pin.Sections != null && pin.Sections.Count > 0 ? pin.Sections.Count : 1;
             int linked = _report.Index.IdsFor(pin).Count;
             Color fill = isAdded ? Fixed : linked == 0 ? Bad : linked >= sections ? Good : Warn;
@@ -534,9 +397,8 @@ namespace AP_Atlas.UI
             b.GuiInput += ev =>
             {
                 // Wheel and right/middle drag over a pin act on the map, as they do elsewhere on it.
-                if (ev is InputEventMouseButton wheel && wheel.Pressed && (wheel.ButtonIndex == MouseButton.WheelUp || wheel.ButtonIndex == MouseButton.WheelDown))
+                if (_mapCanvas != null && _mapCanvas.HandleWheel(ev, b))
                 {
-                    ZoomAtMouse(wheel.ButtonIndex == MouseButton.WheelUp ? 1.2f : 1 / 1.2f);
                     b.AcceptEvent();
                     return;
                 }
@@ -553,7 +415,7 @@ namespace AP_Atlas.UI
                             RenderCurrentTab();
                             return;
                         }
-                        var center = (b.Position + new Vector2(size / 2, size / 2)) / _editorZoom;
+                        var center = _mapCanvas.ToMap(b.Position + new Vector2(size / 2, size / 2));
                         MovePin(pin, center.X, center.Y, isAdded);
                     }
                 }

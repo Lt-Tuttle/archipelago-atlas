@@ -3,9 +3,16 @@ using Godot;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using AP_Atlas.Core;
 using AP_Atlas.Core.PopTracker;
 namespace AP_Atlas.UI
 {
+    /// <summary>
+    /// The Map Tracker: a map pack's maps with a pin per location, coloured by what logic says (in logic, hinted, out of
+    /// logic, checked, excluded, not in the seed; neutral colours in race mode), on a <see cref="MapCanvas"/> shared with
+    /// the Pack Doctor's editor. The explorer lists the maps with their counts; the display options and the legend sit
+    /// above it. The view (the map point at the middle, and the zoom) is remembered per map.
+    /// </summary>
     public partial class MapTrackerControl : MarginContainer
     {
         public Control SidebarContent { get; private set; }
@@ -28,7 +35,6 @@ namespace AP_Atlas.UI
 
         private const int ModeShow = 0, ModeDim = 1, ModeHide = 2;
         private const float DimAlpha = 0.35f;
-        private static readonly Color NotInSeedColor = new Color("#5A5F6E");
 
         private bool Excluded(long id) => IsExcluded?.Invoke(id) == true;
 
@@ -49,13 +55,15 @@ namespace AP_Atlas.UI
                 if (_logicHidden == value) return;
                 _logicHidden = value;
                 RefreshMapListCounters();
+                BuildLegend();
                 if (!string.IsNullOrEmpty(_currentMapId)) RenderLocations();
             }
         }
 
-        private static readonly Color OpenNeutral = Colors.SteelBlue;
-        private static readonly Color HintedNeutral = Colors.MediumPurple;
         public string CurrentMapId => _currentMapId;
+
+        /// <summary>The canvas the map is drawn on.</summary>
+        public MapCanvas Canvas => _canvas;
 
         /// <summary>Re-draws pins after flags or special marks changed.</summary>
         public void RefreshMarkers()
@@ -75,8 +83,7 @@ namespace AP_Atlas.UI
             foreach (var pin in PinsOnMap(mapId))
             {
                 if (!GetLocationIds(pin.Loc).Contains(locationId)) continue;
-                _camera.Position = new Vector2(pin.X, pin.Y);
-                SaveCurrentCamera();
+                _canvas.CenterOn(new Vector2(pin.X, pin.Y));
                 RenderLocations(new HashSet<long> { locationId });
                 return true;
             }
@@ -152,15 +159,11 @@ namespace AP_Atlas.UI
 
         private VBoxContainer _mapListContainer;
         private OptionButton _sortDropdown;
-        private SubViewportContainer _viewportContainer;
-        private SubViewport _viewport;
-        private Sprite2D _mapBackground;
-        private Control _nodesOverlay;
-        private Camera2D _camera;
+        private MapCanvas _canvas;
+        private Control _canvasPanel;
         private CenterContainer _emptyStateContainer;
-
-        private bool _isDragging = false;
-        private Vector2 _lastMousePos;
+        private VBoxContainer _legend;
+        private bool _restoringView;
 
         public MapTrackerControl(AppSettings appSettings)
         {
@@ -168,7 +171,7 @@ namespace AP_Atlas.UI
             if (_appSettings.MapCameras == null) _appSettings.MapCameras = new Dictionary<string, MapCameraSave>();
             SizeFlagsHorizontal = SizeFlags.ExpandFill;
             SizeFlagsVertical = SizeFlags.ExpandFill;
-            // --- BUILD SIDEBAR ---
+            // --- The explorer: sort, display options, the legend, the maps ---
             var leftPanel = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
             SidebarContent = leftPanel;
             var leftVBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
@@ -179,7 +182,9 @@ namespace AP_Atlas.UI
             sortMargin.AddThemeConstantOverride("margin_right", 10);
             leftVBox.AddChild(sortMargin);
             var sortHBox = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            sortHBox.AddChild(new Label { Text = "Sort:", Modulate = Colors.DarkGray });
+            var sortLabel = new Label { Text = "Sort:" };
+            sortLabel.AddThemeColorOverride("font_color", ThemeColors.TextMuted);
+            sortHBox.AddChild(sortLabel);
             _sortDropdown = new OptionButton { SizeFlagsHorizontal = SizeFlags.ExpandFill };
             _sortDropdown.AddItem("A-Z");
             _sortDropdown.AddItem("Most Checks");
@@ -196,29 +201,14 @@ namespace AP_Atlas.UI
             listScroll.AddChild(listMargin);
             _mapListContainer = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
             listMargin.AddChild(_mapListContainer);
-            // --- BUILD CENTER CANVAS ---
+            // --- The canvas ---
             var rightPanel = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
-            var rightStyle = new StyleBoxFlat { BgColor = new Color("#0A0A0F") };
-            rightPanel.AddThemeStyleboxOverride("panel", rightStyle);
+            rightPanel.AddThemeStyleboxOverride("panel", new StyleBoxFlat { BgColor = ThemeColors.SurfaceDeep });
             AddChild(rightPanel);
-            _viewportContainer = new SubViewportContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill, Stretch = true };
-            rightPanel.AddChild(_viewportContainer);
-            _viewport = new SubViewport { Size = new Vector2I(800, 600) };
-            _viewportContainer.AddChild(_viewport);
-            _mapBackground = new Sprite2D { Centered = false };
-            _viewport.AddChild(_mapBackground);
-            _nodesOverlay = new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
-            _viewport.AddChild(_nodesOverlay);
-            // The camera moves only when told (no smoothing), and follows its view's size by itself, so it needn't run every
-            // frame. Running, it sends its view to the renderer each frame, and Godot then redraws the whole window all the
-            // time: Atlas would never idle.
-            _camera = new Camera2D { Zoom = new Vector2(1, 1), AnchorMode = Camera2D.AnchorModeEnum.DragCenter, ProcessMode = ProcessModeEnum.Disabled };
-            _viewport.AddChild(_camera);
-            _viewportContainer.GuiInput += OnViewportGuiInput;
-            _viewportContainer.Resized += () =>
-            {
-                if (!string.IsNullOrEmpty(_currentMapId) && !_appSettings.MapCameras.ContainsKey(_currentMapId)) AutoFitCamera();
-            };
+            _canvasPanel = rightPanel;
+            _canvas = new MapCanvas();
+            _canvas.ViewChanged += SaveCurrentView;
+            rightPanel.AddChild(_canvas);
             _emptyStateContainer = new CenterContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
             var emptyVBox = new VBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
             emptyVBox.AddThemeConstantOverride("separation", 20);
@@ -227,10 +217,9 @@ namespace AP_Atlas.UI
             emptyLbl.SetMeta("font_size_ratio", 2.0f);
             emptyVBox.AddChild(emptyLbl);
             var emptySubLbl = new Label { Text = "Atlas has no PopTracker map pack for this game.\nInstall one on the Map Packs page (Ctrl+0).", HorizontalAlignment = Godot.HorizontalAlignment.Center };
-            emptySubLbl.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextSubtle);
+            emptySubLbl.AddThemeColorOverride("font_color", ThemeColors.TextSubtle);
             emptyVBox.AddChild(emptySubLbl);
             AddChild(_emptyStateContainer);
-
         }
 
         public override void _EnterTree()
@@ -255,6 +244,13 @@ namespace AP_Atlas.UI
         private Control BuildDisplayOptions()
         {
             var box = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            // The view: fit, zoom.
+            var viewRow = new HBoxContainer();
+            viewRow.AddThemeConstantOverride("separation", 4);
+            viewRow.AddChild(Kit.Button("Fit", "Show the whole map (the wheel zooms around the cursor; drag to move)", () => _canvas.FitToView()));
+            viewRow.AddChild(Kit.Button("−", "Zoom out", () => _canvas.ZoomAtCenter(1 / MapCanvas.WheelStep)));
+            viewRow.AddChild(Kit.Button("+", "Zoom in", () => _canvas.ZoomAtCenter(MapCanvas.WheelStep)));
+            box.AddChild(viewRow);
             _displayToggle = new Button { Text = "▸ Display", Flat = true, Alignment = HorizontalAlignment.Left, TooltipText = "Node size and which pins the map shows" };
             box.AddChild(_displayToggle);
             var panel = new VBoxContainer { Visible = false, SizeFlagsHorizontal = SizeFlags.ExpandFill };
@@ -267,8 +263,10 @@ namespace AP_Atlas.UI
             };
 
             var sizeRow = new HBoxContainer();
-            sizeRow.AddChild(new Label { Text = "Node size", Modulate = Colors.DarkGray, CustomMinimumSize = new Vector2(100, 0) });
-            _nodeSizeSlider = new HSlider { MinValue = 0.3, MaxValue = 3.0, Step = 0.05, SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ShrinkCenter, TooltipText = "Size of the map pins (double-click to reset)" };
+            var sizeLabel = new Label { Text = "Node size", CustomMinimumSize = new Vector2(100, 0) };
+            sizeLabel.AddThemeColorOverride("font_color", ThemeColors.TextMuted);
+            sizeRow.AddChild(sizeLabel);
+            _nodeSizeSlider = new HSlider { MinValue = 0.3, MaxValue = 3.0, Step = 0.05, SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ShrinkCenter, TooltipText = "Size of the map's pins (double-click resets)" };
             _nodeSizeValue = new Label { CustomMinimumSize = new Vector2(48, 0), HorizontalAlignment = HorizontalAlignment.Right };
             _nodeSizeSlider.ValueChanged += v =>
             {
@@ -288,7 +286,9 @@ namespace AP_Atlas.UI
             OptionButton ModeRow(string label, string tooltip, Action<int> set)
             {
                 var row = new HBoxContainer { TooltipText = tooltip };
-                row.AddChild(new Label { Text = label, Modulate = Colors.DarkGray, CustomMinimumSize = new Vector2(100, 0), TooltipText = tooltip, MouseFilter = MouseFilterEnum.Pass });
+                var rowLabel = new Label { Text = label, CustomMinimumSize = new Vector2(100, 0), TooltipText = tooltip, MouseFilter = MouseFilterEnum.Pass };
+                rowLabel.AddThemeColorOverride("font_color", ThemeColors.TextMuted);
+                row.AddChild(rowLabel);
                 var dd = new OptionButton { SizeFlagsHorizontal = SizeFlags.ExpandFill, TooltipText = tooltip };
                 dd.AddItem("Show");
                 dd.AddItem("Dim");
@@ -317,7 +317,41 @@ namespace AP_Atlas.UI
             };
             panel.AddChild(_hideCheckedBox);
             SyncDisplayControls();
+
+            _legend = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            _legend.AddThemeConstantOverride("separation", 2);
+            box.AddChild(_legend);
+            BuildLegend();
             return box;
+        }
+
+        /// <summary>What the pins' colours mean (neutral colours in race mode).</summary>
+        private void BuildLegend()
+        {
+            if (_legend == null) return;
+            foreach (Node child in _legend.GetChildren()) child.QueueFree();
+            var entries = _logicHidden
+                ? new (Color Color, string Text)[] { (ThemeColors.LogicHidden, "Open"), (ThemeColors.HintedNeutral, "Hinted"), (ThemeColors.TextSubtle, "Checked") }
+                : new[] { (ThemeColors.Success, "In logic"), (ThemeColors.Hinted, "Hinted, in logic"), (ThemeColors.HintedOutOfLogic, "Hinted, out of logic"), (ThemeColors.Danger, "Out of logic"), (ThemeColors.TextSubtle, "Checked") };
+            var flow = new HFlowContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            flow.AddThemeConstantOverride("h_separation", 10);
+            flow.AddThemeConstantOverride("v_separation", 2);
+            foreach (var (color, text) in entries)
+            {
+                var item = new HBoxContainer();
+                item.AddThemeConstantOverride("separation", 4);
+                item.AddChild(new ColorRect { Color = color, CustomMinimumSize = new Vector2(10, 10), SizeFlagsVertical = SizeFlags.ShrinkCenter });
+                var label = new Label { Text = text };
+                label.SetMeta("font_size_ratio", 0.85f);
+                label.AddThemeColorOverride("font_color", ThemeColors.TextMuted);
+                item.AddChild(label);
+                flow.AddChild(item);
+            }
+            var dim = new Label { Text = "Dimmed: excluded, or not in your seed" };
+            dim.SetMeta("font_size_ratio", 0.85f);
+            dim.AddThemeColorOverride("font_color", ThemeColors.TextSubtle);
+            _legend.AddChild(flow);
+            _legend.AddChild(dim);
         }
 
         private void SyncDisplayControls()
@@ -400,7 +434,7 @@ namespace AP_Atlas.UI
             _pack = pack;
             _index = index;
             if (_emptyStateContainer != null) _emptyStateContainer.Visible = false;
-            if (_viewportContainer != null) _viewportContainer.Visible = true;
+            if (_canvasPanel != null) _canvasPanel.Visible = true;
             BuildLocationMaps();
             RefreshMapList();
             if (_pack.Maps.Count > 0 && (string.IsNullOrEmpty(_currentMapId) || !_pack.Maps.ContainsKey(_currentMapId)))
@@ -531,28 +565,28 @@ namespace AP_Atlas.UI
                         if (counterHBox != null)
                         {
                             foreach (Node n in counterHBox.GetChildren()) { counterHBox.RemoveChild(n); n.QueueFree(); }
-                            void AddPill(int count, Color bgColor, Color textColor)
+                            void AddPill(int count, Color bgColor, string what)
                             {
                                 if (count <= 0) return;
-                                var panel = new PanelContainer { MouseFilter = MouseFilterEnum.Ignore };
-                                var style = new StyleBoxFlat { BgColor = bgColor, CornerRadiusTopLeft = 4, CornerRadiusTopRight = 4, CornerRadiusBottomLeft = 4, CornerRadiusBottomRight = 4, ContentMarginLeft = 6, ContentMarginRight = 6, ContentMarginTop = 2, ContentMarginBottom = 2 };
+                                var panel = new PanelContainer { MouseFilter = MouseFilterEnum.Ignore, TooltipText = $"{count} {what}" };
+                                var style = new StyleBoxFlat { BgColor = bgColor, CornerRadiusTopLeft = 4, CornerRadiusTopRight = 4, CornerRadiusBottomLeft = 4, CornerRadiusBottomRight = 4, ContentMarginLeft = 6, ContentMarginRight = 6, ContentMarginTop = 1, ContentMarginBottom = 1 };
                                 panel.AddThemeStyleboxOverride("panel", style);
                                 var lbl = new Label { Text = count.ToString(), HorizontalAlignment = Godot.HorizontalAlignment.Center, VerticalAlignment = Godot.VerticalAlignment.Center, MouseFilter = MouseFilterEnum.Ignore };
-                                lbl.AddThemeColorOverride("font_color", textColor);
+                                lbl.AddThemeColorOverride("font_color", ThemeColors.TextOn(bgColor));
                                 panel.AddChild(lbl);
                                 counterHBox.AddChild(panel);
                             }
                             if (_logicHidden)
                             {
-                                AddPill(stat.Reachable + stat.Inaccessible, OpenNeutral, Colors.White);
-                                AddPill(stat.HintedReachable + stat.HintedInaccessible, HintedNeutral, Colors.White);
+                                AddPill(stat.Reachable + stat.Inaccessible, ThemeColors.LogicHidden, "open");
+                                AddPill(stat.HintedReachable + stat.HintedInaccessible, ThemeColors.HintedNeutral, "hinted");
                             }
                             else
                             {
-                                AddPill(stat.Reachable, Colors.LimeGreen, Colors.Black);
-                                AddPill(stat.HintedReachable, Colors.DeepSkyBlue, Colors.Black);
-                                AddPill(stat.HintedInaccessible, Colors.Purple, Colors.White);
-                                AddPill(stat.Inaccessible, Colors.Crimson, Colors.White);
+                                AddPill(stat.Reachable, ThemeColors.Success, "in logic");
+                                AddPill(stat.HintedReachable, ThemeColors.Hinted, "hinted, in logic");
+                                AddPill(stat.HintedInaccessible, ThemeColors.HintedOutOfLogic, "hinted, out of logic");
+                                AddPill(stat.Inaccessible, ThemeColors.Danger, "out of logic");
                             }
                         }
                     }
@@ -575,40 +609,15 @@ namespace AP_Atlas.UI
                 }
             }
         }
-        private void AutoFitCamera()
+
+        /// <summary>Remembers the view (the map point at the middle, and the zoom) for the map; a fit before the view has a size isn't kept.</summary>
+        private void SaveCurrentView()
         {
-            if (_pack == null || string.IsNullOrEmpty(_currentMapId) || !_pack.Maps.ContainsKey(_currentMapId)) return;
-            var background = Background(_pack.Maps[_currentMapId]);
-            if (background == null) return;
-            _camera.Position = background.GetSize() / 2f;
-            var mapSize = background.GetSize();
-            var viewSize = _viewportContainer.Size;
-            if (viewSize.X > 0 && viewSize.Y > 0 && (mapSize.X > viewSize.X || mapSize.Y > viewSize.Y))
-            {
-                float scaleX = viewSize.X / mapSize.X;
-                float scaleY = viewSize.Y / mapSize.Y;
-                float minScale = Math.Min(scaleX, scaleY) * 0.95f; // 5% padding
-                _camera.Zoom = new Vector2(minScale, minScale);
-            }
-            else
-            {
-                _camera.Zoom = new Vector2(1, 1);
-            }
-            // Before the view is laid out the fit is only a placeholder; don't persist it, so the
-            // Resized handler re-fits once the real size is known.
-            if (viewSize.X > 0 && viewSize.Y > 0) SaveCurrentCamera();
-        }
-        private void SaveCurrentCamera()
-        {
-            if (string.IsNullOrEmpty(_currentMapId) || _appSettings == null) return;
+            if (_restoringView || string.IsNullOrEmpty(_currentMapId) || _appSettings == null || !_canvas.HasView) return;
             if (_appSettings.MapCameras == null) _appSettings.MapCameras = new Dictionary<string, MapCameraSave>();
-            _appSettings.MapCameras[_currentMapId] = new MapCameraSave
-            {
-                X = _camera.Position.X,
-                Y = _camera.Position.Y,
-                Zoom = _camera.Zoom.X
-            };
-            // Camera moves fire on every mouse-motion event: save once they settle.
+            var center = _canvas.Center;
+            _appSettings.MapCameras[_currentMapId] = new MapCameraSave { X = center.X, Y = center.Y, Zoom = _canvas.Zoom };
+            // Moves fire on every mouse-motion event: save once they settle.
             DataManager.SaveSettingsSoon(_appSettings);
         }
 
@@ -619,70 +628,69 @@ namespace AP_Atlas.UI
         /// <summary>A map's background, or null when it has none (or it was freed with its pack).</summary>
         private static ImageTexture Background(PopTrackerMap map) => map?.Background;
 
+        /// <summary>A map without an image is as big as its pins reach, with room around them.</summary>
+        private Vector2 PinExtent(string mapId)
+        {
+            var pins = PinsOnMap(mapId);
+            return pins.Count == 0 ? new Vector2(1600, 1000) : new Vector2(pins.Max(p => p.X) + 100, pins.Max(p => p.Y) + 100);
+        }
+
         private void SwitchMap(string mapId)
         {
             if (_pack == null || !_pack.Maps.ContainsKey(mapId)) return;
-            if (!string.IsNullOrEmpty(_currentMapId))
-            {
-                SaveCurrentCamera();
-            }
             _currentMapId = mapId;
-            var background = Background(_pack.Maps[mapId]);
-            if (background != null)
+            var map = _pack.Maps[mapId];
+            var background = Background(map);
+            _restoringView = true;
+            try
             {
-                _mapBackground.Texture = background;
-                if (_appSettings != null && _appSettings.MapCameras != null && _appSettings.MapCameras.TryGetValue(mapId, out var state))
-                {
-                    _camera.Position = new Vector2(state.X, state.Y);
-                    _camera.Zoom = new Vector2(state.Zoom, state.Zoom);
-                }
+                _canvas.SetMap(background, background?.GetSize() ?? PinExtent(mapId));
+                if (_appSettings?.MapCameras != null && _appSettings.MapCameras.TryGetValue(mapId, out var state) && state.Zoom > 0)
+                    _canvas.SetView(new Vector2(state.X, state.Y), state.Zoom);
                 else
-                {
-                    AutoFitCamera();
-                }
+                    _canvas.FitToView();
             }
-            else
+            finally
             {
-                _mapBackground.Texture = null;
+                _restoringView = false;
             }
             RenderLocations();
         }
+
         private void RenderLocations(HashSet<long> newlyUnlocked = null)
         {
             using var __perf = AP_Atlas.Core.PerfMonitor.Measure("Map Tracker: draw markers");
-            foreach (Node n in _nodesOverlay.GetChildren()) n.QueueFree();
-            if (_pack == null || string.IsNullOrEmpty(_currentMapId)) return;
-            var nodesToDraw = new List<(PopTrackerLocation Loc, float X, float Y)>();
-            foreach (var loc in _pack.Locations)
+            if (_pack == null || string.IsNullOrEmpty(_currentMapId))
             {
-                if (loc.MapRef.Equals(_currentMapId, StringComparison.OrdinalIgnoreCase))
-                {
-                    nodesToDraw.Add((loc, loc.X, loc.Y));
-                }
-                if (loc.MapLocations != null)
-                {
-                    foreach (var ml in loc.MapLocations)
-                    {
-                        if (ml.Map.Equals(_currentMapId, StringComparison.OrdinalIgnoreCase))
-                        {
-                            nodesToDraw.Add((loc, ml.X, ml.Y));
-                        }
-                    }
-                }
+                _canvas.SetPins(Array.Empty<MapCanvas.Pin>());
+                return;
             }
+            var nodesToDraw = PinsOnMap(_currentMapId);
             int excludedMode = _appSettings.MapExcludedMode, notInSeedMode = _appSettings.MapNotInSeedMode;
+            float size = 24f;
+            if (_pack.Maps.TryGetValue(_currentMapId, out var currentMap) && currentMap.LocationSize > 0)
+            {
+                size = currentMap.LocationSize;
+            }
+            else if (Background(currentMap) is { } background)
+            {
+                size = Math.Max(16f, Math.Min(background.GetWidth(), background.GetHeight()) * 0.015f);
+            }
+            size *= _appSettings.MapNodeScale;
+            var pins = new List<MapCanvas.Pin>();
+            var pulse = new List<Control>();
             foreach (var node in nodesToDraw)
             {
                 var loc = node.Loc;
                 var ids = GetLocationIds(loc);
-                Color nodeColor = Colors.Crimson; // Red by default
+                Color nodeColor = ThemeColors.Danger; // out of logic, until shown otherwise
                 bool dim = false;
                 string stateNote = "";
                 if (ids.Count == 0)
                 {
                     // No check of this pin exists in the seed (turned off by options, or the pack doesn't match).
                     if (notInSeedMode == ModeHide) continue;
-                    if (notInSeedMode == ModeDim) { nodeColor = NotInSeedColor; dim = true; }
+                    if (notInSeedMode == ModeDim) { nodeColor = ThemeColors.TextSubtle; dim = true; }
                     stateNote = "\n(Not in your seed, or not matched to it)";
                 }
                 else
@@ -694,43 +702,34 @@ namespace AP_Atlas.UI
                     if (open.Count == 0)
                     {
                         if (_appSettings.MapHideChecked) continue;
-                        nodeColor = Colors.DimGray;
+                        nodeColor = ThemeColors.TextSubtle;
+                        stateNote = "\nChecked";
                     }
                     else if (counted.Count == 0)
                     {
                         // Everything left here is excluded.
                         if (excludedMode == ModeHide) continue;
                         dim = true;
-                        nodeColor = Colors.DimGray;
+                        nodeColor = ThemeColors.TextSubtle;
                         stateNote = excludedOpen == 1 ? "\nExcluded" : $"\nExcluded ({excludedOpen} checks)";
                     }
                     else
                     {
                         bool anyReachable = counted.Any(_reachableLocs.Contains);
                         bool anyHinted = counted.Any(_hintedLocs.Contains);
-                        if (_logicHidden) nodeColor = anyHinted ? HintedNeutral : OpenNeutral;
-                        else if (anyHinted && anyReachable) nodeColor = Colors.DeepSkyBlue;
-                        else if (anyHinted && !anyReachable) nodeColor = Colors.Purple;
-                        else if (anyReachable) nodeColor = Colors.LimeGreen;
-                        if (excludedOpen > 0) stateNote = $"\n{excludedOpen} excluded";
+                        if (_logicHidden) nodeColor = anyHinted ? ThemeColors.HintedNeutral : ThemeColors.LogicHidden;
+                        else if (anyHinted && anyReachable) nodeColor = ThemeColors.Hinted;
+                        else if (anyHinted && !anyReachable) nodeColor = ThemeColors.HintedOutOfLogic;
+                        else if (anyReachable) nodeColor = ThemeColors.Success;
+                        stateNote = "\n" + (_logicHidden ? (anyHinted ? "Hinted" : "Open") : anyHinted && anyReachable ? "Hinted, in logic" : anyHinted ? "Hinted, out of logic" : anyReachable ? "In logic" : "Out of logic");
+                        if (excludedOpen > 0) stateNote += $"\n{excludedOpen} excluded";
                     }
                 }
-                float size = 24f;
-                if (_pack.Maps.TryGetValue(_currentMapId, out var currentMap) && currentMap.LocationSize > 0)
-                {
-                    size = currentMap.LocationSize;
-                }
-                else if (Background(currentMap) is { } background)
-                {
-                    size = Math.Max(16f, Math.Min(background.GetWidth(), background.GetHeight()) * 0.015f);
-                }
-                size = size * _appSettings.MapNodeScale;
                 var btn = new Button
                 {
-                    Position = new Vector2(node.X - (size / 2), node.Y - (size / 2)),
-                    CustomMinimumSize = new Vector2(size, size),
                     TooltipText = loc.Name + stateNote,
-                    MouseDefaultCursorShape = CursorShape.PointingHand
+                    MouseDefaultCursorShape = CursorShape.PointingHand,
+                    AccessibilityName = loc.Name + stateNote.Replace("\n", ": ")
                 };
                 // Dimmed pins stay clickable, so an excluded check can be included again from Properties.
                 if (dim) btn.Modulate = new Color(1f, 1f, 1f, DimAlpha);
@@ -777,66 +776,34 @@ namespace AP_Atlas.UI
                 }
                 var hoverStyle = (StyleBoxFlat)style.Duplicate();
                 hoverStyle.BgColor = nodeColor.Lightened(0.2f);
+                var focusStyle = (StyleBoxFlat)style.Duplicate();
+                focusStyle.BorderColor = Colors.White;
                 btn.AddThemeStyleboxOverride("normal", style);
                 btn.AddThemeStyleboxOverride("hover", hoverStyle);
                 btn.AddThemeStyleboxOverride("pressed", style);
-                btn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+                btn.AddThemeStyleboxOverride("focus", focusStyle);
                 var pinIds = ids;
                 string pinName = loc.Name;
                 string pinMap = _currentMapId;
                 btn.Pressed += () => PinPicked?.Invoke(pinMap, pinName, pinIds);
-                _nodesOverlay.AddChild(btn);
-                if (newlyUnlocked != null)
+                // The wheel over a pin zooms the map as it does elsewhere.
+                btn.GuiInput += ev =>
                 {
-                    bool isNew = false;
-                    foreach (long id in ids) if (newlyUnlocked.Contains(id)) isNew = true;
-                    if (isNew)
-                    {
-                        btn.PivotOffset = new Vector2(size / 2, size / 2);
-                        var scaleTween = btn.CreateTween().SetLoops(10);
-                        scaleTween.TweenProperty(btn, "scale", new Vector2(1.5f, 1.5f), 0.4f).SetTrans(Tween.TransitionType.Sine);
-                        scaleTween.TweenProperty(btn, "scale", new Vector2(1.0f, 1.0f), 0.4f).SetTrans(Tween.TransitionType.Sine);
-                        var colorTween = btn.CreateTween().SetLoops(10);
-                        float alpha = btn.Modulate.A;
-                        colorTween.TweenProperty(btn, "modulate", new Color(2f, 2f, 2f, Math.Max(alpha, 0.8f)), 0.4f);
-                        colorTween.TweenProperty(btn, "modulate", new Color(1f, 1f, 1f, alpha), 0.4f);
-                    }
-                }
+                    if (_canvas.HandleWheel(ev, btn)) btn.AcceptEvent();
+                };
+                pins.Add(new MapCanvas.Pin { Key = $"{loc.Name}@{node.X},{node.Y}", X = node.X, Y = node.Y, Control = btn, MapSize = size });
+                if (newlyUnlocked != null && ids.Any(newlyUnlocked.Contains)) pulse.Add(btn);
             }
-        }
-        private void OnViewportGuiInput(InputEvent @event)
-        {
-            if (@event is InputEventMouseButton mb)
+            _canvas.SetPins(pins);
+            foreach (var btn in pulse)
             {
-                if (mb.ButtonIndex == MouseButton.Middle || mb.ButtonIndex == MouseButton.Left)
-                {
-                    if (mb.Pressed)
-                    {
-                        _isDragging = true;
-                        _lastMousePos = mb.Position;
-                    }
-                    else
-                    {
-                        _isDragging = false;
-                    }
-                }
-                else if (mb.ButtonIndex == MouseButton.WheelUp && mb.Pressed)
-                {
-                    _camera.Zoom *= 1.1f;
-                    SaveCurrentCamera();
-                }
-                else if (mb.ButtonIndex == MouseButton.WheelDown && mb.Pressed)
-                {
-                    _camera.Zoom *= 0.9f;
-                    SaveCurrentCamera();
-                }
-            }
-            else if (@event is InputEventMouseMotion mm && _isDragging)
-            {
-                var delta = mm.Position - _lastMousePos;
-                _camera.Position -= delta / _camera.Zoom;
-                _lastMousePos = mm.Position;
-                SaveCurrentCamera();
+                var scaleTween = btn.CreateTween().SetLoops(10);
+                scaleTween.TweenProperty(btn, "scale", new Vector2(1.5f, 1.5f), 0.4f).SetTrans(Tween.TransitionType.Sine);
+                scaleTween.TweenProperty(btn, "scale", new Vector2(1.0f, 1.0f), 0.4f).SetTrans(Tween.TransitionType.Sine);
+                var colorTween = btn.CreateTween().SetLoops(10);
+                float alpha = btn.Modulate.A;
+                colorTween.TweenProperty(btn, "modulate", new Color(2f, 2f, 2f, Math.Max(alpha, 0.8f)), 0.4f);
+                colorTween.TweenProperty(btn, "modulate", new Color(1f, 1f, 1f, alpha), 0.4f);
             }
         }
     }

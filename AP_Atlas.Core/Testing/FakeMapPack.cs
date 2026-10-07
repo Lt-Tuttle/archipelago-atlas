@@ -20,8 +20,9 @@ internal static class FakeMapPack
     /// <param name="initLua">The pack's scripts/init.lua, or null for a pack without scripts.</param>
     /// <param name="files">More files, by their path in the pack (e.g. "scripts/helper.lua").</param>
     /// <param name="binaryFiles">More files given as bytes (e.g. a crafted image).</param>
+    /// <param name="mapWidth">The map image's size (a test that zooms and drags the map wants one bigger than the view).</param>
     public static void Write(string zipPath, string name, string game, string? initLua = null, IReadOnlyDictionary<string, string>? files = null,
-        IReadOnlyDictionary<string, byte[]>? binaryFiles = null)
+        IReadOnlyDictionary<string, byte[]>? binaryFiles = null, int mapWidth = MapWidth, int mapHeight = MapHeight)
     {
         if (File.Exists(zipPath)) File.Delete(zipPath);
         using var zip = ZipFile.Open(zipPath, ZipArchiveMode.Create);
@@ -44,7 +45,7 @@ internal static class FakeMapPack
             """[{"name":"Cave","sections":[{"name":"Chest"}],"map_locations":[{"map":"World","x":10,"y":10}]},""" +
             """{"name":"Far","sections":[{"name":"Chest"}],"map_locations":[{"map":"World","x":500,"y":10}]}]""");
         Bytes("pack/images/sword.png", Png(8, 8));
-        Bytes("pack/images/world.png", Png(MapWidth, MapHeight));
+        Bytes("pack/images/world.png", Png(mapWidth, mapHeight));
         Bytes("pack/images/broken.png", new byte[] { 1, 2, 3, 4 });
         if (initLua != null) Text("pack/scripts/init.lua", initLua);
         foreach (var file in files ?? new Dictionary<string, string>()) Text("pack/" + file.Key, file.Value);

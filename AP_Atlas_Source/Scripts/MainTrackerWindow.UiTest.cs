@@ -143,7 +143,7 @@ public partial class MainTrackerWindow
             SlotPanelMovesWholeAsync);
         await ScenarioAsync("Map packs: a slot's pack has its images while the slot is connected (its map shows them), the Pack Doctor's while its window is open; then they're freed once another pack is used",
             PackImagesFollowTheirUsersAsync);
-        await ScenarioAsync("Idle: a connected slot doesn't keep Atlas redrawing: its map's camera doesn't run every frame (zooming, dragging and resizing still move the map), and its card isn't re-styled while nothing changes",
+        await ScenarioAsync("Idle: a connected slot doesn't keep Atlas redrawing: nothing of its map runs every frame (the wheel still zooms it and a drag still moves it; Fit fits; the view is remembered), and its card isn't re-styled while nothing changes",
             ConnectedSlotLetsAtlasIdleAsync);
         await ScenarioAsync("Map pack scripts: a slot whose pack's script runs away keeps working: the script is stopped in seconds without holding up a frame, and Key Items and the log say why",
             RunawayPackScriptAsync, attempts: 2);
@@ -1742,7 +1742,7 @@ public partial class MainTrackerWindow
             // The map shows its background.
             ShowTextClient(slot);
             host.ShowTool(AP_Atlas.UI.Tool.MapTracker);
-            await UiTestWaitForAsync(() => slot.MapTracker.FindChildren("*", "Sprite2D", true, false).OfType<Sprite2D>().FirstOrDefault(s => s.Texture != null), "the map's background on the Map Tracker");
+            await UiTestWaitForAsync(() => slot.MapTracker.FindChildren("*", "TextureRect", true, false).OfType<TextureRect>().FirstOrDefault(s => s.Texture != null), "the map's background on the Map Tracker");
 
             // The Pack Doctor window uses the pack while it's open.
             OpenPackDoctor(zip);
@@ -1771,7 +1771,7 @@ public partial class MainTrackerWindow
     private async Task ConnectedSlotLetsAtlasIdleAsync()
     {
         string zip = System.IO.Path.Combine(AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory(), "uitest_idle_pack.zip");
-        FakeMapPack.Write(zip, "UI test pack", "Test Game");
+        FakeMapPack.Write(zip, "UI test pack", "Test Game", mapWidth: 1600, mapHeight: 1000); // bigger than the view, so there's room to drag
         await using var server = new FakeArchipelagoServer();
         server.Games["Test Game"] = new FakeGame("0123456789abcdef0123456789abcdef01234567",
             new Dictionary<string, long> { ["Sword"] = 1000 }, new Dictionary<string, long> { ["Cave Chest"] = 2000 });
@@ -1786,32 +1786,37 @@ public partial class MainTrackerWindow
             var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
             ShowTextClient(slot);
             host.ShowTool(AP_Atlas.UI.Tool.MapTracker);
-            await UiTestWaitForAsync(() => slot.MapTracker.FindChildren("*", "Sprite2D", true, false).OfType<Sprite2D>().FirstOrDefault(s => s.Texture != null), "the map on the Map Tracker");
-            // The map's camera doesn't run every frame (it would keep Godot redrawing the window all the time), yet the
-            // mouse wheel still zooms the map and dragging still moves it.
-            var camera = slot.MapTracker.FindChildren("*", "Camera2D", true, false).OfType<Camera2D>().Single();
-            var mapView = slot.MapTracker.FindChildren("*", "SubViewportContainer", true, false).OfType<SubViewportContainer>().Single();
-            var mapViewport = (SubViewport)camera.GetViewport();
-            UiTestExpect(!camera.CanProcess(), "the map's camera runs every frame, so Atlas never idles while a slot is connected");
-            // What the map shows follows the camera: centered on its position, at its zoom.
-            string? Follows()
-            {
-                var shown = mapViewport.CanvasTransform;
-                var expected = (Vector2)mapViewport.Size / 2 - camera.Position * camera.Zoom;
-                return Mathf.IsEqualApprox(shown.X.X, camera.Zoom.X) && shown.Origin.DistanceTo(expected) < 0.5f ? null : $"the map shows {shown} for a camera at {camera.Position}, zoom {camera.Zoom.X}";
-            }
+            await UiTestWaitForAsync(() => slot.MapTracker.FindChildren("*", "TextureRect", true, false).OfType<TextureRect>().FirstOrDefault(s => s.Texture != null), "the map on the Map Tracker");
+            // The map is ordinary controls in a scrolling area: nothing of it runs every frame (a camera would keep Godot
+            // redrawing the window all the time), yet the wheel zooms it around the cursor and a drag moves it.
+            var canvas = slot.MapTracker.Canvas;
+            UiTestExpect(slot.MapTracker.FindChildren("*", "Camera2D", true, false).Count == 0 && !canvas.IsProcessing() && !canvas.Surface.IsProcessing(),
+                "the map runs every frame, so Atlas never idles while a slot is connected");
             await UiTestWaitAsync(0.3); // the view settles in its place
-            float zoomBefore = camera.Zoom.X;
-            mapView.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.WheelUp, Pressed = true });
-            UiTestExpect(Mathf.IsEqualApprox(camera.Zoom.X, zoomBefore * 1.1f) && Follows() == null, $"zooming in: {Follows()}");
-            var positionBefore = camera.Position;
-            mapView.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = new Vector2(100, 100) });
-            mapView.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseMotion { Position = new Vector2(130, 100) });
-            mapView.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = new Vector2(130, 100) });
-            await UiTestWaitAsync(0.1); // a moved node's new place reaches the camera at the frame's end
-            UiTestExpect(Mathf.IsEqualApprox(camera.Position.X, positionBefore.X - 30f / camera.Zoom.X, 0.01f) && Follows() == null, $"dragging 30 px: {Follows() ?? $"the camera moved from {positionBefore} to {camera.Position}"}");
-            mapViewport.Size += new Vector2I(40, 20);
-            UiTestExpect(Follows() == null, $"a new view size: {Follows()}");
+            // Fitted: the whole map is in view, and the view is remembered for the map.
+            canvas.FitToView();
+            UiTestExpect(canvas.MapSize.X * canvas.Zoom <= canvas.ViewSize.X + 0.5f && canvas.MapSize.Y * canvas.Zoom <= canvas.ViewSize.Y + 0.5f, $"after Fit the map ({canvas.MapSize * canvas.Zoom}) doesn't fit the view ({canvas.ViewSize})");
+            UiTestExpect(_appSettings.MapCameras.TryGetValue(slot.MapTracker.CurrentMapId, out var savedView) && Mathf.IsEqualApprox(savedView.Zoom, canvas.Zoom), "the map's view isn't remembered");
+            // The wheel zooms by a step each notch, until the map is bigger than the view.
+            float zoomBefore = canvas.Zoom;
+            int notches = 0;
+            while (canvas.MapSize.X * canvas.Zoom < canvas.ViewSize.X + 200 && notches < 12) // room to drag 30 px from anywhere
+            {
+                canvas.Surface.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.WheelUp, Pressed = true, Position = new Vector2(100, 100) });
+                notches++;
+                await UiTestWaitAsync(0.05); // the scroll follows a frame later
+            }
+            UiTestExpect(notches > 0 && Mathf.IsEqualApprox(canvas.Zoom, zoomBefore * Mathf.Pow(AP_Atlas.UI.MapCanvas.WheelStep, notches), 0.001f), $"zooming in {notches} notches took the zoom from {zoomBefore} to {canvas.Zoom}");
+            // Pins sit where the zoom puts them.
+            var pin = canvas.Pins.First();
+            UiTestExpect(pin.Control.Position.DistanceTo(new Vector2(pin.X * canvas.Zoom, pin.Y * canvas.Zoom) - pin.Control.Size / 2) < 0.5f, $"a pin at ({pin.X}, {pin.Y}) sits at {pin.Control.Position} at zoom {canvas.Zoom}");
+            // A drag moves the map by as much as the mouse moved.
+            await UiTestWaitAsync(0.1);
+            var scrollBefore = canvas.ScrollPosition;
+            canvas.Surface.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = new Vector2(100, 100), GlobalPosition = new Vector2(100, 100) });
+            canvas.Surface.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseMotion { Position = new Vector2(70, 100), GlobalPosition = new Vector2(70, 100) });
+            canvas.Surface.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = new Vector2(70, 100), GlobalPosition = new Vector2(70, 100) });
+            UiTestExpect(Mathf.IsEqualApprox(canvas.ScrollPosition.X, scrollBefore.X + 30f), $"dragging 30 px: the map scrolled from {scrollBefore.X} to {canvas.ScrollPosition.X}");
             // The slot's card refreshes its statuses twice a second. Once the slot has settled (its statuses can still change
             // just after it connects), nothing changes and its labels aren't re-styled: each restyle redraws the window, so
             // Atlas would never idle.

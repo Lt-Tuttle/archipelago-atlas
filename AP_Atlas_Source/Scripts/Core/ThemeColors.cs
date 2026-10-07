@@ -106,6 +106,14 @@ namespace AP_Atlas.Core
         public static Color HintPriority => Current.HintPriority;
         public static Color HintNoPriority => Current.HintNoPriority;
 
+        // ---- Map markers (fills with their own contrast; never text) ----
+
+        /// <summary>A hinted location that logic can't reach yet.</summary>
+        public static Color HintedOutOfLogic => Current.HintedOutOfLogic;
+
+        /// <summary>A hinted location while race mode hides logic.</summary>
+        public static Color HintedNeutral => Current.HintedNeutral;
+
         // ---- Surfaces ----
 
         /// <summary>The window's background.</summary>
@@ -181,6 +189,8 @@ namespace AP_Atlas.Core
         public Color Hinted { get; init; }
         public Color HintPriority { get; init; }
         public Color HintNoPriority { get; init; }
+        public Color HintedOutOfLogic { get; init; }
+        public Color HintedNeutral { get; init; }
         public Color Surface { get; init; }
         public Color SurfacePanel { get; init; }
         public Color SurfaceRaised { get; init; }
@@ -236,6 +246,8 @@ namespace AP_Atlas.Core
             Hinted = Colors.DeepSkyBlue,
             HintPriority = Colors.Gold,
             HintNoPriority = Colors.MediumSlateBlue,
+            HintedOutOfLogic = Colors.Purple,
+            HintedNeutral = Colors.MediumPurple,
             Surface = new Color("#1E1E1E"),
             SurfacePanel = new Color("#252526"),
             SurfaceRaised = new Color("#2D2D30"),
