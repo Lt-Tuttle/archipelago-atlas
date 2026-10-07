@@ -43,6 +43,7 @@ You need:
 | Unit tests | `dotnet test --solution AP_Atlas_Source/AP_Atlas.sln` (`AP_Atlas.Core.Tests`: fast, no Godot) |
 | Formatting | `dotnet format whitespace AP_Atlas_Source/AP_Atlas.sln` (C# files use CRLF line endings) |
 | Visual check | `AP_Atlas_Source/Tools/run_visualcheck.ps1 [-Baseline <folder>] [-Theme dark|light|high-contrast]` (pictures of the main screens, as a new user sees them; with `-Baseline`, a `.diff.png` marks every changed pixel) |
+| Release build | `AP_Atlas_Source/Tools/build_release.ps1` exports Atlas with Godot through `export_presets.cfg`, refuses any export error or warning, checks the exe's version, properties and icon, runs the self-test and the UI test on the exported build (`run_selftest.ps1 -Executable`), and zips it with its SHA-256 into `Builds/dist`. The first run fetches Godot's export templates with `Tools/get_export_templates.ps1`: a 1.2 GB archive checked against Godot's published hash, unpacked into `Godot_Engine/export_templates/` (git ignores it); each template is checked against its own pinned hash |
 
 CI runs the build, formatting, guard rails, unit tests and self-test on every push and pull request.
 
@@ -150,7 +151,8 @@ By contributing, you agree that your contribution is licensed under the project'
 ## Versions and releases
 
 - **Version numbers:** Atlas uses [Semantic Versioning](https://semver.org). The version is set once, in `Directory.Build.props` at the repository root, and every project shares it.
-- **Releasing:** `AP_Atlas_Source/Tools/bump_version.ps1 <version>` sets the version and opens its changelog section. Pushing a tag like `v0.1.0-beta.1` builds the release.
+- **Releasing:** `AP_Atlas_Source/Tools/bump_version.ps1 <version>` sets the version (in `Directory.Build.props`, and its numbers as the exe's file and product version in `export_presets.cfg`) and opens its changelog section. Pushing a tag like `v0.1.0-beta.1` runs the release workflow: it exports Atlas with the pinned Godot and export templates, runs the self-test and the UI test on the exported build, and publishes `TheArchipelagoAtlas-<version>-win-x64.zip` and `SHA256SUMS.txt` as a GitHub release (a pre-release for a `-beta` version) with the changelog section as its notes. Run the workflow by hand for a dry run: the same build and tests, the zip kept as a workflow artifact, nothing published.
+- **The export preset** (`AP_Atlas_Source/export_presets.cfg`) is committed and only changed on purpose: the release and debug templates by path (pinned by hash in `get_export_templates.ps1`), a Windows x86_64 build with its .NET runtime included, no pck encryption, a console wrapper for debug exports only, Atlas's icon and version fields. The guard rails check the version fields match the project version. When Godot is updated, change together: the Sdk in `AP_Atlas.csproj`, the editor in `Godot_Engine/`, CI's `GODOT_VERSION` and `GODOT_SHA512`, the archive and template hashes in `get_export_templates.ps1`, and `GODOT_COPYRIGHT.txt` (Godot's own, from the release's tag; the self-test checks it names every component the engine reports).
 
 ## Security
 

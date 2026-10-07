@@ -9,6 +9,9 @@
 config_version=5
 
 [application]
+boot_splash/bg_color=Color(0.117647, 0.117647, 0.117647, 1)
+boot_splash/fullsize=false
+boot_splash/image="res://Assets/Graphics/boot_splash.png"
 config/icon="res://Assets/Graphics/icon.png"
 config/windows_native_icon="res://Assets/Graphics/icon.ico"
 

@@ -95,6 +95,7 @@ namespace AP_Atlas.Core
             await TestAsync("Sphere Tracker: only a room the host created, for this multiworld; nothing in race mode; never stuck", SpheresHostRoomOnly);
             await TestAsync("Sphere Tracker: a page too large isn't retried on its own, large pages are read less often, a stalled one is cut off", SpheresLargePagesAndStalls);
             Test("Links: only https web pages and existing folders are opened, never files or network shares", LinksOpenSafely);
+            Test("Godot's notices ship: GODOT_COPYRIGHT.txt names every component and licence the engine reports", GodotNoticesShip);
             Test("Text from outside is shown as written, never read as markup that opens a file (or reaches another computer)", OutsideTextIsNeverMarkup);
             Test("No pattern runs away: every regular expression has a time limit, and crafted outside text is read in linear time", PatternsCantRunAway);
             await TestAsync("Waits keep their length when the PC's clock is changed: put back, the next request isn't held up; put forward, a site's wait doesn't end early; a time a site names is measured by its own clock", WaitsIgnoreClockChanges);

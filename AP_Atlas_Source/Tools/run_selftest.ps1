@@ -12,12 +12,19 @@
     next to (never inside) those folders. Both runs also get empty stand-ins for the user's folders and the temp
     folder, and fail if anything is written to them (see footprint.ps1).
 
+    With -Executable, the same two runs drive an exported Atlas instead of the project in Godot, so the build that ships
+    is what's tested (Tools/build_release.ps1 does this for every release build).
+
     Exit code: 0 everything passed; the self-test's own code if it failed (1 a check failed, 3 timed out, 4 didn't
     finish); 6 the UI test failed (or, in CI, skipped a scenario); 5 both passed but something was written outside
     Atlas's folder.
 
 .PARAMETER Godot
     The Godot .NET console executable. Defaults to $env:ATLAS_GODOT, then the workspace's Godot_Engine folder.
+
+.PARAMETER Executable
+    An exported Atlas (TheArchipelagoAtlas.exe from Tools/build_release.ps1) to test instead of the project run in Godot.
+    Implies -NoBuild; Godot isn't needed.
 
 .PARAMETER ArchipelagoDir
     Optional Archipelago install for the engine end-to-end check (sets ATLAS_SELFTEST_AP).
@@ -37,6 +44,7 @@
 #>
 param(
     [string]$Godot = $env:ATLAS_GODOT,
+    [string]$Executable,
     [string]$ArchipelagoDir,
     [switch]$NoBuild,
     [switch]$Keep,
@@ -52,12 +60,23 @@ function Get-FullPath([string]$path) { $ExecutionContext.SessionState.Path.GetUn
 $ScratchRoot = Get-FullPath $ScratchRoot
 if ($ArchipelagoDir) { $ArchipelagoDir = Get-FullPath $ArchipelagoDir }
 
-if (-not $Godot) {
-    $Godot = Join-Path (Split-Path -Parent $project) 'Godot_Engine\Godot_v4.7.2-stable_mono_win64\Godot_v4.7.2-stable_mono_win64_console.exe'
+if ($Executable) {
+    # An exported build runs on its own: no Godot editor, no project path, nothing to build.
+    $Executable = Get-FullPath $Executable
+    if (-not (Test-Path -LiteralPath $Executable)) {
+        Write-Host "The exported Atlas was not found at '$Executable'." -ForegroundColor Red
+        exit 2
+    }
+    $NoBuild = $true
 }
-if (-not (Test-Path -LiteralPath $Godot)) {
-    Write-Host "Godot not found at '$Godot'. Pass -Godot <path> or set ATLAS_GODOT." -ForegroundColor Red
-    exit 2
+else {
+    if (-not $Godot) {
+        $Godot = Join-Path (Split-Path -Parent $project) 'Godot_Engine\Godot_v4.7.2-stable_mono_win64\Godot_v4.7.2-stable_mono_win64_console.exe'
+    }
+    if (-not (Test-Path -LiteralPath $Godot)) {
+        Write-Host "Godot not found at '$Godot'. Pass -Godot <path> or set ATLAS_GODOT." -ForegroundColor Red
+        exit 2
+    }
 }
 
 if (-not $NoBuild) {
@@ -93,8 +112,14 @@ function Invoke-AtlasTest([string]$Slug, [string]$Title, [string]$Mode, [string]
     $data = Join-Path $scratch "$Slug-data"
     New-Item -ItemType Directory -Path $data -Force | Out-Null
     $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $Godot
-    $psi.Arguments = "--headless --path `"$project`" res://Scenes/Main_Window.tscn"
+    if ($Executable) {
+        $psi.FileName = $Executable
+        $psi.Arguments = '--headless'
+    }
+    else {
+        $psi.FileName = $Godot
+        $psi.Arguments = "--headless --path `"$project`" res://Scenes/Main_Window.tscn"
+    }
     $psi.UseShellExecute = $false
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true

@@ -1,10 +1,12 @@
 name: Release
 
-# Pushing a tag like v0.1.0-beta.1 builds, tests and publishes that version.
+# Pushing a tag like v0.1.0-beta.1 builds, tests and publishes that version. Run it by hand (Actions → Release → Run
+# workflow) for a dry run: the same build and tests, with the zip kept as a workflow artifact and nothing published.
 # Tools/bump_version.ps1 sets the version and prints the tag commands.
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -13,31 +15,45 @@ env:
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  # Godot must match the version in AP_Atlas.csproj's Sdk and the export templates Tools/get_export_templates.ps1 pins.
+  # The hash is from Godot's published SHA512-SUMS.txt.
   GODOT_VERSION: 4.7.2-stable
   GODOT_SHA512: 79229fd112b0c9cbeab82363a4ef7be18ea70f1caf86bf912789335b136fbe7e01db0053a33461438c5da1c680c17bbb10040bd09bedc51221cd4423d0367757
 
 jobs:
   release:
-    name: Build and publish
+    name: Build, test and publish
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - name: Check out
         uses: actions/checkout@v7
 
-      - name: The tag must match the project version
+      - name: The version (a tag must match the project version)
         shell: pwsh
         run: |
-          $tag = '${{ github.ref_name }}'.TrimStart('v')
           [xml]$props = Get-Content -Raw Directory.Build.props
           $version = @($props.Project.PropertyGroup | ForEach-Object { $_.Version } | Where-Object { $_ })[0]
-          if ($version -ne $tag) { throw "Tag v$tag doesn't match <Version>$version</Version> in Directory.Build.props." }
+          if ('${{ github.ref_type }}' -eq 'tag') {
+            $tag = '${{ github.ref_name }}'.TrimStart('v')
+            if ($version -ne $tag) { throw "Tag v$tag doesn't match <Version>$version</Version> in Directory.Build.props." }
+          }
           "ATLAS_VERSION=$version" >> $env:GITHUB_ENV
+
+      - name: Guard rails
+        shell: pwsh
+        run: ./AP_Atlas_Source/Tools/check_guards.ps1
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
+
+      # The UI test's fake logic engine runs on the Python the portable engine uses (3.12).
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
 
       - name: Build
         working-directory: AP_Atlas_Source
@@ -68,27 +84,51 @@ jobs:
           if (-not $exe) { throw 'Godot console executable not found.' }
           "ATLAS_GODOT=$($exe.FullName)" >> $env:GITHUB_ENV
 
+      # The Windows export templates (about 210 MB unpacked, from a 1.2 GB archive checked against Godot's published hash).
+      - name: Cache the export templates
+        uses: actions/cache@v6
+        with:
+          path: Godot_Engine/export_templates
+          key: godot-templates-${{ env.GODOT_VERSION }}-mono-win-x86_64-${{ hashFiles('AP_Atlas_Source/Tools/get_export_templates.ps1') }}
+
+      - name: Export templates (hash-checked)
+        shell: pwsh
+        run: ./AP_Atlas_Source/Tools/get_export_templates.ps1 -DeleteArchive
+
       - name: Import project resources
         shell: pwsh
         timeout-minutes: 10
         run: |
           & $env:ATLAS_GODOT --headless --path AP_Atlas_Source --import
+          # The editor's exit code after importing isn't meaningful; the build below is the real check.
           exit 0
 
-      - name: Self-test (a release never ships with a failing check)
+      # Exports the release, checks it, runs the self-test and UI test on the exported build, and packs the zip and
+      # its SHA256SUMS.txt (Tools/build_release.ps1).
+      - name: Build, test and package the release
         shell: pwsh
-        run: ./AP_Atlas_Source/Tools/run_selftest.ps1 -NoBuild -ScratchRoot $env:RUNNER_TEMP
+        run: ./AP_Atlas_Source/Tools/build_release.ps1 -Version $env:ATLAS_VERSION -OutDir dist -Godot $env:ATLAS_GODOT -ScratchRoot $env:RUNNER_TEMP
 
-      - name: Package
-        shell: pwsh
-        run: |
-          if (-not (Test-Path AP_Atlas_Source/export_presets.cfg) -or -not (Test-Path AP_Atlas_Source/Tools/build_release.ps1)) {
-            Write-Host '::error::Release packaging is not set up yet. It arrives with the Windows export preset and Tools/build_release.ps1 (roadmap Phase 3).'
-            exit 1
-          }
-          ./AP_Atlas_Source/Tools/build_release.ps1 -Version $env:ATLAS_VERSION -OutDir dist
+      - name: Keep the build's output when it fails
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-output
+          path: |
+            Builds/staging/export.log
+            ${{ runner.temp }}/atlas-selftest-*/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Keep the zip and its checksum
+        uses: actions/upload-artifact@v7
+        with:
+          name: TheArchipelagoAtlas-${{ env.ATLAS_VERSION }}-win-x64
+          path: dist/
+          retention-days: 14
 
       - name: Release notes from the changelog
+        if: github.ref_type == 'tag'
         shell: pwsh
         run: |
           $lines = @(Get-Content CHANGELOG.md)
@@ -101,6 +141,7 @@ jobs:
           Set-Content -Path release-notes.md -Value (($notes -join "`n").Trim()) -Encoding UTF8
 
       - name: Publish the GitHub release
+        if: github.ref_type == 'tag'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}

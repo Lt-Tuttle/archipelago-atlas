@@ -1,5 +1,7 @@
 # Godot-specific ignores
 .godot/
+# Godot writes code-signing credentials here if any are entered in the Export dialog (none are used).
+export_credentials.cfg
 *.translation
 
 # Mono-specific ignores

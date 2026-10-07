@@ -6,7 +6,7 @@ using Godot;
 namespace AP_Atlas.UI
 {
     /// <summary>
-    /// Help: the guide, what's new, the credits and disclaimer, and the licences, from the documents built into Atlas
+    /// Help: the guide, what's new, the credits and disclaimer, the licences and Godot's components, from the documents built into Atlas
     /// (<see cref="AP_Atlas.Core.Docs"/>) rendered by <see cref="AP_Atlas.Core.Markdown"/> into Atlas's own rich text. The
     /// topics on the left, the topic on the right; a link in a topic opens in the browser (https only, when clicked).
     /// One window at a time; it frees itself when closed.
@@ -16,6 +16,7 @@ namespace AP_Atlas.UI
         public const string WhatsNew = "whats-new";
         public const string Credits = "credits";
         public const string Licences = "licences";
+        public const string GodotComponents = "godot-components";
 
         private readonly Func<string, string> _tr;
         private readonly Action<string> _openWeb;
@@ -42,6 +43,7 @@ namespace AP_Atlas.UI
             _pages.Add((Credits, "Credits & disclaimer", () => DisclaimerMarkdown() + AP_Atlas.Core.Docs.Read(AP_Atlas.Core.Docs.Credits)));
             _pages.Add((Licences, "Licences", () =>
                 "## Atlas's licence\n\n```\n" + AP_Atlas.Core.Docs.Read(AP_Atlas.Core.Docs.License) + "\n```\n\n" + AP_Atlas.Core.Docs.Read(AP_Atlas.Core.Docs.ThirdPartyNotices)));
+            _pages.Add((GodotComponents, "Godot's components", GodotComponentsMarkdown));
 
             var box = new HBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, SizeFlagsVertical = Control.SizeFlags.ExpandFill };
             box.AddThemeConstantOverride("separation", 10);
@@ -69,7 +71,7 @@ namespace AP_Atlas.UI
             Canceled += QueueFree;
         }
 
-        /// <summary>The topics, in order: the guide's sections, then what's new, the credits and the licences.</summary>
+        /// <summary>The topics, in order: the guide's sections, then what's new, the credits, the licences and Godot's components.</summary>
         public IReadOnlyList<string> PageIds => _pages.Select(p => p.Id).ToList();
 
         /// <summary>The topic showing.</summary>
@@ -131,6 +133,36 @@ namespace AP_Atlas.UI
                 if (lines.Count == most) break;
             }
             return lines;
+        }
+
+        /// <summary>
+        /// Godot's own notices, as the engine reports them: every component Godot bundles, with its copyright holders and
+        /// licence, then each licence's text. The same notices ship with every release as GODOT_COPYRIGHT.txt (the self-test
+        /// keeps that file in step with the engine).
+        /// </summary>
+        public static string GodotComponentsMarkdown()
+        {
+            var text = new System.Text.StringBuilder();
+            text.Append("## Godot's components\n\n");
+            text.Append("Atlas runs on Godot ").Append(Engine.GetVersionInfo()["string"].AsString())
+                .Append(", which is MIT-licensed and bundles the components below, each under its own licence. ")
+                .Append("These are the engine's own notices, as it reports them; the same notices ship with every release of Atlas as GODOT_COPYRIGHT.txt.\n\n");
+            foreach (var component in Engine.GetCopyrightInfo())
+            {
+                text.Append("### ").Append(component["name"].AsString()).Append("\n\n```\n");
+                foreach (var part in component["parts"].AsGodotArray())
+                {
+                    var details = part.AsGodotDictionary();
+                    foreach (var holder in details["copyright"].AsGodotArray()) text.Append("Copyright: ").Append(holder.AsString()).Append('\n');
+                    text.Append("Licence: ").Append(details["license"].AsString()).Append('\n');
+                }
+                text.Append("```\n\n");
+            }
+            text.Append("## Licence texts\n\n");
+            var licences = Engine.GetLicenseInfo();
+            foreach (var name in licences.Keys)
+                text.Append("### ").Append(name.AsString()).Append("\n\n```\n").Append(licences[name].AsString().TrimEnd()).Append("\n```\n\n");
+            return text.ToString();
         }
 
         private static string DisclaimerMarkdown() =>

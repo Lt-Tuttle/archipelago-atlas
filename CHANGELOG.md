@@ -49,6 +49,8 @@ Development toward the first public beta, 0.1.0.
   - `CREDITS.md` and `THIRD_PARTY_NOTICES.md` credit every component, service and inspiration, with license texts.
   - `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` and `docs/ARCHITECTURE.md`.
   - Guard rails (`Tools/check_guards.ps1`) run in CI.
+  - Release builds: `Tools/build_release.ps1` exports Atlas with Godot (the export preset committed, the export templates pinned by hash), refuses any export error or warning, checks the exe's version, properties and icon, runs the self-test and the UI test on the exported build itself, and packs `TheArchipelagoAtlas-<version>-win-x64.zip` with `SHA256SUMS.txt`. The release workflow runs it for every version tag, or by hand as a dry run. The program icon now comes in all six sizes Windows shows.
+  - Atlas starts with its own splash, the icon on a dark background, in place of Godot's logo. Godot's own notices (its copyright file for the engine version Atlas runs on, covering every component it bundles) ship with every release as `GODOT_COPYRIGHT.txt` and show under Help → Godot's components; the self-test checks the file matches the engine.
   - No test reaches a real site: the self-test's check that a download with the wrong hash is refused now uses a local server (it fetched a file from python.org).
   - Stricter checks on every change:
     - Any build warning is an error.

@@ -15,6 +15,29 @@ namespace AP_Atlas.Core
     /// <summary>Self-tests for the safety and privacy protections: links, secrets, permissions, downloads, GitHub, JSON, the user's install.</summary>
     public static partial class SelfTest
     {
+        /// <summary>
+        /// Godot is MIT-licensed, and the components it bundles have notices of their own. Atlas ships them as GODOT_COPYRIGHT.txt
+        /// (Godot's own file for the version Atlas runs on) and shows what the engine reports under Help; this keeps the file in
+        /// step with the engine, so a Godot update can't leave a stale file behind.
+        /// </summary>
+        private static void GodotNoticesShip()
+        {
+            string file = Docs.Read(Docs.GodotCopyright);
+            Expect(file.Contains("Files: *") && file.Contains("Comment: Godot Engine") && file.Contains("License: Expat"), "GODOT_COPYRIGHT.txt isn't Godot's copyright file");
+            var missing = new List<string>();
+            foreach (var component in Godot.Engine.GetCopyrightInfo())
+            {
+                string name = component["name"].AsString();
+                if (!file.Contains("Comment: " + name)) missing.Add(name);
+            }
+            foreach (var licence in Godot.Engine.GetLicenseInfo().Keys)
+            {
+                string name = licence.AsString();
+                if (!file.Contains("License: " + name)) missing.Add("licence " + name);
+            }
+            Expect(missing.Count == 0, $"the engine reports what the file doesn't have ({string.Join(", ", missing.Take(5))}): refresh GODOT_COPYRIGHT.txt from Godot's tag");
+        }
+
         private static void LinksOpenSafely()
         {
             Expect(ExternalLinks.CheckWeb("https://archipelago.gg/games", out var safe) == null && safe.StartsWith("https://archipelago.gg/"), "a normal https page was refused");

@@ -185,6 +185,19 @@ foreach ($pin in $pinned) {
     Write-Host "GUARD: $($pin.Package) is pinned at $($pin.Version) in $($pin.Project) ($($pin.Why)), but it's $now. Update it only with the checks in CONTRIBUTING." -ForegroundColor Red
     $broken++
 }
+
+# The export preset's file and product version are the project version's numbers (Tools/bump_version.ps1 writes both), so the
+# exe's properties say the version Atlas is.
+$propsVersion = [regex]::Match((Get-Content -Raw -LiteralPath (Join-Path $repo 'Directory.Build.props')), '<Version>([^<]*)</Version>').Groups[1].Value
+$expectedFileVersion = ($propsVersion -split '-')[0] + '.0'
+$presetText = Get-Content -Raw -LiteralPath (Join-Path $repo 'AP_Atlas_Source\export_presets.cfg')
+foreach ($key in 'application/file_version', 'application/product_version') {
+    $found = [regex]::Match($presetText, [regex]::Escape($key) + '="([^"]*)"')
+    if ($found.Success -and $found.Groups[1].Value -eq $expectedFileVersion) { continue }
+    $now = if ($found.Success) { $found.Groups[1].Value } else { 'missing' }
+    Write-Host "GUARD: export_presets.cfg has $key $now, but the project version is $propsVersion, so it must be $expectedFileVersion (Tools/bump_version.ps1 sets both)." -ForegroundColor Red
+    $broken++
+}
 # Nullable checks: classes whose files still start with "#nullable disable" predate them and are annotated as they're
 # reworked. Counted by class (the file name up to its first dot), so splitting a class into partial files doesn't
 # change the count. This number only goes down, and must match: lower it in the same change that migrates a class, so

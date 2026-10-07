@@ -62,6 +62,7 @@ Archipelago's Python packages, from [PyPI](https://pypi.org) (exact versions, ev
 | Microsoft.VisualStudio.Threading.Analyzers 18.7.23 (checks Atlas's async code while it's built) | Microsoft | https://github.com/microsoft/vs-threading | MIT |
 | xunit.v3 4.0.1 (runs the unit tests) | Jim Newkirk, Brad Wilson and the xUnit.net contributors | https://github.com/xunit/xunit | Apache-2.0 |
 | Microsoft.Testing.Platform (runs the unit tests under `dotnet test`) | Microsoft | https://github.com/microsoft/testfx | MIT |
+| Pillow 12.3 (made the program icon's sizes from `icon.png`, through `Tools/make_icon.py`) | Jeffrey A. Clark and contributors | https://python-pillow.github.io | MIT-CMU |
 
 ## Content you add
 

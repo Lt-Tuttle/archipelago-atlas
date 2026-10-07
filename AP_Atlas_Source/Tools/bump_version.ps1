@@ -4,7 +4,8 @@
 
 .DESCRIPTION
     Writes the new version to <Version> in Directory.Build.props (the one place it is set, shared by every project). In CHANGELOG.md it turns the
-    "## [Unreleased]" section into "## [<version>] - <today>" and opens a fresh, empty "## [Unreleased]" above it.
+    "## [Unreleased]" section into "## [<version>] - <today>" and opens a fresh, empty "## [Unreleased]" above it. In export_presets.cfg it
+    sets the exe's file and product version to the version's numbers (Windows takes numbers only: 0.1.0-beta.2 becomes 0.1.0.0).
     It then prints the git commands that commit and tag the release. Pushing the tag starts the release build.
 
 .EXAMPLE
@@ -40,7 +41,19 @@ $today = (Get-Date).ToString('yyyy-MM-dd')
 $log = [regex]::Replace($log, '(?m)^## \[Unreleased\]', "## [Unreleased]`r`n`r`n## [$Version] - $today", 1)
 [System.IO.File]::WriteAllText($changelog, $log, (New-Object System.Text.UTF8Encoding($false)))
 
-Write-Host "Version $old -> $Version (Directory.Build.props, CHANGELOG.md)." -ForegroundColor Green
+# The Windows export preset carries the version as the exe's file and product version: numbers only, the core and then .0.
+# The guard rails check these match Directory.Build.props, so a release can't ship with another version in its properties.
+$preset = Join-Path $project 'export_presets.cfg'
+$core = ($Version -split '-')[0]
+$cfg = [System.IO.File]::ReadAllText($preset)
+foreach ($key in 'application/file_version', 'application/product_version') {
+    $keyPattern = [regex]::Escape($key) + '="[^"]*"'
+    if (-not [regex]::IsMatch($cfg, $keyPattern)) { Write-Host "No $key found in export_presets.cfg." -ForegroundColor Red; exit 2 }
+    $cfg = [regex]::Replace($cfg, $keyPattern, "$key=""$core.0""")
+}
+[System.IO.File]::WriteAllText($preset, $cfg, (New-Object System.Text.UTF8Encoding($false)))
+
+Write-Host "Version $old -> $Version (Directory.Build.props, CHANGELOG.md, export_presets.cfg)." -ForegroundColor Green
 Write-Host 'Review the changelog section, then:'
 Write-Host "  git commit -am `"Release $Version`""
 Write-Host "  git tag -a v$Version -m `"The Archipelago Atlas $Version`""

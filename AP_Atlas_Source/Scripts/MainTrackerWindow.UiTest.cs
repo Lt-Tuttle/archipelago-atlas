@@ -960,6 +960,9 @@ public partial class MainTrackerWindow
             UiTestExpect(help.ShownText.Contains("Lt-Tuttle") && help.ShownText.Contains("Godot"), "Credits & disclaimer doesn't name the author and the credits");
             help.Select(AP_Atlas.UI.HelpWindow.Licences);
             UiTestExpect(help.ShownText.Contains("MIT License"), "the licences don't show Atlas's licence");
+            help.Select(AP_Atlas.UI.HelpWindow.GodotComponents);
+            UiTestExpect(help.ShownText.Contains("FreeType") && help.ShownText.Contains("Licence: Expat") && help.ShownText.Contains("Permission is hereby granted") && help.ShownText.Contains("GODOT_COPYRIGHT.txt"),
+                "Godot's components topic doesn't show the engine's components, their licences and the licence texts");
             // A second Help command uses the same window, at its topic.
             _commands.Run("help.whats-new");
             await UiTestWaitAsync(0.1);

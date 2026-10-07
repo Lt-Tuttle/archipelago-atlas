@@ -5,7 +5,7 @@ The Archipelago Atlas's own code is MIT-licensed (see LICENSE). It includes the 
 ## Godot Engine
 
 https://godotengine.org  
-License: MIT. Atlas runs on Godot. Godot itself includes third-party components with their own licenses; their notices are in Godot's COPYRIGHT.txt (https://github.com/godotengine/godot/blob/master/COPYRIGHT.txt), which release builds include.
+License: MIT. Atlas runs on Godot. Godot itself includes third-party components with their own licenses; their notices are Godot's COPYRIGHT.txt for the engine version Atlas runs on, which ships with every release as `GODOT_COPYRIGHT.txt` and is shown under Help → Godot's components, as the engine itself reports them.
 
 ```
 Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md).
