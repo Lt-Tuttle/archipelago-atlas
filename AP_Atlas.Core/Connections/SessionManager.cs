@@ -368,6 +368,12 @@ namespace AP_Atlas.Core.Connections
             session.Socket.SocketOpened += () => OnSocketOpened(session);
             var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             session.Socket.SocketClosed += _ => closed.TrySetResult();
+            // A connection that breaks without a close frame (reset, or dropped as the server ends) reports an error and is
+            // no longer open: that ends the login too, instead of the library's 4 s wait for an answer.
+            session.Socket.ErrorReceived += (_, _) =>
+            {
+                if (!IsOpen(session)) closed.TrySetResult();
+            };
 
             var attempt = TryLogInAsync(session, login, text, closed.Task);
             using var giveUp = CancellationTokenSource.CreateLinkedTokenSource(ct);

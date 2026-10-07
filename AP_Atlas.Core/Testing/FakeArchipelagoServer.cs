@@ -92,6 +92,9 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
     /// <summary>Close a connection (with a close frame) when it sends its login, instead of answering (a room shutting down).</summary>
     public bool CloseOnLogin { get; set; }
 
+    /// <summary>Reset a connection (no close frame) when it sends its login (a server that died, or a network that broke).</summary>
+    public bool ResetOnLogin { get; set; }
+
     /// <summary>Changes the room info as it's sent (a hostile or broken server), or null.</summary>
     public Func<JObject, JObject>? EditRoomInfo { get; set; }
 
@@ -303,6 +306,11 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
                         {
                             await SayAsync(socket, sending, (string?)packet["text"] ?? "");
                             continue;
+                        }
+                        if (cmd == "Connect" && ResetOnLogin)
+                        {
+                            Reset(client);
+                            return;
                         }
                         if (cmd == "Connect" && CloseOnLogin)
                         {

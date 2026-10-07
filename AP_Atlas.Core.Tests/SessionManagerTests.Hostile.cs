@@ -61,6 +61,22 @@ public sealed partial class SessionManagerTests
     }
 
     [Fact]
+    public async Task A_connection_that_breaks_in_the_middle_of_a_login_ends_the_attempt_at_once()
+    {
+        // No close frame, only an error from the socket: the login still ends at once, not after the library's 4 s.
+        await using var server = Server();
+        server.ResetOnLogin = true;
+        var manager = Manager(new SessionManagerOptions { LoginTimeout = TimeSpan.FromSeconds(10), ReconnectDelays = new[] { TimeSpan.FromSeconds(1) }, Jitter = 0 });
+        var started = Stopwatch.StartNew();
+
+        var result = await Connect(manager, Login(server));
+
+        Assert.Equal(ConnectOutcome.Unreachable, result.Outcome);
+        Assert.InRange(started.Elapsed, TimeSpan.Zero, TimeSpan.FromSeconds(3));
+        Assert.False(manager.IsLoggedIn(new SlotId("p1", "Tester")));
+    }
+
+    [Fact]
     public async Task A_login_naming_players_that_cant_be_is_made_usable()
     {
         await using var server = Server();
