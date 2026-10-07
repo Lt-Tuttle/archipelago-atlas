@@ -13,8 +13,9 @@ namespace AP_Atlas.Core.Connections
     /// <summary>
     /// Where Atlas creates its Archipelago sessions (a guard rail keeps it the only place). Every session keeps the games'
     /// names in Atlas's <see cref="DataPackageStore"/>: left alone, the connection library would read and write
-    /// %LocalAppData%\Archipelago\Cache, outside Atlas's folder, on every connection. And every session's connection
-    /// gives its thread back once Atlas is done with it (<see cref="Finished"/>, <see cref="LibraryThreads"/>).
+    /// %LocalAppData%\Archipelago\Cache, outside Atlas's folder, on every connection. Every session's packets are made
+    /// safe before the library reads them (<see cref="ServerPackets"/>). And every session's connection gives its thread
+    /// back once Atlas is done with it (<see cref="Finished"/>, <see cref="LibraryThreads"/>).
     /// </summary>
     /// <remarks>
     /// The library has no setting for this, so Atlas fills in the one part it would otherwise create itself: a session's
@@ -24,18 +25,22 @@ namespace AP_Atlas.Core.Connections
     /// </remarks>
     public static class AtlasSessions
     {
-        /// <summary>A new session (not connected yet) for a server address as the user typed it ("host:port", "wss://…").</summary>
-        /// <exception cref="NotSupportedException">This version of the connection library can't keep its data in Atlas's folder.</exception>
-        public static ArchipelagoSession Create(string server, DataPackageStore store) =>
-            Prepared(ArchipelagoSessionFactory.CreateSession(server), store);
+        /// <summary>
+        /// A new session (not connected yet) for a server address as the user typed it ("host:port", "wss://…"), logging in
+        /// to <paramref name="slot"/> (named in the log).
+        /// </summary>
+        /// <exception cref="NotSupportedException">This version of the connection library can't keep its data in Atlas's folder, or have its packets checked first.</exception>
+        public static ArchipelagoSession Create(string server, DataPackageStore store, string slot = "") =>
+            Prepared(ArchipelagoSessionFactory.CreateSession(server), store, slot);
 
-        /// <inheritdoc cref="Create(string, DataPackageStore)"/>
-        public static ArchipelagoSession Create(Uri server, DataPackageStore store) =>
-            Prepared(ArchipelagoSessionFactory.CreateSession(server), store);
+        /// <inheritdoc cref="Create(string, DataPackageStore, string)"/>
+        public static ArchipelagoSession Create(Uri server, DataPackageStore store, string slot = "") =>
+            Prepared(ArchipelagoSessionFactory.CreateSession(server), store, slot);
 
-        private static ArchipelagoSession Prepared(ArchipelagoSession session, DataPackageStore store)
+        private static ArchipelagoSession Prepared(ArchipelagoSession session, DataPackageStore store, string slot)
         {
             LibraryCache.Attach(session, store);
+            ServerPackets.Install(session, slot);
             LibraryThreads.Watch(session);
             return session;
         }

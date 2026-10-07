@@ -89,6 +89,18 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
     /// <summary>How long to wait before answering a login.</summary>
     public TimeSpan LoginDelay { get; set; }
 
+    /// <summary>Close a connection (with a close frame) when it sends its login, instead of answering (a room shutting down).</summary>
+    public bool CloseOnLogin { get; set; }
+
+    /// <summary>Changes the room info as it's sent (a hostile or broken server), or null.</summary>
+    public Func<JObject, JObject>? EditRoomInfo { get; set; }
+
+    /// <summary>Changes a login's answer (Connected) as it's sent: given the slot's name and the packet. Or null.</summary>
+    public Func<string, JObject, JObject>? EditConnected { get; set; }
+
+    /// <summary>Changes a data package as it's sent, or null.</summary>
+    public Func<JObject, JObject>? EditDataPackage { get; set; }
+
     // The holds below make an order a test needs certain, where a delay only makes it likely: the room's lines and a
     // client's own packets travel on different connections, so a client may see them in either order.
 
@@ -263,7 +275,7 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
                 }
                 var buffer = new byte[64 * 1024];
                 using var message = new MemoryStream();
-                if (!Silent) await SendAsync(socket, sending, new JArray(RoomInfo()));
+                if (!Silent) await SendAsync(socket, sending, new JArray(EditRoomInfo is { } editInfo ? editInfo(RoomInfo()) : RoomInfo()));
                 while (socket.State == WebSocketState.Open)
                 {
                     var result = await socket.ReceiveAsync(buffer, _stop.Token);
@@ -290,6 +302,13 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
                         if (cmd == "Say")
                         {
                             await SayAsync(socket, sending, (string?)packet["text"] ?? "");
+                            continue;
+                        }
+                        if (cmd == "Connect" && CloseOnLogin)
+                        {
+                            await sending.WaitAsync();
+                            try { await socket.CloseOutputAsync(WebSocketCloseStatus.EndpointUnavailable, "The room shut down.", CancellationToken.None); }
+                            finally { sending.Release(); }
                             continue;
                         }
                         if ((string?)packet["cmd"] == "SetNotify")
@@ -383,6 +402,26 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
     /// Text (PrintJSON only) goes, as on a real server, only to logged-in clients without NoText, on every team.
     /// </summary>
     public Task BroadcastAsync(params JObject[] packets) => SendToAsync(_ => true, packets);
+
+    /// <summary>
+    /// Sends a message exactly as given, to every open connection (logged in or not): text that needn't be JSON, or a binary
+    /// message. For tests of what a broken or hostile server may send.
+    /// </summary>
+    public async Task SendRawAsync(byte[] message, bool binary = false)
+    {
+        List<(WebSocket Socket, SemaphoreSlim Sending)> sockets;
+        lock (_sockets) sockets = _sockets.Where(entry => entry.Socket.State == WebSocketState.Open).ToList();
+        foreach (var (socket, sending) in sockets)
+        {
+            await sending.WaitAsync();
+            try { await socket.SendAsync(message, binary ? WebSocketMessageType.Binary : WebSocketMessageType.Text, true, CancellationToken.None); }
+            catch (Exception ex) when (ex is WebSocketException or ObjectDisposedException or IOException) { } // that client just left
+            finally { sending.Release(); }
+        }
+    }
+
+    /// <inheritdoc cref="SendRawAsync(byte[], bool)"/>
+    public Task SendRawAsync(string text) => SendRawAsync(Encoding.UTF8.GetBytes(text));
 
     /// <summary>Sends packets to one team's clients only, as a real server sends item lines (text skips NoText clients).</summary>
     public Task BroadcastToTeamAsync(int team, params JObject[] packets) => SendToAsync(client => client?.Team == team, packets);
@@ -729,7 +768,8 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
                             ["location_name_to_id"] = JObject.FromObject(game.Locations),
                             ["checksum"] = game.Checksum
                         };
-                return new JArray(new JObject { ["cmd"] = "DataPackage", ["data"] = new JObject { ["games"] = games } });
+                var package = new JObject { ["cmd"] = "DataPackage", ["data"] = new JObject { ["games"] = games } };
+                return new JArray(EditDataPackage is { } editPackage ? editPackage(package) : package);
             case "Get":
                 var keys = packet["keys"]?.ToObject<string[]>() ?? Array.Empty<string>();
                 var values = new JObject();
@@ -746,7 +786,8 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
                 Note("Connected " + name);
                 if (!Slots.Contains(name)) return new JArray(new JObject { ["cmd"] = "ConnectionRefused", ["errors"] = new JArray("InvalidSlot") });
                 // As a real server does: the login and the slot's items so far (the room hears it joined just after).
-                return new JArray(Connected(name), new JObject { ["cmd"] = "ReceivedItems", ["index"] = 0, ["items"] = new JArray() });
+                return new JArray(EditConnected is { } editConnected ? editConnected(name, Connected(name)) : Connected(name),
+                    new JObject { ["cmd"] = "ReceivedItems", ["index"] = 0, ["items"] = new JArray() });
             default:
                 return null;
         }

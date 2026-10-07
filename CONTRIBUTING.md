@@ -65,7 +65,7 @@ New code that doesn't need Godot belongs in `AP_Atlas.Core`, with tests. The vis
   | Web requests | `PoliteHttp` (`GitHubApi` for GitHub) |
   | Opening links and folders | `ExternalLinks` |
   | Anything outside Atlas's folder, or a new site | `Permissions` with `PermissionDialog` |
-  | Connecting to an Archipelago server | `SessionManager` (one connection at a time, time limits, careful reconnects; its sessions keep the games' names in Atlas's folder) |
+  | Connecting to an Archipelago server | `SessionManager` (one connection at a time, time limits, careful reconnects; its sessions keep the games' names in Atlas's folder and have what the server sends checked first by `ServerPackets`) |
   | Starting a program | `EngineInstall.StartInfo` or `AtlasEngine.SetupStartInfo` (keep its temporary files and caches in Atlas's folder); the updater's `UpdateLauncher` (the Atlas just installed, and the previous one as its supervisor) |
   | Secrets | `Secrets` |
   | Work nobody awaits (button handlers, background checks) | `Async.Fire(task, "what it's doing")`, never `async void` or `_ = …` |
@@ -117,7 +117,7 @@ New code that doesn't need Godot belongs in `AP_Atlas.Core`, with tests. The vis
   - Set such values only when they change. The UI test's "Idle" scenario checks a connected slot.
 - **Pinned libraries:** the guard rails pin MoonSharp (2.0.0) and Archipelago.MultiClient.Net (6.7.1), because Atlas relies on how they work inside. Dependabot may propose an update; CI then fails until it's done properly:
   - **MoonSharp:** the limits on pack scripts rely on its debugger hook seeing every step (nested calls and coroutines included), on its fixed stacks, on `table.sort` dropping errors that aren't Lua's, and on which library calls throw .NET exceptions. Re-check each against the new version's source (decompile it), then run the pack script self-tests and the corpus check (`ATLAS_SELFTEST_PACKS`).
-- **Updating Archipelago.MultiClient.Net:** `AtlasSessions` relies on the library's internal data cache, and on how a connection's send loop ends once it's woken (see `LibraryThreads`). The unit tests check both, and that the library reaches nothing else on the PC. If they fail, look at what changed before using the new version.
+- **Updating Archipelago.MultiClient.Net:** `AtlasSessions` relies on the library's internal data cache, on its socket keeping its packet listeners in a field (`ServerPackets` puts itself first there), and on how a connection's send loop ends once it's woken (see `LibraryThreads`). `ServerPackets` also mirrors what the library assumes of a packet (its player table, its slot info lookups); read the library's packet handlers for new assumptions. The unit tests check both, and that the library reaches nothing else on the PC. If they fail, look at what changed before using the new version.
 - **The logic engine's channel:** an engine's standard output carries answers only, each with its request's id; Atlas takes nothing else for an answer. Bridge components write answers with `send()`, and everything that prints goes to standard error (the runner and `protect_channel()` see to it), which Atlas logs. A bridge that can't load says so with `{"event": "boot_failed"}`.
 - **Map pack scripts:** each piece of a pack's scripts' work runs under limits (see `ScriptLimits` in `PackScriptHost`). Keep it that way when adding to the PopTracker API:
   - Make each function the scripts can call with `Callback`, so its failures are Lua errors.

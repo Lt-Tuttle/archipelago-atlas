@@ -295,6 +295,12 @@ namespace AP_Atlas.Core.Connections
     /// </summary>
     internal sealed class SlotInbox
     {
+        /// <summary>
+        /// The most lines kept until the window takes over (it does so moments after the login): a server's flood meanwhile
+        /// keeps the newest.
+        /// </summary>
+        internal const int MaxEarly = 2_000;
+
         private readonly object _lock = new();
         private readonly List<LogMessage> _early = new();
         private Action<LogMessage>? _receive;
@@ -315,6 +321,7 @@ namespace AP_Atlas.Core.Connections
                 if (receive == null)
                 {
                     _early.Add(message);
+                    if (_early.Count > MaxEarly) _early.RemoveRange(0, _early.Count - MaxEarly);
                     return;
                 }
             }
@@ -325,7 +332,11 @@ namespace AP_Atlas.Core.Connections
         public void Preload(IReadOnlyCollection<LogMessage> messages)
         {
             lock (_lock)
-                if (!_closed && _receive == null) _early.AddRange(messages);
+            {
+                if (_closed || _receive != null) return;
+                _early.AddRange(messages);
+                if (_early.Count > MaxEarly) _early.RemoveRange(0, _early.Count - MaxEarly);
+            }
         }
 
         /// <summary>Returns the lines kept so far, and passes each later one to <paramref name="receive"/>. Only the first call takes over.</summary>

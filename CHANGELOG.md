@@ -192,6 +192,12 @@ Development toward the first public beta, 0.1.0.
 - **Dependencies:** Archipelago.MultiClient.Net 6.7.1 and Newtonsoft.Json 13.0.4 now come from NuGet, instead of copied DLLs.
 
 ### Security
+- **A server can't crash Atlas, freeze it or fill its memory or log with what it sends.** Atlas takes whatever an Archipelago server, or anyone on a room's port, sends:
+  - Every packet is checked before the connection library reads it (`ServerPackets`). A login naming a player numbered in the billions made the library set aside gigabytes; one with a player missing from the slot info, or a gap in the numbers, left it with no players or with empty places every later lookup failed on; a room listing thousands of games made Atlas ask for each one's names; a scout's answer naming a location twice left the scout waiting for good. Players outside 16 teams of 10,000 slots are left out, gaps get a stand-in "Player <number>", the slot info is filled in, names are cut at 500 characters, a room's games are taken up to 1,000 (each once), and a data package's missing parts are made empty. What was changed is logged once per connection.
+  - Messages the library can't read (not JSON, binary, unknown) leave the slot connected; the first is logged, then at most one line every 30 seconds with how many came meanwhile.
+  - A room that closes in the middle of a login ends the attempt at once (the library waited 4 seconds for an answer).
+  - The lines a slot keeps until its window takes them over are capped at the newest 2,000.
+  - The UI test's Hostile server scenario sends all of it at once (5,000 items and 2,000 hints with unknown numbers, 5,000 lines, 5,000 bounces, 10,000 checks, 100 unreadable messages, names of 100,000 characters): the slot stays connected, no frame holds 150 ms of Atlas's work as it arrives or as a tool shows it, and the log holds one line about it. Item History and Hints still lay out every row when shown, which takes longer with thousands of rows (half a second for 5,000 items).
 - **No text from outside Atlas can freeze its window.** A game's names, another player's chat, a hint's entrance, a log line quoting any of them: each was laid out whole, in time that grew with the square of its length.
   - A megabyte-long item name froze Atlas for five minutes. 8,000 characters of another player's chat, or of `!players` in a big room, took five seconds in a short text client.
   - A paragraph of rich text longer than 300 characters now wraps at spaces, not with Godot's "word smart" wrapping, which breaks words too wide for a line in time that grows with the square of the paragraph's length: 8,000 characters went from 4.9 seconds to 0.16. Shorter text wraps as before, so a server's address still breaks to fit a narrow column. A run of more than 64 characters without a space gets invisible breaks (zero-width spaces), so it still wraps.
@@ -241,6 +247,8 @@ Development toward the first public beta, 0.1.0.
   - An image you choose for a Pack Doctor fix is checked the same way before it's copied.
 
 ### Fixed
+- Connecting a slot after looking at a multiworld of several slots logged an error for each connection: the connecting overlay reached for the freed Connect All button.
+- An update's download progress reached the status bar from the download's thread (Godot reported an error for each line); it's now shown from the main thread.
 - **Deleting a slot asks first** (as deleting a multiworld and a map pack did), and the multiworld's confirmation says what goes with it.
 - **Go mode is shown:** the slot's card says "Go mode!", the Logic Tracker says it above its list, and Properties has a Goal row, once the goal is in logic.
 - **Key Items said nothing while logic wasn't running;** it now says what the Logic Tracker says (the engine's problem, race mode, or that the engine is starting).

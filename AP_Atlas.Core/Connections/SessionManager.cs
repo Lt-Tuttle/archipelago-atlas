@@ -327,7 +327,7 @@ namespace AP_Atlas.Core.Connections
                 try
                 {
                     ArchipelagoSession session;
-                    try { session = AtlasSessions.Create(login.Server, _store); }
+                    try { session = AtlasSessions.Create(login.Server, _store, login.Slot.SlotName); }
                     catch (Exception ex) when (ex is NotSupportedException or ArgumentException or FormatException)
                     {
                         return new ConnectResult(ConnectOutcome.Failed, ex.Message);
@@ -457,8 +457,13 @@ namespace AP_Atlas.Core.Connections
                 {
                     if (!_open.Contains(session)) return new LoginFailure("Atlas closed the connection before it logged in.");
                 }
-                return await session.LoginAsync("", login.Slot.SlotName, ItemsHandlingFlags.AllItems, new Version(0, 5, 0),
-                    text ? TextTags : QuietTags, null, string.IsNullOrEmpty(login.Password) ? null : login.Password, true).ConfigureAwait(false);
+                var loggingIn = session.LoginAsync("", login.Slot.SlotName, ItemsHandlingFlags.AllItems, new Version(0, 5, 0),
+                    text ? TextTags : QuietTags, null, string.IsNullOrEmpty(login.Password) ? null : login.Password, true);
+                // The library waits for an answer for 4 seconds even when the server closed the connection meanwhile (a
+                // room shutting down): a close ends the login at once.
+                if (await Task.WhenAny(loggingIn, closed).ConfigureAwait(false) != loggingIn)
+                    return new LoginFailure("The connection closed before the server answered the login.");
+                return await loggingIn.ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -564,12 +569,39 @@ namespace AP_Atlas.Core.Connections
             OnDropped(slot.Slot, string.IsNullOrWhiteSpace(reason) ? "the server closed the connection" : reason);
         }
 
+        /// <summary>How often a connection's socket errors are reported after its first: the ones between are counted.</summary>
+        internal static readonly TimeSpan SocketErrorSpacing = TimeSpan.FromSeconds(30);
+
+        // Each connection's socket errors since the last one reported. Guarded by _lock.
+        private sealed class ErrorTally
+        {
+            public DateTime? LastReported; // a SteadyClock time
+            public int Unreported;
+        }
+
+        private readonly ConditionalWeakTable<ArchipelagoSession, ErrorTally> _errors = new();
+
         private void OnSocketError(ArchipelagoSession session, SlotId slot, string message)
         {
-            // A connection Atlas is done with reports a closed socket when its send loop ends (AtlasSessions.Finished): not news.
+            int skipped;
             lock (_lock)
+            {
+                // A connection Atlas is done with reports a closed socket when its send loop ends (AtlasSessions.Finished): not news.
                 if (!_open.Contains(session)) return;
-            Raise(() => SocketError?.Invoke(slot, message), "reporting a socket error");
+                // A server that sends a stream of packets the library can't read (each is an error) is reported once, then at
+                // most every SocketErrorSpacing with a count, so it can't fill the log or keep the window busy.
+                var tally = _errors.GetValue(session, _ => new ErrorTally());
+                if (tally.LastReported is { } last && SteadyClock.UtcNow - last < SocketErrorSpacing)
+                {
+                    tally.Unreported++;
+                    return;
+                }
+                skipped = tally.Unreported;
+                tally.Unreported = 0;
+                tally.LastReported = SteadyClock.UtcNow;
+            }
+            string text = skipped > 0 ? $"{message} (and {skipped} more since the last one reported)" : message;
+            Raise(() => SocketError?.Invoke(slot, text), "reporting a socket error");
         }
 
         private void OnDropped(SlotId slot, string reason)

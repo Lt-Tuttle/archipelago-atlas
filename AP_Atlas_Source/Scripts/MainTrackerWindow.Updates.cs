@@ -62,7 +62,8 @@ public partial class MainTrackerWindow
             Notice = (text, kind, actionText, action) => ShowToast(text,
                 kind == NoticeKind.Error ? AP_Atlas.Core.ThemeColors.Error : kind == NoticeKind.Warning ? AP_Atlas.Core.ThemeColors.Warning : AP_Atlas.Core.ThemeColors.Info,
                 actionText, action),
-            Status = text => { if (text.Length > 0) ShowStatus(text); },
+            // A download reports its progress from its own thread: the status bar is changed on the main thread.
+            Status = text => AP_Atlas.UI.Ui.Defer(this, () => { if (text.Length > 0) ShowStatus(text); }),
             ShowRelease = ShowReleaseNotes,
             RequestRestart = RestartToUpdate,
             OpenWeb = url => { if (!AP_Atlas.Core.ExternalLinks.OpenWeb(url)) ShowToast(Tr("Couldn't open the link."), AP_Atlas.Core.ThemeColors.Error); }

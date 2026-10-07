@@ -17,6 +17,8 @@
         connection library's own cache is in %LocalAppData%).
       - Connecting a session: only SessionManager, which sets the time limit, closes everything when Atlas closes and
         reconnects politely (the self-test may create one it never connects).
+      - Listening to a session's packets ahead of the connection library: only ServerPackets, put there by AtlasSessions
+        for every session, which makes what a server sends safe before anything reads it.
       - Starting a program: only the engine's launch points (EngineInstall.StartInfo, AtlasEngine.SetupStartInfo), which
         keep its temporary files and caches in Atlas's folder, the updater's (UpdateLauncher: the Atlas just installed,
         and the previous one as its supervisor), and the self-test.
@@ -95,6 +97,8 @@ $rules = @(
     @{ Name = 'Handing work to the main thread without Ui.Defer'; Pattern = '\)\.CallDeferred\(\)'; Allowed = @('AP_Atlas_Source\Scripts\UI\Ui.cs') },
     @{ Name = 'Throwing away a call''s result (use Async.Fire for tasks)'; Pattern = '(?<!var\s)(?<![\w.])_\s*=\s*[^;=>]*\('; Allowed = @('AP_Atlas.Core\Async.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.Cheese.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.Spheres.cs') },
     @{ Name = 'Creating an Archipelago session outside AtlasSessions'; Pattern = 'ArchipelagoSessionFactory'; Allowed = @('AP_Atlas.Core\Connections\AtlasSessions.cs') },
+    @{ Name = 'Listening to packets ahead of the connection library outside ServerPackets'; Pattern = 'PacketReceivedHandler'; Allowed = @('AP_Atlas.Core\Connections\ServerPackets.cs') },
+    @{ Name = 'Installing the packet guard outside AtlasSessions'; Pattern = 'ServerPackets\.Install\s*\('; Allowed = @('AP_Atlas.Core\Connections\AtlasSessions.cs') },
     @{ Name = 'Connecting a session outside SessionManager'; Pattern = 'AtlasSessions\.Create\s*\(|TryConnectAndLogin|\.LoginAsync\s*\(|Session\w*\.ConnectAsync\s*\(\s*\)'
        Allowed = @('AP_Atlas.Core\Connections\SessionManager.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.Footprint.cs') },
     # Case-sensitive, so starting an engine process made at a launch point (process.Start()) isn't mistaken for one.

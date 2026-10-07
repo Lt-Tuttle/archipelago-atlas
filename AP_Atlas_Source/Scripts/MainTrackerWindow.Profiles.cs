@@ -265,6 +265,9 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         {
             child.QueueFree();
         }
+        // The Connect All button goes with the list; one is made again below only for a multiworld of several slots
+        // (the connecting overlay would otherwise reach for the freed one).
+        _connectAllBtn = null;
         if (_selectedProfile == null)
         {
             var watermark = new Label { Text = "Select a profile to edit slots.", HorizontalAlignment = HorizontalAlignment.Center, Modulate = new Godot.Color(0.5f, 0.5f, 0.5f) };

@@ -136,7 +136,7 @@ public partial class MainTrackerWindow
         await ScenarioAsync("Multiworlds page: a room link fills in the server address and the slots from the room's status page (asked first; never the room's page) and is kept; edits of a multiworld are kept when another is selected and written to disk; a slot's rename takes effect on Enter or on leaving the field, never per keystroke, and its saved stats follow it; after a reconnect gives up, one status read (at most every ten minutes) offers the room's new port, or says the room is asleep; a connection the server refuses shows as a card",
             MultiworldsPageAsync);
         await ScenarioAsync("Updates: nothing is asked of GitHub without the permission and the daily setting; with them, one read a day finds a newer version of the channel (an unchanged list is confirmed, never sent again) and offers it as a card with its notes; a download whose hash doesn't match the release's SHA256SUMS is refused and nothing is staged, a good one is staged ready for a restart; the swap moves the installed files aside and the release's in (PortableData untouched), the supervisor puts the previous version back when the new Atlas ends before its window and the Atlas put back says so, a started one confirms the note; a folder Atlas can't write to is said so",
-            UpdatesAsync);
+            UpdatesWithoutGodotErrorsAsync);
         await ScenarioAsync("Customization: a custom accent of any colour recolours Atlas, is saved, and its headings and links still read (the preset choice says Custom); colour-blind-safe colours are the theme's other palette, held to the contrast rule, saved and undone; the zoom choice, Ctrl+= and Ctrl+- scale the window and are saved; the pin shape is saved and every map redraws, a diamond being a square on its corner; the page Atlas opens on is saved and the last tool shown is remembered for it",
             CustomizationAsync);
         await ScenarioAsync("Tables: a click on a column's title sorts by it (the column's own first direction, then the other; the arrow says which), typed words narrow the rows, a column hides and shows, pinned rows stay on top, the rows export as TSV, Markdown, Discord parts and a CSV file, the sort and the hidden columns are saved, and unchanged rows are updated in place with the selection kept",
@@ -147,6 +147,8 @@ public partial class MainTrackerWindow
             BurstIsOneUpdateAsync, attempts: 2);
         await ScenarioAsync("Long text: a game's names and a hint's entrance of a megabyte, and a chat line of 100,000 characters without a space, hold up no frame for 150 ms, shown or not (names are cut to 500 characters; a long run of text gets breaks)",
             LongTextHoldsUpNothingAsync, attempts: 2);
+        await ScenarioAsync("Hostile server: a login naming players that can't be, messages that aren't JSON, thousands of items and hints with unknown numbers, floods of lines, bounces and checks, and a room update naming strangers leave the slot connected, hold up no frame for 150 ms as they arrive or as a tool shows them (the two long tables, Item History and Hints, are held to a ceiling for now), log no error and put one line about the unreadable messages in the log",
+            HostileServerAsync, attempts: 2);
         await ScenarioAsync("Room text: one connection per multiworld receives the room's text and every slot's text client shows each line once, named from that slot's view; a command typed into a quiet slot gets its answer; new hints show in the slots they concern; when the text slot leaves, another takes over",
             RoomTextReachesEverySlotAsync);
         await ScenarioAsync("Moving a slot's panel: out of the window and docked elsewhere, the slot keeps its connection, views and updates, and shows what arrived meanwhile",
@@ -1834,6 +1836,119 @@ public partial class MainTrackerWindow
         }
     }
 
+    private async Task HostileServerAsync()
+    {
+        // What no real server sends, all at once: the connection library and Atlas must take it without a crash, a freeze
+        // or a flood of log lines (the unit tests, SessionManagerTests.Hostile.cs, take each kind apart).
+        await using var server = new FakeArchipelagoServer();
+        server.Games["Test Game"] = new FakeGame("4057113e4057113e4057113e4057113e4057113e",
+            new Dictionary<string, long> { ["Sword"] = 1000, ["Shield"] = 1001 }, new Dictionary<string, long> { ["Chest"] = 2000, ["Cave"] = 2001 });
+        string longName = new('n', 100_000);
+        server.EditConnected = (_, connected) =>
+        {
+            connected["players"] = new JArray(
+                new JObject { ["team"] = 0, ["slot"] = 1, ["name"] = "Tester", ["alias"] = "Tester" },
+                new JObject { ["team"] = 0, ["slot"] = 2_000_000_000, ["name"] = "Huge", ["alias"] = "Huge" },
+                new JObject { ["team"] = 5_000, ["slot"] = 1, ["name"] = "Far", ["alias"] = "Far" },
+                new JObject { ["team"] = 0, ["slot"] = 4, ["name"] = longName, ["alias"] = longName });
+            return connected;
+        };
+        var profile = new MultiworldProfile { Name = "UI test (hostile server)", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Tester");
+        _profiles.Add(profile);
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        int socketErrors = 0, errors = 0;
+        void Count(string line, string level)
+        {
+            if (line.Contains("Socket Error", StringComparison.Ordinal)) System.Threading.Interlocked.Increment(ref socketErrors);
+            if (level == "ERROR") System.Threading.Interlocked.Increment(ref errors);
+        }
+        AP_Atlas.Core.Logger.OnLogMessage += Count;
+        try
+        {
+            // Shown after a multiworld of several slots (whose slot list has a Connect All button), as in the full run: the
+            // connecting overlay once reached for that freed button and logged an error for every connection.
+            var several = new MultiworldProfile { Name = "UI test (several slots)", ServerUrl = server.Url.ToString() };
+            several.Slots.Clear();
+            several.Slots.AddRange(new[] { "One", "Two" });
+            _profiles.Add(several);
+            SelectProfile(several);
+            await UiTestWaitAsync(0.1);
+            SelectProfile(profile);
+            DeleteProfile(several);
+            await UiTestWaitAsync(0.1);
+            await OnConnectSlotPressedAsync("Tester", profile);
+            var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
+            await UiTestWaitAsync(0.5);
+            AP_Atlas.Core.HitchMonitor.ResetWorst();
+            // The fake server runs inside Atlas: what it sends is written on a thread of its own, so the frames measure Atlas's work only.
+            await Task.Run(async () =>
+            {
+                for (int i = 0; i < 100; i++) await server.SendRawAsync("not json " + i);
+                // 5,000 items: repeated, unknown, negative, from players nobody is.
+                var items = Enumerable.Range(0, 5_000).Select(i => new JObject
+                {
+                    ["item"] = (i % 4) switch { 0 => 1000L, 1 => 990_000L + i, 2 => -i, _ => 1001L },
+                    ["location"] = (i % 3) switch { 0 => 2000L, 1 => 880_000L + i, _ => -i },
+                    ["player"] = (i % 5) switch { 0 => 1, 1 => 77, 2 => 0, 3 => -3, _ => 4 },
+                    ["flags"] = i % 8,
+                    ["class"] = "NetworkItem"
+                });
+                await server.SendToSlotAsync("Tester", new JObject { ["cmd"] = "ReceivedItems", ["index"] = 0, ["items"] = new JArray(items) });
+                await server.AddHintsAsync(Enumerable.Range(0, 2_000).Select(i =>
+                    FakeArchipelagoServer.Hint(1, 1, 770_000 + i, 660_000 + i, found: i % 2 == 0, status: i % 5, entrance: i % 100 == 0 ? longName : "")).ToArray());
+                await server.BroadcastAsync(Enumerable.Range(0, 5_000).Select(i => server.Chat("flood " + i)).ToArray());
+                await server.SendToSlotAsync("Tester", Enumerable.Range(0, 5_000).Select(i => new JObject { ["cmd"] = "Bounced", ["tags"] = new JArray("DeathLink"), ["data"] = new JObject { ["source"] = i == 0 ? longName : "Someone" } }).ToArray());
+                await server.SendToSlotAsync("Tester", new JObject
+                {
+                    ["cmd"] = "RoomUpdate",
+                    ["checked_locations"] = new JArray(Enumerable.Range(0, 10_000).Select(i => 550_000L + i)),
+                    ["players"] = new JArray(new JObject { ["team"] = 3, ["slot"] = 9, ["name"] = "Stranger", ["alias"] = "Stranger" })
+                });
+            });
+            await UiTestWaitForAsync(() => slot.Session.Items.AllItemsReceived.Count == 5_000 && slot.Model.CurrentHints?.Length == 2_000 &&
+                slot.ChatHistory.Any(e => e.APMessage?.ToString().EndsWith("flood 4999", StringComparison.Ordinal) == true) ? slot : null,
+                "the items, the hints and the flood of lines", seconds: 60);
+            await UiTestWaitAsync(0.5);
+            var steps = new List<(string What, double WorkMs, string Report)> { ("arriving", AP_Atlas.Core.HitchMonitor.WorstWorkMs, AP_Atlas.Core.HitchMonitor.WorstWorkReport) };
+            foreach (var tool in new[] { AP_Atlas.UI.Tool.ItemHistory, AP_Atlas.UI.Tool.Hints, AP_Atlas.UI.Tool.LogicTracker, AP_Atlas.UI.Tool.KeyItems, AP_Atlas.UI.Tool.MapTracker, AP_Atlas.UI.Tool.Connections })
+            {
+                AP_Atlas.Core.HitchMonitor.ResetWorst();
+                host.ShowTool(tool);
+                await UiTestWaitAsync(0.5);
+                steps.Add((tool.Title, AP_Atlas.Core.HitchMonitor.WorstWorkMs, AP_Atlas.Core.HitchMonitor.WorstWorkReport));
+            }
+            AP_Atlas.Core.HitchMonitor.ResetWorst();
+            ShowTextClient(slot);
+            await UiTestWaitAsync(0.5);
+            steps.Add(("the text client", AP_Atlas.Core.HitchMonitor.WorstWorkMs, AP_Atlas.Core.HitchMonitor.WorstWorkReport));
+            GD.Print("UITEST INFO Hostile server: the worst frame's work " + string.Join(", ", steps.Select(s => $"{s.What} {s.WorkMs:0} ms")));
+
+            UiTestExpect(_sessions.IsLoggedIn(new AP_Atlas.Core.Connections.SlotId(profile.Id, "Tester")), "the slot didn't stay connected");
+            var players = slot.Session.Players;
+            UiTestExpect(players.AllPlayers.All(p => p != null) && players.GetPlayerAlias(1) == "Tester" && players.GetPlayerAlias(4)?.Length == AP_Atlas.Core.Connections.NameLimits.MaxName,
+                "the login's players weren't made usable");
+            UiTestExpect(socketErrors == 1, $"the unreadable messages put {socketErrors} socket error line(s) in the log (one is expected)");
+            UiTestExpect(errors == 0, $"{errors} error line(s) were logged");
+            // Item History and Hints lay out a row per item and hint when shown: 5,000 and 2,000 rows take about 550 and 190 ms
+            // on the development PC, whoever sends them (a big slot of a real room too). Making those tables lay out only the
+            // rows on screen is a design change, asked about in the 2026-10-08 questions; until then they're held to a
+            // ceiling that catches anything worse than rows, and everything else to the frame budget.
+            var tables = steps.Where(s => s.What is "Item History" or "Hints").ToList();
+            var slowest = steps.Except(tables).MaxBy(s => s.WorkMs);
+            UiTestExpect(slowest.WorkMs < 150, $"a frame's work took {slowest.WorkMs:0} ms ({slowest.What}), garbage collection left out (the guard is 150 ms): {slowest.Report}");
+            var slowestTable = tables.MaxBy(s => s.WorkMs);
+            UiTestExpect(slowestTable.WorkMs < 2000, $"showing {slowestTable.What} took {slowestTable.WorkMs:0} ms (the ceiling is 2,000 ms): {slowestTable.Report}");
+        }
+        finally
+        {
+            AP_Atlas.Core.Logger.OnLogMessage -= Count;
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+            DeleteProfile(profile);
+        }
+    }
+
     private async Task BurstIsOneUpdateAsync()
     {
         await using var server = new FakeArchipelagoServer();
@@ -2856,6 +2971,25 @@ public partial class MainTrackerWindow
             .FirstOrDefault(s => IsInstanceValid(s) && !s.IsQueuedForDeletion() && s.ProfileId == profileId && s.SlotName == slotName);
 
     /// <summary>Waits (letting the window run) until <paramref name="find"/> returns something, for up to 20 seconds (or <paramref name="seconds"/>).</summary>
+    /// <summary>The Updates scenario, failing if Godot reports a misuse meanwhile (a download's progress once reached the status bar from the download's thread).</summary>
+    private async Task UpdatesWithoutGodotErrorsAsync()
+    {
+        int godotErrors = AP_Atlas.Core.GodotLog.Errors;
+        try
+        {
+            // What the updater says while it downloads comes from the download's thread.
+            await Task.Run(() => _updates!.Status("Downloading (a test line from another thread)"));
+            await UiTestWaitAsync(0.3);
+            UiTestExpect(_globalStatusLabel?.Text == "Downloading (a test line from another thread)", "the updater's status line from another thread didn't reach the status bar");
+            await UpdatesAsync();
+        }
+        finally
+        {
+            godotErrors = AP_Atlas.Core.GodotLog.Errors - godotErrors;
+        }
+        UiTestExpect(godotErrors == 0, $"Godot reported {godotErrors} error(s) (the log file has them)");
+    }
+
     private async Task UpdatesAsync()
     {
         string dataDir = DataManager.GetDataDirectory();

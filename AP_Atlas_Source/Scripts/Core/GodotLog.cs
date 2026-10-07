@@ -33,9 +33,15 @@ namespace AP_Atlas.Core
             _installed = null;
         }
 
+        private static int _errors;
+
+        /// <summary>How many errors Godot has reported so far (the UI test checks a scenario adds none).</summary>
+        public static int Errors => System.Threading.Volatile.Read(ref _errors);
+
         public override void _LogError(string function, string file, int line, string code, string rationale, bool editorNotify, int errorType,
             Godot.Collections.Array<ScriptBacktrace> scriptBacktraces)
         {
+            if (errorType != (int)ErrorType.Warning) System.Threading.Interlocked.Increment(ref _errors);
             try
             {
                 string what = string.IsNullOrEmpty(rationale) ? code : rationale;
