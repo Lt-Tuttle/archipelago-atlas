@@ -139,7 +139,7 @@ public partial class MainTrackerWindow
             UpdatesWithoutGodotErrorsAsync);
         await ScenarioAsync("Customization: a custom accent of any colour recolours Atlas, is saved, and its headings and links still read (the preset choice says Custom); colour-blind-safe colours are the theme's other palette, held to the contrast rule, saved and undone; the zoom choice, Ctrl+= and Ctrl+- scale the window and are saved; the pin shape is saved and every map redraws, a diamond being a square on its corner; the page Atlas opens on is saved and the last tool shown is remembered for it",
             CustomizationAsync);
-        await ScenarioAsync("Tables: a click on a column's title sorts by it (the column's own first direction, then the other; the arrow says which), typed words narrow the rows, a column hides and shows, pinned rows stay on top, the rows export as TSV, Markdown, Discord parts and a CSV file, the sort and the hidden columns are saved, and unchanged rows are updated in place with the selection kept",
+        await ScenarioAsync("Tables: a click on a column's title sorts by it (the column's own first direction, then the other; the arrow says which), typed words narrow the rows, a column hides and shows, pinned rows stay on top, the rows export as TSV, Markdown, Discord parts and a CSV file, the sort and the hidden columns are saved, and unchanged rows are updated in place with the selection kept; thousands of rows lay out only the ones on screen (a frame no longer than a few rows take), which the scroll bar, the wheel and the keys move through",
             TablesAsync);
         await ScenarioAsync("Confirmations and empty states: deleting a slot or a multiworld asks first and cancelling keeps them; without the logic engine, Key Items and the Logic Tracker both say what logic needs; go mode isn't claimed while unknown",
             ConfirmationsAndEmptyStatesAsync);
@@ -147,7 +147,7 @@ public partial class MainTrackerWindow
             BurstIsOneUpdateAsync, attempts: 2);
         await ScenarioAsync("Long text: a game's names and a hint's entrance of a megabyte, and a chat line of 100,000 characters without a space, hold up no frame for 150 ms, shown or not (names are cut to 500 characters; a long run of text gets breaks)",
             LongTextHoldsUpNothingAsync, attempts: 2);
-        await ScenarioAsync("Hostile server: a login naming players that can't be, messages that aren't JSON, thousands of items and hints with unknown numbers, floods of lines, bounces and checks, and a room update naming strangers leave the slot connected, hold up no frame for 150 ms as they arrive or as a tool shows them (the two long tables, Item History and Hints, are held to a ceiling for now), log no error and put one line about the unreadable messages in the log",
+        await ScenarioAsync("Hostile server: a login naming players that can't be, messages that aren't JSON, thousands of items and hints with unknown numbers, floods of lines, bounces and checks, and a room update naming strangers leave the slot connected, hold up no frame for 150 ms as they arrive or as a tool shows them, log no error and put one line about the unreadable messages in the log; a scout the server never answers is given up after a time and asked again next time",
             HostileServerAsync, attempts: 2);
         await ScenarioAsync("Room text: one connection per multiworld receives the room's text and every slot's text client shows each line once, named from that slot's view; a command typed into a quiet slot gets its answer; new hints show in the slots they concern; when the text slot leaves, another takes over",
             RoomTextReachesEverySlotAsync);
@@ -635,7 +635,8 @@ public partial class MainTrackerWindow
             UiTestExpect(ShownContent() == _sphereTab, "the old key still works after a rebind");
             await PressAsync("F1");
             var shortcuts = await UiTestWaitForAsync(() => GetChildren().OfType<AcceptDialog>().FirstOrDefault(d => d.Title == "Keyboard Shortcuts"), "the shortcuts dialog");
-            var rows = Rows(shortcuts.FindChildren("*", nameof(Tree), true, false).OfType<Tree>().First());
+            // The table lays out only the rows on screen: the list is its shown rows.
+            var rows = shortcuts.FindChildren("Table_keys", "", true, false).OfType<AP_Atlas.UI.AtlasTable>().First().ShownRows.Select(r => r.Cells.Select(c => c.Text).ToArray()).ToList();
             UiTestExpect(rows.Any(r => r[0] == "Map Packs" && r[1] == "Ctrl+F6") && rows.Any(r => r[0] == "Map Tracker" && r[1] == "Ctrl+1"),
                 "the shortcuts list doesn't show the keys as they are now");
             shortcuts.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
@@ -1022,7 +1023,9 @@ public partial class MainTrackerWindow
         UiTestExpect(feed.Log.Unseen > 0, "nothing counts as unseen before the window opens");
         _commands!.Run("window.notifications");
         var dialog = await UiTestWaitForAsync(() => GetChildren().OfType<AP_Atlas.UI.NotificationsDialog>().FirstOrDefault(), "the Notifications window");
-        var rows = Rows(dialog.FindChildren("*", nameof(Tree), true, false).OfType<Tree>().First());
+        // The table lays out only the rows on screen: the history is its shown rows.
+        var table = dialog.FindChildren("Table_notifications", "", true, false).OfType<AP_Atlas.UI.AtlasTable>().First();
+        var rows = table.ShownRows.Select(r => r.Cells.Select(c => c.Text).ToArray()).ToList();
         UiTestExpect(rows.Count == feed.Log.Entries.Count && rows[0][2] == "close me" && rows[0][1] == "Error" && feed.Log.Unseen == 0,
             $"the window shows {rows.Count} rows (the log has {feed.Log.Entries.Count}), the first \"{(rows.Count > 0 ? rows[0][2] : "")}\", unseen {feed.Log.Unseen}");
         dialog.EmitSignal(AcceptDialog.SignalName.CustomAction, "clear");
@@ -1504,6 +1507,47 @@ public partial class MainTrackerWindow
         table.MaxRows = 2;
         table.Render();
         UiTestExpect(table.ShownRows.Count == 2 && table.CountLabel.Text.Contains("showing the first 2"), $"the row limit isn't applied or said: {table.CountLabel.Text}");
+        table.MaxRows = int.MaxValue;
+
+        // Only the rows on screen are laid out: 3,000 rows make as many tree items as fit, the scroll bar stands for them all,
+        // and showing them costs a frame no more than a few rows do.
+        table.CustomMinimumSize = new Vector2(700, 420);
+        await UiTestWaitAsync(0.2); // laid out at its new size
+        var many = Enumerable.Range(0, 3000).Select(i => Row($"r{i}", $"Row {i:D4}", i, $"note {i}")).ToList();
+        table.SortBy("count");
+        table.SortBy("count"); // the second click: upward, r0 first
+        AP_Atlas.Core.HitchMonitor.ResetWorst();
+        table.SetRows(many);
+        await UiTestWaitAsync(0.3); // the rows are measured a frame later and the window fitted
+        double manyMs = AP_Atlas.Core.HitchMonitor.WorstWorkMs;
+        int items = table.Tree.GetRoot()!.GetChildCount();
+        UiTestExpect(table.ShownRows.Count == 3000 && items >= 3 && items <= table.VisibleRowCount && items < 100,
+            $"3,000 rows made {items} tree items (expected the rows on screen, {table.VisibleRowCount})");
+        UiTestExpect(table.Scroll.Visible && (int)table.Scroll.MaxValue == 3000 && (int)table.Scroll.Page == table.VisibleRowCount, $"the scroll bar doesn't stand for every row ({table.Scroll.MaxValue}, page {table.Scroll.Page})");
+        UiTestExpect(manyMs < 100, $"3,000 rows took {manyMs:0} ms of a frame to show");
+        UiTestExpect(table.RowAt(table.Tree.GetRoot()!.GetFirstChild())?.Key == "r0" && table.ExportText(AP_Atlas.Core.ExportFormat.Tsv).Split('\n').Length >= 3001, "the first row isn't on screen, or the export lost rows that aren't");
+        // Scrolling (the table's call, the bar) changes which rows the items hold; the end clamps.
+        table.ScrollTo(1500);
+        UiTestExpect(table.FirstShownIndex == 1500 && table.RowAt(table.Tree.GetRoot()!.GetFirstChild())?.Key == "r1500", $"scrolling to row 1,500 shows row {table.FirstShownIndex} first");
+        table.Scroll.Value = 2999;
+        int last = 3000 - table.VisibleRowCount;
+        UiTestExpect(table.FirstShownIndex == last && table.RowAt(table.Tree.GetRoot()!.GetFirstChild())?.Key == $"r{last}", $"the scroll bar's end shows row {table.FirstShownIndex} first (expected {last})");
+        // Selecting a row far away brings it on screen with the selection on it; Down on the last row on screen scrolls one.
+        string? picked = null;
+        table.SelectionChanged += row => picked = row?.Key;
+        table.Select("r42", scrollTo: true);
+        UiTestExpect(table.Selected?.Key == "r42" && table.RowAt(table.Tree.GetSelected())?.Key == "r42" && table.FirstShownIndex <= 42 && 42 < table.FirstShownIndex + table.VisibleRowCount && picked == null,
+            $"selecting row 42 didn't bring it on screen with the selection (first {table.FirstShownIndex}; a pick was reported: {picked != null})");
+        int bottom = table.FirstShownIndex + table.VisibleRowCount - 1;
+        table.Select($"r{bottom}");
+        int firstBefore = table.FirstShownIndex;
+        table.Tree.EmitSignal(Control.SignalName.GuiInput, new InputEventKey { Keycode = Key.Down, Pressed = true });
+        UiTestExpect(table.FirstShownIndex == firstBefore + 1 && picked == $"r{bottom + 1}" && table.RowAt(table.Tree.GetSelected())?.Key == $"r{bottom + 1}",
+            $"Down on the bottom row didn't scroll one row and pick the next (first {table.FirstShownIndex}, picked {picked})");
+        table.Tree.EmitSignal(Control.SignalName.GuiInput, new InputEventKey { Keycode = Key.End, Pressed = true });
+        UiTestExpect(picked == "r2999" && table.FirstShownIndex == last, "End didn't pick the last row and scroll to it");
+        table.Tree.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.WheelUp, Pressed = true, Factor = 1 });
+        UiTestExpect(table.FirstShownIndex == last - 3, $"the wheel didn't scroll three rows up ({table.FirstShownIndex})");
         table.QueueFree();
         await UiTestWaitAsync(0.1);
     }
@@ -1851,6 +1895,8 @@ public partial class MainTrackerWindow
                 new JObject { ["team"] = 0, ["slot"] = 2_000_000_000, ["name"] = "Huge", ["alias"] = "Huge" },
                 new JObject { ["team"] = 5_000, ["slot"] = 1, ["name"] = "Far", ["alias"] = "Far" },
                 new JObject { ["team"] = 0, ["slot"] = 4, ["name"] = longName, ["alias"] = longName });
+            connected["checked_locations"] = new JArray(2000);
+            connected["missing_locations"] = new JArray(2001);
             return connected;
         };
         var profile = new MultiworldProfile { Name = "UI test (hostile server)", ServerUrl = server.Url.ToString() };
@@ -1931,15 +1977,37 @@ public partial class MainTrackerWindow
                 "the login's players weren't made usable");
             UiTestExpect(socketErrors == 1, $"the unreadable messages put {socketErrors} socket error line(s) in the log (one is expected)");
             UiTestExpect(errors == 0, $"{errors} error line(s) were logged");
-            // Item History and Hints lay out a row per item and hint when shown: 5,000 and 2,000 rows take about 550 and 190 ms
-            // on the development PC, whoever sends them (a big slot of a real room too). Making those tables lay out only the
-            // rows on screen is a design change, asked about in the 2026-10-08 questions; until then they're held to a
-            // ceiling that catches anything worse than rows, and everything else to the frame budget.
-            var tables = steps.Where(s => s.What is "Item History" or "Hints").ToList();
-            var slowest = steps.Except(tables).MaxBy(s => s.WorkMs);
+            var slowest = steps.MaxBy(s => s.WorkMs);
             UiTestExpect(slowest.WorkMs < 150, $"a frame's work took {slowest.WorkMs:0} ms ({slowest.What}), garbage collection left out (the guard is 150 ms): {slowest.Report}");
-            var slowestTable = tables.MaxBy(s => s.WorkMs);
-            UiTestExpect(slowestTable.WorkMs < 2000, $"showing {slowestTable.What} took {slowestTable.WorkMs:0} ms (the ceiling is 2,000 ms): {slowestTable.Report}");
+
+            // Item History's class filters choose the rows: without Progression, the 2,500 items whose flags lack it.
+            host.ShowTool(AP_Atlas.UI.Tool.ItemHistory);
+            var historyTable = slot.ItemHistoryView.FindChildren("Table_item-history", "", true, false).OfType<AP_Atlas.UI.AtlasTable>().FirstOrDefault();
+            var progressionToggle = slot.ItemHistoryView.FindChildren("*", nameof(Button), true, false).OfType<Button>().FirstOrDefault(b => b.Text == "Progression");
+            UiTestExpect(historyTable != null && progressionToggle != null, "Item History's table or its Progression filter wasn't found");
+            progressionToggle!.ButtonPressed = false;
+            await UiTestWaitAsync(0.3);
+            UiTestExpect(historyTable!.ShownRows.Count == 2500 && historyTable.CountLabel.Text == "2,500 of 5,000 rows",
+                $"without Progression, Item History shows {historyTable.ShownRows.Count} rows ({historyTable.CountLabel.Text}); 2,500 of 5,000 expected");
+            progressionToggle.ButtonPressed = true;
+            await UiTestWaitAsync(0.3);
+            UiTestExpect(historyTable.ShownRows.Count == 5000, $"with every filter on, Item History shows {historyTable.ShownRows.Count} rows");
+
+            // A scout the server never answers (the fake doesn't) is given up after a time, and asked again the next time.
+            var scoutLimit = AP_Atlas.Core.SlotModel.ScoutTimeout;
+            AP_Atlas.Core.SlotModel.ScoutTimeout = TimeSpan.FromSeconds(1);
+            try
+            {
+                int scouts = server.Count("LocationScouts");
+                var scouted = await slot.Model.ScoutCheckedLocationAsync(2000).WaitAsync(TimeSpan.FromSeconds(5));
+                UiTestExpect(scouted == null && server.Count("LocationScouts") == scouts + 1, $"a scout the server never answers wasn't given up ({server.Count("LocationScouts") - scouts} sent)");
+                await slot.Model.ScoutCheckedLocationAsync(2000).WaitAsync(TimeSpan.FromSeconds(5));
+                UiTestExpect(server.Count("LocationScouts") == scouts + 2, "a scout that was given up wasn't asked again the next time");
+            }
+            finally
+            {
+                AP_Atlas.Core.SlotModel.ScoutTimeout = scoutLimit;
+            }
         }
         finally
         {

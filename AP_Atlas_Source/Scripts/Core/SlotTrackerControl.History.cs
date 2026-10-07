@@ -30,6 +30,39 @@ public partial class SlotTrackerControl : MarginContainer
         var vbox = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
         _historyView.AddChild(vbox);
 
+        // The collected items are a table like every other in Atlas (sorted by a column's title, searched, exported); its
+        // search box and menus sit in the filter bar, and the search narrows the uncollected items too.
+        _historyTable = new AP_Atlas.UI.AtlasTable("item-history", _appSettings, text => text)
+        {
+            Toast = (text, color) => ShowToast?.Invoke(text, color),
+            EmptyText = "Nothing received yet.",
+            NoMatchText = "No items match the current filters."
+        };
+        _historyTable.SetColumns(new List<AP_Atlas.UI.AtlasTable.Column>
+        {
+            new() { Id = "order", Title = "Order", MinWidth = 60, Ratio = 1, Align = HorizontalAlignment.Right },
+            new() { Id = "item", Title = "Item", MinWidth = 140, Ratio = 4 },
+            new() { Id = "from", Title = "From", MinWidth = 100, Ratio = 3 },
+            new() { Id = "location", Title = "Location", MinWidth = 140, Ratio = 4 }
+        }, defaultSort: "order");
+        _historyTable.Customize = (item, row) =>
+        {
+            int column = _historyTable.ShownIndexOf("item");
+            var received = Session?.Items.AllItemsReceived;
+            if (column < 0 || received == null || row.Tag is not int index || index < 0 || index >= received.Count) return;
+            ApplyItemMarker(item, column, received[index].ItemId, received[index].ItemName);
+        };
+        // The column clicked decides what to inspect: the sender, the location it came from, or the item.
+        _historyTable.CellPicked += (row, columnId) =>
+        {
+            var received = Session?.Items.AllItemsReceived;
+            if (received == null || row.Tag is not int index || index < 0 || index >= received.Count) return;
+            var item = received[index];
+            if (columnId == "from" && item.Player != null) Inspect(PlayerTarget(item.Player.Slot));
+            else if (columnId == "location" && item.Player != null && item.LocationId > 0) Inspect(LocationTargetFor(item.Player.Slot, item.LocationId));
+            else Inspect(ReceivedItemTarget(index));
+        };
+
         var filterBar = new HBoxContainer();
         filterBar.AddThemeConstantOverride("separation", 10);
         vbox.AddChild(filterBar);
@@ -48,24 +81,20 @@ public partial class SlotTrackerControl : MarginContainer
         filterBar.AddChild(new VSeparator { CustomMinimumSize = new Godot.Vector2(10, 0) });
 
         filterBar.AddChild(new Label { Text = "Search: " });
-        _itemSearchBox = new LineEdit { PlaceholderText = "Search items, senders, locations...", SizeFlagsHorizontal = SizeFlags.ExpandFill, ClearButtonEnabled = true };
-        filterBar.AddChild(_itemSearchBox);
-        filterBar.AddChild(new VSeparator());
-
-        filterBar.AddChild(new Label { Text = "Sort: " });
-        _optHistorySort = new OptionButton();
-        _optHistorySort.AddItem("Chronological (Oldest First)");
-        _optHistorySort.AddItem("Chronological (Newest First)");
-        _optHistorySort.AddItem("Alphabetical");
-        filterBar.AddChild(_optHistorySort);
+        var search = _historyTable.Take(_historyTable.SearchBox);
+        search.PlaceholderText = "Search items, senders, locations...";
+        search.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        filterBar.AddChild(search);
+        filterBar.AddChild(_historyTable.Take(_historyTable.ColumnsMenu));
+        filterBar.AddChild(_historyTable.Take(_historyTable.ExportMenu));
+        _historyTable.Toolbar.Visible = false;
 
         _filterItemsProgression.Toggled += (b) => UpdateItemHistoryUI();
         _filterItemsUseful.Toggled += (b) => UpdateItemHistoryUI();
         _filterItemsFiller.Toggled += (b) => UpdateItemHistoryUI();
         _filterItemsTrap.Toggled += (b) => UpdateItemHistoryUI();
         _filterItemsMarked.Toggled += (b) => UpdateItemHistoryUI();
-        _itemSearchBox.TextChanged += (txt) => UpdateItemHistoryUI();
-        _optHistorySort.ItemSelected += (idx) => UpdateItemHistoryUI();
+        search.TextChanged += (txt) => UpdateItemHistoryUI(); // the table searches itself; the uncollected items follow
 
         vbox.AddChild(new HSeparator { CustomMinimumSize = new Godot.Vector2(0, 10) });
 
@@ -74,37 +103,12 @@ public partial class SlotTrackerControl : MarginContainer
 
         var leftVBox = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
         split.AddChild(leftVBox);
-        _collectedHeaderLabel = new Label { Text = "Collected (0)" };
-        leftVBox.AddChild(_collectedHeaderLabel);
-        _itemHistoryTree = new Tree { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, Columns = 4, ColumnTitlesVisible = true, HideRoot = true, SelectMode = Tree.SelectModeEnum.Row };
-        _itemHistoryTree.AddThemeConstantOverride("v_separation", 6);
-        _itemHistoryTree.SetColumnTitle(0, "Order");
-        _itemHistoryTree.SetColumnTitle(1, "Item");
-        _itemHistoryTree.SetColumnTitle(2, "From");
-        _itemHistoryTree.SetColumnTitle(3, "Location");
-        _itemHistoryTree.SetColumnExpandRatio(0, 1);
-        _itemHistoryTree.SetColumnExpandRatio(1, 4);
-        _itemHistoryTree.SetColumnExpandRatio(2, 3);
-        _itemHistoryTree.SetColumnExpandRatio(3, 4);
-        _itemHistoryTree.SetColumnCustomMinimumWidth(0, 45);
-        _itemHistoryTree.SetColumnCustomMinimumWidth(1, 140);
-        _itemHistoryTree.SetColumnCustomMinimumWidth(2, 100);
-        _itemHistoryTree.SetColumnCustomMinimumWidth(3, 140);
-        _itemHistoryTree.CreateItem();
-        AP_Atlas.Core.TreePicks.Hook(_itemHistoryTree, (selected, column) =>
-        {
-            var meta = selected.GetMetadata(0);
-            if (meta.VariantType != Variant.Type.Int) return;
-            int index = meta.AsInt32();
-            var received = Session.Items.AllItemsReceived;
-            if (index < 0 || index >= received.Count) return;
-            // The column clicked decides what to inspect: the sender, the location it came from, or the item.
-            var item = received[index];
-            if (column == 2 && item.Player != null) Inspect(PlayerTarget(item.Player.Slot));
-            else if (column == 3 && item.Player != null && item.LocationId > 0) Inspect(LocationTargetFor(item.Player.Slot, item.LocationId));
-            else Inspect(ReceivedItemTarget(index));
-        });
-        leftVBox.AddChild(_itemHistoryTree);
+        var collectedHeader = new HBoxContainer();
+        collectedHeader.AddThemeConstantOverride("separation", 10);
+        collectedHeader.AddChild(new Label { Text = "Collected" });
+        collectedHeader.AddChild(_historyTable.Take(_historyTable.CountLabel));
+        leftVBox.AddChild(collectedHeader);
+        leftVBox.AddChild(_historyTable);
 
         var rightVBox = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
         split.AddChild(rightVBox);
@@ -170,9 +174,8 @@ public partial class SlotTrackerControl : MarginContainer
     // Incremental render state (see the note on the Logic Tracker state above): the trees are rebuilt only
     // when a filter, the search text, the sort mode or the item pool changes; new items are appended and
     // remaining counts are edited in place.
-    private string _historyConfigKey;
-    private int _historyRenderedCount = 0;
-    private int _historyShownCount = 0;
+    // The search the uncollected tree was last built for (another one rebuilds it).
+    private string _uncollectedSearch;
     private readonly Dictionary<(long id, string name, int flags), TreeItem> _uncollectedRows = new();
     private readonly Dictionary<(long id, string name, int flags), int> _uncollectedShownQty = new();
     private readonly Dictionary<string, TreeItem> _uncollectedGroups = new Dictionary<string, TreeItem>();
@@ -193,31 +196,19 @@ public partial class SlotTrackerControl : MarginContainer
     private void RenderItemHistory()
     {
         using var __perf = AP_Atlas.Core.PerfMonitor.Measure($"[{_slotName}] Item History refresh");
-        if (_itemHistoryTree == null || _uncollectedTree == null || Session == null) return;
+        if (_historyTable == null || _uncollectedTree == null || Session == null) return;
 
-        string search = _itemSearchBox?.Text?.Trim() ?? "";
-        int sortMode = _optHistorySort?.Selected ?? 0;
+        string search = _historyTable.SearchBox.Text.Trim();
         var fullPool = Model.Logic.Engine.LastItemPool;
-        int poolCount = fullPool?.Count ?? 0;
         var allItems = Session.Items.AllItemsReceived;
-
         bool markedOnly = _filterItemsMarked?.ButtonPressed == true;
-        string configKey = $"{_filterItemsProgression.ButtonPressed}{_filterItemsUseful.ButtonPressed}{_filterItemsFiller.ButtonPressed}{_filterItemsTrap.ButtonPressed}{markedOnly}|{search}|{sortMode}|{poolCount}";
-        bool full = configKey != _historyConfigKey || allItems.Count < _historyRenderedCount || _itemHistoryTree.GetRoot() == null;
-        _historyConfigKey = configKey;
 
-        // 1. Collected items
-        if (full)
-        {
-            _itemHistoryTree.Clear();
-            _itemHistoryTree.CreateItem();
-            _historyRenderedCount = 0;
-            _historyShownCount = 0;
-        }
-        var historyRoot = _itemHistoryTree.GetRoot();
-
-        var newRows = new List<(int index, long itemId, string itemName, string sender, string locationName, bool prog, bool useful, bool trap)>();
-        for (int i = _historyRenderedCount; i < allItems.Count; i++)
+        // 1. Collected items: a row each, made once (a resync from the server starts over), the class filters applied here
+        // and the search by the table.
+        if (_historyRows.Count > allItems.Count) _historyRows.Clear();
+        for (int i = _historyRows.Count; i < allItems.Count; i++) _historyRows.Add(HistoryRow(i, allItems[i]));
+        var shown = new List<AP_Atlas.UI.AtlasTable.Row>(allItems.Count);
+        for (int i = 0; i < allItems.Count; i++)
         {
             var item = allItems[i];
             bool prog = item.Flags.HasFlag(ItemFlags.Advancement);
@@ -225,48 +216,10 @@ public partial class SlotTrackerControl : MarginContainer
             bool trap = item.Flags.HasFlag(ItemFlags.Trap);
             if (!PassesItemFilter(prog, useful, trap)) continue;
             if (markedOnly && !IsItemMarked(item.ItemId, item.ItemName)) continue;
-
-            string itemName = item.ItemName ?? "Unknown Item";
-            string sender = Session.Players.GetPlayerAlias(item.Player) ?? "Server";
-            string locationName = item.LocationName ?? "Unknown Location";
-            if (!string.IsNullOrEmpty(search) &&
-                itemName.IndexOf(search, StringComparison.OrdinalIgnoreCase) < 0 &&
-                sender.IndexOf(search, StringComparison.OrdinalIgnoreCase) < 0 &&
-                locationName.IndexOf(search, StringComparison.OrdinalIgnoreCase) < 0) continue;
-
-            newRows.Add((i + 1, item.ItemId, itemName, sender, locationName, prog, useful, trap));
+            shown.Add(_historyRows[i]);
         }
-        _historyRenderedCount = allItems.Count;
-
-        if (sortMode == 2)
-        {
-            newRows = newRows.OrderBy(x => x.itemName, StringComparer.OrdinalIgnoreCase).ToList();
-        }
-        foreach (var d in newRows)
-        {
-            int position = -1; // append (oldest first)
-            if (sortMode == 1) position = 0; // newest first
-            else if (sortMode == 2 && !full) position = AlphabeticalInsertIndex(historyRoot, d.itemName);
-
-            var row = _itemHistoryTree.CreateItem(historyRoot, position);
-            row.SetText(0, d.index.ToString());
-            row.SetText(1, d.itemName);
-            row.SetText(2, d.sender);
-            row.SetText(3, d.locationName);
-            var fg = ItemClassColor(d.prog, d.useful, d.trap);
-            // Stripe by receive order so inserting rows never has to restripe the others.
-            var bg = (d.index % 2 == 0) ? Color.FromHtml("#16161C") : Color.FromHtml("#1F1F27");
-            for (int c = 0; c < 4; c++) { row.SetCustomColor(c, fg); row.SetCustomBgColor(c, bg); }
-            row.SetMetadata(0, d.index - 1);
-            row.SetTooltipText(2, "Click to inspect the sender");
-            row.SetTooltipText(3, "Click to inspect the location it came from");
-            ApplyItemMarker(row, 1, d.itemId, d.itemName);
-        }
-        _historyShownCount += newRows.Count;
-
-        _collectedHeaderLabel.Text = (string.IsNullOrEmpty(search) && AllItemFiltersOn)
-            ? $"Collected ({allItems.Count})"
-            : $"Collected ({_historyShownCount} shown / {allItems.Count} total)";
+        _historyTable.TotalCount = allItems.Count;
+        _historyTable.SetRows(shown);
 
         // 2. Not yet collected (needs the engine's item pool)
         if (fullPool == null || fullPool.Count == 0)
@@ -283,7 +236,9 @@ public partial class SlotTrackerControl : MarginContainer
         var remaining = ComputeRemainingPool(fullPool, allItems);
         int totalRemaining = remaining.Values.Sum();
 
-        if (full || _uncollectedTree.GetRoot() == null) RebuildUncollectedTree(remaining, search);
+        bool full = search != _uncollectedSearch || _uncollectedTree.GetRoot() == null;
+        _uncollectedSearch = search;
+        if (full) RebuildUncollectedTree(remaining, search);
         else UpdateUncollectedTreeInPlace(remaining);
 
         int shownRemaining = _uncollectedShownQty.Values.Sum();
@@ -292,17 +247,30 @@ public partial class SlotTrackerControl : MarginContainer
             : $"Not Yet Collected ({shownRemaining} shown / {totalRemaining} remaining)";
     }
 
-    private static int AlphabeticalInsertIndex(TreeItem root, string name)
+    /// <summary>A received item's row: its place in the order (sorted as a number), name, sender and location, in its class's colour.</summary>
+    private AP_Atlas.UI.AtlasTable.Row HistoryRow(int index, ItemInfo item)
     {
-        int index = 0;
-        for (var child = root.GetFirstChild(); child != null; child = child.GetNext(), index++)
+        bool prog = item.Flags.HasFlag(ItemFlags.Advancement);
+        bool useful = item.Flags.HasFlag(ItemFlags.NeverExclude);
+        bool trap = item.Flags.HasFlag(ItemFlags.Trap);
+        var color = ItemClassColor(prog, useful, trap);
+        string itemName = item.ItemName ?? "Unknown Item";
+        string sender = Session.Players.GetPlayerAlias(item.Player) ?? "Server";
+        string locationName = item.LocationName ?? "Unknown Location";
+        return new AP_Atlas.UI.AtlasTable.Row
         {
-            if (string.Compare(child.GetText(1), name, StringComparison.OrdinalIgnoreCase) > 0) return index;
-        }
-        return -1;
+            Key = index.ToString(),
+            Tag = index,
+            Cells = new[]
+            {
+                new AP_Atlas.UI.AtlasTable.Cell((index + 1).ToString(), color, null, index),
+                new AP_Atlas.UI.AtlasTable.Cell(itemName, color),
+                new AP_Atlas.UI.AtlasTable.Cell(sender, color, "Click to inspect the sender"),
+                new AP_Atlas.UI.AtlasTable.Cell(locationName, color, "Click to inspect the location it came from")
+            }
+        };
     }
 
-    /// <summary>Remaining quantity per pool entry after subtracting received items (matched by id, then by name).</summary>
     private static Dictionary<(long id, string name, int flags), int> ComputeRemainingPool(
         List<WorldItemInfo> fullPool, IReadOnlyList<Archipelago.MultiClient.Net.Models.ItemInfo> received)
     {

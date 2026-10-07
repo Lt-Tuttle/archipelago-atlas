@@ -23,7 +23,7 @@ Atlas opens on Home (Ctrl+8) unless Settings → Behaviour → Open on says othe
 - The **bottom pane** holds Chat (the text client: the room's messages, and a line to type commands such as `!hint`), the System Log (what Atlas did, and any trouble it met) and, in developer mode (Settings → Advanced), the Debug Log (Atlas's own diagnostics). The status bar under it says what Atlas is doing and how many slots are connected.
 - The **View** menu shows or hides each part, and remembers it. **Focus mode** (F9) leaves the content and its header alone, with the menu bar; F9 again brings everything back. F11 is full screen.
 - The **command palette** (Ctrl+Shift+P) lists every command in the menus: type a few letters of its name and press Enter.
-- **Tables** (Hints, Cheese Tracker, Sphere Tracker, Notifications, the shortcuts list) all work the same way: click a column's title to sort by it (again to turn the order; the arrow says which), right-click a title to hide or show columns, type words in the search box to narrow the rows (each word must start a word of a cell), and use Export to copy the rows shown as TSV for a spreadsheet, as a Markdown table, as Discord messages (split to fit), or to save them as a CSV file. Right-click a row for its actions and Copy row. The sort and the hidden columns are remembered per table.
+- **Tables** (Item History, Hints, Cheese Tracker, Sphere Tracker, Notifications, the shortcuts list) all work the same way: click a column's title to sort by it (again to turn the order; the arrow says which), right-click a title to hide or show columns, type words in the search box to narrow the rows (each word must start a word of a cell), and use Export to copy the rows shown as TSV for a spreadsheet, as a Markdown table, as Discord messages (split to fit), or to save them as a CSV file. Right-click a row for its actions and Copy row. The sort and the hidden columns are remembered per table. Only the rows on screen are laid out, so a table of thousands of rows shows as fast as one of ten; its scroll bar, the wheel and the keys (arrows, Page Up and Down, Home, End) move through them.
 
 ## Multiworlds
 
@@ -61,7 +61,7 @@ In race mode the explanations are off, and with Hide all logic the tracker is hi
 
 ## Item History
 
-Item History (Ctrl+4) lists everything the slot has received: Order, Item, From (who found it) and Location, sorted oldest or newest first or alphabetically, with a search over items, senders and locations. Below it, the items still out there, by classification and quantity.
+Item History (Ctrl+4) lists everything the slot has received in a table like every other: Order, Item, From (who found it) and Location. A click on Order's title puts the newest first (another, the oldest), a click on Item sorts alphabetically; the filters keep or hide progression, useful, filler and trap items, or only the ones you flagged; the search narrows the items, senders and locations, and the items still out there below it, by classification and quantity.
 
 ## Hints
 

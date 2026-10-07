@@ -130,6 +130,8 @@ Development toward the first public beta, 0.1.0.
   - The UI test checks that every command is in a menu with its key shown, that the keys and a rebind work at once, and that the menu bar never runs a stale key itself.
 
 ### Changed
+- **Tables lay out only the rows on screen.** Godot lays out every row a table holds, so Item History with 5,000 items took half a second to show and Hints with 2,000 hints a fifth of one. Every table now holds as many rows as fit and has a scroll bar of its own for the rest; the wheel and the keys (arrows, Page Up and Down, Home, End) move through the rows. A table of thousands shows as fast as one of ten.
+- **Item History is a table like the others:** a click on a column's title sorts it (Order newest or oldest first, Item alphabetically, in place of the sort list), it has the Columns and Export menus, and its search also narrows the items not yet collected.
 - **The map is a plain canvas now,** shared with the Pack Doctor's editor: the wheel zooms around the cursor, any mouse button drags, Fit shows the whole map, pins are real controls (focus and screen readers reach them, with a tooltip saying their state), and a legend under the display options says what the colours mean. The view is remembered per map as before, and nothing of the map runs every frame.
 - **One palette, one kit:** every colour in the window now comes from `ThemeColors` by what it means (text, states, Archipelago's players, locations and items, the surfaces), and buttons, headings and lines of text from one `Kit`, in place of seven local copies and colours that had drifted apart (quiet text was two greys, success two greens, table stripes three pairs). Quiet text and the useful-item blue are a shade lighter where they were too dark to read. A self-test holds every colour of the palette to the accessibility contrast rule on every surface, and text on every accent preset (red now takes black text).
 - **Toasts no longer pile on top of each other:** they're cards on the alert feed.
@@ -247,6 +249,7 @@ Development toward the first public beta, 0.1.0.
   - An image you choose for a Pack Doctor fix is checked the same way before it's copied.
 
 ### Fixed
+- A location whose contents the server never tells is asked again: a scout now waits 30 seconds, then gives up and asks the next time it's wanted (it used to wait until the connection ended).
 - Connecting to a server that's down, with an address typed without ws:// or wss://, wrote a crash report and an error line a few seconds later: the connection library gives up waiting for its connection after 4 seconds without checking how it ends, and Windows takes longer than that to refuse both its tries. Atlas now recognises that leftover and only notes it in the log file.
 - Connecting a slot after looking at a multiworld of several slots logged an error for each connection: the connecting overlay reached for the freed Connect All button.
 - An update's download progress reached the status bar from the download's thread (Godot reported an error for each line); it's now shown from the main thread.

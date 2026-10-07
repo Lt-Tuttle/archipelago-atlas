@@ -370,6 +370,12 @@ namespace AP_Atlas.Core
 
         private bool Connected => !_disposed && Session.Socket.Connected;
 
+        /// <summary>
+        /// How long a scout waits for the server's answer before it's given up (and asked again the next time it's wanted):
+        /// a server that never answers would otherwise leave the location unknown until the connection ends. The UI test shortens it.
+        /// </summary>
+        internal static TimeSpan ScoutTimeout = TimeSpan.FromSeconds(30);
+
         /// <summary>What a checked location held. Only for checked locations, so it never spoils anything.</summary>
         public Task<ScoutedItemInfo?> ScoutCheckedLocationAsync(long locationId)
         {
@@ -386,7 +392,7 @@ namespace AP_Atlas.Core
         {
             try
             {
-                var result = await Session.Locations.ScoutLocationsAsync(HintCreationPolicy.None, locationId);
+                var result = await Session.Locations.ScoutLocationsAsync(HintCreationPolicy.None, locationId).WaitAsync(ScoutTimeout);
                 return result != null && result.TryGetValue(locationId, out var info) ? info : null;
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)

@@ -84,12 +84,11 @@ public partial class SlotTrackerControl : MarginContainer
     private Tree _logicTree;
 
     // --- Item History view ---
-    private Tree _itemHistoryTree;
+    private AP_Atlas.UI.AtlasTable _historyTable;
+    // A row per item received, in order, made once each (the markers are drawn as the table fills).
+    private readonly List<AP_Atlas.UI.AtlasTable.Row> _historyRows = new();
     private Tree _uncollectedTree;
-    private Label _collectedHeaderLabel;
     private Label _uncollectedHeaderLabel;
-    private LineEdit _itemSearchBox;
-    private OptionButton _optHistorySort;
     private Button _filterItemsProgression;
     private Button _filterItemsUseful;
     private Button _filterItemsFiller;
@@ -411,21 +410,10 @@ public partial class SlotTrackerControl : MarginContainer
         }
         ApplyAllLogicMarkers();
 
-        if (_filterItemsMarked?.ButtonPressed == true)
+        if (_filterItemsMarked?.ButtonPressed == true) UpdateItemHistoryUI(); // membership changed: the rows shown change
+        else
         {
-            _historyConfigKey = null; // membership changed: rebuild
-            UpdateItemHistoryUI();
-        }
-        else if (_itemHistoryTree?.GetRoot() != null)
-        {
-            var received = Session.Items.AllItemsReceived;
-            for (var row = _itemHistoryTree.GetRoot().GetFirstChild(); row != null; row = row.GetNext())
-            {
-                var meta = row.GetMetadata(0);
-                if (meta.VariantType != Variant.Type.Int) continue;
-                int i = meta.AsInt32();
-                if (i >= 0 && i < received.Count) ApplyItemMarker(row, 1, received[i].ItemId, received[i].ItemName);
-            }
+            _historyTable?.Render(); // the markers are drawn as the table fills its rows on screen
             foreach (var kv in _uncollectedRows) ApplyItemMarker(kv.Value, 0, kv.Key.id, kv.Key.name);
         }
 
@@ -459,22 +447,16 @@ public partial class SlotTrackerControl : MarginContainer
     public void RevealHistory(AP_Atlas.Core.InspectTarget target)
     {
         _historyRefresh?.Flush();
-        if (_itemHistoryTree == null) return;
-        if (target.ReceiptIndex >= 0)
+        if (_historyTable == null) return;
+        string key = target.ReceiptIndex.ToString();
+        if (target.ReceiptIndex >= 0 && _historyTable.ShownRows.Any(row => row.Key == key))
         {
-            for (var row = _itemHistoryTree.GetRoot()?.GetFirstChild(); row != null; row = row.GetNext())
-            {
-                var meta = row.GetMetadata(0);
-                if (meta.VariantType == Variant.Type.Int && meta.AsInt32() == target.ReceiptIndex)
-                {
-                    row.Select(1);
-                    _itemHistoryTree.ScrollToItem(row, true);
-                    return;
-                }
-            }
+            _historyTable.Select(key, scrollTo: true);
+            return;
         }
         // Not a specific copy (or filtered out): search by name.
-        _itemSearchBox.Text = target.ItemName ?? "";
+        _historyTable.SearchBox.Text = target.ItemName ?? "";
+        _historyTable.Render();
         UpdateItemHistoryUI();
     }
 
