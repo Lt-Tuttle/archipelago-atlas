@@ -97,6 +97,12 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             RunSelfTest();
             return;
         }
+        // The update supervisor (the Atlas an update replaced, started headless): no window, no claim on the data folder.
+        if (SupervisorRequested)
+        {
+            RunSupervisor();
+            return;
+        }
         // The visual check (testing only) refuses a real data folder before anything in it is read or written.
         if (VisualCheckRequested && !VisualCheckAllowed()) return;
         // The UI test, too, refuses a real data folder before anything in it is read or written.
@@ -133,6 +139,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         AddChild(_alerts);
         AP_Atlas.Core.ThemeColors.SetAccent(_appSettings.ThemeAccentColor);
         AP_Atlas.Core.RaceRules.Initialize(_appSettings);
+        SetUpUpdates();
         AP_Atlas.Core.EngineSetup.AtlasEngine.Initialize(_appSettings);
         AP_Atlas.Core.PopTracker.PackDoctorService.Initialize(_appSettings);
         AP_Atlas.Core.PopTracker.PackDoctorService.ReviewSuggested += OnPackReviewSuggested;
@@ -399,6 +406,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _uiReady = true;
         foreach (var (msg, color) in _pendingNotices) ShowToast(msg, color);
         _pendingNotices.Clear();
+        StartUpdateChecks();
         if (VisualCheckRequested) AP_Atlas.UI.Ui.Defer(this, RunVisualCheck);
         if (UiTestRequested) AP_Atlas.UI.Ui.Defer(this, RunUiTest);
     }

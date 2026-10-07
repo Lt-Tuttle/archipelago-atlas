@@ -135,6 +135,8 @@ public partial class MainTrackerWindow
             AccessibilityAsync);
         await ScenarioAsync("Multiworlds page: a room link fills in the server address and the slots from the room's status page (asked first; never the room's page) and is kept; edits of a multiworld are kept when another is selected and written to disk; a slot's rename takes effect on Enter or on leaving the field, never per keystroke, and its saved stats follow it; after a reconnect gives up, one status read (at most every ten minutes) offers the room's new port, or says the room is asleep; a connection the server refuses shows as a card",
             MultiworldsPageAsync);
+        await ScenarioAsync("Updates: nothing is asked of GitHub without the permission and the daily setting; with them, one read a day finds a newer version of the channel (an unchanged list is confirmed, never sent again) and offers it as a card with its notes; a download whose hash doesn't match the release's SHA256SUMS is refused and nothing is staged, a good one is staged ready for a restart; the swap moves the installed files aside and the release's in (PortableData untouched), the supervisor puts the previous version back when the new Atlas ends before its window and the Atlas put back says so, a started one confirms the note; a folder Atlas can't write to is said so",
+            UpdatesAsync);
         await ScenarioAsync("Customization: a custom accent of any colour recolours Atlas, is saved, and its headings and links still read (the preset choice says Custom); colour-blind-safe colours are the theme's other palette, held to the contrast rule, saved and undone; the zoom choice, Ctrl+= and Ctrl+- scale the window and are saved; the pin shape is saved and every map redraws, a diamond being a square on its corner; the page Atlas opens on is saved and the last tool shown is remembered for it",
             CustomizationAsync);
         await ScenarioAsync("Tables: a click on a column's title sorts by it (the column's own first direction, then the other; the arrow says which), typed words narrow the rows, a column hides and shows, pinned rows stay on top, the rows export as TSV, Markdown, Discord parts and a CSV file, the sort and the hidden columns are saved, and unchanged rows are updated in place with the selection kept",
@@ -2854,6 +2856,153 @@ public partial class MainTrackerWindow
             .FirstOrDefault(s => IsInstanceValid(s) && !s.IsQueuedForDeletion() && s.ProfileId == profileId && s.SlotName == slotName);
 
     /// <summary>Waits (letting the window run) until <paramref name="find"/> returns something, for up to 20 seconds (or <paramref name="seconds"/>).</summary>
+    private async Task UpdatesAsync()
+    {
+        string dataDir = DataManager.GetDataDirectory();
+        string install = System.IO.Path.Combine(dataDir, "fake-install");
+        static void WriteTestFile(string path, string content)
+        {
+            System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
+            System.IO.File.WriteAllText(path, content);
+        }
+        static string ReadTestFile(string dir, string relative) => System.IO.File.ReadAllText(System.IO.Path.Combine(dir, relative));
+        Control? CardWith(string text) => _alerts.Cards.FirstOrDefault(card => card.FindChildren("*", nameof(Label), true, false).OfType<Label>().Any(label => label.Text.Contains(text)));
+        WriteTestFile(System.IO.Path.Combine(install, AP_Atlas.Core.Updates.UpdateLayout.Exe), "old exe");
+        WriteTestFile(System.IO.Path.Combine(install, AP_Atlas.Core.Updates.UpdateLayout.Pck), "old pck");
+        WriteTestFile(System.IO.Path.Combine(install, AP_Atlas.Core.Updates.UpdateLayout.DataFolder, AP_Atlas.Core.Updates.UpdateLayout.MainAssembly), "old dll");
+        WriteTestFile(System.IO.Path.Combine(install, "README.md"), "old readme");
+        WriteTestFile(System.IO.Path.Combine(install, AP_Atlas.Core.Updates.UpdateLayout.PortableData, "settings.json"), "{}");
+
+        // A release one patch newer, as GitHub lists it, from a site on this PC that also serves the zip and its checksum file.
+        var current = _updates!.Current;
+        var next = new AP_Atlas.Core.Updates.SemVer(current.Major, current.Minor, current.Patch + 1);
+        string zipName = AP_Atlas.Core.Updates.ReleaseInfo.ZipPrefix + next + AP_Atlas.Core.Updates.ReleaseInfo.ZipSuffix;
+        static byte[] FakeReleaseZip()
+        {
+            using var zipStream = new System.IO.MemoryStream();
+            using (var archive = new System.IO.Compression.ZipArchive(zipStream, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+            {
+                foreach (var (name, content) in new[]
+                {
+                    (AP_Atlas.Core.Updates.UpdateLayout.ProgramFolder + "/" + AP_Atlas.Core.Updates.UpdateLayout.Exe, "new exe"),
+                    (AP_Atlas.Core.Updates.UpdateLayout.ProgramFolder + "/" + AP_Atlas.Core.Updates.UpdateLayout.Pck, "new pck"),
+                    (AP_Atlas.Core.Updates.UpdateLayout.ProgramFolder + "/" + AP_Atlas.Core.Updates.UpdateLayout.DataFolder + "/" + AP_Atlas.Core.Updates.UpdateLayout.MainAssembly, "new dll"),
+                    (AP_Atlas.Core.Updates.UpdateLayout.ProgramFolder + "/README.md", "new readme")
+                })
+                {
+                    using var writer = new System.IO.StreamWriter(archive.CreateEntry(name).Open(), System.Text.Encoding.UTF8);
+                    writer.Write(content);
+                }
+            }
+            return zipStream.ToArray();
+        }
+        byte[] zip = FakeReleaseZip();
+        string zipHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(zip)).ToLowerInvariant();
+        string goodSums = $"{zipHash}  {zipName}\n", badSums = $"{new string('0', 64)}  {zipName}\n";
+        string sums = goodSums;
+        await using var site = new AP_Atlas.Core.Testing.FakeWebSite();
+        string releasesJson = new Newtonsoft.Json.Linq.JArray(new Newtonsoft.Json.Linq.JObject
+        {
+            ["tag_name"] = "v" + next,
+            ["prerelease"] = false,
+            ["draft"] = false,
+            ["published_at"] = "2026-10-07T12:00:00Z",
+            ["body"] = "## Notes\n\n- Something changed for the better",
+            ["assets"] = new Newtonsoft.Json.Linq.JArray(
+                new Newtonsoft.Json.Linq.JObject { ["name"] = zipName, ["browser_download_url"] = site.Site + "/dl/" + zipName, ["size"] = zip.Length },
+                new Newtonsoft.Json.Linq.JObject { ["name"] = AP_Atlas.Core.Updates.ReleaseInfo.SumsName, ["browser_download_url"] = site.Site + "/dl/" + AP_Atlas.Core.Updates.ReleaseInfo.SumsName, ["size"] = 100 })
+        }).ToString();
+        site.Answer = (path, headers) =>
+        {
+            if (path.StartsWith("/repos/", StringComparison.Ordinal))
+            {
+                var etag = new Dictionary<string, string> { ["ETag"] = "\"r1\"" };
+                if (headers.TryGetValue("if-none-match", out var tag) && tag == "\"r1\"") return new AP_Atlas.Core.Testing.FakeWebSite.FullAnswer(304, Array.Empty<byte>(), "application/json", etag);
+                return new AP_Atlas.Core.Testing.FakeWebSite.FullAnswer(200, System.Text.Encoding.UTF8.GetBytes(releasesJson), "application/json", etag);
+            }
+            if (path == "/dl/" + AP_Atlas.Core.Updates.ReleaseInfo.SumsName) return new AP_Atlas.Core.Testing.FakeWebSite.FullAnswer(200, System.Text.Encoding.UTF8.GetBytes(sums), "text/plain");
+            if (path == "/dl/" + zipName) return new AP_Atlas.Core.Testing.FakeWebSite.FullAnswer(200, zip, "application/zip");
+            return new AP_Atlas.Core.Testing.FakeWebSite.FullAnswer(404, Array.Empty<byte>());
+        };
+        AP_Atlas.Core.GitHubApi.TestSite = site.Site;
+        AP_Atlas.Core.GitHubApi.ResetForTests();
+        TestInstallDir = install;
+        SetUpUpdates();
+        var updates = _updates!;
+        try
+        {
+            // Nothing without the permission and the daily setting.
+            UiTestExpect(await updates.CheckAsync(manual: false) == null && site.Requests.Count == 0, "a check ran without the permission");
+            AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.UpdateChecks, null, true);
+            _appSettings.UpdateCheckDaily = true;
+            _appSettings.UpdateLastCheckUtc = null;
+            var outcome = await updates.CheckAsync(manual: false);
+            UiTestExpect(outcome?.Newer?.Version == next && site.Requests.Count == 1, $"the daily check didn't find {next} (the site saw {site.Requests.Count} requests)");
+            var offer = await UiTestWaitForAsync(() => CardWith(next + " is available"), "the card offering the newer version");
+            // Not due again today; by hand, the unchanged list is confirmed (304) rather than read again.
+            UiTestExpect(await updates.CheckAsync(manual: false) == null && site.Requests.Count == 1, "a second daily check ran before a day passed");
+            outcome = await updates.CheckAsync(manual: true);
+            UiTestExpect(outcome?.Newer?.Version == next && site.Requests.Count == 2, "the manual check didn't confirm the list and find the version again");
+            // The card's action shows the release's notes.
+            _alerts.ActionButtonOf(offer)!.EmitSignal(BaseButton.SignalName.Pressed);
+            var dialog = await UiTestWaitForAsync(() => GetChildren().OfType<AP_Atlas.UI.UpdateDialog>().FirstOrDefault(), "the update dialog");
+            UiTestExpect(dialog.ShownText.Contains("Something changed") && dialog.ShownText.Contains(next.ToString()), "the dialog doesn't show the release's notes");
+            dialog.EmitSignal(AcceptDialog.SignalName.Canceled);
+            await UiTestWaitAsync(0.1);
+            // A download whose hash doesn't match the release's checksum file is refused, and nothing is staged.
+            var release = outcome!.Newer!;
+            sums = badSums;
+            UiTestExpect(!await updates.DownloadAndStageAsync(release) && updates.StagedVersion == null && !System.IO.Directory.Exists(updates.NextDir), "a download with the wrong hash was kept");
+            UiTestExpect(CardWith("couldn't be downloaded") != null, "the refused download wasn't said");
+            sums = goodSums;
+            UiTestExpect(await updates.DownloadAndStageAsync(release) && updates.StagedVersion == next.ToString(), "a good download wasn't staged");
+            var ready = await UiTestWaitForAsync(() => CardWith("ready"), "the ready card");
+            UiTestExpect(_alerts.ActionButtonOf(ready)?.Text == "Restart to update", $"the ready card's action is \"{_alerts.ActionButtonOf(ready)?.Text}\"");
+            // The swap (what Restart to update does once everything is closed), on the fake install folder.
+            string staged = System.IO.Path.Combine(updates.NextDir, AP_Atlas.Core.Updates.UpdateLayout.ProgramFolder);
+            AP_Atlas.Core.Updates.UpdateInstaller.Swap(install, staged, updates.PreviousDir, current.ToString(), _ => { });
+            UiTestExpect(ReadTestFile(install, AP_Atlas.Core.Updates.UpdateLayout.Exe) == "new exe" && ReadTestFile(install, "README.md") == "new readme"
+                && ReadTestFile(updates.PreviousDir, AP_Atlas.Core.Updates.UpdateLayout.Exe) == "old exe" && ReadTestFile(install, "PortableData/settings.json") == "{}"
+                && AP_Atlas.Core.Updates.UpdateInstaller.VersionIn(updates.PreviousDir) == current.ToString(), "the swap didn't move the files as it should");
+            // The new Atlas ends before its window: the supervisor puts the previous version back, and the Atlas put back says so.
+            AP_Atlas.Core.Updates.UpdateInstaller.WriteMarker(updates.UpdatesDir, new AP_Atlas.Core.Updates.UpdateMarker { FromVersion = current.ToString(), ToVersion = next.ToString(), State = AP_Atlas.Core.Updates.UpdateMarker.Starting, StartedUtc = DateTime.UtcNow }); // wall clock: a saved time, as the updater writes it
+            var watch = await AP_Atlas.Core.Updates.UpdateInstaller.WatchAsync(updates.UpdatesDir, () => true, TimeSpan.FromSeconds(5));
+            UiTestExpect(watch == AP_Atlas.Core.Updates.UpdateInstaller.Watch.Exited, $"a new Atlas that ended was seen as {watch}");
+            AP_Atlas.Core.Updates.UpdateInstaller.RollBack(install, updates.PreviousDir, updates.FailedDir, next.ToString(), _ => { });
+            var note = AP_Atlas.Core.Updates.UpdateInstaller.ReadMarker(updates.UpdatesDir)!;
+            note.State = AP_Atlas.Core.Updates.UpdateMarker.RolledBack;
+            note.Reason = "it closed before its window appeared";
+            AP_Atlas.Core.Updates.UpdateInstaller.WriteMarker(updates.UpdatesDir, note);
+            UiTestExpect(ReadTestFile(install, AP_Atlas.Core.Updates.UpdateLayout.Exe) == "old exe" && ReadTestFile(updates.FailedDir, AP_Atlas.Core.Updates.UpdateLayout.Exe) == "new exe" && updates.PreviousVersion == null,
+                "putting the previous version back didn't restore the files");
+            updates.ConfirmStarted();
+            UiTestExpect(CardWith("didn't start") != null && AP_Atlas.Core.Updates.UpdateInstaller.ReadMarker(updates.UpdatesDir) == null, "the update put back wasn't said, or its note stayed");
+            // The new Atlas starts: it confirms the note, and the watch sees it.
+            AP_Atlas.Core.Updates.UpdateInstaller.WriteMarker(updates.UpdatesDir, new AP_Atlas.Core.Updates.UpdateMarker { FromVersion = "0.0.1", ToVersion = current.ToString(), State = AP_Atlas.Core.Updates.UpdateMarker.Starting, StartedUtc = DateTime.UtcNow }); // wall clock: a saved time, as the updater writes it
+            updates.ConfirmStarted();
+            UiTestExpect(AP_Atlas.Core.Updates.UpdateInstaller.ReadMarker(updates.UpdatesDir)?.State == AP_Atlas.Core.Updates.UpdateMarker.Ready && CardWith("updated to") != null, "the started update wasn't confirmed");
+            watch = await AP_Atlas.Core.Updates.UpdateInstaller.WatchAsync(updates.UpdatesDir, () => false, TimeSpan.FromSeconds(5));
+            UiTestExpect(watch == AP_Atlas.Core.Updates.UpdateInstaller.Watch.Started, $"a confirmed note was seen as {watch}");
+            AP_Atlas.Core.Updates.UpdateInstaller.DeleteMarker(updates.UpdatesDir);
+            // A folder Atlas can't write to is said, with the way to update by hand.
+            string notAFolder = System.IO.Path.Combine(dataDir, "not-a-folder.txt");
+            WriteTestFile(notAFolder, "x");
+            TestInstallDir = notAFolder;
+            SetUpUpdates();
+            UiTestExpect(!await _updates!.DownloadAndStageAsync(release) && CardWith("isn't writable") != null, "an unwritable folder wasn't said");
+        }
+        finally
+        {
+            AP_Atlas.Core.GitHubApi.TestSite = null;
+            AP_Atlas.Core.GitHubApi.ResetForTests();
+            AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.UpdateChecks, null, false);
+            _appSettings.UpdateCheckDaily = false;
+            _appSettings.UpdateLastCheckUtc = null;
+            TestInstallDir = null;
+            SetUpUpdates();
+        }
+    }
+
     private async Task<T> UiTestWaitForAsync<T>(Func<T?> find, string what, double seconds = 20) where T : class
     {
         var waited = System.Diagnostics.Stopwatch.StartNew();

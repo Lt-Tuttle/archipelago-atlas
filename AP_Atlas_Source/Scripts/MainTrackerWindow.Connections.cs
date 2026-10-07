@@ -15,7 +15,9 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
 {
     private bool _shuttingDown = false;
     private void GracefulShutdown() => AP_Atlas.Core.Async.Fire(GracefulShutdownAsync(), "closing Atlas", tellUser: false);
-    private async Task GracefulShutdownAsync()
+    /// <summary>Closes everything, then runs <paramref name="andThen"/> (an update's swap); a problem it returns keeps Atlas open and shows it.</summary>
+    private void GracefulShutdown(Func<string> andThen) => AP_Atlas.Core.Async.Fire(GracefulShutdownAsync(andThen), "closing Atlas to update", tellUser: false);
+    private async Task GracefulShutdownAsync(Func<string> andThen = null)
     {
         if (_shuttingDown) return;
         _shuttingDown = true;
@@ -52,10 +54,22 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         {
             GD.PrintErr($"Error during shutdown: {ex}");
         }
-        finally
+        if (andThen != null)
         {
-            GetTree().Quit();
+            string problem;
+            try { problem = andThen(); }
+            catch (Exception ex) { problem = ex.Message; }
+            if (problem != null)
+            {
+                // The update didn't go in: Atlas stays open (its connections are closed; the user can connect again).
+                _shuttingDown = false;
+                AP_Atlas.Core.Logger.LogError("The update wasn't applied: " + problem);
+                ShowToast(problem, AP_Atlas.Core.ThemeColors.Error);
+                ShowStatus(Tr("The update wasn't applied."));
+                return;
+            }
         }
+        GetTree().Quit();
     }
     /// <summary>Slots with a login in flight, keyed by SlotKey(profileId, slotName).</summary>
     private System.Collections.Generic.HashSet<string> _connectingSlots = new System.Collections.Generic.HashSet<string>();

@@ -53,6 +53,23 @@ namespace AP_Atlas.Core
             catch { } // the last resort: there's nowhere left to report that the report itself failed
         }
 
+        /// <summary>
+        /// Gives the data folder up before Atlas exits, so the Atlas it starts in its place (an update) can take it. On the
+        /// thread that took it.
+        /// </summary>
+        public static void ReleaseInstance()
+        {
+            var mutex = _instanceMutex;
+            _instanceMutex = null;
+            if (mutex == null) return;
+            try { mutex.ReleaseMutex(); }
+            catch (Exception ex) when (ex is ApplicationException or ObjectDisposedException)
+            {
+                // Not held (another Atlas had it): nothing to give up.
+            }
+            mutex.Dispose();
+        }
+
         /// <summary>True when this is the only Atlas using its data folder (held until Atlas exits).</summary>
         public static bool TryAcquireInstance()
         {

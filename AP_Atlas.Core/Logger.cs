@@ -37,7 +37,13 @@ namespace AP_Atlas.Core
         /// large one first. Before this is called, lines are only echoed: nothing is written until the app has checked its
         /// data folder (a refused test run writes nothing). Later calls change nothing.
         /// </summary>
-        public static void UseFolder(string folder)
+        public static void UseFolder(string folder) => UseFolder(folder, "atlas_log");
+
+        /// <summary>
+        /// As <see cref="UseFolder(string)"/>, writing to <paramref name="stem"/>.txt (the update supervisor keeps its own
+        /// file, since the Atlas it watches writes atlas_log.txt in the same folder).
+        /// </summary>
+        public static void UseFolder(string folder, string stem)
         {
             lock (_fileLock)
             {
@@ -45,8 +51,8 @@ namespace AP_Atlas.Core
                 try
                 {
                     Directory.CreateDirectory(folder);
-                    string path = Path.Combine(folder, "atlas_log.txt");
-                    RotateIfLarge(folder, path);
+                    string path = Path.Combine(folder, stem + ".txt");
+                    RotateIfLarge(folder, path, stem);
                     _logFilePath = path;
                 }
                 catch (Exception ex)
@@ -56,14 +62,14 @@ namespace AP_Atlas.Core
             }
         }
 
-        private static void RotateIfLarge(string logDir, string logFile)
+        private static void RotateIfLarge(string logDir, string logFile, string stem)
         {
             try
             {
                 if (File.Exists(logFile) && new FileInfo(logFile).Length > 5 * 1024 * 1024)
-                    File.Move(logFile, Path.Combine(logDir, "atlas_log_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".txt"));
+                    File.Move(logFile, Path.Combine(logDir, stem + "_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".txt"));
                 // Keep the ten most recent archived logs.
-                var old = new DirectoryInfo(logDir).GetFiles("atlas_log_*.txt");
+                var old = new DirectoryInfo(logDir).GetFiles(stem + "_*.txt");
                 Array.Sort(old, (a, b) => b.LastWriteTimeUtc.CompareTo(a.LastWriteTimeUtc));
                 for (int i = 10; i < old.Length; i++)
                 {

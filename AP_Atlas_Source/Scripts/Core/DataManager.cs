@@ -122,6 +122,18 @@ public class AppSettings
     public bool ShowSystemLogTab { get; set; } = true;
     /// <summary>Shows Atlas's diagnostics: the Debug Log tab, frame hitch warnings on the status bar, the Debug Log's menu items.</summary>
     public bool DeveloperMode { get; set; } = false;
+
+    // ---- Updates (Settings -> Updates) ----
+    /// <summary>Read Atlas's releases list on GitHub once a day (needs the update-check permission as well).</summary>
+    public bool UpdateCheckDaily { get; set; } = false;
+    /// <summary>"auto" (a beta build follows the beta channel, a release the stable one), "stable" or "beta".</summary>
+    public string UpdateChannel { get; set; } = "auto";
+    /// <summary>When the releases list was last read: the wall clock, for "once a day" across restarts.</summary>
+    public System.DateTime? UpdateLastCheckUtc { get; set; }
+    /// <summary>Whether the one-time offer to turn the daily check on was shown.</summary>
+    public bool UpdateOffered { get; set; } = false;
+    /// <summary>How many times Atlas has started (the offer comes on the second start, never the first).</summary>
+    public int StartCount { get; set; } = 0;
 }
 public class SlotStats
 {

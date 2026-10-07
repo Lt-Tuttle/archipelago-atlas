@@ -99,6 +99,12 @@ Atlas can run logic on your own Archipelago install instead. That needs your con
 
 When a seed was made with another version of a game's apworld, Atlas finds that version and uses it for that slot, after asking before it looks anything up on GitHub, and downloading only from sources you've trusted (Settings → Privacy & permissions lists them). A multiworld's slots share a small pool of engine processes.
 
+## Updates
+
+Atlas keeps itself up to date only with your say. Under Settings → Updates, **Check for a newer Atlas daily** asks your permission the first time (one small request to GitHub a day at most, for the list of Atlas's releases; an unchanged list is confirmed rather than read again), and **Check now** does the same by hand (so does Help → Check for Updates). Atlas offers the daily check once, on its second start, and never checks on the first. **Versions** picks stable releases only, or betas too; Automatic follows the version you run.
+
+When a newer version of your channel exists, a card says so and **See what's new** shows the release's notes with the choice to download it. The download is checked against the release's SHA256SUMS.txt and refused if it doesn't match; it's unpacked into Atlas's data folder, never into the program's. **Restart to update** closes your connections, moves the installed files aside and the new ones in (your data folder isn't touched), and starts the new Atlas while the version you had watches it start from its place under `PortableData/updates/previous`: if the new Atlas doesn't bring up its window, it's put back and tells you so. The previous version stays until the next update, and **Go back** under Settings → Updates restores it the same way. A folder Atlas can't write to, or a data folder on a different drive from the program's, is said, with the releases page to update by hand.
+
 ## Settings
 
 Settings (Ctrl+,) holds every setting in sections the explorer lists, and a search box that finds a setting by any word of its name, description or section: Multiworld (automatic reconnects, each seed's apworld version, race mode), Appearance (the theme, the colours, the zoom, the font sizes, the map's pins), Behaviour (what Atlas opens on), Window (which parts show, the bottom pane's tabs), Tools (the engine, Cheese Tracker and Sphere Tracker settings), Privacy & permissions, Keyboard, Advanced (developer mode) and Data (Atlas's data folder). Each setting applies and is saved as you change it.
@@ -106,6 +112,8 @@ Settings (Ctrl+,) holds every setting in sections the explorer lists, and a sear
 Under **Appearance**: the theme (Follow Windows, Dark, Light, High contrast; a change restyles the window at once and reaches everything after a restart); colour-blind-safe colours (blue for in logic, connected and done, orange for out of logic and errors, with the hint and item kinds told apart the same way, so nothing rests on red against green; also after a restart); the accent colour, a preset or any colour you pick (headings and links are lightened or darkened as needed, so they always read); the zoom of the whole window (also Ctrl+= and Ctrl+-, and Reset Zoom in the View menu); a text size for each part of the window; and the shape of the Map Tracker's pins (round, square or diamond).
 
 Under **Behaviour**: what Atlas opens on: Home, the tool you had open when it closed, or Multiworlds.
+
+Under **Updates**: the daily check (with its permission), the versions you take (stable or beta), Check now, See what's new, Restart to update and Go back (see Updates).
 
 Under **Advanced**: developer mode, which shows Atlas's diagnostics: the Debug Log tab, frame hitch warnings on the status bar and the Debug Log's menu items. Everything is written to the log file either way.
 

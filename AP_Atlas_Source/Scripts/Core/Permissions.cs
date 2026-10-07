@@ -49,12 +49,18 @@ namespace AP_Atlas.Core
             "One small read when you fill in a multiworld from its room link, and one when a reconnect fails (at most every ten minutes), " +
             "to say whether the room moved to another port or went to sleep. Atlas never requests the room's own page, which would wake a sleeping room.");
 
-        public static IReadOnlyList<Kind> All { get; } = new[] { FindArchipelago, WriteArchipelago, GitHubLookups, RoomStatusReads };
+        public static readonly Kind UpdateChecks = new Kind("online.update-check", "Check GitHub for new versions of Atlas",
+            "Once a day at most, Atlas reads the list of its own releases on GitHub: one small request, and an unchanged list is confirmed " +
+            "rather than sent again. Nothing is downloaded until you press Update, and a download is checked against the release's " +
+            "SHA-256 before it's used. Settings \u2192 Updates turns the daily check off.");
+
+        public static IReadOnlyList<Kind> All { get; } = new[] { FindArchipelago, WriteArchipelago, GitHubLookups, RoomStatusReads, UpdateChecks };
 
         /// <summary>Every place Atlas reaches online, in plain words: the privacy statement (Settings → Privacy &amp; permissions, About). A new site joins it.</summary>
         public const string WhereAtlasGoesOnline =
             "The archipelago.gg rooms you connect to, and a room's status page when you allow it (to fill in a multiworld from its link, or after a failed reconnect). Cheese Tracker (your instance) and spheretracker.de (the host's room) for the multiworlds you link. " +
-            "GitHub for apworld releases, when you allow it. python.org, pypa.io and PyPI when you set up the Atlas Engine. Nothing else, and nothing at startup.";
+            "GitHub for apworld releases, and for new versions of Atlas (once a day at most, and only to download one when you ask), when you allow it. " +
+            "python.org, pypa.io and PyPI when you set up the Atlas Engine. Nothing else, and nothing at startup.";
 
         private static readonly HashSet<string> _deniedThisSession = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly HashSet<string> _allowedThisSession = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

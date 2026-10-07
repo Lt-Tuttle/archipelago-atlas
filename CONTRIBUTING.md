@@ -66,12 +66,12 @@ New code that doesn't need Godot belongs in `AP_Atlas.Core`, with tests. The vis
   | Opening links and folders | `ExternalLinks` |
   | Anything outside Atlas's folder, or a new site | `Permissions` with `PermissionDialog` |
   | Connecting to an Archipelago server | `SessionManager` (one connection at a time, time limits, careful reconnects; its sessions keep the games' names in Atlas's folder) |
-  | Starting a program | `EngineInstall.StartInfo` or `AtlasEngine.SetupStartInfo` (keep its temporary files and caches in Atlas's folder) |
+  | Starting a program | `EngineInstall.StartInfo` or `AtlasEngine.SetupStartInfo` (keep its temporary files and caches in Atlas's folder); the updater's `UpdateLauncher` (the Atlas just installed, and the previous one as its supervisor) |
   | Secrets | `Secrets` |
   | Work nobody awaits (button handlers, background checks) | `Async.Fire(task, "what it's doing")`, never `async void` or `_ = …` |
   | Updating the window from another thread, or later | `Ui.Defer(owner, …)`, never `Callable.From(…).CallDeferred()` |
   | Running Lua | `PackScriptHost`, where a pack's scripts run under limits |
-  | Reading a zip (a map pack, an apworld) | `SafeZip`: `ReadText`, `ReadTextBytes` or `ReadImage`, never `ZipFile.OpenRead` or `entry.Open()`. Its limits hold however a zip lies about its files |
+  | Reading a zip (a map pack, an apworld) | `SafeZip`: `ReadText`, `ReadTextBytes` or `ReadImage`, never `ZipFile.OpenRead` or `entry.Open()`. Its limits hold however a zip lies about its files; `SafeZip.UnpackTo` unpacks Atlas's own hash-checked releases under limits of its own |
   | Decoding an image | `PackImages.DecodeImage`, which checks the size its header gives against an `ImageBudget` before any memory is set aside for it |
   | Rich text (BBCode) | `SafeRichText` (`Markup`, `Append`), with outside text escaped (`Bbcode.Escape`, or a helper that does). Plain text goes in a `Label`. A paragraph over 300 characters wraps at spaces (Godot's "word smart" wrapping takes time that grows with the square of a paragraph), and `Bbcode.Safe` gives long runs of text breaks: leave its AutowrapMode alone |
   | Names from a server (items, locations, entrances) | The library's lookups, which Atlas fills with names cut to `NameLimits.MaxName`; cut any other name a server sends with `NameLimits.Cap` |

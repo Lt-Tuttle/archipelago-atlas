@@ -48,6 +48,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'footprint.ps1')
 function Get-FullPath([string]$path) { $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($path) }
 function Stop-Build([int]$Code, [string]$Message) { Write-Host $Message -ForegroundColor Red; exit $Code }
 
@@ -178,6 +179,58 @@ else {
     Write-Host 'Testing the exported build: the self-test, the UI test and the footprint check...'
     & (Join-Path $PSScriptRoot 'run_selftest.ps1') -Executable $exe -ScratchRoot $ScratchRoot
     if ($LASTEXITCODE -ne 0) { Stop-Build 5 "The exported build failed its tests (run_selftest.ps1 exit code $LASTEXITCODE)." }
+
+    # 5b. The update path, for real, on copies of the exported build (ATLAS_UPDATE_SELFCHECK): the build stages a copy of
+    # itself as an update, swaps the files, starts the "new" Atlas and the supervisor, and the new one confirms the
+    # hand-over; then the same with a new Atlas that ends before its window, which the supervisor puts back. Nothing may
+    # be written outside the check's folders.
+    Write-Host 'Checking that the exported build can update itself (a copy of it), and put itself back when an update fails to start...'
+    foreach ($case in @(@{ Name = 'update'; NewPhase = '2'; Expect = 'UPDATE READY'; Kept = 'previous' }, @{ Name = 'rollback'; NewPhase = 'fail'; Expect = 'UPDATE ROLLED BACK'; Kept = 'failed' })) {
+        $checkRoot = Join-Path $stagingRoot "selfcheck-$($case.Name)"
+        if (Test-Path -LiteralPath $checkRoot) { Remove-Item -LiteralPath $checkRoot -Recurse -Force }
+        $checkInstall = Join-Path $checkRoot 'TheArchipelagoAtlas'
+        $checkData = Join-Path $checkRoot 'data'
+        Copy-Item -LiteralPath $staging -Destination $checkInstall -Recurse
+        New-Item -ItemType Directory -Path $checkData -Force | Out-Null
+        $checkInfo = New-Object System.Diagnostics.ProcessStartInfo
+        $checkInfo.FileName = Join-Path $checkInstall 'TheArchipelagoAtlas.exe'
+        $checkInfo.Arguments = '--headless'
+        $checkInfo.WorkingDirectory = $checkInstall
+        $checkInfo.UseShellExecute = $false
+        $checkInfo.CreateNoWindow = $true
+        $checkInfo.EnvironmentVariables['ATLAS_DATA_DIR'] = $checkData
+        $checkInfo.EnvironmentVariables['ATLAS_UPDATE_SELFCHECK'] = '1'
+        $checkInfo.EnvironmentVariables['ATLAS_UPDATE_SELFCHECK_NEW'] = $case.NewPhase
+        $outside = Set-StandInUserFolders $checkInfo $checkRoot
+        $first = [System.Diagnostics.Process]::Start($checkInfo)
+        if (-not $first.WaitForExit(180000)) {
+            try { $first.Kill() } catch { }
+            Stop-Build 5 "The self-check's first Atlas ($($case.Name)) didn't exit within 3 minutes."
+        }
+        # The new Atlas, the supervisor and (for the rollback) the Atlas put back run on their own: wait until none runs from the check's folders.
+        $deadline = (Get-Date).AddMinutes(4)
+        do {
+            Start-Sleep -Milliseconds 500
+            $running = @(Get-Process -Name 'TheArchipelagoAtlas' -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($checkRoot, [System.StringComparison]::OrdinalIgnoreCase) })
+        } while ($running.Count -gt 0 -and (Get-Date) -lt $deadline)
+        if ($running.Count -gt 0) {
+            $running | ForEach-Object { try { $_.Kill() } catch { } }
+            Stop-Build 5 "The self-check's processes ($($case.Name)) were still running after 4 minutes. Logs: $checkData\logs"
+        }
+        $logText = ''
+        foreach ($name in 'atlas_log.txt', 'atlas_update_log.txt') {
+            $logPath = Join-Path $checkData "logs\$name"
+            if (Test-Path -LiteralPath $logPath) { $logText += (Get-Content -Raw -LiteralPath $logPath) + "`n" }
+        }
+        if (-not $logText.Contains($case.Expect)) {
+            Write-Host $logText
+            Stop-Build 5 "The self-check ($($case.Name)) didn't log '$($case.Expect)'. Logs: $checkData\logs"
+        }
+        if (-not (Test-Path -LiteralPath (Join-Path $checkInstall 'TheArchipelagoAtlas.exe'))) { Stop-Build 5 "After the self-check ($($case.Name)), the program folder has no exe." }
+        if (-not (Test-Path -LiteralPath (Join-Path $checkData "updates\$($case.Kept)\TheArchipelagoAtlas.exe"))) { Stop-Build 5 "After the self-check ($($case.Name)), updates\$($case.Kept) has no exe." }
+        if ((Test-Footprint $outside) -gt 0) { Stop-Build 5 "The self-check ($($case.Name)) wrote outside Atlas's folder." }
+        Write-Host "  $($case.Name): $($case.Expect)" -ForegroundColor Green
+    }
 }
 
 # 6. The documents, then the zip and its checksum.

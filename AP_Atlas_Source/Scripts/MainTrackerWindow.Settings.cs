@@ -194,6 +194,8 @@ public partial class MainTrackerWindow
                 () => _commands.ShortcutOf(bound.Id), () => bound.DefaultShortcut, key => SetKeyBinding(bound.Id, key), () => ConflictsOf(bound.Id));
         }
 
+        AddUpdateSettings(page);
+
         page.AddSection("advanced", "Advanced");
         page.AddToggle("advanced", "developer-mode", "Developer mode",
             "Shows Atlas's diagnostics: the Debug Log tab in the bottom pane, frame hitch warnings on the status bar and the Debug Log's menu items. Everything is written to the log file either way.",

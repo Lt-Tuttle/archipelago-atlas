@@ -193,7 +193,8 @@ namespace AP_Atlas.Core
             try { Recovered?.Invoke(path, what); } catch { } // a listener's failure mustn't undo the recovery
         }
 
-        private static void Retry(Action action)
+        /// <summary>Runs a file operation again, a few times, while another program holds the file for a moment.</summary>
+        internal static void Retry(Action action)
         {
             // Antivirus scanners and sync tools (OneDrive, Dropbox) briefly lock files they're reading.
             for (int attempt = 0; ; attempt++)

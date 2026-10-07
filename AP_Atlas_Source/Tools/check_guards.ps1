@@ -18,7 +18,8 @@
       - Connecting a session: only SessionManager, which sets the time limit, closes everything when Atlas closes and
         reconnects politely (the self-test may create one it never connects).
       - Starting a program: only the engine's launch points (EngineInstall.StartInfo, AtlasEngine.SetupStartInfo), which
-        keep its temporary files and caches in Atlas's folder, and the self-test.
+        keep its temporary files and caches in Atlas's folder, the updater's (UpdateLauncher: the Atlas just installed,
+        and the previous one as its supervisor), and the self-test.
       - Running the engine on a Python other than the portable engine's own (AtlasEngine.TestPython): only the UI test,
         for its fake engine.
       - Changing how many engines a multiworld's slots share (EnginePools.TestMaxEngines): only the UI test.
@@ -43,7 +44,8 @@
         can lie: SafeZip refuses zip64 zips before they're listed, and counts every file's bytes as they're unpacked, with
         limits per file and per zip. Making a zip (ZipArchiveMode.Create, CreateEntry(...).Open()) is fine anywhere.
       - Unpacking a zip into a folder: only the engine's setup, for its downloads checked against pinned SHA-256 hashes
-        (Python, pip, Archipelago) before they're unpacked.
+        (Python, pip, Archipelago) before they're unpacked. (Atlas's own releases are unpacked by SafeZip.UnpackTo, with
+        its limits, after their hash was checked against the release's SHA256SUMS.txt.)
       - Decoding an image: only PackImages.DecodeImage, which takes the image's size from its header and checks it against
         an ImageBudget first (a decoder sets aside width x height x 4 bytes from the header alone), and the visual check,
         for its own screenshots.
@@ -98,7 +100,8 @@ $rules = @(
     # Case-sensitive, so starting an engine process made at a launch point (process.Start()) isn't mistaken for one.
     @{ Name = 'Starting a program outside the engine''s launch points'; CaseSensitive = $true
        Pattern = 'new\s+(System\.Diagnostics\.)?ProcessStartInfo\b|(?<![\w.])(System\.Diagnostics\.)?Process\.Start\s*\(|\bOS\.(Execute|ExecuteWithPipe|CreateProcess|CreateInstance)\s*\('
-       Allowed = @('AP_Atlas_Source\Scripts\Core\Engine\AtlasEngine.cs', 'AP_Atlas_Source\Scripts\Core\Engine\EngineInstall.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.cs') },
+       Allowed = @('AP_Atlas_Source\Scripts\Core\Engine\AtlasEngine.cs', 'AP_Atlas_Source\Scripts\Core\Engine\EngineInstall.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.cs',
+                   'AP_Atlas_Source\Scripts\Core\Updates\UpdateLauncher.cs') },
     @{ Name = 'Running the engine on another Python'; Pattern = '\bTestPython\s*=(?!=)'; Allowed = @('AP_Atlas_Source\Scripts\MainTrackerWindow.UiTest.cs') },
     @{ Name = 'Changing how many engines a multiworld runs'; Pattern = '\bTestMaxEngines\s*=(?!=)'; Allowed = @('AP_Atlas_Source\Scripts\MainTrackerWindow.UiTest.cs') },
     @{ Name = 'Sending chat or changing a connection''s tags outside SessionManager'; Pattern = 'new\s+(SayPacket|ConnectUpdatePacket)\b|\.UpdateConnectionOptions\s*\('

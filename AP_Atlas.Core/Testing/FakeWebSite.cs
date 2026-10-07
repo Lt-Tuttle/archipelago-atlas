@@ -37,6 +37,15 @@ public sealed class FakeWebSite : IAsyncDisposable
 
     public string ContentType { get; set; } = "application/json";
 
+    /// <summary>An answer with bytes and headers of its own (a file, a 304 with an ETag).</summary>
+    public sealed record FullAnswer(int Status, byte[] Body, string? ContentType = null, IReadOnlyDictionary<string, string>? Headers = null);
+
+    /// <summary>
+    /// When set, answers instead of <see cref="Respond"/>: the path and the request's headers (names in lower case) in,
+    /// a <see cref="FullAnswer"/> out.
+    /// </summary>
+    public Func<string, IReadOnlyDictionary<string, string>, FullAnswer>? Answer { get; set; }
+
     /// <summary>Every path asked for, in order.</summary>
     public IReadOnlyList<string> Requests
     {
@@ -82,13 +91,34 @@ public sealed class FakeWebSite : IAsyncDisposable
                     headerEnd = IndexOf(buffer, "\r\n\r\n");
                 }
                 if (headerEnd < 0) return;
-                string requestLine = Encoding.ASCII.GetString(buffer.GetBuffer(), 0, headerEnd).Split("\r\n")[0];
-                var parts = requestLine.Split(' ');
+                string[] requestLines = Encoding.ASCII.GetString(buffer.GetBuffer(), 0, headerEnd).Split("\r\n");
+                var parts = requestLines[0].Split(' ');
                 string path = parts.Length > 1 ? parts[1] : "/";
+                var requestHeaders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (string line in requestLines.AsSpan(1))
+                {
+                    int colon = line.IndexOf(':');
+                    if (colon > 0) requestHeaders[line.Substring(0, colon).Trim().ToLowerInvariant()] = line.Substring(colon + 1).Trim();
+                }
                 lock (_requests) _requests.Add(path);
-                var (status, body) = Respond(path);
-                byte[] payload = Encoding.UTF8.GetBytes(body ?? "");
-                string head = $"HTTP/1.1 {status} Test\r\nContent-Type: {ContentType}\r\nContent-Length: {payload.Length}\r\nConnection: close\r\n\r\n";
+                int status;
+                byte[] payload;
+                string contentType = ContentType;
+                var extraHeaders = new StringBuilder();
+                if (Answer is { } answer)
+                {
+                    var full = answer(path, requestHeaders);
+                    status = full.Status;
+                    payload = full.Body;
+                    contentType = full.ContentType ?? ContentType;
+                    foreach (var header in full.Headers ?? new Dictionary<string, string>()) extraHeaders.Append(header.Key).Append(": ").Append(header.Value).Append("\r\n");
+                }
+                else
+                {
+                    (status, string body) = Respond(path);
+                    payload = Encoding.UTF8.GetBytes(body ?? "");
+                }
+                string head = $"HTTP/1.1 {status} Test\r\nContent-Type: {contentType}\r\nContent-Length: {payload.Length}\r\n{extraHeaders}Connection: close\r\n\r\n";
                 await stream.WriteAsync(Encoding.ASCII.GetBytes(head), _stop.Token).ConfigureAwait(false);
                 await stream.WriteAsync(payload, _stop.Token).ConfigureAwait(false);
             }

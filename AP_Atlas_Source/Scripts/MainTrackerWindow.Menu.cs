@@ -66,6 +66,7 @@ public partial class MainTrackerWindow
 
         Add("help.guide", "Help", "Guide", "", () => OpenHelp(null));
         Add("help.whats-new", "Help", "What's New", "", () => OpenHelp(AP_Atlas.UI.HelpWindow.WhatsNew));
+        Add("help.check-updates", "Help", "Check for Updates\u2026", "", () => AP_Atlas.Core.Async.Fire(_updates!.CheckAsync(manual: true), "checking for a newer Atlas", tellUser: true));
         Add("help.shortcuts", "Help", "Keyboard Shortcuts", "F1", ShowShortcuts);
         Add("help.race-mode", "Help", "What Does Race Mode Change?", "", ShowRaceModeInfo);
         Add("help.github", "Help", "Atlas on GitHub", "", () =>
@@ -135,7 +136,7 @@ public partial class MainTrackerWindow
         menus["Help"].AddSeparator();
         AddCommandItems(menus["Help"], "help.shortcuts");
         menus["Help"].AddSeparator();
-        AddCommandItems(menus["Help"], "help.race-mode", "help.github");
+        AddCommandItems(menus["Help"], "help.race-mode", "help.github", "help.check-updates");
         menus["Help"].AddSeparator();
         AddCommandItems(menus["Help"], "help.credits", "help.about");
     }

@@ -95,6 +95,59 @@ public sealed class SafeZip : IDisposable
 
     public void Dispose() => _zip.Dispose();
 
+    /// <summary>The most one file of a release of Atlas may unpack to (its program is about 105 MB).</summary>
+    public const long ProgramLimit = 1L << 30;
+
+    /// <summary>The most a release of Atlas may unpack to in all (about 200 MB today).</summary>
+    public const long ProgramTotal = 2L << 30;
+
+    /// <summary>
+    /// Unpacks a zip into a folder with the same care as reading one: refused as a zip64 zip, each file's bytes counted as
+    /// they're written (no file past <paramref name="fileLimit"/>, nothing past <paramref name="totalLimit"/> in all), and
+    /// no entry allowed to land outside the folder. For Atlas's own releases, after their hash was checked; a refusal
+    /// leaves what was unpacked for the caller to remove.
+    /// </summary>
+    public static void UnpackTo(string zipPath, string folder, long fileLimit, long totalLimit)
+    {
+        string root = Path.GetFullPath(folder);
+        Directory.CreateDirectory(root);
+        using var zip = Open(zipPath);
+        long total = 0;
+        var buffer = new byte[81920];
+        foreach (var entry in zip.Entries)
+        {
+            string full = Path.GetFullPath(Path.Combine(root, entry.FullName.Replace('/', Path.DirectorySeparatorChar)));
+            if (!full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException($"'{entry.FullName}' would land outside the folder");
+            if (entry.FullName.EndsWith('/') || entry.FullName.EndsWith('\\'))
+            {
+                Directory.CreateDirectory(full);
+                continue;
+            }
+            if (entry.Length > fileLimit) throw TooBig(entry, fileLimit);
+            if (total + entry.Length > totalLimit) throw TooMuchInAll(zipPath, totalLimit);
+            Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+            using var source = OpenEntry(entry);
+            using var output = new FileStream(full, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            long count = 0;
+            int read;
+            while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                count += read;
+                if (count > fileLimit) throw TooBig(entry, fileLimit);
+                if (total + count > totalLimit) throw TooMuchInAll(zipPath, totalLimit);
+                output.Write(buffer, 0, read);
+            }
+            total += count;
+        }
+    }
+
+    /// <summary>The one place a file is unpacked from: every reader above counts what comes out of it.</summary>
+    private static Stream OpenEntry(ZipArchiveEntry entry) => entry.Open();
+
+    private static InvalidDataException TooMuchInAll(string zipPath, long total) =>
+        new($"'{Path.GetFileName(zipPath)}' unpacks to more than {Size(total)}, more than Atlas unpacks from one zip");
+
     private byte[] Read(ZipArchiveEntry entry, long limit, long total, ref long used, string kind)
     {
         if (entry.Archive != _zip) throw new ArgumentException("The file is from another zip.", nameof(entry));
@@ -102,7 +155,7 @@ public sealed class SafeZip : IDisposable
         // stops a compressed file at the size its headers give, but reads a stored one to the end of its bytes.
         if (entry.Length > limit) throw TooBig(entry, limit);
         if (used + entry.Length > total) throw TooMuch(kind, total);
-        using var source = entry.Open();
+        using var source = OpenEntry(entry);
         using var output = new MemoryStream((int)entry.Length);
         var buffer = new byte[81920];
         long count = 0;
