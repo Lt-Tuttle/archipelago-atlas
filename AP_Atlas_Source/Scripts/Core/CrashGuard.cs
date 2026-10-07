@@ -26,6 +26,13 @@ namespace AP_Atlas.Core
                 Record("Unhandled exception" + (e.IsTerminating ? " (Atlas is closing)" : ""), e.ExceptionObject as Exception);
             TaskScheduler.UnobservedTaskException += (_, e) =>
             {
+                if (AP_Atlas.Core.Connections.LibraryLeftovers.IsAbandonedConnect(e.Exception))
+                {
+                    // Not a crash: a connection attempt the library gave up on (already reported as failed) ended later.
+                    Logger.LogDebug("The connection library's abandoned connection attempt ended: " + e.Exception.InnerException?.Message);
+                    e.SetObserved();
+                    return;
+                }
                 Record("A background task failed without being checked", e.Exception);
                 e.SetObserved();
             };

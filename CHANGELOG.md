@@ -247,6 +247,7 @@ Development toward the first public beta, 0.1.0.
   - An image you choose for a Pack Doctor fix is checked the same way before it's copied.
 
 ### Fixed
+- Connecting to a server that's down, with an address typed without ws:// or wss://, wrote a crash report and an error line a few seconds later: the connection library gives up waiting for its connection after 4 seconds without checking how it ends, and Windows takes longer than that to refuse both its tries. Atlas now recognises that leftover and only notes it in the log file.
 - Connecting a slot after looking at a multiworld of several slots logged an error for each connection: the connecting overlay reached for the freed Connect All button.
 - An update's download progress reached the status bar from the download's thread (Godot reported an error for each line); it's now shown from the main thread.
 - **Deleting a slot asks first** (as deleting a multiworld and a map pack did), and the multiworld's confirmation says what goes with it.

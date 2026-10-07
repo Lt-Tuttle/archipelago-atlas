@@ -199,4 +199,42 @@ public sealed partial class SessionManagerTests
         lock (errors) Assert.Empty(errors);
         await manager.CloseAllAsync(TimeSpan.FromSeconds(5));
     }
+
+    [Fact]
+    public async Task The_librarys_abandoned_connection_attempt_is_recognised_and_nothing_else_is()
+    {
+        // The library stops waiting for a socket's connection after 4 s without checking how it ends. Windows takes about 2 s
+        // to refuse each of the two tries for an address without a scheme, so the failure turns up later, unchecked.
+        var leftovers = new List<Exception>();
+        void Unobserved(object? sender, UnobservedTaskExceptionEventArgs e)
+        {
+            if (e.Exception.ToString().Contains("ConnectToProvidedUri", StringComparison.Ordinal)) lock (leftovers) leftovers.Add(e.Exception);
+        }
+        TaskScheduler.UnobservedTaskException += Unobserved;
+        try
+        {
+            var session = AtlasSessions.Create("127.0.0.1:9", new DataPackageStore(_dir.Path));
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => session.ConnectAsync().WaitAsync(TimeSpan.FromSeconds(30), Ct));
+            var waited = Stopwatch.StartNew();
+            while (waited.Elapsed < TimeSpan.FromSeconds(15))
+            {
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                lock (leftovers) if (leftovers.Count > 0) break;
+                await Task.Delay(250, Ct);
+            }
+        }
+        finally
+        {
+            TaskScheduler.UnobservedTaskException -= Unobserved;
+        }
+        lock (leftovers)
+        {
+            Assert.NotEmpty(leftovers);
+            Assert.All(leftovers, failure => Assert.True(LibraryLeftovers.IsAbandonedConnect(failure)));
+        }
+        Assert.False(LibraryLeftovers.IsAbandonedConnect(new AggregateException(new InvalidOperationException("something else"))));
+        Assert.False(LibraryLeftovers.IsAbandonedConnect(new AggregateException(new System.Net.WebSockets.WebSocketException("not the library's"))));
+        Assert.False(LibraryLeftovers.IsAbandonedConnect(null));
+    }
 }
