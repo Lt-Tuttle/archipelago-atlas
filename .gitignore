@@ -34,3 +34,6 @@ AI notes/
 
 # Visual check pictures (they only compare on the PC that took them)
 VisualCheck/
+
+# Test results written by dotnet test
+TestResults/

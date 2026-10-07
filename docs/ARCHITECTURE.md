@@ -243,6 +243,7 @@ Downloads that become code are pinned:
 
 - **Building and testing:** see [CONTRIBUTING.md](../CONTRIBUTING.md).
 - **CI** (`.github/workflows/ci.yml`): guard rails → build → format check → unit tests → hash-checked Godot → import → self-test and UI test, with the footprint check.
+- **CodeQL** (`.github/workflows/codeql.yml`): GitHub's static analysis of the C# code on every push and pull request to `main` and weekly; findings show under the repository's Security tab.
 - **Releases** (`.github/workflows/release.yml`): run when a `v*` tag is pushed, or by hand as a dry run that publishes nothing. The version is set once, in `Directory.Build.props`; `Tools/bump_version.ps1` copies its numbers into the export preset's version fields, and the guard rails check they agree. `Tools/build_release.ps1` exports the project with Godot through `AP_Atlas_Source/export_presets.cfg` (the Windows release template pinned by hash and fetched by `Tools/get_export_templates.ps1`; the .NET runtime is included, so nothing has to be installed), refuses any export error or warning, checks the exe's version, properties and icon, runs the self-test and the UI test on the exported build itself (`run_selftest.ps1 -Executable`, with the footprint check), and packs `TheArchipelagoAtlas-<version>-win-x64.zip` (one folder with the program, its data folder and the README, licence, notices, Godot's copyright file, credits and changelog) with `SHA256SUMS.txt`.
 
 ## Planned restructuring (roadmap Phase 1)
