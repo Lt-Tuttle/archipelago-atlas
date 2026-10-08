@@ -170,6 +170,8 @@ public partial class MainTrackerWindow
             PackImagesFollowTheirUsersAsync);
         await ScenarioAsync("Map packs reach connected slots: a pack installed while a slot is connected shows on its map at once, without a reconnect; deleted, the map says there's no pack again; another pack for the game takes its place",
             PacksReachConnectedSlotsAsync);
+        await ScenarioAsync("Live map following: a pack whose scripts follow the game switches the map to the tab the room's data storage names, at connect and when it changes (Atlas asks the server about the key and never writes the room's data); with the switch off, the map stays; the switch is remembered per slot",
+            LiveMapFollowingAsync);
         await ScenarioAsync("Idle: a connected slot doesn't keep Atlas redrawing: nothing of its map runs every frame (the wheel still zooms it and a drag still moves it; Fit fits; the view is remembered), and its card isn't re-styled while nothing changes",
             ConnectedSlotLetsAtlasIdleAsync);
         await ScenarioAsync("Map pack scripts: a slot whose pack's script runs away keeps working: the script is stopped in seconds without holding up a frame, and Key Items and the log say why",
@@ -2570,6 +2572,52 @@ public partial class MainTrackerWindow
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
             if (_profiles.Contains(profile)) DeleteProfile(profile);
             foreach (string file in new[] { zip, second }) AP_Atlas.Core.SafeFile.Delete(file);
+        }
+    }
+
+    private async Task LiveMapFollowingAsync()
+    {
+        string zip = System.IO.Path.Combine(AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory(), "uitest_follow_pack.zip");
+        FakeMapPack.Write(zip, "UI test following pack", "Test Game", initLua: FakeMapPack.FollowingInitLua, layoutsJson: FakeMapPack.TwoTabLayout);
+        await using var server = new FakeArchipelagoServer();
+        server.Games["Test Game"] = new FakeGame("0123456789abcdef0123456789abcdef01234567",
+            new Dictionary<string, long> { ["Sword"] = 1000 }, new Dictionary<string, long> { ["Cave Chest"] = 2000 });
+        server.DataStorage["atlas_test_map"] = "Elsewhere"; // where the game's client says the player is
+        var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Tester");
+        _profiles.Add(profile);
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        string key = AP_Atlas.Core.Annotations.SlotKey(profile.Id, "Tester");
+        try
+        {
+            await OnConnectSlotPressedAsync("Tester", profile);
+            var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
+            ShowTextClient(slot);
+            host.ShowTool(AP_Atlas.UI.Tool.MapTracker);
+            var map = slot.MapTracker;
+            // At connect: the key is read, and the map shows the tab it names.
+            await UiTestWaitForAsync(() => map.CurrentMapId == "Broken" ? map : null, "the map to follow the game to the tab the room names");
+            UiTestExpect(map.FollowAvailable && map.FollowGame && map.FollowBox.Visible, "the follow switch isn't offered, or isn't on");
+            UiTestExpect(server.Received.Any(p => (string?)p["cmd"] == "SetNotify" && p["keys"]?.ToObject<string[]>()?.Contains("atlas_test_map") == true),
+                "the server wasn't asked to tell Atlas about the key");
+            // A change: the map follows.
+            await server.SetAsync("atlas_test_map", "Overworld");
+            await UiTestWaitForAsync(() => map.CurrentMapId == "World" ? map : null, "the map to follow the game back");
+            // Off: the map stays where the user put it, and the choice is remembered for the slot.
+            map.FollowBox.ButtonPressed = false;
+            UiTestExpect(_appSettings.MapFollowGame.TryGetValue(key, out bool following) && !following, "turning following off wasn't remembered");
+            await server.SetAsync("atlas_test_map", "Elsewhere");
+            await UiTestWaitAsync(1.0);
+            UiTestExpect(map.CurrentMapId == "World", $"the map followed the game with the switch off (it shows {map.CurrentMapId})");
+            UiTestExpect(server.Count("Set") == 0, "Atlas wrote the room's data storage for the pack");
+        }
+        finally
+        {
+            _appSettings.MapFollowGame.Remove(key);
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+            if (_profiles.Contains(profile)) DeleteProfile(profile);
+            AP_Atlas.Core.SafeFile.Delete(zip);
         }
     }
 

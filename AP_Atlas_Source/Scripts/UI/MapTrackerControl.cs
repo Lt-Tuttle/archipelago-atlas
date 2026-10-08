@@ -34,6 +34,12 @@ namespace AP_Atlas.UI
         /// <summary>Raised when the map display options change, so every slot's map redraws with them.</summary>
         public static event Action DisplayOptionsChanged;
 
+        /// <summary>Translates text as it's shown (the window sets it).</summary>
+        public static Func<string, string> Translate { get; set; } = text => text;
+
+        /// <summary>The user turned "Follow the game's current map" on or off.</summary>
+        public event Action<bool> FollowToggled;
+
         private const int ModeShow = 0, ModeDim = 1, ModeHide = 2;
         private const float DimAlpha = 0.35f;
 
@@ -249,6 +255,8 @@ namespace AP_Atlas.UI
         // --- Display options (shared by every slot's map) ---
 
         private Button _displayToggle;
+        private CheckBox _followBox;
+        private bool _syncingFollow;
         private HSlider _nodeSizeSlider;
         private Label _nodeSizeValue;
         private OptionButton _excludedModeDropdown;
@@ -268,6 +276,19 @@ namespace AP_Atlas.UI
             viewRow.AddChild(Kit.Button("−", "Zoom out", () => _canvas.ZoomAtCenter(1 / MapCanvas.WheelStep)));
             viewRow.AddChild(Kit.Button("+", "Zoom in", () => _canvas.ZoomAtCenter(MapCanvas.WheelStep)));
             box.AddChild(viewRow);
+            // Shown only when the pack's scripts can switch the map to where the player is.
+            _followBox = new CheckBox
+            {
+                Text = Translate("Follow the game's current map"),
+                TooltipText = Translate("The pack switches the map to where you are in the game, from what the game's client tells the room. Turn it off to look around on your own."),
+                Visible = false,
+                ButtonPressed = true
+            };
+            _followBox.Toggled += on =>
+            {
+                if (!_syncingFollow) FollowToggled?.Invoke(on);
+            };
+            box.AddChild(_followBox);
             _displayToggle = new Button { Text = "▸ Display", ThemeTypeVariation = "QuietButton", Alignment = HorizontalAlignment.Left, TooltipText = "Node size and which pins the map shows" };
             box.AddChild(_displayToggle);
             var panel = new VBoxContainer { Visible = false, SizeFlagsHorizontal = SizeFlags.ExpandFill };
@@ -509,6 +530,7 @@ namespace AP_Atlas.UI
         /// <summary>The slot's pack was removed or replaced: nothing of it is shown, and the empty state says why.</summary>
         public void ClearPack()
         {
+            FollowAvailable = false;
             _pack = null;
             _index = null;
             _currentMapId = "";
@@ -518,6 +540,60 @@ namespace AP_Atlas.UI
             RefreshMapList();
             if (_canvasPanel != null) _canvasPanel.Visible = false;
             if (_emptyStateContainer != null) _emptyStateContainer.Visible = true;
+        }
+
+        /// <summary>Whether the pack can follow the game's map (its scripts switch tabs): the switch shows only then.</summary>
+        public bool FollowAvailable
+        {
+            get => _followBox?.Visible == true;
+            set { if (_followBox != null) _followBox.Visible = value; }
+        }
+
+        /// <summary>Whether the map follows the game's current map (the switch's state; set without telling anyone).</summary>
+        public bool FollowGame
+        {
+            get => _followBox?.ButtonPressed != false;
+            set
+            {
+                if (_followBox == null) return;
+                _syncingFollow = true;
+                _followBox.ButtonPressed = value;
+                _syncingFollow = false;
+            }
+        }
+
+        /// <summary>The switch (for tests).</summary>
+        internal CheckBox FollowBox => _followBox;
+
+        /// <summary>
+        /// Shows the map of a pack tab, as a pack's script asks (Tracker:UiHint "ActivateTab", title): the tab's first map,
+        /// else a map of that name, else one whose name holds it (letters and digits compared). False when nothing matches.
+        /// </summary>
+        public bool ActivateTab(string title)
+        {
+            string mapId = MapForTab(title);
+            if (mapId == null) return false;
+            if (!string.Equals(mapId, _currentMapId, StringComparison.OrdinalIgnoreCase)) SwitchMap(mapId);
+            return true;
+        }
+
+        private string MapForTab(string title)
+        {
+            if (_pack == null || string.IsNullOrWhiteSpace(title)) return null;
+            title = title.Trim();
+            if (_pack.TabMaps.TryGetValue(title, out var maps))
+            {
+                string first = maps.FirstOrDefault(m => _pack.Maps.ContainsKey(m));
+                if (first != null) return _pack.Maps[first].Id;
+            }
+            if (_pack.Maps.TryGetValue(title, out var named)) return named.Id;
+            static string Plain(string s) => new string((s ?? "").Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
+            string wanted = Plain(title);
+            if (wanted.Length == 0) return null;
+            var byName = _pack.Maps.Values.FirstOrDefault(m => Plain(m.Name) == wanted);
+            if (byName != null) return byName.Id;
+            return _pack.Maps.Values.Where(m => Plain(m.Name).Contains(wanted, StringComparison.Ordinal) || (Plain(m.Name).Length > 2 && wanted.Contains(Plain(m.Name), StringComparison.Ordinal)))
+                .OrderBy(m => m.Name.Length).Select(m => m.Id).FirstOrDefault();
         }
 
         /// <summary>Whether the map says there's no pack (for tests).</summary>

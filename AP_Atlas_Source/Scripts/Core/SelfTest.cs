@@ -122,6 +122,7 @@ namespace AP_Atlas.Core
             await TestAsync("Pack scripts: items that arrive while a pack's scripts start reach them", PackScriptsGetItemsThatArriveWhileTheyStart);
             await TestAsync("Pack scripts: work that runs away is stopped, wherever it runs, and the scripts with it", PackScriptsThatRunAwayAreStopped);
             await TestAsync("Pack scripts: modules come from the pack, compiled once; library functions that could hurt Atlas are safe", PackScriptsUseTheirOwnCompiledFiles);
+            await TestAsync("Pack scripts: they read the room's data storage (never write it) and switch the map's tab; the pack's tabs are read from its layouts", PackScriptsReadTheRoomAndFollowTheMap);
             await TestAsync("Pack scripts: code nested deeper than Atlas compiles is refused, never compiled; every loader compiles that way, with room to spare", PackScriptsCompileSafely);
             await TestAsync("Map packs: a file or image too big to read safely is refused before it fills memory; the rest of the pack works, and the user is told why", PackFilesCantFillMemory);
             await TestAsync("Pack Doctor: an analysis reads its own snapshot, never the fixes as they change", PackDoctorReadsASnapshot);

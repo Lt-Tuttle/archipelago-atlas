@@ -145,6 +145,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         if (VisualCheckRequested) _appSettings.Theme = System.Environment.GetEnvironmentVariable("ATLAS_VISUALCHECK_THEME") is { Length: > 0 } theme ? theme : "dark";
         AP_Atlas.Core.ThemeColors.SetPalette(AP_Atlas.Core.ThemeColors.PaletteForSetting(_appSettings.Theme, _appSettings.ColourBlindSafe));
         AP_Atlas.Core.ThemeColors.SetMapColours(_appSettings.MapColours);
+        AP_Atlas.UI.MapTrackerControl.Translate = text => Tr(text);
         // Every dialog and window fits the screen it opens on, and the window follows Windows' display scale.
         AP_Atlas.UI.WindowFit.Watch(GetTree(), () => _appSettings);
         MigrateZoom();

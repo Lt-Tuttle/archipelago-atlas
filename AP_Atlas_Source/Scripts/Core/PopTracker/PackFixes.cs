@@ -390,6 +390,7 @@ namespace AP_Atlas.Core.PopTracker
                 Manifest = original.Manifest,
                 SourcePath = original.SourcePath,
                 RootPrefix = original.RootPrefix,
+                TabMaps = original.TabMaps,
                 ItemsByCode = new Dictionary<string, PopTrackerItem>(original.ItemsByCode, StringComparer.OrdinalIgnoreCase),
                 Images = new Dictionary<string, ImageTexture>(original.Images, StringComparer.OrdinalIgnoreCase),
                 ImageEntries = original.ImageEntries,

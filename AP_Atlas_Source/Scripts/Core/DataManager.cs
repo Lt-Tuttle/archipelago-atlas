@@ -72,6 +72,8 @@ public class AppSettings
     public Dictionary<string, MapCameraSave> MapCameras { get; set; } = new Dictionary<string, MapCameraSave>();
     /// <summary>The Map Tracker's pin colours the user changed: a state ("in-logic", "out-of-logic", "mixed", "sequence-break", "checked", "logic-unknown") → "#RRGGBB". Empty: PopTracker's.</summary>
     public Dictionary<string, string> MapColours { get; set; } = new Dictionary<string, string>();
+    /// <summary>Slot key ("profileId|slotName") → whether its Map Tracker follows the game's current map (on unless turned off).</summary>
+    public Dictionary<string, bool> MapFollowGame { get; set; } = new Dictionary<string, bool>();
 
     // Properties panel: titles of sections the user collapsed, and the flag color used by the F shortcut.
     public List<string> CollapsedPropertySections { get; set; } = new List<string> { "Advanced" };
@@ -371,6 +373,7 @@ public static class DataManager
         }
         if (settings.MapNodeScale <= 0 || float.IsNaN(settings.MapNodeScale)) settings.MapNodeScale = 1f;
         settings.MapColours ??= new Dictionary<string, string>();
+        settings.MapFollowGame ??= new Dictionary<string, bool>();
         settings.UiZoom = System.Math.Clamp(settings.UiZoom, 50, 200);
         if (settings.MapMarkerStyle is not ("round" or "square" or "diamond")) settings.MapMarkerStyle = "round";
         if (settings.StartupPage is not ("home" or "last" or "multiworlds")) settings.StartupPage = "home";

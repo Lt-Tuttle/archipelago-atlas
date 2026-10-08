@@ -465,6 +465,40 @@ namespace AP_Atlas.Core
         /// the script's call, as in Lua. Library functions that could hurt Atlas in one step are safe: collectgarbage
         /// collects nothing, and the json and dynamic modules aren't there.
         /// </summary>
+        private static async Task PackScriptsReadTheRoomAndFollowTheMap()
+        {
+            string zip = Scratch("selftest_follow.zip");
+            AP_Atlas.Core.Testing.FakeMapPack.Write(zip, "Self-test following pack", "Self Test Game F", initLua: AP_Atlas.Core.Testing.FakeMapPack.FollowingInitLua,
+                layoutsJson: AP_Atlas.Core.Testing.FakeMapPack.TwoTabLayout);
+            var pack = PopTracker.PopTrackerPackLoader.InspectZipPack(zip) ?? throw new InvalidOperationException("the test pack wasn't read");
+            Expect(pack.TabMaps.TryGetValue("Elsewhere", out var elsewhere) && elsewhere.SequenceEqual(new[] { "Broken" })
+                && pack.TabMaps.TryGetValue("Overworld", out var overworld) && overworld.SequenceEqual(new[] { "World" }),
+                $"the layout's tabs weren't read: {string.Join("; ", pack.TabMaps.Select(t => t.Key + " = " + string.Join(",", t.Value)))}");
+            var host = PopTracker.PackScriptHost.Load(pack);
+            Expect(host != null && host.FollowsMaps && !host.ReadsGameMemory, "the pack wasn't seen to follow the game's map");
+            await Task.Run(() =>
+            {
+                host!.Initialize();
+                host.Clear(1, 0, new Newtonsoft.Json.Linq.JObject());
+            });
+            Expect(host!.Errors.Count == 0 && !host.Stopped, "the scripts didn't run cleanly: " + string.Join("; ", host.Errors));
+            var outbox = host.TakeOutbox();
+            Expect(outbox.Watch.SequenceEqual(new[] { "atlas_test_map" }) && outbox.Get.SequenceEqual(new[] { "atlas_test_map" }) && outbox.Hints.Count == 0,
+                $"the scripts' requests were {string.Join(",", outbox.Watch)} / {string.Join(",", outbox.Get)} / {outbox.Hints.Count} hints");
+            Expect(host.IgnoredWrites.SetEquals(new[] { "atlas_test_written" }) && host.TakeOutbox().IsEmpty, "a write to the room's data storage wasn't refused, or went out");
+            Expect(host.LoadedFiles.Contains(("AddMaps", "maps/maps.json")) && host.LoadedFiles.Count == 4, $"the files init.lua loads weren't noted: {string.Join(", ", host.LoadedFiles)}");
+            await Task.Run(() => host.ApplyRetrieved("atlas_test_map", "Elsewhere"));
+            Expect(host.TakeOutbox().Hints.SequenceEqual(new[] { ("ActivateTab", "Elsewhere") }), "the value read didn't move the map");
+            await Task.Run(() => host.ApplySetReply("atlas_test_map", "Overworld", "Elsewhere"));
+            Expect(host.TakeOutbox().Hints.SequenceEqual(new[] { ("ActivateTab", "Overworld") }), "a change to the key didn't move the map");
+            // A second SetNotify for the same key isn't sent again.
+            await Task.Run(() => host.Clear(1, 0, new Newtonsoft.Json.Linq.JObject()));
+            outbox = host.TakeOutbox();
+            Expect(outbox.Watch.Count == 0 && outbox.Get.SequenceEqual(new[] { "atlas_test_map" }), "the key was asked about again, or not read again");
+            var report = await Task.Run(() => PopTracker.PackDoctor.Analyze(PopTracker.PackDoctor.Prepare(pack, null)));
+            Expect(report.Findings.Any(f => f.Key == "script:follows-maps") && report.Findings.Any(f => f.Key == "script:writes"), "the Pack Doctor doesn't report live map following or the ignored write");
+        }
+
         private static async Task PackScriptsUseTheirOwnCompiledFiles()
         {
             string zip = Scratch("selftest_modules.zip");

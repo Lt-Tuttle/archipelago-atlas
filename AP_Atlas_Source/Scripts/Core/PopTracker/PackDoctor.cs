@@ -305,6 +305,45 @@ namespace AP_Atlas.Core.PopTracker
                     Details = host.UnsupportedApis.OrderBy(a => a).ToList()
                 });
             }
+            if (host.FollowsMaps)
+            {
+                add(new Finding
+                {
+                    Key = "script:follows-maps",
+                    Category = "Scripts",
+                    Severity = FindingSeverity.Info,
+                    Title = host.ReadsGameMemory ? "Live map following: the pack switches maps from the game's memory, which Atlas can't read"
+                        : "Live map following: supported",
+                    Detail = host.ReadsGameMemory
+                        ? "The pack's scripts read the game while it runs (PopTracker's memory watches). Atlas only talks to the room, so the map won't follow the game."
+                        : "The pack's scripts switch the map to where the player is, from what the game's client tells the room. The Map Tracker follows it while \"Follow the game's current map\" is on (Display)."
+                });
+            }
+            if (host.IgnoredWrites.Count > 0)
+            {
+                add(new Finding
+                {
+                    Key = "script:writes",
+                    Category = "Scripts",
+                    Severity = FindingSeverity.Info,
+                    Title = "The pack's script tries to write the room's data storage; Atlas never does that for a pack",
+                    Detail = "Reading is enough for tracking. The writes did nothing.",
+                    Details = host.IgnoredWrites.OrderBy(k => k).ToList()
+                });
+            }
+            var unread = host.LoadedFiles.Where(f => !IsReadByAtlas(f.Path, host.Variant)).Select(f => $"{f.Kind}: {f.Path}").Distinct().ToList();
+            if (unread.Count > 0)
+            {
+                add(new Finding
+                {
+                    Key = "script:unread-files",
+                    Category = "Scripts",
+                    Severity = FindingSeverity.Warning,
+                    Title = $"The pack's script loads {unread.Count} file(s) from places Atlas doesn't read",
+                    Detail = "Atlas reads a pack's items, maps, locations and layouts folders (and its default variant's own). Files outside them aren't shown.",
+                    Details = unread
+                });
+            }
             if (!host.HasClearHandler && !host.HasItemHandler)
             {
                 add(new Finding
@@ -363,6 +402,14 @@ namespace AP_Atlas.Core.PopTracker
         }
 
         private static string ValueText(Newtonsoft.Json.Linq.JToken v) => PackScriptHost.SettingInfo.FormatValue(v);
+
+        /// <summary>Whether Atlas reads a pack file a script loads: one in the items, maps, locations or layouts folder (or the variant's own).</summary>
+        private static bool IsReadByAtlas(string path, string variant)
+        {
+            path = (path ?? "").Replace('\\', '/').TrimStart('/');
+            if (!string.IsNullOrEmpty(variant) && path.StartsWith(variant + "/", StringComparison.OrdinalIgnoreCase)) path = path.Substring(variant.Length + 1);
+            return new[] { "items/", "maps/", "locations/", "layouts/" }.Any(folder => path.StartsWith(folder, StringComparison.OrdinalIgnoreCase));
+        }
 
         // =====================================================================
         // Key Items

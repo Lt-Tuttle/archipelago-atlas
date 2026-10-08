@@ -45,6 +45,8 @@ Each pin is coloured the way PopTracker colours it: green when every open check 
 
 Without a pack for the game, the Map Tracker says so and points you to Map Packs. A pack you install while the slot is connected shows on its map at once, and a pack you delete leaves it; no reconnect.
 
+**Follow the game's current map:** some packs switch the map to where you are in the game, from what the game's client tells the room (Dark Souls Remastered's, for one, when its client is set to share your location). With such a pack, a switch under Fit turns following on or off for that slot (on to begin with). The pack's scripts may read the room's data storage for this; Atlas never writes the room's data storage for a pack.
+
 - The map scrolls and zooms like a document: the wheel zooms around the cursor, any mouse button drags it, **Fit** (and −, +) are above the display options, and the view is remembered per map. The **legend** under the display options says what the pin colours mean; a pin's tooltip says its state and the checks it covers.
 
 ## Key Items

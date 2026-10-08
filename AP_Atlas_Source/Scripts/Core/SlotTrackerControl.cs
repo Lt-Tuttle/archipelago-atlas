@@ -151,6 +151,11 @@ public partial class SlotTrackerControl : MarginContainer
             else Inspect(AP_Atlas.Core.InspectTarget.ForPackLocation(ProfileId, _slotName, mapId, pinName));
         };
         _mapTracker.MapPicked += mapId => Inspect(AP_Atlas.Core.InspectTarget.ForMap(ProfileId, _slotName, mapId));
+        _mapTracker.FollowToggled += on =>
+        {
+            _appSettings.MapFollowGame[FollowKey] = on;
+            DataManager.SaveSettingsSoon(_appSettings);
+        };
         _mapTracker.IsExcluded = IsExcluded;
         _mapTracker.MarkerLookup = id =>
         {
@@ -519,6 +524,7 @@ public partial class SlotTrackerControl : MarginContainer
         AP_Atlas.Core.Annotations.Changed -= OnAnnotationsChanged;
         AP_Atlas.Core.PopTracker.PackFixes.Changed -= OnPackFixesChanged;
         AP_Atlas.Core.PopTracker.PopTrackerPackLoader.PacksChanged -= OnPacksChanged;
+        StopWatchingForScripts();
         Session.Socket.PacketReceived -= OnDataPackagePacket;
         Model.Changed -= OnModelChanged;
         Model.Dispose();

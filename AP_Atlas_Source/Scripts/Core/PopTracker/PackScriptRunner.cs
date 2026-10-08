@@ -70,6 +70,18 @@ namespace AP_Atlas.Core.PopTracker
             });
         }
 
+        /// <summary>
+        /// What the scripts asked of the room or the window (data storage keys to watch and read, hints such as
+        /// "ActivateTab"), on the main thread after the work that asked.
+        /// </summary>
+        public Action<PackScriptHost.Outbox>? OutboxReady { get; set; }
+
+        /// <summary>A watched data storage key changed: the scripts' handlers hear it.</summary>
+        public void FeedSetReply(string key, JToken? value, JToken? oldValue) => Queue(() => _queued?.ApplySetReply(key, value, oldValue));
+
+        /// <summary>A key the scripts asked to read was read.</summary>
+        public void FeedRetrieved(string key, JToken? value) => Queue(() => _queued?.ApplyRetrieved(key, value));
+
         /// <summary>Lets go of the scripts (their pack was removed): queued work finishes, then nothing runs them again.</summary>
         public void Stop() => Queue(() => _queued = null, () => Scripts = null);
 
@@ -98,6 +110,7 @@ namespace AP_Atlas.Core.PopTracker
                     _stopReported = true;
                     _toMainThread(() => _stopped?.Invoke(reason));
                 }
+                if (_queued?.TakeOutbox() is { IsEmpty: false } outbox && OutboxReady is { } ready) _toMainThread(() => ready(outbox));
                 if (onMainThread != null) _toMainThread(onMainThread);
             }, TaskScheduler.Default);
         }

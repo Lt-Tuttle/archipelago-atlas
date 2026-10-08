@@ -51,6 +51,12 @@ namespace AP_Atlas.Core.PopTracker
         internal readonly object ImageLock = new object();
 
         public Dictionary<string, PopTrackerMap> Maps { get; set; } = new Dictionary<string, PopTrackerMap>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// The pack's tabs that show maps: a tab's title → the maps it shows, in order, from every layout file (PopTracker's
+        /// "tabbed" layouts). A script switches the window to a tab by its title (Tracker:UiHint "ActivateTab").
+        /// </summary>
+        public Dictionary<string, List<string>> TabMaps { get; set; } = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
         public List<PopTrackerLocation> Locations { get; set; } = new List<PopTrackerLocation>();
 
         /// <summary>From item_mapping.lua: Archipelago item id → pack item codes.</summary>
@@ -292,7 +298,9 @@ namespace AP_Atlas.Core.PopTracker
                     var pack = new LoadedPack { Manifest = manifest, SourcePath = zipPath, RootPrefix = rootPrefix };
 
                     // 2. Read items
-                    var itemEntries = archive.Entries.Where(e => e.FullName.StartsWith(rootPrefix + "items/", StringComparison.OrdinalIgnoreCase) && IsJsonFile(e.FullName));
+                    // The default variant's own files take the place of the base ones of the same name (as PopTracker reads them).
+                    string variant = PackScriptHost.DefaultVariant(manifest);
+                    var itemEntries = FolderEntries(archive, rootPrefix, variant, "items", variantFirst: true);
                     foreach (var entry in itemEntries)
                     {
                         var token = ParseJsonLenient(archive, entry, pack, logDebug);
@@ -331,7 +339,7 @@ namespace AP_Atlas.Core.PopTracker
                     }
 
                     // 5. Read maps
-                    var mapEntries = archive.Entries.Where(e => e.FullName.StartsWith(rootPrefix + "maps/", StringComparison.OrdinalIgnoreCase) && (e.FullName.EndsWith(".json", StringComparison.OrdinalIgnoreCase) || e.FullName.EndsWith(".jsonc", StringComparison.OrdinalIgnoreCase)));
+                    var mapEntries = FolderEntries(archive, rootPrefix, variant, "maps", variantFirst: false);
                     foreach (var entry in mapEntries)
                     {
                         string json = ReadText(archive, entry, pack);
@@ -393,7 +401,7 @@ namespace AP_Atlas.Core.PopTracker
                     }
 
                     // 6. Read locations
-                    var locationEntries = archive.Entries.Where(e => e.FullName.StartsWith(rootPrefix + "locations/", StringComparison.OrdinalIgnoreCase) && (e.FullName.EndsWith(".json", StringComparison.OrdinalIgnoreCase) || e.FullName.EndsWith(".jsonc", StringComparison.OrdinalIgnoreCase)));
+                    var locationEntries = FolderEntries(archive, rootPrefix, variant, "locations", variantFirst: false);
                     foreach (var entry in locationEntries)
                     {
                         string json = ReadText(archive, entry, pack);
@@ -499,6 +507,75 @@ namespace AP_Atlas.Core.PopTracker
             }
         }
 
+        /// <summary>
+        /// A pack folder's JSON files: the base folder's, with the default variant's own files ("variant/items/x.json") in
+        /// place of the base ones of the same name. Items keep the first definition of a code, so theirs come first.
+        /// </summary>
+        private static List<ZipArchiveEntry> FolderEntries(SafeZip archive, string rootPrefix, string variant, string folder, bool variantFirst)
+        {
+            string basePrefix = rootPrefix + folder + "/";
+            var baseEntries = archive.Entries.Where(e => e.FullName.StartsWith(basePrefix, StringComparison.OrdinalIgnoreCase) && IsJsonFile(e.FullName))
+                .OrderBy(e => e.FullName, StringComparer.OrdinalIgnoreCase).ToList();
+            if (string.IsNullOrEmpty(variant)) return baseEntries;
+            string variantPrefix = rootPrefix + variant + "/" + folder + "/";
+            var variantEntries = archive.Entries.Where(e => e.FullName.StartsWith(variantPrefix, StringComparison.OrdinalIgnoreCase) && IsJsonFile(e.FullName))
+                .OrderBy(e => e.FullName, StringComparer.OrdinalIgnoreCase).ToList();
+            if (variantEntries.Count == 0) return baseEntries;
+            var replaced = new HashSet<string>(variantEntries.Select(e => e.FullName.Substring(variantPrefix.Length)), StringComparer.OrdinalIgnoreCase);
+            var kept = baseEntries.Where(e => !replaced.Contains(e.FullName.Substring(basePrefix.Length)));
+            return variantFirst ? variantEntries.Concat(kept).ToList() : kept.Concat(variantEntries).ToList();
+        }
+
+        /// <summary>
+        /// Every "tabbed" layout's tabs that show maps (through nested groups, docks and "layout" references), by title. A
+        /// tab title used twice keeps its first maps.
+        /// </summary>
+        internal static void ExtractTabMaps(IReadOnlyDictionary<string, JToken> layouts, LoadedPack pack)
+        {
+            List<string> MapsIn(JToken token, HashSet<string> followed, int depth)
+            {
+                var maps = new List<string>();
+                if (token == null || depth > 64) return maps;
+                if (token is JArray array)
+                {
+                    foreach (var child in array) maps.AddRange(MapsIn(child, followed, depth + 1));
+                }
+                else if (token is JObject obj)
+                {
+                    string type = (string)obj["type"] ?? "";
+                    if (type.Equals("map", StringComparison.OrdinalIgnoreCase) && obj["maps"] is JArray names)
+                        maps.AddRange(names.Where(n => n.Type == JTokenType.String).Select(n => (string)n));
+                    if (type.Equals("layout", StringComparison.OrdinalIgnoreCase) && (string)obj["key"] is { } key && followed.Add(key) && layouts.TryGetValue(key, out var referenced))
+                        maps.AddRange(MapsIn(referenced, followed, depth + 1));
+                    foreach (var prop in obj.Properties())
+                        if (prop.Name is not "maps" and not "key") maps.AddRange(MapsIn(prop.Value, followed, depth + 1));
+                }
+                return maps.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            }
+            void Walk(JToken token, int depth)
+            {
+                if (token == null || depth > 64) return;
+                if (token is JArray array)
+                {
+                    foreach (var child in array) Walk(child, depth + 1);
+                    return;
+                }
+                if (token is not JObject obj) return;
+                if (((string)obj["type"] ?? "").Equals("tabbed", StringComparison.OrdinalIgnoreCase) && obj["tabs"] is JArray tabs)
+                {
+                    foreach (var tab in tabs.OfType<JObject>())
+                    {
+                        string title = ((string)tab["title"] ?? "").Trim();
+                        if (title.Length == 0 || pack.TabMaps.ContainsKey(title)) continue;
+                        var maps = MapsIn(tab["content"], new HashSet<string>(StringComparer.OrdinalIgnoreCase), depth + 1);
+                        if (maps.Count > 0) pack.TabMaps[title] = maps;
+                    }
+                }
+                foreach (var prop in obj.Properties()) Walk(prop.Value, depth + 1);
+            }
+            foreach (var layout in layouts.Values) Walk(layout, 0);
+        }
+
         private static bool IsJsonFile(string name) =>
             name.EndsWith(".json", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".jsonc", StringComparison.OrdinalIgnoreCase);
 
@@ -544,9 +621,7 @@ namespace AP_Atlas.Core.PopTracker
         private static void ExtractLayoutGrids(SafeZip archive, string rootPrefix, LoadedPack pack, Action<string> logDebug)
         {
             var layouts = new Dictionary<string, JToken>(StringComparer.OrdinalIgnoreCase);
-            var layoutEntries = archive.Entries
-                .Where(e => e.FullName.StartsWith(rootPrefix + "layouts/", StringComparison.OrdinalIgnoreCase) && IsJsonFile(e.FullName))
-                .OrderBy(e => e.FullName, StringComparer.OrdinalIgnoreCase);
+            var layoutEntries = FolderEntries(archive, rootPrefix, PackScriptHost.DefaultVariant(pack.Manifest), "layouts", variantFirst: false);
             foreach (var entry in layoutEntries)
             {
                 if (ParseJsonLenient(archive, entry, pack, logDebug) is JObject obj)
@@ -555,6 +630,7 @@ namespace AP_Atlas.Core.PopTracker
                 }
             }
             if (layouts.Count == 0) return;
+            ExtractTabMaps(layouts, pack);
 
             var seen = new HashSet<string>();
             void AddGrid(PackItemGrid grid)

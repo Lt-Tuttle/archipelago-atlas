@@ -22,8 +22,9 @@ internal static class FakeMapPack
     /// <param name="binaryFiles">More files given as bytes (e.g. a crafted image).</param>
     /// <param name="mapWidth">The map image's size (a test that zooms and drags the map wants one bigger than the view).</param>
     /// <param name="locationsJson">The pack's locations/locations.json in place of the two usual pins.</param>
+    /// <param name="layoutsJson">The pack's layouts/tracker.json in place of the usual item grid.</param>
     public static void Write(string zipPath, string name, string game, string? initLua = null, IReadOnlyDictionary<string, string>? files = null,
-        IReadOnlyDictionary<string, byte[]>? binaryFiles = null, int mapWidth = MapWidth, int mapHeight = MapHeight, string? locationsJson = null)
+        IReadOnlyDictionary<string, byte[]>? binaryFiles = null, int mapWidth = MapWidth, int mapHeight = MapHeight, string? locationsJson = null, string? layoutsJson = null)
     {
         if (File.Exists(zipPath)) File.Delete(zipPath);
         using var zip = ZipFile.Open(zipPath, ZipArchiveMode.Create);
@@ -40,7 +41,7 @@ internal static class FakeMapPack
         Text("pack/manifest.json", $$"""{"name":"{{name}}","game_name":"{{game}}","package_version":"1.0","author":"Atlas tests"}""");
         Text("pack/items/items.json",
             """[{"name":"Sword","type":"toggle","img":"images/sword.png","codes":"sword"},{"name":"Shield","type":"toggle","img":"images/broken.png","codes":"shield"}]""");
-        Text("pack/layouts/tracker.json", """{"tracker_default":{"type":"itemgrid","rows":[["sword","shield"]]}}""");
+        Text("pack/layouts/tracker.json", layoutsJson ?? """{"tracker_default":{"type":"itemgrid","rows":[["sword","shield"]]}}""");
         Text("pack/maps/maps.json", """[{"name":"World","img":"images/world.png","location_size":16},{"name":"Broken","img":"images/broken.png"}]""");
         Text("pack/locations/locations.json", locationsJson ??
             """[{"name":"Cave","sections":[{"name":"Chest"}],"map_locations":[{"map":"World","x":10,"y":10}]},""" +
@@ -52,6 +53,41 @@ internal static class FakeMapPack
         foreach (var file in files ?? new Dictionary<string, string>()) Text("pack/" + file.Key, file.Value);
         foreach (var file in binaryFiles ?? new Dictionary<string, byte[]>()) Bytes("pack/" + file.Key, file.Value);
     }
+
+    /// <summary>
+    /// A pack's scripts that follow the game's map the way real packs do: on clear, they ask to hear about a data storage
+    /// key and read it, then switch the window's tab to the key's value (Tracker:UiHint "ActivateTab"). They also try to
+    /// write a key, which Atlas never does for a pack.
+    /// </summary>
+    public const string FollowingInitLua = """
+        Tracker:AddItems("items/items.json")
+        Tracker:AddMaps("maps/maps.json")
+        Tracker:AddLocations("locations/locations.json")
+        Tracker:AddLayouts("layouts/tracker.json")
+        local function show(value)
+            if type(value) == "string" then Tracker:UiHint("ActivateTab", value) end
+        end
+        Archipelago:Set("atlas_test_written", 0, false, {{"replace", 1}})
+        Archipelago:AddClearHandler("follow", function(slot_data)
+            Archipelago:SetNotify({"atlas_test_map"})
+            Archipelago:Get({"atlas_test_map"})
+        end)
+        Archipelago:AddSetReplyHandler("follow", function(key, value, old)
+            if key == "atlas_test_map" then show(value) end
+        end)
+        Archipelago:AddRetrievedHandler("follow", function(key, value)
+            if key == "atlas_test_map" then show(value) end
+        end)
+        """;
+
+    /// <summary>A layout with the item grid and two tabs, each showing one of the fake pack's maps.</summary>
+    public const string TwoTabLayout = """
+        {"tracker_default":{"type":"array","content":[
+            {"type":"itemgrid","rows":[["sword","shield"]]},
+            {"type":"tabbed","tabs":[
+                {"title":"Overworld","content":{"type":"map","maps":["World"]}},
+                {"title":"Elsewhere","content":{"type":"group","content":{"type":"map","maps":["Broken"]}}}]}]}}
+        """;
 
     /// <summary>A PNG of one colour (Atlas purple), RGBA, 8 bits per channel.</summary>
     public static byte[] Png(int width, int height)

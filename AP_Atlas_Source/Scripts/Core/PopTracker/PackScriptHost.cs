@@ -50,6 +50,53 @@ namespace AP_Atlas.Core.PopTracker
         /// <summary>PopTracker APIs the scripts used that Atlas doesn't emulate (they did nothing).</summary>
         public HashSet<string> UnsupportedApis { get; } = new HashSet<string>();
 
+        /// <summary>
+        /// What the scripts asked of the room and the window since it was last taken: data storage keys to be told about
+        /// (SetNotify), keys to read once (Get), and hints to the window (Tracker:UiHint, e.g. "ActivateTab"). Filled on the
+        /// scripts' thread, handed to the main thread by the runner.
+        /// </summary>
+        public sealed class Outbox
+        {
+            public List<string> Watch { get; } = new List<string>();
+            public List<string> Get { get; } = new List<string>();
+            public List<(string Name, string Value)> Hints { get; } = new List<(string, string)>();
+            public bool IsEmpty => Watch.Count == 0 && Get.Count == 0 && Hints.Count == 0;
+        }
+
+        private Outbox _outbox = new Outbox();
+
+        /// <summary>What the scripts asked for since the last call (empty when nothing).</summary>
+        public Outbox TakeOutbox()
+        {
+            var taken = _outbox;
+            _outbox = new Outbox();
+            return taken;
+        }
+
+        /// <summary>The data storage keys the scripts asked to be told about.</summary>
+        public HashSet<string> WatchedKeys { get; } = new HashSet<string>(StringComparer.Ordinal);
+
+        /// <summary>
+        /// Keys the scripts tried to write to the room's data storage (Archipelago:Set). Atlas never writes the room's data
+        /// for a pack (the owner's rule, 2026-10-08): the call does nothing, and the Doctor lists it.
+        /// </summary>
+        public HashSet<string> IgnoredWrites { get; } = new HashSet<string>(StringComparer.Ordinal);
+
+        /// <summary>The files the scripts loaded through Tracker:AddItems, AddMaps, AddLocations and AddLayouts, as the variant resolves them ("AddMaps", "maps/maps.json").</summary>
+        public List<(string Kind, string Path)> LoadedFiles { get; } = new List<(string, string)>();
+
+        private bool? _followsMaps;
+
+        /// <summary>
+        /// Whether the pack's scripts switch the window's map as the player moves (Tracker:UiHint "ActivateTab", usually
+        /// from a data storage key the game's client writes): live map following.
+        /// </summary>
+        public bool FollowsMaps => _followsMaps ??= _files.Any(f => f.Key.EndsWith(".lua", StringComparison.OrdinalIgnoreCase) && f.Value.Contains("ActivateTab", StringComparison.Ordinal));
+
+        /// <summary>Whether the scripts read the game's memory (AddMemoryWatch, AutoTracker:Read…), which Atlas can't.</summary>
+        public bool ReadsGameMemory => _files.Any(f => f.Key.EndsWith(".lua", StringComparison.OrdinalIgnoreCase) &&
+            (f.Value.Contains("AddMemoryWatch", StringComparison.Ordinal) || f.Value.Contains("AutoTracker:Read", StringComparison.Ordinal)));
+
         /// <summary>Codes the scripts looked up that the pack doesn't define.</summary>
         public HashSet<string> UnknownCodes { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -87,6 +134,8 @@ namespace AP_Atlas.Core.PopTracker
         private readonly List<DynValue> _clearHandlers = new List<DynValue>();
         private readonly List<DynValue> _itemHandlers = new List<DynValue>();
         private readonly List<DynValue> _locationHandlers = new List<DynValue>();
+        private readonly List<DynValue> _setReplyHandlers = new List<DynValue>();
+        private readonly List<DynValue> _retrievedHandlers = new List<DynValue>();
         private readonly Dictionary<string, List<DynValue>> _watches = new Dictionary<string, List<DynValue>>(StringComparer.OrdinalIgnoreCase);
 
         // Pack items (by definition) and the Lua tables standing in for them.
@@ -146,7 +195,7 @@ namespace AP_Atlas.Core.PopTracker
             return host;
         }
 
-        private static string DefaultVariant(PopTrackerManifest m)
+        internal static string DefaultVariant(PopTrackerManifest m)
         {
             if (m?.Variants == null || !m.Variants.Properties().Any()) return "standard";
             return m.Variants.ContainsKey("standard") ? "standard" : m.Variants.Properties().First().Name;
@@ -241,6 +290,48 @@ namespace AP_Atlas.Core.PopTracker
             {
                 foreach (var h in _locationHandlers) Run("location handler", () => CallLua(h, locationId, locationName ?? ""));
             });
+
+        /// <summary>A data storage key the scripts asked about changed (SetReply): its handlers get the key, the value and the old value.</summary>
+        public void ApplySetReply(string key, JToken value, JToken oldValue) =>
+            Work($"the data storage handler (for {key})", () =>
+            {
+                var now = ToLua(value);
+                var before = ToLua(oldValue);
+                foreach (var h in _setReplyHandlers) Run("data storage handler", () => CallLua(h, key, now, before));
+            });
+
+        /// <summary>A key the scripts asked to read (Get) was read: its handlers get the key and the value.</summary>
+        public void ApplyRetrieved(string key, JToken value) =>
+            Work($"the data storage read handler (for {key})", () =>
+            {
+                var now = ToLua(value);
+                foreach (var h in _retrievedHandlers) Run("data storage read handler", () => CallLua(h, key, now));
+            });
+
+        /// <summary>The keys a script passed: a table of strings, or one string.</summary>
+        private static List<string> KeysOf(CallbackArguments args)
+        {
+            var keys = new List<string>();
+            for (int i = 0; i < args.Count; i++)
+            {
+                var a = args[i];
+                if (a.Type == DataType.Table)
+                {
+                    foreach (var v in a.Table.Values)
+                        if (v.Type == DataType.String && v.String.Length > 0 && v.String.Length <= 512) keys.Add(v.String);
+                }
+                else if (a.Type == DataType.String && i > 0 && a.String.Length > 0 && a.String.Length <= 512) keys.Add(a.String);
+            }
+            return keys.Distinct(StringComparer.Ordinal).Take(64).ToList();
+        }
+
+        /// <summary>The file a script names, as the variant resolves it (the variant's own file first), or the name as written.</summary>
+        private string ResolvedName(string path)
+        {
+            path = (path ?? "").Replace('\\', '/').TrimStart('/');
+            if (!string.IsNullOrEmpty(Variant) && _files.ContainsKey(Variant + "/" + path)) return Variant + "/" + path;
+            return path;
+        }
 
         /// <summary>Runs Lua, recording a Lua error (the scripts carry on). Anything else (a stop) goes on up to <see cref="Work"/>.</summary>
         private bool Run(string what, Action action)
@@ -766,7 +857,24 @@ namespace AP_Atlas.Core.PopTracker
             tracker["ActiveVariantUID"] = Variant;
             tracker["BulkUpdate"] = false;
             tracker["AllowDeferredLogicUpdate"] = false;
-            foreach (var name in new[] { "AddItems", "AddMaps", "AddLocations", "AddLayouts", "UiHint" }) tracker[name] = NoOp();
+            // The files init.lua loads are noted (the Doctor compares them with what Atlas read); hints to the window go out.
+            foreach (var name in new[] { "AddItems", "AddMaps", "AddLocations", "AddLayouts" })
+            {
+                string kind = name;
+                tracker[name] = Callback(args =>
+                {
+                    string path = args.Count > 1 ? args[1].CastToString() : null;
+                    if (!string.IsNullOrWhiteSpace(path) && LoadedFiles.Count < 500) LoadedFiles.Add((kind, ResolvedName(path)));
+                    return DynValue.True;
+                });
+            }
+            tracker["UiHint"] = Callback(args =>
+            {
+                string hint = args.Count > 1 ? args[1].CastToString() : null;
+                string value = args.Count > 2 ? args[2].CastToString() : null;
+                if (!string.IsNullOrEmpty(hint) && _outbox.Hints.Count < 64) _outbox.Hints.Add((hint, value ?? ""));
+                return DynValue.Nil;
+            });
             tracker["FindObjectForCode"] = Callback(args => FindObjectForCode(args.Count > 1 ? args[1].CastToString() : null));
             tracker["ProviderCountForCode"] = Callback(args => DynValue.NewNumber(ProviderCount(args.Count > 1 ? args[1].CastToString() : null)));
             g["Tracker"] = tracker;
@@ -796,8 +904,34 @@ namespace AP_Atlas.Core.PopTracker
             _archipelago["AddClearHandler"] = Callback(args => AddHandler(_clearHandlers, args));
             _archipelago["AddItemHandler"] = Callback(args => AddHandler(_itemHandlers, args));
             _archipelago["AddLocationHandler"] = Callback(args => AddHandler(_locationHandlers, args));
-            foreach (var name in new[] { "AddScoutHandler", "AddBouncedHandler", "AddRetrievedHandler", "AddSetReplyHandler", "SetNotify", "Get", "LocationChecks", "LocationScouts", "StatusUpdate", "Bounce", "Set" })
-                _archipelago[name] = NoOp(DynValue.True);
+            // The room's data storage, read only: the keys the scripts want to hear about and read go out to the slot's
+            // connection, and the answers come back to these handlers. Writes are never sent for a pack.
+            _archipelago["AddSetReplyHandler"] = Callback(args => AddHandler(_setReplyHandlers, args));
+            _archipelago["AddRetrievedHandler"] = Callback(args => AddHandler(_retrievedHandlers, args));
+            _archipelago["SetNotify"] = Callback(args =>
+            {
+                foreach (string key in KeysOf(args))
+                    if (WatchedKeys.Add(key)) _outbox.Watch.Add(key);
+                return DynValue.True;
+            });
+            _archipelago["Get"] = Callback(args =>
+            {
+                foreach (string key in KeysOf(args)) if (!_outbox.Get.Contains(key)) _outbox.Get.Add(key);
+                return DynValue.True;
+            });
+            _archipelago["Set"] = Callback(args =>
+            {
+                string key = Enumerable.Range(0, args.Count).Select(i => args[i]).FirstOrDefault(a => a.Type == DataType.String)?.String ?? "?";
+                if (IgnoredWrites.Add(key) && Log.Count < 500) Log.Add($"Atlas doesn't write the room's data storage for a pack: Archipelago:Set(\"{key}\") did nothing.");
+                return DynValue.True;
+            });
+            // Handlers for answers Atlas never asks for can be registered (nothing calls them); asking for those things is noted.
+            foreach (var name in new[] { "AddScoutHandler", "AddBouncedHandler" }) _archipelago[name] = NoOp(DynValue.True);
+            foreach (var name in new[] { "LocationChecks", "LocationScouts", "StatusUpdate", "Bounce" })
+            {
+                string called = "Archipelago." + name;
+                _archipelago[name] = Callback(_ => { UnsupportedApis.Add(called); return DynValue.True; });
+            }
             g["Archipelago"] = _archipelago;
 
             // AutoTracker: "connected" for AP, nothing else.

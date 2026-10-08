@@ -201,8 +201,15 @@ public partial class SlotTrackerControl : MarginContainer
         foreach (var l in locations) _scriptLocationsQueued.Add(l.Id);
         _scripts ??= new AP_Atlas.Core.PopTracker.PackScriptRunner(work => AP_Atlas.UI.Ui.Defer(this, () => work()),
             message => AP_Atlas.Core.Logger.LogWarning($"[{_slotName}] {message}"), PackScriptsStopped);
+        _scripts.OutboxReady ??= OnScriptsOutbox;
         _scripts.Start(Pack, PlayerSlot, Team, slotData, items, locations, (host, ms) =>
         {
+            if (_mapTracker != null)
+            {
+                // The switch shows when the pack's scripts can move the map to where the player is (and don't need the game's memory to).
+                _mapTracker.FollowAvailable = host != null && host.FollowsMaps && !host.ReadsGameMemory;
+                _mapTracker.FollowGame = FollowGame;
+            }
             if (host == null) { AppendDebugLog($"[MapTracker] The pack has no scripts/init.lua; Key Items use the pack's item mappings only."); return; }
             AppendDebugLog($"[MapTracker] Ran the pack's scripts in {ms} ms: {host.Errors.Count} error(s)" +
                            (host.UnsupportedApis.Count > 0 ? $", unsupported APIs: {string.Join(", ", host.UnsupportedApis)}" : ""));
@@ -267,6 +274,49 @@ public partial class SlotTrackerControl : MarginContainer
         if (Pack != null && AP_Atlas.Core.PopTracker.PopTrackerPackLoader.IsCurrent(Pack)) return;
         if (Pack != null) UnloadMapPack();
         LoadMapPack();
+    }
+
+    // =====================================================================
+    // The room's data storage for the pack's scripts (read only) and live map following
+    // =====================================================================
+
+    /// <summary>The key this slot's settings are kept under.</summary>
+    private string FollowKey => AP_Atlas.Core.Annotations.SlotKey(ProfileId, _slotName);
+
+    /// <summary>Whether the map follows the game's current map (on unless the user turned it off for this slot).</summary>
+    private bool FollowGame => !_appSettings.MapFollowGame.TryGetValue(FollowKey, out bool on) || on;
+
+    /// <summary>The room's data storage, read for the pack's scripts on this slot's connection (made when they first ask).</summary>
+    private AP_Atlas.Core.Connections.DataStorageReads _storageReads;
+
+    /// <summary>
+    /// What the pack's scripts asked for: to hear about data storage keys (SetNotify), to read keys once (Get), and hints
+    /// to the window ("ActivateTab": the map follows the game). Atlas only reads the room's data storage for a pack; it
+    /// never writes it.
+    /// </summary>
+    private void OnScriptsOutbox(AP_Atlas.Core.PopTracker.PackScriptHost.Outbox outbox)
+    {
+        if (_ended || Session == null || !GodotObject.IsInstanceValid(this)) return;
+        if ((outbox.Watch.Count > 0 || outbox.Get.Count > 0) && _storageReads == null)
+        {
+            _storageReads = new AP_Atlas.Core.Connections.DataStorageReads(Session);
+            // The answers arrive on the connection's thread; the scripts take them on the main thread, in order.
+            _storageReads.Changed += (key, value, old) => AP_Atlas.UI.Ui.Defer(this, () => _scripts?.FeedSetReply(key, value, old));
+            _storageReads.Read += (key, value) => AP_Atlas.UI.Ui.Defer(this, () => _scripts?.FeedRetrieved(key, value));
+        }
+        if (outbox.Watch.Count > 0) AP_Atlas.Core.Async.Fire(_storageReads.WatchAsync(outbox.Watch), "asking the room about data storage keys for the map pack", tellUser: false);
+        if (outbox.Get.Count > 0) AP_Atlas.Core.Async.Fire(_storageReads.ReadAsync(outbox.Get), "reading the room's data storage for the map pack", tellUser: false);
+        foreach (var (name, value) in outbox.Hints)
+        {
+            if (name == "ActivateTab" && FollowGame && _mapTracker != null && _mapTracker.FollowAvailable && !_mapTracker.ActivateTab(value))
+                AppendDebugLog($"[MapTracker] The pack asked for the tab \"{value}\", which matches none of its maps.");
+        }
+    }
+
+    private void StopWatchingForScripts()
+    {
+        _storageReads?.Dispose();
+        _storageReads = null;
     }
 
     /// <summary>Lets go of the slot's pack: its images, its scripts, its maps and Key Items' grids.</summary>
