@@ -164,7 +164,20 @@ namespace AP_Atlas.UI
         {
             if (key != _key || !IsInstanceValid(this)) return;
             _report = PackDoctorService.Reports[key];
-            SetStatus($"Checked {DateTime.Now:HH:mm:ss}. Names: {_report.Names?.Source ?? "none"}{(_report.Names != null ? $" ({_report.Names.Game})" : "")}.");
+            string checkedLine = $"Checked {DateTime.Now:HH:mm:ss}. Names: {_report.Names?.Source ?? "none"}{(_report.Names != null ? $" ({_report.Names.Game})" : "")}.";
+            if (_appliedKeys.Count > 0 && PackDoctorService.IsBusy(_key))
+            {
+                // A check that started before the edit: its report doesn't have it yet; the next one will.
+                SetStatus(_appliedText + " Checking the pack again…");
+            }
+            else if (_appliedKeys.Count > 0)
+            {
+                // The report after an Apply says whether every applied row is gone, instead of a bare "Checked".
+                int back = _report.Findings.Count(f => !f.Ignored && _appliedKeys.Contains(f.Key));
+                SetStatus(_appliedText + (back > 0 ? $" {back} of them still show: press Re-check, or Choose… on each." : " Done: the pack's view is updated."));
+                _appliedKeys.Clear();
+            }
+            else SetStatus(checkedLine);
             RenderCurrentTab();
         }
 
@@ -665,7 +678,7 @@ namespace AP_Atlas.UI
                     t.ApItemId != null ? $"tracks {t.ApItemName}" : null,
                     t.Hidden ? "hidden" : null,
                     t.ImageFile != null ? "custom image" : null
-                }.Where(x => x != null)));
+                }.Where(x => x != null)) + (t.Automatic ? " (automatic: the names match)" : ""));
             Group("Added tiles", "tiles", f.AddedTiles, t => $"Added tile for {t.ApItemName}");
             Group("Grids", "grids", f.Grids, g => $"Grid {g.Subject.Substring(5)}: " + string.Join(", ", new[]
             {
@@ -673,7 +686,7 @@ namespace AP_Atlas.UI
                 g.ItemSize != null ? $"tile size {g.ItemSize}" : null,
                 g.Rows != null ? "reordered" : null
             }.Where(x => x != null)));
-            Group("Location links", "links", f.Links, l => $"{l.PinPath} / {(string.IsNullOrEmpty(l.SectionName) ? "(pin)" : l.SectionName)} → {(l.ApLocationId == null ? "nothing" : l.ApLocationName)}");
+            Group("Location links", "links", f.Links, l => $"{l.PinPath} / {(string.IsNullOrEmpty(l.SectionName) ? "(pin)" : l.SectionName)} → {(l.ApLocationId == null ? "nothing" : l.ApLocationName)}" + (l.Automatic ? " (automatic: the names match)" : ""));
             Group("Pins", "pins", f.Pins, p => p.Removed ? $"Removed pin {p.PinPath}" : $"Moved pin {p.PinPath} on {p.MapId}");
             Group("Added pins", "pins", f.AddedPins, p => $"Added pin '{p.Name}' on {p.MapId} ({p.ApLocationIds.Count} location{(p.ApLocationIds.Count == 1 ? "" : "s")})");
             Group("Map images", "maps", f.MapImages, m => $"Map '{m.MapId}' uses {m.ImageFile}");

@@ -21,6 +21,11 @@ namespace AP_Atlas.Core.PopTracker
         /// <summary>The author's version of the subject when the fix was made (see PackFixes.AuthorStamp).</summary>
         public string AuthorStamp { get; set; } = "";
         public DateTime Made { get; set; } = DateTime.Now;
+        /// <summary>"automatic" when the Doctor made the fix itself (an exact name match); null for the user's own.</summary>
+        public string Source { get; set; }
+
+        [JsonIgnore]
+        public bool Automatic => Source == "automatic";
     }
 
     /// <summary>A Key Items tile: which AP item it tracks, hidden, or a replacement image.</summary>
@@ -100,6 +105,9 @@ namespace AP_Atlas.Core.PopTracker
 
         /// <summary>Pack version the user last reviewed in the Doctor (no prompts until the pack changes).</summary>
         public string ReviewedVersion { get; set; } = "";
+
+        /// <summary>Pack version whose exact name matches the Doctor linked by itself (once per version).</summary>
+        public string AutoLinkedVersion { get; set; } = "";
 
         public List<TileFix> Tiles { get; set; } = new List<TileFix>();
         public List<AddedTile> AddedTiles { get; set; } = new List<AddedTile>();
@@ -192,6 +200,14 @@ namespace AP_Atlas.Core.PopTracker
             var file = Get(packKey);
             file.ReviewedVersion = version;
             if (string.IsNullOrEmpty(file.PackVersion)) file.PackVersion = version;
+            Save(file);
+        }
+
+        /// <summary>Records that the Doctor's automatic pass ran for this pack version (not an undoable edit; no Changed event).</summary>
+        public static void SetAutoLinkedVersion(string packKey, string version)
+        {
+            var file = Get(packKey);
+            file.AutoLinkedVersion = version;
             Save(file);
         }
 
@@ -434,9 +450,12 @@ namespace AP_Atlas.Core.PopTracker
                 if (gf.Rows != null) grid.Rows = gf.Rows.Select(r => new List<string>(r)).ToList();
             }
 
-            // Tiles: hidden, replacement image.
+            // Tiles: a link for a code no pack item defines adds the item (so the cell shows a tile and the index can pair
+            // it); hidden; replacement image.
             foreach (var tf in f.Tiles)
             {
+                if (tf.ApItemId != null && !tf.Hidden && !e.ItemsByCode.ContainsKey(tf.Code))
+                    e.ItemsByCode[tf.Code] = new PopTrackerItem { Name = string.IsNullOrEmpty(tf.ApItemName) ? tf.Code : tf.ApItemName, Type = "toggle", Img = "", CodesRaw = tf.Code };
                 if (tf.Hidden)
                 {
                     foreach (var g in e.ItemGridGroups) foreach (var r in g.Rows) r.RemoveAll(c => string.Equals(c, tf.Code, StringComparison.OrdinalIgnoreCase));

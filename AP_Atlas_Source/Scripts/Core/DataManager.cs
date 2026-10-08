@@ -107,6 +107,9 @@ public class AppSettings
     /// <summary>When a seed was made with another apworld version, find and use that version automatically (from trusted sources only).</summary>
     public bool AutoFixApworldVersions { get; set; } = true;
 
+    /// <summary>The Pack Doctor links a pack's exact name matches (tiles and pins) by itself on the pack's first check.</summary>
+    public bool PackDoctorAutoLink { get; set; } = true;
+
     /// <summary>Optional URL of a newer apworld source list (Atlas's format). Empty: the bundled list and GitHub releases.</summary>
     public string ApworldSourcesUrl { get; set; } = "";
     /// <summary>Download sources the user trusts ("github.com/owner/repo" or a host), so they're asked only once.</summary>

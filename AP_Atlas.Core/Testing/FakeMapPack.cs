@@ -24,9 +24,10 @@ internal static class FakeMapPack
     /// <param name="locationsJson">The pack's locations/locations.json in place of the two usual pins.</param>
     /// <param name="layoutsJson">The pack's layouts/tracker.json in place of the usual item grid.</param>
     /// <param name="variantsJson">The manifest's "variants" object (e.g. {"standard":{"display_name":"Standard"},"var_b":{"display_name":"B"}}), or null for none.</param>
+    /// <param name="itemsJson">The pack's items/items.json in place of the usual Sword and Shield.</param>
     public static void Write(string zipPath, string name, string game, string? initLua = null, IReadOnlyDictionary<string, string>? files = null,
         IReadOnlyDictionary<string, byte[]>? binaryFiles = null, int mapWidth = MapWidth, int mapHeight = MapHeight, string? locationsJson = null, string? layoutsJson = null,
-        string? variantsJson = null)
+        string? variantsJson = null, string? itemsJson = null)
     {
         if (File.Exists(zipPath)) File.Delete(zipPath);
         using var zip = ZipFile.Open(zipPath, ZipArchiveMode.Create);
@@ -41,7 +42,7 @@ internal static class FakeMapPack
             stream.Write(data);
         }
         Text("pack/manifest.json", $$"""{"name":"{{name}}","game_name":"{{game}}","package_version":"1.0","author":"Atlas tests"{{(variantsJson != null ? ",\"variants\":" + variantsJson : "")}}}""");
-        Text("pack/items/items.json",
+        Text("pack/items/items.json", itemsJson ??
             """[{"name":"Sword","type":"toggle","img":"images/sword.png","codes":"sword"},{"name":"Shield","type":"toggle","img":"images/broken.png","codes":"shield"}]""");
         Text("pack/layouts/tracker.json", layoutsJson ?? """{"tracker_default":{"type":"itemgrid","rows":[["sword","shield"]]}}""");
         Text("pack/maps/maps.json", """[{"name":"World","img":"images/world.png","location_size":16},{"name":"Broken","img":"images/broken.png"}]""");

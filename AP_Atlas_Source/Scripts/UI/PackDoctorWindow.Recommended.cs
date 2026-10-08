@@ -17,11 +17,32 @@ namespace AP_Atlas.UI
         private readonly Dictionary<string, int> _recChoice = new Dictionary<string, int>();
 
         /// <summary>Findings the Doctor can fix with one of its suggestions (unlinked tiles and pin sections).</summary>
-        private List<Finding> Recommendations() =>
-            _report?.Findings
-                .Where(f => !f.Ignored && f.Suggestions.Count > 0 && (f.Actions.HasFlag(FindingActions.LinkItem) || f.Actions.HasFlag(FindingActions.LinkLocation)))
-                .OrderByDescending(f => f.Suggestions[0].Score)
-                .ToList() ?? new List<Finding>();
+        private List<Finding> Recommendations() => PackDoctor.Recommendations(_report);
+
+        // What Apply last did, until the report after it says whether every applied row is gone.
+        private readonly HashSet<string> _appliedKeys = new HashSet<string>();
+        private string _appliedText = "";
+
+        /// <summary>The Recommended tab's rows as the report has them: key, the best match's score, whether the row clashes (for tests).</summary>
+        public IReadOnlyList<(string Key, double Score, bool Conflict)> RecommendedRows()
+        {
+            var recs = Recommendations();
+            var conflicts = PackDoctor.Conflicts(_report, recs, ChosenSuggestion);
+            return recs.Select(f => (f.Key, ChosenSuggestion(f).Score, conflicts.ContainsKey(f.Key))).ToList();
+        }
+
+        /// <summary>Applies one recommendation's chosen match, as its Apply button does (for tests).</summary>
+        public void ApplyRecommendation(string key)
+        {
+            var f = Recommendations().FirstOrDefault(r => r.Key == key);
+            if (f != null) ApplyRecommendations(new List<Finding> { f });
+        }
+
+        /// <summary>The status line (for tests).</summary>
+        public string StatusText => _status?.Text ?? "";
+
+        /// <summary>Whether a report has arrived (for tests).</summary>
+        public bool HasReport => _report != null;
 
         private Suggestion ChosenSuggestion(Finding f) =>
             f.Suggestions[Math.Clamp(_recChoice.TryGetValue(f.Key, out int i) ? i : 0, 0, f.Suggestions.Count - 1)];
@@ -42,42 +63,7 @@ namespace AP_Atlas.UI
         /// Rows that would give the same location (or item) to two things: the strongest row keeps it, the rest are
         /// flagged. A location some pin already shows is flagged too.
         /// </summary>
-        private void ComputeConflicts(List<Finding> recs)
-        {
-            _recConflicts = new Dictionary<string, string>();
-            foreach (var group in recs.GroupBy(f => (f.Actions.HasFlag(FindingActions.LinkItem), ChosenSuggestion(f).Id)).Where(g => g.Count() > 1))
-            {
-                var ordered = group.OrderByDescending(f => ChosenSuggestion(f).Score).ToList();
-                foreach (var f in ordered.Skip(1))
-                    _recConflicts[f.Key] = $"Same match as \"{RowName(ordered[0])}\" (stronger); pick another for this row.";
-            }
-            foreach (var f in recs.Where(f => f.Actions.HasFlag(FindingActions.LinkLocation) && !_recConflicts.ContainsKey(f.Key)))
-            {
-                var id = ChosenSuggestion(f).Id;
-                if (!_report.Index.ByLocation.TryGetValue(id, out var shownBy) || shownBy.Count == 0) continue;
-                // The same check on another map (same name) is fine; a differently named check there is a clash.
-                var parts = f.Subject.Substring(f.Subject.IndexOf(':') + 1).Split('|');
-                string mine = PackDoctor.SameCheckKey(parts[0], parts.Length > 1 ? parts[1] : "");
-                var other = shownBy.FirstOrDefault(m => PackDoctor.SameCheckKey(m.Pin.FullPath, m.Section?.Name) != mine);
-                if (other != null) _recConflicts[f.Key] = $"Already shown by a different check: \"{other.Section?.Name ?? other.Pin.Name}\" on pin {other.Pin.FullPath}.";
-            }
-            // Two rows with the same match but the same check name (one check on two maps) aren't a conflict.
-            foreach (var key in _recConflicts.Keys.ToList())
-            {
-                var f = recs.First(r => r.Key == key);
-                if (!_recConflicts[key].StartsWith("Same match as")) continue;
-                var rivals = recs.Where(r => r != f && r.Actions == f.Actions && ChosenSuggestion(r).Id == ChosenSuggestion(f).Id).ToList();
-                if (rivals.All(r => RowName(r).Equals(RowName(f), StringComparison.OrdinalIgnoreCase))) _recConflicts.Remove(key);
-            }
-        }
-
-        private string RowName(Finding f)
-        {
-            string subject = f.Subject.Substring(f.Subject.IndexOf(':') + 1);
-            if (f.Actions.HasFlag(FindingActions.LinkItem)) return ItemNameOf(subject);
-            var parts = subject.Split('|');
-            return parts.Length > 1 && parts[1].Length > 0 ? parts[1] : parts[0].Split('/').Last();
-        }
+        private void ComputeConflicts(List<Finding> recs) => _recConflicts = PackDoctor.Conflicts(_report, recs, ChosenSuggestion);
 
         /// <summary>
         /// Every suggested fix in one list: pick a confidence level to pre-select, adjust any row, then apply
@@ -130,7 +116,11 @@ namespace AP_Atlas.UI
             actions.AddChild(applyAll);
             actions.AddChild(Kit.Button("Select all", "Select every row", () => { foreach (var f in recs) { _recTicked.Add(f.Key); _recUnticked.Remove(f.Key); } RenderCurrentTab(); }, recs.Count > 0));
             actions.AddChild(Kit.Button("Select none", "Clear the selection", () => { foreach (var f in recs) { _recUnticked.Add(f.Key); _recTicked.Remove(f.Key); } RenderCurrentTab(); }, recs.Count > 0));
-            actions.AddChild(Kit.Subtle($"{recs.Count} suggestion{(recs.Count == 1 ? "" : "s")} · {recs.Count(f => f.Suggestions[0].Score >= 0.85)} at 85%+ · {recs.Count(f => f.Suggestions[0].Score < 0.6)} below 60% (check those by hand)"));
+            // The counts agree with the selection: rows at the level that aren't selected are the ones that clash.
+            int clashing = recs.Count(f => !IsTicked(f) && _recConflicts.ContainsKey(f.Key) && ChosenSuggestion(f).Score >= _recThreshold - 0.0001f);
+            actions.AddChild(Kit.Subtle($"{recs.Count} suggestion{(recs.Count == 1 ? "" : "s")} · {selected} selected (at or above {_recThreshold:P0})" +
+                (clashing > 0 ? $" · {clashing} more at that level clash with another row or a placed check (⚠)" : "") +
+                $" · {recs.Count(f => f.Suggestions[0].Score < 0.6)} below 60% (check those by hand)"));
             root.AddChild(actions);
 
             if (recs.Count == 0)
@@ -232,35 +222,45 @@ namespace AP_Atlas.UI
             if (findings.Count == 0) return;
             var picks = findings.Select(f => (Finding: f, Pick: ChosenSuggestion(f))).ToList();
             string description = picks.Count == 1 ? $"Apply suggestion: {picks[0].Pick.Label}" : $"Apply {picks.Count} suggested fixes";
-            PackFixes.Edit(_key, description, file =>
+            try
             {
-                foreach (var (f, s) in picks)
+                PackFixes.Edit(_key, description, file =>
                 {
-                    string subject = f.Subject.Substring(f.Subject.IndexOf(':') + 1);
-                    if (f.Actions.HasFlag(FindingActions.LinkItem))
+                    foreach (var (f, s) in picks)
                     {
-                        var t = UpsertTile(file, subject);
-                        t.ApItemId = s.Id;
-                        t.ApItemName = s.Label;
-                    }
-                    else
-                    {
-                        var parts = subject.Split('|');
-                        file.Links.RemoveAll(x => x.Subject == f.Subject);
-                        file.Links.Add(new LocationLinkFix
+                        string subject = f.Subject.Substring(f.Subject.IndexOf(':') + 1);
+                        if (f.Actions.HasFlag(FindingActions.LinkItem))
                         {
-                            Subject = f.Subject,
-                            PinPath = parts[0],
-                            SectionName = parts.Length > 1 ? parts[1] : "",
-                            ApLocationId = s.Id,
-                            ApLocationName = s.Label,
-                            AuthorStamp = PackFixes.AuthorStamp(_original, f.Subject)
-                        });
+                            var t = UpsertTile(file, subject);
+                            t.ApItemId = s.Id;
+                            t.ApItemName = s.Label;
+                        }
+                        else
+                        {
+                            var parts = subject.Split('|');
+                            file.Links.RemoveAll(x => x.Subject == f.Subject);
+                            file.Links.Add(new LocationLinkFix
+                            {
+                                Subject = f.Subject,
+                                PinPath = parts[0],
+                                SectionName = parts.Length > 1 ? parts[1] : "",
+                                ApLocationId = s.Id,
+                                ApLocationName = s.Label,
+                                AuthorStamp = PackFixes.AuthorStamp(_original, f.Subject)
+                            });
+                        }
                     }
-                }
-            });
-            foreach (var (f, _) in picks) { _recTicked.Remove(f.Key); _recUnticked.Remove(f.Key); _recChoice.Remove(f.Key); }
-            SetStatus(picks.Count == 1 ? $"Applied: {picks[0].Pick.Label}. Undo reverses it." : $"Applied {picks.Count} fixes. Undo reverses all of them.");
+                });
+            }
+            catch (Exception ex)
+            {
+                AP_Atlas.Core.Logger.LogWarning($"Pack Doctor couldn't apply {description}: {ex.Message}");
+                SetStatus($"Couldn't apply: {ex.Message}");
+                return;
+            }
+            foreach (var (f, _) in picks) { _recTicked.Remove(f.Key); _recUnticked.Remove(f.Key); _recChoice.Remove(f.Key); _appliedKeys.Add(f.Key); }
+            _appliedText = picks.Count == 1 ? $"Applied: {picks[0].Pick.Label}. Undo reverses it." : $"Applied {picks.Count} fixes. Undo reverses all of them.";
+            SetStatus(_appliedText + " Checking the pack again…");
         }
     }
 }

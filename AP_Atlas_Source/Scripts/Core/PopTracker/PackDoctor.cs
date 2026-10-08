@@ -194,6 +194,48 @@ namespace AP_Atlas.Core.PopTracker
             AnalyzeLocations(effective, index, locNames, Add, report);
             AnalyzeMaps(effective, index, Add);
 
+            // ---- The fixes themselves: the Doctor's automatic links (for the record), and links to items the game no longer has ----
+            foreach (var t in fixes.Tiles.Where(t => t.Automatic && t.ApItemId != null))
+                Add(new Finding
+                {
+                    Key = "auto:" + t.Subject,
+                    Category = "Key Items",
+                    Severity = FindingSeverity.AutoFixed,
+                    Title = $"Linked tile '{t.Code}' to {t.ApItemName} (the names match)",
+                    Detail = "Made by the Doctor on the pack's first check. Reset it under Your fixes if it's wrong.",
+                    Subject = t.Subject,
+                    Actions = FindingActions.ResetFixes,
+                    RelatedSubjects = { t.Subject }
+                });
+            foreach (var l in fixes.Links.Where(l => l.Automatic && l.ApLocationId != null))
+                Add(new Finding
+                {
+                    Key = "auto:" + l.Subject,
+                    Category = "Locations",
+                    Severity = FindingSeverity.AutoFixed,
+                    Title = $"Linked '{(string.IsNullOrEmpty(l.SectionName) ? l.PinPath : l.SectionName)}' to {l.ApLocationName} (the names match)",
+                    Detail = "Made by the Doctor on the pack's first check. Reset it under Your fixes if it's wrong.",
+                    Subject = l.Subject,
+                    Actions = FindingActions.ResetFixes,
+                    RelatedSubjects = { l.Subject }
+                });
+            if (itemNames.Count > 0)
+            {
+                foreach (var t in fixes.Tiles.Where(t => t.ApItemId != null && !itemNames.ContainsKey(t.ApItemId.Value)))
+                    Add(new Finding
+                    {
+                        Key = "tile:stalefix:" + t.Code,
+                        Category = "Key Items",
+                        Severity = FindingSeverity.Warning,
+                        Title = $"Your fix links tile '{t.Code}' to \"{t.ApItemName}\", an item this game doesn't have",
+                        Detail = "The game's names may have changed since. Link the tile again, or reset the fix.",
+                        Subject = "tile:" + t.Code,
+                        Actions = FindingActions.LinkItem | FindingActions.ResetFixes,
+                        RelatedSubjects = { "tile:" + t.Code },
+                        Suggestions = Suggest(t.ApItemName ?? t.Code, itemNames, 5)
+                    });
+            }
+
             // ---- The user's links that send several pin sections to one location (usually a wrong match) ----
             // Packs often show one check on two maps (an overview and the area map) under the same name; that's fine.
             // Differently named checks sharing one location is the sign of a wrong match.
@@ -695,6 +737,71 @@ namespace AP_Atlas.Core.PopTracker
         {
             if (!d.TryGetValue(key, out var list)) d[key] = list = new List<T>();
             list.Add(value);
+        }
+
+        // =====================================================================
+        // Recommendations: the rows the Doctor can fix from its suggestions, and which clash
+        // =====================================================================
+
+        /// <summary>Findings the Doctor can fix with one of its suggestions (unlinked tiles and pin sections), best first.</summary>
+        public static List<Finding> Recommendations(DoctorReport report) =>
+            report?.Findings
+                .Where(f => !f.Ignored && f.Suggestions.Count > 0 && (f.Actions.HasFlag(FindingActions.LinkItem) || f.Actions.HasFlag(FindingActions.LinkLocation)))
+                .OrderByDescending(f => f.Suggestions[0].Score)
+                .ToList() ?? new List<Finding>();
+
+        /// <summary>What a recommendation row is about: the tile's item name (or its code), or the section (or pin) name.</summary>
+        public static string RowName(DoctorReport report, Finding f)
+        {
+            string subject = f.Subject.Substring(f.Subject.IndexOf(':') + 1);
+            if (f.Actions.HasFlag(FindingActions.LinkItem))
+                return report?.Pack != null && report.Pack.ItemsByCode.TryGetValue(subject, out var item) && !string.IsNullOrEmpty(item.Name) ? item.Name : subject;
+            var parts = subject.Split('|');
+            return parts.Length > 1 && parts[1].Length > 0 ? parts[1] : parts[0].Split('/').Last();
+        }
+
+        /// <summary>
+        /// Rows whose chosen match clashes: two rows that would give the same item or location to two things (the
+        /// strongest keeps it; one check shown on two maps under the same name is fine), and a pin whose chosen location
+        /// a differently named check already shows. Finding key → why.
+        /// </summary>
+        public static Dictionary<string, string> Conflicts(DoctorReport report, List<Finding> recs, Func<Finding, Suggestion> chosen)
+        {
+            var conflicts = new Dictionary<string, string>();
+            foreach (var group in recs.GroupBy(f => (f.Actions.HasFlag(FindingActions.LinkItem), chosen(f).Id)).Where(g => g.Count() > 1))
+            {
+                var ordered = group.OrderByDescending(f => chosen(f).Score).ToList();
+                foreach (var f in ordered.Skip(1))
+                    conflicts[f.Key] = $"Same match as \"{RowName(report, ordered[0])}\" (stronger); pick another for this row.";
+            }
+            foreach (var f in recs.Where(f => f.Actions.HasFlag(FindingActions.LinkLocation) && !conflicts.ContainsKey(f.Key)))
+            {
+                var id = chosen(f).Id;
+                if (report?.Index == null || !report.Index.ByLocation.TryGetValue(id, out var shownBy) || shownBy.Count == 0) continue;
+                var parts = f.Subject.Substring(f.Subject.IndexOf(':') + 1).Split('|');
+                string mine = SameCheckKey(parts[0], parts.Length > 1 ? parts[1] : "");
+                var other = shownBy.FirstOrDefault(m => SameCheckKey(m.Pin.FullPath, m.Section?.Name) != mine);
+                if (other != null) conflicts[f.Key] = $"Already shown by a different check: \"{other.Section?.Name ?? other.Pin.Name}\" on pin {other.Pin.FullPath}.";
+            }
+            foreach (var key in conflicts.Keys.ToList())
+            {
+                var f = recs.First(r => r.Key == key);
+                if (!conflicts[key].StartsWith("Same match as")) continue;
+                var rivals = recs.Where(r => r != f && r.Actions == f.Actions && chosen(r).Id == chosen(f).Id).ToList();
+                if (rivals.All(r => RowName(report, r).Equals(RowName(report, f), StringComparison.OrdinalIgnoreCase))) conflicts.Remove(key);
+            }
+            return conflicts;
+        }
+
+        /// <summary>
+        /// The recommendations whose best match is exact (the same name once case and punctuation are ignored) and
+        /// clashes with nothing: what the Doctor links by itself on a pack's first check.
+        /// </summary>
+        public static List<Finding> ExactMatches(DoctorReport report)
+        {
+            var recs = Recommendations(report).Where(f => f.Suggestions[0].Score >= 0.999).ToList();
+            var conflicts = Conflicts(report, recs, f => f.Suggestions[0]);
+            return recs.Where(f => !conflicts.ContainsKey(f.Key)).ToList();
         }
 
         // =====================================================================

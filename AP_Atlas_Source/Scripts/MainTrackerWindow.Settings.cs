@@ -213,6 +213,13 @@ public partial class MainTrackerWindow
             });
 
         page.AddSection("tools", "Tools");
+        page.AddToggle("tools", "pack-doctor-auto-link", "Pack Doctor: link exact name matches by itself",
+            "On a map pack's first check, a tile or pin whose name matches an Archipelago item or location exactly (ignoring case and punctuation) is linked for you, as a fix marked automatic that Undo or Your fixes can reverse. Off: every match waits for you on the Recommended tab.",
+            () => _appSettings.PackDoctorAutoLink, on =>
+            {
+                _appSettings.PackDoctorAutoLink = on;
+                DataManager.SaveSettings(_appSettings);
+            });
         page.AddAction("tools", "engine", "Atlas Engine", "The logic engine: its install, version and mode.", "Open…", OpenEngineSetup);
         page.AddAction("tools", "cheese", "Cheese Tracker", "Your API key, links and automatic updates.", "Open…", OpenCheeseSettings);
         page.AddAction("tools", "spheres", "Sphere Tracker", "The host's spheretracker.de room for each multiworld.", "Open…",

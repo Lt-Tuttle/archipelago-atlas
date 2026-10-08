@@ -759,6 +759,64 @@ namespace AP_Atlas.Core
             Expect(fresh.Findings.First(f => f.Key == findingKey).Ignored, "a new snapshot sees the edit");
         }
 
+        private static async Task PackDoctorAppliesTileFixes()
+        {
+            var pack = new PopTracker.LoadedPack
+            {
+                Manifest = new PopTracker.PopTrackerManifest { Name = "Self-test apply pack", GameName = "Self-test Apply Game", Version = "1.0" },
+                SourcePath = Scratch("selftest_apply_pack.zip")
+            };
+            pack.ItemsByCode["known"] = new PopTracker.PopTrackerItem { Name = "Known Item", CodesRaw = "known" };
+            // deku_shield and twin have no item; twin and twin_ both match "Twin" exactly (a clash: only the first is linked by itself).
+            pack.ItemGridGroups.Add(new PopTracker.PackItemGrid { LayoutKey = "tracker_default", Rows = new List<List<string>> { new List<string> { "deku_shield", "known", "twin", "twin_" } } });
+            var names = new PopTracker.GameNameTable { Game = "Self-test Apply Game", Source = "server" };
+            names.Items["Deku Shield"] = 5;
+            names.Items["Known Item"] = 6;
+            names.Items["Twin"] = 7;
+            string key = PopTracker.PackFixes.KeyFor(pack);
+            PopTracker.PackFixes.Reset(key);
+            try
+            {
+                var first = await Task.Run(() => PopTracker.PackDoctor.Analyze(PopTracker.PackDoctor.Prepare(pack, names)));
+                var unknown = first.Findings.FirstOrDefault(f => f.Key == "tile:unknown:deku_shield");
+                Expect(unknown != null && unknown.Suggestions.Count > 0 && unknown.Suggestions[0].Label == "Deku Shield" && unknown.Suggestions[0].Score >= 0.999,
+                    "a code no item defines isn't reported with its exact match first");
+                var exact = PopTracker.PackDoctor.ExactMatches(first);
+                Expect(exact.Select(f => f.Key).OrderBy(k => k).SequenceEqual(new[] { "tile:unknown:deku_shield", "tile:unknown:twin" }),
+                    "the exact matches aren't deku_shield and twin alone (twin_ clashes with twin): " + string.Join(", ", exact.Select(f => f.Key)));
+
+                // Linked by the Doctor itself: the fixes are marked automatic, the pass is recorded for the version.
+                int linked = PopTracker.PackDoctorService.AutoLinkExact(key, pack, first);
+                var fixes = PopTracker.PackFixes.Get(key);
+                Expect(linked == 2 && fixes.Tiles.Count == 2 && fixes.Tiles.All(t => t.Automatic && t.ApItemId != null) && fixes.AutoLinkedVersion == "1.0",
+                    $"the automatic pass linked {linked} ({fixes.Tiles.Count} tile fixes, version '{fixes.AutoLinkedVersion}')");
+
+                // The fix defines the item: the next analysis sees the tile, linked, and records the automatic link.
+                var second = await Task.Run(() => PopTracker.PackDoctor.Analyze(PopTracker.PackDoctor.Prepare(pack, names)));
+                Expect(!second.Findings.Any(f => f.Key == "tile:unknown:deku_shield" || f.Key == "tile:unknown:twin") && second.Findings.Any(f => f.Key == "tile:unknown:twin_"),
+                    "after the fix, the code is still reported as undefined (or the clashing one was linked)");
+                Expect(second.Pack.ItemsByCode.TryGetValue("deku_shield", out var defined) && defined.Name == "Deku Shield" && second.Index.ItemIdsFor("deku_shield").Contains(5),
+                    "the fix didn't define the tile's item, or the index doesn't link it");
+                Expect(second.Findings.Any(f => f.Key == "auto:tile:deku_shield" && f.Severity == PopTracker.FindingSeverity.AutoFixed), "the automatic link isn't listed as fixed on its own");
+                Expect(second.TilesLinked == 3, $"{second.TilesLinked} tiles are linked, not 3");
+
+                // Undo takes the automatic links back in one step.
+                Expect(PopTracker.PackFixes.Undo(key) && PopTracker.PackFixes.Get(key).Tiles.Count == 0, "Undo didn't take the automatic links back");
+                var third = await Task.Run(() => PopTracker.PackDoctor.Analyze(PopTracker.PackDoctor.Prepare(pack, names)));
+                Expect(third.Findings.Any(f => f.Key == "tile:unknown:deku_shield"), "after Undo, the code isn't reported again");
+
+                // A fix that links a tile to an item the game doesn't have any more is reported, with the tile still linkable.
+                PopTracker.PackFixes.Edit(key, "self-test: a stale fix", f => f.Tiles.Add(new PopTracker.TileFix { Subject = "tile:known", Code = "known", ApItemId = 999, ApItemName = "Gone Item" }));
+                var fourth = await Task.Run(() => PopTracker.PackDoctor.Analyze(PopTracker.PackDoctor.Prepare(pack, names)));
+                var stale = fourth.Findings.FirstOrDefault(f => f.Key == "tile:stalefix:known");
+                Expect(stale != null && stale.Actions.HasFlag(PopTracker.FindingActions.LinkItem) && stale.Title.Contains("Gone Item"), "a fix to a vanished item isn't reported");
+            }
+            finally
+            {
+                PopTracker.PackFixes.Reset(key);
+            }
+        }
+
         /// <summary>Settings saved from a background thread are written on the main thread instead, and the log says so.</summary>
         private static async Task OffThreadSavesMoveToTheMainThread()
         {

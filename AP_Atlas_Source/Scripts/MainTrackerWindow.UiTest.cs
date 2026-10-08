@@ -170,6 +170,8 @@ public partial class MainTrackerWindow
             SlotPanelMovesWholeAsync);
         await ScenarioAsync("Map packs: a slot's pack has its images while the slot is connected (its map shows them), the Pack Doctor's while its window is open; then they're freed once another pack is used",
             PackImagesFollowTheirUsersAsync);
+        await ScenarioAsync("Pack Doctor: on a pack's first check, a tile whose name matches an item exactly (once punctuation is ignored) is linked by itself as an automatic fix; the Recommended tab lists what's left, Apply on a row writes the fix, the row goes after the check and the status says so; Undo takes the automatic link back",
+            PackDoctorAsync);
         await ScenarioAsync("Map packs reach connected slots: a slot without a pack offers \"Find a map pack for <game>…\" on its map, which shows Map Packs and searches GitHub once; a pack chosen from the results downloads with a progress line, installs with a card and reaches the slot's map; a pack installed while a slot is connected shows on its map at once, without a reconnect; deleted, the map says there's no pack again; another pack for the game takes its place",
             PacksReachConnectedSlotsAsync);
         await ScenarioAsync("Live map following: a pack whose scripts follow the game switches the map to the tab the room's data storage names, at connect and when it changes (Atlas asks the server about the key and never writes the room's data); with the switch off, the map stays; the switch is remembered per slot",
@@ -2674,6 +2676,58 @@ public partial class MainTrackerWindow
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
             if (_profiles.Contains(profile)) DeleteProfile(profile);
             foreach (string file in new[] { zip, other }) AP_Atlas.Core.SafeFile.Delete(file);
+        }
+    }
+
+    private async Task PackDoctorAsync()
+    {
+        string zip = System.IO.Path.Combine(AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory(), "uitest_doctor_pack.zip");
+        // "Sword!" matches the game's "Sword" once punctuation is ignored (the index alone wouldn't link it); the pin "Cave" / "Chest" is close to "Cave Chest" but not exact.
+        FakeMapPack.Write(zip, "UI test doctor pack", "Doctor Test Game",
+            itemsJson: """[{"name":"Sword!","type":"toggle","img":"images/sword.png","codes":"sword"},{"name":"Shield","type":"toggle","img":"images/broken.png","codes":"shield"}]""");
+        await using var server = new FakeArchipelagoServer { SlotGame = "Doctor Test Game" };
+        server.Games["Doctor Test Game"] = new FakeGame("d0c70123456789abcdef0123456789abcdef0123",
+            new Dictionary<string, long> { ["Sword"] = 1000, ["Shield"] = 1001 }, new Dictionary<string, long> { ["Cave Chest"] = 2000, ["Far Chest"] = 2001 });
+        var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Tester");
+        _profiles.Add(profile);
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        string key = "";
+        try
+        {
+            await OnConnectSlotPressedAsync("Tester", profile);
+            var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
+            var pack = await UiTestWaitForAsync(() => slot.Pack, "the slot to load the doctor pack");
+            key = AP_Atlas.Core.PopTracker.PackFixes.KeyFor(pack);
+            // The first check links the exact match by itself.
+            var auto = await UiTestWaitForAsync(() => AP_Atlas.Core.PopTracker.PackFixes.Get(key).Tiles.FirstOrDefault(t => t.Code == "sword"), "the Doctor to link the exact match by itself");
+            UiTestExpect(auto.Automatic && auto.ApItemId == 1000 && auto.ApItemName == "Sword", $"the automatic link is wrong: {auto.ApItemName} ({auto.ApItemId}), automatic {auto.Automatic}");
+            UiTestExpect(!AP_Atlas.Core.PopTracker.PackFixes.Get(key).Tiles.Any(t => t.Code == "shield"), "an item the index links by name got a fix too");
+            // The window: the Recommended tab lists the pin that isn't exact and not the linked tile; Apply writes the fix and says so.
+            OpenPackDoctor(zip);
+            var window = await UiTestWaitForAsync(() => GetTree().Root.GetChildren().OfType<AP_Atlas.UI.PackDoctorWindow>().FirstOrDefault(), "the Pack Doctor window");
+            // The report after the automatic link (a check queued by the link, or the window's own) no longer suggests the linked tile.
+            await UiTestWaitForAsync(() => window.HasReport && !window.RecommendedRows().Any(r => r.Key == "tile:unlinked:sword") ? window : null, "the report after the automatic link, without the linked tile");
+            var rows = window.RecommendedRows();
+            var pin = rows.FirstOrDefault(r => r.Key == "loc:unmatched:Cave|Chest");
+            UiTestExpect(pin.Key != null && pin.Score < 0.999, $"the pin isn't a suggestion: {string.Join(", ", rows.Select(r => r.Key))}");
+            UiTestExpect(slot.ProgressionTracker != null && slot.PackIndex.ItemIdsFor("sword").Contains(1000), "the slot's Key Items don't use the automatic link");
+            window.ApplyRecommendation(pin.Key);
+            await UiTestWaitForAsync(() => AP_Atlas.Core.PopTracker.PackFixes.Get(key).Links.FirstOrDefault(l => l.Subject == "link:Cave|Chest" && l.ApLocationId == 2000), "the pin's link to be written");
+            await UiTestWaitForAsync(() => window.StatusText.StartsWith("Applied") && window.StatusText.Contains("Done") ? window : null, "the status to say the apply landed");
+            UiTestExpect(!window.RecommendedRows().Any(r => r.Key == pin.Key), "the applied row is still suggested after the check");
+            // Undo twice: the pin link, then the automatic tile link.
+            UiTestExpect(AP_Atlas.Core.PopTracker.PackFixes.Undo(key) && AP_Atlas.Core.PopTracker.PackFixes.Undo(key) && AP_Atlas.Core.PopTracker.PackFixes.Get(key).Tiles.Count == 0,
+                "Undo didn't take the automatic link back");
+            window.EmitSignal(Window.SignalName.CloseRequested);
+        }
+        finally
+        {
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+            if (_profiles.Contains(profile)) DeleteProfile(profile);
+            if (key.Length > 0) AP_Atlas.Core.PopTracker.PackFixes.Reset(key);
+            AP_Atlas.Core.SafeFile.Delete(zip);
         }
     }
 

@@ -25,6 +25,14 @@ namespace AP_Atlas.Core.PopTracker
 
         private static AppSettings _settings;
         private static readonly HashSet<string> _running = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Packs whose fixes changed while a check ran: checked once more when it ends, so the edit isn't lost to the snapshot.
+        private static readonly HashSet<string> _checkAgain = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Whether a pack will be checked again after the check that's running (its fixes changed meanwhile): the report
+        /// the running check delivers isn't the last word. False once the last report of a sequence is delivered.
+        /// </summary>
+        public static bool IsBusy(string packKey) => _checkAgain.Contains(packKey);
         private static readonly HashSet<string> _localFetchAttempted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         public static void Initialize(AppSettings settings)
@@ -42,7 +50,11 @@ namespace AP_Atlas.Core.PopTracker
         private static LoadedPack FindOriginal(string zipPath)
         {
             try { return string.IsNullOrEmpty(zipPath) ? null : PopTrackerPackLoader.InspectZipPack(zipPath); }
-            catch { return null; }
+            catch (Exception ex)
+            {
+                Logger.LogWarning($"Pack Doctor couldn't read the pack to check it again: {ex.Message}");
+                return null;
+            }
         }
 
         /// <summary>
@@ -53,7 +65,11 @@ namespace AP_Atlas.Core.PopTracker
         {
             if (original == null) return null;
             string key = PackFixes.KeyFor(original);
-            if (!_running.Add(key)) return Reports.TryGetValue(key, out var existing) ? existing : null;
+            if (!_running.Add(key))
+            {
+                _checkAgain.Add(key);
+                return Reports.TryGetValue(key, out var existing) ? existing : null;
+            }
             try
             {
                 // Which of the pack's images decode (and their sizes): checked off the main thread, without keeping them,
@@ -80,6 +96,13 @@ namespace AP_Atlas.Core.PopTracker
 
                 var fixes = PackFixes.Get(key);
                 string version = original.Manifest?.GetActualVersion() ?? "";
+                // Once per pack version: exact name matches are linked by the Doctor itself (undoable; the edit queues a
+                // check with them in, which then lists what's left).
+                if (_settings?.PackDoctorAutoLink != false && fixes.AutoLinkedVersion != version && names != null)
+                {
+                    int linked = AutoLinkExact(key, original, report);
+                    if (linked > 0) Logger.LogInfo($"Pack Doctor linked {linked} exact name match{(linked == 1 ? "" : "es")} in '{original.Manifest?.Name}' by itself (Undo in the Doctor reverses them).");
+                }
                 int needs = report.NeedsReview.Count();
                 bool newOrChanged = fixes.ReviewedVersion != version;
                 if (prompt && newOrChanged && needs > 0)
@@ -96,7 +119,54 @@ namespace AP_Atlas.Core.PopTracker
             finally
             {
                 _running.Remove(key);
+                if (_checkAgain.Remove(key)) AP_Atlas.Core.Async.Fire(CheckAsync(original, prompt: false), "checking a map pack again after an edit");
             }
+        }
+
+        /// <summary>
+        /// Links every recommendation whose best match is exact and clashes with nothing (<see cref="PackDoctor.ExactMatches"/>)
+        /// as fixes marked automatic, in one undoable step, and records the pass for the pack's version. Main thread.
+        /// Returns how many it linked.
+        /// </summary>
+        public static int AutoLinkExact(string key, LoadedPack original, DoctorReport report)
+        {
+            string version = original?.Manifest?.GetActualVersion() ?? "";
+            var exact = PackDoctor.ExactMatches(report);
+            if (exact.Count == 0)
+            {
+                PackFixes.SetAutoLinkedVersion(key, version);
+                return 0;
+            }
+            PackFixes.Edit(key, $"Link {exact.Count} exact name match{(exact.Count == 1 ? "" : "es")} automatically", file =>
+            {
+                foreach (var f in exact)
+                {
+                    var s = f.Suggestions[0];
+                    string subject = f.Subject.Substring(f.Subject.IndexOf(':') + 1);
+                    if (f.Actions.HasFlag(FindingActions.LinkItem))
+                    {
+                        file.Tiles.RemoveAll(t => t.Subject == f.Subject);
+                        file.Tiles.Add(new TileFix { Subject = f.Subject, Code = subject, ApItemId = s.Id, ApItemName = s.Label, Source = "automatic", AuthorStamp = PackFixes.AuthorStamp(original, f.Subject) });
+                    }
+                    else
+                    {
+                        var parts = subject.Split('|');
+                        file.Links.RemoveAll(l => l.Subject == f.Subject);
+                        file.Links.Add(new LocationLinkFix
+                        {
+                            Subject = f.Subject,
+                            PinPath = parts[0],
+                            SectionName = parts.Length > 1 ? parts[1] : "",
+                            ApLocationId = s.Id,
+                            ApLocationName = s.Label,
+                            Source = "automatic",
+                            AuthorStamp = PackFixes.AuthorStamp(original, f.Subject)
+                        });
+                    }
+                }
+                file.AutoLinkedVersion = version;
+            });
+            return exact.Count;
         }
 
         /// <summary>Marks a pack's current version as reviewed (no more prompts until it changes).</summary>
