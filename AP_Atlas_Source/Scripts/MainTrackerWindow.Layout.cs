@@ -57,6 +57,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _consoleOutput = new AP_Atlas.UI.SafeRichText { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, ScrollFollowing = true, SelectionEnabled = true };
         _sysLogVBox.AddChild(_consoleOutput);
         _systemLog = new AP_Atlas.UI.LogPane(_consoleOutput);
+        _systemLog.Appended += () => MarkTerminalTabNew(1);
         _terminalStage.AddChild(_sysLogVBox);
         _debugLogVBox = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
         _debugLogConsole = new AP_Atlas.UI.SafeRichText { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, ScrollFollowing = true, SelectionEnabled = true };
@@ -66,10 +67,45 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _bottomTabs.TabSelected += (long tab) =>
         {
             _currentTerminalTab = (int)tab;
+            ClearTerminalTabNew((int)tab);
             RefreshTerminalView();
         };
         _contentSplit.AddChild(_bottomPane);
     }
+
+    // ---- "New lines" on the bottom pane's tabs: a small dot on a tab that isn't showing, cleared when it is ----
+
+    /// <summary>A small disc in the palette's "pending" colour (an 8 px texture, drawn once per call; it's tiny).</summary>
+    private static Texture2D NewLinesDot()
+    {
+        var image = Godot.Image.CreateEmpty(8, 8, false, Godot.Image.Format.Rgba8);
+        image.Fill(new Color(0, 0, 0, 0));
+        var colour = AP_Atlas.Core.ThemeColors.Pending;
+        for (int x = 0; x < 8; x++)
+            for (int y = 0; y < 8; y++)
+                if ((x - 3.5f) * (x - 3.5f) + (y - 3.5f) * (y - 3.5f) <= 3.6f * 3.6f) image.SetPixel(x, y, colour);
+        return ImageTexture.CreateFromImage(image);
+    }
+
+    /// <summary>Marks a bottom pane tab as holding lines not seen yet, unless it's the one showing.</summary>
+    private void MarkTerminalTabNew(int tab)
+    {
+        if (_bottomTabs == null || tab < 0 || tab >= _bottomTabs.TabCount || _bottomTabs.IsTabHidden(tab)) return;
+        bool showing = _bottomPane != null && _bottomPane.Visible && _currentTerminalTab == tab;
+        if (showing || _bottomTabs.GetTabIcon(tab) != null) return;
+        _bottomTabs.SetTabIcon(tab, NewLinesDot());
+        _bottomTabs.SetTabTooltip(tab, Tr("New lines"));
+    }
+
+    private void ClearTerminalTabNew(int tab)
+    {
+        if (_bottomTabs == null || tab < 0 || tab >= _bottomTabs.TabCount || _bottomTabs.GetTabIcon(tab) == null) return;
+        _bottomTabs.SetTabIcon(tab, null);
+        _bottomTabs.SetTabTooltip(tab, "");
+    }
+
+    /// <summary>Whether a bottom pane tab carries the "new lines" dot (for tests).</summary>
+    public bool TerminalTabHasNew(int tab) => _bottomTabs != null && tab >= 0 && tab < _bottomTabs.TabCount && _bottomTabs.GetTabIcon(tab) != null;
     private Label _sidebarTitle;
     private Button _sidebarMenuBtn;
     private Label _propsTitle;

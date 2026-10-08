@@ -77,7 +77,11 @@ public partial class MainTrackerWindow
         FitPanes(show, width ?? GetViewport().GetVisibleRect().Size.X);
         if (_sidebar != null) _sidebar.Visible = show && _appSettings.ShowSlotsPanel && !_autoHidden.Contains("view.slots-panel");
         if (_propertiesSidebar != null) _propertiesSidebar.Visible = show && _appSettings.ShowPropertiesPanel && !_autoHidden.Contains("view.properties-panel");
-        if (_bottomPane != null) _bottomPane.Visible = show && _appSettings.ShowBottomPane;
+        if (_bottomPane != null)
+        {
+            _bottomPane.Visible = show && _appSettings.ShowBottomPane;
+            if (_bottomPane.Visible) ClearTerminalTabNew(_currentTerminalTab); // the showing tab's lines are seen now
+        }
         if (_globalStatusBar != null) _globalStatusBar.Visible = show && _appSettings.ShowStatusBar;
         if (_activityBar != null) _activityBar.Visible = show;
         SetExplorerVisible(_explorerWanted && !_autoHidden.Contains("view.explorer"));

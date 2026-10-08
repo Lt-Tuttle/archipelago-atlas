@@ -370,6 +370,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         slotTracker.ShowActionToast = ShowToast;
         slotTracker.OpenEngineSetup = OpenEngineSetup;
         slotTracker.FindMapPack = FindMapPack;
+        slotTracker.NewChatLines += () => MarkTerminalTabNew(0);
         slotTracker.AccuracyChanged += () => _propertiesPanel?.QueueRefresh();
         // When this slot's logic moves, hints at its locations change for the other slots of the same multiworld.
         slotTracker.StateChanged += () =>

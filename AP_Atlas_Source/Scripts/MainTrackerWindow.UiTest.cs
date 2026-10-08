@@ -126,7 +126,7 @@ public partial class MainTrackerWindow
             PrivacyAsync);
         await ScenarioAsync("Home: Ctrl+8 shows it on its own; every tool has a card with a line and every link is https; the checklist ticks the engine as it is and nothing else in a fresh folder, then a multiworld and a pack once they exist; a tip shows and Next tip goes around; the multiworld is listed and one click connects its slot, ticks the step and says Connected; a tool's card shows the tool",
             HomeAsync);
-        await ScenarioAsync("Games page: the Games tool lists every game in its group (community games from the index, the games your multiworlds play as added by you), typed words narrow the list, a game's page walks its setup through (the apworld, a map pack, your YAML, the files it needs) with each step ticked as Atlas finds it; a YAML added once is listed under every game it names; the game's folders are inside Atlas's data folder; once GitHub may be asked, the page lists every version of every project (the game's own, and one of the same name found by one search), newest first with pre-releases marked and the newest full release named, and downloads nothing without a press",
+        await ScenarioAsync("Games page: the Games tool lists every game in its group (community games from the index, the games your multiworlds play as added by you), typed words narrow the list, a game's page walks its setup through (the apworld, a map pack, your YAML, the files it needs) with each step ticked as Atlas finds it; a YAML added once is listed under every game it names; the game's folders are inside Atlas's data folder; once GitHub may be asked, the page lists every version of every project (the game's own, and one of the same name found by one search), newest first with pre-releases marked and the newest full release named, and downloads nothing without a press; Add YAML offers the places a YAML may be; the release-files dialog fits the window with a check box per file; a Discord home is named on its link",
             GamesPageAsync);
         await ScenarioAsync("Help: the guide opens on its first topic with a topic per section; a topic shows its section, What's new the changelog, Credits & disclaimer the author and the credits, Licences Atlas's licence; a second Help command uses the same window at its topic; Home's What's new card lists the newest changes and leads here",
             HelpAsync);
@@ -172,7 +172,7 @@ public partial class MainTrackerWindow
             PackImagesFollowTheirUsersAsync);
         await ScenarioAsync("Pack Doctor: on a pack's first check, a tile whose name matches an item exactly (once punctuation is ignored) is linked by itself as an automatic fix; the Recommended tab lists what's left, Apply on a row writes the fix, the row goes after the check and the status says so; Undo takes the automatic link back",
             PackDoctorAsync);
-        await ScenarioAsync("Map packs reach connected slots: a slot without a pack offers \"Find a map pack for <game>…\" on its map, which shows Map Packs and searches GitHub once; a pack chosen from the results downloads with a progress line, installs with a card and reaches the slot's map; a pack installed while a slot is connected shows on its map at once, without a reconnect; deleted, the map says there's no pack again; another pack for the game takes its place",
+        await ScenarioAsync("Map packs reach connected slots: the chat's filters sit in one row; the Chat and System Log tabs carry a dot for lines that arrived while they weren't showing, cleared when shown; a slot without a pack offers \"Find a map pack for <game>…\" on its map, which shows Map Packs and searches GitHub once; a pack chosen from the results downloads with a progress line, installs with a card and reaches the slot's map; a pack installed while a slot is connected shows on its map at once, without a reconnect; deleted, the map says there's no pack again; another pack for the game takes its place",
             PacksReachConnectedSlotsAsync);
         await ScenarioAsync("Live map following: a pack whose scripts follow the game switches the map to the tab the room's data storage names, at connect and when it changes (Atlas asks the server about the key and never writes the room's data); with the switch off, the map stays; the switch is remembered per slot",
             LiveMapFollowingAsync);
@@ -1055,7 +1055,8 @@ public partial class MainTrackerWindow
             // Each release its own file (its own SHA-256): the same hash would mean the same file published twice.
             string Release(string tag, bool pre, char digest) =>
                 $"{{\"tag_name\":\"{tag}\",\"draft\":false,\"prerelease\":{(pre ? "true" : "false")},\"published_at\":\"2026-09-0{(pre ? 2 : 1)}T00:00:00Z\"," +
-                $"\"assets\":[{{\"name\":\"atlas_test.apworld\",\"browser_download_url\":\"{github.Site}/dl/{tag}/atlas_test.apworld\",\"digest\":\"sha256:{new string(digest, 64)}\",\"size\":1000}}]}}";
+                $"\"assets\":[{{\"name\":\"atlas_test.apworld\",\"browser_download_url\":\"{github.Site}/dl/{tag}/atlas_test.apworld\",\"digest\":\"sha256:{new string(digest, 64)}\",\"size\":1000}}," +
+                $"{{\"name\":\"atlas_template.yaml\",\"browser_download_url\":\"{github.Site}/dl/{tag}/atlas_template.yaml\",\"size\":2000}},{{\"name\":\"client.zip\",\"browser_download_url\":\"{github.Site}/dl/{tag}/client.zip\",\"size\":300000}}]}}";
             github.Respond = path =>
                 path.StartsWith("/search/repositories") ? (200, "{\"items\":[{\"full_name\":\"fork/atlas-test\",\"name\":\"atlas-test\"},{\"full_name\":\"other/atlas-test-maps\",\"name\":\"atlas-test-maps\"}]}")
                 : path.StartsWith("/repos/owner/atlas-test/releases") ? (200, "[" + Release("1.0.0", false, 'a') + "]")
@@ -1076,6 +1077,23 @@ public partial class MainTrackerWindow
             UiTestExpect(github.Requests.Count(r => r.StartsWith("/search/")) == 1, $"GitHub was searched {github.Requests.Count(r => r.StartsWith("/search/"))} times, not once");
             UiTestExpect(!github.Requests.Any(r => r.StartsWith("/dl/")), "a version was downloaded without a press");
             UiTestExpect(page.Steps().Any(s => s.Title == "A map pack" && !s.Done), "the map pack step is missing");
+            // Add YAML's menu offers Atlas's YAML folder (the install's Players folder and this game's downloads only when they exist).
+            UiTestExpect(page.YamlMenuItems().SequenceEqual(new[] { "From Atlas's YAML folder…" }), $"the Add YAML menu offers: {string.Join(", ", page.YamlMenuItems())}");
+            // The release-files dialog: sized, a check box per file (the release's files besides the apworld), Select all; nothing downloads without Download.
+            page.ListReleaseFilesForTests("Atlas Test Game");
+            var files = await UiTestWaitForAsync(() => page.GetChildren().OfType<ConfirmationDialog>().FirstOrDefault(d => d.HasMeta("release_files") && !d.IsQueuedForDeletion()), "the release-files dialog");
+            await UiTestWaitForAsync(() => files.FindChildren("*", nameof(CheckBox), true, false).OfType<CheckBox>().Count() == 2 ? files : null, "the release's two files as check boxes");
+            var ticks = files.FindChildren("*", nameof(CheckBox), true, false).OfType<CheckBox>().ToList();
+            UiTestExpect(ticks.All(t => !t.ButtonPressed) && ticks.Any(t => t.Text.StartsWith("atlas_template.yaml")) && ticks.Any(t => t.Text.StartsWith("client.zip")), $"the files aren't listed unticked: {string.Join(", ", ticks.Select(t => t.Text))}");
+            UiTestExpect(files.Size.X <= GetTree().Root.Size.X && files.Size.Y <= GetTree().Root.Size.Y && files.Size.X >= 600, $"the dialog is {files.Size}");
+            files.FindChildren("*", nameof(Button), true, false).OfType<Button>().First(b => b.Text == "Select all").EmitSignal(BaseButton.SignalName.Pressed);
+            UiTestExpect(ticks.All(t => t.ButtonPressed), "Select all didn't tick every file");
+            files.EmitSignal(AcceptDialog.SignalName.Canceled);
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(!github.Requests.Any(r => r.StartsWith("/dl/")), "a file was downloaded without Download");
+            // A community game whose home is its Discord thread says so on its link.
+            page.Select("Dark Souls Remastered");
+            UiTestExpect(page.LinkTexts().Contains("Discord thread ↗"), $"a Discord home isn't named: {string.Join(", ", page.LinkTexts())}");
         }
         finally
         {
@@ -2755,6 +2773,31 @@ public partial class MainTrackerWindow
             host.ShowTool(AP_Atlas.UI.Tool.MapTracker);
             await UiTestWaitAsync(0.5);
             UiTestExpect(slot.Pack == null && slot.MapTracker.ShowingEmptyState, "a slot without a pack doesn't say so on its map");
+
+            // The chat's filters sit in one row (seven toggles: the kinds of line, then the kinds of item), and still filter.
+            var filterRow = slot.FindChildren("*", nameof(HFlowContainer), true, false).OfType<HFlowContainer>().First(f => f.HasMeta("chat_filters"));
+            var toggles = filterRow.GetChildren().OfType<Button>().ToList();
+            UiTestExpect(toggles.Count == 7 && toggles.All(t => t.ToggleMode && t.ButtonPressed) && toggles.Select(t => t.Text).SequenceEqual(new[] { "Chat", "Hints", "System", "Progression", "Useful", "Filler", "Traps" }),
+                $"the chat's filters aren't one row of seven toggles: {string.Join(", ", toggles.Select(t => t.Text))}");
+            // The bottom pane's tabs carry a dot for lines not seen yet: a chat line while System Log shows marks Chat, showing Chat
+            // clears it; a log line while Chat shows marks System Log; a line on the showing tab marks nothing.
+            ShowTerminalTab(1);
+            await UiTestWaitAsync(0.2);
+            ClearTerminalTabNew(1);
+            UiTestExpect(!TerminalTabHasNew(0) && !TerminalTabHasNew(1), "a tab starts with a dot");
+            await server.BroadcastAsync(server.Chat("a line for the dot"));
+            await UiTestWaitForAsync(() => TerminalTabHasNew(0) ? slot : null, "the Chat tab's dot after a chat line");
+            ShowTerminalTab(0);
+            UiTestExpect(!TerminalTabHasNew(0), "showing Chat didn't clear its dot");
+            ClearTerminalTabNew(1);
+            LogToSystem("a log line for the dot", null);
+            await UiTestWaitForAsync(() => TerminalTabHasNew(1) ? slot : null, "the System Log tab's dot after a log line");
+            await server.BroadcastAsync(server.Chat("another line while Chat shows"));
+            await UiTestWaitAsync(0.3);
+            UiTestExpect(!TerminalTabHasNew(0), "a chat line marked the showing Chat tab");
+            ShowTerminalTab(1);
+            UiTestExpect(!TerminalTabHasNew(1), "showing System Log didn't clear its dot");
+            ShowTerminalTab(0);
 
             // "Find a map pack for Test Game…" on the empty map: the window shows Map Packs and searches GitHub (a fake site)
             // once for the game; the pack chosen from what it found downloads with a progress line, installs with a card,

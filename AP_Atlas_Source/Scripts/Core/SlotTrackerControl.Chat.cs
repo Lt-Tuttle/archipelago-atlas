@@ -24,50 +24,31 @@ public partial class SlotTrackerControl : MarginContainer
         AddChild(vbox);
 
         var filterMargin = new MarginContainer();
-        filterMargin.AddThemeConstantOverride("margin_bottom", 10);
+        filterMargin.AddThemeConstantOverride("margin_bottom", 4);
         vbox.AddChild(filterMargin);
 
-        var filterVBox = new VBoxContainer();
-        filterVBox.AddThemeConstantOverride("separation", 10);
-        filterMargin.AddChild(filterVBox);
-
-        // Row 1: Message Types
-        var msgRow = new HBoxContainer();
-        msgRow.AddThemeConstantOverride("separation", 10);
-        msgRow.AddChild(new Label { Text = "Message Types: " });
-
-        _filterChat = new Button { ToggleMode = true, Text = "Chat", ButtonPressed = true, CustomMinimumSize = new Godot.Vector2(100, 0) };
-        _filterHints = new Button { ToggleMode = true, Text = "Hints", ButtonPressed = true, CustomMinimumSize = new Godot.Vector2(100, 0) };
-        _filterSystem = new Button { ToggleMode = true, Text = "System", ButtonPressed = true, CustomMinimumSize = new Godot.Vector2(100, 0) };
-
-        msgRow.AddChild(_filterChat);
-        msgRow.AddChild(_filterHints);
-        msgRow.AddChild(_filterSystem);
-        filterVBox.AddChild(msgRow);
-
-        // Row 2: Item Types
-        var itemRow = new HBoxContainer();
-        itemRow.AddThemeConstantOverride("separation", 10);
-        itemRow.AddChild(new Label { Text = "Item Types: " });
-
-        _filterProgression = new Button { ToggleMode = true, Text = "Progression", ButtonPressed = true, CustomMinimumSize = new Godot.Vector2(100, 0) };
-        _filterUseful = new Button { ToggleMode = true, Text = "Useful", ButtonPressed = true, CustomMinimumSize = new Godot.Vector2(100, 0) };
-        _filterFiller = new Button { ToggleMode = true, Text = "Filler", ButtonPressed = true, CustomMinimumSize = new Godot.Vector2(100, 0) };
-        _filterTrap = new Button { ToggleMode = true, Text = "Traps", ButtonPressed = true, CustomMinimumSize = new Godot.Vector2(100, 0) };
-
-        itemRow.AddChild(_filterProgression);
-        itemRow.AddChild(_filterUseful);
-        itemRow.AddChild(_filterFiller);
-        itemRow.AddChild(_filterTrap);
-        filterVBox.AddChild(itemRow);
-
-        _filterHints.Toggled += (b) => RedrawChat();
-        _filterProgression.Toggled += (b) => RedrawChat();
-        _filterUseful.Toggled += (b) => RedrawChat();
-        _filterFiller.Toggled += (b) => RedrawChat();
-        _filterTrap.Toggled += (b) => RedrawChat();
-        _filterChat.Toggled += (b) => RedrawChat();
-        _filterSystem.Toggled += (b) => RedrawChat();
+        // One row of filters: the kinds of line, then the kinds of item (they wrap on a narrow pane).
+        var filters = new HFlowContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        filters.AddThemeConstantOverride("h_separation", 6);
+        filters.AddThemeConstantOverride("v_separation", 4);
+        filters.SetMeta("chat_filters", true);
+        filterMargin.AddChild(filters);
+        Button Filter(string text, string tip)
+        {
+            var b = new Button { ToggleMode = true, Text = AP_Atlas.UI.Kit.Translate(text), ButtonPressed = true, TooltipText = AP_Atlas.UI.Kit.Translate(tip) };
+            b.AccessibilityName = b.Text;
+            b.Toggled += _ => RedrawChat();
+            filters.AddChild(b);
+            return b;
+        }
+        _filterChat = Filter("Chat", "Show what players say");
+        _filterHints = Filter("Hints", "Show hint lines");
+        _filterSystem = Filter("System", "Show the room's own lines (joins, releases, commands)");
+        filters.AddChild(new VSeparator());
+        _filterProgression = Filter("Progression", "Show items that unlock progress");
+        _filterUseful = Filter("Useful", "Show useful items");
+        _filterFiller = Filter("Filler", "Show filler items");
+        _filterTrap = Filter("Traps", "Show traps");
 
         _chatScroll = new ScrollContainer
         {
@@ -103,18 +84,25 @@ public partial class SlotTrackerControl : MarginContainer
     /// <summary>A frame's share of drawing lines; the rest continue next frame, so a flood (a release) never holds one up.</summary>
     private static readonly long ChatSliceTicks = System.Diagnostics.Stopwatch.Frequency * 6 / 1000;
 
+    /// <summary>Lines arrived for this slot's text client after it joined (the window marks the Chat tab while it isn't showing).</summary>
+    public event Action NewChatLines;
+
     /// <summary>New lines in the model: special items are announced at once (whichever slot is showing); the lines are drawn when the panel shows.</summary>
     private void OnNewChatLines()
     {
+        bool fresh = false;
         foreach (var entry in Model.Chat)
         {
             if (entry.Sequence <= _announcedSequence) continue;
             _announcedSequence = entry.Sequence;
-            if (entry.IsSystemMessage || entry.Early) continue;
+            if (entry.Early) continue;
+            fresh = true;
+            if (entry.IsSystemMessage) continue;
             if (entry.Hint != null) AnnounceSpecialHint(entry.Hint);
             else AnnounceSpecialItem(entry.APMessage);
         }
         _chatRefresh?.Request();
+        if (fresh) NewChatLines?.Invoke();
     }
 
     // Characters given to the text client's lines in this frame's slice: Godot lays them out after the slice, at the end of

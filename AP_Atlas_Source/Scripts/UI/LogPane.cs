@@ -23,6 +23,9 @@ namespace AP_Atlas.UI
 
         public LogPane(SafeRichText view) => _view = view;
 
+        /// <summary>Lines were added to the view (main thread, once per frame with lines).</summary>
+        public event System.Action? Appended;
+
         /// <summary>Adds text (BBCode, ending in a line break) at the end of this frame. Any thread.</summary>
         public void Append(string text)
         {
@@ -37,6 +40,7 @@ namespace AP_Atlas.UI
             while (_queue.TryDequeue(out var line)) text.Append(line);
             if (text.Length == 0) return;
             _view.Append(text.ToString());
+            Appended?.Invoke();
             int extra = _view.GetParagraphCount() - Lines;
             if (extra < TrimStep) return;
             for (int i = 0; i < extra; i++) _view.RemoveParagraph(0, noInvalidate: i < extra - 1);

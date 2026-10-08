@@ -377,7 +377,11 @@ namespace AP_Atlas.UI
             Step(steps, yamls.Count > 0 || linked.Count > 0, _tr("Your YAML"),
                 yamls.Count > 0 ? _tr("{0} in Atlas's YAML folder.").Replace("{0}", yamls.Count.ToString())
                     : _tr("Most games rebuild your world from the server's data; a few need your YAML. Keep yours here to link it to a slot in one click."),
-                new List<Button> { Kit.Button(_tr("Add YAML…"), _tr("Copies a player YAML into Atlas's YAML folder (a multi-game YAML is listed under each of its games)."), AddYaml) });
+                new List<Button>
+                {
+                    Kit.Button(_tr("Add YAML…"), _tr("Copies a player YAML into Atlas's YAML folder (a multi-game YAML is listed under each of its games)."), () => AddYaml(null)),
+                    YamlPlacesMenu(game)
+                });
             foreach (var yaml in yamls) _detail.AddChild(YamlRow(game, yaml));
 
             // 4. Files the game's setup needs (optional), each with the release it came from.
@@ -400,6 +404,9 @@ namespace AP_Atlas.UI
                 toolLabel.ClipText = true;
                 toolLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
                 toolRow.AddChild(toolLabel);
+                string toolPath = Path.Combine(tools, record.File);
+                if (IsYamlFile(toolPath))
+                    toolRow.AddChild(Kit.Button(_tr("Add as YAML"), _tr("Keeps this file in Atlas's YAML folder as a player YAML, listed under its games."), () => AddYamlFile(toolPath), small: true));
                 _detail.AddChild(toolRow);
             }
 
@@ -411,10 +418,16 @@ namespace AP_Atlas.UI
                 foreach (var slot in slots) _detail.AddChild(SlotRow(slot));
             }
 
-            // Links.
+            // Links: the button says where the link leads (most community games' "home" is their thread in the Archipelago Discord).
             var links = new HFlowContainer();
             links.AddThemeConstantOverride("h_separation", 8);
-            if (entry.Guide != null) links.AddChild(Kit.Button(_tr("Setup guide ↗"), entry.Guide, () => ExternalLinks.OpenWeb(entry.Guide)));
+            if (entry.Guide != null)
+            {
+                var (text, tip) = LinkButtonText(entry.Guide);
+                var link = Kit.Button(text, tip, () => ExternalLinks.OpenWeb(entry.Guide));
+                link.SetMeta("game_link", true);
+                links.AddChild(link);
+            }
             string? repo = entry.Repo ?? ApworldSources.Find(game)?.Repo;
             if (repo != null) links.AddChild(Kit.Button(_tr("Project ↗"), "https://github.com/" + repo, () => ExternalLinks.OpenWeb("https://github.com/" + repo)));
             if (links.GetChildCount() > 0) _detail.AddChild(links);
@@ -424,6 +437,19 @@ namespace AP_Atlas.UI
             if (entry.Section != Section.Official && anyProject && !_versions.ContainsKey(game) && !_versionsAsked.Contains(game) && Permissions.IsAllowed(_hooks.Settings, Permissions.GitHubLookups))
                 LoadVersions(game, again: false);
         }
+
+        /// <summary>What a game's link button says, by where the link leads, and the tooltip that explains it.</summary>
+        private (string Text, string Tip) LinkButtonText(string url) => Links.KindOf(url) switch
+        {
+            LinkKind.Discord => (_tr("Discord thread ↗"),
+                _tr("Opens the game's thread in the Archipelago Discord in your browser. Join the Archipelago Discord first (discord.gg/archipelago). If the thread doesn't open, the game's channel is hidden on your side: in the server, open Channels & Roles (or Browse Channels), tick the game's channel, then come back and press this again.") + "\n" + url),
+            LinkKind.GitHub or LinkKind.GitLab => (_tr("Project page ↗"), url),
+            _ => (_tr("Setup guide ↗"), url)
+        };
+
+        /// <summary>The link buttons on the game's page, by their text (for tests).</summary>
+        public List<string> LinkTexts() =>
+            _detail.FindChildren("*", nameof(Button), true, false).OfType<Button>().Where(b => b.HasMeta("game_link")).Select(b => b.Text).ToList();
 
         private string CheckSummary(EngineInstall install, string game) =>
             GameSweep.LastFor(install, game) is { } r ? _tr("Checked: {0}.").Replace("{0}", r.Summary) : "";
@@ -829,7 +855,49 @@ namespace AP_Atlas.UI
                 : _tr("{0} couldn't be installed: the log says why.").Replace("{0}", r.File));
         }
 
-        private void AddYaml()
+        private const string DownArrow = "▾";
+
+        private static bool IsYamlFile(string path) => path.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".yml", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>The chosen Archipelago install's Players folder, when the install is known and the folder exists (never searched for).</summary>
+        private string? PlayersFolder()
+        {
+            string root = _hooks.Settings.ArchipelagoInstallationPath;
+            if (string.IsNullOrWhiteSpace(root)) return null;
+            string players = Path.Combine(root, "Players");
+            return Directory.Exists(players) ? players : null;
+        }
+
+        /// <summary>A ▾ beside Add YAML…: the other places a YAML may be (this game's downloaded files, the install's Players folder, Atlas's own folder).</summary>
+        private MenuButton YamlPlacesMenu(string game)
+        {
+            var menu = new MenuButton { Text = DownArrow, TooltipText = _tr("Other places to take a YAML from"), AccessibilityName = _tr("Add YAML from…"), FocusMode = FocusModeEnum.All };
+            var popup = menu.GetPopup();
+            string tools = GameFiles.ToolsFolder(DataManager.GetDataDirectory(), game);
+            popup.AboutToPopup += () =>
+            {
+                popup.Clear();
+                if (Directory.Exists(tools) && Directory.EnumerateFiles(tools).Any(IsYamlFile)) popup.AddItem(_tr("From this game's downloaded files…"), 0);
+                if (PlayersFolder() != null) popup.AddItem(_tr("From my Archipelago install's Players folder…"), 1);
+                popup.AddItem(_tr("From Atlas's YAML folder…"), 2);
+            };
+            popup.IdPressed += id => AddYaml(id switch { 0 => tools, 1 => PlayersFolder(), _ => GameFiles.YamlsFolder(DataManager.GetDataDirectory()) });
+            menu.SetMeta("yaml_places", true);
+            return menu;
+        }
+
+        /// <summary>The places the Add YAML menu offers right now (for tests).</summary>
+        public List<string> YamlMenuItems()
+        {
+            var menu = _detail.FindChildren("*", nameof(MenuButton), true, false).OfType<MenuButton>().FirstOrDefault(m => m.HasMeta("yaml_places"));
+            if (menu == null) return new List<string>();
+            var popup = menu.GetPopup();
+            popup.EmitSignal(PopupMenu.SignalName.AboutToPopup);
+            return Enumerable.Range(0, popup.ItemCount).Select(i => popup.GetItemText(i)).ToList();
+        }
+
+        /// <summary>Picks a player YAML to keep: from <paramref name="startFolder"/>, else where one was last picked, else the install's Players folder.</summary>
+        private void AddYaml(string? startFolder)
         {
             var dialog = new FileDialog
             {
@@ -839,7 +907,8 @@ namespace AP_Atlas.UI
                 UseNativeDialog = true,
                 Title = _tr("A player YAML to keep in Atlas")
             };
-            if (!string.IsNullOrWhiteSpace(_hooks.Settings.LastYamlFolder) && Directory.Exists(_hooks.Settings.LastYamlFolder)) dialog.CurrentDir = _hooks.Settings.LastYamlFolder;
+            string? start = new[] { startFolder, _hooks.Settings.LastYamlFolder, PlayersFolder() }.FirstOrDefault(d => !string.IsNullOrWhiteSpace(d) && Directory.Exists(d));
+            if (start != null) dialog.CurrentDir = start;
             dialog.FileSelected += path =>
             {
                 dialog.QueueFree();
@@ -893,40 +962,56 @@ namespace AP_Atlas.UI
             string? preferred = _hooks.LiveSlots().Where(s => string.Equals(s.Game, game, StringComparison.OrdinalIgnoreCase))
                 .Select(s => s.ChosenApworld?.Version ?? (s.ServerChecksumFor(game) is { } sum ? ApworldSources.CachedFor(game, sum)?.Version : null)).FirstOrDefault(v => v != null);
             int start = Math.Max(0, preferred != null ? versions.FindIndex(v => ApworldChoices.SameLabel(v.Version, preferred)) : versions.FindIndex(v => !v.Prerelease));
-            var dialog = new ConfirmationDialog { Title = _tr("Files of a {0} release").Replace("{0}", game), OkButtonText = _tr("Download"), DialogHideOnOk = false };
-            var box = new VBoxContainer { CustomMinimumSize = new Vector2(540, 0) };
+            var dialog = new ConfirmationDialog { Title = _tr("Release files for {0}").Replace("{0}", game), OkButtonText = _tr("Download"), DialogHideOnOk = false, Unresizable = false };
+            dialog.SetMeta("release_files", true);
+            var box = new VBoxContainer { CustomMinimumSize = new Vector2(620, 0), SizeFlagsVertical = SizeFlags.ExpandFill };
             box.AddThemeConstantOverride("separation", 6);
-            box.AddChild(Wrapped(Kit.Text(_tr("Pick the release, then the files the game's setup guide asks for. Atlas keeps them in the game's folder and never runs them."))));
+            box.AddChild(Wrapped(Kit.Text(_tr("Pick the release, then tick the files the game's setup guide asks for. Atlas keeps them in the game's folder and never runs them."))));
             var releaseRow = new HBoxContainer();
             releaseRow.AddThemeConstantOverride("separation", 8);
-            releaseRow.AddChild(Kit.Muted(_tr("Release:")));
-            var release = new OptionButton { SizeFlagsHorizontal = SizeFlags.ExpandFill, AccessibilityName = _tr("Release") };
+            var releaseLabel = Kit.Muted(_tr("Release:"));
+            releaseLabel.AutowrapMode = TextServer.AutowrapMode.Off;
+            releaseLabel.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
+            releaseRow.AddChild(releaseLabel);
+            var release = new OptionButton { SizeFlagsHorizontal = SizeFlags.ExpandFill, AccessibilityName = _tr("Release"), ClipText = true };
             foreach (var v in versions) release.AddItem(v.Version + (v.Prerelease ? " " + _tr("(pre-release)") : "") + "  ·  github.com/" + v.Repo);
             release.Selected = start;
             releaseRow.AddChild(release);
             box.AddChild(releaseRow);
-            var list = new ItemList { CustomMinimumSize = new Vector2(500, 200), SelectMode = ItemList.SelectModeEnum.Multi, AccessibilityName = _tr("Files") };
-            box.AddChild(list);
+            var selectRow = new HBoxContainer();
+            selectRow.AddThemeConstantOverride("separation", 8);
+            var boxes = new List<(CheckBox Box, ApworldSources.ReleaseFile File)>();
+            selectRow.AddChild(Kit.Button(_tr("Select all"), null, () => { foreach (var (b, _) in boxes) b.ButtonPressed = true; }, small: true));
+            selectRow.AddChild(Kit.Button(_tr("Select none"), null, () => { foreach (var (b, _) in boxes) b.ButtonPressed = false; }, small: true));
             var note = Wrapped(Kit.Muted(""));
-            box.AddChild(note);
+            selectRow.AddChild(note);
+            box.AddChild(selectRow);
+            var scroll = new ScrollContainer { SizeFlagsVertical = SizeFlags.ExpandFill, HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled, CustomMinimumSize = new Vector2(0, 220) };
+            var list = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            list.AddThemeConstantOverride("separation", 2);
+            scroll.AddChild(list);
+            box.AddChild(scroll);
             dialog.AddChild(box);
-            var files = new List<ApworldSources.ReleaseFile>();
             string chosenTag = "";
             string chosenRepo = "";
             void Fill(int index)
             {
                 var v = versions[index];
-                list.Clear();
-                files.Clear();
+                Clear(list);
+                boxes.Clear();
                 note.Text = _tr("Reading the release…");
                 Async.Fire(async () =>
                 {
                     var (found, problem, tag) = await Task.Run(() => ApworldSources.ReleaseFilesAsync(v.Repo, v.Version, CancellationToken.None));
                     if (!IsInstanceValid(dialog) || release.Selected != index) return;
-                    files.AddRange(found);
                     chosenTag = tag ?? v.Version;
                     chosenRepo = v.Repo;
-                    foreach (var f in found) list.AddItem($"{f.Name}  ({Math.Max(1, f.Size / 1024)} KB{(f.Sha256 != null ? "" : ", " + _tr("no published hash"))})");
+                    foreach (var f in found)
+                    {
+                        var tick = new CheckBox { Text = $"{f.Name}  ({Math.Max(1, f.Size / 1024)} KB{(f.Sha256 != null ? "" : ", " + _tr("no published hash"))})", AccessibilityName = f.Name };
+                        boxes.Add((tick, f));
+                        list.AddChild(tick);
+                    }
                     note.Text = problem != null ? _tr("GitHub couldn't be read just now: {0}").Replace("{0}", problem)
                         : found.Count == 0 ? _tr("This release has no files besides the apworld.")
                         : _tr("{0} file(s) in {1}.").Replace("{0}", found.Count.ToString()).Replace("{1}", chosenTag);
@@ -936,9 +1021,13 @@ namespace AP_Atlas.UI
             Fill(start);
             dialog.Confirmed += () =>
             {
-                var chosen = list.GetSelectedItems().Select(i => files[i]).ToList();
+                var chosen = boxes.Where(b => b.Box.ButtonPressed).Select(b => b.File).ToList();
+                if (chosen.Count == 0)
+                {
+                    note.Text = _tr("Tick the files to download first.");
+                    return;
+                }
                 dialog.QueueFree();
-                if (chosen.Count == 0) return;
                 string repo = chosenRepo, tag = chosenTag;
                 void Go() => Run(_tr("Downloading {0} file(s)…").Replace("{0}", chosen.Count.ToString()), async (log, ct) =>
                 {
@@ -971,8 +1060,11 @@ namespace AP_Atlas.UI
             };
             dialog.Canceled += dialog.QueueFree;
             AddChild(dialog);
-            dialog.PopupCentered();
+            dialog.PopupCentered(new Vector2I(680, 520));
         }
+
+        /// <summary>Opens the release-files dialog for a game (for tests; the page's button asks the GitHub permission first).</summary>
+        internal void ListReleaseFilesForTests(string game) => ListReleaseFiles(game);
 
         /// <summary>A file Atlas downloaded into a game's tools folder: where from, which release, its SHA-256.</summary>
         public sealed class ToolRecord

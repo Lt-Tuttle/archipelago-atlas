@@ -238,6 +238,7 @@ public partial class MainTrackerWindow
         if (_bottomTabs == null) return;
         _bottomTabs.CurrentTab = tab;
         _currentTerminalTab = tab;
+        ClearTerminalTabNew(tab);
         RefreshTerminalView();
     }
 
