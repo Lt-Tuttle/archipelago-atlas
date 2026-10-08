@@ -30,6 +30,9 @@ namespace AP_Atlas.UI
         private readonly AppSettings _settings;
         private readonly Func<IEnumerable<SlotTrackerControl>> _slots;
         private readonly Func<IEnumerable<string>> _knownGames;
+
+        /// <summary>Shows the Games page in the main window (set by the window).</summary>
+        public Action OpenGamesPage { get; set; }
         private readonly int _fontSize;
 
         private VBoxContainer _modeBox, _stepsBox, _gamesBox, _slotsBox;
@@ -151,10 +154,28 @@ namespace AP_Atlas.UI
             page.AddChild(_stage);
 
             page.AddChild(Header("Games"));
-            page.AddChild(BuildSourcesRow());
+            // A game is set up on the Games page; the list here stays out of the way unless asked for.
+            var gamesRow = new HBoxContainer();
+            gamesRow.AddThemeConstantOverride("separation", 8);
+            var gamesNote = new Label { Text = Kit.Translate("Set up a game on the Games page: its apworld, a map pack, your YAML and the files its setup needs, in one place."), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart };
+            gamesNote.AddThemeColorOverride("font_color", Muted);
+            gamesRow.AddChild(gamesNote);
+            gamesRow.AddChild(Kit.Button(Kit.Translate("Open the Games page"), null, () => OpenGamesPage?.Invoke()));
+            var gamesMore = new VBoxContainer { Visible = false };
+            gamesMore.AddThemeConstantOverride("separation", 4);
+            var showList = Kit.Button(Kit.Translate("Show the list here"), Kit.Translate("The games this engine has, with ways to add one"), () => { }, flat: true);
+            showList.Pressed += () =>
+            {
+                gamesMore.Visible = !gamesMore.Visible;
+                showList.Text = gamesMore.Visible ? Kit.Translate("Hide the list") : Kit.Translate("Show the list here");
+            };
+            gamesRow.AddChild(showList);
+            page.AddChild(gamesRow);
+            gamesMore.AddChild(BuildSourcesRow());
             _gamesBox = new VBoxContainer();
             _gamesBox.AddThemeConstantOverride("separation", 4);
-            page.AddChild(_gamesBox);
+            gamesMore.AddChild(_gamesBox);
+            page.AddChild(gamesMore);
             var verifyRow = new HBoxContainer();
             verifyRow.AddThemeConstantOverride("separation", 8);
             var verify = new Button
@@ -165,13 +186,6 @@ namespace AP_Atlas.UI
             };
             verify.Pressed += PickSeed;
             verifyRow.AddChild(verify);
-            var sweep = new Button { Text = "Test every game", TooltipText = "Rebuild each installed game with default options and compute its starting logic (a few seconds)" };
-            sweep.Pressed += () =>
-            {
-                var install = AtlasEngine.Current;
-                RunOperation("Testing every game", (log, _, ct) => GameSweep.RunAsync(install, log, ct));
-            };
-            verifyRow.AddChild(sweep);
             var verifyNote = new Label { Text = "Proves the logic for a game against the real generator, not just its location list.", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart };
             verifyNote.AddThemeColorOverride("font_color", Muted);
             verifyRow.AddChild(verifyNote);

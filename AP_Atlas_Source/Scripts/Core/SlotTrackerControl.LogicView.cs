@@ -61,15 +61,9 @@ public partial class SlotTrackerControl : MarginContainer
         _accuracyLinkYaml = new Button { Text = "Link YAML…", TooltipText = "Choose the YAML used to generate this seed; Atlas remembers it for this slot" };
         _accuracyLinkYaml.Pressed += PickYaml;
         bannerRow.AddChild(_accuracyLinkYaml);
-        _accuracyFix = new Button { Text = "Fix automatically", TooltipText = "Find the apworld version this seed was made with and use it for this slot (your install isn't changed)" };
+        _accuracyFix = new Button { Text = "Choose the version…", TooltipText = "Lists the game's releases: pick the one the seed's host used, choose their file, or let Atlas try them (for this slot only; your install isn't changed)" };
         _accuracyFix.Pressed += () => FixApworldVersion(interactive: true);
         bannerRow.AddChild(_accuracyFix);
-        _accuracyChooseApworld = new Button { Text = "Choose apworld file…", TooltipText = "Use the apworld file the seed's host gave you, if it's this seed's version" };
-        _accuracyChooseApworld.Pressed += ChooseSeedApworld;
-        bannerRow.AddChild(_accuracyChooseApworld);
-        _accuracyAddSource = new Button { Text = "Add a source…", TooltipText = "Paste the GitHub link of the project the seed's apworld comes from" };
-        _accuracyAddSource.Pressed += AddApworldSource;
-        bannerRow.AddChild(_accuracyAddSource);
         _accuracyBanner.AddChild(bannerRow);
         vbox.AddChild(_accuracyBanner);
 

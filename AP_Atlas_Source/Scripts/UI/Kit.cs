@@ -32,6 +32,9 @@ namespace AP_Atlas.UI
         /// <summary>The theme type variation of a quiet button: no background until hovered, a tint while pressed.</summary>
         public const string QuietButton = "QuietButton";
 
+        /// <summary>Translates text as it's shown, for parts built away from the window (the window sets it).</summary>
+        public static Func<string, string> Translate { get; set; } = text => text;
+
         /// <summary>
         /// A small (i) beside a box: pressed, it explains in three lines what goes there, where it comes from and whether
         /// it's needed, with a Guide button that opens the matching section. Named for screen readers after its box.

@@ -247,6 +247,11 @@ namespace AP_Atlas.Core
         {
             string? checksum = ServerChecksum;
             if (checksum == null || _seedApworldFailed.Contains(checksum)) return null;
+            // The version the user chose for this slot's seed comes first (even one whose data differs: they chose it).
+            if (_settings.SlotApworlds != null && _settings.SlotApworlds.TryGetValue(Annotations.SlotKey(_model.ProfileId, _model.SlotName), out var chosen)
+                && string.Equals(chosen.SeedChecksum, checksum, StringComparison.OrdinalIgnoreCase) && string.Equals(chosen.Game, _model.Game, StringComparison.OrdinalIgnoreCase)
+                && System.IO.File.Exists(chosen.File))
+                return chosen.File;
             return ApworldSources.CachedFor(_model.Game, checksum)?.File;
         }
 

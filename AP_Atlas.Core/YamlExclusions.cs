@@ -54,6 +54,38 @@ namespace AP_Atlas.Core
             return result;
         }
 
+        /// <summary>
+        /// The players a YAML file's text holds: each document's name and the games it may roll (a weighted game map counts
+        /// every game weighted above 0). Documents that name no game are left out.
+        /// </summary>
+        public static List<(string Name, List<string> Games)> Players(string text)
+        {
+            var players = new List<(string, List<string>)>();
+            foreach (var docText in SplitDocuments(text ?? ""))
+            {
+                Dictionary<string, object> doc;
+                try { doc = Parse(docText) as Dictionary<string, object>; }
+                catch (Exception ex)
+                {
+                    Logger.LogDebug("Part of a YAML couldn't be read: " + ex.Message);
+                    continue;
+                }
+                if (doc == null) continue;
+                var games = new List<string>();
+                switch (Get(doc, "game"))
+                {
+                    case string one when one.Trim().Length > 0:
+                        games.Add(one.Trim());
+                        break;
+                    case Dictionary<string, object> weights:
+                        games.AddRange(weights.Where(kv => kv.Key.Trim().Length > 0 && Str(kv.Value) is string w && w.Trim() != "0").Select(kv => kv.Key.Trim()));
+                        break;
+                }
+                if (games.Count > 0) players.Add((Str(Get(doc, "name")) ?? "", games));
+            }
+            return players;
+        }
+
         /// <summary>Whether a YAML name (which may hold {player} / {number} placeholders) can produce this slot name.</summary>
         public static bool NameMatches(string yamlName, string slotName)
         {

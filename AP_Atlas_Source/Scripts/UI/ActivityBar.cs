@@ -19,8 +19,8 @@ namespace AP_Atlas.UI
         public const int Width = 64;
 
         private const int ButtonWidth = Width - 8;
-        private const int CompactButtonHeight = 44;
-        private const int LabelledButtonHeight = 58;
+        private const int CompactButtonHeight = 40;
+        private const int LabelledButtonHeight = 52;
 
         private readonly Func<string, string> _tr;
         private readonly Func<Tool, string> _keyOf;

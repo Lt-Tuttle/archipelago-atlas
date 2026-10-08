@@ -272,6 +272,7 @@ namespace AP_Atlas.UI
             "cheese-tracker" => "Your async multiworld's shared tracker, kept up to date from Atlas's logic.",
             "sphere-tracker" => "The host's spheretracker.de room: the multiworld, sphere by sphere.",
             "connections" => "Your servers, passwords and slots.",
+            "games" => "Every game, set up in one place: its apworld, a map pack, your YAML and its files.",
             "map-packs" => "PopTracker packs for your games, looked over by the Pack Doctor.",
             "settings" => "Every setting, searchable; every key, yours to change.",
             _ => ""

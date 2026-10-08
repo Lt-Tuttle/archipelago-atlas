@@ -54,12 +54,22 @@ namespace AP_Atlas.Core.EngineSetup
             lock (Store) return Store.TryGetValue(install.Root ?? "", out var r) ? r : null;
         }
 
-        public static Task<GameSweepRecord> RunAsync(EngineInstall install, Action<string> log, CancellationToken ct) =>
+        /// <summary>The last check of one game in this engine, or null.</summary>
+        public static GameSweepResult LastFor(EngineInstall install, string game)
+        {
+            lock (Store)
+                return Store.TryGetValue(install?.Root ?? "", out var r) && r.Results.TryGetValue(game ?? "", out var result) ? result : null;
+        }
+
+        /// <param name="only">Check only these games (their results join the earlier ones); null checks every game.</param>
+        public static Task<GameSweepRecord> RunAsync(EngineInstall install, Action<string> log, CancellationToken ct, IReadOnlyList<string> only = null) =>
             AtlasEngine.ExclusiveAsync(async () =>
             {
                 var check = AtlasEngine.LastCheck(install) ?? await AtlasEngine.RunCheckAsync(install, log, ct);
-                var games = (check.Games ?? new List<string>()).Where(g => g != "Archipelago" && g != "Universal Tracker").ToList();
-                log?.Invoke($"Testing {games.Count} games: each is rebuilt with default options and its starting logic computed…");
+                var games = (check.Games ?? new List<string>()).Where(g => g != "Archipelago" && g != "Universal Tracker")
+                    .Where(g => only == null || only.Contains(g, StringComparer.OrdinalIgnoreCase)).ToList();
+                if (games.Count == 1) log?.Invoke($"Checking {games[0]}: it's rebuilt with default options and its starting logic computed…");
+                else log?.Invoke($"Testing {games.Count} games: each is rebuilt with default options and its starting logic computed…");
                 var results = new Dictionary<string, GameSweepResult>(StringComparer.OrdinalIgnoreCase);
                 var remaining = new List<string>(games);
                 for (int attempt = 0; attempt < 5 && remaining.Count > 0; attempt++)
@@ -82,9 +92,13 @@ namespace AP_Atlas.Core.EngineSetup
                     results[missing[0]] = new GameSweepResult { Game = missing[0], Error = "the engine stopped while testing this game" };
                     remaining = missing.Skip(1).ToList();
                 }
-                var record = new GameSweepRecord { Engine = install.Describe(), Tested = DateTime.Now, Results = results };
+                var record = new GameSweepRecord { Engine = install.Describe(), Tested = DateTime.Now, Results = results }; // wall clock: shown as a date
                 lock (Store)
                 {
+                    // One game's check joins the earlier results of the others.
+                    if (only != null && Store.TryGetValue(install.Root ?? "", out var earlier))
+                        foreach (var (game, result) in earlier.Results)
+                            if (!record.Results.ContainsKey(game)) record.Results[game] = result;
                     Store[install.Root ?? ""] = record;
                     try { SafeFile.WriteJson(StorePath, Store); } catch (Exception ex) { Logger.LogWarning("Couldn't save the game test results: " + ex.Message); }
                 }

@@ -84,17 +84,46 @@ namespace AP_Atlas.Core.EngineSetup
             lock (CacheIndex)
                 return CacheIndex.Where(c => string.Equals(c.Game, game, StringComparison.OrdinalIgnoreCase)
                                              && string.Equals(c.Checksum, checksum, StringComparison.OrdinalIgnoreCase)
-                                             && File.Exists(c.File))
-                    .OrderByDescending(c => c.Added).FirstOrDefault();
+                                             && File.Exists(Resolved(c.File)))
+                    .OrderByDescending(c => c.Added).Select(WithResolvedFile).FirstOrDefault();
         }
+
+        /// <summary>Every file of a game's apworld Atlas has identified (its version, where it came from, its data checksum), for the version picker.</summary>
+        public static List<AP_Atlas.Core.Games.IdentifiedApworld> IdentifiedFor(string game)
+        {
+            lock (CacheIndex)
+                return CacheIndex.Where(c => string.Equals(c.Game, game, StringComparison.OrdinalIgnoreCase) && File.Exists(Resolved(c.File)))
+                    .Select(c => new AP_Atlas.Core.Games.IdentifiedApworld(c.Version ?? "?", c.Source ?? "", Resolved(c.File), c.Checksum ?? ""))
+                    .ToList();
+        }
+
+        /// <summary>
+        /// An index entry's file as a full path. The index keeps files under its own folder's parent tree relative to that
+        /// folder ("../../games/…"), so a data folder that moves keeps working; older entries kept full paths.
+        /// </summary>
+        private static string Resolved(string file) =>
+            string.IsNullOrEmpty(file) ? "" : Path.IsPathRooted(file) ? file : Path.GetFullPath(Path.Combine(CacheDir, file));
+
+        private static string Stored(string file)
+        {
+            string full = Path.GetFullPath(file), data = Path.GetFullPath(DataManager.GetDataDirectory());
+            return full.StartsWith(data, StringComparison.OrdinalIgnoreCase) ? Path.GetRelativePath(CacheDir, full).Replace('\\', '/') : full;
+        }
+
+        private static CachedApworld WithResolvedFile(CachedApworld c) =>
+            new CachedApworld { Game = c.Game, Checksum = c.Checksum, Version = c.Version, File = Resolved(c.File), Source = c.Source, Added = c.Added };
+
+        /// <summary>Remembers what a file is (its game's data checksum and version), so it's never loaded again to find out.</summary>
+        public static void RememberIdentified(string game, string checksum, string version, string file, string source) => Remember(game, checksum, version, file, source);
 
         private static void Remember(string game, string checksum, string version, string file, string source)
         {
             if (string.IsNullOrEmpty(game) || string.IsNullOrEmpty(checksum) || string.IsNullOrEmpty(file)) return;
+            string full = Path.GetFullPath(file);
             lock (CacheIndex)
             {
-                CacheIndex.RemoveAll(c => string.Equals(c.File, file, StringComparison.OrdinalIgnoreCase) || !File.Exists(c.File));
-                CacheIndex.Add(new CachedApworld { Game = game, Checksum = checksum, Version = version, File = file, Source = source });
+                CacheIndex.RemoveAll(c => string.Equals(Resolved(c.File), full, StringComparison.OrdinalIgnoreCase) || !File.Exists(Resolved(c.File)));
+                CacheIndex.Add(new CachedApworld { Game = game, Checksum = checksum, Version = version, File = Stored(full), Source = source });
                 try { SafeFile.WriteJson(CacheIndexPath, CacheIndex); }
                 catch (Exception ex) { Logger.LogWarning("Couldn't save the apworld cache index: " + ex.Message); }
             }
@@ -111,11 +140,31 @@ namespace AP_Atlas.Core.EngineSetup
             if (!string.Equals(id.Game, game, StringComparison.OrdinalIgnoreCase)) return (null, $"it's for {id.Game}, not {game}");
             if (!string.Equals(id.Checksum, expectedChecksum, StringComparison.OrdinalIgnoreCase))
                 return (null, $"it's a different version (data {Short(id.Checksum)}{(id.WorldVersion != null ? ", version " + id.WorldVersion : "")}) than the seed's ({Short(expectedChecksum)})");
-            string target = Path.Combine(CacheDir, "yours", id.Checksum.Substring(0, Math.Min(12, id.Checksum.Length)), Path.GetFileName(file));
+            string target = UserFileTarget(game, id.Checksum, file);
             Directory.CreateDirectory(Path.GetDirectoryName(target));
             File.Copy(file, target, true);
             Remember(id.Game, id.Checksum, id.WorldVersion, target, "your file");
             return (CachedFor(game, expectedChecksum), null);
+        }
+
+        private static string UserFileTarget(string game, string checksum, string file) =>
+            Path.Combine(AP_Atlas.Core.Games.GameFiles.ApworldsFolder(DataManager.GetDataDirectory(), game), "yours",
+                checksum.Substring(0, Math.Min(12, checksum.Length)), Path.GetFileName(file));
+
+        /// <summary>
+        /// Keeps an apworld file the user chose in the game's folder, whatever its version (the picker asks before using one
+        /// that differs from the seed's). Returns the kept file, its data checksum and version, or why it can't be used.
+        /// </summary>
+        public static async Task<(string File, string Checksum, string Version, string Problem)> KeepUserFileAsync(EngineInstall install, string file, string game, CancellationToken ct)
+        {
+            var id = await IdentifyAsync(install, file, game, ct);
+            if (id.Error != null) return (null, null, null, "it couldn't be loaded: " + FirstLine(id.Error));
+            if (!string.Equals(id.Game, game, StringComparison.OrdinalIgnoreCase)) return (null, null, null, $"it's for {id.Game}, not {game}");
+            string target = UserFileTarget(game, id.Checksum, file);
+            Directory.CreateDirectory(Path.GetDirectoryName(target));
+            if (!string.Equals(Path.GetFullPath(file), Path.GetFullPath(target), StringComparison.OrdinalIgnoreCase)) File.Copy(file, target, true);
+            Remember(id.Game, id.Checksum, id.WorldVersion, target, "your file");
+            return (target, id.Checksum, id.WorldVersion, null);
         }
 
         public static ApworldSourceList List => _list ??= Load();
@@ -181,7 +230,22 @@ namespace AP_Atlas.Core.EngineSetup
         private sealed class RepoListing
         {
             public readonly List<ReleaseAsset> Assets = new();
+            /// <summary>The newest full release's other files (not .apworld), with their sizes.</summary>
+            public readonly List<ReleaseFile> Others = new();
             public string Problem;
+        }
+
+        /// <summary>A file of a release that isn't an apworld (a game's client, a patcher, a .bat): its tag, name, download, published SHA-256 and size.</summary>
+        public sealed record ReleaseFile(string Tag, string Name, string Url, string Sha256, long Size);
+
+        /// <summary>
+        /// The other files of a repository's newest full release (not drafts or pre-releases): what a game's setup may need
+        /// besides its apworld. Reads the release list (one GitHub call per repository per session); downloads nothing.
+        /// </summary>
+        public static async Task<(List<ReleaseFile> Files, string Problem)> ReleaseFilesAsync(string repo, CancellationToken ct)
+        {
+            var listing = await RepoAssetsAsync(repo, ct);
+            return (listing.Others.ToList(), listing.Problem);
         }
 
         private static readonly Dictionary<string, RepoListing> _repoAssets = new(StringComparer.OrdinalIgnoreCase);
@@ -198,6 +262,17 @@ namespace AP_Atlas.Core.EngineSetup
             var answer = await GitHubApi.GetAsync($"/repos/{repo}/releases?per_page=50", ct);
             if (answer.Ok && answer.Json is JArray releases)
             {
+                // GitHub lists releases newest first: the first full release's other files are a game's current tools.
+                var newestFull = releases.FirstOrDefault(r => r["draft"]?.Value<bool>() != true && r["prerelease"]?.Value<bool>() != true);
+                foreach (var asset in newestFull?["assets"] as JArray ?? new JArray())
+                {
+                    string name = asset["name"]?.ToString() ?? "";
+                    string url = asset["browser_download_url"]?.ToString();
+                    if (name.Length == 0 || url == null || name.EndsWith(".apworld", StringComparison.OrdinalIgnoreCase)) continue;
+                    string digest = asset["digest"]?.ToString();
+                    listing.Others.Add(new ReleaseFile(newestFull["tag_name"]?.ToString() ?? "", name, url,
+                        digest != null && digest.StartsWith("sha256:") ? digest.Substring(7).ToLowerInvariant() : null, asset["size"]?.Value<long>() ?? 0));
+                }
                 foreach (var release in releases)
                 {
                     if (release["draft"]?.Value<bool>() == true) continue;
@@ -269,6 +344,17 @@ namespace AP_Atlas.Core.EngineSetup
                     if (info.Sha256 != null && string.Equals(info.Game, game, StringComparison.OrdinalIgnoreCase)) copies.Add((file, info.Sha256));
                 }
             return copies;
+        }
+
+        /// <summary>The games an engine has from .apworld files (one look at its world folders).</summary>
+        public static HashSet<string> GamesWithApworldFiles(EngineInstall install)
+        {
+            var games = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (install == null) return games;
+            foreach (var dir in install.WorldFolders())
+                foreach (var file in EngineInstall.SafeFiles(dir, "*.apworld"))
+                    if (FileFacts(file).Game is { } game) games.Add(game);
+            return games;
         }
 
         private static readonly Dictionary<string, (DateTime Modified, long Size, string Game, string Sha256)> _fileFacts = new(StringComparer.OrdinalIgnoreCase);
@@ -518,8 +604,12 @@ namespace AP_Atlas.Core.EngineSetup
             // Per source and version (two projects may publish the same version label), and the file name stays as
             // published: Archipelago imports the package named after it.
             string origin = Regex.Replace(SourceKey(version.Url).Replace("github.com/", ""), @"[^\w.\-+]", "_");
-            string target = Path.Combine(CacheDir, origin, Regex.Replace(NormalizeVersion(version.Version), @"[^\w.\-+]", "_"), fileName);
-            if (File.Exists(target) && (version.Sha256 == null || EngineDownloader.Sha256Of(target).Equals(version.Sha256, StringComparison.OrdinalIgnoreCase))) return target;
+            string versionFolder = Regex.Replace(NormalizeVersion(version.Version), @"[^\w.\-+]", "_");
+            // Every release of a game's apworld is kept in the game's own folder, by project and version.
+            string target = Path.Combine(AP_Atlas.Core.Games.GameFiles.ApworldsFolder(DataManager.GetDataDirectory(), game), origin, versionFolder, fileName);
+            string earlier = Path.Combine(CacheDir, origin, versionFolder, fileName);
+            foreach (string have in new[] { target, earlier })
+                if (File.Exists(have) && (version.Sha256 == null || EngineDownloader.Sha256Of(have).Equals(version.Sha256, StringComparison.OrdinalIgnoreCase))) return have;
             log?.Invoke($"Downloading {game} {version.Version} from {SourceKey(version.Url)}" + (version.Sha256 != null ? " (checked against its published SHA-256)…" : " (no published hash to check against)…"));
             await EngineDownloader.DownloadAsync(version.Url, target, version.Sha256, null, ct);
             return target;
@@ -578,7 +668,8 @@ namespace AP_Atlas.Core.EngineSetup
                     catch (Exception ex) { log?.Invoke($"  {label}: couldn't download ({ex.Message})"); continue; }
                     string checksum;
                     CachedApworld known;
-                    lock (CacheIndex) known = CacheIndex.FirstOrDefault(c => string.Equals(c.File, file, StringComparison.OrdinalIgnoreCase));
+                    string fullFile = Path.GetFullPath(file);
+                    lock (CacheIndex) known = CacheIndex.FirstOrDefault(c => string.Equals(Resolved(c.File), fullFile, StringComparison.OrdinalIgnoreCase));
                     if (known != null) checksum = known.Checksum;
                     else
                     {

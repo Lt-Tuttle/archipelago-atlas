@@ -126,6 +126,8 @@ public partial class MainTrackerWindow
             PrivacyAsync);
         await ScenarioAsync("Home: Ctrl+8 shows it on its own; every tool has a card with a line and every link is https; the checklist ticks the engine as it is and nothing else in a fresh folder, then a multiworld and a pack once they exist; a tip shows and Next tip goes around; the multiworld is listed and one click connects its slot, ticks the step and says Connected; a tool's card shows the tool",
             HomeAsync);
+        await ScenarioAsync("Games page: the Games tool lists every game in its group (community games from the index, the games your multiworlds play as added by you), typed words narrow the list, a game's page walks its setup through (the apworld, a map pack, your YAML, the files it needs) with each step ticked as Atlas finds it; a YAML added once is listed under every game it names; the game's folders are inside Atlas's data folder",
+            GamesPageAsync);
         await ScenarioAsync("Help: the guide opens on its first topic with a topic per section; a topic shows its section, What's new the changelog, Credits & disclaimer the author and the credits, Licences Atlas's licence; a second Help command uses the same window at its topic; Home's What's new card lists the newest changes and leads here",
             HelpAsync);
         await ScenarioAsync("Alerts: what Atlas tells the user stacks at the bottom right without overlapping, at most a few at once, every card in the history newest first with its kind; a card's button runs its action and the card goes, the × takes one away, the plain ones go after their hold; Window → Notifications lists the history, marks it seen, and Clear empties it",
@@ -575,6 +577,7 @@ public partial class MainTrackerWindow
             [AP_Atlas.UI.Tool.SphereTracker] = _sphereTab,
             [AP_Atlas.UI.Tool.Settings] = _settingsPage!,
             [AP_Atlas.UI.Tool.Home] = _homePage!,
+            [AP_Atlas.UI.Tool.Games] = _gamesPage!,
         };
         var slotViews = new Dictionary<AP_Atlas.UI.Tool, Func<SlotTrackerControl, Control>>
         {
@@ -984,6 +987,68 @@ public partial class MainTrackerWindow
             AP_Atlas.Core.SafeFile.Delete(zip);
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
             DeleteProfile(profile);
+        }
+    }
+
+    private async Task GamesPageAsync()
+    {
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        var page = _gamesPage ?? throw new InvalidOperationException("The Games page wasn't built.");
+        var profile = new MultiworldProfile { Name = "Games test" };
+        profile.Slots.Clear();
+        profile.Slots.Add("Me");
+        profile.SavedStats["Me"] = new SlotStats { GameName = "Atlas Test Game", LastUpdated = DateTime.Now };
+        _profiles.Add(profile);
+        string yaml = System.IO.Path.Combine(DataManager.GetDataDirectory(), "uitest_two_games.yaml");
+        try
+        {
+            host.ShowTool(AP_Atlas.UI.Tool.Games);
+            await UiTestWaitAsync(0.2);
+            UiTestExpect(ShownContent() == page && page.SidebarContent.IsVisibleInTree(), "the Games tool didn't show its page and its list");
+            // The groups: the community index's games, and a game a multiworld plays that nothing else knows, as added by you.
+            UiTestExpect(page.Games.Count(g => g.Section == AP_Atlas.UI.GamesPage.Section.Community) > 10, "the community index's games aren't listed");
+            UiTestExpect(page.Games.Any(g => g.Game == "Atlas Test Game" && g.Section == AP_Atlas.UI.GamesPage.Section.Yours), "a game a multiworld plays isn't listed as added by you");
+            // Typed words narrow the list.
+            var search = page.SidebarContent.FindChildren("*", nameof(LineEdit), true, false).OfType<LineEdit>().First();
+            search.Text = "atlas test";
+            search.EmitSignal(LineEdit.SignalName.TextChanged, search.Text);
+            UiTestExpect(page.ShownGames.SequenceEqual(new[] { "Atlas Test Game" }), $"searching \"atlas test\" lists {string.Join(", ", page.ShownGames)}");
+            search.Text = "";
+            search.EmitSignal(LineEdit.SignalName.TextChanged, "");
+            // A game's page: the steps, none done yet.
+            var tree = page.SidebarContent.FindChildren("*", nameof(Tree), true, false).OfType<Tree>().First();
+            TreeItem? Row(TreeItem? item, string game)
+            {
+                for (var i = item?.GetFirstChild(); i != null; i = i.GetNext())
+                {
+                    if (i.GetMetadata(0).VariantType == Variant.Type.String && i.GetMetadata(0).AsString() == game) return i;
+                    if (Row(i, game) is { } found) return found;
+                }
+                return null;
+            }
+            var row = Row(tree.GetRoot(), "Atlas Test Game") ?? throw new InvalidOperationException("the test game has no row");
+            row.Select(0);
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(page.SelectedGame == "Atlas Test Game", "selecting a game didn't show its page");
+            var steps = page.Steps();
+            UiTestExpect(steps.Count == 4 && steps.All(s => !s.Done), $"the game's page has the steps {string.Join("; ", steps.Select(s => s.Title + (s.Done ? " (done)" : "")))}");
+            // A YAML naming two games is listed under both, and ticks the step.
+            AP_Atlas.Core.SafeFile.WriteAllText(yaml, "name: Me\ngame:\n  Atlas Test Game: 1\n  Other Test Game: 1\n");
+            var entry = page.AddYamlFile(yaml) ?? throw new InvalidOperationException("the YAML wasn't added");
+            var library = AP_Atlas.Core.Games.YamlLibrary.Load(DataManager.GetDataDirectory());
+            UiTestExpect(entry.Games.Count == 2 && library.For("Atlas Test Game").Count == 1 && library.For("Other Test Game").Count == 1, "a two-game YAML isn't listed under both games");
+            UiTestExpect(page.Steps().Any(s => s.Title == "Your YAML" && s.Done), "the YAML step isn't ticked once a YAML for the game is kept");
+            // The game's folders are Atlas's own.
+            string data = System.IO.Path.GetFullPath(DataManager.GetDataDirectory());
+            UiTestExpect(System.IO.Path.GetFullPath(AP_Atlas.Core.Games.GameFiles.GameFolder(data, "Atlas Test Game")).StartsWith(data, StringComparison.OrdinalIgnoreCase)
+                && System.IO.Path.GetFullPath(AP_Atlas.Core.Games.GameFiles.YamlsFolder(data)).StartsWith(data, StringComparison.OrdinalIgnoreCase), "a game's folder isn't inside Atlas's data folder");
+            library.Remove(library.For("Atlas Test Game")[0]);
+        }
+        finally
+        {
+            AP_Atlas.Core.SafeFile.Delete(yaml);
+            if (_profiles.Contains(profile)) DeleteProfile(profile);
+            host.ShowTool(AP_Atlas.UI.Tool.Home);
         }
     }
 
@@ -1906,7 +1971,7 @@ public partial class MainTrackerWindow
     {
         var host = (AP_Atlas.UI.IPropertiesHost)this;
         var order = string.Join(",", _activityBar.Order.Select(t => t.Title));
-        UiTestExpect(order == "Map Tracker,Key Items,Logic Tracker,Item History,Hints,Cheese Tracker,Sphere Tracker,Home,Multiworlds,Map Packs,Settings", $"the activity bar's order is {order}");
+        UiTestExpect(order == "Map Tracker,Key Items,Logic Tracker,Item History,Hints,Cheese Tracker,Sphere Tracker,Home,Multiworlds,Games,Map Packs,Settings", $"the activity bar's order is {order}");
         UiTestExpect(_activityBar.CaptionOf(AP_Atlas.UI.Tool.MapTracker) == "SLOT" && _activityBar.CaptionOf(AP_Atlas.UI.Tool.CheeseTracker) == "MULTIWORLD" && _activityBar.CaptionOf(AP_Atlas.UI.Tool.MapPacks) == "ATLAS",
             "the groups aren't captioned as designed");
         var noIcon = AP_Atlas.UI.Tool.All.Where(t => !AP_Atlas.UI.LucideIcons.Names.Contains(t.Icon) || _activityBar.ButtonOf(t).Icon == null).Select(t => t.Title).ToList();
@@ -1916,7 +1981,7 @@ public partial class MainTrackerWindow
         var misnamed = AP_Atlas.UI.Tool.All.Where(t => _activityBar.ButtonOf(t).Text != t.ShortTitle || _activityBar.ButtonOf(t).AccessibilityName != t.Title).Select(t => t.Title).ToList();
         UiTestExpect(misnamed.Count == 0 && _activityBar.EngineButton.Text == "Engine", $"bar buttons without their short name under the icon and their full title for screen readers: {string.Join(", ", misnamed)}");
         var shortNames = string.Join(",", _activityBar.Order.Select(t => t.ShortTitle));
-        UiTestExpect(shortNames == "Map,Items,Logic,History,Hints,Cheese,Spheres,Home,Worlds,Packs,Settings", $"the short names are {shortNames}");
+        UiTestExpect(shortNames == "Map,Items,Logic,History,Hints,Cheese,Spheres,Home,Worlds,Games,Packs,Settings", $"the short names are {shortNames}");
         var bands = _activityBar.FindChildren("*", nameof(PanelContainer), true, false).OfType<PanelContainer>().Where(p => p != _activityBar).ToList();
         UiTestExpect(bands.Count == 3 && bands.All(b => b.GetThemeStylebox("panel") is StyleBoxFlat box && box.BgColor == AP_Atlas.Core.ThemeColors.AccentTint), $"{bands.Count} caption bands, not three in the accent's tint");
         UiTestExpect(_activityBar.ButtonOf(AP_Atlas.UI.Tool.Hints).TooltipText.Contains("Ctrl+5"), $"the Hints button's tooltip is \"{_activityBar.ButtonOf(AP_Atlas.UI.Tool.Hints).TooltipText}\"");
@@ -2987,6 +3052,17 @@ public partial class MainTrackerWindow
             await UiTestWaitAsync(0.5);
             UiTestExpect(engine.Starts == 5 && slot.LogicSettled, "a change to another game's apworld restarted the slot");
 
+            // A version chosen for the slot's seed (the version picker's choice): kept for the slot and the seed, and logic
+            // restarts on a fresh engine with it, without a reconnect.
+            string chosenFile = System.IO.Path.Combine(AP_Atlas.Core.Games.GameFiles.ApworldsFolder(DataManager.GetDataDirectory(), "Test Game"), "yours", "test_game.apworld");
+            System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(chosenFile)!);
+            AP_Atlas.Core.SafeFile.WriteAllText(chosenFile, "a stand-in");
+            slot.UseApworld(chosenFile, "9.9.9", "your file", matchesSeed: false);
+            await UiTestWaitForAsync(() => slot.LogicSettled && engine.Starts == 6 ? slot : null, "logic to restart on the version chosen for the slot");
+            UiTestExpect(slot.ChosenApworld?.File == chosenFile && slot.ChosenApworld.Version == "9.9.9" && DataManager.LoadSettings().SlotApworlds.ContainsKey(slot.AnnotationKey),
+                "the version chosen for the slot wasn't kept for it and its seed");
+            _appSettings.SlotApworlds.Remove(slot.AnnotationKey);
+
             // An answer that doesn't say what each new item opened is a failure, never taken for "it opened nothing": logic
             // starts again (after 2 s: the restart above gave it a fresh set of tries).
             engine.ShortSteps = true;
@@ -3417,9 +3493,11 @@ public partial class MainTrackerWindow
                     UiTestExpect(AutoHiddenParts.Contains("view.properties-panel") && _appSettings.ShowPropertiesPanel, $"Properties should hide itself {at} with its setting kept");
                 else
                     UiTestExpect(!AutoHiddenParts.Contains("view.properties-panel"), $"Properties hid itself {at} though it fits");
-                // A short window (720 logical units: 1080p at 150%, the 1100x900 window) shows the bar's icons alone; a 1080p screen at 125% keeps the names.
-                bool shortWindow = size.Y / scale < 800;
-                UiTestExpect(_activityBar.Compact == shortWindow, $"the activity bar is {(_activityBar.Compact ? "compact" : "labelled")} {at} ({size.Y / scale:0} logical units tall)");
+                // A short window (720 logical units: 1080p at 150%, the 1100x900 window) shows the bar's icons alone; one 900 or more
+                // tall (1440p at 150%, 4K at 150% and 200%) keeps the names; in between, whichever fits.
+                float tall = size.Y / scale;
+                if (tall < 800) UiTestExpect(_activityBar.Compact, $"the activity bar keeps its names {at} ({tall:0} logical units tall)");
+                if (tall >= 900) UiTestExpect(!_activityBar.Compact, $"the activity bar drops its names {at} ({tall:0} logical units tall)");
                 UiTestExpect(_activityBar.EngineButton.GetGlobalRect().End.Y <= _activityBar.GetGlobalRect().End.Y + 0.5f, $"the bar's last button is cut off {at}");
 
                 ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.Home);

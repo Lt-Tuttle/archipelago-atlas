@@ -104,6 +104,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             () => ActiveSlotNodes().OfType<SlotTrackerControl>().Select(s => s.Game)
                 .Concat(_profiles.SelectMany(p => p.SavedStats.Values.Select(st => st.GameName))),
             _appSettings.ContentFontSize);
+        window.OpenGamesPage = () => ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.Games);
         if (logLines != null && logLines.Count > 0) window.AppendLog(logLines);
     }
     private static string DescribeRaceMode()

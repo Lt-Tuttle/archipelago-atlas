@@ -781,8 +781,12 @@ def cached_apworld(index_path, game, checksum):
         with open(index_path, encoding='utf-8-sig') as f:
             entries = json.load(f) or []
         for e in entries:
-            if str(e.get('Game', '')).lower() == str(game).lower() and e.get('Checksum') == checksum and os.path.isfile(e.get('File') or ''):
-                return e['File']
+            # Paths are kept relative to the index's folder (older entries have full paths).
+            path = e.get('File') or ''
+            if path and not os.path.isabs(path):
+                path = os.path.normpath(os.path.join(os.path.dirname(index_path), path))
+            if str(e.get('Game', '')).lower() == str(game).lower() and e.get('Checksum') == checksum and os.path.isfile(path):
+                return path
     except Exception as e:
         note("Atlas's apworld cache list could not be read: " + type(e).__name__ + ': ' + str(e))
     return None

@@ -87,6 +87,19 @@ The Sphere Tracker (Ctrl+7) shows the spheretracker.de room a multiworld's host 
 
 Spheres give away the seed's structure, so nothing of this shows in race mode.
 
+## Games
+
+The Games page (the gamepad on the activity bar) lists every game Atlas knows in three groups: **Official** (they ship with Archipelago, so the Atlas Engine has them), **Community** (from the community index) and **Added by you** (projects you added, apworlds you installed that the index doesn't know, and games your multiworlds play). Type a few letters to narrow the list; sort it by name, by what's ready, or by what you played last. ✔ means the game is in the engine with a map pack; ● in the engine; ○ not yet.
+
+A game's page walks its setup through in one place, each step ticked as Atlas finds it done:
+
+- **The apworld in the Atlas Engine:** Install (or Update) downloads the newest release from the game's project, after you trust the project once, checks it against its published SHA-256 and installs it; Choose a file installs one you have. Check this game rebuilds it with default options and computes its starting logic.
+- **A map pack:** the Map Packs page installs one.
+- **Your YAML:** Add YAML keeps a copy in Atlas's YAML folder. A YAML that can roll several games is listed under each of them. Link it to a slot that plays the game in one click; most games don't need one.
+- **Files its setup needs:** some games need a client, a patcher or a .bat from their release. "Get from the release" lists the newest release's other files; the ones you pick are downloaded into the game's own folder (checked against their published SHA-256 when there is one). Atlas never runs them: the game's setup guide says what to do with each.
+
+Under **Your slots**, a slot whose seed was made with another version of the game's apworld offers **Choose the version…** (also on the Logic Tracker's banner): it lists the game's releases newest first, marks the ones Atlas has and the one known to match the seed, and lets you use the version the host used, let Atlas try them one by one (it says how many it may download, stops at the first match, and you can stop it), choose the host's file, or add the host's project. The choice is kept for that slot and its seed; only that slot's logic uses it, and your own Archipelago isn't changed. Atlas doesn't download versions by itself any more. Every release Atlas downloads is kept in the game's folder, so each multiworld can run the version its seed needs.
+
 ## Map Packs and the Pack Doctor
 
 Map Packs lists the PopTracker packs in Atlas's packs folder (`PortableData/packs`, as zips) and installs new ones from a zip; when you ask, it looks for a game's packs on GitHub and shows what it found. A pack is read for its structure only; its images are decoded while a slot or the Pack Doctor uses it.

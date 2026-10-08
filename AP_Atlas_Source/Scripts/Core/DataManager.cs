@@ -5,6 +5,20 @@ using Godot;
 using Newtonsoft.Json;
 using System.Collections.Generic;
 
+/// <summary>The apworld version a slot runs for its seed, as the user chose it in the version picker.</summary>
+public class SlotApworldChoice
+{
+    public string Game { get; set; } = "";
+    /// <summary>The seed's data checksum when it was chosen: a new seed asks again.</summary>
+    public string SeedChecksum { get; set; } = "";
+    /// <summary>The file (inside Atlas's data folder).</summary>
+    public string File { get; set; } = "";
+    public string Version { get; set; } = "";
+    public string Source { get; set; } = "";
+    /// <summary>Whether its data matches the seed's (the user may choose one that doesn't).</summary>
+    public bool MatchesSeed { get; set; }
+}
+
 public class MapCameraSave
 {
     public float X { get; set; }
@@ -74,6 +88,8 @@ public class AppSettings
     public Dictionary<string, string> MapColours { get; set; } = new Dictionary<string, string>();
     /// <summary>Slot key ("profileId|slotName") → whether its Map Tracker follows the game's current map (on unless turned off).</summary>
     public Dictionary<string, bool> MapFollowGame { get; set; } = new Dictionary<string, bool>();
+    /// <summary>Slot key ("profileId|slotName") → the apworld version the user chose for that slot's seed (the version picker).</summary>
+    public Dictionary<string, SlotApworldChoice> SlotApworlds { get; set; } = new Dictionary<string, SlotApworldChoice>();
 
     // Properties panel: titles of sections the user collapsed, and the flag color used by the F shortcut.
     public List<string> CollapsedPropertySections { get; set; } = new List<string> { "Advanced" };
@@ -374,6 +390,7 @@ public static class DataManager
         if (settings.MapNodeScale <= 0 || float.IsNaN(settings.MapNodeScale)) settings.MapNodeScale = 1f;
         settings.MapColours ??= new Dictionary<string, string>();
         settings.MapFollowGame ??= new Dictionary<string, bool>();
+        settings.SlotApworlds ??= new Dictionary<string, SlotApworldChoice>();
         settings.UiZoom = System.Math.Clamp(settings.UiZoom, 50, 200);
         if (settings.MapMarkerStyle is not ("round" or "square" or "diamond")) settings.MapMarkerStyle = "round";
         if (settings.StartupPage is not ("home" or "last" or "multiworlds")) settings.StartupPage = "home";

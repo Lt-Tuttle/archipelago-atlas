@@ -58,6 +58,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     private AP_Atlas.Core.CheeseTracker.CheeseTrackerService _cheese;
     private LineEdit _cheeseInput;
     private LineEdit _sphereInput;
+    private AP_Atlas.UI.GamesPage _gamesPage;
     private Button _passwordToggle;
     private AP_Atlas.UI.CheeseTrackerTab _cheeseTab;
     private AP_Atlas.Core.Spheres.SphereService _spheres;
@@ -146,6 +147,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         AP_Atlas.Core.ThemeColors.SetPalette(AP_Atlas.Core.ThemeColors.PaletteForSetting(_appSettings.Theme, _appSettings.ColourBlindSafe));
         AP_Atlas.Core.ThemeColors.SetMapColours(_appSettings.MapColours);
         AP_Atlas.UI.MapTrackerControl.Translate = text => Tr(text);
+        AP_Atlas.UI.Kit.Translate = text => Tr(text);
         // Every dialog and window fits the screen it opens on, and the window follows Windows' display scale.
         AP_Atlas.UI.WindowFit.Watch(GetTree(), () => _appSettings);
         MigrateZoom();
@@ -401,6 +403,21 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         var homePage = BuildHomePage();
         _contentStage.AddChild(homePage);
         _toolViews[AP_Atlas.UI.Tool.Home] = (homePage, null, "", homePage.OnShown);
+        _gamesPage = new AP_Atlas.UI.GamesPage(new AP_Atlas.UI.GamesHooks
+        {
+            Settings = _appSettings,
+            Tr = text => Tr(text),
+            Profiles = () => _profiles,
+            LiveSlots = () => ActiveSlotNodes().OfType<SlotTrackerControl>().Where(GodotObject.IsInstanceValid),
+            Toast = ShowToast,
+            ShowTool = tool => ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(tool),
+            OpenEngineSetup = OpenEngineSetup
+        });
+        _gamesPage.Visible = false;
+        _contentStage.AddChild(_gamesPage);
+        _gamesPage.SidebarContent.Visible = false;
+        _midLeftVBox.AddChild(_gamesPage.SidebarContent);
+        _toolViews[AP_Atlas.UI.Tool.Games] = (_gamesPage, _gamesPage.SidebarContent, "Games", _gamesPage.OnShown);
         ReportEngineAtStartup();
         OfferToDeletePlainTextPasswordCopies();
         var statusTimer = new Godot.Timer { WaitTime = 0.5f, Autostart = true };

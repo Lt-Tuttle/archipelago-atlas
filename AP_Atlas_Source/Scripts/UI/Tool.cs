@@ -78,11 +78,12 @@ namespace AP_Atlas.UI
         public static readonly Tool SphereTracker = new("sphere-tracker", "Sphere Tracker", "Spheres", ToolScope.Multiworld, ToolGroup.Multiworld, "orbit");
         public static readonly Tool Home = new("home", "Home", "Home", ToolScope.App, ToolGroup.Atlas, "house");
         public static readonly Tool Connections = new("connections", "Multiworlds", "Worlds", ToolScope.App, ToolGroup.Atlas, "globe");
+        public static readonly Tool Games = new("games", "Games", "Games", ToolScope.App, ToolGroup.Atlas, "gamepad-2"); // after the ninth tool: no number key
         public static readonly Tool MapPacks = new("map-packs", "Map Packs", "Packs", ToolScope.App, ToolGroup.Atlas, "package"); // the tenth tool: no number key (Ctrl+0 resets the zoom)
         public static readonly Tool Settings = new("settings", "Settings", "Settings", ToolScope.App, ToolGroup.Atlas, "settings") { DefaultKey = "Ctrl+," };
 
         /// <summary>Every tool, in the activity bar's order, top to bottom (Ctrl+1 to Ctrl+9).</summary>
-        public static IReadOnlyList<Tool> All { get; } = new[] { MapTracker, KeyItems, LogicTracker, ItemHistory, Hints, CheeseTracker, SphereTracker, Home, Connections, MapPacks, Settings };
+        public static IReadOnlyList<Tool> All { get; } = new[] { MapTracker, KeyItems, LogicTracker, ItemHistory, Hints, CheeseTracker, SphereTracker, Home, Connections, Games, MapPacks, Settings };
 
         /// <summary>The tool with an id, or null for none (a setting from another version).</summary>
         public static Tool? Named(string? id) => System.Linq.Enumerable.FirstOrDefault(All, tool => tool.Id == id);

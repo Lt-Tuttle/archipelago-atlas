@@ -208,7 +208,7 @@ namespace AP_Atlas.UI
                         : "The installed apworld's data checksum equals the one the server reports for this seed");
             else if (slot.ApworldMatchesSeed == false)
                 Row("Apworld vs seed", Colored($"Different version (installed {Short(localChecksum)}, seed {Short(serverChecksum)})", Warn),
-                    "Fix automatically on the Logic Tracker's banner finds the seed's version and uses it for this slot (your install isn't changed)");
+                    "\"Choose the version…\" on the Logic Tracker's banner (or the game's page under Games) lists the game's releases; pick the seed's, and only this slot uses it (your install isn't changed)");
             else PlainRow("Apworld vs seed", "Not reported by the server or engine");
 
             var installedCopy = AP_Atlas.Core.EngineSetup.ApworldSources.InstalledCopies(slot.LogicEngine?.Install, slot.Game).FirstOrDefault();
