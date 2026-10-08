@@ -43,7 +43,7 @@ namespace AP_Atlas.UI
             dialog.SetMeta("quick_setup", id);
             dialog.Canceled += dialog.QueueFree;
             parent.AddChild(dialog);
-            dialog.PopupCentered(new Vector2I(600, 0));
+            WindowFit.Pop(dialog, 600);
             return dialog;
         }
 
@@ -55,6 +55,7 @@ namespace AP_Atlas.UI
             var text = Kit.Muted(intro);
             text.AutowrapMode = TextServer.AutowrapMode.WordSmart;
             text.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+            text.CustomMinimumSize = new Vector2(540, 0); // wrapped at its real width from the first measure (a 0-wide first pass reports a tall minimum)
             box.AddChild(text);
             return box;
         }
@@ -79,7 +80,7 @@ namespace AP_Atlas.UI
 
         private static Label Problem(VBoxContainer box)
         {
-            var problem = new Label { Visible = false, AutowrapMode = TextServer.AutowrapMode.WordSmart };
+            var problem = new Label { Visible = false, AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(540, 0) };
             problem.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Error);
             box.AddChild(problem);
             return problem;

@@ -49,7 +49,7 @@ namespace AP_Atlas.UI
             var panel = new EngineSetupPanel(tr, showDetails);
             _open = panel;
             parent.AddChild(panel);
-            panel.PopupCentered(new Vector2I(560, 0));
+            WindowFit.Pop(panel, 560);
             panel.Start();
             return panel;
         }

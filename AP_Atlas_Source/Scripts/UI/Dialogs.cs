@@ -26,7 +26,7 @@ namespace AP_Atlas.UI
             };
             dialog.Canceled += () => dialog.QueueFree();
             parent.AddChild(dialog);
-            dialog.PopupCentered(new Vector2I(500, 0));
+            WindowFit.Pop(dialog, 500);
         }
 
         /// <summary>
@@ -65,7 +65,7 @@ namespace AP_Atlas.UI
                 dialog.QueueFree();
             };
             parent.AddChild(dialog);
-            dialog.PopupCentered(new Vector2I(480, 0));
+            WindowFit.Pop(dialog, 480);
         }
 
         /// <summary>A toggle that lights up when on, rather than a check box (the theme hides an empty check box); OK waits for it.</summary>
@@ -107,7 +107,7 @@ namespace AP_Atlas.UI
             };
             dialog.Canceled += () => dialog.QueueFree();
             parent.AddChild(dialog);
-            dialog.PopupCentered(new Vector2I(540, 0));
+            WindowFit.Pop(dialog, 540);
             input.GrabFocus();
         }
     }

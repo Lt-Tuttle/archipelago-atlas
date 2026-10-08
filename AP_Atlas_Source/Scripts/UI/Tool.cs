@@ -12,12 +12,13 @@ namespace AP_Atlas.UI
         Slot
     }
 
-    /// <summary>The group a tool sits in on the activity bar, top to bottom: the slot tools, the multiworld tools, Atlas's own pages.</summary>
+    /// <summary>Where a tool sits on the activity bar, top to bottom: Home alone, Atlas's tools, the external trackers, then Atlas's configuration pages at the bottom.</summary>
     public enum ToolGroup
     {
-        Slot,
-        Multiworld,
-        Atlas
+        Home,
+        Tools,
+        External,
+        Config
     }
 
     /// <summary>
@@ -67,26 +68,26 @@ namespace AP_Atlas.UI
         /// <summary>How wide the tool's explorer starts, in logical units, when the window has the room (0: the explorer's minimum); the user's drag is kept per tool.</summary>
         public int ExplorerStartWidth { get; private init; }
 
-        public static readonly Tool MapTracker = new("map-tracker", "Map Tracker", "Map", ToolScope.Slot, ToolGroup.Slot, "map")
+        public static readonly Tool MapTracker = new("map-tracker", "Map Tracker", "Map", ToolScope.Slot, ToolGroup.Tools, "map")
         {
             SlotView = slot => slot.MapTracker,
             SlotExplorer = slot => slot.MapTracker?.SidebarContent,
             ExplorerTitle = "Maps"
         };
-        public static readonly Tool KeyItems = new("key-items", "Key Items", "Items", ToolScope.Slot, ToolGroup.Slot, "key-round") { SlotView = slot => slot.ProgressionTracker };
-        public static readonly Tool LogicTracker = new("logic-tracker", "Logic Tracker", "Logic", ToolScope.Slot, ToolGroup.Slot, "route") { SlotView = slot => slot.LogicTrackerView };
-        public static readonly Tool ItemHistory = new("item-history", "Item History", "History", ToolScope.Slot, ToolGroup.Slot, "logs") { SlotView = slot => slot.ItemHistoryView };
-        public static readonly Tool Hints = new("hints", "Hints", "Hints", ToolScope.Slot, ToolGroup.Slot, "lightbulb") { SlotView = slot => slot.HintsView };
-        public static readonly Tool CheeseTracker = new("cheese-tracker", "Cheese Tracker", "Cheese", ToolScope.Multiworld, ToolGroup.Multiworld, "users");
-        public static readonly Tool SphereTracker = new("sphere-tracker", "Sphere Tracker", "Spheres", ToolScope.Multiworld, ToolGroup.Multiworld, "orbit");
-        public static readonly Tool Home = new("home", "Home", "Home", ToolScope.App, ToolGroup.Atlas, "house");
-        public static readonly Tool Connections = new("connections", "Multiworlds", "Worlds", ToolScope.App, ToolGroup.Atlas, "globe");
-        public static readonly Tool Games = new("games", "Games", "Games", ToolScope.App, ToolGroup.Atlas, "gamepad-2") { ExplorerStartWidth = 360 }; // after the ninth tool: no number key
-        public static readonly Tool MapPacks = new("map-packs", "Map Packs", "Packs", ToolScope.App, ToolGroup.Atlas, "package") { ExplorerStartWidth = 400 }; // the tenth tool: no number key (Ctrl+0 resets the zoom)
-        public static readonly Tool Settings = new("settings", "Settings", "Settings", ToolScope.App, ToolGroup.Atlas, "settings") { DefaultKey = "Ctrl+," };
+        public static readonly Tool KeyItems = new("key-items", "Key Items", "Items", ToolScope.Slot, ToolGroup.Tools, "key-round") { SlotView = slot => slot.ProgressionTracker };
+        public static readonly Tool LogicTracker = new("logic-tracker", "Logic Tracker", "Logic", ToolScope.Slot, ToolGroup.Tools, "route") { SlotView = slot => slot.LogicTrackerView };
+        public static readonly Tool ItemHistory = new("item-history", "Item History", "History", ToolScope.Slot, ToolGroup.Tools, "logs") { SlotView = slot => slot.ItemHistoryView };
+        public static readonly Tool Hints = new("hints", "Hints", "Hints", ToolScope.Slot, ToolGroup.Tools, "lightbulb") { SlotView = slot => slot.HintsView };
+        public static readonly Tool CheeseTracker = new("cheese-tracker", "Cheese Tracker", "Cheese", ToolScope.Multiworld, ToolGroup.External, "users");
+        public static readonly Tool SphereTracker = new("sphere-tracker", "Sphere Tracker", "Spheres", ToolScope.Multiworld, ToolGroup.External, "orbit");
+        public static readonly Tool Home = new("home", "Home", "Home", ToolScope.App, ToolGroup.Home, "house");
+        public static readonly Tool Connections = new("connections", "Multiworlds", "Worlds", ToolScope.App, ToolGroup.Tools, "globe");
+        public static readonly Tool Games = new("games", "Games", "Games", ToolScope.App, ToolGroup.Config, "gamepad-2") { ExplorerStartWidth = 360 }; // the tenth tool: no number key
+        public static readonly Tool MapPacks = new("map-packs", "Map Packs", "Packs", ToolScope.App, ToolGroup.Config, "package") { ExplorerStartWidth = 400 }; // the eleventh: no number key (Ctrl+0 resets the zoom)
+        public static readonly Tool Settings = new("settings", "Settings", "Settings", ToolScope.App, ToolGroup.Config, "settings") { DefaultKey = "Ctrl+," };
 
-        /// <summary>Every tool, in the activity bar's order, top to bottom (Ctrl+1 to Ctrl+9).</summary>
-        public static IReadOnlyList<Tool> All { get; } = new[] { MapTracker, KeyItems, LogicTracker, ItemHistory, Hints, CheeseTracker, SphereTracker, Home, Connections, Games, MapPacks, Settings };
+        /// <summary>Every tool, in the activity bar's order, top to bottom (Ctrl+1 to Ctrl+9: Home, the five slot tools, Multiworlds, Cheese Tracker, Sphere Tracker).</summary>
+        public static IReadOnlyList<Tool> All { get; } = new[] { Home, MapTracker, KeyItems, LogicTracker, ItemHistory, Hints, Connections, CheeseTracker, SphereTracker, Games, MapPacks, Settings };
 
         /// <summary>The tool with an id, or null for none (a setting from another version).</summary>
         public static Tool? Named(string? id) => System.Linq.Enumerable.FirstOrDefault(All, tool => tool.Id == id);

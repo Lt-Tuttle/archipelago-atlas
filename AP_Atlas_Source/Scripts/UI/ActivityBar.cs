@@ -6,9 +6,9 @@ using Godot;
 namespace AP_Atlas.UI
 {
     /// <summary>
-    /// The column of tools on the far left of the window: every tool as an icon with its short name under it, in three
-    /// groups whose captions sit on bands of the accent colour (the slot tools, the multiworld tools, then Atlas's own
-    /// pages at the bottom), and a button for the Atlas Engine window. One button is lit: the tool the window shows
+    /// The column of tools on the far left of the window: every tool as an icon with its short name under it: Home alone at
+    /// the top, then Atlas's tools, the external trackers and, at the bottom, the configuration pages, each group but Home
+    /// captioned on two lines on a band of the accent colour, and a button for the Atlas Engine window. One button is lit: the tool the window shows
     /// (<see cref="Select"/> follows the window, however the tool was switched). Each button's tooltip names the tool
     /// and its key, and screen readers get the full title. When the window is too short for the names, the bar shows
     /// the icons alone (<see cref="Compact"/>); the bar never asks the window for more height than that layout needs.
@@ -63,7 +63,7 @@ namespace AP_Atlas.UI
 
         public Button EngineButton => _engine;
 
-        /// <summary>The caption of the group a tool sits in ("SLOT", "MULTIWORLD", "ATLAS"), as written in the code.</summary>
+        /// <summary>The caption of the group a tool sits in ("ATLAS\nTOOLS", "EXTERNAL\nTOOLS", "ATLAS\nCONFIG"; "" for Home), as written in the code.</summary>
         public string CaptionOf(Tool tool) => _captions[tool];
 
         public override void _Ready()
@@ -89,10 +89,11 @@ namespace AP_Atlas.UI
             _column.AddThemeConstantOverride("separation", 2);
             _column.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
             _frame.AddChild(_column);
-            AddGroup("SLOT", ToolGroup.Slot);
-            AddGroup("MULTIWORLD", ToolGroup.Multiworld);
-            _column.AddChild(new Control { SizeFlagsVertical = SizeFlags.ExpandFill }); // Atlas's pages sit at the bottom
-            AddGroup("ATLAS", ToolGroup.Atlas);
+            AddGroup(null, ToolGroup.Home); // Home alone, no caption
+            AddGroup("ATLAS\nTOOLS", ToolGroup.Tools);
+            AddGroup("EXTERNAL\nTOOLS", ToolGroup.External);
+            _column.AddChild(new Control { SizeFlagsVertical = SizeFlags.ExpandFill }); // the configuration pages sit at the bottom
+            AddGroup("ATLAS\nCONFIG", ToolGroup.Config);
             _engine = MakeButton("cpu", _tr("Atlas Engine"), _tr("Atlas Engine"), _tr("Engine"));
             _engine.Pressed += () => EnginePressed?.Invoke();
             _column.AddChild(_engine);
@@ -118,6 +119,7 @@ namespace AP_Atlas.UI
             Compact = compact;
             foreach (var (tool, button) in _buttons) Lay(button, compact ? "" : _tr(tool.ShortTitle), compact);
             Lay(_engine, compact ? "" : _tr("Engine"), compact);
+            foreach (var (_, label) in _bands) label.Visible = !compact; // the bands stay as thin tinted dividers
         }
 
         private static void Lay(Button button, string text, bool compact)
@@ -127,14 +129,17 @@ namespace AP_Atlas.UI
             button.CustomMinimumSize = new Vector2(ButtonWidth, compact ? CompactButtonHeight : LabelledButtonHeight);
         }
 
-        private void AddGroup(string caption, ToolGroup group)
+        private void AddGroup(string? caption, ToolGroup group)
         {
-            var band = new PanelContainer();
-            var label = new Label { Text = _tr(caption), HorizontalAlignment = HorizontalAlignment.Center };
-            label.AddThemeFontSizeOverride("font_size", 8); // "MULTIWORLD" has to fit the band
-            band.AddChild(label);
-            _bands.Add((band, label));
-            _column.AddChild(band);
+            if (caption != null)
+            {
+                var band = new PanelContainer();
+                var label = new Label { Text = string.Join("\n", caption.Split('\n').Select(line => _tr(line))), HorizontalAlignment = HorizontalAlignment.Center };
+                label.AddThemeFontSizeOverride("font_size", 8); // two short lines fit the band
+                band.AddChild(label);
+                _bands.Add((band, label));
+                _column.AddChild(band);
+            }
             foreach (var tool in Tool.All.Where(t => t.Group == group))
             {
                 var button = MakeButton(tool.Icon, Tooltip(tool), _tr(tool.Title), _tr(tool.ShortTitle)); // named for screen readers by its full title
@@ -143,7 +148,7 @@ namespace AP_Atlas.UI
                 var shown = tool;
                 button.Pressed += () => ToolPressed?.Invoke(shown);
                 _buttons[tool] = button;
-                _captions[tool] = caption;
+                _captions[tool] = caption ?? "";
                 _order.Add(tool);
                 _column.AddChild(button);
             }

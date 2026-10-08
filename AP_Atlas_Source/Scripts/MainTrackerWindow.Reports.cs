@@ -36,7 +36,7 @@ public partial class MainTrackerWindow
             {
                 var dialog = new AP_Atlas.UI.CrashReportDialog(preview, text => Tr(text), decided);
                 AddChild(dialog);
-                dialog.PopupCentered(new Vector2I(680, 0));
+                AP_Atlas.UI.WindowFit.Pop(dialog, 680);
             },
             SystemInfo = () => AP_Atlas.UI.AboutDialog.BuildSystemInfo(EngineLineForAbout(), AtlasVersion.Commit)
         };
@@ -76,6 +76,6 @@ public partial class MainTrackerWindow
         dialog.Confirmed += dialog.QueueFree;
         dialog.Canceled += dialog.QueueFree;
         AddChild(dialog);
-        dialog.PopupCentered(new Vector2I(600, 0));
+        AP_Atlas.UI.WindowFit.Pop(dialog, 600);
     }
 }

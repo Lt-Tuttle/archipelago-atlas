@@ -63,7 +63,7 @@ namespace AP_Atlas.UI
                 Answer(false);
             };
             parent.AddChild(dialog);
-            dialog.PopupCentered(new Vector2I(560, 0));
+            WindowFit.Pop(dialog, 560);
         }
     }
 }

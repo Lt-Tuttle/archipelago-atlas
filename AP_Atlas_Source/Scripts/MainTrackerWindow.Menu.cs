@@ -48,7 +48,7 @@ public partial class MainTrackerWindow
         Add("view.zoom-out", "View", "Zoom Out", "Ctrl+-", () => ZoomBy(-1));
         Add("view.zoom-reset", "View", "Reset Zoom", "Ctrl+0", () => SetZoom(100));
 
-        // The tools, Ctrl+1 to Ctrl+9 in the tool list's order; a later tool brings its own key (Map Packs: Ctrl+0, Settings: Ctrl+,).
+        // The tools, Ctrl+1 to Ctrl+9 in the tool list's order (Home, the slot tools, Multiworlds, Cheese and Sphere Tracker); a later tool brings its own key (Settings: Ctrl+,; Games and Map Packs: none).
         int number = 1;
         foreach (var tool in AP_Atlas.UI.Tool.All)
         {

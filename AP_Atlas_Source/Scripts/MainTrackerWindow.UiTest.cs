@@ -112,8 +112,10 @@ public partial class MainTrackerWindow
             MenuBarAndKeysAsync);
         await ScenarioAsync("Command palette: Ctrl+Shift+P opens it ready to type, it lists every command with its key, a typed word narrows it to the commands whose words start that way, Enter runs the pick and closes it, Escape only closes it",
             CommandPaletteAsync);
-        await ScenarioAsync("Activity bar: every tool in its group, in order, with a shipped icon, its short name under it, its full title for screen readers and its key in the tooltip; the group captions sit on accent bands; pressing a button shows the tool, switching a tool any other way lights its button and names it in the header; the engine button opens the engine window",
+        await ScenarioAsync("Activity bar: Home alone at the top, then ATLAS TOOLS, EXTERNAL TOOLS and, at the bottom, ATLAS CONFIG, each caption on two lines on an accent band; every tool in its group, in order, with a shipped icon, its short name under it, its full title for screen readers and its key in the tooltip; the group captions sit on accent bands; pressing a button shows the tool, switching a tool any other way lights its button and names it in the header; the engine button opens the engine window",
             ActivityBarAsync);
+        await ScenarioAsync("Dialogs: a confirmation (with and without a requirement), a prompt and Save changes stand as tall as their content, under four fifths of the window, with their buttons and content inside (a wrapped line measured before its width used to make every dialog as tall as the screen)",
+            DialogsStandAsTallAsTheirContentAsync);
         await ScenarioAsync("Slot picker: the tool header lists the connected slots with the selected one chosen; picking one shows its view, Ctrl+Tab and Ctrl+Shift+Tab go through them around the end, a slot selected elsewhere shows as picked, a tool that isn't per slot hides it, and a slot that ends leaves it",
             SlotPickerAsync);
         await ScenarioAsync("Window parts: the View menu hides and shows the slots panel, the explorer (whatever tool shows), Properties, the bottom pane and the status bar, remembering each; each tool's explorer has its own width (Map Packs starts at 400, Games at 360); focus mode leaves the content alone and, off again, brings each part back as the user had it",
@@ -124,7 +126,7 @@ public partial class MainTrackerWindow
             KeyboardShortcutsAsync);
         await ScenarioAsync("Privacy & permissions: a section of the Settings page lists every permission Atlas can ask for with its state (asks each time, allowed until Atlas closes, always allowed, not until Atlas restarts) and every trusted apworld source; a kept answer and a trusted source can be taken back, which is saved; the section is found by its words",
             PrivacyAsync);
-        await ScenarioAsync("Home: Ctrl+8 shows it on its own; every tool has a card with a line and every link is https; the checklist keeps each button beside its text; it ticks the engine as it is and nothing else in a fresh folder, then a multiworld and a pack once they exist, and hides each done step; a tip shows and Next tip goes around; the multiworld is listed and one click connects its slot, ticks the step and says Connected; a tool's card shows the tool; each step sets itself up in a dialog on Home (a new multiworld with its slot, connecting a slot, finding a map pack for a slot's game, linking Cheese Tracker, linking the host's Sphere Tracker room) or opens the page where it's done by hand; Skip hides a step and is remembered, Unskip brings it back; the multiworld list keeps Connect beside the text; when every step is done one line says so and Show steps brings them back",
+        await ScenarioAsync("Home: Ctrl+1 shows it on its own; every tool has a card with a line and every link is https; the checklist keeps each button beside its text; it ticks the engine as it is and nothing else in a fresh folder, then a multiworld and a pack once they exist, and hides each done step; a tip shows and Next tip goes around; the multiworld is listed and one click connects its slot, ticks the step and says Connected; a tool's card shows the tool; each step sets itself up in a dialog on Home (a new multiworld with its slot, connecting a slot, finding a map pack for a slot's game, linking Cheese Tracker, linking the host's Sphere Tracker room) or opens the page where it's done by hand; Skip hides a step and is remembered, Unskip brings it back; the multiworld list keeps Connect beside the text; when every step is done one line says so and Show steps brings them back",
             HomeAsync);
         await ScenarioAsync("Games page: the Games tool lists every game in its group (community games from the index, the games your multiworlds play as added by you), with the games of your own slots first (from their saved stats and their linked YAMLs, each once), typed words narrow the list, a game's page walks its setup through (the apworld, a map pack, your YAML, the files it needs) with each step ticked as Atlas finds it; a YAML added once is listed under every game it names; the game's folders are inside Atlas's data folder; once GitHub may be asked, the page lists every version of every project (the game's own, and one of the same name found by one search), newest first with pre-releases marked and the newest full release named, and downloads nothing without a press; Add YAML offers the places a YAML may be; the release-files dialog fits the window with a check box per file; a Discord home is named on its link",
             GamesPageAsync);
@@ -652,14 +654,15 @@ public partial class MainTrackerWindow
         var missing = _commands!.All.Select(c => c.Id).Where(id => !placed.Contains(id)).ToList();
         UiTestExpect(missing.Count == 0, $"commands in no menu: {string.Join(", ", missing)}");
         var tools = menus[3].GetPopup();
-        UiTestExpect(tools.GetItemText(0) == "Map Tracker" && ShortcutShown(tools, 0) == "Ctrl+1", $"the Tools menu's first item is \"{tools.GetItemText(0)}\" with \"{ShortcutShown(tools, 0)}\"");
+        UiTestExpect(tools.GetItemText(0) == "Home" && ShortcutShown(tools, 0) == "Ctrl+1" && tools.GetItemText(1) == "Map Tracker" && ShortcutShown(tools, 1) == "Ctrl+2",
+            $"the Tools menu's first items are \"{tools.GetItemText(0)}\" ({ShortcutShown(tools, 0)}) and \"{tools.GetItemText(1)}\" ({ShortcutShown(tools, 1)})");
 
         host.ShowTool(AP_Atlas.UI.Tool.Connections);
         _commands!.Run("tool.map-packs");
         UiTestExpect(ShownContent() == _packManagerPanel, "the Map Packs command didn't show Map Packs");
         UiTestExpect(_commands.ShortcutOf("tool.map-packs") == "" && _commands.ShortcutOf("view.zoom-reset") == "Ctrl+0", "Ctrl+0 belongs to Reset Zoom, and Map Packs has no default key");
-        await PressAsync("Ctrl+7");
-        UiTestExpect(ShownContent() == _sphereTab, "Ctrl+7 didn't show the Sphere Tracker");
+        await PressAsync("Ctrl+9");
+        UiTestExpect(ShownContent() == _sphereTab, "Ctrl+9 didn't show the Sphere Tracker");
         // A rebind in the settings takes over at once (as a user might type it), and the old key means nothing.
         _appSettings.KeyBindings["tool.map-packs"] = "ctrl+f6";
         try
@@ -673,7 +676,7 @@ public partial class MainTrackerWindow
             var shortcuts = await UiTestWaitForAsync(() => GetChildren().OfType<AcceptDialog>().FirstOrDefault(d => d.Title == "Keyboard Shortcuts"), "the shortcuts dialog");
             // The table lays out only the rows on screen: the list is its shown rows.
             var rows = shortcuts.FindChildren("Table_keys", "", true, false).OfType<AP_Atlas.UI.AtlasTable>().First().ShownRows.Select(r => r.Cells.Select(c => c.Text).ToArray()).ToList();
-            UiTestExpect(rows.Any(r => r[0] == "Map Packs" && r[1] == "Ctrl+F6") && rows.Any(r => r[0] == "Map Tracker" && r[1] == "Ctrl+1"),
+            UiTestExpect(rows.Any(r => r[0] == "Map Packs" && r[1] == "Ctrl+F6") && rows.Any(r => r[0] == "Map Tracker" && r[1] == "Ctrl+2"),
                 "the shortcuts list doesn't show the keys as they are now");
             shortcuts.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
         }
@@ -703,8 +706,8 @@ public partial class MainTrackerWindow
         UiTestExpect(page.SearchHasFocus, "the search box isn't ready to type into");
         UiTestExpect(_midLeftSidebar.Visible && page.SectionList.Visible, "the explorer doesn't list the sections");
         // The tools' keys still work while the search box has the focus.
-        await PressAsync("Ctrl+8");
-        UiTestExpect(ShownContent() == _homePage, "Ctrl+8 didn't switch tools while the search box had the focus");
+        await PressAsync("Ctrl+1");
+        UiTestExpect(ShownContent() == _homePage, "Ctrl+1 didn't switch tools while the search box had the focus");
         host.ShowTool(AP_Atlas.UI.Tool.Settings);
 
         // Each kind of row changes its setting at once and saves it.
@@ -832,7 +835,7 @@ public partial class MainTrackerWindow
 
             // A key another command has: both rows say so.
             capture.EmitSignal(BaseButton.SignalName.Pressed);
-            capture.EmitSignal(Control.SignalName.GuiInput, AP_Atlas.UI.CommandKeys.ToEvent("Ctrl+1")!);
+            capture.EmitSignal(Control.SignalName.GuiInput, AP_Atlas.UI.CommandKeys.ToEvent("Ctrl+2")!);
             UiTestExpect(conflict.Visible && conflict.TooltipText.Contains("Map Tracker") && otherConflict.Visible && otherConflict.TooltipText.Contains("Map Packs"),
                 $"a shared key isn't shown on both rows: {conflict.Visible} \"{conflict.TooltipText}\", {otherConflict.Visible} \"{otherConflict.TooltipText}\"");
 
@@ -962,8 +965,8 @@ public partial class MainTrackerWindow
         var host = (AP_Atlas.UI.IPropertiesHost)this;
         var home = _homePage ?? throw new InvalidOperationException("Home wasn't built.");
         host.ShowTool(AP_Atlas.UI.Tool.MapPacks);
-        await PressAsync("Ctrl+8");
-        UiTestExpect(ShownContent() == home && _activityBar.Selected == AP_Atlas.UI.Tool.Home && !_midLeftSidebar.Visible, "Ctrl+8 didn't show Home on its own");
+        await PressAsync("Ctrl+1");
+        UiTestExpect(ShownContent() == home && _activityBar.Selected == AP_Atlas.UI.Tool.Home && !_midLeftSidebar.Visible, "Ctrl+1 didn't show Home on its own");
         // Every tool but Home has a card with a line of its own; every link is https, and the Discord one is the official invite.
         var noBlurb = AP_Atlas.UI.Tool.All.Where(t => t != AP_Atlas.UI.Tool.Home && AP_Atlas.UI.HomePage.Blurb(t).Length == 0).Select(t => t.Title).ToList();
         UiTestExpect(noBlurb.Count == 0, $"tools without a card line: {string.Join(", ", noBlurb)}");
@@ -1053,6 +1056,7 @@ public partial class MainTrackerWindow
             home.StepButtonOf("multiworld").EmitSignal(BaseButton.SignalName.Pressed);
             var newDialog = await UiTestWaitForAsync(() => QuickDialog("new-multiworld"), "the New multiworld dialog");
             UiTestExpect(ShownContent() == home, "the multiworld step left Home");
+            await UiTestDialogSizedAsync(newDialog, "the New multiworld dialog");
             ((LineEdit)newDialog.FindChild("NameBox", true, false)).Text = "Quick MW";
             ((LineEdit)newDialog.FindChild("ServerBox", true, false)).Text = server.Url.ToString();
             var slotsBox = (VBoxContainer)newDialog.FindChild("SlotsBox", true, false);
@@ -1066,6 +1070,7 @@ public partial class MainTrackerWindow
             // The connect step: a dialog listing every multiworld's slots; Connect brings the slot's view and the button says so.
             home.StepButtonOf("connect").EmitSignal(BaseButton.SignalName.Pressed);
             var connectDialog = await UiTestWaitForAsync(() => QuickDialog("connect-slots"), "the Connect a slot dialog");
+            await UiTestDialogSizedAsync(connectDialog, "the Connect a slot dialog");
             var connectButtons = connectDialog.FindChildren("*", nameof(Button), true, false).OfType<Button>().Where(b => b.HasMeta("connect_slot")).ToList();
             var testerButton = connectButtons.First(b => b.GetMeta("connect_slot").AsString() == profile.Id + "|Tester");
             var tester2Button = connectButtons.First(b => b.GetMeta("connect_slot").AsString() == added!.Id + "|Quill");
@@ -1085,6 +1090,7 @@ public partial class MainTrackerWindow
             AP_Atlas.Core.GitHubApi.ResetForTests();
             home.StepButtonOf("pack").EmitSignal(BaseButton.SignalName.Pressed);
             var packDialog = await UiTestWaitForAsync(() => QuickDialog("find-pack"), "the Find a map pack dialog");
+            await UiTestDialogSizedAsync(packDialog, "the Find a map pack dialog");
             var gameChoice = (OptionButton)packDialog.FindChild("GameChoice", true, false);
             UiTestExpect(gameChoice.ItemCount > 0 && gameChoice.GetItemText(gameChoice.Selected) == "Test Game", $"the pack dialog offers {gameChoice.ItemCount} game(s), first {(gameChoice.ItemCount > 0 ? gameChoice.GetItemText(0) : "")}");
             packDialog.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
@@ -1107,6 +1113,7 @@ public partial class MainTrackerWindow
             CheeseClient.Spacing = TimeSpan.Zero;
             home.StepButtonOf("cheese").EmitSignal(BaseButton.SignalName.Pressed);
             var cheeseDialog = await UiTestWaitForAsync(() => QuickDialog("link-cheese"), "the Link Cheese Tracker dialog");
+            await UiTestDialogSizedAsync(cheeseDialog, "the Link Cheese Tracker dialog");
             var multiworldChoice = (OptionButton)cheeseDialog.FindChild("MultiworldChoice", true, false);
             for (int i = 0; i < multiworldChoice.ItemCount; i++)
                 if (multiworldChoice.GetItemText(i) == "Quick MW") multiworldChoice.Selected = i;
@@ -1541,11 +1548,13 @@ public partial class MainTrackerWindow
             _addSlotButton.EmitSignal(BaseButton.SignalName.Pressed);
             dialog = await UiTestWaitForAsync(Dialog, "the dialog for a multiworld with a server");
             UiTestExpect(dialog.ConnectNow.ButtonPressed, "Connect now isn't on for a multiworld with a server address");
+            await UiTestDialogSizedAsync(dialog, "the Add a slot dialog");
             // A duplicate name keeps the dialog open and says so; nothing is added.
             dialog.NameInput.Text = "Tester";
             dialog.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
             await UiTestWaitAsync(0.1);
             UiTestExpect(Dialog() == dialog && dialog.ProblemText.Contains("Tester") && profile.Slots.Count == 1, $"a duplicate name was taken, or not explained (\"{dialog.ProblemText}\")");
+            await UiTestDialogSizedAsync(dialog, "the Add a slot dialog with its problem line");
             // The game: typed words narrow the list; the engine line follows the choice (no engine in this folder: Set up the Atlas Engine).
             dialog.GameSearch.Text = "test game";
             dialog.GameSearch.EmitSignal(LineEdit.SignalName.TextChanged, dialog.GameSearch.Text);
@@ -2363,12 +2372,52 @@ public partial class MainTrackerWindow
         }
     }
 
+    /// <summary>A dialog stands as tall as its content, well under the window's height, with its OK button and its content inside it.</summary>
+    private async Task UiTestDialogSizedAsync(AcceptDialog dialog, string what)
+    {
+        await UiTestWaitAsync(0.15); // the content's layout and the shrink that follows
+        var area = AP_Atlas.UI.WindowFit.AvailableLogical(dialog).Size;
+        float natural = dialog.GetContentsMinimumSize().Y;
+        int expected = Math.Max((int)Math.Ceiling(natural), dialog.MinSize.Y);
+        UiTestExpect(dialog.Size.Y <= expected + 8, $"{what} is {dialog.Size.Y} tall for content of {natural}");
+        UiTestExpect(dialog.Size.Y < area.Y * 0.8f, $"{what} stands {dialog.Size.Y} tall in a window of {area.Y}");
+        var ok = dialog.GetOkButton();
+        var okRect = ok.GetGlobalRect();
+        UiTestExpect(ok.IsVisibleInTree() && okRect.Position.Y >= 0 && okRect.End.Y <= dialog.Size.Y + 1 && okRect.End.X <= dialog.Size.X + 1, $"{what}'s OK button is outside the window: {okRect} in {dialog.Size}");
+        var content = dialog.GetChildren().OfType<Control>().FirstOrDefault();
+        UiTestExpect(content == null || content.GetGlobalRect().End.Y <= okRect.Position.Y + 1, $"{what}'s content runs under its buttons");
+    }
+
+    private async Task DialogsStandAsTallAsTheirContentAsync()
+    {
+        const string fourLines = "A confirmation whose text runs to several lines once it's wrapped at the dialog's width, so the dialog has to measure it at that width and not before, which is where a dialog as tall as the screen came from; the fix sizes the window to the content after it has laid out.";
+        ConfirmationDialog? Find(string title) => GetChildren().OfType<ConfirmationDialog>().FirstOrDefault(d => d.Title == title && !d.IsQueuedForDeletion());
+        AP_Atlas.UI.Dialogs.Confirm(this, "Tall?", fourLines, "OK", () => { });
+        var confirm = await UiTestWaitForAsync(() => Find("Tall?"), "the confirmation");
+        await UiTestDialogSizedAsync(confirm, "a confirmation");
+        confirm.EmitSignal(AcceptDialog.SignalName.Canceled);
+        AP_Atlas.UI.Dialogs.Confirm(this, "Tall with a requirement?", fourLines, "OK", () => { }, "I have read this");
+        var required = await UiTestWaitForAsync(() => Find("Tall with a requirement?"), "the confirmation with a requirement");
+        await UiTestDialogSizedAsync(required, "a confirmation with a requirement");
+        required.EmitSignal(AcceptDialog.SignalName.Canceled);
+        AP_Atlas.UI.Dialogs.Prompt(this, "A name?", fourLines, "", "Player1", "OK", _ => { });
+        var prompt = await UiTestWaitForAsync(() => Find("A name?"), "the prompt");
+        await UiTestDialogSizedAsync(prompt, "a prompt");
+        prompt.EmitSignal(AcceptDialog.SignalName.Canceled);
+        AP_Atlas.UI.Dialogs.SaveChanges(this, "Something", () => { }, () => { }, () => { }, text => Tr(text));
+        var save = await UiTestWaitForAsync(() => Find("Unsaved changes"), "Save changes");
+        await UiTestDialogSizedAsync(save, "Save changes");
+        save.EmitSignal(AcceptDialog.SignalName.Canceled);
+        await UiTestWaitAsync(0.1);
+    }
+
     private async Task ActivityBarAsync()
     {
         var host = (AP_Atlas.UI.IPropertiesHost)this;
         var order = string.Join(",", _activityBar.Order.Select(t => t.Title));
-        UiTestExpect(order == "Map Tracker,Key Items,Logic Tracker,Item History,Hints,Cheese Tracker,Sphere Tracker,Home,Multiworlds,Games,Map Packs,Settings", $"the activity bar's order is {order}");
-        UiTestExpect(_activityBar.CaptionOf(AP_Atlas.UI.Tool.MapTracker) == "SLOT" && _activityBar.CaptionOf(AP_Atlas.UI.Tool.CheeseTracker) == "MULTIWORLD" && _activityBar.CaptionOf(AP_Atlas.UI.Tool.MapPacks) == "ATLAS",
+        UiTestExpect(order == "Home,Map Tracker,Key Items,Logic Tracker,Item History,Hints,Multiworlds,Cheese Tracker,Sphere Tracker,Games,Map Packs,Settings", $"the activity bar's order is {order}");
+        UiTestExpect(_activityBar.CaptionOf(AP_Atlas.UI.Tool.Home) == "" && _activityBar.CaptionOf(AP_Atlas.UI.Tool.MapTracker) == "ATLAS\nTOOLS" && _activityBar.CaptionOf(AP_Atlas.UI.Tool.Connections) == "ATLAS\nTOOLS"
+            && _activityBar.CaptionOf(AP_Atlas.UI.Tool.CheeseTracker) == "EXTERNAL\nTOOLS" && _activityBar.CaptionOf(AP_Atlas.UI.Tool.MapPacks) == "ATLAS\nCONFIG",
             "the groups aren't captioned as designed");
         var noIcon = AP_Atlas.UI.Tool.All.Where(t => !AP_Atlas.UI.LucideIcons.Names.Contains(t.Icon) || _activityBar.ButtonOf(t).Icon == null).Select(t => t.Title).ToList();
         UiTestExpect(noIcon.Count == 0, $"tools without a shipped icon: {string.Join(", ", noIcon)}");
@@ -2377,20 +2426,22 @@ public partial class MainTrackerWindow
         var misnamed = AP_Atlas.UI.Tool.All.Where(t => _activityBar.ButtonOf(t).Text != t.ShortTitle || _activityBar.ButtonOf(t).AccessibilityName != t.Title).Select(t => t.Title).ToList();
         UiTestExpect(misnamed.Count == 0 && _activityBar.EngineButton.Text == "Engine", $"bar buttons without their short name under the icon and their full title for screen readers: {string.Join(", ", misnamed)}");
         var shortNames = string.Join(",", _activityBar.Order.Select(t => t.ShortTitle));
-        UiTestExpect(shortNames == "Map,Items,Logic,History,Hints,Cheese,Spheres,Home,Worlds,Games,Packs,Settings", $"the short names are {shortNames}");
+        UiTestExpect(shortNames == "Home,Map,Items,Logic,History,Hints,Worlds,Cheese,Spheres,Games,Packs,Settings", $"the short names are {shortNames}");
         var bands = _activityBar.FindChildren("*", nameof(PanelContainer), true, false).OfType<PanelContainer>().Where(p => p != _activityBar).ToList();
         UiTestExpect(bands.Count == 3 && bands.All(b => b.GetThemeStylebox("panel") is StyleBoxFlat box && box.BgColor == AP_Atlas.Core.ThemeColors.AccentTint), $"{bands.Count} caption bands, not three in the accent's tint");
-        UiTestExpect(_activityBar.ButtonOf(AP_Atlas.UI.Tool.Hints).TooltipText.Contains("Ctrl+5"), $"the Hints button's tooltip is \"{_activityBar.ButtonOf(AP_Atlas.UI.Tool.Hints).TooltipText}\"");
+        UiTestExpect(bands.All(b => b.GetChild<Label>(0).Text.Split('\n').Length == 2 && b.GetChild<Label>(0).Visible) && _activityBar.ButtonOf(AP_Atlas.UI.Tool.Home).GetIndex() == 0,
+            "the captions aren't two lines each, or Home has a band above it");
+        UiTestExpect(_activityBar.ButtonOf(AP_Atlas.UI.Tool.Hints).TooltipText.Contains("Ctrl+6"), $"the Hints button's tooltip is \"{_activityBar.ButtonOf(AP_Atlas.UI.Tool.Hints).TooltipText}\"");
 
         // Pressing a button shows the tool; switching a tool any other way lights its button and names it in the header.
         host.ShowTool(AP_Atlas.UI.Tool.Connections);
         _activityBar.ButtonOf(AP_Atlas.UI.Tool.MapPacks).EmitSignal(BaseButton.SignalName.Pressed);
         await UiTestWaitAsync(0.05);
         UiTestExpect(ShownContent() == _packManagerPanel && _activityBar.Selected == AP_Atlas.UI.Tool.MapPacks, "pressing the Map Packs button didn't show Map Packs");
-        await PressAsync("Ctrl+7");
+        await PressAsync("Ctrl+9");
         UiTestExpect(ShownContent() == _sphereTab && _activityBar.Selected == AP_Atlas.UI.Tool.SphereTracker
             && _activityBar.ButtonOf(AP_Atlas.UI.Tool.SphereTracker).ButtonPressed && !_activityBar.ButtonOf(AP_Atlas.UI.Tool.MapPacks).ButtonPressed,
-            "Ctrl+7 didn't light the Sphere Tracker's button alone");
+            "Ctrl+9 didn't light the Sphere Tracker's button alone");
         UiTestExpect(_toolTitle.Text == "Sphere Tracker", $"the tool header says \"{_toolTitle.Text}\"");
 
         // The engine button opens the engine window.
@@ -2413,7 +2464,7 @@ public partial class MainTrackerWindow
         UiTestExpect(input.HasFocus(), "the palette's typing box isn't focused");
         int listed = Rows(tree).Count, expected = _commands!.All.Count(c => c.Enabled()) - 1; // the Debug Log waits for developer mode
         UiTestExpect(listed == expected, $"the palette lists {listed} commands, not every command that can run but itself ({expected})");
-        UiTestExpect(Rows(tree).Any(r => r[0] == "Map Tracker" && r[1] == "Ctrl+1"), "the palette doesn't show a command's key");
+        UiTestExpect(Rows(tree).Any(r => r[0] == "Map Tracker" && r[1] == "Ctrl+2"), "the palette doesn't show a command's key");
 
         void Type(string text)
         {
@@ -4293,7 +4344,7 @@ public partial class MainTrackerWindow
                 var dialog = new AP_Atlas.UI.DataFolderDialog(resolution.Problem!, resolution.Portable, fallback, pointer, AP_Atlas.Core.DataFolder.Probe,
                     (folder, chosen) => { decided = folder; remembered = chosen; }, () => quit = true, text => Tr(text));
                 AddChild(dialog);
-                dialog.PopupCentered(new Vector2I(660, 0));
+                AP_Atlas.UI.WindowFit.Pop(dialog, 660);
                 return dialog;
             }
             // The default: the local app data folder, made, nothing remembered.

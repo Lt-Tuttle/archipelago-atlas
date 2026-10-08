@@ -66,7 +66,7 @@ namespace AP_Atlas.UI
                 dialog.Confirmed += dialog.QueueFree;
                 dialog.Canceled += dialog.QueueFree;
                 button.AddChild(dialog);
-                dialog.PopupCentered();
+                WindowFit.Pop(dialog, 440);
             };
             return button;
         }

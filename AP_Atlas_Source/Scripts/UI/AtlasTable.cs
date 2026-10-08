@@ -774,7 +774,7 @@ namespace AP_Atlas.UI
             dialog.Canceled += dialog.QueueFree;
             AddChild(dialog);
             MainTrackerWindow.SetFontSizeRecursive(dialog, Tree.GetThemeFontSize("font_size"));
-            dialog.PopupCentered(new Vector2I(520, 0));
+            WindowFit.Pop(dialog, 520);
         }
 
         /// <summary>Asks where to save the shown rows as a CSV file (Atlas's own folder first; the user picks any other).</summary>

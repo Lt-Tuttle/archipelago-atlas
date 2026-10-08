@@ -6,7 +6,7 @@ Atlas is an unofficial community tool: it isn't affiliated with or endorsed by t
 
 ## Home
 
-Atlas opens on Home (Ctrl+8) unless Settings → Behaviour → Open on says otherwise. Its header carries Atlas's icon and wordmark, which take the theme's colours and your accent. It has:
+Atlas opens on Home (Ctrl+1) unless Settings → Behaviour → Open on says otherwise. Its header carries Atlas's icon and wordmark, which take the theme's colours and your accent. It has:
 
 - **Getting started:** the steps to a working Atlas, each with a button that sets it up in a small window right here, a quieter button to the page where it's done by hand (the step ticks either way, since it reads what Atlas has), and **Skip** for a step that doesn't apply (Show steps lists it again, with Unskip): set up the Atlas Engine (the tick appears the moment the setup finishes); **New…** makes a multiworld (its name, server and password, and its slots, typed or from a YAML, which names a slot and its game); **Connect…** lists every multiworld's slots with a Connect button each; **Find a pack…** searches GitHub once for a map pack of a game your slots play (or another you type) and shows what it found on the Map Packs page; **Link…** links a multiworld to its Cheese Tracker page, or to the host's spheretracker.de room. A step disappears once it's done or skipped, and when every step is done the section says "You're set up." with Show steps to see them again, ticked. The buttons sit beside their text at any window width, and so does the multiworld list's Connect.
 - **Your multiworlds:** the ones you've played most recently, each with a Connect button that connects every slot of it in turn.
@@ -18,7 +18,7 @@ Atlas opens on Home (Ctrl+8) unless Settings → Behaviour → Open on says othe
 
 Atlas opens at the size Windows gives other apps (it follows the display scale of the monitor it's on, and follows along when it's moved to a monitor with another scale) and keeps itself, and every dialog and window it opens, within the screen. When the window is too narrow for every part at the zoom you've chosen, Properties gives way first, then the explorer, then the slots panel; they come back as the window widens, and the View menu still shows what you asked for. The Atlas Engine and Pack Doctor windows are windows of their own: move them to another monitor, or behind Atlas, as you like.
 
-- The **activity bar** on the far left holds every tool in three groups, each captioned on a band in the accent colour: the slot tools (Map Tracker, Key Items, Logic Tracker, Item History, Hints), the multiworld tools (Cheese Tracker, Sphere Tracker) and Atlas's own pages (Home, Multiworlds, Map Packs, Settings), with the Atlas Engine's button at the bottom. Each button shows its icon with a short name under it (Map, Items, Logic, History, Hints; Cheese, Spheres; Home, Worlds, Packs, Settings; Engine); when the window is too short for the names, the icons stand alone, and the tooltip always gives the tool's full name and its key. Ctrl+1 to Ctrl+9 open the tools in the bar's order; Settings is Ctrl+, (comma), and Map Packs has no key of its own until you give it one under Settings → Keyboard.
+- The **activity bar** on the far left holds Home at the top, then three groups, each captioned on two lines on a band in the accent colour: ATLAS TOOLS (Map Tracker, Key Items, Logic Tracker, Item History, Hints, Multiworlds), EXTERNAL TOOLS (Cheese Tracker, Sphere Tracker) and, at the bottom, ATLAS CONFIG (Games, Map Packs, Settings), with the Atlas Engine's button under them. Each button shows its icon with a short name under it (Home; Map, Items, Logic, History, Hints, Worlds; Cheese, Spheres; Games, Packs, Settings; Engine); when the window is too short for the names, the icons stand alone, and the tooltip always gives the tool's full name and its key. Ctrl+1 to Ctrl+9 open Home, Map Tracker, Key Items, Logic Tracker, Item History, Hints, Multiworlds, Cheese Tracker and Sphere Tracker, in the bar's order; Settings is Ctrl+, (comma); Games and Map Packs have no key of their own until you give them one under Settings → Keyboard. A key you changed there is kept.
 - The **Slots panel** lists every connected slot as a card with its status. Click a card to make that slot the one the slot tools show. Ctrl+Tab and Ctrl+Shift+Tab go through the connected slots, and the picker in the tool header does the same.
 - The **explorer**, beside the content, is the tool's own list: the maps of a pack, the multiworlds, the packs, the Settings sections. Each tool keeps its own explorer width: drag the divider, and that tool remembers it (Map Packs and Games start wider than the rest, for their long names).
 - **Properties**, on the right, shows everything about whatever you last selected anywhere: a location, an item, a player, a hint, a map, a pack or a multiworld. It keeps a history (◀ ▶, also Alt+Left and Alt+Right), ⌂ shows the selected slot's summary, and ⧉ (Ctrl+Shift+C) copies everything shown. Its long sections (lists: a multiworld's slots, seed settings, slot data, a location's logic, an item's copies, flagged checks) start collapsed; click a header to open or close a section, and Atlas remembers your choice.
@@ -29,7 +29,7 @@ Atlas opens at the size Windows gives other apps (it follows the display scale o
 
 ## Multiworlds
 
-The Multiworlds page (Ctrl+9) holds your multiworlds: each has a name, a room link, a server address (the server and the room's port, as the room page shows them, for example `archipelago.gg:12345`; the box is empty until you fill it), a password if the room has one (the eye beside the box shows it while you check it), an optional Cheese Tracker link (the tracker's page, or the archipelago.gg room link), an optional Sphere Tracker link (the host's room on spheretracker.de; see Sphere Tracker), and the slots you play in it. Each label sits beside its box, with an (i) that says what goes there, where it comes from and whether it's needed; the whole editor scrolls when the window is short. Passwords are stored encrypted for your Windows account.
+The Multiworlds page (Ctrl+7) holds your multiworlds: each has a name, a room link, a server address (the server and the room's port, as the room page shows them, for example `archipelago.gg:12345`; the box is empty until you fill it), a password if the room has one (the eye beside the box shows it while you check it), an optional Cheese Tracker link (the tracker's page, or the archipelago.gg room link), an optional Sphere Tracker link (the host's room on spheretracker.de; see Sphere Tracker), and the slots you play in it. Each label sits beside its box, with an (i) that says what goes there, where it comes from and whether it's needed; the whole editor scrolls when the window is short. Passwords are stored encrypted for your Windows account.
 
 Paste the room link the host shared and press **Fill from link**: Atlas asks once to read the room's status page (never the room's page itself), then fills in the server address from the room's port and the slots from its players; if you had typed an address yourself, it asks before replacing it. **Save Settings** writes what you typed to disk and checks the Cheese Tracker and Sphere Tracker links. Nothing you typed vanishes silently: selecting another multiworld, adding one, leaving the page or closing Atlas with unsaved edits asks whether to save them (Save, Don't save or Cancel). A slot's new name takes effect when you press Enter or leave its field, and its saved stats follow it.
 
@@ -43,7 +43,7 @@ Atlas connects to the room's server and nothing else for a connection. It never 
 
 ## Map Tracker
 
-The Map Tracker (Ctrl+1) shows the selected slot's checks on the game's map, from a PopTracker map pack (see Map Packs). The explorer lists the pack's maps, sorted A–Z or by most checks. Drag to pan and scroll to zoom.
+The Map Tracker (Ctrl+2) shows the selected slot's checks on the game's map, from a PopTracker map pack (see Map Packs). The explorer lists the pack's maps, sorted A–Z or by most checks. Drag to pan and scroll to zoom.
 
 Each pin is coloured the way PopTracker colours it: green when every open check there is in logic, half green and half red when some are (the pin is split down the middle; its tooltip says how many), yellow when only the game's sequence-break (glitch) logic reaches them, red when none is, dark grey when all are checked, and a quiet blue while logic isn't known (the engine isn't running, or race mode hides it; the legend says which). A hinted pin has colours of its own that still say its logic: sky blue when a hinted check there is in logic, violet when none is, lavender while logic isn't known. Settings → Appearance changes any of these colours (Reset puts PopTracker's back; with colour-blind-safe colours on, the defaults are blue, orange and yellow, with bluish green and vermilion for hinted pins) and the pins' shape; a pack that sets its own pin size, border or shape for a map or a pin keeps it. Click a pin and Properties shows its locations, with why each is or isn't in logic when the engine runs. Under Display: the pin size (the wheel never changes it; drag the slider, double-click for 100%), whether excluded locations and locations not in this seed are shown, dimmed or hidden, and Hide checked pins.
 
@@ -59,7 +59,7 @@ The **Chat** tab's filters sit in one row: Chat, Hints and System (the kinds of 
 
 ## Key Items
 
-Key Items (Ctrl+2) shows the progression items you've received. The Visual view is the pack's own item grid (when the pack has one), with each tile as the pack's scripts show it; the Text view lists the items. Collected and Missing filter the list, the search box narrows it, and Item Size changes the tiles. Seed settings the pack shows are read from the slot's options.
+Key Items (Ctrl+3) shows the progression items you've received. The Visual view is the pack's own item grid (when the pack has one), with each tile as the pack's scripts show it; the Text view lists the items. Collected and Missing filter the list, the search box narrows it, and Item Size changes the tiles. Seed settings the pack shows are read from the slot's options.
 
 **Layout:** the choice beside Visual / Text lists the pack's own layouts (PopTracker's default, horizontal, vertical and broadcast, whichever the pack has) and two Atlas builds from the pack's item groups: Vertical (by group) stacks each group under its header, Horizontal (by group) sets the groups side by side. The pack's default layout is used until you pick another; the choice is kept per slot.
 
@@ -71,7 +71,7 @@ While logic can't run, a banner above the list says why and offers the way out: 
 
 - Once everything your goal needs is reachable, the Logic Tracker says **GO MODE** above its list, your slot's card says "Go mode!", and Properties shows a Goal row.
 
-The Logic Tracker (Ctrl+3) lists the slot's locations in the order they came into logic: Order, Location and Unlocked By (the item that opened it), from Archipelago's own logic running in the Atlas Engine. Properties explains any location: the items that open it, its access rule and the path to it.
+The Logic Tracker (Ctrl+4) lists the slot's locations in the order they came into logic: Order, Location and Unlocked By (the item that opened it), from Archipelago's own logic running in the Atlas Engine. Properties explains any location: the items that open it, its access rule and the path to it.
 
 The banner above the table says how far the logic can be trusted. It's exact when the slot's apworld matches the version the seed was made with; when it doesn't, Atlas can find and use that version (Fix automatically, which asks before looking anything up on GitHub and downloads only from sources you trust), or you can give it the apworld file the seed's host shared (Choose apworld file…), the YAML the seed was generated with (Link YAML…), or the GitHub project the apworld comes from (Add a source…).
 
@@ -79,17 +79,17 @@ In race mode the explanations are off, and with Hide all logic the tracker is hi
 
 ## Item History
 
-Item History (Ctrl+4) lists everything the slot has received in a table like every other: Order, Item, From (who found it) and Location. A click on Order's title puts the newest first (another, the oldest), a click on Item sorts alphabetically; the filters keep or hide progression, useful, filler and trap items, or only the ones you flagged; the search narrows the items, senders and locations, and the items still out there below it, by classification and quantity.
+Item History (Ctrl+5) lists everything the slot has received in a table like every other: Order, Item, From (who found it) and Location. A click on Order's title puts the newest first (another, the oldest), a click on Item sorts alphabetically; the filters keep or hide progression, useful, filler and trap items, or only the ones you flagged; the search narrows the items, senders and locations, and the items still out there below it, by classification and quantity.
 
 ## Hints
 
-Hints (Ctrl+5) lists the slot's hints in one table: Status, Item, For, Location, In World Of, Entrance and In Logic. My Items shows hints for items this slot will receive, My Locations hints for items hidden in this slot's world; Show Found includes hints whose item has been found, and Flagged / special only keeps the ones you've flagged or marked special. The search box narrows the table.
+Hints (Ctrl+6) lists the slot's hints in one table: Status, Item, For, Location, In World Of, Entrance and In Logic. My Items shows hints for items this slot will receive, My Locations hints for items hidden in this slot's world; Show Found includes hints whose item has been found, and Flagged / special only keeps the ones you've flagged or marked special. The search box narrows the table.
 
 A hint's status (Priority, No priority, Avoid, Unspecified) can be changed from the table for hints you own, as the Archipelago text client would. The bar at the bottom asks the server for a hint: Item (where is one of my items) or Location (what is at one of my locations), with the name completed as you type. New hints show as a toast.
 
 ## Cheese Tracker
 
-Cheese Tracker is the community tracker for async multiworlds. The Cheese Tracker tool (Ctrl+6) shows your multiworlds' trackers the way the site does: sortable columns, filters by status, availability, owner, game and text, "mine first", and a status summary, with the selected slot's notes, hints and actions below. The explorer lists My slots (yours in every linked multiworld), each multiworld, and the settings.
+Cheese Tracker is the community tracker for async multiworlds. The Cheese Tracker tool (Ctrl+8) shows your multiworlds' trackers the way the site does: sortable columns, filters by status, availability, owner, game and text, "mine first", and a status summary, with the selected slot's notes, hints and actions below. The explorer lists My slots (yours in every linked multiworld), each multiworld, and the settings.
 
 Reading a tracker needs nothing. To change statuses, claim slots and edit notes as you, Atlas needs your API key from Cheese Tracker's settings page; it's stored encrypted for your Windows account and sent only to the site. Atlas reads a linked tracker every 10 minutes while one of its slots is connected or the tool shows it, and right before any change, so a change never overwrites someone else's newer edit.
 
@@ -97,7 +97,7 @@ Atlas suggests BK, Unblocked or Go mode from its logic, and changes a slot autom
 
 ## Sphere Tracker
 
-The Sphere Tracker (Ctrl+7) shows the spheretracker.de room a multiworld's host created and shared, for one slot at a time: the slot's open locations with their spheres, its earliest open sphere, and the multiworld's earliest. The room's other tables are there as the page has them. Link the host's room to the multiworld in the tool's settings, or in the Sphere Tracker box of the Multiworlds page; Atlas reads it, and never creates rooms of its own.
+The Sphere Tracker (Ctrl+9) shows the spheretracker.de room a multiworld's host created and shared, for one slot at a time: the slot's open locations with their spheres, its earliest open sphere, and the multiworld's earliest. The room's other tables are there as the page has them. Link the host's room to the multiworld in the tool's settings, or in the Sphere Tracker box of the Multiworlds page; Atlas reads it, and never creates rooms of its own.
 
 Spheres give away the seed's structure, so nothing of this shows in race mode.
 
@@ -165,8 +165,8 @@ Every command's key is listed under Help → Keyboard Shortcuts (F1) and can be 
 
 | Key | Does |
 |---|---|
-| Ctrl+1 … Ctrl+7 | Map Tracker, Key Items, Logic Tracker, Item History, Hints, Cheese Tracker, Sphere Tracker |
-| Ctrl+8, Ctrl+9, Ctrl+, | Home, Multiworlds, Settings |
+| Ctrl+1 … Ctrl+9 | Home, Map Tracker, Key Items, Logic Tracker, Item History, Hints, Multiworlds, Cheese Tracker, Sphere Tracker |
+| Ctrl+, | Settings |
 | Ctrl+=, Ctrl+-, Ctrl+0 | Zoom in, zoom out, back to Windows' size |
 | Ctrl+Tab, Ctrl+Shift+Tab | The next and the previous connected slot |
 | Ctrl+Shift+P | The command palette |

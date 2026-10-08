@@ -709,11 +709,11 @@ namespace AP_Atlas.UI
 
         private void Confirm(string text, Action onYes)
         {
-            var dialog = new ConfirmationDialog { Title = "Atlas Engine", DialogText = text, DialogAutowrap = true, MinSize = new Vector2I(520, 0) };
+            var dialog = new ConfirmationDialog { Title = "Atlas Engine", DialogText = text, DialogAutowrap = true };
             dialog.Confirmed += () => { dialog.QueueFree(); onYes(); };
             dialog.Canceled += () => dialog.QueueFree();
             AddChild(dialog);
-            dialog.PopupCentered();
+            WindowFit.Pop(dialog, 520);
         }
 
         private static Label Header(string text)

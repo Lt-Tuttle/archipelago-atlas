@@ -77,7 +77,7 @@ public partial class MainTrackerWindow
                 then();
             }, () => GetTree().Quit(0), text => Tr(text));
         AddChild(dialog);
-        dialog.PopupCentered(new Vector2I(660, 0));
+        AP_Atlas.UI.WindowFit.Pop(dialog, 660);
     }
 
     private void Settle(string folder, DataFolder.Resolution resolution)

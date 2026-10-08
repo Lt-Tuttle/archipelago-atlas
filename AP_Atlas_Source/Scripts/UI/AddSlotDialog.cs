@@ -66,7 +66,7 @@ namespace AP_Atlas.UI
             var box = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(560, 0) };
             box.AddThemeConstantOverride("separation", 8);
             AddChild(box);
-            _problem = new Label { Visible = false, AutowrapMode = TextServer.AutowrapMode.WordSmart }; // added last; made first, since typing clears it
+            _problem = new Label { Visible = false, AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(560, 0) }; // added last; made first, since typing clears it
             _problem.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Error);
             var grid = new GridContainer { Columns = 2, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
             grid.AddThemeConstantOverride("h_separation", 10);
@@ -117,6 +117,7 @@ namespace AP_Atlas.UI
             _status = Kit.Muted("");
             _status.AutowrapMode = TextServer.AutowrapMode.WordSmart;
             _status.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+            _status.CustomMinimumSize = new Vector2(320, 0); // wrapped at a real width from the first measure
             _status.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
             statusLine.AddChild(_status);
             _statusAction = Kit.Button("", null, () => _statusActionRun?.Invoke(), small: true);
@@ -146,7 +147,7 @@ namespace AP_Atlas.UI
         {
             var dialog = new AddSlotDialog(hooks);
             parent.AddChild(dialog);
-            dialog.PopupCentered(new Vector2I(620, 0));
+            WindowFit.Pop(dialog, 620);
             Ui.Defer(dialog, () => dialog._name.GrabFocus());
             return dialog;
         }
