@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using Godot;
 
 /// <summary>
@@ -9,6 +11,16 @@ public partial class MainTrackerWindow
     private VBoxContainer? _bottomPane;
     private bool _explorerWanted; // the tool showing has an explorer
     private bool _focusMode;
+
+    // The panes' smallest widths, in logical units (the scale multiplies them). Together with the activity bar, margins and
+    // separators they must fit the window, or a pane hides itself: Properties first, then the explorer, then the slots.
+    internal const int SlotsMinWidth = 320, ExplorerMinWidth = 220, ContentMinWidth = 480, PropertiesMinWidth = 250;
+    private const int PaneSeparation = 8, OuterMargins = 16;
+
+    /// <summary>The parts hidden because the window is too narrow for them (their settings untouched; they return with the width).</summary>
+    private readonly HashSet<string> _autoHidden = new();
+    private HBoxContainer? _toolHeader; // the tool's header row above the content: its buttons need their width too
+    internal IReadOnlyCollection<string> AutoHiddenParts => _autoHidden;
 
     /// <summary>Whether the user shows a part, by the command that toggles it (the View menu's check marks).</summary>
     private bool PartShown(string commandId) => commandId switch
@@ -55,15 +67,34 @@ public partial class MainTrackerWindow
         ApplyWindowParts();
     }
 
-    /// <summary>Shows each part as the settings say, or nothing but the content in focus mode.</summary>
-    private void ApplyWindowParts()
+    /// <summary>Shows each part as the settings say, or nothing but the content in focus mode; a part the width can't hold hides itself.</summary>
+    /// <param name="width">The window's width in logical units to fit, when it's about to change; the current one otherwise.</param>
+    private void ApplyWindowParts(float? width = null)
     {
         bool show = !_focusMode;
-        if (_sidebar != null) _sidebar.Visible = show && _appSettings.ShowSlotsPanel;
-        if (_propertiesSidebar != null) _propertiesSidebar.Visible = show && _appSettings.ShowPropertiesPanel;
+        FitPanes(show, width ?? GetViewport().GetVisibleRect().Size.X);
+        if (_sidebar != null) _sidebar.Visible = show && _appSettings.ShowSlotsPanel && !_autoHidden.Contains("view.slots-panel");
+        if (_propertiesSidebar != null) _propertiesSidebar.Visible = show && _appSettings.ShowPropertiesPanel && !_autoHidden.Contains("view.properties-panel");
         if (_bottomPane != null) _bottomPane.Visible = show && _appSettings.ShowBottomPane;
         if (_globalStatusBar != null) _globalStatusBar.Visible = show && _appSettings.ShowStatusBar;
         if (_activityBar != null) _activityBar.Visible = show;
-        SetExplorerVisible(_explorerWanted);
+        SetExplorerVisible(_explorerWanted && !_autoHidden.Contains("view.explorer"));
+    }
+
+    /// <summary>Which wanted parts the window's width can hold, Properties giving way first, then the explorer, then the slots.</summary>
+    private void FitPanes(bool show, float width)
+    {
+        _autoHidden.Clear();
+        if (!show || _contentStage == null) return;
+        float available = width - OuterMargins - (_activityBar != null ? Math.Max(_activityBar.Size.X, _activityBar.GetCombinedMinimumSize().X) : 0);
+        if (available <= 0) return; // not laid out yet
+        bool slots = _appSettings.ShowSlotsPanel, explorer = _explorerWanted && _appSettings.ShowExplorer, properties = _appSettings.ShowPropertiesPanel;
+        // The middle column is as wide as its widest row: the explorer beside the content, the tool's header, or the bottom pane.
+        float header = _toolHeader?.GetCombinedMinimumSize().X ?? 0, bottom = _bottomPane?.Visible == true ? _bottomPane.GetCombinedMinimumSize().X : 0;
+        float Middle() => Math.Max(Math.Max(ContentMinWidth + (explorer ? ExplorerMinWidth + PaneSeparation : 0), header), bottom);
+        float Needed() => Middle() + (slots ? SlotsMinWidth + PaneSeparation : 0) + (properties ? PropertiesMinWidth + PaneSeparation : 0);
+        if (Needed() > available && properties) { properties = false; _autoHidden.Add("view.properties-panel"); }
+        if (Needed() > available && explorer) { explorer = false; _autoHidden.Add("view.explorer"); }
+        if (Needed() > available && slots) { slots = false; _autoHidden.Add("view.slots-panel"); }
     }
 }

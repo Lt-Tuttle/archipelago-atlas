@@ -46,7 +46,7 @@ public partial class MainTrackerWindow
         Add("view.focus-mode", "View", "Focus Mode", "F9", ToggleFocusMode);
         Add("view.zoom-in", "View", "Zoom In", "Ctrl+=", () => ZoomBy(1));
         Add("view.zoom-out", "View", "Zoom Out", "Ctrl+-", () => ZoomBy(-1));
-        Add("view.zoom-reset", "View", "Reset Zoom", "", () => SetZoom(100));
+        Add("view.zoom-reset", "View", "Reset Zoom", "Ctrl+0", () => SetZoom(100));
 
         // The tools, Ctrl+1 to Ctrl+9 in the tool list's order; a later tool brings its own key (Map Packs: Ctrl+0, Settings: Ctrl+,).
         int number = 1;

@@ -16,7 +16,9 @@ Atlas opens on Home (Ctrl+8) unless Settings → Behaviour → Open on says othe
 
 ## The window
 
-- The **activity bar** on the far left holds every tool in three groups: the slot tools (Map Tracker, Key Items, Logic Tracker, Item History, Hints), the multiworld tools (Cheese Tracker, Sphere Tracker) and Atlas's own pages (Home, Multiworlds, Map Packs, Settings), with the Atlas Engine's button at the bottom. Ctrl+1 to Ctrl+9 open the tools in the bar's order; Map Packs is Ctrl+0 and Settings Ctrl+, (comma).
+Atlas opens at the size Windows gives other apps (it follows the display scale of the monitor it's on, and follows along when it's moved to a monitor with another scale) and keeps itself, and every dialog and window it opens, within the screen. When the window is too narrow for every part at the zoom you've chosen, Properties gives way first, then the explorer, then the slots panel; they come back as the window widens, and the View menu still shows what you asked for. The Atlas Engine and Pack Doctor windows are windows of their own: move them to another monitor, or behind Atlas, as you like.
+
+- The **activity bar** on the far left holds every tool in three groups: the slot tools (Map Tracker, Key Items, Logic Tracker, Item History, Hints), the multiworld tools (Cheese Tracker, Sphere Tracker) and Atlas's own pages (Home, Multiworlds, Map Packs, Settings), with the Atlas Engine's button at the bottom. Ctrl+1 to Ctrl+9 open the tools in the bar's order; Settings is Ctrl+, (comma), and Map Packs has no key of its own until you give it one under Settings → Keyboard.
 - The **Slots panel** lists every connected slot as a card with its status. Click a card to make that slot the one the slot tools show. Ctrl+Tab and Ctrl+Shift+Tab go through the connected slots, and the picker in the tool header does the same.
 - The **explorer**, beside the content, is the tool's own list: the maps of a pack, the multiworlds, the packs, the Settings sections.
 - **Properties**, on the right, shows everything about whatever you last selected anywhere: a location, an item, a player, a hint, a map, a pack or a multiworld. It keeps a history (◀ ▶, also Alt+Left and Alt+Right), ⌂ shows the selected slot's summary, and ⧉ (Ctrl+Shift+C) copies everything shown.
@@ -85,7 +87,7 @@ Spheres give away the seed's structure, so nothing of this shows in race mode.
 
 ## Map Packs and the Pack Doctor
 
-Map Packs (Ctrl+0) lists the PopTracker packs in Atlas's packs folder (`PortableData/packs`, as zips) and installs new ones from a zip; when you ask, it looks for a game's packs on GitHub and shows what it found. A pack is read for its structure only; its images are decoded while a slot or the Pack Doctor uses it.
+Map Packs lists the PopTracker packs in Atlas's packs folder (`PortableData/packs`, as zips) and installs new ones from a zip; when you ask, it looks for a game's packs on GitHub and shows what it found. A pack is read for its structure only; its images are decoded while a slot or the Pack Doctor uses it.
 
 The **Pack Doctor** checks a pack against the game's real Archipelago names and reports what's wrong, what Atlas fixed on its own, and what you should decide, with suggestions. You can fix a pack locally: Key Items tiles, which location a pin shows, pin positions, added pins and map images, with undo and a per-fix reset, and a report ready to send to the pack's author. Fixes live in Atlas's own folder (`PortableData/pack_fixes`), never in the pack's zip. The doctor runs when a pack is installed, updated or first used, and when you open it from the page.
 
@@ -113,7 +115,7 @@ When a newer version of your channel exists, a card says so and **See what's new
 
 Settings (Ctrl+,) holds every setting in sections the explorer lists, and a search box that finds a setting by any word of its name, description or section: Multiworld (automatic reconnects, each seed's apworld version, race mode), Appearance (the theme, the colours, the zoom, the font sizes, the map's pins), Behaviour (what Atlas opens on), Window (which parts show, the bottom pane's tabs), Tools (the engine, Cheese Tracker and Sphere Tracker settings), Privacy & permissions, Keyboard, Advanced (developer mode) and Data (Atlas's data folder). Each setting applies and is saved as you change it.
 
-Under **Appearance**: the theme (Follow Windows, Dark, Light, High contrast; a change restyles the window at once and reaches everything after a restart); colour-blind-safe colours (blue for in logic, connected and done, orange for out of logic and errors, with the hint and item kinds told apart the same way, so nothing rests on red against green; also after a restart); the accent colour, a preset or any colour you pick (headings and links are lightened or darkened as needed, so they always read); the zoom of the whole window (also Ctrl+= and Ctrl+-, and Reset Zoom in the View menu); a text size for each part of the window; and the shape of the Map Tracker's pins (round, square or diamond).
+Under **Appearance**: the theme (Follow Windows, Dark, Light, High contrast; a change restyles the window at once and reaches everything after a restart); colour-blind-safe colours (blue for in logic, connected and done, orange for out of logic and errors, with the hint and item kinds told apart the same way, so nothing rests on red against green; also after a restart); the accent colour, a preset or any colour you pick (headings and links are lightened or darkened as needed, so they always read); the zoom of the whole window, relative to Windows' display scale, so 100% is the size Windows gives every other app (also Ctrl+= and Ctrl+-, and Ctrl+0 to go back to 100%); a text size for each part of the window; and the shape of the Map Tracker's pins (round, square or diamond).
 
 Under **Behaviour**: what Atlas opens on: Home, the tool you had open when it closed, or Multiworlds.
 
@@ -128,7 +130,8 @@ Every command's key is listed under Help → Keyboard Shortcuts (F1) and can be 
 | Key | Does |
 |---|---|
 | Ctrl+1 … Ctrl+7 | Map Tracker, Key Items, Logic Tracker, Item History, Hints, Cheese Tracker, Sphere Tracker |
-| Ctrl+8, Ctrl+9, Ctrl+0, Ctrl+, | Home, Multiworlds, Map Packs, Settings |
+| Ctrl+8, Ctrl+9, Ctrl+, | Home, Multiworlds, Settings |
+| Ctrl+=, Ctrl+-, Ctrl+0 | Zoom in, zoom out, back to Windows' size |
 | Ctrl+Tab, Ctrl+Shift+Tab | The next and the previous connected slot |
 | Ctrl+Shift+P | The command palette |
 | Ctrl+N | A new multiworld |

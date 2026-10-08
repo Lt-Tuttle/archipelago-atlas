@@ -399,8 +399,28 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     /// <summary>The zoom choices, in percent, as the Settings page and Ctrl+= / Ctrl+- step through them.</summary>
     internal static readonly int[] ZoomSteps = { 75, 90, 100, 110, 125, 150, 175, 200 };
 
-    /// <summary>Scales the whole window (every control, text and picture) by the zoom setting.</summary>
-    private void ApplyZoom() => GetWindow().ContentScaleFactor = _appSettings.UiZoom / 100f;
+    /// <summary>Scales the whole window (every control, text and picture) by Windows' display scale and the zoom setting, and refits the panes.</summary>
+    private void ApplyZoom()
+    {
+        AP_Atlas.UI.WindowFit.ApplyRootScale(GetWindow(), _appSettings, width => { if (_contentStage != null) ApplyWindowParts(width); }); // the panes exist once the window is built
+    }
+
+    /// <summary>
+    /// Settings from before the zoom was relative to Windows' scale: a zoom set to make up for the scale (150% on a 150%
+    /// monitor) becomes 100%, the size Windows gives other apps. Once, when the file is first loaded by this Atlas.
+    /// </summary>
+    private void MigrateZoom()
+    {
+        if (_appSettings.SettingsVersion >= 1) return;
+        float windows = AP_Atlas.UI.WindowFit.WindowsScale(GetWindow().CurrentScreen);
+        if (_appSettings.UiZoom != 100 && windows > 1.01f)
+        {
+            int relative = (int)Math.Round(_appSettings.UiZoom / windows);
+            _appSettings.UiZoom = ZoomSteps.OrderBy(step => Math.Abs(step - relative)).First();
+        }
+        _appSettings.SettingsVersion = 1;
+        DataManager.SaveSettings(_appSettings);
+    }
 
     private void SetZoom(int percent)
     {

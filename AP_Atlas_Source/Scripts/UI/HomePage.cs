@@ -13,6 +13,22 @@ namespace AP_Atlas.UI
     /// </summary>
     public sealed partial class HomePage : VBoxContainer
     {
+        /// <summary>A tool card's smallest width, and a feature card's, in logical units: the grids' columns come from them.</summary>
+        public const int ToolCardWidth = 270, FeatureCardWidth = 340;
+        private GridContainer? _tools, _features;
+
+        /// <summary>The tool cards' columns and the feature cards' (for tests).</summary>
+        public int ToolColumns => _tools?.Columns ?? 0;
+        public int FeatureColumns => _features?.Columns ?? 0;
+
+        private void Reflow(float width)
+        {
+            if (_tools == null || _features == null || width <= 0) return;
+            int toolColumns = Math.Clamp((int)(width / ToolCardWidth), 1, 3), featureColumns = Math.Clamp((int)(width / FeatureCardWidth), 1, 2);
+            if (_tools.Columns != toolColumns) _tools.Columns = toolColumns;
+            if (_features.Columns != featureColumns) _features.Columns = featureColumns;
+        }
+
         /// <summary>What Home reads, and what its buttons do, from the window.</summary>
         public sealed class Hooks
         {
@@ -104,7 +120,8 @@ namespace AP_Atlas.UI
             Name = "Home";
             SizeFlagsHorizontal = SizeFlags.ExpandFill;
             SizeFlagsVertical = SizeFlags.ExpandFill;
-            var scroll = new ScrollContainer { HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled, SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
+            // The page never asks the window for width (ShowNever: no sideways scrolling, and the grids below fold to fit instead).
+            var scroll = new ScrollContainer { HorizontalScrollMode = ScrollContainer.ScrollMode.ShowNever, SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
             AddChild(scroll);
             var margin = new MarginContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
             foreach (string side in new[] { "margin_left", "margin_right", "margin_top", "margin_bottom" }) margin.AddThemeConstantOverride(side, 24);
@@ -127,7 +144,10 @@ namespace AP_Atlas.UI
             titles.AddThemeConstantOverride("separation", 4);
             _wordmark = Wordmark.Make(80, _tr("The Archipelago Atlas"));
             titles.AddChild(_wordmark);
-            titles.AddChild(Kit.Text(_tr("Maps, logic, hints and the trackers your group uses, in one window."), AP_Atlas.Core.ThemeColors.TextMuted));
+            var tagline = Kit.Text(_tr("Maps, logic, hints and the trackers your group uses, in one window."), AP_Atlas.Core.ThemeColors.TextMuted);
+            tagline.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+            tagline.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+            titles.AddChild(tagline);
             header.AddChild(titles);
             body.AddChild(header);
 
@@ -155,7 +175,7 @@ namespace AP_Atlas.UI
 
             // The tools.
             body.AddChild(Kit.Heading(_tr("Tools"), 1.25f));
-            var tools = new GridContainer { Columns = 3, SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            var tools = _tools = new GridContainer { Columns = 3, SizeFlagsHorizontal = SizeFlags.ExpandFill };
             tools.AddThemeConstantOverride("h_separation", 10);
             tools.AddThemeConstantOverride("v_separation", 10);
             foreach (var tool in Tool.All)
@@ -167,8 +187,10 @@ namespace AP_Atlas.UI
 
             // What sets Atlas apart.
             body.AddChild(Kit.Heading(_tr("What sets Atlas apart"), 1.25f));
-            var features = new GridContainer { Columns = 2, SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            var features = _features = new GridContainer { Columns = 2, SizeFlagsHorizontal = SizeFlags.ExpandFill };
             features.AddThemeConstantOverride("h_separation", 10);
+            // The grids take as many columns as the width allows (a narrow window, or a large zoom), set only when that changes.
+            scroll.Resized += () => Ui.DeferQuiet(this, () => Reflow(scroll.Size.X - 48));
             features.AddThemeConstantOverride("v_separation", 10);
             features.AddChild(FeatureCard("Asks first", "Nothing outside Atlas's own folder, and nothing new online, without your yes. Settings → Privacy & permissions lists every answer, and takes any back."));
             features.AddChild(FeatureCard("Easy on the servers", "Polite, capped and backed-off traffic to archipelago.gg and every other site, and a closed room is never kept busy."));
@@ -347,8 +369,11 @@ namespace AP_Atlas.UI
             row.AddChild(mark);
             var text = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ShrinkCenter };
             text.AddThemeConstantOverride("separation", 2);
-            text.AddChild(new Label { Text = _tr(title) });
-            text.AddChild(Small(_tr(description)));
+            text.AddChild(new Label { Text = _tr(title), AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill });
+            var about = Small(_tr(description));
+            about.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+            about.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+            text.AddChild(about);
             row.AddChild(text);
             var button = new Button { Text = _tr(buttonText), SizeFlagsVertical = SizeFlags.ShrinkCenter };
             button.Pressed += act;

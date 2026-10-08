@@ -25,8 +25,15 @@ public class AppSettings
     public string Theme { get; set; } = "follow";
     /// <summary>The theme's colour-blind-safe palette (blue and orange in place of green and red) instead of its usual one.</summary>
     public bool ColourBlindSafe { get; set; } = false;
-    /// <summary>The whole window's zoom, in percent (100 = as designed).</summary>
+    /// <summary>The whole window's zoom, in percent, relative to Windows' display scale (100 = the size Windows gives other apps).</summary>
     public int UiZoom { get; set; } = 100;
+    /// <summary>The settings' shape; a file from an older Atlas (a lower number) is migrated once when it's loaded.</summary>
+    public int SettingsVersion { get; set; } = 0;
+    /// <summary>The newest shape: 1 = the zoom is relative to Windows' display scale (2026-10).</summary>
+    public const int CurrentSettingsVersion = 1;
+    /// <summary>Whether this is a new file (nothing was remembered): the window takes its first size and place.</summary>
+    [Newtonsoft.Json.JsonIgnore]
+    public bool Fresh { get; set; }
     /// <summary>Whether the Atlas Engine window shows its log pane (pip's and Python's own lines); off until asked for.</summary>
     public bool EngineLogShown { get; set; } = false;
     /// <summary>The Map Tracker's pin shape: "round", "square" or "diamond".</summary>
@@ -317,7 +324,7 @@ public static class DataManager
 
     public static AppSettings LoadSettings()
     {
-        var settings = AP_Atlas.Core.SafeFile.ReadJson(Path.Combine(GetDataDirectory(), "settings.json"), () => new AppSettings());
+        var settings = AP_Atlas.Core.SafeFile.ReadJson(Path.Combine(GetDataDirectory(), "settings.json"), () => new AppSettings { SettingsVersion = AppSettings.CurrentSettingsVersion, Fresh = true });
         // Older or hand-edited files can leave collections null.
         settings.MapCameras ??= new Dictionary<string, MapCameraSave>();
         settings.CollapsedPropertySections ??= new List<string>();

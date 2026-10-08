@@ -56,9 +56,7 @@ namespace AP_Atlas.UI
             var w = new PackDoctorWindow(original, fontSize) { _focusPinPath = focusPinPath };
             if (focusPinPath != null) startTab = "Maps";
             _open[key] = w;
-            anyNode.GetTree().Root.AddChild(w);
-            var screen = DisplayServer.ScreenGetSize();
-            w.PopupCentered(new Vector2I((int)(screen.X * 0.72f), (int)(screen.Y * 0.78f)));
+            WindowFit.ShowNative(w, anyNode, new Vector2I(1100, 760), new Vector2I(900, 600));
             if (startTab != null) w.SelectTab(startTab);
         }
 

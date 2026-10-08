@@ -86,6 +86,9 @@ public partial class MainTrackerWindow
         }
 
         await UiTestWaitAsync(1.0); // the window settles, as on a first run
+        // A window a desktop user would have (1600x1000): every pane fits at 100%, so the scenarios see Atlas whole.
+        GetTree().Root.Size = new Vector2I(1600, 1000);
+        await UiTestWaitAsync(0.3);
         await ScenarioAsync("Startup: Atlas opens on Home", () =>
         {
             UiTestExpect(ShownContent() == _homePage && _activityBar.Selected == AP_Atlas.UI.Tool.Home, $"Atlas opened on {ShownContent()?.Name ?? "nothing"}");
@@ -141,6 +144,8 @@ public partial class MainTrackerWindow
             DataFolderAsync);
         await ScenarioAsync("Engine setup panel: the short setup asks the engine permission first and starts nothing until it's answered; the panel says the step it's on in plain words (never pip's lines), says why a run stopped with Try again and Show details, Try again runs it again, Show details opens the full window with its log (hidden by default otherwise), and Don't allow starts nothing",
             EngineSetupPanelAsync);
+        await ScenarioAsync("Display scale: at Windows' 125% to 200% on 1080p, 1440p and 4K screens, and in an 1100-wide window at 125%, the window is drawn at that scale with a smallest size that fits, every pane stays inside it without overlapping (Properties hides itself when the width can't hold it, its setting kept), Home's cards take the columns the width allows, and the Engine window, About, Help, the shortcuts, a confirmation and the command palette each fit the window they open in",
+            DisplayScaleAsync);
         await ScenarioAsync("Crash reports: a problem last time is offered as a card; the dialog shows the whole report as it would be sent, with the user's name, paths, the server, the slot and an e-mail replaced by marks; Send once posts a Sentry envelope to the project (scrubbed, with the note) and the file isn't offered again; with Always send, the next is sent without asking; Don't send dismisses it and nothing is posted; Help → Report a problem writes a scrubbed zip in Atlas's folder and uploads nothing; a build without an address offers nothing",
             CrashReportsAsync);
         await ScenarioAsync("Customization: a custom accent of any colour recolours Atlas, is saved, and its headings and links still read (the preset choice says Custom); colour-blind-safe colours are the theme's other palette, held to the contrast rule, saved and undone; the zoom choice, Ctrl+= and Ctrl+- scale the window and are saved; the pin shape is saved and every map redraws, a diamond being a square on its corner; the page Atlas opens on is saved and the last tool shown is remembered for it",
@@ -626,8 +631,9 @@ public partial class MainTrackerWindow
         UiTestExpect(tools.GetItemText(0) == "Map Tracker" && ShortcutShown(tools, 0) == "Ctrl+1", $"the Tools menu's first item is \"{tools.GetItemText(0)}\" with \"{ShortcutShown(tools, 0)}\"");
 
         host.ShowTool(AP_Atlas.UI.Tool.Connections);
-        await PressAsync("Ctrl+0");
-        UiTestExpect(ShownContent() == _packManagerPanel, "Ctrl+0 didn't show Map Packs");
+        _commands!.Run("tool.map-packs");
+        UiTestExpect(ShownContent() == _packManagerPanel, "the Map Packs command didn't show Map Packs");
+        UiTestExpect(_commands.ShortcutOf("tool.map-packs") == "" && _commands.ShortcutOf("view.zoom-reset") == "Ctrl+0", "Ctrl+0 belongs to Reset Zoom, and Map Packs has no default key");
         await PressAsync("Ctrl+7");
         UiTestExpect(ShownContent() == _sphereTab, "Ctrl+7 didn't show the Sphere Tracker");
         // A rebind in the settings takes over at once (as a user might type it), and the old key means nothing.
@@ -637,8 +643,8 @@ public partial class MainTrackerWindow
             await PressAsync("Ctrl+F6");
             UiTestExpect(ShownContent() == _packManagerPanel, "a rebound key (Ctrl+F6) didn't show Map Packs");
             host.ShowTool(AP_Atlas.UI.Tool.SphereTracker);
-            await PressAsync("Ctrl+0");
-            UiTestExpect(ShownContent() == _sphereTab, "the old key still works after a rebind");
+            await PressAsync("Ctrl+F7"); // nothing's key
+            UiTestExpect(ShownContent() == _sphereTab, "a key that isn't anyone's switched tools");
             await PressAsync("F1");
             var shortcuts = await UiTestWaitForAsync(() => GetChildren().OfType<AcceptDialog>().FirstOrDefault(d => d.Title == "Keyboard Shortcuts"), "the shortcuts dialog");
             // The table lays out only the rows on screen: the list is its shown rows.
@@ -673,8 +679,8 @@ public partial class MainTrackerWindow
         UiTestExpect(page.SearchHasFocus, "the search box isn't ready to type into");
         UiTestExpect(_midLeftSidebar.Visible && page.SectionList.Visible, "the explorer doesn't list the sections");
         // The tools' keys still work while the search box has the focus.
-        await PressAsync("Ctrl+0");
-        UiTestExpect(ShownContent() == _packManagerPanel, "Ctrl+0 didn't switch tools while the search box had the focus");
+        await PressAsync("Ctrl+8");
+        UiTestExpect(ShownContent() == _homePage, "Ctrl+8 didn't switch tools while the search box had the focus");
         host.ShowTool(AP_Atlas.UI.Tool.Settings);
 
         // Each kind of row changes its setting at once and saves it.
@@ -781,12 +787,12 @@ public partial class MainTrackerWindow
         ShowSettings("keyboard");
         await UiTestWaitAsync(0.1);
         UiTestExpect(ShownContent() == page && page.ScrollPosition > 0, "the keyboard section didn't show");
-        UiTestExpect(capture.Key == "Ctrl+0" && capture.Text == "Ctrl+0" && reset.Disabled && !conflict.Visible, $"Map Packs' row shows \"{capture.Text}\", reset {(reset.Disabled ? "off" : "on")}, conflict {conflict.Visible}");
+        UiTestExpect(capture.Key == "" && reset.Disabled && !conflict.Visible, $"Map Packs' row shows \"{capture.Text}\" (no default key), reset {(reset.Disabled ? "off" : "on")}, conflict {conflict.Visible}");
         try
         {
             // Press the key's button, then a key: the command runs on it at once, the menus and the bar show it, and it's saved.
             capture.EmitSignal(BaseButton.SignalName.Pressed);
-            UiTestExpect(capture.Capturing && capture.Text != "Ctrl+0", "pressing the key's button didn't start waiting for a key");
+            UiTestExpect(capture.Capturing, "pressing the key's button didn't start waiting for a key");
             capture.EmitSignal(Control.SignalName.GuiInput, AP_Atlas.UI.CommandKeys.ToEvent("Ctrl+F6")!);
             UiTestExpect(!capture.Capturing && capture.Key == "Ctrl+F6" && _appSettings.KeyBindings.GetValueOrDefault("tool.map-packs") == "Ctrl+F6"
                 && DataManager.LoadSettings().KeyBindings.GetValueOrDefault("tool.map-packs") == "Ctrl+F6", "the pressed key wasn't taken, or wasn't saved");
@@ -808,8 +814,8 @@ public partial class MainTrackerWindow
 
             // Reset: the default key again, the rebind forgotten.
             reset.EmitSignal(BaseButton.SignalName.Pressed);
-            UiTestExpect(!_appSettings.KeyBindings.ContainsKey("tool.map-packs") && capture.Key == "Ctrl+0" && reset.Disabled && !conflict.Visible && !otherConflict.Visible
-                && ShortcutShown(tools, item) == "Ctrl+0", "the reset didn't bring the default key back");
+            UiTestExpect(!_appSettings.KeyBindings.ContainsKey("tool.map-packs") && capture.Key == "" && reset.Disabled && !conflict.Visible && !otherConflict.Visible
+                && ShortcutShown(tools, item) == "", "the reset didn't bring the default (no key) back");
 
             // Backspace: no key at all.
             capture.EmitSignal(BaseButton.SignalName.Pressed);
@@ -825,12 +831,12 @@ public partial class MainTrackerWindow
             // Escape keeps the key; a modifier on its own isn't a key; losing the focus ends the wait.
             capture.EmitSignal(BaseButton.SignalName.Pressed);
             capture.EmitSignal(Control.SignalName.GuiInput, AP_Atlas.UI.CommandKeys.ToEvent("Escape")!);
-            UiTestExpect(!capture.Capturing && capture.Key == "Ctrl+0" && !_appSettings.KeyBindings.ContainsKey("tool.map-packs"), "Escape didn't keep the key as it was");
+            UiTestExpect(!capture.Capturing && capture.Key == "" && !_appSettings.KeyBindings.ContainsKey("tool.map-packs"), "Escape didn't keep the key as it was");
             capture.EmitSignal(BaseButton.SignalName.Pressed);
             capture.EmitSignal(Control.SignalName.GuiInput, new InputEventKey { Pressed = true, Keycode = Key.Ctrl, CtrlPressed = true });
-            UiTestExpect(capture.Capturing && capture.Key == "Ctrl+0", "a modifier on its own was taken as the key");
+            UiTestExpect(capture.Capturing && capture.Key == "", "a modifier on its own was taken as the key");
             capture.EmitSignal(Control.SignalName.FocusExited);
-            UiTestExpect(!capture.Capturing && capture.Text == "Ctrl+0", "losing the focus didn't end the wait");
+            UiTestExpect(!capture.Capturing && capture.Key == "", "losing the focus didn't end the wait");
 
             // The rows are found by the command's words; the F1 list leads here.
             page.Search("map packs");
@@ -1327,13 +1333,14 @@ public partial class MainTrackerWindow
 
         // Zoom: the choice scales the window at once and is saved; Ctrl+= and Ctrl+- step through the choices.
         var zoom = (OptionButton)page.ControlOf("ui-zoom");
-        UiTestExpect(zoom.Selected == Array.IndexOf(ZoomSteps, 100) && Mathf.IsEqualApprox(GetWindow().ContentScaleFactor, 1f), "the zoom isn't 100% to begin with");
+        float windows = AP_Atlas.UI.WindowFit.WindowsScale(GetWindow().CurrentScreen);
+        UiTestExpect(zoom.Selected == Array.IndexOf(ZoomSteps, 100) && Mathf.IsEqualApprox(GetWindow().ContentScaleFactor, windows), "the zoom isn't 100% to begin with");
         int step150 = Array.IndexOf(ZoomSteps, 150);
         zoom.Select(step150);
         zoom.EmitSignal(OptionButton.SignalName.ItemSelected, step150);
-        UiTestExpect(_appSettings.UiZoom == 150 && Mathf.IsEqualApprox(GetWindow().ContentScaleFactor, 1.5f) && DataManager.LoadSettings().UiZoom == 150, "picking 150% didn't scale the window, or wasn't saved");
+        UiTestExpect(_appSettings.UiZoom == 150 && Mathf.IsEqualApprox(GetWindow().ContentScaleFactor, windows * 1.5f) && DataManager.LoadSettings().UiZoom == 150, "picking 150% didn't scale the window, or wasn't saved");
         await PressAsync("Ctrl+=");
-        UiTestExpect(_appSettings.UiZoom == 175 && Mathf.IsEqualApprox(GetWindow().ContentScaleFactor, 1.75f) && zoom.Selected == Array.IndexOf(ZoomSteps, 175), "Ctrl+= didn't zoom in a step, or the choice doesn't show it");
+        UiTestExpect(_appSettings.UiZoom == 175 && Mathf.IsEqualApprox(GetWindow().ContentScaleFactor, windows * 1.75f) && zoom.Selected == Array.IndexOf(ZoomSteps, 175), "Ctrl+= didn't zoom in a step, or the choice doesn't show it");
         await PressAsync("Ctrl+-");
         await PressAsync("Ctrl+-");
         UiTestExpect(_appSettings.UiZoom == 125, $"two Ctrl+- didn't zoom out two steps (at {_appSettings.UiZoom}%)");
@@ -1346,7 +1353,10 @@ public partial class MainTrackerWindow
         int step100 = Array.IndexOf(ZoomSteps, 100);
         zoom.Select(step100);
         zoom.EmitSignal(OptionButton.SignalName.ItemSelected, step100);
-        UiTestExpect(_appSettings.UiZoom == 100 && Mathf.IsEqualApprox(GetWindow().ContentScaleFactor, 1f), "the zoom didn't go back to 100%");
+        UiTestExpect(_appSettings.UiZoom == 100 && Mathf.IsEqualApprox(GetWindow().ContentScaleFactor, windows), "the zoom didn't go back to 100%");
+        await PressAsync("Ctrl+=");
+        await PressAsync("Ctrl+0");
+        UiTestExpect(_appSettings.UiZoom == 100, "Ctrl+0 didn't reset the zoom");
 
         // The pin shape: saved, every map redraws; a diamond is a square turned on its corner, a round pin's corners are as wide as it is.
         var markers = (OptionButton)page.ControlOf("map-markers");
@@ -3065,6 +3075,90 @@ public partial class MainTrackerWindow
     }
 
     /// <summary>The short setup: the permission first, then the panel's plain-words steps, Try again and Show details; never pip's lines.</summary>
+    /// <summary>
+    /// Atlas at Windows' display scale on real screens (1080p to 4K at 125% to 200%) and in a narrow window. Every pane stays inside the
+    /// window without overlapping (Properties hides itself when the width can't hold it, its setting untouched), Home's
+    /// cards take the columns the width allows, and every window and dialog fits the window it opens in.
+    /// </summary>
+    private async Task DisplayScaleAsync()
+    {
+        var root = GetTree().Root;
+        var sizeBefore = root.Size;
+        bool propertiesBefore = _appSettings.ShowPropertiesPanel;
+        try
+        {
+            // Real screens: 4K at 150% and 200%, 1440p at 150%, 1080p at 125% and 150%, and an 1100x900 window at 125% (880 logical units wide: Properties can't fit there).
+            foreach (var (scale, size) in new[] { (1.5f, new Vector2I(3840, 2160)), (2.0f, new Vector2I(3840, 2160)), (1.5f, new Vector2I(2560, 1440)), (1.25f, new Vector2I(1920, 1080)), (1.5f, new Vector2I(1920, 1080)), (1.25f, new Vector2I(1100, 900)) })
+            {
+                AP_Atlas.UI.WindowFit.TestScale = scale;
+                AP_Atlas.UI.WindowFit.TestUsableRect = new Rect2I(Vector2I.Zero, size);
+                root.Size = size;
+                _appSettings.ShowPropertiesPanel = true;
+                ApplyZoom();
+                await UiTestWaitAsync(0.4);
+                string at = $"at {scale}x in {size.X}x{size.Y}";
+                GD.Print($"UITEST INFO root {at}: mode {root.Mode}, size {root.Size}, min {root.MinSize}, factor {root.ContentScaleFactor}, visible {GetViewport().GetVisibleRect().Size}");
+                UiTestExpect(Mathf.IsEqualApprox(root.ContentScaleFactor, scale), $"the window isn't drawn at Windows' scale {at}");
+                UiTestExpect(root.MinSize.X <= size.X && root.MinSize.Y <= size.Y, $"the window's smallest size {root.MinSize} doesn't fit the screen {at}");
+                var visible = GetViewport().GetVisibleRect();
+                var panes = new (string Name, Control? Node)[] { ("the activity bar", _activityBar), ("the slots panel", _sidebar), ("the explorer", _midLeftSidebar), ("the content", _contentStage), ("Properties", _propertiesSidebar), ("the status bar", _globalStatusBar) }
+                    .Where(p => p.Node != null && p.Node.IsVisibleInTree()).ToList();
+                foreach (var (name, node) in panes)
+                {
+                    var rect = node!.GetGlobalRect();
+                    UiTestExpect(rect.Position.X >= -0.5f && rect.Position.Y >= -0.5f && rect.End.X <= visible.Size.X + 0.5f && rect.End.Y <= visible.Size.Y + 0.5f, $"{name} is off the window {at}: {rect} in {visible.Size}");
+                }
+                var across = panes.Where(p => p.Name != "the status bar").Select(p => p.Node!.GetGlobalRect()).OrderBy(r => r.Position.X).ToList();
+                for (int i = 1; i < across.Count; i++)
+                    UiTestExpect(across[i - 1].End.X <= across[i].Position.X + 0.5f || across[i - 1].Position.X == across[i].Position.X, $"panes overlap {at}: one ends at {across[i - 1].End.X}, the next starts at {across[i].Position.X}");
+                if (size.X == 1100)
+                    UiTestExpect(AutoHiddenParts.Contains("view.properties-panel") && _appSettings.ShowPropertiesPanel, $"Properties should hide itself {at} with its setting kept");
+                else
+                    UiTestExpect(!AutoHiddenParts.Contains("view.properties-panel"), $"Properties hid itself {at} though it fits");
+
+                ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.Home);
+                await UiTestWaitAsync(0.3);
+                var home = _homePage!;
+                float width = _contentStage!.Size.X;
+                UiTestExpect(home.ToolColumns >= 1 && home.ToolColumns * AP_Atlas.UI.HomePage.ToolCardWidth <= width + AP_Atlas.UI.HomePage.ToolCardWidth, $"Home's {home.ToolColumns} tool columns don't fit {width} {at}");
+                UiTestExpect(home.FeatureColumns >= 1 && home.FeatureColumns * AP_Atlas.UI.HomePage.FeatureCardWidth <= width + AP_Atlas.UI.HomePage.FeatureCardWidth, $"Home's {home.FeatureColumns} feature columns don't fit {width} {at}");
+
+                // Every window and dialog fits the window it opens in (embedded here: a headless run has no native windows).
+                async Task FitsAsync<T>(Func<T?> find, string what, Action close) where T : Window
+                {
+                    var window = await UiTestWaitForAsync(find, what);
+                    await UiTestWaitAsync(0.3);
+                    var area = AP_Atlas.UI.WindowFit.AvailableLogical(window).Size;
+                    UiTestExpect(window.Position.X >= 0 && window.Position.Y >= 0 && window.Position.X + window.Size.X <= area.X && window.Position.Y + window.Size.Y <= area.Y,
+                        $"{what} doesn't fit {at}: at {window.Position} size {window.Size} in {area}");
+                    close();
+                    await UiTestWaitAsync(0.2);
+                }
+                OpenEngineWindow();
+                await FitsAsync(() => root.GetChildren().OfType<AP_Atlas.UI.AtlasEngineWindow>().FirstOrDefault(), "the Atlas Engine window", () => root.GetChildren().OfType<AP_Atlas.UI.AtlasEngineWindow>().First().EmitSignal(Window.SignalName.CloseRequested));
+                _commands!.Run("help.about");
+                await FitsAsync(() => GetChildren().OfType<AcceptDialog>().FirstOrDefault(d => d.Title == "About The Archipelago Atlas"), "the About dialog", () => GetChildren().OfType<AcceptDialog>().First(d => d.Title == "About The Archipelago Atlas").GetOkButton().EmitSignal(BaseButton.SignalName.Pressed));
+                _commands.Run("help.guide");
+                await FitsAsync(() => GetChildren().OfType<AP_Atlas.UI.HelpWindow>().FirstOrDefault(), "the Help window", () => GetChildren().OfType<AP_Atlas.UI.HelpWindow>().First().GetOkButton().EmitSignal(BaseButton.SignalName.Pressed));
+                _commands.Run("help.shortcuts");
+                await FitsAsync(() => GetChildren().OfType<AcceptDialog>().FirstOrDefault(d => d.Title == "Keyboard Shortcuts"), "the shortcuts dialog", () => GetChildren().OfType<AcceptDialog>().First(d => d.Title == "Keyboard Shortcuts").GetOkButton().EmitSignal(BaseButton.SignalName.Pressed));
+                AP_Atlas.UI.Dialogs.Confirm(this, "Fit?", "A confirmation that must fit the window at any scale, however long its text runs on, and it runs on for a while to be sure the label wraps.", "OK", () => { });
+                await FitsAsync(() => GetChildren().OfType<ConfirmationDialog>().FirstOrDefault(d => d.Title == "Fit?"), "a confirmation", () => GetChildren().OfType<ConfirmationDialog>().First(d => d.Title == "Fit?").EmitSignal(ConfirmationDialog.SignalName.Canceled));
+                await PressAsync("Ctrl+Shift+P");
+                await FitsAsync(() => GetChildren().OfType<AP_Atlas.UI.CommandPalette>().FirstOrDefault(), "the command palette", () => GetChildren().OfType<AP_Atlas.UI.CommandPalette>().First().Hide());
+            }
+        }
+        finally
+        {
+            AP_Atlas.UI.WindowFit.TestScale = null;
+            AP_Atlas.UI.WindowFit.TestUsableRect = null;
+            _appSettings.ShowPropertiesPanel = propertiesBefore;
+            root.Size = sizeBefore;
+            ApplyZoom();
+            await UiTestWaitAsync(0.3);
+        }
+    }
+
     private async Task EngineSetupPanelAsync()
     {
         var kind = AP_Atlas.Core.Permissions.EngineSetup;

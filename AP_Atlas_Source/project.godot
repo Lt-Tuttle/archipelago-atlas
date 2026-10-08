@@ -34,6 +34,10 @@ project/assembly_name="AP_Atlas"
 
 window/size/viewport_width=1152
 window/size/viewport_height=648
+window/dpi/allow_hidpi=true
+window/stretch/mode="disabled"
+window/stretch/aspect="ignore"
+window/subwindows/embed_subwindows=true
 
 [rendering]
 

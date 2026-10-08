@@ -69,7 +69,16 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 return;
             }
         }
+        AP_Atlas.Core.Logger.LogInfo("Closing: the window is going; the engine's processes and the rest end with it.");
         GetTree().Quit();
+        // A last resort: a process that stays alive after its window closed keeps the one-instance lock for its folder, and
+        // the next start says "Atlas is already open" with no Atlas in sight. Everything worth keeping was saved above.
+        AP_Atlas.Core.Async.Fire(Task.Run(async () =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+            AP_Atlas.Core.Logger.LogWarning("Atlas hadn't ended 10 seconds after closing; ending it now.");
+            System.Environment.Exit(0);
+        }), "ending Atlas after closing", tellUser: false);
     }
     /// <summary>Slots with a login in flight, keyed by SlotKey(profileId, slotName).</summary>
     private System.Collections.Generic.HashSet<string> _connectingSlots = new System.Collections.Generic.HashSet<string>();

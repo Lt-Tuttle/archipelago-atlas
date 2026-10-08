@@ -140,6 +140,9 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         // The visual check pictures one theme at a time (dark unless asked), never the PC's Windows mode.
         if (VisualCheckRequested) _appSettings.Theme = System.Environment.GetEnvironmentVariable("ATLAS_VISUALCHECK_THEME") is { Length: > 0 } theme ? theme : "dark";
         AP_Atlas.Core.ThemeColors.SetPalette(AP_Atlas.Core.ThemeColors.PaletteForSetting(_appSettings.Theme, _appSettings.ColourBlindSafe));
+        // Every dialog and window fits the screen it opens on, and the window follows Windows' display scale.
+        AP_Atlas.UI.WindowFit.Watch(GetTree(), () => _appSettings);
+        MigrateZoom();
         ApplyZoom();
         // The alert feed: what Atlas tells the user, stacked at the bottom right, kept for Window → Notifications.
         _alerts = new AP_Atlas.UI.AlertFeed(_alertLog, text => Tr(text), () => _appSettings.GlobalFontSize, VisualCheckRequested);
@@ -170,25 +173,14 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 var tracker = _cheese?.RoomView(p.Id)?.Tracker;
                 return (tracker?.UpstreamUrl, tracker?.OwnerName);
             });
-        // Restore window state
+        // The window where it was (kept within its screen, whole), or its first size and place at Windows' scale.
         var window = GetTree().Root;
-        if (_appSettings.WindowWidth > 0 && _appSettings.WindowHeight > 0)
-        {
-            window.Size = new Vector2I(_appSettings.WindowWidth, _appSettings.WindowHeight);
-        }
-        if (_appSettings.WindowX >= 0 && _appSettings.WindowY >= 0)
-        {
-            // Only set position if it's roughly on screen
-            var screenRect = DisplayServer.ScreenGetUsableRect(DisplayServer.WindowGetCurrentScreen());
-            if (screenRect.HasPoint(new Vector2I(_appSettings.WindowX, _appSettings.WindowY)))
-            {
-                window.Position = new Vector2I(_appSettings.WindowX, _appSettings.WindowY);
-            }
-        }
+        AP_Atlas.UI.WindowFit.PlaceRoot(window, _appSettings, _appSettings.Fresh);
         if (_appSettings.WindowMaximized)
         {
             window.Mode = Window.ModeEnum.Maximized;
         }
+        window.SizeChanged += () => AP_Atlas.UI.Ui.DeferQuiet(this, () => ApplyWindowParts());
         SetAnchorsPreset(LayoutPreset.FullRect);
         var rootVbox = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
         rootVbox.SetAnchorsPreset(LayoutPreset.FullRect);
@@ -218,7 +210,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _mainSplit.AddThemeConstantOverride("separation", 8);
         appWorkspaceHBox.AddChild(_mainSplit);
         // --- 1. FAR LEFT SLOTS SIDEBAR ---
-        _sidebar = new PanelContainer { SizeFlagsVertical = SizeFlags.ExpandFill, CustomMinimumSize = new Godot.Vector2(400, 0) };
+        _sidebar = new PanelContainer { SizeFlagsVertical = SizeFlags.ExpandFill, CustomMinimumSize = new Godot.Vector2(SlotsMinWidth, 0) };
         _sidebar.AddThemeStyleboxOverride("panel", GetVSCodePanelStyle());
         _mainSplit.AddChild(_sidebar);
         var sidebarMargin = new MarginContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
@@ -252,7 +244,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         rightOfSidebarSplit.Dragged += (offset) => { _appSettings.SplitRightSidebarOffset = (int)offset; DataManager.SaveSettingsSoon(_appSettings); };
         rightOfSidebarSplit.AddThemeConstantOverride("separation", 8);
         // --- 3. MID LEFT EXPLORER SIDEBAR ---
-        _midLeftSidebar = new PanelContainer { SizeFlagsVertical = SizeFlags.ExpandFill, CustomMinimumSize = new Godot.Vector2(250, 0), Visible = false };
+        _midLeftSidebar = new PanelContainer { SizeFlagsVertical = SizeFlags.ExpandFill, CustomMinimumSize = new Godot.Vector2(ExplorerMinWidth, 0), Visible = false };
         _midLeftStyle = GetVSCodePanelStyle();
         _midLeftStyle.CornerRadiusTopLeft = 0; // Seamless connection to the tab bar while the explorer is shown
         _midLeftSidebar.AddThemeStyleboxOverride("panel", _midLeftStyle);
@@ -275,7 +267,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         // --- 4. CENTER STAGE AND BOTTOM TABS ---
         // --- 5. GLOBAL TAB BAR ---
         // The tool header: which tool the content area shows (the activity bar switches it).
-        var globalTabHBox = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        var globalTabHBox = _toolHeader = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         _toolTitle = new Label { SizeFlagsHorizontal = SizeFlags.ExpandFill, VerticalAlignment = VerticalAlignment.Center };
         _toolTitle.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextMuted);
         _toolTitle.AddThemeConstantOverride("margin_left", 8);
@@ -296,7 +288,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         // --- 5. CONTENT STAGE ---
         var contentWrapper = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
         contentWrapper.AddThemeConstantOverride("separation", 0);
-        _contentStage = new PanelContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        _contentStage = new PanelContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, CustomMinimumSize = new Godot.Vector2(ContentMinWidth, 0) };
         _contentStageStyle = GetVSCodePanelStyle();
         _contentStageStyle.CornerRadiusTopLeft = 0; // Seamless connection (rounded again while the explorer is shown)
         _contentStage.AddThemeStyleboxOverride("panel", _contentStageStyle);
@@ -305,7 +297,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         rightOfSidebarSplit.AddChild(contentWrapper);
         _contentSplit.AddChild(rightOfSidebarSplit);
         // --- 6. FAR RIGHT PROPERTIES SIDEBAR ---
-        _propertiesSidebar = new PanelContainer { SizeFlagsVertical = SizeFlags.ExpandFill, CustomMinimumSize = new Godot.Vector2(250, 0), Visible = true };
+        _propertiesSidebar = new PanelContainer { SizeFlagsVertical = SizeFlags.ExpandFill, CustomMinimumSize = new Godot.Vector2(PropertiesMinWidth, 0), Visible = true };
         _propertiesSidebar.AddThemeStyleboxOverride("panel", GetVSCodePanelStyle());
         centerRightSplit.AddChild(_propertiesSidebar);
         var propsMargin = new MarginContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
@@ -442,6 +434,11 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         if (what == NotificationWMCloseRequest)
         {
             GracefulShutdown();
+        }
+        // Moved to a monitor with another display scale: the window follows it (the notification reaches every node under the window).
+        else if (what == NotificationWMDpiChange && _appSettings != null)
+        {
+            AP_Atlas.UI.Ui.DeferQuiet(this, ApplyZoom);
         }
     }
 

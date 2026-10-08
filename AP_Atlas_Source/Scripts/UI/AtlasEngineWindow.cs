@@ -55,9 +55,7 @@ namespace AP_Atlas.UI
             }
             var w = new AtlasEngineWindow(settings, slots, knownGames, fontSize);
             _open = w;
-            anyNode.GetTree().Root.AddChild(w);
-            var screen = DisplayServer.ScreenGetSize();
-            w.PopupCentered(new Vector2I(Math.Min(1200, (int)(screen.X * 0.7f)), (int)(screen.Y * 0.8f)));
+            WindowFit.ShowNative(w, anyNode, new Vector2I(1200, 800), new Vector2I(820, 600));
             return w;
         }
 
@@ -218,6 +216,7 @@ namespace AP_Atlas.UI
 
             AtlasEngine.Changed += OnEngineChanged;
             AtlasEngine.SetupStep += OnSetupStep;
+            WindowFit.ScaleChanged += OnScaleChanged;
             var timer = new Godot.Timer { WaitTime = 1.5, Autostart = true };
             timer.Timeout += RefreshSlotsIfChanged;
             AddChild(timer);
@@ -235,6 +234,7 @@ namespace AP_Atlas.UI
         {
             AtlasEngine.Changed -= OnEngineChanged;
             AtlasEngine.SetupStep -= OnSetupStep;
+            WindowFit.ScaleChanged -= OnScaleChanged;
             _cts?.Cancel();
             if (_open == this) _open = null;
         }
@@ -250,6 +250,14 @@ namespace AP_Atlas.UI
         }
 
         private void OnEngineChanged() => Ui.Defer(this, () => Render());
+
+        private void OnScaleChanged() => Ui.DeferQuiet(this, () => WindowFit.Refit(this));
+
+        /// <summary>Moved (maybe to another monitor): drawn at that screen's scale and kept within it.</summary>
+        public override void _Notification(int what)
+        {
+            if (what == NotificationWMPositionChanged || what == NotificationWMDpiChange) WindowFit.Refit(this);
+        }
 
         private void OnSetupStep(string text) => Ui.Defer(this, () =>
         {

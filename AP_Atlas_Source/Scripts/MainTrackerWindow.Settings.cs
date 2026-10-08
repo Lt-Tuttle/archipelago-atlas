@@ -126,7 +126,7 @@ public partial class MainTrackerWindow
         page.AddColour("appearance", "custom-accent", "Custom accent", "Any colour. Headings and links are lightened or darkened as needed, so they always read.",
             () => AP_Atlas.Core.ThemeColors.Accent,
             colour => ApplyAccent("#" + colour.ToHtml(false).ToUpperInvariant()));
-        page.AddChoice("appearance", "ui-zoom", "Zoom", "The whole window, text and pictures alike (Ctrl+= and Ctrl+- step through these).",
+        page.AddChoice("appearance", "ui-zoom", "Zoom", "The whole window, text and pictures alike, relative to Windows' display scale: 100% is the size Windows gives other apps. Ctrl+= and Ctrl+- step through these; Ctrl+0 goes back to 100%.",
             ZoomSteps.Select(step => step + "%").ToArray(),
             () => Array.IndexOf(ZoomSteps, _appSettings.UiZoom),
             index => SetZoom(ZoomSteps[index]));

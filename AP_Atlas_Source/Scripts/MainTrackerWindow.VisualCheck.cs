@@ -63,6 +63,10 @@ public partial class MainTrackerWindow
             VisualCheckPrint($"VISUALCHECK REFUSED: the baseline folder {baseline} doesn't exist.");
             return 2;
         }
+        // The pictures are taken at a fixed scale, never this PC's: 100%, or ATLAS_VISUALCHECK_SCALE (1.5 = Windows' 150%).
+        float scale = float.TryParse(System.Environment.GetEnvironmentVariable("ATLAS_VISUALCHECK_SCALE"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float asked) && asked > 0 ? asked : 1f;
+        AP_Atlas.UI.WindowFit.TestScale = scale;
+        ApplyZoom();
         GetTree().Root.Size = VisualCheckWindowSize;
         await VisualCheckWaitAsync(1.5);
 
