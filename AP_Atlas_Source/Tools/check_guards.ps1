@@ -255,7 +255,7 @@ elseif ($colourLiterals -lt $colourLiteralLimit) {
 
 # Text the shell shows is translation-ready: it goes through Tr() where it's shown. The raw literals left in the shell
 # (Text = "...", TooltipText = "...", PlaceholderText = "...") can only go down.
-$rawTextLimit = 152
+$rawTextLimit = 144
 $rawText = 0
 foreach ($file in $files) {
     $inShell = $file.FullName -match '\\Scripts\\UI\\' -or $file.Name -like 'MainTrackerWindow*.cs'
