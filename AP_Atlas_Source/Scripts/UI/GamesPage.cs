@@ -46,7 +46,8 @@ namespace AP_Atlas.UI
             Yours
         }
 
-        public sealed record GameEntry(string Game, Section Section, bool InEngine, string? Repo, string? Guide);
+        /// <summary>A game the page lists: its group, whether the engine has it, its project and guide, and whether a slot of the user's plays it (listed first).</summary>
+        public sealed record GameEntry(string Game, Section Section, bool InEngine, string? Repo, string? Guide, bool Played = false);
 
         private readonly GamesHooks _hooks;
         private readonly Func<string, string> _tr;
@@ -77,6 +78,9 @@ namespace AP_Atlas.UI
 
         /// <summary>The games the list shows now (after the search), in order (for tests).</summary>
         public List<string> ShownGames { get; private set; } = new();
+
+        /// <summary>The list's group headers as shown, in order (for tests).</summary>
+        public List<string> ShownSections { get; private set; } = new();
 
         /// <summary>The game whose page shows (null: the overview).</summary>
         public string? SelectedGame => _selected;
@@ -189,10 +193,11 @@ namespace AP_Atlas.UI
                 bool added = fromFiles.Contains(game);
                 games[game] = new GameEntry(game, added ? Section.Yours : Section.Official, true, null, added ? null : OfficialGuide(game));
             }
-            // Games the user's multiworlds play are listed even before the engine knows them.
-            foreach (string game in PlayedGames().Keys)
+            // Games the user's multiworlds play are listed even before the engine knows them, and first (Played).
+            var played = PlayedGames();
+            foreach (string game in played.Keys)
                 if (!games.ContainsKey(game)) games[game] = new GameEntry(game, Section.Yours, inEngine.Contains(game), null, null);
-            return games.Values.ToList();
+            return games.Values.Select(g => g with { Played = played.ContainsKey(g.Game) }).ToList();
         }
 
         private static string? HttpsOrNull(string? url) => url != null && url.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ? url : null;
@@ -207,6 +212,17 @@ namespace AP_Atlas.UI
                 foreach (var stats in profile.SavedStats.Values)
                     if (!string.IsNullOrWhiteSpace(stats.GameName) && (!played.TryGetValue(stats.GameName, out var when) || stats.LastUpdated > when))
                         played[stats.GameName] = stats.LastUpdated;
+            // A slot's linked YAML names its game before the slot ever connects.
+            foreach (var profile in _hooks.Profiles())
+                foreach (string slot in profile.Slots)
+                {
+                    if (!_hooks.Settings.SlotYamlPaths.TryGetValue(AP_Atlas.Core.Annotations.SlotKey(profile.Id, slot), out var path) || !File.Exists(path)) continue;
+                    try
+                    {
+                        foreach (string game in AP_Atlas.Core.YamlExclusions.GamesFor(File.ReadAllText(path), slot)) played.TryAdd(game, DateTime.MinValue);
+                    }
+                    catch (Exception ex) { AP_Atlas.Core.Logger.LogDebug($"Couldn't read the YAML linked to {slot}: {ex.Message}"); }
+                }
             foreach (var slot in _hooks.LiveSlots())
                 if (!string.IsNullOrWhiteSpace(slot.Game)) played[slot.Game] = DateTime.Now; // wall clock: compared with saved times
             return played;
@@ -229,12 +245,17 @@ namespace AP_Atlas.UI
             };
             var list = shown.ToList();
             ShownGames = new List<string>();
+            ShownSections = new List<string>();
+            // The games of the user's own slots come first, each listed once; the rest in their groups.
+            var groups = new List<(string Title, List<GameEntry> Games)> { (_tr("In your multiworlds"), list.Where(g => g.Played).ToList()) };
             foreach (var section in new[] { Section.Official, Section.Community, Section.Yours })
+                groups.Add((SectionTitle(section), list.Where(g => g.Section == section && !g.Played).ToList()));
+            foreach (var (title, inSection) in groups)
             {
-                var inSection = list.Where(g => g.Section == section).ToList();
                 if (inSection.Count == 0) continue;
                 var header = _list.CreateItem(root);
-                header.SetText(0, SectionTitle(section) + $" ({inSection.Count})");
+                header.SetText(0, title + $" ({inSection.Count})");
+                ShownSections.Add(header.GetText(0));
                 header.SetSelectable(0, false);
                 header.SetCustomBgColor(0, ThemeColors.AccentTint);
                 header.SetCustomColor(0, ThemeColors.Heading);

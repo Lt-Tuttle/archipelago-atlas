@@ -136,6 +136,15 @@ namespace AP_Atlas.Core
         /// <summary>Black or white, whichever reads better on <paramref name="background"/>.</summary>
         public static Color TextOn(Color background) => Contrast(Colors.White, background) >= Contrast(Colors.Black, background) ? Colors.White : Colors.Black;
 
+        /// <summary>The accent as text on a surface: lightened (dark palettes) or darkened a step at a time until it reads at 4.5 to 1, whatever the accent.</summary>
+        public static Color AccentTextFor(Color accent, Color surface, Palette palette) => Readable(accent, surface, 4.5, palette.IsDark);
+
+        /// <summary>The accent as text on a surface of the current palette (a card's title, a section header, a group's name).</summary>
+        public static Color AccentText(Color surface) => AccentTextFor(Accent, surface, Current);
+
+        /// <summary>The accent as a button's label, on the Control surface (the default purple on the dark grey read at under 2 to 1 before).</summary>
+        public static Color AccentOnControl => AccentText(Control);
+
         /// <summary>Headings and section titles: the accent, lightened to read on dark surfaces, darkened on light ones.</summary>
         public static Color Heading => HeadingFor(Accent, Current);
 

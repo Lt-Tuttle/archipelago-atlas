@@ -19,6 +19,22 @@ public partial class MainTrackerWindow
     internal const int PropertiesStartWidth = 360;
     private const int PaneSeparation = 8, OuterMargins = 16;
 
+    /// <summary>
+    /// The explorer's width for the tool that shows: the width the user dragged it to for that tool, else the width a
+    /// returning user dragged before tools had their own, else the tool's starting width (Map Packs and Games start wider
+    /// than the minimum: their lists hold long names). The explorer doesn't expand, so the split's default position is its
+    /// start and the offset is the explorer's width itself (clamped to its minimum).
+    /// </summary>
+    private void ApplyExplorerOffset(AP_Atlas.UI.Tool tool)
+    {
+        if (_explorerSplit == null || tool == null) return;
+        int offset = _appSettings.ExplorerSplitOffsets.TryGetValue(tool.Id, out int kept) ? kept
+            : _appSettings.SplitRightSidebarOffset != 0 ? _appSettings.SplitRightSidebarOffset
+            : tool.ExplorerStartWidth;
+        var offsets = _explorerSplit.SplitOffsets;
+        if (offsets.Length == 0 || offsets[0] != offset) _explorerSplit.SplitOffsets = new[] { offset };
+    }
+
     /// <summary>The parts hidden because the window is too narrow for them (their settings untouched; they return with the width).</summary>
     private readonly HashSet<string> _autoHidden = new();
     private HBoxContainer? _toolHeader; // the tool's header row above the content: its buttons need their width too

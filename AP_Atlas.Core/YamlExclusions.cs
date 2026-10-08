@@ -86,6 +86,18 @@ namespace AP_Atlas.Core
             return players;
         }
 
+        /// <summary>
+        /// The games a slot may roll from a YAML's text: the player whose name can produce the slot's name (placeholders
+        /// included), else a player without a name; none when the YAML names neither.
+        /// </summary>
+        public static List<string> GamesFor(string text, string slotName)
+        {
+            var players = Players(text);
+            var player = players.FirstOrDefault(p => NameMatches(p.Name, slotName));
+            if (player.Games == null) player = players.FirstOrDefault(p => string.IsNullOrEmpty(p.Name));
+            return player.Games ?? new List<string>();
+        }
+
         /// <summary>Whether a YAML name (which may hold {player} / {number} placeholders) can produce this slot name.</summary>
         public static bool NameMatches(string yamlName, string slotName)
         {

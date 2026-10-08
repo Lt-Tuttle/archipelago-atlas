@@ -31,7 +31,7 @@ namespace AP_Atlas.UI
             var labelFont = GetThemeFont("font", "Label");
             if (labelFont != null) _text.AddThemeFontOverride("normal_font", labelFont);
             _text.CustomMinimumSize = new Vector2(720, 520);
-            _text.Markup = AP_Atlas.Core.Markdown.ToBbcode(Markdown(tr, commit), "#" + AP_Atlas.Core.ThemeColors.Accent.Lightened(0.3f).ToHtml(false));
+            _text.Markup = AP_Atlas.Core.Markdown.ToBbcode(Markdown(tr, commit), "#" + AP_Atlas.Core.ThemeColors.Link.ToHtml(false));
             _text.MetaClicked += meta =>
             {
                 string url = meta.AsString();

@@ -54,6 +54,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     private PanelContainer _propertiesSidebar;
     private Label _midLeftTitle;
     private VBoxContainer _midLeftContent;
+    private HSplitContainer _explorerSplit; // explorer | content; its offset is the shown tool's own (ApplyExplorerOffset)
     private AP_Atlas.UI.PropertiesPanel _propertiesPanel;
     private List<MultiworldProfile> _profiles = new();
     private AP_Atlas.Core.CheeseTracker.CheeseTrackerService _cheese;
@@ -256,8 +257,9 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _mainSplit.AddChild(centerRightSplit);
         var rightColumn = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
         centerRightSplit.AddChild(rightColumn);
-        var rightOfSidebarSplit = new HSplitContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, SplitOffsets = new[] { _appSettings.SplitRightSidebarOffset } };
-        rightOfSidebarSplit.Dragged += (offset) => { _appSettings.SplitRightSidebarOffset = (int)offset; DataManager.SaveSettingsSoon(_appSettings); };
+        var rightOfSidebarSplit = _explorerSplit = new HSplitContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, SplitOffsets = new[] { _appSettings.SplitRightSidebarOffset } };
+        // A drag is kept for the tool that shows: each tool's explorer has its own width (ApplyExplorerOffset).
+        rightOfSidebarSplit.Dragged += (offset) => { if (_currentTool != null) _appSettings.ExplorerSplitOffsets[_currentTool.Id] = (int)offset; DataManager.SaveSettingsSoon(_appSettings); };
         rightOfSidebarSplit.AddThemeConstantOverride("separation", 8);
         // --- 3. MID LEFT EXPLORER SIDEBAR ---
         _midLeftSidebar = new PanelContainer { SizeFlagsVertical = SizeFlags.ExpandFill, CustomMinimumSize = new Godot.Vector2(ExplorerMinWidth, 0), Visible = false };
@@ -374,7 +376,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         );
         _packManagerPanel.FontSize = () => _appSettings.ContentFontSize;
         _packManagerPanel.Visible = false;
-        _packManagerPanel.OpenDoctor = path => OpenPackDoctor(path);
+        _packManagerPanel.OpenDoctor = (path, tab) => OpenPackDoctor(path, tab);
         _packManagerPanel.Toast = ShowToast;
         _packManagerPanel.OnDataRefreshed += () =>
         {

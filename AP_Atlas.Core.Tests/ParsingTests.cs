@@ -33,6 +33,17 @@ public class YamlExclusionsTests
         Assert.NotNull(YamlExclusions.Read(path, "Dark Souls II", "Carol").Error);
         Assert.NotNull(YamlExclusions.Read(dir.File("does-not-exist.yaml"), "X", "Y").Error);
     }
+
+    [Fact]
+    public void Games_for_a_slot_follow_its_player_then_an_unnamed_one()
+    {
+        string two = "name: Alice\ngame:\n  A Link to the Past: 0\n  Dark Souls II: 50\n---\nname: Bob{number}\ngame: Dark Souls III\n";
+        Assert.Equal(new[] { "Dark Souls II" }, YamlExclusions.GamesFor(two, "Alice"));
+        Assert.Equal(new[] { "Dark Souls III" }, YamlExclusions.GamesFor(two, "Bob7"));
+        Assert.Empty(YamlExclusions.GamesFor(two, "Carol"));
+        Assert.Equal(new[] { "Hollow Knight" }, YamlExclusions.GamesFor("game: Hollow Knight\n", "Anyone"));
+        Assert.Empty(YamlExclusions.GamesFor("", "Anyone"));
+    }
 }
 
 public class LinkParsingTests

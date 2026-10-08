@@ -81,7 +81,7 @@ namespace AP_Atlas.UI
                 text.AddChild(explanation);
                 row.AddChild(text);
                 var shown = new Label { Text = state, SizeFlagsVertical = SizeFlags.ShrinkCenter };
-                shown.AddThemeColorOverride("font_color", grants.Count > 0 ? ThemeColors.Accent.Lightened(0.3f) : ThemeColors.TextMuted);
+                shown.AddThemeColorOverride("font_color", grants.Count > 0 ? ThemeColors.AccentText(ThemeColors.Surface) : ThemeColors.TextMuted);
                 row.AddChild(shown);
                 _permissions.AddChild(row);
 

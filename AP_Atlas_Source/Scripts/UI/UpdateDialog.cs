@@ -31,7 +31,7 @@ namespace AP_Atlas.UI
             _text.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
             _text.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
             _text.SelectionEnabled = true;
-            _text.Markup = AP_Atlas.Core.Markdown.ToBbcode(head + notes, "#" + AP_Atlas.Core.ThemeColors.Accent.Lightened(0.3f).ToHtml(false));
+            _text.Markup = AP_Atlas.Core.Markdown.ToBbcode(head + notes, "#" + AP_Atlas.Core.ThemeColors.Link.ToHtml(false));
             AddChild(_text);
             // Prose in the font the labels use; the rich text's own default is the mono font.
             var labelFont = GetThemeFont("font", "Label");

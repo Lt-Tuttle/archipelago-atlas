@@ -128,7 +128,7 @@ namespace AP_Atlas.Core
 
         private void AddAccentText(Button button)
         {
-            button.AddThemeColorOverride("font_color", ThemeColors.Accent);
+            button.AddThemeColorOverride("font_color", ThemeColors.AccentOnControl);
             _accentTextButtons.Add(button);
         }
 
@@ -165,7 +165,7 @@ namespace AP_Atlas.Core
         private void OnAccentChanged()
         {
             _accentTextButtons.RemoveAll(b => !GodotObject.IsInstanceValid(b));
-            foreach (var b in _accentTextButtons) b.AddThemeColorOverride("font_color", ThemeColors.Accent);
+            foreach (var b in _accentTextButtons) b.AddThemeColorOverride("font_color", ThemeColors.AccentOnControl);
             if (_selectedPackRow != null && GodotObject.IsInstanceValid(_selectedPackRow))
                 _selectedPackRow.AddThemeStyleboxOverride("panel", PackRowStyle(true));
         }
@@ -247,7 +247,7 @@ namespace AP_Atlas.Core
 
             var doctorBtn = new Button { Text = "Pack Doctor…", CustomMinimumSize = new Vector2(200, 40), TooltipText = "Check this pack against the game and fix problems locally" };
             AddAccentText(doctorBtn);
-            doctorBtn.Pressed += () => OpenDoctor?.Invoke(zipPath);
+            doctorBtn.Pressed += () => OpenDoctor?.Invoke(zipPath, null);
             btnHBox.AddChild(doctorBtn);
 
             var updateBtn = new Button { Text = "Update Map Pack", CustomMinimumSize = new Vector2(200, 40) };
@@ -485,11 +485,19 @@ namespace AP_Atlas.Core
                     locIndicator.AddThemeColorOverride("font_color", pack.Locations.Count > 0 ? ThemeColors.Success : ThemeColors.TextSubtle);
                     capsHbox.AddChild(locIndicator);
                     // Pack Doctor status (filled in when a check finishes).
-                    var doctorBadge = new Label { Name = "DoctorBadge" };
+                    string key = PackFixes.KeyFor(pack);
+                    var doctorBadge = new Label { Name = "DoctorBadge", SizeFlagsVertical = SizeFlags.ShrinkCenter };
                     doctorBadge.SetMeta("font_size_ratio", 0.8f);
-                    doctorBadge.SetMeta("pack_key", PackFixes.KeyFor(pack));
+                    doctorBadge.SetMeta("pack_key", key);
                     capsHbox.AddChild(doctorBadge);
-                    UpdateDoctorBadge(doctorBadge);
+                    // What the check left to decide, straight to the Doctor's Recommended tab (its Overview when nothing is suggested).
+                    string reviewFile = file;
+                    var reviewBtn = AP_Atlas.UI.Kit.Button("", Tr("Opens the Pack Doctor on what's left to decide."), () => OpenDoctor?.Invoke(reviewFile, ReviewTab(key)), small: true);
+                    reviewBtn.Name = "ReviewButton";
+                    reviewBtn.Visible = false;
+                    reviewBtn.SetMeta("pack_key", key);
+                    capsHbox.AddChild(reviewBtn);
+                    UpdateDoctorBadge(doctorBadge, reviewBtn);
                     infoVBox.AddChild(capsHbox);
 
                     hbox.AddChild(infoVBox);
@@ -528,8 +536,8 @@ namespace AP_Atlas.Core
         // Pack Doctor
         // =====================================================================
 
-        /// <summary>Opens the Pack Doctor for a zip (set by the main window).</summary>
-        public Action<string> OpenDoctor { get; set; }
+        /// <summary>Opens the Pack Doctor for a zip, on a tab (null: its first); set by the main window.</summary>
+        public Action<string, string> OpenDoctor { get; set; }
 
         // Zips seen this session (path → last write), so installs and updates are checked, but not every pack at startup.
         private static readonly Dictionary<string, DateTime> _seenPacks = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
@@ -549,20 +557,35 @@ namespace AP_Atlas.Core
             _firstScanDone = true;
         }
 
-        private void UpdateDoctorBadge(Label badge)
+        private void UpdateDoctorBadge(Label badge, Button review)
         {
             if (!GodotObject.IsInstanceValid(badge)) return;
+            bool reviewValid = review != null && GodotObject.IsInstanceValid(review);
             string key = badge.GetMeta("pack_key").AsString();
             if (!PackDoctorService.Reports.TryGetValue(key, out var report) || report == null)
             {
                 badge.Text = "";
+                if (reviewValid) review.Visible = false;
                 return;
             }
             int needs = report.NeedsReview.Count();
             int fixes = PackFixes.Get(key).Count;
             badge.Text = needs > 0 ? $"⚠ {needs} to review" : "✔ Checked" + (fixes > 0 ? $" · {fixes} fix{(fixes == 1 ? "" : "es")}" : "");
             badge.AddThemeColorOverride("font_color", needs > 0 ? ThemeColors.Warning : ThemeColors.Success);
+            if (reviewValid)
+            {
+                review.Visible = needs > 0;
+                review.Text = Tr("Review {0}").Replace("{0}", needs.ToString());
+            }
         }
+
+        /// <summary>The Doctor's tab for a pack's review: Recommended while it suggests matches, else the Overview.</summary>
+        private static string ReviewTab(string key) =>
+            PackDoctorService.Reports.TryGetValue(key, out var report) && report != null && PackDoctor.Recommendations(report).Count > 0 ? "Recommended" : "Overview";
+
+        /// <summary>A pack row's Review button, by the pack's key (for tests).</summary>
+        internal Button ReviewButtonFor(string key) =>
+            _packListVBox.GetChildren().Select(row => row.FindChild("ReviewButton", true, false) as Button).FirstOrDefault(b => b != null && b.GetMeta("pack_key").AsString() == key);
 
         private void OnDoctorReportReady(string key)
         {
@@ -570,7 +593,7 @@ namespace AP_Atlas.Core
             foreach (Node row in _packListVBox.GetChildren())
             {
                 var badge = row.FindChild("DoctorBadge", true, false) as Label;
-                if (badge != null && badge.GetMeta("pack_key").AsString() == key) UpdateDoctorBadge(badge);
+                if (badge != null && badge.GetMeta("pack_key").AsString() == key) UpdateDoctorBadge(badge, row.FindChild("ReviewButton", true, false) as Button);
             }
             if (_shownPackPath != null && PackFixes.KeyFor(PopTrackerPackLoader.InspectZipPack(_shownPackPath)) == key) ShowPackDetails(_shownPackPath);
         }
@@ -719,7 +742,7 @@ namespace AP_Atlas.Core
             foreach (var (game, candidates, problem) in results)
             {
                 var heading = new Label { Text = game };
-                heading.AddThemeColorOverride("font_color", ThemeColors.Accent.Lightened(0.2f));
+                heading.AddThemeColorOverride("font_color", ThemeColors.AccentText(ThemeColors.Surface));
                 box.AddChild(heading);
                 if (problem != null) box.AddChild(Muted($"GitHub couldn't be searched: {problem}"));
                 else if (candidates.Count == 0) box.AddChild(Muted("No map packs found on GitHub. Packs are often shared in the game's Archipelago Discord thread; install one from its zip with Install Pack (Zip)."));

@@ -116,7 +116,7 @@ public partial class MainTrackerWindow
             ActivityBarAsync);
         await ScenarioAsync("Slot picker: the tool header lists the connected slots with the selected one chosen; picking one shows its view, Ctrl+Tab and Ctrl+Shift+Tab go through them around the end, a slot selected elsewhere shows as picked, a tool that isn't per slot hides it, and a slot that ends leaves it",
             SlotPickerAsync);
-        await ScenarioAsync("Window parts: the View menu hides and shows the slots panel, the explorer (whatever tool shows), Properties, the bottom pane and the status bar, remembering each; focus mode leaves the content alone and, off again, brings each part back as the user had it",
+        await ScenarioAsync("Window parts: the View menu hides and shows the slots panel, the explorer (whatever tool shows), Properties, the bottom pane and the status bar, remembering each; each tool's explorer has its own width (Map Packs and Games start at 320); focus mode leaves the content alone and, off again, brings each part back as the user had it",
             WindowPartsAsync);
         await ScenarioAsync("Settings page: Ctrl+, shows it with the search box ready and the sections in the explorer; each kind of row changes its setting at once and saves it (a toggle, a choice, a number, a window part, a bottom pane tab); a setting changed elsewhere shows as it is; typed words narrow the rows; a section jump scrolls",
             SettingsPageAsync);
@@ -126,7 +126,7 @@ public partial class MainTrackerWindow
             PrivacyAsync);
         await ScenarioAsync("Home: Ctrl+8 shows it on its own; every tool has a card with a line and every link is https; the checklist ticks the engine as it is and nothing else in a fresh folder, then a multiworld and a pack once they exist; a tip shows and Next tip goes around; the multiworld is listed and one click connects its slot, ticks the step and says Connected; a tool's card shows the tool",
             HomeAsync);
-        await ScenarioAsync("Games page: the Games tool lists every game in its group (community games from the index, the games your multiworlds play as added by you), typed words narrow the list, a game's page walks its setup through (the apworld, a map pack, your YAML, the files it needs) with each step ticked as Atlas finds it; a YAML added once is listed under every game it names; the game's folders are inside Atlas's data folder; once GitHub may be asked, the page lists every version of every project (the game's own, and one of the same name found by one search), newest first with pre-releases marked and the newest full release named, and downloads nothing without a press; Add YAML offers the places a YAML may be; the release-files dialog fits the window with a check box per file; a Discord home is named on its link",
+        await ScenarioAsync("Games page: the Games tool lists every game in its group (community games from the index, the games your multiworlds play as added by you), with the games of your own slots first (from their saved stats and their linked YAMLs, each once), typed words narrow the list, a game's page walks its setup through (the apworld, a map pack, your YAML, the files it needs) with each step ticked as Atlas finds it; a YAML added once is listed under every game it names; the game's folders are inside Atlas's data folder; once GitHub may be asked, the page lists every version of every project (the game's own, and one of the same name found by one search), newest first with pre-releases marked and the newest full release named, and downloads nothing without a press; Add YAML offers the places a YAML may be; the release-files dialog fits the window with a check box per file; a Discord home is named on its link",
             GamesPageAsync);
         await ScenarioAsync("Help: the guide opens on its first topic with a topic per section; a topic shows its section, What's new the changelog, Credits & disclaimer the author and the credits, Licences Atlas's licence; a second Help command uses the same window at its topic; Home's What's new card lists the newest changes and leads here",
             HelpAsync);
@@ -170,7 +170,7 @@ public partial class MainTrackerWindow
             SlotPanelMovesWholeAsync);
         await ScenarioAsync("Map packs: a slot's pack has its images while the slot is connected (its map shows them), the Pack Doctor's while its window is open; then they're freed once another pack is used",
             PackImagesFollowTheirUsersAsync);
-        await ScenarioAsync("Pack Doctor: on a pack's first check, a tile whose name matches an item exactly (once punctuation is ignored) is linked by itself as an automatic fix; the Recommended tab lists what's left, Apply on a row writes the fix, the row goes after the check and the status says so; Undo takes the automatic link back",
+        await ScenarioAsync("Pack Doctor: on a pack's first check, a tile whose name matches an item exactly (once punctuation is ignored) is linked by itself as an automatic fix; the pack's row on the Map Packs page offers Review N, which opens the Doctor on Recommended; the Recommended tab lists what's left, Apply on a row writes the fix, the row goes after the check and the status says so; Undo takes the automatic link back",
             PackDoctorAsync);
         await ScenarioAsync("Map packs reach connected slots: Key Items offers the pack's layouts and two Atlas builds by item group, kept per slot; the chat's filters sit in one row; the Chat and System Log tabs carry a dot for lines that arrived while they weren't showing, cleared when shown; a slot without a pack offers \"Find a map pack for <game>…\" on its map, which shows Map Packs and searches GitHub once; a pack chosen from the results downloads with a progress line, installs with a card and reaches the slot's map; a pack installed while a slot is connected shows on its map at once, without a reconnect; deleted, the map says there's no pack again; another pack for the game takes its place",
             PacksReachConnectedSlotsAsync);
@@ -1020,6 +1020,9 @@ public partial class MainTrackerWindow
             UiTestExpect(page.ShownGames.SequenceEqual(new[] { "Atlas Test Game" }), $"searching \"atlas test\" lists {string.Join(", ", page.ShownGames)}");
             search.Text = "";
             search.EmitSignal(LineEdit.SignalName.TextChanged, "");
+            // The games of the user's own slots come first, each listed once.
+            UiTestExpect(page.ShownSections.Count > 1 && page.ShownSections[0] == "In your multiworlds (1)" && page.ShownGames[0] == "Atlas Test Game" && page.ShownGames.Count(g => g == "Atlas Test Game") == 1,
+                $"the list doesn't open with the slots' games: {string.Join(" | ", page.ShownSections)}; first {page.ShownGames.FirstOrDefault()}");
             // A game's page: the steps, none done yet.
             var tree = page.SidebarContent.FindChildren("*", nameof(Tree), true, false).OfType<Tree>().First();
             TreeItem? Row(TreeItem? item, string game)
@@ -1042,6 +1045,13 @@ public partial class MainTrackerWindow
             var entry = page.AddYamlFile(yaml) ?? throw new InvalidOperationException("the YAML wasn't added");
             var library = AP_Atlas.Core.Games.YamlLibrary.Load(DataManager.GetDataDirectory());
             UiTestExpect(entry.Games.Count == 2 && library.For("Atlas Test Game").Count == 1 && library.For("Other Test Game").Count == 1, "a two-game YAML isn't listed under both games");
+            // A slot's linked YAML puts its games at the top too, before the slot ever connects.
+            string meKey = AP_Atlas.Core.Annotations.SlotKey(profile.Id, "Me");
+            _appSettings.SlotYamlPaths[meKey] = yaml;
+            page.Refresh();
+            UiTestExpect(page.ShownSections[0] == "In your multiworlds (2)" && page.ShownGames.Take(2).OrderBy(g => g).SequenceEqual(new[] { "Atlas Test Game", "Other Test Game" }),
+                $"a linked YAML's games aren't listed first: {string.Join(" | ", page.ShownSections)}; {string.Join(", ", page.ShownGames.Take(3))}");
+            _appSettings.SlotYamlPaths.Remove(meKey);
             UiTestExpect(page.Steps().Any(s => s.Title == "Your YAML" && s.Done), "the YAML step isn't ticked once a YAML for the game is kept");
             // The game's folders are Atlas's own.
             string data = System.IO.Path.GetFullPath(DataManager.GetDataDirectory());
@@ -1989,6 +1999,26 @@ public partial class MainTrackerWindow
         host.ShowTool(AP_Atlas.UI.Tool.MapPacks);
         await UiTestWaitAsync(0.05);
         UiTestExpect(_midLeftSidebar.Visible && Checked("view.explorer"), "Map Packs' explorer isn't shown to begin with");
+        // Each tool's explorer has its own width: Map Packs starts wider than the minimum (given the room: the slots panel and
+        // Properties step aside in this narrow test window, since the split clamps to what fits), Multiworlds at it; a drag is kept per tool.
+        _commands!.Run("view.slots-panel");
+        _commands.Run("view.properties-panel");
+        await UiTestWaitAsync(0.05);
+        UiTestExpect(_explorerSplit.SplitOffsets[0] == 320 && _midLeftSidebar.Size.X >= 318, $"Map Packs' explorer starts {_midLeftSidebar.Size.X} wide (offset {_explorerSplit.SplitOffsets[0]}), not 320");
+        _explorerSplit.EmitSignal(SplitContainer.SignalName.Dragged, 400);
+        host.ShowTool(AP_Atlas.UI.Tool.Connections);
+        await UiTestWaitAsync(0.05);
+        UiTestExpect(_explorerSplit.SplitOffsets[0] == 0 && _midLeftSidebar.Size.X < 318 && !_appSettings.ExplorerSplitOffsets.ContainsKey("connections"),
+            $"the Multiworlds explorer is {_midLeftSidebar.Size.X} wide (offset {_explorerSplit.SplitOffsets[0]}) after a drag on Map Packs'");
+        host.ShowTool(AP_Atlas.UI.Tool.MapPacks);
+        await UiTestWaitAsync(0.05);
+        UiTestExpect(_appSettings.ExplorerSplitOffsets.TryGetValue("map-packs", out int packsOffset) && packsOffset == 400 && _explorerSplit.SplitOffsets[0] == 400 && _midLeftSidebar.Size.X >= 398,
+            $"the drag on Map Packs' explorer isn't kept for it (offset {packsOffset}, {_midLeftSidebar.Size.X} wide)");
+        _appSettings.ExplorerSplitOffsets.Remove("map-packs");
+        ApplyExplorerOffset(AP_Atlas.UI.Tool.MapPacks);
+        _commands.Run("view.slots-panel");
+        _commands.Run("view.properties-panel");
+        await UiTestWaitAsync(0.05);
         _commands!.Run("view.explorer");
         UiTestExpect(!_midLeftSidebar.Visible && !_appSettings.ShowExplorer && !Checked("view.explorer") && !DataManager.LoadSettings().ShowExplorer, "the explorer wasn't hidden, or not remembered");
         host.ShowTool(AP_Atlas.UI.Tool.Connections);
@@ -2722,9 +2752,14 @@ public partial class MainTrackerWindow
             var auto = await UiTestWaitForAsync(() => AP_Atlas.Core.PopTracker.PackFixes.Get(key).Tiles.FirstOrDefault(t => t.Code == "sword"), "the Doctor to link the exact match by itself");
             UiTestExpect(auto.Automatic && auto.ApItemId == 1000 && auto.ApItemName == "Sword", $"the automatic link is wrong: {auto.ApItemName} ({auto.ApItemId}), automatic {auto.Automatic}");
             UiTestExpect(!AP_Atlas.Core.PopTracker.PackFixes.Get(key).Tiles.Any(t => t.Code == "shield"), "an item the index links by name got a fix too");
-            // The window: the Recommended tab lists the pin that isn't exact and not the linked tile; Apply writes the fix and says so.
-            OpenPackDoctor(zip);
+            // The pack's row on the Map Packs page says what's left to review, and its button opens the Doctor on the Recommended
+            // tab, which lists the pin that isn't exact and not the linked tile; Apply writes the fix and says so.
+            host.ShowTool(AP_Atlas.UI.Tool.MapPacks);
+            var review = await UiTestWaitForAsync(() => _packManagerPanel.ReviewButtonFor(key) is { Visible: true } b
+                && b.Text == $"Review {AP_Atlas.Core.PopTracker.PackDoctorService.Reports[key].NeedsReview.Count()}" ? b : null, "the pack row's Review button with the count to review");
+            review.EmitSignal(BaseButton.SignalName.Pressed);
             var window = await UiTestWaitForAsync(() => GetTree().Root.GetChildren().OfType<AP_Atlas.UI.PackDoctorWindow>().FirstOrDefault(), "the Pack Doctor window");
+            UiTestExpect(window.CurrentTabTitle == "Recommended", $"the Review button opened the Doctor on {window.CurrentTabTitle}, not Recommended");
             // The report after the automatic link (a check queued by the link, or the window's own) no longer suggests the linked tile.
             await UiTestWaitForAsync(() => window.HasReport && !window.RecommendedRows().Any(r => r.Key == "tile:unlinked:sword") ? window : null, "the report after the automatic link, without the linked tile");
             var rows = window.RecommendedRows();

@@ -578,8 +578,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         {
             try
             {
-                var player = AP_Atlas.Core.YamlExclusions.Players(System.IO.File.ReadAllText(yaml)).FirstOrDefault(p => AP_Atlas.Core.YamlExclusions.NameMatches(p.Name, slotName) || string.IsNullOrEmpty(p.Name));
-                if (player.Games != null && player.Games.Count > 0) return player.Games[0];
+                var games = AP_Atlas.Core.YamlExclusions.GamesFor(System.IO.File.ReadAllText(yaml), slotName);
+                if (games.Count > 0) return games[0];
             }
             catch (Exception ex) { AP_Atlas.Core.Logger.LogDebug($"Couldn't read the YAML linked to {slotName}: {ex.Message}"); }
         }

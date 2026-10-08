@@ -101,7 +101,7 @@ namespace AP_Atlas.UI
         {
             var page = _pages[index];
             CurrentPageId = page.Id;
-            _text.Markup = AP_Atlas.Core.Markdown.ToBbcode(page.Markdown(), "#" + AP_Atlas.Core.ThemeColors.Accent.Lightened(0.3f).ToHtml(false));
+            _text.Markup = AP_Atlas.Core.Markdown.ToBbcode(page.Markdown(), "#" + AP_Atlas.Core.ThemeColors.Link.ToHtml(false));
             _text.ScrollToLine(0);
         }
 

@@ -282,7 +282,7 @@ namespace AP_Atlas.UI
 
         private static string Hex(Color c) => "#" + c.ToHtml(false);
 
-        private Color LinkColor => ThemeColors.Accent.Lightened(0.35f);
+        private Color LinkColor => ThemeColors.Link;
 
         /// <summary>BBCode for a clickable link that runs an action.</summary>
         private string Link(string text, Action action, Color? color = null)
@@ -397,8 +397,8 @@ namespace AP_Atlas.UI
                 Alignment = HorizontalAlignment.Left,
                 SizeFlagsHorizontal = SizeFlags.ExpandFill
             };
-            header.AddThemeColorOverride("font_color", ThemeColors.Accent.Lightened(0.2f));
-            header.AddThemeColorOverride("font_hover_color", ThemeColors.Accent.Lightened(0.45f));
+            header.AddThemeColorOverride("font_color", ThemeColors.AccentText(ThemeColors.Surface));
+            header.AddThemeColorOverride("font_hover_color", ThemeColors.Link);
             _content.AddChild(header);
 
             var margin = new MarginContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, Visible = !isCollapsed };

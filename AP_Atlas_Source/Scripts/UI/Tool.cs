@@ -64,6 +64,9 @@ namespace AP_Atlas.UI
         /// <summary>A tool's own default key, for a tool past the first nine (which get Ctrl+1 to Ctrl+9).</summary>
         public string DefaultKey { get; private init; } = "";
 
+        /// <summary>How wide the tool's explorer starts, in logical units, when the window has the room (0: the explorer's minimum); the user's drag is kept per tool.</summary>
+        public int ExplorerStartWidth { get; private init; }
+
         public static readonly Tool MapTracker = new("map-tracker", "Map Tracker", "Map", ToolScope.Slot, ToolGroup.Slot, "map")
         {
             SlotView = slot => slot.MapTracker,
@@ -78,8 +81,8 @@ namespace AP_Atlas.UI
         public static readonly Tool SphereTracker = new("sphere-tracker", "Sphere Tracker", "Spheres", ToolScope.Multiworld, ToolGroup.Multiworld, "orbit");
         public static readonly Tool Home = new("home", "Home", "Home", ToolScope.App, ToolGroup.Atlas, "house");
         public static readonly Tool Connections = new("connections", "Multiworlds", "Worlds", ToolScope.App, ToolGroup.Atlas, "globe");
-        public static readonly Tool Games = new("games", "Games", "Games", ToolScope.App, ToolGroup.Atlas, "gamepad-2"); // after the ninth tool: no number key
-        public static readonly Tool MapPacks = new("map-packs", "Map Packs", "Packs", ToolScope.App, ToolGroup.Atlas, "package"); // the tenth tool: no number key (Ctrl+0 resets the zoom)
+        public static readonly Tool Games = new("games", "Games", "Games", ToolScope.App, ToolGroup.Atlas, "gamepad-2") { ExplorerStartWidth = 320 }; // after the ninth tool: no number key
+        public static readonly Tool MapPacks = new("map-packs", "Map Packs", "Packs", ToolScope.App, ToolGroup.Atlas, "package") { ExplorerStartWidth = 320 }; // the tenth tool: no number key (Ctrl+0 resets the zoom)
         public static readonly Tool Settings = new("settings", "Settings", "Settings", ToolScope.App, ToolGroup.Atlas, "settings") { DefaultKey = "Ctrl+," };
 
         /// <summary>Every tool, in the activity bar's order, top to bottom (Ctrl+1 to Ctrl+9).</summary>

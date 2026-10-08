@@ -214,7 +214,7 @@ namespace AP_Atlas.UI
             var newsCard = Card(out var newsBox);
             var newsHeader = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
             var newsTitle = new Label { Text = _tr("What's new"), SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ShrinkCenter };
-            newsTitle.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Accent.Lightened(0.3f));
+            newsTitle.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.AccentText(AP_Atlas.Core.ThemeColors.RowOdd));
             newsHeader.AddChild(newsTitle);
             _whatsNewButton = new Button { Text = _tr("All changes…") };
             _whatsNewButton.Pressed += () => _hooks.ShowWhatsNew();
@@ -337,7 +337,7 @@ namespace AP_Atlas.UI
             foreach (var step in _steps)
             {
                 step.LastDone = step.Done();
-                step.Mark.Texture = LucideTextures.Get(step.LastDone ? "circle-check" : "circle", step.LastDone ? AP_Atlas.Core.ThemeColors.Accent.Lightened(0.3f) : AP_Atlas.Core.ThemeColors.TextSubtle);
+                step.Mark.Texture = LucideTextures.Get(step.LastDone ? "circle-check" : "circle", step.LastDone ? AP_Atlas.Core.ThemeColors.Heading : AP_Atlas.Core.ThemeColors.TextSubtle);
                 step.Mark.TooltipText = step.LastDone ? _tr("Done") : _tr("Not yet");
             }
             RefreshRecents();
@@ -458,7 +458,7 @@ namespace AP_Atlas.UI
         {
             var card = Card(out var box);
             var name = new Label { Text = _tr(title) };
-            name.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Accent.Lightened(0.3f));
+            name.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.AccentText(AP_Atlas.Core.ThemeColors.RowOdd));
             box.AddChild(name);
             box.AddChild(Small(_tr(text)));
             return card;

@@ -719,7 +719,7 @@ namespace AP_Atlas.UI
         private static Label Header(string text)
         {
             var label = new Label { Text = text.ToUpperInvariant() };
-            label.AddThemeColorOverride("font_color", ThemeColors.Accent);
+            label.AddThemeColorOverride("font_color", ThemeColors.AccentText(ThemeColors.SurfaceSunken));
             return label;
         }
 

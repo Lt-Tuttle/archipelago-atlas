@@ -477,7 +477,7 @@ namespace AP_Atlas.Core.PopTracker
                     if (blocks.Count > 1 || !string.IsNullOrEmpty(block.Header))
                     {
                         var header = new Label { Text = block.Header, HorizontalAlignment = HorizontalAlignment.Center };
-                        header.AddThemeColorOverride("font_color", ThemeColors.Accent);
+                        header.AddThemeColorOverride("font_color", ThemeColors.AccentText(ThemeColors.Surface));
                         box.AddChild(header);
                     }
                     float blockSize = baseSize * Math.Clamp(block.ItemSize / (float)Math.Max(1, commonSize), 0.6f, 1.8f);
@@ -493,7 +493,7 @@ namespace AP_Atlas.Core.PopTracker
                 if (!string.IsNullOrEmpty(grid.Header) && grid.Header != lastHeader && grids.Select(g => g.Header).Distinct().Count() > 1)
                 {
                     var header = new Label { Text = grid.Header, HorizontalAlignment = HorizontalAlignment.Center };
-                    header.AddThemeColorOverride("font_color", ThemeColors.Accent);
+                    header.AddThemeColorOverride("font_color", ThemeColors.AccentText(ThemeColors.Surface));
                     _visualGrid.AddChild(header);
                 }
                 lastHeader = grid.Header;
@@ -602,7 +602,7 @@ namespace AP_Atlas.Core.PopTracker
 
             _visualGrid.AddChild(new HSeparator());
             var header = new Label { Text = "Seed settings", HorizontalAlignment = HorizontalAlignment.Center, TooltipText = "Read from this slot's options by the map pack's own script" };
-            header.AddThemeColorOverride("font_color", ThemeColors.Accent);
+            header.AddThemeColorOverride("font_color", ThemeColors.AccentText(ThemeColors.Surface));
             _visualGrid.AddChild(header);
 
             foreach (var grid in settingGrids)
@@ -831,7 +831,7 @@ namespace AP_Atlas.Core.PopTracker
                 // Category Header
                 var catItem = _textTree.CreateItem(root);
                 catItem.SetText(0, cat.Key);
-                catItem.SetCustomColor(0, ThemeColors.Accent);
+                catItem.SetCustomColor(0, ThemeColors.AccentText(ThemeColors.Surface));
                 catItem.SetCustomBgColor(0, new Color(0.1f, 0.1f, 0.15f, 0.8f));
                 catItem.SetCustomBgColor(1, new Color(0.1f, 0.1f, 0.15f, 0.8f));
                 catItem.SetCustomBgColor(2, new Color(0.1f, 0.1f, 0.15f, 0.8f));

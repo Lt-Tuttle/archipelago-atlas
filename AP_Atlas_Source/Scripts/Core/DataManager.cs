@@ -71,6 +71,8 @@ public class AppSettings
     // Layout State
     public int MainSplitOffset { get; set; } = 300;
     public int SplitRightSidebarOffset { get; set; } = 0;
+    /// <summary>Each tool's own explorer width as the user dragged it (tool id → split offset); a tool without one starts at its Tool.ExplorerStartWidth.</summary>
+    public Dictionary<string, int> ExplorerSplitOffsets { get; set; } = new Dictionary<string, int>();
     public int SplitCenterRightOffset { get; set; } = 0;
     public int SplitContentOffset { get; set; } = 0;
 

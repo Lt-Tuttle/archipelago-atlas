@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Godot;
 
 namespace AP_Atlas.Core
@@ -59,6 +60,26 @@ namespace AP_Atlas.Core
                 var accent = new Color(hex);
                 double contrast = ThemeColors.Contrast(ThemeColors.TextOn(accent), accent);
                 Expect(contrast >= 4.5, $"text on the {name} accent reads at {contrast:0.0} to 1");
+            }
+            // The accent as text (a button's label, a card's title, a section header) reads on every surface it's drawn on, and
+            // text reads on a solid accent and on the accent's tint: for every preset and for accents a user might pick.
+            var probes = global::MainTrackerWindow.AccentPresets.Select(p => p.Hex)
+                .Concat(new[] { "#000000", "#FFFFFF", "#1E1E1E", "#808080", "#0000FF", "#FFFF00", "#7A7A7A", "#3E3E42" }).ToList();
+            foreach (string hex in probes)
+            {
+                var accent = new Color(hex);
+                double onAccent = ThemeColors.Contrast(ThemeColors.TextOn(accent), accent);
+                Expect(onAccent >= 4.5, $"text on the accent {hex} reads at {onAccent:0.0} to 1");
+                foreach (var palette in Palette.All)
+                {
+                    foreach (var (surfaceName, surface) in new[] { ("Control", palette.Control), ("ControlHover", palette.ControlHover), ("Surface", palette.Surface), ("SurfaceSunken", palette.SurfaceSunken), ("SurfaceDeep", palette.SurfaceDeep), ("RowOdd", palette.RowOdd) })
+                    {
+                        double contrast = ThemeColors.Contrast(ThemeColors.AccentTextFor(accent, surface, palette), surface);
+                        Expect(contrast >= 4.5, $"{palette.Name}: the accent {hex} as text on {surfaceName} reads at {contrast:0.0} to 1");
+                    }
+                    double onTint = ThemeColors.Contrast(palette.Text, palette.SurfaceSunken.Lerp(accent, 0.18f));
+                    Expect(onTint >= 4.5, $"{palette.Name}: text on the accent {hex}'s tint reads at {onTint:0.0} to 1");
+                }
             }
             // Any accent the user picks: its headings and links read on every palette's surface.
             foreach (string hex in new[] { "#000000", "#FFFFFF", "#1E1E1E", "#808080", "#0000FF", "#FFFF00", ThemeColors.DefaultAccentHex })

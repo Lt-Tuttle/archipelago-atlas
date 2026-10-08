@@ -198,6 +198,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         using var _ = AP_Atlas.Core.PerfMonitor.Measure($"Switch to {tool.Title} tab");
 
         _currentTool = tool;
+        ApplyExplorerOffset(tool);
         if (_uiReady && _appSettings.LastTool != tool.Id)
         {
             _appSettings.LastTool = tool.Id; // for "where I left off" at the next start

@@ -197,6 +197,9 @@ namespace AP_Atlas.UI
 
         private void SetStatus(string text) => _status.Text = text;
 
+        /// <summary>The title of the tab that shows (for tests).</summary>
+        internal string CurrentTabTitle => _tabs == null ? "" : _tabs.GetTabTitle(_tabs.CurrentTab);
+
         private void SelectTab(string name)
         {
             for (int i = 0; i < _tabs.GetTabCount(); i++)
