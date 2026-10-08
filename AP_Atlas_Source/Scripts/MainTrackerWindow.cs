@@ -79,6 +79,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         AP_Atlas.Core.Logger.OnLogMessage -= OnLogMessageReceived;
         AP_Atlas.Core.Annotations.Changed -= OnAnnotationsChanged;
         AP_Atlas.Core.PopTracker.PackDoctorService.ReviewSuggested -= OnPackReviewSuggested;
+        AP_Atlas.Core.EngineSetup.AtlasEngine.PartsChanged -= OnEnginePartsChanged;
+        AP_Atlas.Core.EngineSetup.AtlasEngine.Changed -= OnEngineChangedForHome;
     }
 
     // Slot cards show special-item progress, so redraw them when special marks change.
@@ -152,6 +154,10 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         SetUpUpdates();
         SetUpCrashReports();
         AP_Atlas.Core.EngineSetup.AtlasEngine.Initialize(_appSettings);
+        // Before any slot exists: a changed engine part retires the pools' processes first, then the slots restart.
+        EnginePools.Initialize();
+        AP_Atlas.Core.EngineSetup.AtlasEngine.PartsChanged += OnEnginePartsChanged;
+        AP_Atlas.Core.EngineSetup.AtlasEngine.Changed += OnEngineChangedForHome;
         AP_Atlas.Core.PopTracker.PackDoctorService.Initialize(_appSettings);
         AP_Atlas.Core.PopTracker.PackDoctorService.ReviewSuggested += OnPackReviewSuggested;
         _profiles = DataManager.LoadProfiles();
@@ -273,7 +279,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _toolTitle.AddThemeConstantOverride("margin_left", 8);
         globalTabHBox.AddChild(_toolTitle);
         globalTabHBox.AddChild(BuildSlotPicker());
-        var contentMenuBtn = new Button { Text = "...", Flat = true, AccessibilityName = Tr("More options") };
+        var contentMenuBtn = new Button { Text = "...", ThemeTypeVariation = "QuietButton", AccessibilityName = Tr("More options") };
         contentMenuBtn.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextMuted);
         AttachFontMenuPopup(contentMenuBtn,
             () => _appSettings.ContentFontSize,

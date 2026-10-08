@@ -370,6 +370,15 @@ public partial class SlotTrackerControl : MarginContainer
     /// </summary>
     public bool? ApworldMatchesSeed => Model.Logic.ApworldMatchesSeed;
 
+    /// <summary>
+    /// Whether linking the player's YAML would help this slot's logic: the engine asked for one (it can't rebuild the
+    /// world from the server's data), or the rebuilt world differs from the server's for a reason other than the apworld
+    /// version. Otherwise nothing offers to link one.
+    /// </summary>
+    public bool YamlWouldHelp =>
+        EngineProblem?.Code is "yaml_needed" or "generation_failed"
+        || (!LogicHidden && LogicAccuracyWarning != null && ApworldMatchesSeed != false);
+
     public string InstalledWorldVersion => Model.Logic.Running ? Model.Logic.Engine.LastWorldVersion : null;
 
     /// <summary>True when this slot runs on Atlas's cached copy of the seed's apworld version instead of the installed one.</summary>

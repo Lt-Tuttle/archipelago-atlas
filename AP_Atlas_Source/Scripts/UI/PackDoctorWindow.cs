@@ -38,7 +38,7 @@ namespace AP_Atlas.UI
         private static readonly Dictionary<string, PackDoctorWindow> _open = new Dictionary<string, PackDoctorWindow>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>Opens (or focuses) the Doctor for a pack.</summary>
-        public static void Open(Node anyNode, LoadedPack original, int fontSize, string startTab = null, string focusPinPath = null)
+        public static void Open(Node anyNode, LoadedPack original, int fontSize, string startTab = null, string focusPinPath = null, AppSettings settings = null)
         {
             if (original == null) return;
             string key = PackFixes.KeyFor(original);
@@ -56,7 +56,8 @@ namespace AP_Atlas.UI
             var w = new PackDoctorWindow(original, fontSize) { _focusPinPath = focusPinPath };
             if (focusPinPath != null) startTab = "Maps";
             _open[key] = w;
-            WindowFit.ShowNative(w, anyNode, new Vector2I(1100, 760), new Vector2I(900, 600));
+            WindowFit.ShowNative(w, anyNode, new Vector2I(1100, 760), new Vector2I(900, 600), AtlasEngineWindow.ToRect(settings?.PackDoctorWindowRect),
+                settings == null ? null : rect => { settings.PackDoctorWindowRect = AtlasEngineWindow.FromRect(rect); DataManager.SaveSettingsSoon(settings); });
             if (startTab != null) w.SelectTab(startTab);
         }
 
@@ -140,6 +141,13 @@ namespace AP_Atlas.UI
                 AP_Atlas.Core.Async.Fire(PackDoctorService.CheckAsync(_original, prompt: false), "checking the map pack");
             }, "showing the pack's images"), "reading the map pack's images");
             RenderCurrentTab();
+        }
+
+        /// <summary>Moved or resized (maybe to another monitor): drawn at that screen's scale, kept within it, and remembered.</summary>
+        public override void _Notification(int what)
+        {
+            if (what == NotificationWMPositionChanged || what == NotificationWMDpiChange) WindowFit.Refit(this);
+            if (what == NotificationWMPositionChanged || what == NotificationWMSizeChanged) WindowFit.Remember(this);
         }
 
         public override void _ExitTree()

@@ -247,7 +247,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 connectBtn.SetMeta("is_icon_button", true);
                 connectBtn.SetMeta("slot_name", slotName);
                 connectBtn.SetMeta("profile_id", profile.Id);
-                connectBtn.TooltipText = isConnecting ? "Connecting..." : (isConnected ? "Connected" : "Connect");
+                connectBtn.TooltipText = isConnecting ? Tr("Connecting...") : (isConnected ? Tr("Connected") : Tr("Connect"));
+                connectBtn.AccessibilityName = connectBtn.TooltipText;
                 connectBtn.AddThemeColorOverride("icon_disabled_color", AP_Atlas.Core.ThemeColors.Text);
                 if (isConnected) connectBtn.Modulate = AP_Atlas.Core.ThemeColors.Text;
                 else if (isConnecting) connectBtn.Modulate = AP_Atlas.Core.ThemeColors.Text;
@@ -273,8 +274,9 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                     ExpandIcon = true,
                     IconAlignment = HorizontalAlignment.Center,
                     Disabled = !isSocketConnected,
-                    TooltipText = "Disconnect"
+                    TooltipText = Tr("Disconnect")
                 };
+                disconnectBtn.AccessibilityName = disconnectBtn.TooltipText;
                 disconnectBtn.SetMeta("is_icon_button", true);
                 disconnectBtn.AddThemeColorOverride("icon_disabled_color", AP_Atlas.Core.ThemeColors.Disabled);
                 if (isSocketConnected) disconnectBtn.Modulate = AP_Atlas.Core.ThemeColors.Danger;

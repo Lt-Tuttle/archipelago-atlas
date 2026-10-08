@@ -22,7 +22,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     {
         var original = AP_Atlas.Core.PopTracker.PopTrackerPackLoader.InspectZipPack(zipPath);
         if (original == null) { ShowToast("Couldn't read that map pack.", AP_Atlas.Core.ThemeColors.Error); return; }
-        AP_Atlas.UI.PackDoctorWindow.Open(this, original, _appSettings.ContentFontSize, startTab);
+        AP_Atlas.UI.PackDoctorWindow.Open(this, original, _appSettings.ContentFontSize, startTab, settings: _appSettings);
     }
     /// <summary>Opens the Cheese Tracker tab's Settings (the API key, links, automatic updates, the site).</summary>
     public void OpenCheeseSettings() => ShowCheeseTab(AP_Atlas.UI.CheeseTrackerTab.SettingsView);

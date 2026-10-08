@@ -142,8 +142,10 @@ public partial class MainTrackerWindow
             UpdatesWithoutGodotErrorsAsync);
         await ScenarioAsync("Data folder: a program folder that can't be written to needs a choice (the override and a writable folder don't, and nothing outside Atlas's folder is touched then); the dialog names the folder and the problem, Continue takes the local app data folder by default and makes it, another folder that can't be used is refused with the reason and the dialog stays, a usable one is taken and remembered in the pointer file, and Quit chooses nothing",
             DataFolderAsync);
-        await ScenarioAsync("Engine setup panel: the short setup asks the engine permission first and starts nothing until it's answered; the panel says the step it's on in plain words (never pip's lines), says why a run stopped with Try again and Show details, Try again runs it again, Show details opens the full window with its log (hidden by default otherwise), and Don't allow starts nothing",
+        await ScenarioAsync("Engine setup panel: the short setup asks the engine permission first and starts nothing until it's answered; the panel says the step it's on in plain words (never pip's lines) with one bar for the whole setup that never goes down, says why a run stopped with Try again and Show details, Try again runs it again, Show details opens the full window with its log (hidden by default otherwise), and Don't allow starts nothing",
             EngineSetupPanelAsync);
+        await ScenarioAsync("Engine window slots: a slot whose logic doesn't ask for a YAML gets no Link YAML button; a linked YAML shows Change YAML and Unlink; unlinked, nothing; Copy log says so in the status line",
+            EngineWindowSlotsAsync);
         await ScenarioAsync("Display scale: at Windows' 125% to 200% on 1080p, 1440p and 4K screens, and in an 1100-wide window at 125%, the window is drawn at that scale with a smallest size that fits, every pane stays inside it without overlapping (Properties hides itself when the width can't hold it, its setting kept), Home's cards take the columns the width allows, and the Engine window, About, Help, the shortcuts, a confirmation and the command palette each fit the window they open in",
             DisplayScaleAsync);
         await ScenarioAsync("Crash reports: a problem last time is offered as a card; the dialog shows the whole report as it would be sent, with the user's name, paths, the server, the slot and an e-mail replaced by marks; Send once posts a Sentry envelope to the project (scrubbed, with the note) and the file isn't offered again; with Always send, the next is sent without asking; Don't send dismisses it and nothing is posted; Help → Report a problem writes a scrubbed zip in Atlas's folder and uploads nothing; a build without an address offers nothing",
@@ -922,6 +924,11 @@ public partial class MainTrackerWindow
         UiTestExpect(!home.StepDone("multiworld") && !home.StepDone("connect") && !home.StepDone("pack") && !home.StepDone("cheese"),
             $"steps done before anything happened: {string.Join(", ", home.StepIds.Where(home.StepDone))}");
         UiTestExpect(home.RecentProfileIds.Count == 0, "multiworlds listed while there are none");
+        // The engine changing (setup finished) makes Home re-read its state: the engine step ticks without a visit.
+        int refreshes = home.RefreshCount;
+        AP_Atlas.Core.EngineSetup.AtlasEngine.NotifyChanged();
+        await UiTestWaitAsync(0.1);
+        UiTestExpect(home.RefreshCount > refreshes, "Home didn't re-read Atlas's state after an engine change");
         // A tip shows; Next tip shows the next one, around the end.
         int tip = home.TipIndex;
         UiTestExpect(tip >= 0 && home.TipText.Contains(AP_Atlas.UI.HomePage.Tips[tip]), "no tip shows");
@@ -953,6 +960,20 @@ public partial class MainTrackerWindow
             // A tool's card shows the tool.
             home.ToolCardOf(AP_Atlas.UI.Tool.MapPacks).EmitSignal(BaseButton.SignalName.Pressed);
             UiTestExpect(ShownContent() == _packManagerPanel, "the Map Packs card didn't show Map Packs");
+            // Add a multiworld from Home: the Multiworlds page shows the new one selected, its name ready to type; a
+            // second press selects it again instead of adding another.
+            host.ShowTool(AP_Atlas.UI.Tool.Home);
+            int before = _profiles.Count;
+            home.StepButtonOf("multiworld").EmitSignal(BaseButton.SignalName.Pressed);
+            UiTestExpect(ShownContent() == _connectionPanel && _selectedProfile != null && _selectedProfile.Name == "New Multiworld" && _profiles.Count == before + 1,
+                "Add from Home didn't show the new multiworld on the Multiworlds page");
+            UiTestExpect(_nameInput.HasFocus(), "the new multiworld's name box isn't ready to type into");
+            var added = _selectedProfile;
+            OnAddProfilePressed();
+            UiTestExpect(_profiles.Count == before + 1 && _selectedProfile == added, "a second Add made another untouched multiworld");
+            host.ShowTool(AP_Atlas.UI.Tool.Home);
+            UiTestExpect(home.StepDone("multiworld"), "the multiworld step isn't ticked after Add");
+            DeleteProfile(added);
         }
         finally
         {
@@ -1418,6 +1439,12 @@ public partial class MainTrackerWindow
         var off = AP_Atlas.UI.Kit.Button("Off", null, () => presses++, enabled: false, small: true);
         off.EmitSignal(BaseButton.SignalName.Pressed);
         UiTestExpect(off.Disabled && off.TooltipText == "" && off.HasMeta("font_size_ratio") && presses == 2, "a disabled small kit button isn't disabled, or isn't small");
+        // A quiet (flat) kit button still shows a hover and a press: the theme's variation, not Godot's "flat".
+        var quiet = AP_Atlas.UI.Kit.Button("Quiet", "a quiet one", () => { }, flat: true);
+        AddChild(quiet);
+        UiTestExpect(quiet.ThemeTypeVariation == AP_Atlas.UI.Kit.QuietButton && !quiet.Flat && quiet.GetThemeStylebox("hover") is StyleBoxFlat && quiet.GetThemeStylebox("pressed") is StyleBoxFlat
+            && quiet.GetThemeStylebox("normal") is StyleBoxEmpty, "a quiet kit button has no hover or pressed look");
+        quiet.QueueFree();
         // Its text lines wrap and take the palette's colours.
         UiTestExpect(AP_Atlas.UI.Kit.Text("t").GetThemeColor("font_color") == AP_Atlas.Core.ThemeColors.Text
             && AP_Atlas.UI.Kit.Muted("t").GetThemeColor("font_color") == AP_Atlas.Core.ThemeColors.TextMuted
@@ -2685,6 +2712,18 @@ public partial class MainTrackerWindow
             ExpectLogic(slot, "after restarting logic", inLogic: new long[] { 2001, 2002, 2003 }, outOfLogic: Array.Empty<long>(), goal: true, active: 3);
             UiTestExpect(engine.Crashes == 1 && slot.EngineProblem == null, "the engine failed again");
 
+            // The engine's parts changed (its game's apworld added or updated): the slot restarts by itself on a fresh
+            // engine (its pool retired the old process), without a reconnect, and a card says so. Another game's apworld
+            // leaves it alone.
+            string root = AtlasEngine.Resolve(_appSettings).Root;
+            AtlasEngine.RaisePartsChangedForTests(new[] { new AtlasEngine.EngineChange("apworld", root, "Test Game") });
+            await UiTestWaitForAsync(() => slot.LogicSettled && engine.Starts == 5 ? slot : null, "logic to restart on its own after the engine's parts changed");
+            ExpectLogic(slot, "after the engine's parts changed", inLogic: new long[] { 2001, 2002, 2003 }, outOfLogic: Array.Empty<long>(), goal: true, active: 3);
+            UiTestExpect(_alertLog.Entries.Any(e => e.Message.Contains("Restarting logic for Tester")), "no card said logic was restarting on the updated engine");
+            AtlasEngine.RaisePartsChangedForTests(new[] { new AtlasEngine.EngineChange("apworld", root, "Other Game") });
+            await UiTestWaitAsync(0.5);
+            UiTestExpect(engine.Starts == 5 && slot.LogicSettled, "a change to another game's apworld restarted the slot");
+
             // An answer that doesn't say what each new item opened is a failure, never taken for "it opened nothing": logic
             // starts again (after 2 s: the restart above gave it a fresh set of tries).
             engine.ShortSteps = true;
@@ -3159,6 +3198,52 @@ public partial class MainTrackerWindow
         }
     }
 
+    /// <summary>The engine window's Slots list offers a YAML only when it would help; Copy log says so in the status line.</summary>
+    private async Task EngineWindowSlotsAsync()
+    {
+        await using var server = new FakeArchipelagoServer();
+        server.Games["Test Game"] = new FakeGame("0123456789abcdef0123456789abcdef01234567",
+            new Dictionary<string, long> { ["Sword"] = 1000 }, new Dictionary<string, long> { ["Cave Chest"] = 2000 });
+        var profile = new MultiworldProfile { Name = "Engine window test", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Tester");
+        _profiles.Add(profile);
+        string yaml = System.IO.Path.Combine(DataManager.GetDataDirectory(), "uitest_slot.yaml");
+        await System.IO.File.WriteAllTextAsync(yaml, "name: Tester\ngame: Test Game\n");
+        try
+        {
+            await OnConnectSlotPressedAsync("Tester", profile);
+            var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
+            await UiTestWaitForAsync(() => slot.EngineProblem != null ? slot : null, "the slot to report its engine problem (no engine is set up here)");
+            UiTestExpect(!slot.YamlWouldHelp, $"a YAML is offered for \"{slot.EngineProblem?.Code}\", which no YAML would help");
+            OpenEngineWindow();
+            var window = await UiTestWaitForAsync(() => GetTree().Root.GetChildren().OfType<AP_Atlas.UI.AtlasEngineWindow>().FirstOrDefault(), "the engine window");
+            await UiTestWaitAsync(0.3);
+            window.RefreshSlotsNow();
+            UiTestExpect(!window.SlotButtonTexts.Any(t => t.StartsWith("Link YAML")) && window.SlotButtonTexts.Contains("Restart logic"),
+                $"the Slots list offers a YAML nobody asked for: {string.Join(", ", window.SlotButtonTexts)}");
+            slot.LinkYaml(yaml);
+            window.RefreshSlotsNow();
+            UiTestExpect(window.SlotButtonTexts.Contains("Change YAML…") && window.SlotButtonTexts.Contains("Unlink"),
+                $"a linked YAML isn't offered for a change: {string.Join(", ", window.SlotButtonTexts)}");
+            slot.LinkYaml(null);
+            window.RefreshSlotsNow();
+            UiTestExpect(!window.SlotButtonTexts.Any(t => t.Contains("YAML")), $"an unlinked YAML still shows: {string.Join(", ", window.SlotButtonTexts)}");
+            // Copy log says so.
+            var copy = window.FindChildren("*", "Button", true, false).OfType<Button>().First(b => b.Text == "Copy log");
+            copy.EmitSignal(BaseButton.SignalName.Pressed);
+            UiTestExpect(window.StatusText == "Log copied.", $"Copy log said \"{window.StatusText}\"");
+            window.EmitSignal(Window.SignalName.CloseRequested);
+            await UiTestWaitAsync(0.2);
+        }
+        finally
+        {
+            ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.Connections);
+            DeleteProfile(profile);
+            AP_Atlas.Core.SafeFile.Delete(yaml);
+        }
+    }
+
     private async Task EngineSetupPanelAsync()
     {
         var kind = AP_Atlas.Core.Permissions.EngineSetup;
@@ -3187,8 +3272,10 @@ public partial class MainTrackerWindow
             UiTestExpect(Panel() == null, "nothing starts before the permission is answered");
             ask.EmitSignal(ConfirmationDialog.SignalName.Confirmed);
             var panel = await UiTestWaitForAsync(Panel, "the setup panel");
-            await UiTestWaitForAsync(() => panel.StepText.StartsWith("Downloading Python") ? panel : null, "the panel's first step");
+            await UiTestWaitForAsync(() => panel.StepText.Contains("Downloading Python") ? panel : null, "the panel's first step");
             UiTestExpect(!panel.StepText.Contains("pretend"), "pip's lines don't reach the panel");
+            await UiTestWaitForAsync(() => panel.StepText.Contains("health check") ? panel : null, "the panel's second step");
+            UiTestExpect(panel.ProgressValue >= 0.5, $"the bar went back down between steps ({panel.ProgressValue:0.00})");
             await UiTestWaitForAsync(() => panel.TryAgainShown ? panel : null, "the failed run's Try again");
             UiTestExpect(panel.OutcomeText.Contains("pretend setup failed"), "the panel says why the setup stopped: " + panel.OutcomeText);
             UiTestExpect(panel.DetailsShown, "Show details is offered after a failure");

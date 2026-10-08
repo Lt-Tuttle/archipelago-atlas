@@ -29,6 +29,7 @@ namespace AP_Atlas.UI
         public static event Action? ScaleChanged;
 
         private static readonly List<Window> _watched = new();
+        private static readonly Dictionary<Window, Action<Rect2I>> _rememberers = new();
 
         /// <summary>Whether a window is being fitted (for tests).</summary>
         internal static bool IsWatched(Window window) => _watched.Contains(window);
@@ -150,11 +151,15 @@ namespace AP_Atlas.UI
         /// Shows one of Atlas's own windows as a Windows window of its own (movable to another monitor, kept within the
         /// screen it's on, drawn at that screen's scale), or embedded where that isn't possible (headless runs).
         /// </summary>
-        public static void ShowNative(Window window, Node owner, Vector2I wantedLogical, Vector2I minLogical)
+        /// <param name="remembered">Where the window was last (screen pixels), or null: it opens centred on the owner's screen.</param>
+        /// <param name="remember">Told the window's place and size (screen pixels) when it moves, resizes or closes, to keep for next time.</param>
+        public static void ShowNative(Window window, Node owner, Vector2I wantedLogical, Vector2I minLogical, Rect2I? remembered = null, Action<Rect2I>? remember = null)
         {
             bool native = TestScale == null && TestUsableRect == null && DisplayServer.HasFeature(DisplayServer.Feature.Subwindows);
             window.Transient = false;
             window.Exclusive = false;
+            // A window is visible as made; Godot refuses to change force_native on a shown window, so it's hidden first.
+            window.Visible = false;
             window.ForceNative = native;
             var root = owner.GetTree().Root;
             root.AddChild(window);
@@ -168,15 +173,39 @@ namespace AP_Atlas.UI
             var settings = _settings?.Invoke();
             float scale = settings != null ? EffectiveScale(screen, settings) : WindowsScale(screen);
             var usable = UsableRect(screen);
+            IntRect rect;
+            if (remembered is { } last && last.Size.X > 0 && last.Size.Y > 0)
+            {
+                // Back where it was, within the screen that holds its middle (another monitor may have gone).
+                screen = ScreenHolding(last);
+                usable = UsableRect(screen);
+                scale = settings != null ? EffectiveScale(screen, settings) : WindowsScale(screen);
+                rect = IntRect.Fit(ToInt(last), ToInt(usable));
+            }
+            else
+            {
+                var wanted = Scaled(wantedLogical, scale);
+                rect = IntRect.Centred(Math.Min(wanted.X, usable.Size.X * 9 / 10), Math.Min(wanted.Y, usable.Size.Y * 9 / 10), ToInt(usable));
+            }
             window.ContentScaleFactor = scale;
-            var wanted = Scaled(wantedLogical, scale);
-            var rect = IntRect.Centred(Math.Min(wanted.X, usable.Size.X * 9 / 10), Math.Min(wanted.Y, usable.Size.Y * 9 / 10), ToInt(usable));
             var min = Scaled(minLogical, scale);
             window.MinSize = new Vector2I(Math.Min(min.X, rect.Width), Math.Min(min.Y, rect.Height));
             window.Size = new Vector2I(rect.Width, rect.Height);
             window.Position = new Vector2I(rect.X, rect.Y);
+            if (remember != null)
+            {
+                _rememberers[window] = remember;
+                window.TreeExiting += () => { Remember(window); _rememberers.Remove(window); };
+            }
             window.Show();
             _natives.Add(window);
+        }
+
+        /// <summary>A native window's place and size, kept for next time (its own windows call this when they move or resize).</summary>
+        public static void Remember(Window window)
+        {
+            if (!GodotObject.IsInstanceValid(window) || !window.ForceNative || window.Mode != Window.ModeEnum.Windowed) return;
+            if (_rememberers.TryGetValue(window, out var remember)) remember(new Rect2I(window.Position, window.Size));
         }
 
         /// <summary>

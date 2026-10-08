@@ -251,7 +251,7 @@ namespace AP_Atlas.UI
             viewRow.AddChild(Kit.Button("−", "Zoom out", () => _canvas.ZoomAtCenter(1 / MapCanvas.WheelStep)));
             viewRow.AddChild(Kit.Button("+", "Zoom in", () => _canvas.ZoomAtCenter(MapCanvas.WheelStep)));
             box.AddChild(viewRow);
-            _displayToggle = new Button { Text = "▸ Display", Flat = true, Alignment = HorizontalAlignment.Left, TooltipText = "Node size and which pins the map shows" };
+            _displayToggle = new Button { Text = "▸ Display", ThemeTypeVariation = "QuietButton", Alignment = HorizontalAlignment.Left, TooltipText = "Node size and which pins the map shows" };
             box.AddChild(_displayToggle);
             var panel = new VBoxContainer { Visible = false, SizeFlagsHorizontal = SizeFlags.ExpandFill };
             panel.AddThemeConstantOverride("separation", 6);

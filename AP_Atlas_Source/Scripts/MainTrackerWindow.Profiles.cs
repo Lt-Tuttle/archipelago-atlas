@@ -240,6 +240,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             _saveButton.Disabled = true;
             _deleteButton.Disabled = true;
             _addSlotButton.Disabled = true;
+            PopulateSlotsList(); // the rows of the multiworld selected until now go
             return;
         }
         _nameInput.Text = profile.Name;
@@ -314,7 +315,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             };
             connectBtn.SetMeta("is_icon_button", true);
             connectBtn.SetMeta("slot_name", slotName);
-            connectBtn.TooltipText = "Connect";
+            connectBtn.TooltipText = Tr("Connect");
+            connectBtn.AccessibilityName = connectBtn.TooltipText;
             connectBtn.AddThemeColorOverride("icon_disabled_color", AP_Atlas.Core.ThemeColors.Text);
             connectBtn.Modulate = AP_Atlas.Core.ThemeColors.Success;
             connectBtn.Pressed += () =>
@@ -333,8 +335,9 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 ExpandIcon = true,
                 IconAlignment = HorizontalAlignment.Center,
                 Disabled = true,
-                TooltipText = "Disconnect"
+                TooltipText = Tr("Disconnect")
             };
+            disconnectBtn.AccessibilityName = disconnectBtn.TooltipText;
             disconnectBtn.SetMeta("is_icon_button", true);
             disconnectBtn.AddThemeColorOverride("icon_disabled_color", AP_Atlas.Core.ThemeColors.Disabled);
             disconnectBtn.Modulate = AP_Atlas.Core.ThemeColors.Disabled;
@@ -352,8 +355,9 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 SizeFlagsHorizontal = Godot.Control.SizeFlags.ShrinkCenter,
                 ExpandIcon = true,
                 IconAlignment = HorizontalAlignment.Center,
-                TooltipText = "Delete Slot"
+                TooltipText = Tr("Delete Slot")
             };
+            delBtn.AccessibilityName = delBtn.TooltipText;
             delBtn.SetMeta("is_icon_button", true);
             delBtn.Modulate = AP_Atlas.Core.ThemeColors.Danger;
             delBtn.Pressed += () =>
@@ -407,15 +411,39 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         PopulateSlotsList();
         RefreshProfileListStyles();
     }
+    /// <summary>
+    /// A new multiworld, shown where it can be filled in: the Multiworlds page with it selected and its name ready to
+    /// type. A new one that was never touched is selected again instead of adding another beside it.
+    /// </summary>
     private void OnAddProfilePressed()
     {
-        var newProfile = new MultiworldProfile();
-        newProfile.Slots.Add("Player1");
-        _profiles.Add(newProfile);
-        DataManager.SaveProfiles(_profiles);
-        RefreshProfileList();
-        SelectProfile(newProfile);
+        var untouched = _profiles.FirstOrDefault(IsUntouchedNew);
+        var profile = untouched;
+        if (profile == null)
+        {
+            profile = new MultiworldProfile();
+            profile.Slots.Add("Player1");
+            _profiles.Add(profile);
+            DataManager.SaveProfiles(_profiles);
+            RefreshProfileList();
+        }
+        ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.Connections);
+        SelectProfile(profile);
+        if (untouched != null) ShowToast(Tr("Give your new multiworld a name first."), AP_Atlas.Core.ThemeColors.Info);
+        _nameInput.GrabFocus();
+        _nameInput.SelectAll();
+        UpdateSidebar();
+        _homePage?.Refresh();
     }
+
+    /// <summary>A multiworld as Add made it, with nothing filled in yet: the default name, one slot "Player1", every box empty, no stats.</summary>
+    private static bool IsUntouchedNew(MultiworldProfile profile) =>
+        profile.Name == new MultiworldProfile().Name
+        && profile.Slots.Count == 1 && profile.Slots[0] == "Player1"
+        && (string.IsNullOrEmpty(profile.ServerUrl) || profile.ServerUrl == new MultiworldProfile().ServerUrl)
+        && string.IsNullOrEmpty(profile.RoomLink) && string.IsNullOrEmpty(profile.Password)
+        && string.IsNullOrEmpty(profile.CheeseTrackerUrl) && string.IsNullOrEmpty(profile.SphereTrackerUrl)
+        && profile.SavedStats.Count == 0;
     private void OnSaveProfilePressed()
     {
         if (_selectedProfile != null)

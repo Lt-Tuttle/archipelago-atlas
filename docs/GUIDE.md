@@ -8,7 +8,7 @@ Atlas is an unofficial community tool: it isn't affiliated with or endorsed by t
 
 Atlas opens on Home (Ctrl+8) unless Settings → Behaviour → Open on says otherwise. Its header carries Atlas's icon and wordmark, which take the theme's colours and your accent. It has:
 
-- **Getting started:** the steps to a working Atlas, each with a tick once it's done and a button that does it: set up the Atlas Engine, add a multiworld, connect a slot, install a map pack, and link Cheese Tracker if your multiworld uses it.
+- **Getting started:** the steps to a working Atlas, each with a tick once it's done and a button that does it: set up the Atlas Engine (the tick appears the moment the setup finishes), add a multiworld (which takes you to the Multiworlds page with the new one selected, its name ready to type), connect a slot, install a map pack, and link Cheese Tracker if your multiworld uses it.
 - **Your multiworlds:** the ones you've played most recently, each with a Connect button that connects every slot of it in turn.
 - **Tools:** a card per tool.
 - A tip, which changes each time Home shows.
@@ -97,9 +97,11 @@ A pack's own scripts run in a sandbox with no file, network or OS access, and un
 
 Logic, maps and hints need Archipelago's own code. The Atlas Engine is Atlas's portable copy: Python and Archipelago, in Atlas's own folder, each download pinned to an exact version and checked against a fixed hash.
 
-**Setting it up** is one button: Set up on Home (or on a slot's "logic needs the engine" card, or Settings → Tools). Atlas asks once for the download (Allow once, Always allow or Don't allow; Settings → Privacy & permissions keeps the answer), then a small panel says what it's doing in plain words (downloading Python, unpacking Archipelago, installing its packages, running the health check) with a progress bar and Cancel. It ends with Ready, or with what went wrong and Try again; Show details opens the full engine window with the setup's own log.
+**Setting it up** is one button: Set up on Home (or on a slot's "logic needs the engine" card, or Settings → Tools). Atlas asks once for the download (Allow once, Always allow or Don't allow; Settings → Privacy & permissions keeps the answer), then a small panel says what it's doing in plain words ("Step 3 of 9: Downloading Archipelago…") with one bar for the whole setup, which never goes back, and Cancel. It ends with Ready, or with what went wrong and Try again; Show details opens the full engine window with the setup's own log.
 
-**The engine window** (Tools → Atlas Engine, or the bar's bottom button) is for managing the engine once it works: each part with its version, Set up everything, the games it can run and each slot's YAML. Its log (what Python and pip print) stays hidden behind Show log until you want it, for a problem report. Test every game rebuilds each installed game.
+**The engine window** (Tools → Atlas Engine, or the bar's bottom button) is for managing the engine once it works: each part with its version, Set up everything, the games it can run and each slot's YAML. Its log (what Python and pip print) stays hidden behind Show log until you want it, for a problem report (Copy log says "Log copied." when it has). Test every game rebuilds each installed game. The window opens as a window of its own, centred on Atlas's screen the first time and where you last left it after that, as does the Pack Doctor's.
+
+**When a part of the engine changes** (an apworld added or updated, Archipelago or its packages updated, a new Universal Tracker), every connected slot whose logic runs on it restarts its logic on the new parts by itself; a card says which slots and which parts. There's nothing to reconnect. The Slots section offers Link YAML only when logic would be helped by one (the engine said it can't rebuild the world from the server's data, or the rebuilt world differs from the server's); a linked YAML can be changed or unlinked there.
 
 Atlas can run logic on your own Archipelago install instead. That needs your consent: the engine window shows exactly what Atlas would add (its bridge apworld in the install's worlds folder) before anything is written, and Remove Atlas's files undoes it.
 

@@ -17,16 +17,20 @@ namespace AP_Atlas.UI
         /// it, the theme's ring shows it), unless <paramref name="focusable"/> is false for a button beside a field the
         /// user keeps typing into. A button showing only a symbol ("◀", "+") is named for screen readers by its tooltip.
         /// </summary>
-        /// <param name="flat">No background until hovered: a quiet button beside text.</param>
+        /// <param name="flat">No background until hovered, a tint while pressed: a quiet button beside text (the theme's QuietButton).</param>
         /// <param name="small">Slightly smaller text: an action in a row of many.</param>
         public static Button Button(string text, string? tooltip, Action onPressed, bool enabled = true, bool flat = false, bool small = false, bool focusable = true)
         {
-            var button = new Button { Text = text, TooltipText = tooltip ?? "", Disabled = !enabled, Flat = flat, FocusMode = focusable ? Control.FocusModeEnum.All : Control.FocusModeEnum.None };
+            var button = new Button { Text = text, TooltipText = tooltip ?? "", Disabled = !enabled, FocusMode = focusable ? Control.FocusModeEnum.All : Control.FocusModeEnum.None };
+            if (flat) button.ThemeTypeVariation = QuietButton;
             if (small) button.SetMeta("font_size_ratio", 0.9f);
             if (IsSymbolOnly(text) && !string.IsNullOrEmpty(tooltip)) button.AccessibilityName = tooltip;
             button.Pressed += () => onPressed();
             return button;
         }
+
+        /// <summary>The theme type variation of a quiet button: no background until hovered, a tint while pressed.</summary>
+        public const string QuietButton = "QuietButton";
 
         /// <summary>Text with no letter or digit (a glyph such as "◀" or "…"): no name for a screen reader to read.</summary>
         public static bool IsSymbolOnly(string? text) => string.IsNullOrEmpty(text) || !System.Linq.Enumerable.Any(text, char.IsLetterOrDigit);

@@ -73,6 +73,30 @@ public class EnginePoolTests
     }
 
     [Fact]
+    public async Task Retired_engines_take_no_new_slots_and_stop_when_their_last_slot_leaves()
+    {
+        string python = await PythonOrSkipAsync();
+        using var dir = new TempFolder();
+        var engine = FakeEngines.SmallWorld(dir);
+        var pool = Pool(python, engine, max: 2);
+        var alice = await JoinAsync(pool, "Alice");
+        Assert.Equal(1, pool.LiveEngines);
+
+        pool.Retire(); // the engine's parts changed: Alice's process loaded the old ones
+        Assert.Equal(0, pool.LiveEngines);
+        var bob = await JoinAsync(pool, "Bob"); // a fresh engine, though the retired one has room
+        Assert.NotEqual(alice.EngineNumber, bob.EngineNumber);
+        Assert.Equal(new[] { 1, 1 }, pool.SlotsPerEngine);
+        Assert.Equal(2, engine.Starts);
+        Assert.Equal(1, pool.LiveEngines);
+
+        alice.Leave(); // the retired engine's last slot: it stops
+        await Task.Delay(500, Ct);
+        Assert.Equal(new[] { 1 }, pool.SlotsPerEngine);
+        bob.Leave();
+    }
+
+    [Fact]
     public async Task Slots_sharing_an_engine_each_keep_their_own_world()
     {
         string python = await PythonOrSkipAsync();

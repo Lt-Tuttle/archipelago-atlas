@@ -55,7 +55,8 @@ namespace AP_Atlas.UI
             }
             var w = new AtlasEngineWindow(settings, slots, knownGames, fontSize);
             _open = w;
-            WindowFit.ShowNative(w, anyNode, new Vector2I(1200, 800), new Vector2I(820, 600));
+            WindowFit.ShowNative(w, anyNode, new Vector2I(1200, 800), new Vector2I(820, 600), ToRect(settings.EngineWindowRect),
+                rect => { settings.EngineWindowRect = FromRect(rect); DataManager.SaveSettingsSoon(settings); });
             return w;
         }
 
@@ -186,8 +187,12 @@ namespace AP_Atlas.UI
             split.AddChild(_logBox);
             var logHeader = new HBoxContainer();
             logHeader.AddChild(new Label { Text = "Log", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill });
-            var copyLog = new Button { Text = "Copy log", Flat = true };
-            copyLog.Pressed += () => DisplayServer.ClipboardSet(_log.GetParsedText());
+            var copyLog = new Button { Text = "Copy log", ThemeTypeVariation = "QuietButton" };
+            copyLog.Pressed += () =>
+            {
+                DisplayServer.ClipboardSet(_log.GetParsedText());
+                SetStatus("Log copied.", Good);
+            };
             logHeader.AddChild(copyLog);
             _logBox.AddChild(logHeader);
             _log = new RichTextLabel { SizeFlagsVertical = Control.SizeFlags.ExpandFill, ScrollFollowing = true, SelectionEnabled = true, BbcodeEnabled = false };
@@ -199,7 +204,7 @@ namespace AP_Atlas.UI
             _status = new Label { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart };
             _status.AddThemeColorOverride("font_color", Muted);
             footer.AddChild(_status);
-            _logToggle = new Button { Flat = true };
+            _logToggle = new Button { ThemeTypeVariation = "QuietButton" };
             _logToggle.Pressed += () => ShowLog(!_logBox.Visible);
             footer.AddChild(_logToggle);
             ShowLog(_settings.EngineLogShown);
@@ -215,7 +220,7 @@ namespace AP_Atlas.UI
             footer.AddChild(close);
 
             AtlasEngine.Changed += OnEngineChanged;
-            AtlasEngine.SetupStep += OnSetupStep;
+            AtlasEngine.SetupProgressed += OnSetupProgressed;
             WindowFit.ScaleChanged += OnScaleChanged;
             var timer = new Godot.Timer { WaitTime = 1.5, Autostart = true };
             timer.Timeout += RefreshSlotsIfChanged;
@@ -233,7 +238,7 @@ namespace AP_Atlas.UI
         public override void _ExitTree()
         {
             AtlasEngine.Changed -= OnEngineChanged;
-            AtlasEngine.SetupStep -= OnSetupStep;
+            AtlasEngine.SetupProgressed -= OnSetupProgressed;
             WindowFit.ScaleChanged -= OnScaleChanged;
             _cts?.Cancel();
             if (_open == this) _open = null;
@@ -257,13 +262,30 @@ namespace AP_Atlas.UI
         public override void _Notification(int what)
         {
             if (what == NotificationWMPositionChanged || what == NotificationWMDpiChange) WindowFit.Refit(this);
+            if (what == NotificationWMPositionChanged || what == NotificationWMSizeChanged) WindowFit.Remember(this);
         }
 
-        private void OnSetupStep(string text) => Ui.Defer(this, () =>
+        internal static Rect2I? ToRect(SavedWindowRect saved) => saved == null ? null : new Rect2I(saved.X, saved.Y, saved.Width, saved.Height);
+        internal static SavedWindowRect FromRect(Rect2I rect) => new() { X = rect.Position.X, Y = rect.Position.Y, Width = rect.Size.X, Height = rect.Size.Y };
+
+        private void OnSetupProgressed(AtlasEngine.SetupProgress progress) => Ui.Defer(this, () =>
         {
-            _stage.Text = text;
-            _stage.Visible = _busy;
+            if (progress.Text != null)
+            {
+                _stage.Text = progress.Steps > 0 ? $"Step {progress.Step} of {progress.Steps}: {progress.Text}" : progress.Text;
+                _stage.Visible = _busy;
+            }
+            if (progress.Fraction >= 0 && _busy) _progress.Value = Math.Max(_progress.Value, progress.Fraction);
         });
+
+        /// <summary>The status line's text (for tests).</summary>
+        public string StatusText => _status.Text;
+
+        /// <summary>Lays the Slots section out again now, if the slots changed (the timer does this every 1.5 s; for tests).</summary>
+        public void RefreshSlotsNow() => RefreshSlotsIfChanged();
+
+        /// <summary>The texts of the buttons in the Slots section's rows (for tests).</summary>
+        public IReadOnlyList<string> SlotButtonTexts => _slotsBox.GetChildren().OfType<HBoxContainer>().SelectMany(row => row.GetChildren().OfType<Button>()).Select(b => b.Text).ToList();
 
         /// <summary>
         /// Downloads ask the engine permission first (once; "Always allow" is kept under Settings → Privacy &amp; permissions),
@@ -540,7 +562,7 @@ namespace AP_Atlas.UI
 
         private string SlotsSignature() =>
             string.Join("|", (_slots?.Invoke() ?? Enumerable.Empty<SlotTrackerControl>()).Where(IsInstanceValid)
-                .Select(s => $"{s.SlotName}:{s.EngineRunning}:{s.EngineBooting}:{s.EngineProblem?.Code}:{s.LinkedYamlSetting}:{s.EngineYamlInfo?["source"]}:{s.ApworldMatchesSeed}"));
+                .Select(s => $"{s.SlotName}:{s.EngineRunning}:{s.EngineBooting}:{s.EngineProblem?.Code}:{s.LinkedYamlSetting}:{s.EngineYamlInfo?["source"]}:{s.ApworldMatchesSeed}:{s.YamlWouldHelp}"));
 
         private void RefreshSlotsIfChanged()
         {
@@ -572,14 +594,19 @@ namespace AP_Atlas.UI
                 var detail = new Label { Text = text, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart };
                 detail.AddThemeColorOverride("font_color", ThemeColors.TextMuted);
                 row.AddChild(detail);
-                var link = new Button
+                // A YAML is offered only when it would help: the engine asked for one, or the rebuilt world differs from the
+                // server's. A linked one can be changed or unlinked.
+                if (slot.LinkedYamlSetting != null || slot.YamlWouldHelp)
                 {
-                    Text = slot.LinkedYamlSetting == null ? "Link YAML…" : "Change YAML…",
-                    TooltipText = "The player YAML used to generate this seed. Only needed when the server's data can't rebuild the world.",
-                    Disabled = slot.EngineBooting
-                };
-                link.Pressed += slot.PickYaml;
-                row.AddChild(link);
+                    var link = new Button
+                    {
+                        Text = slot.LinkedYamlSetting == null ? "Link YAML…" : "Change YAML…",
+                        TooltipText = "The player YAML used to generate this seed. Only needed when the server's data can't rebuild the world.",
+                        Disabled = slot.EngineBooting
+                    };
+                    link.Pressed += slot.PickYaml;
+                    row.AddChild(link);
+                }
                 if (slot.LinkedYamlSetting != null)
                 {
                     var unlink = new Button { Text = "Unlink", TooltipText = slot.LinkedYamlSetting, Disabled = slot.EngineBooting };
@@ -899,7 +926,7 @@ namespace AP_Atlas.UI
             void log(string line) => Ui.Defer(this, () => Log(line));
             void progress(float f) => Ui.Defer(this, () =>
             {
-                _progress.Value = f < 0 ? 0 : f;
+                if (f >= 0) _progress.Value = Math.Max(_progress.Value, f); // one number for the whole operation: never down
             });
             Async.Fire(Task.Run(async () =>
             {

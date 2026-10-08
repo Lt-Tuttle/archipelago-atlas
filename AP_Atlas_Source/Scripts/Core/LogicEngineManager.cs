@@ -79,6 +79,45 @@ public static class EnginePools
     }
 
     /// <summary>
+    /// Once, at startup: when the engine's parts change, every pool retires its processes (they loaded the old parts),
+    /// before any slot hears of the change and restarts on a fresh one.
+    /// </summary>
+    public static void Initialize()
+    {
+        if (_initialized) return;
+        _initialized = true;
+        AP_Atlas.Core.EngineSetup.AtlasEngine.PartsChanged += changes =>
+        {
+            var roots = new HashSet<string>(changes.Select(c => NormalizeRoot(c.Root)), StringComparer.OrdinalIgnoreCase);
+            lock (Lock)
+                foreach (var (key, pool) in Pools)
+                    if (roots.Contains(NormalizeRoot(key.Engine))) pool.Retire();
+        };
+    }
+
+    private static bool _initialized;
+
+    /// <summary>Retires a multiworld's pools' processes (its slots' apworld choice changed): restarted slots get fresh ones.</summary>
+    public static void Retire(string multiworld)
+    {
+        lock (Lock)
+            foreach (var (key, pool) in Pools)
+                if (key.Multiworld == multiworld) pool.Retire();
+    }
+
+    /// <summary>A pool key's engine part is "mode:root"; a change names the root alone.</summary>
+    private static string NormalizeRoot(string rootOrKey)
+    {
+        string root = rootOrKey ?? "";
+        int colon = root.IndexOf(':');
+        if (colon == 1 || colon < 0) { } // a drive letter, or no mode prefix
+        else root = root.Substring(colon + 1);
+        try { root = Path.GetFullPath(string.IsNullOrEmpty(root) ? "." : root); }
+        catch (ArgumentException) { } // not a path at all: compared as written
+        return root.TrimEnd('\\', '/').ToLowerInvariant();
+    }
+
+    /// <summary>
     /// Forgets a deleted multiworld's pools. Its slots have left them (each engine stopped with its last slot), and
     /// nothing would use them again: kept, they would pile up over a long session.
     /// </summary>

@@ -326,9 +326,13 @@ namespace AP_Atlas.UI
             NextTip();
         }
 
+        /// <summary>How many times the page re-read Atlas's state (for tests).</summary>
+        public int RefreshCount { get; private set; }
+
         /// <summary>Reads Atlas's state again: the steps' ticks and the multiworlds.</summary>
         public void Refresh()
         {
+            RefreshCount++;
             foreach (var step in _steps)
             {
                 step.LastDone = step.Done();
@@ -440,7 +444,7 @@ namespace AP_Atlas.UI
         private Control ToolCard(Tool tool)
         {
             var card = Card(out var box);
-            var button = new Button { Text = _tr(tool.Title), Icon = LucideTextures.Get(tool.Icon, AP_Atlas.Core.ThemeColors.Text, 1.2f), Alignment = HorizontalAlignment.Left, Flat = true };
+            var button = new Button { Text = _tr(tool.Title), Icon = LucideTextures.Get(tool.Icon, AP_Atlas.Core.ThemeColors.Text, 1.2f), Alignment = HorizontalAlignment.Left, ThemeTypeVariation = "QuietButton" };
             button.AddThemeConstantOverride("h_separation", 8);
             button.Pressed += () => _hooks.ShowTool(tool);
             box.AddChild(button);

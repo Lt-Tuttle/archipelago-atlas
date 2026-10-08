@@ -65,6 +65,7 @@ namespace AP_Atlas.Core
             Engine = new LogicEngineManager(AtlasEngine.Resolve(settings), log, model.ProfileId, model.SlotName);
             Engine.EngineLost += OnEngineLost;
             AtlasEngine.Changed += OnEngineSetupChanged;
+            AtlasEngine.PartsChanged += OnEnginePartsChanged;
             AtlasEngine.PauseRequested += OnEnginePauseRequested;
         }
 
@@ -544,6 +545,34 @@ namespace AP_Atlas.Core
             }, $"pausing {_model.SlotName}'s logic for an engine update");
         }
 
+        /// <summary>
+        /// A part of the engine changed (any thread): a slot whose logic runs on that engine restarts it on the new
+        /// parts (its pool has retired the process that loaded the old ones), without a reconnect. An apworld change
+        /// concerns only the slots of its game.
+        /// </summary>
+        private void OnEnginePartsChanged(IReadOnlyList<AtlasEngine.EngineChange> changes) => AP_Atlas.UI.Ui.Defer(null, () =>
+        {
+            if (_disposed || !(Running || Booting)) return;
+            if (!changes.Any(Concerns)) return;
+            var parts = changes.Where(Concerns).Select(c => c.Kind == "apworld" ? $"{c.Game}'s apworld" : c.Kind).Distinct().ToList();
+            _log($"Restarting {_model.SlotName}'s logic: the engine's parts changed ({string.Join(", ", parts)}).");
+            Status = "Restarting logic on the updated engine…";
+            if (Booting) StopRun();
+            Restart();
+        }, $"restarting {_model.SlotName}'s logic on the updated engine");
+
+        private bool Concerns(AtlasEngine.EngineChange change)
+        {
+            if (!string.Equals(FullRoot(change.Root), FullRoot(Engine.Install.Root), StringComparison.OrdinalIgnoreCase)) return false;
+            return change.Kind != "apworld" || change.Game == null || string.Equals(change.Game, _model.Game, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string FullRoot(string root)
+        {
+            try { return System.IO.Path.GetFullPath(string.IsNullOrEmpty(root) ? "." : root).TrimEnd('\\', '/'); }
+            catch (ArgumentException) { return root ?? ""; }
+        }
+
         /// <summary>Setup finished or changed (any thread): a slot that was waiting on the engine tries again.</summary>
         private void OnEngineSetupChanged() => AP_Atlas.UI.Ui.Defer(null, () =>
         {
@@ -560,6 +589,7 @@ namespace AP_Atlas.Core
             _disposed = true;
             _run++;
             AtlasEngine.Changed -= OnEngineSetupChanged;
+            AtlasEngine.PartsChanged -= OnEnginePartsChanged;
             AtlasEngine.PauseRequested -= OnEnginePauseRequested;
             Engine.EngineLost -= OnEngineLost;
             Engine.StopEngine();

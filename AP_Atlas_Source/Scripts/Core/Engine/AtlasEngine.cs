@@ -578,7 +578,9 @@ namespace AP_Atlas.Core.EngineSetup
             finally
             {
                 SetupLock.Release();
-                // After the release, so slots waiting on the engine see it free when they react.
+                // After the release, so slots waiting on the engine see it free when they react. The parts that changed
+                // first: pools retire the processes that loaded the old ones, running slots restart on the new.
+                FlushChanges();
                 NotifyChanged();
             }
         }
@@ -728,6 +730,52 @@ namespace AP_Atlas.Core.EngineSetup
         /// <summary>Test hook: stands in for the whole setup (the UI test's setup panel scenario; nothing is downloaded).</summary>
         internal static Func<Action<string>, Action<float>, CancellationToken, Task<bool>> TestSetUp;
 
+        /// <summary>
+        /// Where the setup is: its step (1-based, 0 when unknown) of how many, what it's doing (null when only the
+        /// fraction moved), and how far along the whole setup is (0 to 1; negative when unknown). One number for the
+        /// whole setup, never going down (SetupProgressPlan).
+        /// </summary>
+        public sealed record SetupProgress(int Step, int Steps, string Text, float Fraction);
+
+        /// <summary>Raised (on the setup's thread) as the setup moves: the step it's on and the overall fraction.</summary>
+        public static event Action<SetupProgress> SetupProgressed;
+
+        /// <summary>A part of the engine that changed: which, under which engine root, and for an apworld, its game.</summary>
+        public sealed record EngineChange(string Kind, string Root, string Game = null);
+
+        /// <summary>
+        /// Raised (on any thread) once an engine change is done with: every part that changed since the last time.
+        /// Running slots restart their logic on the new parts, and their engine pools retire the processes that loaded
+        /// the old ones. Raised before <see cref="Changed"/>.
+        /// </summary>
+        public static event Action<IReadOnlyList<EngineChange>> PartsChanged;
+
+        private static readonly List<EngineChange> _pendingChanges = new List<EngineChange>();
+        private static SetupProgressPlan _plan;
+        private static Action<float> _setupProgress;
+
+        /// <summary>Notes a changed part; told to the slots when the change that made it is done (or at once when none is running).</summary>
+        private static void NoteChange(string kind, string root, string game = null)
+        {
+            lock (_pendingChanges) _pendingChanges.Add(new EngineChange(kind, root, game));
+            if (SetupLock.CurrentCount > 0) FlushChanges();
+        }
+
+        private static void FlushChanges()
+        {
+            List<EngineChange> changes;
+            lock (_pendingChanges)
+            {
+                if (_pendingChanges.Count == 0) return;
+                changes = _pendingChanges.ToList();
+                _pendingChanges.Clear();
+            }
+            PartsChanged?.Invoke(changes);
+        }
+
+        /// <summary>Test hook: tells the slots the engine's parts changed, as an install would (the UI test's logic scenario).</summary>
+        internal static void RaisePartsChangedForTests(IReadOnlyList<EngineChange> changes) => PartsChanged?.Invoke(changes);
+
         /// <summary>Logs a step and tells the panel about it.</summary>
         private static void Stage(Action<string> log, string text)
         {
@@ -735,8 +783,28 @@ namespace AP_Atlas.Core.EngineSetup
             ReportStep(text);
         }
 
+        /// <summary>A phase of the setup begins (the plan moves to its start), and it's logged and shown.</summary>
+        private static void Phase(Action<string> log, string phaseId, string text)
+        {
+            _plan?.Enter(phaseId);
+            Stage(log, text);
+            if (_plan != null) _setupProgress?.Invoke(_plan.Fraction);
+        }
+
+        /// <summary>A download within the running phase moved (its own fraction, or negative when its size is unknown).</summary>
+        private static void Progressed(float part)
+        {
+            if (_plan == null) return;
+            float fraction = _plan.Within(part);
+            SetupProgressed?.Invoke(new SetupProgress(_plan.Step, _plan.Steps, null, fraction));
+        }
+
         /// <summary>Tells the panel what setup is doing (the UI test's pretend setup uses it too).</summary>
-        internal static void ReportStep(string text) => SetupStep?.Invoke(text);
+        internal static void ReportStep(string text)
+        {
+            SetupStep?.Invoke(text);
+            SetupProgressed?.Invoke(new SetupProgress(_plan?.Step ?? 0, _plan?.Steps ?? 0, text, _plan?.Fraction ?? -1f));
+        }
 
         /// <summary>
         /// Runs every step the engine still needs, then a health check. Updated parts are verified before they're
@@ -748,7 +816,7 @@ namespace AP_Atlas.Core.EngineSetup
                 LastSetupProblem = null;
                 if (TestSetUp != null)
                 {
-                    bool pretend = await TestSetUp(log, progress, ct);
+                    bool pretend = await TestSetUp(log, f => { progress?.Invoke(f); SetupProgressed?.Invoke(new SetupProgress(0, 0, null, f)); }, ct);
                     if (!pretend) LastSetupProblem = "The pretend setup failed.";
                     NotifyChanged();
                     return pretend;
@@ -758,10 +826,30 @@ namespace AP_Atlas.Core.EngineSetup
                     RecoverInterruptedUpdate();
                     var steps = Steps(install);
                     bool Needs(EngineStepId id) => steps.Any(s => s.Id == id && s.State != EngineStepState.Ok);
-                    if (install.Mode == EngineMode.Portable)
+                    // The phases this setup will run, so the panel shows one number for the whole of it.
+                    var phases = new List<string>();
+                    bool portable = install.Mode == EngineMode.Portable;
+                    if (portable)
                     {
-                        if (Needs(EngineStepId.Runtime)) await InstallRuntimeCoreAsync(log, progress, ct);
-                        if (Needs(EngineStepId.Archipelago)) await InstallArchipelagoCoreAsync(log, progress, ct);
+                        if (Needs(EngineStepId.Runtime)) { phases.Add("runtime"); phases.Add("pip"); }
+                        if (Needs(EngineStepId.Archipelago)) phases.Add("archipelago");
+                        if (Needs(EngineStepId.Runtime) || Needs(EngineStepId.Archipelago) || Needs(EngineStepId.Packages)) phases.Add("packages");
+                    }
+                    if (steps.First(s => s.Id == EngineStepId.Tracker).State == EngineStepState.Missing) phases.Add("tracker");
+                    phases.Add("bridge");
+                    phases.Add("check");
+                    if (portable && (phases.Contains("packages") || WorldPackagesWanted(install))) { phases.Add("world-packages"); phases.Add("check-2"); }
+                    _plan = SetupProgressPlan.For(phases);
+                    _setupProgress = progress;
+                    void overall(float part)
+                    {
+                        Progressed(part);
+                        progress?.Invoke(_plan?.Fraction ?? part);
+                    }
+                    if (portable)
+                    {
+                        if (Needs(EngineStepId.Runtime)) await InstallRuntimeCoreAsync(log, overall, ct);
+                        if (Needs(EngineStepId.Archipelago)) await InstallArchipelagoCoreAsync(log, overall, ct);
                         steps = Steps(install);
                         if (Needs(EngineStepId.Packages)) await InstallPackagesCoreAsync(log, ct);
                     }
@@ -772,13 +860,20 @@ namespace AP_Atlas.Core.EngineSetup
                         return false;
                     }
                     steps = Steps(install);
-                    if (steps.First(s => s.Id == EngineStepId.Tracker).State == EngineStepState.Missing) await InstallTrackerCoreAsync(install, log, progress, ct);
+                    if (steps.First(s => s.Id == EngineStepId.Tracker).State == EngineStepState.Missing) await InstallTrackerCoreAsync(install, log, overall, ct);
+                    Phase(log, "bridge", "Installing Atlas's bridge…");
                     InstallBridge(install, log);
                     bool ok = await CheckCommitOrRollBackAsync(install, log, ct);
                     // Worlds that couldn't load for want of their own packages: install those, then verify again.
-                    if (ok && install.Mode == EngineMode.Portable && await InstallWorldPackagesCoreAsync(install, log, ct, force: false))
+                    if (ok && portable && await InstallWorldPackagesCoreAsync(install, log, ct, force: false))
                         ok = await CheckCommitOrRollBackAsync(install, log, ct);
                     if (!ok) LastSetupProblem = ProblemWith(Current) ?? "The health check didn't pass (the log says what it found).";
+                    else
+                    {
+                        _plan.Complete();
+                        SetupProgressed?.Invoke(new SetupProgress(_plan.Steps, _plan.Steps, "Ready.", 1f));
+                        progress?.Invoke(1f);
+                    }
                     return ok;
                 }
                 catch (OperationCanceledException)
@@ -799,9 +894,18 @@ namespace AP_Atlas.Core.EngineSetup
                 }
                 finally
                 {
+                    _plan = null;
+                    _setupProgress = null;
                     NotifyChanged();
                 }
             }, ct);
+
+        /// <summary>Whether any installed world still wants packages of its own (false while Archipelago isn't there to ask).</summary>
+        private static bool WorldPackagesWanted(EngineInstall install)
+        {
+            try { return InstallableWorldPackages(install).Count > 0; }
+            catch (Exception) { return false; } // no Archipelago yet: the setup installs it first
+        }
 
         /// <summary>Runs one step (from the setup window), then verifies the engine the same way setup does.</summary>
         public static Task<bool> RunStepAsync(EngineInstall install, EngineStepId step, Action<string> log, Action<float> progress, CancellationToken ct) =>
@@ -874,7 +978,7 @@ namespace AP_Atlas.Core.EngineSetup
         {
             EnsureDepth();
             EnsureFreeSpace(EngineDir);
-            Stage(log, $"Downloading Python {PythonVersion} from python.org…");
+            Phase(log, "runtime", $"Downloading Python {PythonVersion} from python.org…");
             string zip = Path.Combine(DownloadsDir, Path.GetFileName(PythonUrl));
             await EngineDownloader.DownloadAsync(PythonUrl, zip, PythonSha256, Report(progress), ct);
             Stage(log, "Verified. Unpacking Python…");
@@ -889,7 +993,7 @@ namespace AP_Atlas.Core.EngineSetup
             log($"Downloading pip {PipVersion} from PyPI…");
             string pipWheel = Path.Combine(DownloadsDir, Path.GetFileName(new Uri(PipWheelUrl).AbsolutePath));
             await EngineDownloader.DownloadAsync(PipWheelUrl, pipWheel, PipWheelSha256, null, ct);
-            Stage(log, "Verified. Installing pip…");
+            Phase(log, "pip", "Verified. Installing pip…");
             string stagedExe = Path.Combine(staging, "python.exe");
             await ZipFile.ExtractToDirectoryAsync(pipWheel, Path.Combine(staging, "Lib", "site-packages"), overwriteFiles: true, ct);
             int code = await RunAsync(stagedExe, new[] { "-m", "pip", "install", "--no-index", "--no-deps", "--force-reinstall", "--no-warn-script-location", "--disable-pip-version-check", pipWheel },
@@ -906,12 +1010,13 @@ namespace AP_Atlas.Core.EngineSetup
             State.PackagesSignature = null; // packages live inside the runtime folder
             SaveState();
             log($"Python {PythonVersion} ready.");
+            NoteChange("runtime", ArchipelagoDir);
         }
 
         private static async Task InstallArchipelagoCoreAsync(Action<string> log, Action<float> progress, CancellationToken ct)
         {
             EnsureFreeSpace(EngineDir);
-            Stage(log, $"Downloading Archipelago {ArchipelagoVersion} from GitHub…");
+            Phase(log, "archipelago", $"Downloading Archipelago {ArchipelagoVersion} from GitHub…");
             string zip = Path.Combine(DownloadsDir, $"Archipelago-{ArchipelagoVersion}.zip");
             await EngineDownloader.DownloadAsync(ArchipelagoUrl, zip, ArchipelagoSha256, Report(progress), ct);
             Stage(log, "Verified. Unpacking Archipelago…");
@@ -950,6 +1055,7 @@ namespace AP_Atlas.Core.EngineSetup
             SaveState();
             WriteRunner();
             log($"Archipelago {ArchipelagoVersion} ready.");
+            NoteChange("archipelago", ArchipelagoDir);
         }
 
         /// <summary>Archipelago's requirements minus the GUI and build tools, plus packages worlds need but don't list.</summary>
@@ -994,6 +1100,7 @@ namespace AP_Atlas.Core.EngineSetup
             if (!string.Equals(locked, PackagesSignature(), StringComparison.OrdinalIgnoreCase))
                 throw new Exception($"Atlas's package list was made for different requirements than this Archipelago's, so nothing was installed. Update Atlas, or report this (expected {locked}, found {PackagesSignature()}).");
             EnsureDepth();
+            Phase(log, "packages", "Installing Archipelago's Python packages…");
             var (rest, unpacked) = EngineLock.Take(lockText, UnpackedPackage);
             if (unpacked == null || unpacked.Hashes.Count == 0) throw new Exception($"Atlas's package list doesn't pin {UnpackedPackage}, so nothing was installed. Update Atlas, or report this.");
             await UnpackPackageAsync(unpacked, log, ct);
@@ -1006,6 +1113,7 @@ namespace AP_Atlas.Core.EngineSetup
             State.PackagesSignature = PackagesSignature();
             SaveState();
             log("Packages ready.");
+            NoteChange("packages", ArchipelagoDir);
         }
 
         /// <summary>
@@ -1151,6 +1259,7 @@ namespace AP_Atlas.Core.EngineSetup
             }
             bool any = false;
             State.WorldPackagesTried ??= new Dictionary<string, string>();
+            Phase(log, "world-packages", "Installing the packages some games need…");
             foreach (var (world, requirements) in targets)
             {
                 log($"Installing the packages {world} declares…");
@@ -1159,7 +1268,7 @@ namespace AP_Atlas.Core.EngineSetup
                 int code = await RunAsync(PythonExe, new[] { "-m", "pip", "install", "-r", file, "--prefer-binary", "--disable-pip-version-check", "--no-warn-script-location", "--retries", "5", "--timeout", "60" },
                     PythonDir, log, ct, TimeSpan.FromMinutes(10));
                 State.WorldPackagesTried[world] = Signature(requirements);
-                if (code == 0) { any = true; log($"Packages for {world} installed."); }
+                if (code == 0) { any = true; log($"Packages for {world} installed."); NoteChange("world-packages", ArchipelagoDir, world); }
                 else log($"The packages for {world} couldn't be installed; {world} won't be available (everything else is unaffected).");
             }
             SaveState();
@@ -1180,7 +1289,7 @@ namespace AP_Atlas.Core.EngineSetup
         {
             string worlds = install.WorldsDir ?? throw new Exception("The engine has no worlds folder.");
             RequireWriteConsent(install);
-            Stage(log, $"Downloading Universal Tracker {TrackerVersion} from GitHub…");
+            Phase(log, "tracker", $"Downloading Universal Tracker {TrackerVersion} from GitHub…");
             string temp = Path.Combine(DownloadsDir, "tracker.apworld");
             await EngineDownloader.DownloadAsync(TrackerUrl, temp, TrackerSha256, Report(progress), ct);
             await StopEnginesUsingAsync(install.Root, log, ct);
@@ -1212,6 +1321,7 @@ namespace AP_Atlas.Core.EngineSetup
             }
             if (install.Mode == EngineMode.Portable) { State.Tracker = TrackerVersion; SaveState(); }
             log($"Universal Tracker {TrackerVersion} installed in {worlds}.");
+            NoteChange("tracker", install.Root);
         }
 
         // =====================================================================
@@ -1300,7 +1410,7 @@ namespace AP_Atlas.Core.EngineSetup
 
         public static async Task<EngineCheckResult> RunCheckAsync(EngineInstall install, Action<string> log, CancellationToken ct)
         {
-            Stage(log, "Running the health check (loading every game takes a few seconds)…");
+            Phase(log, "check", "Running the health check (loading every game takes a few seconds)…");
             InstallBridge(install);
             EngineCheckResult result = null;
             var errors = new StringBuilder();
@@ -1388,8 +1498,15 @@ namespace AP_Atlas.Core.EngineSetup
                 {
                     string target = Path.Combine(install.WorldsDir ?? throw new Exception("The engine has no worlds folder."), Path.GetFileName(sourceFile));
                     if (File.Exists(target)) await StopEnginesUsingAsync(install.Root, log, ct);
-                    InstallApworld(install, sourceFile, log);
+                    string installed = InstallApworld(install, sourceFile, log);
                     var check = await RunCheckAsync(install, log, ct);
+                    string game = GameOfApworld(installed);
+                    if (game != null && check.FailedWorlds.Contains(game))
+                    {
+                        string why = check.FailedDetails.TryGetValue(game, out var info) ? (info.Error ?? info.MissingModule) : null;
+                        log($"{game} was added but doesn't load" + (why != null ? ": " + why : ".") + " The engine runs without it.");
+                        return false;
+                    }
                     return check.Passed;
                 }
                 catch (OperationCanceledException) { log("Cancelled."); return false; }
@@ -1430,6 +1547,7 @@ namespace AP_Atlas.Core.EngineSetup
             File.Copy(sourceFile, target);
             RecordChange(install, "added", target);
             log?.Invoke($"Installed {Path.GetFileName(sourceFile)} ({GameOfApworld(target) ?? "unknown game"}).");
+            NoteChange("apworld", install.Root, GameOfApworld(target));
             NotifyChanged();
             return target;
         }

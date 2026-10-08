@@ -21,7 +21,7 @@ namespace AP_Atlas.UI
         private readonly Func<string, string> _tr;
         private readonly Action<IReadOnlyList<string>> _showDetails;
         private readonly Label _step = new();
-        private readonly ProgressBar _progress = new() { MaxValue = 1, Step = 0.001, ShowPercentage = false, CustomMinimumSize = new Vector2(0, 14) };
+        private readonly ProgressBar _progress = new() { MaxValue = 1, Step = 0.001, ShowPercentage = true, CustomMinimumSize = new Vector2(0, 18) };
         private readonly Label _outcome = new();
         private readonly Button _tryAgain;
         private readonly Button _details;
@@ -31,6 +31,8 @@ namespace AP_Atlas.UI
 
         /// <summary>What the panel says the setup is doing (for tests).</summary>
         public string StepText => _step.Text;
+        /// <summary>How far the bar is (0 to 1; for tests).</summary>
+        public double ProgressValue => _progress.Value;
         /// <summary>The outcome line (Ready, or why it stopped), empty while running (for tests).</summary>
         public string OutcomeText => _outcome.Text;
         public bool TryAgainShown => _tryAgain.Visible;
@@ -123,17 +125,22 @@ namespace AP_Atlas.UI
             OkButtonText = _tr("Cancel");
             _step.Text = _tr("Starting…");
             _step.AddThemeColorOverride("font_color", ThemeColors.Text);
-            void OnStep(string text) => Ui.Defer(this, () => { _step.Text = text; _progress.Value = 0; });
-            AtlasEngine.SetupStep += OnStep;
+            // One number for the whole setup: the bar never goes down, and the step says where it is ("Step 3 of 9: …").
+            void OnProgress(AtlasEngine.SetupProgress p) => Ui.Defer(this, () =>
+            {
+                if (p.Text != null) _step.Text = p.Steps > 0 ? _tr("Step {0} of {1}: {2}").Replace("{0}", p.Step.ToString()).Replace("{1}", p.Steps.ToString()).Replace("{2}", p.Text) : p.Text;
+                if (p.Fraction >= 0) _progress.Value = Math.Max(_progress.Value, p.Fraction);
+            });
+            AtlasEngine.SetupProgressed += OnProgress;
             void log(string line) { lock (_log) _log.Add(line); }
-            void progress(float f) => Ui.Defer(this, () => _progress.Value = f < 0 ? 0 : f);
+            void progress(float f) => Ui.Defer(this, () => { if (f >= 0) _progress.Value = Math.Max(_progress.Value, f); });
             Async.Fire(Task.Run(async () =>
             {
                 bool ok;
                 try { ok = await AtlasEngine.SetUpAsync(AtlasEngine.Current, log, progress, ct); }
                 catch (OperationCanceledException) { ok = false; }
                 catch (Exception ex) { ok = false; log(ex.Message); AP_Atlas.Core.Logger.LogWarning("[Atlas Engine] " + ex); }
-                AtlasEngine.SetupStep -= OnStep;
+                AtlasEngine.SetupProgressed -= OnProgress;
                 Ui.Defer(this, () =>
                 {
                     _running = false;

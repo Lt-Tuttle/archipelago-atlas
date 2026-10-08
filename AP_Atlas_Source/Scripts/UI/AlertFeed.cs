@@ -102,7 +102,7 @@ namespace AP_Atlas.UI
                 };
                 row.AddChild(actionButton);
             }
-            var close = new Button { Text = "×", Flat = true, TooltipText = _tr("Dismiss"), AccessibilityName = _tr("Dismiss") };
+            var close = new Button { Text = "×", ThemeTypeVariation = "QuietButton", TooltipText = _tr("Dismiss"), AccessibilityName = _tr("Dismiss") };
             close.Pressed += () => Dismiss(card);
             row.AddChild(close);
             card.AddChild(row);

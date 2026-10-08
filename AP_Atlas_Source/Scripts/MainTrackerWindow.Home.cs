@@ -36,6 +36,35 @@ public partial class MainTrackerWindow
         return page;
     }
 
+    /// <summary>The engine changed (any thread): Home's checklist ticks the engine step as soon as the setup is done.</summary>
+    private void OnEngineChangedForHome() => AP_Atlas.UI.Ui.Defer(this, () =>
+    {
+        if (_currentTool == AP_Atlas.UI.Tool.Home) _homePage?.Refresh();
+    });
+
+    /// <summary>
+    /// The engine's parts changed (any thread): the slots whose logic runs on it restart by themselves; a card says so,
+    /// naming the parts.
+    /// </summary>
+    private void OnEnginePartsChanged(System.Collections.Generic.IReadOnlyList<AP_Atlas.Core.EngineSetup.AtlasEngine.EngineChange> changes) => AP_Atlas.UI.Ui.Defer(this, () =>
+    {
+        var running = ActiveSlotNodes().OfType<SlotTrackerControl>().Where(slot => slot.EngineRunning || slot.EngineBooting).Select(slot => slot.SlotName).Distinct().ToList();
+        if (running.Count == 0) return;
+        var parts = changes.Select(DescribeChange).Distinct().ToList();
+        ShowToast(Tr("Restarting logic for {0} with {1}…").Replace("{0}", string.Join(", ", running)).Replace("{1}", string.Join(", ", parts)), AP_Atlas.Core.ThemeColors.Info);
+    });
+
+    private string DescribeChange(AP_Atlas.Core.EngineSetup.AtlasEngine.EngineChange change) => change.Kind switch
+    {
+        "apworld" => change.Game != null ? Tr("{0}'s apworld").Replace("{0}", change.Game) : Tr("an apworld"),
+        "runtime" => Tr("the new Python"),
+        "archipelago" => Tr("the new Archipelago"),
+        "packages" => Tr("the new packages"),
+        "world-packages" => change.Game != null ? Tr("{0}'s packages").Replace("{0}", change.Game) : Tr("the games' packages"),
+        "tracker" => Tr("the new Universal Tracker"),
+        _ => change.Kind
+    };
+
     /// <summary>Whether a map pack is installed: a zip in Atlas's own packs folder, as the Map Packs page lists them.</summary>
     private static bool AnyMapPackInstalled()
     {

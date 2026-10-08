@@ -117,6 +117,10 @@ public class AppSettings
     public Dictionary<string, TablePrefs> Tables { get; set; } = new Dictionary<string, TablePrefs>();
 
     // Window State
+    /// <summary>Where the Atlas Engine window was last (screen pixels); null until it's been moved or closed.</summary>
+    public SavedWindowRect EngineWindowRect { get; set; }
+    /// <summary>Where the Pack Doctor window was last (screen pixels); null until it's been moved or closed.</summary>
+    public SavedWindowRect PackDoctorWindowRect { get; set; }
     public int WindowWidth { get; set; } = 1024;
     public int WindowHeight { get; set; } = 768;
     public int WindowX { get; set; } = -1;
@@ -153,6 +157,15 @@ public class SlotStats
     /// <summary>The slot's player number in its multiworld (matches Cheese Tracker rows while offline). 0: unknown.</summary>
     public int SlotNumber { get; set; }
     public System.DateTime LastUpdated { get; set; } = System.DateTime.Now;
+}
+
+/// <summary>A window's place and size on the screen, in pixels, as remembered between runs.</summary>
+public class SavedWindowRect
+{
+    public int X { get; set; }
+    public int Y { get; set; }
+    public int Width { get; set; }
+    public int Height { get; set; }
 }
 
 public class MultiworldProfile

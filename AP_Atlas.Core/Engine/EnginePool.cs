@@ -54,13 +54,38 @@ namespace AP_Atlas.Core.EngineSetup
         /// <summary>How many engines a multiworld may run on a PC with this many processors: half of them, from 1 to 4.</summary>
         public static int EnginesFor(int processors) => Math.Clamp(processors / 2, 1, 4);
 
-        /// <summary>How many slots each running engine has, oldest engine first.</summary>
+        /// <summary>How many slots each running engine has, oldest engine first (retired ones included while they have slots).</summary>
         public IReadOnlyList<int> SlotsPerEngine
         {
             get
             {
                 lock (_lock) return _engines.Select(engine => engine.Seats.Count).ToList();
             }
+        }
+
+        /// <summary>How many engines take new slots: the ones not retired.</summary>
+        public int LiveEngines
+        {
+            get
+            {
+                lock (_lock) return _engines.Count(engine => !engine.Retired);
+            }
+        }
+
+        /// <summary>
+        /// The engine's parts changed (an apworld added, packages or Archipelago updated): every running process loaded
+        /// the old ones. They're retired: no new slot joins them, and each stops when its last slot leaves (a slot that
+        /// restarts leaves its old process and joins a fresh one, started even when a retired one has room).
+        /// </summary>
+        public void Retire()
+        {
+            int retired;
+            lock (_lock)
+            {
+                retired = _engines.Count(engine => !engine.Retired);
+                foreach (var engine in _engines) engine.Retired = true;
+            }
+            if (retired > 0) _log($"{retired} logic engine(s) retired: the engine's parts changed, and slots restart on fresh ones.");
         }
 
         /// <summary>
@@ -73,7 +98,8 @@ namespace AP_Atlas.Core.EngineSetup
             lock (_lock)
             {
                 PooledEngine engine;
-                if (_engines.Count < MaxEngines)
+                var live = _engines.Where(e => !e.Retired).ToList();
+                if (live.Count < MaxEngines)
                 {
                     engine = new PooledEngine(_start(), ++_started);
                     _engines.Add(engine);
@@ -81,7 +107,7 @@ namespace AP_Atlas.Core.EngineSetup
                     engine.Process.Exited += code => Lose(started, $"its process exited (code {code})");
                     _log($"Logic engine {engine.Number} started (for {key}).");
                 }
-                else engine = _engines.OrderBy(e => e.Seats.Count).First(); // the oldest of those with the fewest slots
+                else engine = live.OrderBy(e => e.Seats.Count).First(); // the oldest of those with the fewest slots
                 var seat = new EngineSeat(this, engine, key);
                 engine.Seats.Add(seat);
                 return seat;
@@ -227,5 +253,8 @@ namespace AP_Atlas.Core.EngineSetup
         public List<EngineSeat> Seats { get; } = new();
 
         public bool Lost;
+
+        /// <summary>Loaded parts the engine has since replaced: takes no new slots, stops when its last leaves.</summary>
+        public bool Retired;
     }
 }

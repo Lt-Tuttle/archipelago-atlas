@@ -393,7 +393,7 @@ namespace AP_Atlas.UI
             var header = new Button
             {
                 Text = (isCollapsed ? "▶  " : "▼  ") + title,
-                Flat = true,
+                ThemeTypeVariation = "QuietButton",
                 Alignment = HorizontalAlignment.Left,
                 SizeFlagsHorizontal = SizeFlags.ExpandFill
             };

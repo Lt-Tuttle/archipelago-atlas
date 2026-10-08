@@ -32,7 +32,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _bottomTabs.AddTab("Debug Log");
         bottomHeader.AddChild(_bottomTabs);
         bottomHeader.AddChild(new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill }); // Spacer
-        var bottomMenuBtn = new Button { Text = "...", Flat = true, AccessibilityName = Tr("More options") };
+        var bottomMenuBtn = new Button { Text = "...", ThemeTypeVariation = "QuietButton", AccessibilityName = Tr("More options") };
         _bottomMenuBtn = bottomMenuBtn;
         bottomMenuBtn.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextMuted);
         var extraItems = new System.Collections.Generic.Dictionary<string, System.Action> {
@@ -135,7 +135,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             panelVBox.AddChild(new HSeparator());
             foreach (var kvp in extraItems)
             {
-                var btn = new Button { Text = kvp.Key, Flat = true, Alignment = HorizontalAlignment.Left };
+                var btn = new Button { Text = kvp.Key, ThemeTypeVariation = "QuietButton", Alignment = HorizontalAlignment.Left };
                 itemButtons.Add((kvp.Key, btn));
                 var action = kvp.Value;
                 btn.Pressed += () =>
@@ -163,7 +163,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         titleLabel = new Label { Name = "FixedHeaderTitle", Text = titleText, SizeFlagsHorizontal = SizeFlags.ExpandFill, HorizontalAlignment = HorizontalAlignment.Left };
         titleLabel.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextMuted);
         headerBox.AddChild(titleLabel);
-        menuBtn = new Button { Text = "...", Flat = true, AccessibilityName = Tr("More options") };
+        menuBtn = new Button { Text = "...", ThemeTypeVariation = "QuietButton", AccessibilityName = Tr("More options") };
         menuBtn.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextMuted);
         AttachFontMenuPopup(menuBtn, getFontSize, setFontSize);
         headerBox.AddChild(menuBtn);
@@ -276,6 +276,18 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         theme.SetColor("font_disabled_color", "Button", new Godot.Color(1, 1, 1, 0.35f));
         theme.SetColor("font_pressed_color", "Button", textOnAccent);
         theme.SetColor("font_hover_pressed_color", "Button", textOnAccent);
+        // A quiet button (the kit's "flat"): no background until hovered, a tint of the accent while pressed, so a press
+        // is seen. Godot's own "flat" drew nothing in any state.
+        theme.SetTypeVariation("QuietButton", "Button");
+        theme.SetStylebox("normal", "QuietButton", new StyleBoxEmpty { ContentMarginLeft = 10, ContentMarginRight = 10, ContentMarginTop = 5, ContentMarginBottom = 5 });
+        theme.SetStylebox("disabled", "QuietButton", new StyleBoxEmpty { ContentMarginLeft = 10, ContentMarginRight = 10, ContentMarginTop = 5, ContentMarginBottom = 5 });
+        theme.SetStylebox("hover", "QuietButton", btnHover);
+        var quietPressed = new StyleBoxFlat { BgColor = AP_Atlas.Core.ThemeColors.AccentTint, BorderWidthLeft = 2, BorderColor = accentColor, CornerRadiusTopLeft = 4, CornerRadiusTopRight = 4, CornerRadiusBottomLeft = 4, CornerRadiusBottomRight = 4, ContentMarginLeft = 10, ContentMarginRight = 10, ContentMarginTop = 5, ContentMarginBottom = 5 };
+        theme.SetStylebox("pressed", "QuietButton", quietPressed);
+        theme.SetStylebox("hover_pressed", "QuietButton", quietPressed);
+        theme.SetStylebox("focus", "QuietButton", focusRing);
+        theme.SetColor("font_pressed_color", "QuietButton", AP_Atlas.Core.ThemeColors.Text);
+        theme.SetColor("font_hover_pressed_color", "QuietButton", AP_Atlas.Core.ThemeColors.Text);
         var cbNormal = new StyleBoxEmpty();
         theme.SetStylebox("normal", "CheckBox", cbNormal);
         theme.SetStylebox("hover", "CheckBox", cbNormal);
@@ -506,7 +518,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                     iconBtn.CustomMinimumSize = new Godot.Vector2(36, 36);
                     iconBtn.ExpandIcon = true;
                     iconBtn.IconAlignment = HorizontalAlignment.Center;
-                    iconBtn.Flat = true;
+                    iconBtn.ThemeTypeVariation = "QuietButton";
                 }
             }
             if (c.Name == "FixedHeaderTitle" || c.Name == "HeaderBox") return;

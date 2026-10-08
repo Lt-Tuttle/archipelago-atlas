@@ -65,6 +65,7 @@ public partial class SlotTrackerControl : MarginContainer
         }
         bool versionProblem = warning != null && ApworldMatchesSeed == false;
         _accuracyLinkYaml.Visible = warning != null && !versionProblem;
+        _accuracyLinkYaml.Text = LinkedYamlSetting == null ? "Link YAML…" : "Change YAML…";
         _accuracyFix.Visible = versionProblem && !_apworldFixRunning;
         _accuracyAddSource.Visible = versionProblem && !_apworldFixRunning;
         _accuracyChooseApworld.Visible = versionProblem && !_apworldFixRunning;
