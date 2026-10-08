@@ -16,7 +16,7 @@ namespace AP_Atlas.UI
     public static class WindowFit
     {
         /// <summary>The main window's smallest size, in logical units (before the scale).</summary>
-        public static readonly Vector2I MainMinLogical = new(980, 660); // the activity bar's buttons, the menu and the status bar need the height
+        public static readonly Vector2I MainMinLogical = new(980, 680); // the activity bar's compact layout, the menu and the status bar need the height
 
         /// <summary>The main window's first size, in logical units, when nothing is remembered.</summary>
         public static readonly Vector2I MainFirstLogical = new(1152, 648);

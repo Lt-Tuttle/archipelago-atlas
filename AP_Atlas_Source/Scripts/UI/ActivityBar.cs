@@ -6,15 +6,21 @@ using Godot;
 namespace AP_Atlas.UI
 {
     /// <summary>
-    /// The column of icons on the far left of the window: every tool, in three labelled groups (the slot tools, the
-    /// multiworld tools, then Atlas's own pages at the bottom), and a button for the Atlas Engine window. One button is
-    /// lit: the tool the window shows (<see cref="Select"/> follows the window, however the tool was switched). Each
-    /// button's tooltip names the tool and its key.
+    /// The column of tools on the far left of the window: every tool as an icon with its short name under it, in three
+    /// groups whose captions sit on bands of the accent colour (the slot tools, the multiworld tools, then Atlas's own
+    /// pages at the bottom), and a button for the Atlas Engine window. One button is lit: the tool the window shows
+    /// (<see cref="Select"/> follows the window, however the tool was switched). Each button's tooltip names the tool
+    /// and its key, and screen readers get the full title. When the window is too short for the names, the bar shows
+    /// the icons alone (<see cref="Compact"/>); the bar never asks the window for more height than that layout needs.
     /// </summary>
     public partial class ActivityBar : PanelContainer
     {
-        /// <summary>Wide enough for the group captions.</summary>
+        /// <summary>Wide enough for the group captions and the short names.</summary>
         public const int Width = 64;
+
+        private const int ButtonWidth = Width - 8;
+        private const int CompactButtonHeight = 44;
+        private const int LabelledButtonHeight = 58;
 
         private readonly Func<string, string> _tr;
         private readonly Func<Tool, string> _keyOf;
@@ -23,8 +29,12 @@ namespace AP_Atlas.UI
         private readonly Dictionary<Tool, string> _captions = new();
         private readonly List<Tool> _order = new();
         private readonly List<Button> _styled = new();
+        private readonly List<(PanelContainer Band, Label Label)> _bands = new();
         private Button _engine = null!;
+        private Control _frame = null!;
+        private VBoxContainer _column = null!;
         private Color _accent = AP_Atlas.Core.ThemeColors.Accent;
+        private float _labelledNeeded;
 
         /// <summary>The user pressed a tool's button.</summary>
         public event Action<Tool>? ToolPressed;
@@ -46,6 +56,9 @@ namespace AP_Atlas.UI
         /// <summary>The lit tool, if any.</summary>
         public Tool? Selected { get; private set; }
 
+        /// <summary>Icons alone (the window is too short for the names under them).</summary>
+        public bool Compact { get; private set; }
+
         public Button ButtonOf(Tool tool) => _buttons[tool];
 
         public Button EngineButton => _engine;
@@ -55,7 +68,6 @@ namespace AP_Atlas.UI
 
         public override void _Ready()
         {
-            CustomMinimumSize = new Vector2(Width, 0);
             SizeFlagsVertical = SizeFlags.ExpandFill;
             AddThemeStyleboxOverride("panel", new StyleBoxFlat
             {
@@ -69,28 +81,63 @@ namespace AP_Atlas.UI
                 ContentMarginLeft = 4,
                 ContentMarginRight = 4
             });
-            var column = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill };
-            column.AddThemeConstantOverride("separation", 2);
-            AddChild(column);
-            AddGroup(column, "SLOT", ToolGroup.Slot);
-            AddGroup(column, "MULTIWORLD", ToolGroup.Multiworld);
-            column.AddChild(new Control { SizeFlagsVertical = SizeFlags.ExpandFill }); // Atlas's pages sit at the bottom
-            AddGroup(column, "ATLAS", ToolGroup.Atlas);
-            _engine = MakeButton("cpu", _tr("Atlas Engine"), _tr("Atlas Engine"));
+            // The column sits in a plain control, so its own height never forces the window taller: when the window is
+            // too short for the names, the bar goes compact instead (decided from the height it's given).
+            _frame = new Control { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, ClipContents = true, MouseFilter = MouseFilterEnum.Ignore };
+            AddChild(_frame);
+            _column = new VBoxContainer();
+            _column.AddThemeConstantOverride("separation", 2);
+            _column.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+            _frame.AddChild(_column);
+            AddGroup("SLOT", ToolGroup.Slot);
+            AddGroup("MULTIWORLD", ToolGroup.Multiworld);
+            _column.AddChild(new Control { SizeFlagsVertical = SizeFlags.ExpandFill }); // Atlas's pages sit at the bottom
+            AddGroup("ATLAS", ToolGroup.Atlas);
+            _engine = MakeButton("cpu", _tr("Atlas Engine"), _tr("Atlas Engine"), _tr("Engine"));
             _engine.Pressed += () => EnginePressed?.Invoke();
-            column.AddChild(_engine);
+            _column.AddChild(_engine);
             ApplyAccent(_accent);
+            // Measured once, in each layout: what the names need, and the least the bar ever asks for.
+            _labelledNeeded = _column.GetCombinedMinimumSize().Y;
+            SetCompact(true);
+            float compactNeeded = _column.GetCombinedMinimumSize().Y;
+            var panel = GetThemeStylebox("panel");
+            CustomMinimumSize = new Vector2(Width, compactNeeded + panel.ContentMarginTop + panel.ContentMarginBottom);
+            _frame.Resized += Relayout;
+            Relayout();
         }
 
-        private void AddGroup(VBoxContainer column, string caption, ToolGroup group)
+        private void Relayout()
         {
+            bool compact = _frame.Size.Y < _labelledNeeded;
+            if (compact != Compact) SetCompact(compact);
+        }
+
+        private void SetCompact(bool compact)
+        {
+            Compact = compact;
+            foreach (var (tool, button) in _buttons) Lay(button, compact ? "" : _tr(tool.ShortTitle), compact);
+            Lay(_engine, compact ? "" : _tr("Engine"), compact);
+        }
+
+        private static void Lay(Button button, string text, bool compact)
+        {
+            button.Text = text;
+            button.VerticalIconAlignment = compact ? VerticalAlignment.Center : VerticalAlignment.Top;
+            button.CustomMinimumSize = new Vector2(ButtonWidth, compact ? CompactButtonHeight : LabelledButtonHeight);
+        }
+
+        private void AddGroup(string caption, ToolGroup group)
+        {
+            var band = new PanelContainer();
             var label = new Label { Text = _tr(caption), HorizontalAlignment = HorizontalAlignment.Center };
-            label.AddThemeFontSizeOverride("font_size", 9);
-            label.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextSubtle);
-            column.AddChild(label);
+            label.AddThemeFontSizeOverride("font_size", 8); // "MULTIWORLD" has to fit the band
+            band.AddChild(label);
+            _bands.Add((band, label));
+            _column.AddChild(band);
             foreach (var tool in Tool.All.Where(t => t.Group == group))
             {
-                var button = MakeButton(tool.Icon, Tooltip(tool), _tr(tool.Title)); // named for screen readers by its title
+                var button = MakeButton(tool.Icon, Tooltip(tool), _tr(tool.Title), _tr(tool.ShortTitle)); // named for screen readers by its full title
                 button.ToggleMode = true;
                 button.ButtonGroup = _group;
                 var shown = tool;
@@ -98,7 +145,7 @@ namespace AP_Atlas.UI
                 _buttons[tool] = button;
                 _captions[tool] = caption;
                 _order.Add(tool);
-                column.AddChild(button);
+                _column.AddChild(button);
             }
         }
 
@@ -114,18 +161,20 @@ namespace AP_Atlas.UI
             foreach (var (tool, button) in _buttons) button.TooltipText = Tooltip(tool);
         }
 
-        private Button MakeButton(string icon, string tooltip, string accessibleName)
+        private Button MakeButton(string icon, string tooltip, string accessibleName, string shortName)
         {
             var button = new Button
             {
                 TooltipText = tooltip,
                 AccessibilityName = accessibleName,
-                CustomMinimumSize = new Vector2(Width - 8, 44),
                 FocusMode = FocusModeEnum.All,
                 ExpandIcon = true,
                 IconAlignment = HorizontalAlignment.Center,
+                ClipText = true,
+                TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
                 MouseDefaultCursorShape = CursorShape.PointingHand
             };
+            Lay(button, shortName, compact: false);
             // Lucide's icons are strokes in "currentColor": drawn white, then tinted by the button's state.
             string? svg = LucideIcons.Svg(icon, "#FFFFFF");
             if (svg != null)
@@ -135,16 +184,22 @@ namespace AP_Atlas.UI
                 button.Icon = ImageTexture.CreateFromImage(image);
             }
             button.AddThemeConstantOverride("icon_max_width", 22);
+            button.AddThemeFontSizeOverride("font_size", 10);
             button.AddThemeColorOverride("icon_normal_color", AP_Atlas.Core.ThemeColors.TextSubtle);
             button.AddThemeColorOverride("icon_hover_color", AP_Atlas.Core.ThemeColors.Text);
             button.AddThemeColorOverride("icon_pressed_color", AP_Atlas.Core.ThemeColors.Text);
             button.AddThemeColorOverride("icon_hover_pressed_color", AP_Atlas.Core.ThemeColors.Text);
             button.AddThemeColorOverride("icon_focus_color", AP_Atlas.Core.ThemeColors.Text);
+            button.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextSubtle);
+            button.AddThemeColorOverride("font_hover_color", AP_Atlas.Core.ThemeColors.Text);
+            button.AddThemeColorOverride("font_pressed_color", AP_Atlas.Core.ThemeColors.Text);
+            button.AddThemeColorOverride("font_hover_pressed_color", AP_Atlas.Core.ThemeColors.Text);
+            button.AddThemeColorOverride("font_focus_color", AP_Atlas.Core.ThemeColors.Text);
             _styled.Add(button);
             return button;
         }
 
-        /// <summary>Styles every button for the accent colour: a lit button has a bar of it on its left edge.</summary>
+        /// <summary>Styles every button and caption band for the accent colour: a lit button has a bar of it on its left edge; the bands are its tint.</summary>
         public void ApplyAccent(Color accent)
         {
             _accent = accent;
@@ -155,6 +210,22 @@ namespace AP_Atlas.UI
                 button.AddThemeStyleboxOverride("hover", Box(AP_Atlas.Core.ThemeColors.SurfacePanel, null));
                 button.AddThemeStyleboxOverride("pressed", Box(AP_Atlas.Core.ThemeColors.SurfacePanel, accent));
                 button.AddThemeStyleboxOverride("hover_pressed", Box(AP_Atlas.Core.ThemeColors.SurfaceRaised, accent));
+            }
+            foreach (var (band, label) in _bands)
+            {
+                band.AddThemeStyleboxOverride("panel", new StyleBoxFlat
+                {
+                    BgColor = AP_Atlas.Core.ThemeColors.AccentTint,
+                    CornerRadiusTopLeft = 3,
+                    CornerRadiusTopRight = 3,
+                    CornerRadiusBottomLeft = 3,
+                    CornerRadiusBottomRight = 3,
+                    ContentMarginTop = 1,
+                    ContentMarginBottom = 1,
+                    ContentMarginLeft = 2,
+                    ContentMarginRight = 2
+                });
+                label.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Heading);
             }
         }
 

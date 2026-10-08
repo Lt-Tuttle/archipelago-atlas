@@ -112,7 +112,7 @@ public partial class MainTrackerWindow
             MenuBarAndKeysAsync);
         await ScenarioAsync("Command palette: Ctrl+Shift+P opens it ready to type, it lists every command with its key, a typed word narrows it to the commands whose words start that way, Enter runs the pick and closes it, Escape only closes it",
             CommandPaletteAsync);
-        await ScenarioAsync("Activity bar: every tool in its group, in order, with a shipped icon and its key in the tooltip; pressing a button shows the tool, switching a tool any other way lights its button and names it in the header; the engine button opens the engine window",
+        await ScenarioAsync("Activity bar: every tool in its group, in order, with a shipped icon, its short name under it, its full title for screen readers and its key in the tooltip; the group captions sit on accent bands; pressing a button shows the tool, switching a tool any other way lights its button and names it in the header; the engine button opens the engine window",
             ActivityBarAsync);
         await ScenarioAsync("Slot picker: the tool header lists the connected slots with the selected one chosen; picking one shows its view, Ctrl+Tab and Ctrl+Shift+Tab go through them around the end, a slot selected elsewhere shows as picked, a tool that isn't per slot hides it, and a slot that ends leaves it",
             SlotPickerAsync);
@@ -1876,6 +1876,14 @@ public partial class MainTrackerWindow
             "the groups aren't captioned as designed");
         var noIcon = AP_Atlas.UI.Tool.All.Where(t => !AP_Atlas.UI.LucideIcons.Names.Contains(t.Icon) || _activityBar.ButtonOf(t).Icon == null).Select(t => t.Title).ToList();
         UiTestExpect(noIcon.Count == 0, $"tools without a shipped icon: {string.Join(", ", noIcon)}");
+        // The names under the icons (the window of the test is tall enough), the full titles for screen readers, the captions on bands.
+        UiTestExpect(!_activityBar.Compact, "the bar shows icons alone in a window tall enough for the names");
+        var misnamed = AP_Atlas.UI.Tool.All.Where(t => _activityBar.ButtonOf(t).Text != t.ShortTitle || _activityBar.ButtonOf(t).AccessibilityName != t.Title).Select(t => t.Title).ToList();
+        UiTestExpect(misnamed.Count == 0 && _activityBar.EngineButton.Text == "Engine", $"bar buttons without their short name under the icon and their full title for screen readers: {string.Join(", ", misnamed)}");
+        var shortNames = string.Join(",", _activityBar.Order.Select(t => t.ShortTitle));
+        UiTestExpect(shortNames == "Map,Items,Logic,History,Hints,Cheese,Spheres,Home,Worlds,Packs,Settings", $"the short names are {shortNames}");
+        var bands = _activityBar.FindChildren("*", nameof(PanelContainer), true, false).OfType<PanelContainer>().Where(p => p != _activityBar).ToList();
+        UiTestExpect(bands.Count == 3 && bands.All(b => b.GetThemeStylebox("panel") is StyleBoxFlat box && box.BgColor == AP_Atlas.Core.ThemeColors.AccentTint), $"{bands.Count} caption bands, not three in the accent's tint");
         UiTestExpect(_activityBar.ButtonOf(AP_Atlas.UI.Tool.Hints).TooltipText.Contains("Ctrl+5"), $"the Hints button's tooltip is \"{_activityBar.ButtonOf(AP_Atlas.UI.Tool.Hints).TooltipText}\"");
 
         // Pressing a button shows the tool; switching a tool any other way lights its button and names it in the header.
@@ -3255,6 +3263,10 @@ public partial class MainTrackerWindow
                     UiTestExpect(AutoHiddenParts.Contains("view.properties-panel") && _appSettings.ShowPropertiesPanel, $"Properties should hide itself {at} with its setting kept");
                 else
                     UiTestExpect(!AutoHiddenParts.Contains("view.properties-panel"), $"Properties hid itself {at} though it fits");
+                // A short window (720 logical units: 1080p at 150%, the 1100x900 window) shows the bar's icons alone; a 1080p screen at 125% keeps the names.
+                bool shortWindow = size.Y / scale < 800;
+                UiTestExpect(_activityBar.Compact == shortWindow, $"the activity bar is {(_activityBar.Compact ? "compact" : "labelled")} {at} ({size.Y / scale:0} logical units tall)");
+                UiTestExpect(_activityBar.EngineButton.GetGlobalRect().End.Y <= _activityBar.GetGlobalRect().End.Y + 0.5f, $"the bar's last button is cut off {at}");
 
                 ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.Home);
                 await UiTestWaitAsync(0.3);
