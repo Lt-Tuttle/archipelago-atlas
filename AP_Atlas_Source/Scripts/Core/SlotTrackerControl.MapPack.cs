@@ -19,6 +19,9 @@ public partial class SlotTrackerControl : MarginContainer
     // Map pack
     // =====================================================================
 
+    /// <summary>Shows the Map Packs page and searches GitHub for a game's packs (set by MainTrackerWindow; the user pressed for it).</summary>
+    public Action<string> FindMapPack { get; set; }
+
     private void LoadMapPack() => AP_Atlas.Core.Async.Fire(LoadMapPackAsync(), $"loading {_slotName}'s map pack");
 
     /// <summary>The pack's images, used while this slot is open (released when it ends).</summary>

@@ -40,6 +40,27 @@ namespace AP_Atlas.UI
         /// <summary>The user turned "Follow the game's current map" on or off.</summary>
         public event Action<bool> FollowToggled;
 
+        /// <summary>The user pressed "Find a map pack for {game}…" on the empty state (the owner searches GitHub for one).</summary>
+        public event Action FindPackRequested;
+
+        private Button _findPackButton;
+        private string _gameName = "";
+
+        /// <summary>The slot's game, named on the empty state's button ("Find a map pack for Dark Souls Remastered…").</summary>
+        public string GameName
+        {
+            get => _gameName;
+            set
+            {
+                _gameName = value ?? "";
+                if (_findPackButton != null)
+                    _findPackButton.Text = _gameName.Length > 0 ? Translate("Find a map pack for {0}…").Replace("{0}", _gameName) : Translate("Find a map pack…");
+            }
+        }
+
+        /// <summary>The empty state's button (for tests).</summary>
+        public Button FindPackButton => _findPackButton;
+
         private const int ModeShow = 0, ModeDim = 1, ModeHide = 2;
         private const float DimAlpha = 0.35f;
 
@@ -236,12 +257,15 @@ namespace AP_Atlas.UI
             var emptyVBox = new VBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
             emptyVBox.AddThemeConstantOverride("separation", 20);
             _emptyStateContainer.AddChild(emptyVBox);
-            var emptyLbl = new Label { Text = "No map pack installed", HorizontalAlignment = HorizontalAlignment.Center };
+            var emptyLbl = new Label { Text = Translate("No map pack installed"), HorizontalAlignment = HorizontalAlignment.Center };
             emptyLbl.SetMeta("font_size_ratio", 2.0f);
             emptyVBox.AddChild(emptyLbl);
-            var emptySubLbl = new Label { Text = "Atlas has no PopTracker map pack for this game.\nInstall one on the Map Packs page (Packs, on the left); it shows here at once.", HorizontalAlignment = Godot.HorizontalAlignment.Center };
+            var emptySubLbl = new Label { Text = Translate("Atlas has no PopTracker map pack for this game.\nFind one on GitHub from here, or install one on the Map Packs page (Packs, on the left); it shows here at once."), HorizontalAlignment = Godot.HorizontalAlignment.Center };
             emptySubLbl.AddThemeColorOverride("font_color", ThemeColors.TextSubtle);
             emptyVBox.AddChild(emptySubLbl);
+            _findPackButton = Kit.Button(Translate("Find a map pack…"), Translate("One search of GitHub for this game's PopTracker packs, when you press; you choose what to install."), () => FindPackRequested?.Invoke());
+            _findPackButton.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
+            emptyVBox.AddChild(_findPackButton);
             AddChild(_emptyStateContainer);
         }
 

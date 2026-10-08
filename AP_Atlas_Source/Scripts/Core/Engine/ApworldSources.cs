@@ -22,6 +22,10 @@ namespace AP_Atlas.Core.EngineSetup
         [JsonIgnore] public string Origin { get; set; } = "index";
         /// <summary>The GitHub repository ("owner/name") it's published in, when known.</summary>
         [JsonIgnore] public string Repo { get; set; }
+        /// <summary>The project marked it a pre-release (listed, never installed as "the newest").</summary>
+        [JsonIgnore] public bool Prerelease { get; set; }
+        /// <summary>When GitHub says the release was published (a time the site names; shown only).</summary>
+        [JsonIgnore] public DateTime? Published { get; set; }
     }
 
     public class ApworldSource
@@ -224,28 +228,35 @@ namespace AP_Atlas.Core.EngineSetup
         {
             public string Tag, Name, Url, Sha256;
             public bool Prerelease;
+            public DateTime? Published;
         }
 
         /// <summary>A repository's published .apworld files; <see cref="Problem"/> is set when GitHub couldn't be asked (nothing is known then).</summary>
         private sealed class RepoListing
         {
             public readonly List<ReleaseAsset> Assets = new();
-            /// <summary>The newest full release's other files (not .apworld), with their sizes.</summary>
+            /// <summary>Every release's other files (not .apworld), with their sizes, newest release first.</summary>
             public readonly List<ReleaseFile> Others = new();
+            /// <summary>The releases (not drafts), newest first: tag and whether it's a pre-release.</summary>
+            public readonly List<(string Tag, bool Prerelease)> Releases = new();
             public string Problem;
+            /// <summary>The newest release that isn't a pre-release, or null.</summary>
+            public string NewestFullTag => Releases.FirstOrDefault(r => !r.Prerelease).Tag;
         }
 
         /// <summary>A file of a release that isn't an apworld (a game's client, a patcher, a .bat): its tag, name, download, published SHA-256 and size.</summary>
         public sealed record ReleaseFile(string Tag, string Name, string Url, string Sha256, long Size);
 
         /// <summary>
-        /// The other files of a repository's newest full release (not drafts or pre-releases): what a game's setup may need
-        /// besides its apworld. Reads the release list (one GitHub call per repository per session); downloads nothing.
+        /// The other files of one of a repository's releases: what a game's setup may need besides its apworld. The release
+        /// is named by its tag or version label (<paramref name="tag"/>; null for the newest full release). Reads the release
+        /// list (one GitHub call per repository per session); downloads nothing. <c>Tag</c> says which release was read.
         /// </summary>
-        public static async Task<(List<ReleaseFile> Files, string Problem)> ReleaseFilesAsync(string repo, CancellationToken ct)
+        public static async Task<(List<ReleaseFile> Files, string Problem, string Tag)> ReleaseFilesAsync(string repo, string tag, CancellationToken ct)
         {
             var listing = await RepoAssetsAsync(repo, ct);
-            return (listing.Others.ToList(), listing.Problem);
+            string chosen = tag != null ? listing.Releases.Select(r => r.Tag).FirstOrDefault(t => AP_Atlas.Core.Games.ApworldChoices.SameLabel(t, tag)) : listing.NewestFullTag;
+            return (listing.Others.Where(f => chosen != null && f.Tag == chosen).ToList(), listing.Problem, chosen);
         }
 
         private static readonly Dictionary<string, RepoListing> _repoAssets = new(StringComparer.OrdinalIgnoreCase);
@@ -262,33 +273,26 @@ namespace AP_Atlas.Core.EngineSetup
             var answer = await GitHubApi.GetAsync($"/repos/{repo}/releases?per_page=50", ct);
             if (answer.Ok && answer.Json is JArray releases)
             {
-                // GitHub lists releases newest first: the first full release's other files are a game's current tools.
-                var newestFull = releases.FirstOrDefault(r => r["draft"]?.Value<bool>() != true && r["prerelease"]?.Value<bool>() != true);
-                foreach (var asset in newestFull?["assets"] as JArray ?? new JArray())
-                {
-                    string name = asset["name"]?.ToString() ?? "";
-                    string url = asset["browser_download_url"]?.ToString();
-                    if (name.Length == 0 || url == null || name.EndsWith(".apworld", StringComparison.OrdinalIgnoreCase)) continue;
-                    string digest = asset["digest"]?.ToString();
-                    listing.Others.Add(new ReleaseFile(newestFull["tag_name"]?.ToString() ?? "", name, url,
-                        digest != null && digest.StartsWith("sha256:") ? digest.Substring(7).ToLowerInvariant() : null, asset["size"]?.Value<long>() ?? 0));
-                }
+                // GitHub lists releases newest first. Every release's files are kept: its apworld, and the other files a
+                // game's setup may need (a client, a patcher), by the release they belong to.
                 foreach (var release in releases)
                 {
                     if (release["draft"]?.Value<bool>() == true) continue;
+                    string tag = release["tag_name"]?.ToString() ?? "";
+                    bool prerelease = release["prerelease"]?.Value<bool>() == true;
+                    DateTime? published = release["published_at"]?.Type == JTokenType.Date ? release["published_at"].Value<DateTime>()
+                        : DateTime.TryParse(release["published_at"]?.ToString(), null, System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal, out var when) ? when : null;
+                    listing.Releases.Add((tag, prerelease));
                     foreach (var asset in release["assets"] as JArray ?? new JArray())
                     {
                         string name = asset["name"]?.ToString() ?? "";
-                        if (!name.EndsWith(".apworld", StringComparison.OrdinalIgnoreCase)) continue;
+                        string url = asset["browser_download_url"]?.ToString();
+                        if (name.Length == 0 || url == null) continue;
                         string digest = asset["digest"]?.ToString();
-                        assets.Add(new ReleaseAsset
-                        {
-                            Tag = release["tag_name"]?.ToString() ?? "",
-                            Name = name,
-                            Url = asset["browser_download_url"]?.ToString(),
-                            Sha256 = digest != null && digest.StartsWith("sha256:") ? digest.Substring(7).ToLowerInvariant() : null,
-                            Prerelease = release["prerelease"]?.Value<bool>() == true
-                        });
+                        string sha = digest != null && digest.StartsWith("sha256:") ? digest.Substring(7).ToLowerInvariant() : null;
+                        if (name.EndsWith(".apworld", StringComparison.OrdinalIgnoreCase))
+                            assets.Add(new ReleaseAsset { Tag = tag, Name = name, Url = url, Sha256 = sha, Prerelease = prerelease, Published = published });
+                        else listing.Others.Add(new ReleaseFile(tag, name, url, sha, asset["size"]?.Value<long>() ?? 0));
                     }
                 }
             }
@@ -313,7 +317,16 @@ namespace AP_Atlas.Core.EngineSetup
                 var asset = group.FirstOrDefault(a => apworldName != null && string.Equals(a.Name, apworldName + ".apworld", StringComparison.OrdinalIgnoreCase))
                             ?? (group.Count() == 1 ? group.First() : null);
                 if (asset?.Url == null) continue;
-                versions.Add(new ApworldVersion { Version = group.Key.TrimStart('v', 'V'), Url = asset.Url, Sha256 = asset.Sha256, Origin = "github", Repo = repo });
+                versions.Add(new ApworldVersion
+                {
+                    Version = AP_Atlas.Core.Games.ApworldChoices.NormalizeLabel(group.Key),
+                    Url = asset.Url,
+                    Sha256 = asset.Sha256,
+                    Origin = "github",
+                    Repo = repo,
+                    Prerelease = asset.Prerelease,
+                    Published = asset.Published
+                });
             }
             return versions;
         }
@@ -494,6 +507,93 @@ namespace AP_Atlas.Core.EngineSetup
             return repos;
         }
 
+        private class KnownProjectsRecord
+        {
+            public List<string> Repos { get; set; } = new();
+            public DateTime Checked { get; set; }
+        }
+
+        private static string KnownProjectsPath => Path.Combine(CacheDir, "known_projects.json");
+        private static Dictionary<string, KnownProjectsRecord> _knownProjects;
+        private static Dictionary<string, KnownProjectsRecord> KnownProjects => _knownProjects ??= SafeFile.ReadJson(KnownProjectsPath, () => new Dictionary<string, KnownProjectsRecord>(StringComparer.OrdinalIgnoreCase));
+        private static readonly HashSet<string> _projectSearchesThisSession = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Every project a game's apworld versions may come from: the repositories of <see cref="ReposForAsync"/> (your
+        /// installed copy's, the community index's, the ones you added), then projects of the same name as one of them,
+        /// which publish .apworld files: forks and re-uploads, where a seed's host may have taken a newer version (they
+        /// rarely carry a fork link, so they're found by one GitHub repository search per name). The search runs once per
+        /// game per session, and what it found is kept for a week in known_projects.json; a search GitHub couldn't finish
+        /// (a rate limit, a failure) is never remembered as "no other projects". With <paramref name="again"/>, it runs now.
+        /// The caller asks the GitHub permission first.
+        /// </summary>
+        public static async Task<List<ApworldRepo>> ProjectsForAsync(AppSettings settings, EngineInstall install, string game, Action<string> log, CancellationToken ct, bool again = false)
+        {
+            var repos = await ReposForAsync(settings, install, game, log, ct);
+            var names = repos.Select(r => r.Repo.Split('/').Last()).Where(n => n.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (names.Count == 0) return repos;
+
+            KnownProjectsRecord record;
+            lock (KnownProjects) KnownProjects.TryGetValue(game, out record);
+            bool fresh = record != null && !again && (DateTime.Now - record.Checked).TotalDays < 7; // wall clock: a saved time
+            bool searchedBefore;
+            lock (_projectSearchesThisSession) searchedBefore = _projectSearchesThisSession.Contains(game);
+            List<string> found = record?.Repos ?? new List<string>();
+            if (!fresh && (again || !searchedBefore))
+            {
+                lock (_projectSearchesThisSession) _projectSearchesThisSession.Add(game);
+                log?.Invoke($"Looking on GitHub for other projects named like {string.Join(", ", names)}…");
+                bool incomplete = false;
+                var candidates = new List<string>();
+                foreach (var name in names)
+                {
+                    var answer = await GitHubApi.GetAsync($"/search/repositories?q={Uri.EscapeDataString(name + " in:name")}&per_page=20", ct);
+                    if (!answer.Ok)
+                    {
+                        incomplete = true;
+                        Logger.LogWarning($"GitHub search for projects named {name} didn't work: {answer.Message}");
+                        continue;
+                    }
+                    foreach (var item in answer.Json?["items"] as JArray ?? new JArray())
+                    {
+                        string full = item["full_name"]?.ToString();
+                        if (full == null || !string.Equals(item["name"]?.ToString(), name, StringComparison.OrdinalIgnoreCase)) continue;
+                        if (repos.Any(r => r.Repo.Equals(full, StringComparison.OrdinalIgnoreCase)) || candidates.Contains(full, StringComparer.OrdinalIgnoreCase)) continue;
+                        candidates.Add(full);
+                    }
+                }
+                // A project counts when its releases hold an apworld (one release list per project, kept for the session).
+                var publishing = new List<string>();
+                foreach (var candidate in candidates.Take(10))
+                {
+                    var listing = await RepoAssetsAsync(candidate, ct);
+                    if (listing.Problem != null) incomplete = true;
+                    else if (listing.Assets.Count > 0) publishing.Add(candidate);
+                }
+                found = publishing;
+                if (!incomplete)
+                {
+                    lock (KnownProjects)
+                    {
+                        KnownProjects[game] = new KnownProjectsRecord { Repos = publishing, Checked = DateTime.Now }; // wall clock: a saved time
+                        try { SafeFile.WriteJson(KnownProjectsPath, KnownProjects); }
+                        catch (Exception ex) { Logger.LogWarning("Couldn't save the projects found for " + game + ": " + ex.Message); }
+                    }
+                    log?.Invoke(publishing.Count == 0 ? $"No other project named like {string.Join(", ", names)} publishes a {game} apworld."
+                        : $"Other projects publishing a {game} apworld: {string.Join(", ", publishing.Select(p => "github.com/" + p))}.");
+                }
+                else
+                {
+                    log?.Invoke("GitHub couldn't be fully searched just now, so Atlas will look again next time.");
+                    if (record != null) found = record.Repos.Concat(publishing).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                }
+            }
+            foreach (var repo in found)
+                if (!repos.Any(r => r.Repo.Equals(repo, StringComparison.OrdinalIgnoreCase)))
+                    repos.Add(new ApworldRepo { Repo = repo, Reason = "a project of the same name (a fork or re-upload)", Approved = IsRepoApproved(settings, repo) });
+            return repos;
+        }
+
         /// <summary>
         /// Checks a pasted link as a source of a game's apworld: it must be a GitHub repository that publishes .apworld
         /// files in its releases. Changes nothing (it can run on any thread); <see cref="AddUserRepo"/> records it.
@@ -542,7 +642,7 @@ namespace AP_Atlas.Core.EngineSetup
                 if (source != null && string.Equals(source.Repo, repo, StringComparison.OrdinalIgnoreCase))
                     foreach (var v in source.Versions)
                         if (!versions.Any(x => x.Url == v.Url || (x.Sha256 != null && v.Sha256 != null && x.Sha256.Equals(v.Sha256, StringComparison.OrdinalIgnoreCase))))
-                            versions.Add(new ApworldVersion { Version = v.Version, Url = v.Url, Sha256 = v.Sha256, Origin = "index", Repo = repo });
+                            versions.Add(new ApworldVersion { Version = AP_Atlas.Core.Games.ApworldChoices.NormalizeLabel(v.Version), Url = v.Url, Sha256 = v.Sha256, Origin = "index", Repo = repo });
                 foreach (var v in versions.OrderByDescending(v => SortKey(v.Version)))
                     if (!result.Any(x => x.Url == v.Url || (x.Sha256 != null && v.Sha256 != null && x.Sha256.Equals(v.Sha256, StringComparison.OrdinalIgnoreCase))))
                         result.Add(v);

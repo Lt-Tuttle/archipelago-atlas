@@ -339,6 +339,73 @@ namespace AP_Atlas.Core
             }
         }
 
+        private static async Task SameNameProjectsAreFoundOnce()
+        {
+            PoliteHttp.ResetForTests();
+            GitHubApi.ResetForTests();
+            PoliteHttp.Spacing = TimeSpan.Zero;
+            using var server = new FakeWebServer();
+            GitHubApi.TestSite = server.Site;
+            const string game = "Atlas Selftest World";
+            var settings = new AppSettings();
+            settings.ExtraApworldRepos[game] = new List<string> { "owner/selftest-world" };
+            string knownFile = Path.Combine(AtlasEngine.EngineDir, "apworld_cache", "known_projects.json");
+            long reset = DateTimeOffset.UtcNow.AddMinutes(30).ToUnixTimeSeconds();
+            try
+            {
+                // The search is rate-limited: the game's own project is listed, and nothing is remembered about other projects.
+                server.Page("/search/repositories", 403, "application/json", "{\"message\":\"API rate limit exceeded\"}",
+                    $"x-ratelimit-remaining: 0\r\nx-ratelimit-reset: {reset}\r\nx-ratelimit-resource: search\r\n");
+                server.Page("/repos/owner/selftest-world/releases", 200, "application/json", "[]");
+                var first = await ApworldSources.ProjectsForAsync(settings, null, game, null, CancellationToken.None);
+                Expect(first.Count == 1 && first[0].Repo == "owner/selftest-world", $"a rate-limited search listed {string.Join(", ", first.Select(r => r.Repo))}");
+                var known = SafeFile.ReadJson<Dictionary<string, Newtonsoft.Json.Linq.JObject>>(knownFile, () => null);
+                Expect(known == null || !known.ContainsKey(game), "a search GitHub couldn't finish was remembered as 'no other projects'");
+
+                // The search works: a project of the same name that publishes an apworld counts; one without releases and one
+                // with another name don't. The user's project keeps its reason; the fork says what it is.
+                GitHubApi.ResetForTests();
+                server.Page("/search/repositories", 200, "application/json",
+                    "{\"items\":[{\"full_name\":\"fork/selftest-world\",\"name\":\"selftest-world\"},{\"full_name\":\"empty/selftest-world\",\"name\":\"selftest-world\"},{\"full_name\":\"other/selftest-world-maps\",\"name\":\"selftest-world-maps\"}]}");
+                server.Page("/repos/fork/selftest-world/releases", 200, "application/json",
+                    "[{\"tag_name\":\"2.0\",\"draft\":false,\"prerelease\":false,\"assets\":[{\"name\":\"selftest_world.apworld\",\"browser_download_url\":\"https://github.com/fork/selftest-world/releases/download/2.0/selftest_world.apworld\"}]}]");
+                server.Page("/repos/empty/selftest-world/releases", 200, "application/json", "[]");
+                var second = await ApworldSources.ProjectsForAsync(settings, null, game, null, CancellationToken.None, again: true);
+                Expect(second.Select(r => r.Repo).SequenceEqual(new[] { "owner/selftest-world", "fork/selftest-world" }),
+                    $"the projects found were {string.Join(", ", second.Select(r => r.Repo))}");
+                Expect(second[0].Reason == "added by you" && second[1].Reason.Contains("same name") && !second[1].Approved, "the fork's reason or trust is wrong: " + second[1].Reason);
+                int searches = server.Requests.Count(r => r.Path.StartsWith("/search/"));
+                Expect(searches == 2, $"GitHub was searched {searches} times over two lookups, not once each");
+                known = SafeFile.ReadJson<Dictionary<string, Newtonsoft.Json.Linq.JObject>>(knownFile, () => null);
+                Expect(known != null && known.ContainsKey(game) && known[game]["Repos"]?.ToObject<string[]>()?.SequenceEqual(new[] { "fork/selftest-world" }) == true,
+                    "the projects found weren't kept for next time");
+
+                // Asked again this session: nothing more is asked of GitHub (the session's answer, and the file for a week).
+                int before = server.RequestCount;
+                var third = await ApworldSources.ProjectsForAsync(settings, null, game, null, CancellationToken.None);
+                Expect(third.Count == 2 && server.RequestCount == before, "a game's projects were looked up again in the same session");
+
+                // The versions of every project (each read once per session), newest first within a project, each naming its
+                // project; a pre-release says so, and GitHub's tag "1.0.0-0" is the release 1.0.0.0.
+                server.Page("/repos/second/selftest-world/releases", 200, "application/json",
+                    "[{\"tag_name\":\"v2.1.0-beta\",\"draft\":false,\"prerelease\":true,\"published_at\":\"2026-09-02T00:00:00Z\",\"assets\":[{\"name\":\"selftest_world.apworld\",\"browser_download_url\":\"https://github.com/second/selftest-world/releases/download/v2.1.0-beta/selftest_world.apworld\"}]}," +
+                    "{\"tag_name\":\"1.0.0-0\",\"draft\":false,\"prerelease\":false,\"published_at\":\"2026-01-01T00:00:00Z\",\"assets\":[{\"name\":\"selftest_world.apworld\",\"browser_download_url\":\"https://github.com/second/selftest-world/releases/download/1.0.0-0/selftest_world.apworld\"}]}]");
+                GitHubApi.ResetForTests();
+                var versions = await ApworldSources.VersionsAsync(game, new[] { "fork/selftest-world", "second/selftest-world" }, "selftest_world", CancellationToken.None);
+                Expect(versions.Select(v => $"{v.Version}@{v.Repo}{(v.Prerelease ? "!" : "")}").SequenceEqual(new[] { "2.0@fork/selftest-world", "2.1.0-beta@second/selftest-world!", "1.0.0.0@second/selftest-world" }),
+                    "the versions read were " + string.Join(", ", versions.Select(v => $"{v.Version}@{v.Repo}{(v.Prerelease ? "!" : "")}")));
+                Expect(versions[1].Published == new DateTime(2026, 9, 2, 0, 0, 0, DateTimeKind.Utc), "a release's publish date wasn't read");
+            }
+            finally
+            {
+                GitHubApi.TestSite = null;
+                GitHubApi.ResetForTests();
+                PoliteHttp.Spacing = TimeSpan.FromSeconds(1);
+                PoliteHttp.ResetForTests();
+                SafeFile.Delete(knownFile);
+            }
+        }
+
         private static void DeepJsonIsRefused()
         {
             string deep = new string('[', 100_000) + new string(']', 100_000);

@@ -99,13 +99,16 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     /// <summary>The full engine window: every part, the games and the slots, with the log (Tools → Atlas Engine, the bar's bottom button).</summary>
     public void OpenEngineWindow(IReadOnlyList<string> logLines = null)
     {
-        var window = AP_Atlas.UI.AtlasEngineWindow.Open(this, _appSettings,
-            () => ActiveSlotNodes().OfType<SlotTrackerControl>(),
-            () => ActiveSlotNodes().OfType<SlotTrackerControl>().Select(s => s.Game)
-                .Concat(_profiles.SelectMany(p => p.SavedStats.Values.Select(st => st.GameName))),
-            _appSettings.ContentFontSize);
+        var window = AP_Atlas.UI.AtlasEngineWindow.Open(this, _appSettings, () => ActiveSlotNodes().OfType<SlotTrackerControl>(), _appSettings.ContentFontSize);
         window.OpenGamesPage = () => ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.Games);
         if (logLines != null && logLines.Count > 0) window.AppendLog(logLines);
+    }
+
+    /// <summary>Shows the Map Packs page and searches GitHub for a game's packs: one search, because the user pressed for it (the map's empty state, a game's page).</summary>
+    private void FindMapPack(string game)
+    {
+        ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.MapPacks);
+        _packManagerPanel.SearchForGame(game);
     }
     private static string DescribeRaceMode()
     {

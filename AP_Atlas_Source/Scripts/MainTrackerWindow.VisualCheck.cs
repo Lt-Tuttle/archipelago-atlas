@@ -80,6 +80,14 @@ public partial class MainTrackerWindow
         host.ShowTool(AP_Atlas.UI.Tool.Connections);
         await VisualCheckWaitAsync(0.3);
 
+        // A game's page: its setup steps and the versions known offline (nothing is asked of GitHub).
+        host.ShowTool(AP_Atlas.UI.Tool.Games);
+        _gamesPage!.Select("Dark Souls Remastered");
+        await VisualCheckWaitAsync(0.5);
+        await VisualCheckPictureAsync("games_detail");
+        host.ShowTool(AP_Atlas.UI.Tool.Connections);
+        await VisualCheckWaitAsync(0.3);
+
         // The engine window opens before anything is allowed, so it never goes online.
         await VisualCheckWindowAsync("engine", () => OpenEngineWindow(), 1.5);
         // The guide as the Help window renders it (the documents built in, through Markdown).

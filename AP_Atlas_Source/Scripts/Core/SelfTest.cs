@@ -103,6 +103,7 @@ namespace AP_Atlas.Core
             Test("Permissions: Always allow is kept and can be taken back; Allow once lasts the session", PermissionsAreKeptAndRevocable);
             await TestAsync("Downloads: the wrong file or a too-large one is never kept; redirects only to web addresses", DownloadsAreChecked);
             await TestAsync("GitHub: a rate limit is reported as one (never as 'not found') and waited out; unchanged answers come from the cache", GitHubLimitsAreRespected);
+            await TestAsync("Apworld projects: projects of the same name are found by one search and kept; a search GitHub couldn't finish is never remembered as 'no other projects'", SameNameProjectsAreFoundOnce);
             Test("JSON: deeply nested input is refused instead of crashing", DeepJsonIsRefused);
             Test("Godot writes no log or shader cache outside Atlas's folder; its own warnings go to Atlas's log", GodotWritesNothingOutside);
             Test("Connections keep the games' names in Atlas's folder, never in the connection library's own cache", ConnectionsKeepNamesInside);

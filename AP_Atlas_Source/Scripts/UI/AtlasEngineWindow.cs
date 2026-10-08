@@ -15,8 +15,8 @@ namespace AP_Atlas.UI
 {
     /// <summary>
     /// The Atlas Engine setup page: which engine logic runs on (Atlas's portable copy or the user's Archipelago install),
-    /// each setup step with its status and fix, the games the connected slots need, how each slot's world was rebuilt,
-    /// and a log. "Set up everything" runs whatever is missing; every download is pinned and hash-checked.
+    /// each setup step with its status and fix, how each slot's world was rebuilt, and a log. "Set up everything" runs
+    /// whatever is missing; every download is pinned and hash-checked. Games are set up on the Games page.
     /// </summary>
     public partial class AtlasEngineWindow : Window
     {
@@ -29,13 +29,12 @@ namespace AP_Atlas.UI
 
         private readonly AppSettings _settings;
         private readonly Func<IEnumerable<SlotTrackerControl>> _slots;
-        private readonly Func<IEnumerable<string>> _knownGames;
 
         /// <summary>Shows the Games page in the main window (set by the window).</summary>
         public Action OpenGamesPage { get; set; }
         private readonly int _fontSize;
 
-        private VBoxContainer _modeBox, _stepsBox, _gamesBox, _slotsBox;
+        private VBoxContainer _modeBox, _stepsBox, _slotsBox;
         private Button _setupAll, _cancel;
         private ProgressBar _progress;
         private Label _status;
@@ -45,10 +44,9 @@ namespace AP_Atlas.UI
         private Button _logToggle;
         private Label _stage;
         private bool _busy;
-        private Dictionary<string, List<string>> _localApworlds;
         private string _slotsSignature = "";
 
-        public static AtlasEngineWindow Open(Node anyNode, AppSettings settings, Func<IEnumerable<SlotTrackerControl>> slots, Func<IEnumerable<string>> knownGames, int fontSize)
+        public static AtlasEngineWindow Open(Node anyNode, AppSettings settings, Func<IEnumerable<SlotTrackerControl>> slots, int fontSize)
         {
             if (_open != null && IsInstanceValid(_open))
             {
@@ -56,7 +54,7 @@ namespace AP_Atlas.UI
                 _open.Render();
                 return _open;
             }
-            var w = new AtlasEngineWindow(settings, slots, knownGames, fontSize);
+            var w = new AtlasEngineWindow(settings, slots, fontSize);
             _open = w;
             WindowFit.ShowNative(w, anyNode, new Vector2I(1200, 800), new Vector2I(820, 600), ToRect(settings.EngineWindowRect),
                 rect => { settings.EngineWindowRect = FromRect(rect); DataManager.SaveSettingsSoon(settings); });
@@ -85,11 +83,10 @@ namespace AP_Atlas.UI
             }
         }
 
-        private AtlasEngineWindow(AppSettings settings, Func<IEnumerable<SlotTrackerControl>> slots, Func<IEnumerable<string>> knownGames, int fontSize)
+        private AtlasEngineWindow(AppSettings settings, Func<IEnumerable<SlotTrackerControl>> slots, int fontSize)
         {
             _settings = settings;
             _slots = slots;
-            _knownGames = knownGames;
             _fontSize = fontSize;
             Title = "Atlas Engine";
             Transient = false;
@@ -154,28 +151,15 @@ namespace AP_Atlas.UI
             page.AddChild(_stage);
 
             page.AddChild(Header("Games"));
-            // A game is set up on the Games page; the list here stays out of the way unless asked for.
+            // A game is set up on the Games page: its apworld (every version every known project publishes), a map pack,
+            // its YAML and the files its setup needs, in one place.
             var gamesRow = new HBoxContainer();
             gamesRow.AddThemeConstantOverride("separation", 8);
-            var gamesNote = new Label { Text = Kit.Translate("Set up a game on the Games page: its apworld, a map pack, your YAML and the files its setup needs, in one place."), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart };
+            var gamesNote = new Label { Text = Kit.Translate("Set up a game on the Games page: its apworld (every version every known project publishes, with the installed one marked), a map pack, your YAML and the files its setup needs, in one place."), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart };
             gamesNote.AddThemeColorOverride("font_color", Muted);
             gamesRow.AddChild(gamesNote);
             gamesRow.AddChild(Kit.Button(Kit.Translate("Open the Games page"), null, () => OpenGamesPage?.Invoke()));
-            var gamesMore = new VBoxContainer { Visible = false };
-            gamesMore.AddThemeConstantOverride("separation", 4);
-            var showList = Kit.Button(Kit.Translate("Show the list here"), Kit.Translate("The games this engine has, with ways to add one"), () => { }, flat: true);
-            showList.Pressed += () =>
-            {
-                gamesMore.Visible = !gamesMore.Visible;
-                showList.Text = gamesMore.Visible ? Kit.Translate("Hide the list") : Kit.Translate("Show the list here");
-            };
-            gamesRow.AddChild(showList);
             page.AddChild(gamesRow);
-            gamesMore.AddChild(BuildSourcesRow());
-            _gamesBox = new VBoxContainer();
-            _gamesBox.AddThemeConstantOverride("separation", 4);
-            gamesMore.AddChild(_gamesBox);
-            page.AddChild(gamesMore);
             var verifyRow = new HBoxContainer();
             verifyRow.AddThemeConstantOverride("separation", 8);
             var verify = new Button
@@ -242,8 +226,7 @@ namespace AP_Atlas.UI
 
             AddThemeFontSizeOverride("title_font_size", _fontSize);
             Render();
-            ScanLocalApworlds();
-            // Fill in the Games list right away when the engine is usable but hasn't been checked this session.
+            // Run the health check right away when the engine is usable but hasn't been checked this session.
             var current = AtlasEngine.Current;
             if (AtlasEngine.ProblemWith(current) == null && AtlasEngine.LastCheck(current) == null)
                 RunOperation("Health check", async (log, _, ct) => { await AtlasEngine.RunCheckAsync(current, log, ct); });
@@ -320,7 +303,6 @@ namespace AP_Atlas.UI
             var install = AtlasEngine.Current;
             RenderMode(install);
             RenderSteps(install);
-            RenderGames(install);
             RenderSlots();
             _setupAll.Disabled = _busy;
             string problem = AtlasEngine.ProblemWith(install);
@@ -494,86 +476,6 @@ namespace AP_Atlas.UI
             }
         }
 
-        private void RenderGames(EngineInstall install)
-        {
-            Clear(_gamesBox);
-            var games = (_knownGames?.Invoke() ?? Enumerable.Empty<string>()).Where(g => !string.IsNullOrEmpty(g) && g != "Archipelago")
-                .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(g => g).ToList();
-            var check = AtlasEngine.LastCheck(install);
-            if (games.Count == 0)
-            {
-                _gamesBox.AddChild(Note("Games appear here once you've connected a slot (or saved one in a profile)."));
-                return;
-            }
-            if (check == null) _gamesBox.AddChild(Note("Run the health check to see which games the engine has."));
-            foreach (var game in games)
-            {
-                var row = new HBoxContainer();
-                row.AddThemeConstantOverride("separation", 10);
-                bool? installed = check?.Games == null ? null : check.Games.Contains(game, StringComparer.OrdinalIgnoreCase);
-                var icon = new Label { Text = installed == true ? "✔" : installed == false ? "✖" : "○", CustomMinimumSize = new Vector2(22, 0), HorizontalAlignment = HorizontalAlignment.Center };
-                icon.AddThemeColorOverride("font_color", installed == true ? Good : installed == false ? Bad : Muted);
-                row.AddChild(icon);
-                row.AddChild(new Label { Text = game, CustomMinimumSize = new Vector2(240, 0) });
-                GameSweepResult swept = null;
-                GameSweep.LastFor(install)?.Results.TryGetValue(game, out swept);
-                var tested = SeedVerifier.For(game, null);
-                string testedText = tested == null ? "" : tested.Exact
-                    ? $" · logic verified exactly against seed {tested.SeedName} ({tested.Spheres} spheres, {tested.Tested:d})"
-                    : $" · logic differs from seed {tested.SeedName}: {tested.Late} late, {tested.Early} early ({tested.Tested:d})";
-                var detail = new Label
-                {
-                    Text = (installed == true ? "Installed" : installed == false ? "Not in the engine: its apworld is needed" : "") +
-                           (installed == true && swept != null ? (swept.Ok ? " · rebuilds and computes logic" : " · not testable with default options") : "") + testedText,
-                    TooltipText = string.Join("\n", new[] { swept?.Summary, tested?.Verdict }.Where(x => x != null)),
-                    SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
-                    AutowrapMode = TextServer.AutowrapMode.WordSmart
-                };
-                detail.AddThemeColorOverride("font_color", installed == true ? Muted : ThemeColors.TextMuted);
-                row.AddChild(detail);
-                if (installed == false && install.CanLaunch)
-                {
-                    List<string> local = null;
-                    if (install.Mode == EngineMode.Portable && _localApworlds != null) _localApworlds.TryGetValue(game, out local);
-                    if (local != null && local.Count > 0)
-                    {
-                        var copy = new Button { Text = "Copy from my install", TooltipText = "Copy " + local[0] + " into the Atlas engine", Disabled = _busy };
-                        string localFile = local[0];
-                        copy.Pressed += () => InstallApworld(localFile);
-                        row.AddChild(copy);
-                    }
-                    var source = ApworldSources.Find(game);
-                    if (source != null)
-                    {
-                        string seedChecksum = SeedChecksumFor(game);
-                        var download = new Button
-                        {
-                            Text = seedChecksum != null ? "Download the seed's version…" : "Download…",
-                            TooltipText = (seedChecksum != null ? "Finds the version whose data matches your connected seed, then installs it.\n" : "Installs the newest known version.\n") +
-                                          "Source: " + (source.Repo != null ? "github.com/" + source.Repo : source.Home ?? "community index"),
-                            Disabled = _busy
-                        };
-                        string g = game;
-                        download.Pressed += () => DownloadGame(g, seedChecksum, null);
-                        row.AddChild(download);
-                    }
-                    var pick = new Button { Text = "Choose apworld…", TooltipText = "Pick the game's .apworld file (from its release page or the Archipelago Discord)", Disabled = _busy };
-                    pick.Pressed += PickApworld;
-                    row.AddChild(pick);
-                }
-                _gamesBox.AddChild(row);
-            }
-            if (check?.FailedWorlds?.Count > 0)
-            {
-                string Why(string world) =>
-                    check.FailedDetails != null && check.FailedDetails.TryGetValue(world, out var d) && !string.IsNullOrEmpty(d.MissingModule)
-                        ? $"{world} (needs package {d.MissingModule})" : world;
-                bool fixable = AtlasEngine.InstallableWorldPackages(install, includeTried: true).Count > 0;
-                _gamesBox.AddChild(Note($"{check.FailedWorlds.Count} world(s) couldn't load: {string.Join(", ", check.FailedWorlds.Take(10).Select(Why))}." +
-                    (fixable ? " Setup → Python packages → Install adds the packages they declare." : "")));
-            }
-        }
-
         private string SlotsSignature() =>
             string.Join("|", (_slots?.Invoke() ?? Enumerable.Empty<SlotTrackerControl>()).Where(IsInstanceValid)
                 .Select(s => $"{s.SlotName}:{s.EngineRunning}:{s.EngineBooting}:{s.EngineProblem?.Code}:{s.LinkedYamlSetting}:{s.EngineYamlInfo?["source"]}:{s.ApworldMatchesSeed}:{s.YamlWouldHelp}"));
@@ -700,154 +602,6 @@ namespace AP_Atlas.UI
             else Run();
         }
 
-        private void InstallApworld(string source)
-        {
-            var install = AtlasEngine.Current;
-            RunOperation("Adding " + Path.GetFileName(source), (log, _, ct) => AtlasEngine.InstallApworldAsync(install, source, log, ct));
-        }
-
-        private Control BuildSourcesRow()
-        {
-            var row = new HBoxContainer();
-            row.AddThemeConstantOverride("separation", 8);
-            var list = ApworldSources.List;
-            var info = new Label { Text = $"Apworld sources: {list.Games.Count} games (list built {list.Built}), plus each project's GitHub releases.", AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
-            info.AddThemeColorOverride("font_color", Muted);
-            row.AddChild(info);
-            var url = new LineEdit { PlaceholderText = "Newer list URL (optional)", Text = _settings.ApworldSourcesUrl ?? "", CustomMinimumSize = new Vector2(260, 0), TooltipText = "A URL serving a newer Atlas apworld source list (for example a maintained fork of the community index)." };
-            row.AddChild(url);
-            var refresh = new Button { Text = "Refresh" };
-            refresh.Pressed += () =>
-            {
-                _settings.ApworldSourcesUrl = url.Text.Trim();
-                DataManager.SaveSettings(_settings);
-                RunOperation("Refreshing the apworld source list", async (log, _, ct) => log(await ApworldSources.RefreshAsync(_settings.ApworldSourcesUrl, ct)));
-            };
-            row.AddChild(refresh);
-            return row;
-        }
-
-        /// <summary>The checksum of a connected slot's seed for this game (to pick the matching apworld version), or null.</summary>
-        private string SeedChecksumFor(string game) =>
-            (_slots?.Invoke() ?? Enumerable.Empty<SlotTrackerControl>()).Where(IsInstanceValid)
-                .Where(s => string.Equals(s.Game, game, StringComparison.OrdinalIgnoreCase))
-                .Select(s => s.ServerChecksumFor(game)).FirstOrDefault(c => c != null);
-
-        /// <summary>
-        /// Downloads a game's apworld, after the user approves the source: the version matching a seed when its checksum
-        /// is known, else the newest. Installs it (verified by a health check) and restarts logic for a waiting slot.
-        /// </summary>
-        private void DownloadGame(string game, string seedChecksum, SlotTrackerControl slot)
-        {
-            var source = ApworldSources.Find(game);
-            if (source == null) return;
-            if (seedChecksum != null)
-            {
-                FindSeedVersion(game, seedChecksum, slot);
-                return;
-            }
-            var newest = source.Versions.LastOrDefault();
-            string where = source.Repo != null ? "github.com/" + source.Repo : newest != null ? ApworldSources.SourceKey(newest.Url) : "?";
-            void Go()
-            {
-                var install = AtlasEngine.Current;
-                RunOperation($"Downloading {game}", async (log, _, ct) =>
-                {
-                    var versions = await ApworldSources.VersionsAsync(source, ct);
-                    var latest = versions.FirstOrDefault() ?? throw new Exception("No versions are listed.");
-                    string file = await ApworldSources.DownloadAsync(source, latest, log, ct);
-                    log($"Installing {game} {latest.Version}…");
-                    bool ok = await AtlasEngine.InstallApworldAsync(install, file, log, ct);
-                    if (ok && slot != null) Ui.Defer(slot, () => slot.RetryLogicEngine());
-                });
-            }
-            if (newest != null && ApworldSources.IsApproved(_settings, newest.Url)) { Go(); return; }
-            var dialog = new ConfirmationDialog
-            {
-                Title = "Download an apworld",
-                DialogText = $"Download {game} from {where}?\n\n" +
-                             (seedChecksum != null ? "Atlas will try the listed versions (newest first) until one's data matches your seed, and install that one.\n" : "Atlas will install the newest listed version.\n") +
-                             "Every file is checked against its published SHA-256 when one exists.\n\n" +
-                             "Apworlds are programs that run inside the engine. Only continue if you trust this source.",
-                DialogAutowrap = true,
-                MinSize = new Vector2I(560, 0),
-                OkButtonText = "Download"
-            };
-            var trust = new CheckBox { Text = $"Don't ask again for {where}" };
-            dialog.AddChild(trust);
-            dialog.Confirmed += () =>
-            {
-                if (trust.ButtonPressed && newest != null) ApworldSources.Approve(_settings, newest.Url);
-                dialog.QueueFree();
-                Go();
-            };
-            dialog.Canceled += () => dialog.QueueFree();
-            AddChild(dialog);
-            dialog.PopupCentered();
-        }
-
-        /// <summary>
-        /// Finds where a game's apworld versions are published (reads GitHub release lists; nothing is downloaded), then names
-        /// every source, with why it's included, and asks before trying them for the seed's version.
-        /// </summary>
-        private void FindSeedVersion(string game, string seedChecksum, SlotTrackerControl slot)
-        {
-            var install = AtlasEngine.Current;
-            RunOperation($"Finding where {game} versions are published", async (log, _, ct) =>
-            {
-                var repos = await ApworldSources.ReposForAsync(_settings, install, game, log, ct);
-                Ui.Defer(this, () => ConfirmSeedSearch(game, seedChecksum, slot, repos));
-            });
-        }
-
-        private void ConfirmSeedSearch(string game, string seedChecksum, SlotTrackerControl slot, List<ApworldSources.ApworldRepo> repos)
-        {
-            if (repos.Count == 0)
-            {
-                Log($"Atlas doesn't know where {game} versions are published. Add the project's GitHub link, or choose the apworld file the seed's host used.");
-                return;
-            }
-            void Go(List<ApworldSources.ApworldRepo> chosen)
-            {
-                var install = AtlasEngine.Current;
-                RunOperation($"Finding {game}'s version for the seed", async (log, _, ct) =>
-                {
-                    var (version, match) = await ApworldSources.FindMatchingAsync(install, game, seedChecksum, chosen.Select(r => r.Repo), log, ct);
-                    if (match == null) return;
-                    log($"Installing {game} {version.Version}…");
-                    bool ok = await AtlasEngine.InstallApworldAsync(install, match, log, ct);
-                    if (ok && slot != null) Ui.Defer(slot, () => slot.RetryLogicEngine());
-                });
-            }
-            if (repos.All(r => r.Approved))
-            {
-                Go(repos);
-                return;
-            }
-            var dialog = new ConfirmationDialog
-            {
-                Title = "Find the seed's apworld version",
-                DialogText = $"Look for the {game} apworld this seed was made with?\n\nAtlas will try versions published in:\n" +
-                             string.Join("\n", repos.Select(r => $"  •  {r.Display}: {r.Reason}{(r.Approved ? " (trusted)" : "")}")) +
-                             "\n\nEach file is checked against its published SHA-256 when one exists. Apworlds are programs that run inside the engine: " +
-                             "only continue if you trust every source listed.",
-                DialogAutowrap = true,
-                MinSize = new Vector2I(600, 0),
-                OkButtonText = "Look and install"
-            };
-            var trust = new CheckBox { Text = "Trust these from now on", ButtonPressed = false };
-            dialog.AddChild(trust);
-            dialog.Confirmed += () =>
-            {
-                if (trust.ButtonPressed) foreach (var r in repos.Where(r => !r.Approved)) ApworldSources.ApproveRepo(_settings, r.Repo);
-                dialog.QueueFree();
-                Go(repos);
-            };
-            dialog.Canceled += () => dialog.QueueFree();
-            AddChild(dialog);
-            dialog.PopupCentered();
-        }
-
         private void PickSeed()
         {
             var dialog = new FileDialog
@@ -865,29 +619,6 @@ namespace AP_Atlas.UI
                 dialog.QueueFree();
                 var install = AtlasEngine.Current;
                 RunOperation("Seed test", (log, _, ct) => SeedVerifier.VerifyAsync(install, path, log, ct));
-            };
-            dialog.Canceled += () => dialog.QueueFree();
-            GetTree().Root.AddChild(dialog);
-            dialog.PopupCentered(new Vector2I(900, 600));
-        }
-
-        private void PickApworld()
-        {
-            var dialog = new FileDialog
-            {
-                FileMode = FileDialog.FileModeEnum.OpenFile,
-                Access = FileDialog.AccessEnum.Filesystem,
-                Filters = new[] { "*.apworld ; Archipelago world" },
-                UseNativeDialog = true,
-                Title = "Choose an apworld to add to the engine"
-            };
-            dialog.FileSelected += path =>
-            {
-                dialog.QueueFree();
-                string game = AtlasEngine.GameOfApworld(path);
-                Confirm($"Add {Path.GetFileName(path)}{(game != null ? $" ({game})" : "")} to the {AtlasEngine.Current.Describe()}?\n\n" +
-                        "Apworlds are programs: only add ones from a source you trust (the game's official release page or the Archipelago Discord).",
-                    () => InstallApworld(path));
             };
             dialog.Canceled += () => dialog.QueueFree();
             GetTree().Root.AddChild(dialog);
@@ -957,43 +688,8 @@ namespace AP_Atlas.UI
                     if (failure != null) Log(name + " stopped: " + failure);
                     Render();
                     if (failure != null) SetStatus(name + " stopped: " + failure, Bad);
-                    ScanLocalApworlds();
                 });
             }), $"running \"{name}\"", tellUser: false);
-        }
-
-        /// <summary>
-        /// Finds apworlds in the Archipelago install the user chose, by game, for "Copy from my install". Only that folder:
-        /// Atlas never searches the PC for installs by itself.
-        /// </summary>
-        private void ScanLocalApworlds()
-        {
-            string chosen = _settings.ArchipelagoInstallationPath;
-            Async.Fire(Task.Run(() =>
-            {
-                var map = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-                var roots = !string.IsNullOrWhiteSpace(chosen) && File.Exists(Path.Combine(chosen, "ArchipelagoLauncher.exe")) ? new[] { chosen } : Array.Empty<string>();
-                foreach (var root in roots)
-                {
-                    foreach (var dir in new[] { Path.Combine(root, "custom_worlds"), Path.Combine(root, "lib", "worlds") })
-                    {
-                        if (!Directory.Exists(dir)) continue;
-                        foreach (var file in Directory.GetFiles(dir, "*.apworld"))
-                        {
-                            string game = AtlasEngine.GameOfApworld(file);
-                            if (game == null) continue;
-                            if (!map.TryGetValue(game, out var list)) map[game] = list = new List<string>();
-                            list.Add(file);
-                        }
-                    }
-                }
-                Ui.Defer(this, () =>
-                {
-                    _localApworlds = map;
-                    RenderGames(AtlasEngine.Current);
-                    MainTrackerWindow.SetFontSizeRecursive(_gamesBox, _fontSize);
-                });
-            }), "looking for apworlds in your Archipelago install");
         }
 
         // =====================================================================

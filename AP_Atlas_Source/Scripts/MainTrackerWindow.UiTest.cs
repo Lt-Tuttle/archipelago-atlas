@@ -126,7 +126,7 @@ public partial class MainTrackerWindow
             PrivacyAsync);
         await ScenarioAsync("Home: Ctrl+8 shows it on its own; every tool has a card with a line and every link is https; the checklist ticks the engine as it is and nothing else in a fresh folder, then a multiworld and a pack once they exist; a tip shows and Next tip goes around; the multiworld is listed and one click connects its slot, ticks the step and says Connected; a tool's card shows the tool",
             HomeAsync);
-        await ScenarioAsync("Games page: the Games tool lists every game in its group (community games from the index, the games your multiworlds play as added by you), typed words narrow the list, a game's page walks its setup through (the apworld, a map pack, your YAML, the files it needs) with each step ticked as Atlas finds it; a YAML added once is listed under every game it names; the game's folders are inside Atlas's data folder",
+        await ScenarioAsync("Games page: the Games tool lists every game in its group (community games from the index, the games your multiworlds play as added by you), typed words narrow the list, a game's page walks its setup through (the apworld, a map pack, your YAML, the files it needs) with each step ticked as Atlas finds it; a YAML added once is listed under every game it names; the game's folders are inside Atlas's data folder; once GitHub may be asked, the page lists every version of every project (the game's own, and one of the same name found by one search), newest first with pre-releases marked and the newest full release named, and downloads nothing without a press",
             GamesPageAsync);
         await ScenarioAsync("Help: the guide opens on its first topic with a topic per section; a topic shows its section, What's new the changelog, Credits & disclaimer the author and the credits, Licences Atlas's licence; a second Help command uses the same window at its topic; Home's What's new card lists the newest changes and leads here",
             HelpAsync);
@@ -170,7 +170,7 @@ public partial class MainTrackerWindow
             SlotPanelMovesWholeAsync);
         await ScenarioAsync("Map packs: a slot's pack has its images while the slot is connected (its map shows them), the Pack Doctor's while its window is open; then they're freed once another pack is used",
             PackImagesFollowTheirUsersAsync);
-        await ScenarioAsync("Map packs reach connected slots: a pack installed while a slot is connected shows on its map at once, without a reconnect; deleted, the map says there's no pack again; another pack for the game takes its place",
+        await ScenarioAsync("Map packs reach connected slots: a slot without a pack offers \"Find a map pack for <game>…\" on its map, which shows Map Packs and searches GitHub once; a pack chosen from the results downloads with a progress line, installs with a card and reaches the slot's map; a pack installed while a slot is connected shows on its map at once, without a reconnect; deleted, the map says there's no pack again; another pack for the game takes its place",
             PacksReachConnectedSlotsAsync);
         await ScenarioAsync("Live map following: a pack whose scripts follow the game switches the map to the tab the room's data storage names, at connect and when it changes (Atlas asks the server about the key and never writes the room's data); with the switch off, the map stays; the switch is remembered per slot",
             LiveMapFollowingAsync);
@@ -1000,6 +1000,7 @@ public partial class MainTrackerWindow
         profile.SavedStats["Me"] = new SlotStats { GameName = "Atlas Test Game", LastUpdated = DateTime.Now };
         _profiles.Add(profile);
         string yaml = System.IO.Path.Combine(DataManager.GetDataDirectory(), "uitest_two_games.yaml");
+        await using var github = new AP_Atlas.Core.Testing.FakeWebSite();
         try
         {
             host.ShowTool(AP_Atlas.UI.Tool.Games);
@@ -1043,9 +1044,42 @@ public partial class MainTrackerWindow
             UiTestExpect(System.IO.Path.GetFullPath(AP_Atlas.Core.Games.GameFiles.GameFolder(data, "Atlas Test Game")).StartsWith(data, StringComparison.OrdinalIgnoreCase)
                 && System.IO.Path.GetFullPath(AP_Atlas.Core.Games.GameFiles.YamlsFolder(data)).StartsWith(data, StringComparison.OrdinalIgnoreCase), "a game's folder isn't inside Atlas's data folder");
             library.Remove(library.For("Atlas Test Game")[0]);
+
+            // Every project's versions. GitHub is a fake site: the project added for the game publishes 1.0.0; a search for
+            // projects of the same name finds a fork publishing 1.2.0 and a 1.3.0 pre-release (and an unrelated project,
+            // left out). Once the permission is given, the page reads them by itself, one search, and downloads nothing.
+            // Each release its own file (its own SHA-256): the same hash would mean the same file published twice.
+            string Release(string tag, bool pre, char digest) =>
+                $"{{\"tag_name\":\"{tag}\",\"draft\":false,\"prerelease\":{(pre ? "true" : "false")},\"published_at\":\"2026-09-0{(pre ? 2 : 1)}T00:00:00Z\"," +
+                $"\"assets\":[{{\"name\":\"atlas_test.apworld\",\"browser_download_url\":\"{github.Site}/dl/{tag}/atlas_test.apworld\",\"digest\":\"sha256:{new string(digest, 64)}\",\"size\":1000}}]}}";
+            github.Respond = path =>
+                path.StartsWith("/search/repositories") ? (200, "{\"items\":[{\"full_name\":\"fork/atlas-test\",\"name\":\"atlas-test\"},{\"full_name\":\"other/atlas-test-maps\",\"name\":\"atlas-test-maps\"}]}")
+                : path.StartsWith("/repos/owner/atlas-test/releases") ? (200, "[" + Release("1.0.0", false, 'a') + "]")
+                : path.StartsWith("/repos/fork/atlas-test/releases") ? (200, "[" + Release("v1.3.0-beta", true, 'b') + "," + Release("1.2.0", false, 'c') + "]")
+                : (404, "{}");
+            AP_Atlas.Core.GitHubApi.TestSite = github.Site;
+            AP_Atlas.Core.GitHubApi.ResetForTests();
+            AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.GitHubLookups, null, true);
+            AP_Atlas.Core.EngineSetup.ApworldSources.AddUserRepo(_appSettings, "Atlas Test Game", "owner/atlas-test");
+            page.Select("Atlas Test Game");
+            await UiTestWaitForAsync(() => page.StatusText.Contains("version(s) from") ? page : null, "the projects' releases to be read", 20);
+            await UiTestWaitForAsync(() => page.VersionRows().Count > 0 ? page : null, "the versions table");
+            var versions = page.VersionRows();
+            UiTestExpect(versions.Select(v => v.Version).SequenceEqual(new[] { "1.3.0-beta", "1.2.0", "1.0.0" }), $"the versions aren't every project's, newest first: {string.Join(", ", versions.Select(v => v.Version + " (" + v.Project + ")"))}");
+            UiTestExpect(versions[0].Prerelease && versions[0].Project == "github.com/fork/atlas-test" && !versions[1].Prerelease && versions[2].Project == "github.com/owner/atlas-test",
+                $"the table doesn't name each version's project or mark the pre-release: {string.Join("; ", versions.Select(v => $"{v.Version} {v.Project}{(v.Prerelease ? " pre" : "")}"))}");
+            UiTestExpect(page.VersionsLine.Contains("Newest known: 1.2.0 from github.com/fork/atlas-test") && page.VersionsLine.Contains("fork or re-upload"), $"the line above the table says: {page.VersionsLine}");
+            UiTestExpect(github.Requests.Count(r => r.StartsWith("/search/")) == 1, $"GitHub was searched {github.Requests.Count(r => r.StartsWith("/search/"))} times, not once");
+            UiTestExpect(!github.Requests.Any(r => r.StartsWith("/dl/")), "a version was downloaded without a press");
+            UiTestExpect(page.Steps().Any(s => s.Title == "A map pack" && !s.Done), "the map pack step is missing");
         }
         finally
         {
+            AP_Atlas.Core.GitHubApi.TestSite = null;
+            AP_Atlas.Core.GitHubApi.ResetForTests();
+            AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.GitHubLookups, null, false);
+            _appSettings.ExtraApworldRepos.Remove("Atlas Test Game");
+            _appSettings.ApprovedApworldSources.Remove("github.com/owner/atlas-test");
             AP_Atlas.Core.SafeFile.Delete(yaml);
             if (_profiles.Contains(profile)) DeleteProfile(profile);
             host.ShowTool(AP_Atlas.UI.Tool.Home);
@@ -2593,6 +2627,8 @@ public partial class MainTrackerWindow
     {
         string packs = AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory();
         string zip = System.IO.Path.Combine(packs, "uitest_late_pack.zip"), second = System.IO.Path.Combine(packs, "uitest_late_pack_2.zip");
+        string fromGitHub = System.IO.Path.Combine(packs, "uitest_github_pack.zip"), packSource = System.IO.Path.Combine(DataManager.GetDataDirectory(), "uitest_github_pack_source.zip");
+        await using var github = new AP_Atlas.Core.Testing.FakeWebSite();
         await using var server = new FakeArchipelagoServer();
         server.Games["Test Game"] = new FakeGame("0123456789abcdef0123456789abcdef01234567",
             new Dictionary<string, long> { ["Sword"] = 1000 }, new Dictionary<string, long> { ["Cave Chest"] = 2000 });
@@ -2611,6 +2647,47 @@ public partial class MainTrackerWindow
             host.ShowTool(AP_Atlas.UI.Tool.MapTracker);
             await UiTestWaitAsync(0.5);
             UiTestExpect(slot.Pack == null && slot.MapTracker.ShowingEmptyState, "a slot without a pack doesn't say so on its map");
+
+            // "Find a map pack for Test Game…" on the empty map: the window shows Map Packs and searches GitHub (a fake site)
+            // once for the game; the pack chosen from what it found downloads with a progress line, installs with a card,
+            // and reaches the slot's map.
+            FakeMapPack.Write(packSource, "UI test GitHub pack", "Test Game");
+            byte[] packBytes = await System.IO.File.ReadAllBytesAsync(packSource);
+            AP_Atlas.Core.SafeFile.Delete(packSource);
+            github.Answer = (path, _) =>
+            {
+                static byte[] Json(string s) => System.Text.Encoding.UTF8.GetBytes(s);
+                if (path.StartsWith("/search/repositories"))
+                    return new AP_Atlas.Core.Testing.FakeWebSite.FullAnswer(200, Json("{\"items\":[{\"full_name\":\"packs/test-game-poptracker\",\"description\":\"A PopTracker pack for Test Game\",\"html_url\":\"https://github.com/packs/test-game-poptracker\",\"stargazers_count\":3}]}"), "application/json");
+                if (path.StartsWith("/repos/packs/test-game-poptracker/releases/latest"))
+                    return new AP_Atlas.Core.Testing.FakeWebSite.FullAnswer(200, Json($"{{\"tag_name\":\"v1\",\"assets\":[{{\"name\":\"uitest_github_pack.zip\",\"browser_download_url\":\"{github.Site}/dl/uitest_github_pack.zip\",\"size\":{packBytes.Length}}}]}}"), "application/json");
+                if (path == "/dl/uitest_github_pack.zip") return new AP_Atlas.Core.Testing.FakeWebSite.FullAnswer(200, packBytes, "application/zip");
+                return new AP_Atlas.Core.Testing.FakeWebSite.FullAnswer(404, Array.Empty<byte>());
+            };
+            AP_Atlas.Core.GitHubApi.TestSite = github.Site;
+            AP_Atlas.Core.GitHubApi.ResetForTests();
+            UiTestExpect(slot.MapTracker.FindPackButton.Text == "Find a map pack for Test Game…", $"the empty map's button says \"{slot.MapTracker.FindPackButton.Text}\"");
+            slot.MapTracker.FindPackButton.EmitSignal(BaseButton.SignalName.Pressed);
+            await UiTestWaitForAsync(() => ShownContent() == _packManagerPanel ? _packManagerPanel : null, "the Map Packs page to show");
+            var results = await UiTestWaitForAsync(() => _packManagerPanel.GetChildren().OfType<AcceptDialog>().FirstOrDefault(d => d.Title == "Map packs on GitHub"), "the search results", 20);
+            UiTestExpect(github.Requests.Count(r => r.StartsWith("/search/")) == 1, $"GitHub was searched {github.Requests.Count(r => r.StartsWith("/search/"))} times for one game");
+            results.FindChildren("*", nameof(Button), true, false).OfType<Button>().First(b => b.Text == "Install…").EmitSignal(BaseButton.SignalName.Pressed);
+            var question = await UiTestWaitForAsync(() => _packManagerPanel.GetChildren().OfType<ConfirmationDialog>().FirstOrDefault(d => d.Title == "Install a map pack"), "the question before the download", 20);
+            UiTestExpect(!System.IO.File.Exists(fromGitHub) && !github.Requests.Any(r => r.StartsWith("/dl/")), "the pack was downloaded before the question was answered");
+            question.EmitSignal(AcceptDialog.SignalName.Confirmed);
+            results.EmitSignal(AcceptDialog.SignalName.Confirmed);
+            var fromSearch = await UiTestWaitForAsync(() => slot.Pack, "the slot to load the pack found on GitHub", 20);
+            UiTestExpect(fromSearch.Manifest.Name == "UI test GitHub pack" && System.IO.File.Exists(fromGitHub), "the pack from GitHub wasn't installed for the slot");
+            UiTestExpect(_packManagerPanel.DownloadText.StartsWith("Downloading uitest_github_pack.zip") && _packManagerPanel.DownloadText.Contains(" of ") && !_packManagerPanel.Downloading,
+                $"no progress line was shown for the download: \"{_packManagerPanel.DownloadText}\"");
+            UiTestExpect(_alertLog.Entries.Any(e => e.Message.Contains("Installed UI test GitHub pack") && e.Message.Contains("Test Game")), "no card said the pack was installed");
+            // Gone again, for the rest of the scenario.
+            AP_Atlas.Core.SafeFile.Delete(fromGitHub);
+            AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
+            await UiTestWaitForAsync(() => slot.Pack == null && slot.MapTracker.ShowingEmptyState ? slot : null, "the map to say the pack from GitHub is gone");
+            host.ShowTool(AP_Atlas.UI.Tool.MapTracker);
+            await UiTestWaitAsync(0.2);
+
             // Installed while connected: the map shows it at once.
             FakeMapPack.Write(zip, "UI test late pack", "Test Game");
             AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
@@ -2634,9 +2711,11 @@ public partial class MainTrackerWindow
         }
         finally
         {
+            AP_Atlas.Core.GitHubApi.TestSite = null;
+            AP_Atlas.Core.GitHubApi.ResetForTests();
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
             if (_profiles.Contains(profile)) DeleteProfile(profile);
-            foreach (string file in new[] { zip, second }) AP_Atlas.Core.SafeFile.Delete(file);
+            foreach (string file in new[] { zip, second, fromGitHub, packSource }) AP_Atlas.Core.SafeFile.Delete(file);
         }
     }
 
@@ -3062,6 +3141,26 @@ public partial class MainTrackerWindow
             UiTestExpect(slot.ChosenApworld?.File == chosenFile && slot.ChosenApworld.Version == "9.9.9" && DataManager.LoadSettings().SlotApworlds.ContainsKey(slot.AnnotationKey),
                 "the version chosen for the slot wasn't kept for it and its seed");
             _appSettings.SlotApworlds.Remove(slot.AnnotationKey);
+
+            // The Games page says which version each connected slot should run: with the engine's world data differing from
+            // the seed's and no version known to match, it says so and offers the picker (nothing is downloaded).
+            engine.DataChecksum = "0000000000000000000000000000000000000000";
+            engine.Apply();
+            slot.RetryLogicEngine();
+            await UiTestWaitForAsync(() => slot.LogicSettled && slot.ApworldMatchesSeed == false ? slot : null, "the engine to report that the seed's data differs");
+            ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.Games);
+            _gamesPage!.Select("Test Game");
+            await UiTestWaitAsync(0.2);
+            var lines = _gamesPage.SlotLines();
+            UiTestExpect(lines.Any(l => l.StartsWith("Tester:") && l.Contains("isn't among the known versions")), $"the Games page doesn't say the slot's seed needs another version: {string.Join(" | ", lines)}");
+            engine.DataChecksum = LogicWorldChecksum;
+            engine.Apply();
+            slot.RetryLogicEngine();
+            await UiTestWaitForAsync(() => slot.LogicSettled && slot.ApworldMatchesSeed == true ? slot : null, "the engine to match the seed again");
+            _gamesPage.Select("Test Game");
+            await UiTestWaitAsync(0.2);
+            UiTestExpect(_gamesPage.SlotLines().Any(l => l.StartsWith("Tester:") && l.Contains("matches its seed")), $"the Games page doesn't say the slot's apworld matches: {string.Join(" | ", _gamesPage.SlotLines())}");
+            ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.LogicTracker);
 
             // An answer that doesn't say what each new item opened is a failure, never taken for "it opened nothing": logic
             // starts again (after 2 s: the restart above gave it a fresh set of tries).

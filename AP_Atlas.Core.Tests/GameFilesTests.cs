@@ -68,6 +68,38 @@ public sealed class GameFilesTests : IDisposable
         Assert.Equal(new[] { "v1.10.0", "1.10.0-beta", "1.9.2", "0.2.5", "nightly" }, sorted);
     }
 
+    [Theory]
+    [InlineData("v0.2.5", "0.2.5")]
+    [InlineData("0.0.22-0", "0.0.22.0")]
+    [InlineData("0.1.0-0", "0.1.0.0")]
+    [InlineData("1.0.0-beta", "1.0.0-beta")]
+    [InlineData(" V2 ", "2")]
+    [InlineData("vanilla", "vanilla")]
+    public void One_label_names_one_release_as_the_index_and_GitHub_write_it(string label, string expected)
+    {
+        Assert.Equal(expected, ApworldChoices.NormalizeLabel(label));
+        Assert.True(ApworldChoices.SameLabel(label, expected));
+    }
+
+    [Fact]
+    public void A_build_number_is_a_release_not_a_prerelease_and_a_prerelease_sorts_before_its_release()
+    {
+        // The index's "0.0.22-0" is the release 0.0.22.0: the same release as 0.0.22, after 0.0.21, and not a pre-release of 0.0.22.
+        Assert.Equal(0, ApworldChoices.VersionComparer.Instance.Compare("0.0.22-0", "0.0.22"));
+        Assert.True(ApworldChoices.VersionComparer.Instance.Compare("0.0.22-0", "0.0.21") > 0);
+        Assert.True(ApworldChoices.VersionComparer.Instance.Compare("0.0.22-beta", "0.0.22") < 0);
+        Assert.Equal(0, ApworldChoices.VersionComparer.Instance.Compare("0.0.22-0", "v0.0.22.0"));
+        // The picker's list carries whether a version is a pre-release and when it was published.
+        var published = new[]
+        {
+            new PublishedApworld("1.3.0-beta", "github.com/fork/dsr", "https://github.com/fork/dsr/releases/download/1.3.0-beta/dsr.apworld", "cc", Prerelease: true, Published: new DateTime(2026, 9, 1)),
+            new PublishedApworld("1.2.0", "github.com/fork/dsr", "https://github.com/fork/dsr/releases/download/1.2.0/dsr.apworld", "bb"),
+        };
+        var choices = ApworldChoices.Compose(published, Array.Empty<IdentifiedApworld>(), Array.Empty<string>(), null);
+        Assert.Equal(new[] { "1.3.0-beta", "1.2.0" }, choices.Select(c => c.Version).ToArray());
+        Assert.True(choices[0].Prerelease && choices[0].Published == new DateTime(2026, 9, 1) && !choices[1].Prerelease);
+    }
+
     [Fact]
     public void The_picker_puts_the_seeds_match_first_then_the_newest_and_marks_what_Atlas_has()
     {

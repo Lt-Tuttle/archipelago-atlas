@@ -10,14 +10,18 @@ namespace AP_Atlas.Core.Games;
 /// file), whether Atlas has it already, whether it's the one installed in the engine, and whether its data is known to
 /// match the seed's.
 /// </summary>
-public sealed record ApworldChoice(string Version, string Source, string? Url, string? Sha256, string? LocalFile, bool Installed, bool MatchesSeed, string? Checksum)
+public sealed record ApworldChoice(string Version, string Source, string? Url, string? Sha256, string? LocalFile, bool Installed, bool MatchesSeed, string? Checksum,
+    bool Prerelease = false, DateTime? Published = null)
 {
     /// <summary>Atlas has the file (nothing to download).</summary>
     public bool Downloaded => LocalFile != null;
 }
 
-/// <summary>A release Atlas knows of: its version label, the project (or "your file"), its download and its published hash.</summary>
-public sealed record PublishedApworld(string Version, string Source, string? Url, string? Sha256);
+/// <summary>
+/// A release Atlas knows of: its version label, the project (or "your file"), its download and its published hash; whether
+/// the project marked it a pre-release, and when it was published (a time the site names, shown only).
+/// </summary>
+public sealed record PublishedApworld(string Version, string Source, string? Url, string? Sha256, bool Prerelease = false, DateTime? Published = null);
 
 /// <summary>A file Atlas has already identified: its version, where it came from, the file and the data checksum it reported.</summary>
 public sealed record IdentifiedApworld(string Version, string Source, string File, string Checksum);
@@ -41,7 +45,7 @@ public static class ApworldChoices
             var have = known.FirstOrDefault(k => SameVersion(k.Version, p.Version) && SameSource(k.Source, p.Source, p.Url));
             if (have != null) used.Add(have);
             bool match = have != null && seedChecksum != null && string.Equals(have.Checksum, seedChecksum, StringComparison.OrdinalIgnoreCase);
-            choices.Add(new ApworldChoice(p.Version, p.Source, p.Url, p.Sha256, have?.File, p.Sha256 != null && installed.Contains(p.Sha256), match, have?.Checksum));
+            choices.Add(new ApworldChoice(p.Version, p.Source, p.Url, p.Sha256, have?.File, p.Sha256 != null && installed.Contains(p.Sha256), match, have?.Checksum, p.Prerelease, p.Published));
         }
         foreach (var k in known.Where(k => !used.Contains(k)))
         {
@@ -57,7 +61,21 @@ public static class ApworldChoices
             .ToList();
     }
 
-    private static string Key(string? version) => Regex.Replace((version ?? "").Trim().ToLowerInvariant(), "^v", "");
+    /// <summary>
+    /// One label for one release: "v0.2.5" is "0.2.5", and a build number the community index writes as "0.0.22-0" is
+    /// GitHub's tag "0.0.22.0" (a suffix that isn't a number, "1.0.0-beta", is a pre-release and stays).
+    /// </summary>
+    public static string NormalizeLabel(string? version)
+    {
+        string v = (version ?? "").Trim();
+        v = Regex.Replace(v, @"^[vV](?=\d)", "");
+        return Regex.Replace(v, @"^(\d+(?:\.\d+)*)-(\d+)$", "$1.$2");
+    }
+
+    /// <summary>Whether two labels name the same release.</summary>
+    public static bool SameLabel(string? a, string? b) => Key(a) == Key(b);
+
+    private static string Key(string? version) => NormalizeLabel(version).ToLowerInvariant();
 
     private static bool SameVersion(string? a, string? b) => Key(a) == Key(b);
 

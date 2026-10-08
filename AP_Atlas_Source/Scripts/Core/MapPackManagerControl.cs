@@ -33,6 +33,19 @@ namespace AP_Atlas.Core
         /// <summary>The page's text size (the content setting); the window sets it.</summary>
         public Func<int> FontSize { get; set; } = () => 14;
 
+        /// <summary>Shows a card (the window's alert feed); the window sets it.</summary>
+        public Action<string, Color> Toast { get; set; }
+
+        private HBoxContainer _downloadRow;
+        private Label _downloadLabel;
+        private ProgressBar _downloadBar;
+
+        /// <summary>Whether a pack is downloading now (for tests).</summary>
+        public bool Downloading => _downloadRow != null && _downloadRow.Visible;
+
+        /// <summary>The last progress line shown for a download (for tests).</summary>
+        public string DownloadText { get; private set; } = "";
+
         public MapPackManagerControl(Action<string, string> logAction, Action showOverlayAction, Action hideOverlayAction, Func<HashSet<string>> getActiveGamesFunc, Func<List<ArchipelagoSession>> getActiveSessionsFunc = null)
         {
             _logAction = logAction;
@@ -82,6 +95,17 @@ namespace AP_Atlas.Core
 
             sidebarVBox.AddChild(new HSeparator());
             sidebarVBox.AddChild(btnVBox);
+
+            // A download's progress: "Downloading <pack>: 3 of 11 MB" with a bar, in place of the whole-window overlay.
+            _downloadRow = new HBoxContainer { Visible = false };
+            _downloadRow.AddThemeConstantOverride("separation", 8);
+            _downloadLabel = AP_Atlas.UI.Kit.Muted("");
+            _downloadLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+            _downloadLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+            _downloadRow.AddChild(_downloadLabel);
+            _downloadBar = new ProgressBar { MaxValue = 1, Step = 0.001, ShowPercentage = false, CustomMinimumSize = new Vector2(100, 0), SizeFlagsVertical = SizeFlags.ShrinkCenter };
+            _downloadRow.AddChild(_downloadBar);
+            sidebarVBox.AddChild(_downloadRow);
 
             _inspectorContainer = new MarginContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
             _inspectorContainer.AddThemeConstantOverride("margin_left", 20);
@@ -600,7 +624,22 @@ namespace AP_Atlas.Core
             var missing = games.Where(g => !installed.Any(i => PopTrackerPackLoader.IsGameNameMatch(i, g))).OrderBy(g => g).ToList();
             foreach (var g in games.Except(missing)) _logAction($"{g} already has a map pack.", "green");
             if (missing.Count == 0) return;
+            await SearchGamesAsync(missing);
+        }
 
+        /// <summary>
+        /// Searches GitHub for one game's PopTracker packs and shows what it found (nothing installed until chosen): the Map
+        /// Tracker's empty state and a game's page call it, so a slot without a pack is one press from the search, connected
+        /// or not. One search, because the user pressed for it.
+        /// </summary>
+        public void SearchForGame(string game)
+        {
+            if (string.IsNullOrWhiteSpace(game)) return;
+            AP_Atlas.Core.Async.Fire(SearchGamesAsync(new List<string> { game }), $"searching GitHub for {game} map packs");
+        }
+
+        private async Task SearchGamesAsync(List<string> missing)
+        {
             var results = new List<(string Game, List<PackCandidate> Candidates, string Problem)>();
             _showOverlayAction();
             try
@@ -775,34 +814,79 @@ namespace AP_Atlas.Core
             if (!safeName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) safeName += ".zip";
             string dest = System.IO.Path.Combine(packsDir, safeName);
             string temp = System.IO.Path.Combine(packsDir, $".download-{Guid.NewGuid():N}.tmp");
+            // The progress shows in the page (the window stays usable); the progress callback runs off the main thread.
+            ShowDownload(safeName, 0, -1);
+            long shown = 0;
+            void Progress(long done, long total)
+            {
+                if (done - shown < 256 * 1024 && done != total) return;
+                shown = done;
+                AP_Atlas.UI.Ui.Defer(this, () => ShowDownload(safeName, done, total));
+            }
             WebResponse r;
-            _showOverlayAction();
-            try { r = await PoliteHttp.DownloadAsync(url, where, temp, null, 256L * 1024 * 1024, TimeSpan.FromMinutes(10)); }
-            finally { _hideOverlayAction(); }
+            try { r = await PoliteHttp.DownloadAsync(url, where, temp, null, 256L * 1024 * 1024, TimeSpan.FromMinutes(10), Progress); }
+            finally { if (GodotObject.IsInstanceValid(this)) _downloadRow.Visible = false; }
             if (!r.Ok)
             {
                 PoliteHttp.TryDelete(temp);
-                if (GodotObject.IsInstanceValid(this)) _logAction($"Couldn't download the pack: {r.Message}", "red");
+                Failed($"Couldn't download the pack from {where}: {r.Message}");
                 return;
             }
             string problem = CheckPackZip(temp);
             if (problem != null)
             {
                 PoliteHttp.TryDelete(temp);
-                if (GodotObject.IsInstanceValid(this)) _logAction($"The download from {where} wasn't installed: {problem}.", "red");
+                Failed($"The download from {where} wasn't installed: {problem}.");
                 return;
             }
             try { File.Move(temp, dest, true); }
             catch (Exception ex)
             {
                 PoliteHttp.TryDelete(temp);
-                if (GodotObject.IsInstanceValid(this)) _logAction($"Couldn't install the pack: {ex.Message}", "red");
+                Failed($"Couldn't install the pack: {ex.Message}");
                 return;
             }
             if (!GodotObject.IsInstanceValid(this)) return;
             _logAction($"Installed {safeName} from {where}.", "lime");
+            SayInstalled(dest);
             PopTrackerPackLoader.NotifyPacksChanged();
             await RefreshPackListAsync();
+        }
+
+        private void Failed(string message)
+        {
+            if (!GodotObject.IsInstanceValid(this)) return;
+            _logAction(message, "red");
+            Toast?.Invoke(message, ThemeColors.Error);
+        }
+
+        private void ShowDownload(string name, long done, long total)
+        {
+            if (!GodotObject.IsInstanceValid(this)) return;
+            // Sizes in the unit the whole download is measured in: KB under a megabyte, else MB with one decimal.
+            bool mb = Math.Max(done, total) >= 1024 * 1024;
+            string Size(long bytes) => mb ? (bytes / (1024.0 * 1024.0)).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) : Math.Max(1, bytes / 1024).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            string unit = mb ? "MB" : "KB";
+            DownloadText = total > 0 ? AP_Atlas.UI.Kit.Translate("Downloading {0}: {1} of {2} {3}").Replace("{0}", name).Replace("{1}", Size(done)).Replace("{2}", Size(total)).Replace("{3}", unit)
+                : done > 0 ? AP_Atlas.UI.Kit.Translate("Downloading {0}: {1} {2}").Replace("{0}", name).Replace("{1}", Size(done)).Replace("{2}", unit)
+                : AP_Atlas.UI.Kit.Translate("Downloading {0}…").Replace("{0}", name);
+            _downloadLabel.Text = DownloadText;
+            _downloadBar.Indeterminate = total <= 0;
+            _downloadBar.Value = total > 0 ? Math.Clamp((double)done / total, 0, 1) : 0;
+            _downloadRow.Visible = true;
+        }
+
+        /// <summary>A card saying the pack is in: connected slots of its game show it at once (PacksChanged reaches them).</summary>
+        private void SayInstalled(string zipPath)
+        {
+            PopTrackerManifest manifest = null;
+            try { manifest = ReadManifest(zipPath); }
+            catch (Exception ex) { Logger.LogDebug($"Couldn't read the installed pack's manifest for the card: {ex.Message}"); }
+            string name = manifest?.Name ?? System.IO.Path.GetFileNameWithoutExtension(zipPath);
+            string game = manifest?.GameName;
+            Toast?.Invoke(string.IsNullOrEmpty(game)
+                ? AP_Atlas.UI.Kit.Translate("Installed {0}.").Replace("{0}", name)
+                : AP_Atlas.UI.Kit.Translate("Installed {0}: connected slots of {1} use it now.").Replace("{0}", name).Replace("{1}", game), ThemeColors.Success);
         }
 
         /// <summary>Why a file isn't a usable PopTracker pack zip, or null when it is.</summary>
@@ -912,6 +996,7 @@ namespace AP_Atlas.Core
                         System.IO.File.Copy(path, temp, true);
                         System.IO.File.Move(temp, destPath, true);
                         _logAction($"Installed the map pack {System.IO.Path.GetFileName(path)}.", "lime");
+                        SayInstalled(destPath);
                         PopTrackerPackLoader.NotifyPacksChanged();
                         RefreshPackList();
                     }

@@ -371,6 +371,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _packManagerPanel.FontSize = () => _appSettings.ContentFontSize;
         _packManagerPanel.Visible = false;
         _packManagerPanel.OpenDoctor = path => OpenPackDoctor(path);
+        _packManagerPanel.Toast = ShowToast;
         _packManagerPanel.OnDataRefreshed += () =>
         {
             SetFontSizeRecursive(_packManagerPanel, _appSettings.ContentFontSize);
@@ -411,7 +412,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             LiveSlots = () => ActiveSlotNodes().OfType<SlotTrackerControl>().Where(GodotObject.IsInstanceValid),
             Toast = ShowToast,
             ShowTool = tool => ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(tool),
-            OpenEngineSetup = OpenEngineSetup
+            OpenEngineSetup = OpenEngineSetup,
+            FindPack = FindMapPack
         });
         _gamesPage.Visible = false;
         _contentStage.AddChild(_gamesPage);

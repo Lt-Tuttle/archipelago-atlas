@@ -169,7 +169,7 @@ public partial class SlotTrackerControl : MarginContainer
             case "no_engine":
                 return "Logic needs the Atlas Engine.\n" + e.Message + "\nAtlas can download everything it needs (about 50 MB, no installer).";
             case "world_missing":
-                return $"{Game} isn't installed in the logic engine.\nAdd its apworld under Atlas Engine → Games.";
+                return $"{Game} isn't installed in the logic engine.\nInstall its apworld on the Games page.";
             case "yaml_needed":
                 return $"{Game} can't rebuild your world from the server's data alone.\nLink this player's YAML (the file used to generate the seed).";
             case "generation_failed":

@@ -144,6 +144,8 @@ public partial class SlotTrackerControl : MarginContainer
 
         _mapTracker = new AP_Atlas.UI.MapTrackerControl(_appSettings);
         _mapTracker.SetSession(Session);
+        _mapTracker.GameName = Game;
+        _mapTracker.FindPackRequested += () => FindMapPack?.Invoke(Game);
         _mapTracker.PinPicked += (mapId, pinName, ids) =>
         {
             // A pin with one check is that location; a pin covering several opens the pin's own view.
