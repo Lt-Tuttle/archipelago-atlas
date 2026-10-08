@@ -70,6 +70,9 @@ namespace AP_Atlas.Core.PopTracker
             });
         }
 
+        /// <summary>Lets go of the scripts (their pack was removed): queued work finishes, then nothing runs them again.</summary>
+        public void Stop() => Queue(() => _queued = null, () => Scripts = null);
+
         /// <summary>Feeds items received since (index: the item's place in everything the slot received).</summary>
         public void FeedItems(IReadOnlyList<(int Index, long ItemId, string ItemName, int Player)> fresh, Action? onMainThread = null) =>
             Queue(() =>

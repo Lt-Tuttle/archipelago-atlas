@@ -21,8 +21,9 @@ internal static class FakeMapPack
     /// <param name="files">More files, by their path in the pack (e.g. "scripts/helper.lua").</param>
     /// <param name="binaryFiles">More files given as bytes (e.g. a crafted image).</param>
     /// <param name="mapWidth">The map image's size (a test that zooms and drags the map wants one bigger than the view).</param>
+    /// <param name="locationsJson">The pack's locations/locations.json in place of the two usual pins.</param>
     public static void Write(string zipPath, string name, string game, string? initLua = null, IReadOnlyDictionary<string, string>? files = null,
-        IReadOnlyDictionary<string, byte[]>? binaryFiles = null, int mapWidth = MapWidth, int mapHeight = MapHeight)
+        IReadOnlyDictionary<string, byte[]>? binaryFiles = null, int mapWidth = MapWidth, int mapHeight = MapHeight, string? locationsJson = null)
     {
         if (File.Exists(zipPath)) File.Delete(zipPath);
         using var zip = ZipFile.Open(zipPath, ZipArchiveMode.Create);
@@ -41,7 +42,7 @@ internal static class FakeMapPack
             """[{"name":"Sword","type":"toggle","img":"images/sword.png","codes":"sword"},{"name":"Shield","type":"toggle","img":"images/broken.png","codes":"shield"}]""");
         Text("pack/layouts/tracker.json", """{"tracker_default":{"type":"itemgrid","rows":[["sword","shield"]]}}""");
         Text("pack/maps/maps.json", """[{"name":"World","img":"images/world.png","location_size":16},{"name":"Broken","img":"images/broken.png"}]""");
-        Text("pack/locations/locations.json",
+        Text("pack/locations/locations.json", locationsJson ??
             """[{"name":"Cave","sections":[{"name":"Chest"}],"map_locations":[{"map":"World","x":10,"y":10}]},""" +
             """{"name":"Far","sections":[{"name":"Chest"}],"map_locations":[{"map":"World","x":500,"y":10}]}]""");
         Bytes("pack/images/sword.png", Png(8, 8));

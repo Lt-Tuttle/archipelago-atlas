@@ -21,6 +21,12 @@ namespace AP_Atlas.Core.PopTracker
         [JsonProperty("map")] public string Map { get; set; } = "";
         [JsonProperty("x")] public float X { get; set; } = 0f;
         [JsonProperty("y")] public float Y { get; set; } = 0f;
+        /// <summary>The pin's own size on this map (0: the map's).</summary>
+        [JsonProperty("size")] public float Size { get; set; } = 0f;
+        /// <summary>The pin's own border (below 0: the map's).</summary>
+        [JsonProperty("border_thickness")] public float BorderThickness { get; set; } = -1f;
+        /// <summary>The pin's own shape ("rect", "diamond", ...), or null for the map's.</summary>
+        [JsonProperty("shape")] public string Shape { get; set; }
     }
 
     public class PopTrackerLocation
@@ -47,6 +53,10 @@ namespace AP_Atlas.Core.PopTracker
         [JsonProperty("map_bg")] public string MapBg { get; set; } = "";
         [JsonProperty("img")] public string Img { get; set; } = "";
         [JsonProperty("location_size")] public float LocationSize { get; set; } = 0f;
+        /// <summary>The border of the map's pins (below 0: Atlas's).</summary>
+        [JsonProperty("location_border_thickness")] public float LocationBorderThickness { get; set; } = -1f;
+        /// <summary>The shape of the map's pins ("rect", "diamond", ...), or null for the Appearance setting.</summary>
+        [JsonProperty("location_shape")] public string LocationShape { get; set; }
 
         // Metadata not bound via JSON, populated at load time
         [JsonIgnore] public string Id { get; set; } = "";

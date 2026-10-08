@@ -53,6 +53,17 @@ public partial class MainTrackerWindow
     };
 
     /// <summary>The Map Tracker's pin shapes, as the page offers them.</summary>
+    /// <summary>What each pin colour means, for its row on the Settings page.</summary>
+    private static string MapColourDescription(AP_Atlas.Core.Maps.MapPinState state) => state switch
+    {
+        AP_Atlas.Core.Maps.MapPinState.InLogic => "Every open check at the pin is in logic (PopTracker's bright green).",
+        AP_Atlas.Core.Maps.MapPinState.Mixed => "Some of the pin's open checks are in logic, some aren't (PopTracker's orange).",
+        AP_Atlas.Core.Maps.MapPinState.SequenceBreak => "Reachable only with the game's glitch or sequence-break logic (PopTracker's yellow).",
+        AP_Atlas.Core.Maps.MapPinState.OutOfLogic => "None of the pin's open checks is in logic yet (PopTracker's red).",
+        AP_Atlas.Core.Maps.MapPinState.Checked => "Every check at the pin is done (PopTracker's dark grey).",
+        _ => "Logic isn't known: the engine isn't running yet, or logic is hidden (see Settings → Multiworld)."
+    };
+
     private static readonly (string Key, string Title)[] MarkerStyles = { ("round", "Round"), ("square", "Square"), ("diamond", "Diamond") };
 
     /// <summary>What Atlas opens on, as the page offers it.</summary>
@@ -139,6 +150,29 @@ public partial class MainTrackerWindow
                 DataManager.SaveSettings(_appSettings);
                 AP_Atlas.UI.MapTrackerControl.RedrawAll();
             });
+        // The pins' colours, one row per state (PopTracker's by default), and a way back to them.
+        foreach (var state in AP_Atlas.Core.Maps.MapPinLogic.All)
+        {
+            var shown = state;
+            string key = AP_Atlas.Core.Maps.MapPinLogic.Key(state);
+            page.AddColour("appearance", "map-colour-" + key, "Map pins: " + AP_Atlas.Core.Maps.MapPinLogic.Title(state).ToLowerInvariant(), MapColourDescription(state),
+                () => AP_Atlas.Core.ThemeColors.MapColour(shown),
+                colour =>
+                {
+                    _appSettings.MapColours[key] = "#" + colour.ToHtml(false).ToUpperInvariant();
+                    AP_Atlas.Core.ThemeColors.SetMapColours(_appSettings.MapColours);
+                    DataManager.SaveSettings(_appSettings);
+                    AP_Atlas.UI.MapTrackerControl.RedrawAll();
+                });
+        }
+        page.AddAction("appearance", "map-colours-reset", "Map pins: PopTracker's colours", "Puts every pin colour back to PopTracker's (or, with colour-blind-safe colours on, the safe set).", "Reset", () =>
+        {
+            _appSettings.MapColours.Clear();
+            AP_Atlas.Core.ThemeColors.SetMapColours(_appSettings.MapColours);
+            DataManager.SaveSettings(_appSettings);
+            AP_Atlas.UI.MapTrackerControl.RedrawAll();
+            page.RefreshRows();
+        });
         AddFontSizeSetting(page, "menu-font-size", "Menu and tab font size", "The menu bar, the tool header and the bottom pane's tabs (14 to begin with).",
             () => _appSettings.GlobalFontSize, size => _appSettings.GlobalFontSize = size);
         AddFontSizeSetting(page, "slots-font-size", "Slots panel font size", "The slot cards (14 to begin with).",

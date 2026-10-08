@@ -168,6 +168,8 @@ public partial class MainTrackerWindow
             SlotPanelMovesWholeAsync);
         await ScenarioAsync("Map packs: a slot's pack has its images while the slot is connected (its map shows them), the Pack Doctor's while its window is open; then they're freed once another pack is used",
             PackImagesFollowTheirUsersAsync);
+        await ScenarioAsync("Map packs reach connected slots: a pack installed while a slot is connected shows on its map at once, without a reconnect; deleted, the map says there's no pack again; another pack for the game takes its place",
+            PacksReachConnectedSlotsAsync);
         await ScenarioAsync("Idle: a connected slot doesn't keep Atlas redrawing: nothing of its map runs every frame (the wheel still zooms it and a drag still moves it; Fit fits; the view is remembered), and its card isn't re-styled while nothing changes",
             ConnectedSlotLetsAtlasIdleAsync);
         await ScenarioAsync("Map pack scripts: a slot whose pack's script runs away keeps working: the script is stopped in seconds without holding up a frame, and Key Items and the log say why",
@@ -1509,6 +1511,36 @@ public partial class MainTrackerWindow
         markers.EmitSignal(OptionButton.SignalName.ItemSelected, 0);
         UiTestExpect(_appSettings.MapMarkerStyle == "round", "the pins didn't go back to round");
 
+        // The pins' colours: PopTracker's by default; a changed one is saved and reaches every map's legend; the reset brings PopTracker's back.
+        var map = new AP_Atlas.UI.MapTrackerControl(_appSettings);
+        AddChild(map);
+        try
+        {
+            var inLogic = AP_Atlas.Core.Maps.MapPinState.InLogic;
+            UiTestExpect(AP_Atlas.Core.ThemeColors.MapColour(inLogic) == Color.FromHtml("#20FF20") && AP_Atlas.Core.ThemeColors.MapColour(AP_Atlas.Core.Maps.MapPinState.OutOfLogic) == Color.FromHtml("#CF1010"),
+                "the pins don't start in PopTracker's green and red");
+            var pinPicker = (ColorPickerButton)page.ControlOf("map-colour-in-logic");
+            pinPicker.Color = Color.FromHtml("#00A0FF");
+            pinPicker.EmitSignal(ColorPickerButton.SignalName.ColorChanged, pinPicker.Color);
+            await UiTestWaitAsync(0.6);
+            UiTestExpect(AP_Atlas.Core.ThemeColors.MapColour(inLogic) == Color.FromHtml("#00A0FF") && DataManager.LoadSettings().MapColours.GetValueOrDefault("in-logic") == "#00A0FF",
+                "a changed pin colour wasn't applied or saved");
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(map.LegendEntries.Any(e => e.Color == Color.FromHtml("#00A0FF") && e.Text == "In logic"), "the legend didn't take the new colour");
+            ((Button)page.ControlOf("map-colours-reset")).EmitSignal(BaseButton.SignalName.Pressed);
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(AP_Atlas.Core.ThemeColors.MapColour(inLogic) == Color.FromHtml("#20FF20") && _appSettings.MapColours.Count == 0 && pinPicker.Color == Color.FromHtml("#20FF20"),
+                "the reset didn't bring PopTracker's colours back");
+            map.Logic = AP_Atlas.UI.MapTrackerControl.LogicShown.NotRunning;
+            UiTestExpect(map.LegendEntries.Any(e => e.Text.Contains("not running")) && !map.LegendEntries.Any(e => e.Text == "In logic"), "the legend doesn't say logic isn't running");
+            map.Logic = AP_Atlas.UI.MapTrackerControl.LogicShown.Hidden;
+            UiTestExpect(map.LegendEntries.Any(e => e.Text.Contains("race mode")), "the legend doesn't say race mode hides logic");
+        }
+        finally
+        {
+            map.QueueFree();
+        }
+
         // Where Atlas opens: the choice is saved; the last tool shown is remembered for "where I left off"; an unknown tool means Home.
         var startup = (OptionButton)page.ControlOf("startup");
         startup.Select(2);
@@ -1719,6 +1751,7 @@ public partial class MainTrackerWindow
             ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.LogicTracker);
             await UiTestWaitAsync(0.2);
             UiTestExpect(!slot.GoModeShown && slot.GoalInLogic == null, "go mode is claimed while logic is unknown");
+            UiTestExpect(slot.MapTracker.Logic == AP_Atlas.UI.MapTrackerControl.LogicShown.NotRunning, $"without the engine the map's logic is {slot.MapTracker.Logic}, not 'not running'");
 
             // Deleting a slot asks first; cancelling keeps it, confirming removes it.
             SelectProfile(profile);
@@ -2489,10 +2522,65 @@ public partial class MainTrackerWindow
         }
     }
 
+    private async Task PacksReachConnectedSlotsAsync()
+    {
+        string packs = AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory();
+        string zip = System.IO.Path.Combine(packs, "uitest_late_pack.zip"), second = System.IO.Path.Combine(packs, "uitest_late_pack_2.zip");
+        await using var server = new FakeArchipelagoServer();
+        server.Games["Test Game"] = new FakeGame("0123456789abcdef0123456789abcdef01234567",
+            new Dictionary<string, long> { ["Sword"] = 1000 }, new Dictionary<string, long> { ["Cave Chest"] = 2000 });
+        var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Tester");
+        _profiles.Add(profile);
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        try
+        {
+            UiTestExpect(!System.IO.Directory.GetFiles(packs, "*.zip").Any(f => AP_Atlas.Core.PopTracker.PopTrackerPackLoader.InspectZipPack(f)?.Manifest?.GameName == "Test Game"),
+                "a pack for the test game was left installed by another scenario");
+            await OnConnectSlotPressedAsync("Tester", profile);
+            var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
+            ShowTextClient(slot);
+            host.ShowTool(AP_Atlas.UI.Tool.MapTracker);
+            await UiTestWaitAsync(0.5);
+            UiTestExpect(slot.Pack == null && slot.MapTracker.ShowingEmptyState, "a slot without a pack doesn't say so on its map");
+            // Installed while connected: the map shows it at once.
+            FakeMapPack.Write(zip, "UI test late pack", "Test Game");
+            AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
+            var pack = await UiTestWaitForAsync(() => slot.Pack, "the slot to load the pack installed while it was connected");
+            await UiTestWaitForAsync(() => slot.MapTracker.Pack != null && !slot.MapTracker.ShowingEmptyState ? slot.MapTracker : null, "the map to show the new pack");
+            UiTestExpect(pack.Manifest.Name == "UI test late pack" && slot.Session?.Socket.Connected == true, "the new pack isn't the one installed, or the slot reconnected");
+            // An unrelated change leaves the slot's pack alone.
+            AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
+            await UiTestWaitAsync(0.3);
+            UiTestExpect(ReferenceEquals(slot.Pack, pack), "a change that didn't touch the slot's pack reloaded it");
+            // Deleted: the map says there's no pack again, and its images are let go.
+            AP_Atlas.Core.SafeFile.Delete(zip);
+            AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
+            await UiTestWaitForAsync(() => slot.Pack == null && slot.MapTracker.ShowingEmptyState ? slot : null, "the map to say the pack is gone");
+            UiTestExpect(AP_Atlas.Core.PopTracker.PackImages.UsersOf(pack) == 0, "the deleted pack's images are still used");
+            // Another pack for the game takes its place.
+            FakeMapPack.Write(second, "UI test second pack", "Test Game");
+            AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
+            var replacement = await UiTestWaitForAsync(() => slot.Pack, "the second pack");
+            UiTestExpect(replacement.Manifest.Name == "UI test second pack" && !slot.MapTracker.ShowingEmptyState, "the second pack didn't take the first one's place");
+        }
+        finally
+        {
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+            if (_profiles.Contains(profile)) DeleteProfile(profile);
+            foreach (string file in new[] { zip, second }) AP_Atlas.Core.SafeFile.Delete(file);
+        }
+    }
+
     private async Task ConnectedSlotLetsAtlasIdleAsync()
     {
         string zip = System.IO.Path.Combine(AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory(), "uitest_idle_pack.zip");
-        FakeMapPack.Write(zip, "UI test pack", "Test Game", mapWidth: 1600, mapHeight: 1000); // bigger than the view, so there's room to drag
+        // Bigger than the view, so there's room to drag; a third pin sets its own size and shape, as PopTracker packs may.
+        FakeMapPack.Write(zip, "UI test pack", "Test Game", mapWidth: 1600, mapHeight: 1000, locationsJson:
+            """[{"name":"Cave","sections":[{"name":"Chest"}],"map_locations":[{"map":"World","x":10,"y":10}]},""" +
+            """{"name":"Far","sections":[{"name":"Chest"}],"map_locations":[{"map":"World","x":500,"y":10}]},""" +
+            """{"name":"Big","sections":[{"name":"Chest"}],"map_locations":[{"map":"World","x":300,"y":300,"size":40,"shape":"diamond","border_thickness":4}]}]""");
         await using var server = new FakeArchipelagoServer();
         server.Games["Test Game"] = new FakeGame("0123456789abcdef0123456789abcdef01234567",
             new Dictionary<string, long> { ["Sword"] = 1000 }, new Dictionary<string, long> { ["Cave Chest"] = 2000 });
@@ -2531,6 +2619,21 @@ public partial class MainTrackerWindow
             // Pins sit where the zoom puts them.
             var pin = canvas.Pins.First();
             UiTestExpect(pin.Control.Position.DistanceTo(new Vector2(pin.X * canvas.Zoom, pin.Y * canvas.Zoom) - pin.Control.Size / 2) < 0.5f, $"a pin at ({pin.X}, {pin.Y}) sits at {pin.Control.Position} at zoom {canvas.Zoom}");
+            // A pin that sets its own size and shape keeps them.
+            var big = canvas.Pins.First(p => p.Key.StartsWith("Big@", StringComparison.Ordinal));
+            UiTestExpect(Mathf.IsEqualApprox(big.MapSize, 40f * _appSettings.MapNodeScale) && Mathf.IsEqualApprox(big.Control.Rotation, Mathf.Pi / 4)
+                && big.Control.GetThemeStylebox("normal") is StyleBoxFlat bigStyle && bigStyle.BorderWidthTop == 4,
+                $"the pack's own pin size, shape and border weren't kept (size {big.MapSize}, turned {big.Control.Rotation})");
+            // Zoomed far out and back: every pin is as big as the zoom says and sits on its point (a shrunk pin used to keep its old size).
+            canvas.SetZoom(AP_Atlas.UI.MapCanvas.MinZoom);
+            canvas.SetZoom(canvas.Zoom * 3);
+            var misplaced = canvas.Pins.Where(p => !Mathf.IsEqualApprox(p.Control.Size.X, canvas.ScreenSizeOf(p), 0.01f)
+                || p.Control.Position.DistanceTo(new Vector2(p.X * canvas.Zoom, p.Y * canvas.Zoom) - p.Control.Size / 2) > 0.5f).Select(p => $"{p.Key} {p.Control.Size.X} for {canvas.ScreenSizeOf(p)}").ToList();
+            UiTestExpect(misplaced.Count == 0, $"after zooming out, pins aren't the size the zoom says or off their point: {string.Join(", ", misplaced)}");
+            UiTestExpect(!slot.MapTracker.NodeSizeSlider.Scrollable, "the pin size slider moves with the wheel (scrolling the explorer over it changed every pin)");
+            canvas.FitToView();
+            for (int i = 0; i < notches; i++) canvas.ZoomAtCenter(AP_Atlas.UI.MapCanvas.WheelStep);
+            await UiTestWaitAsync(0.1);
             // A drag moves the map by as much as the mouse moved.
             await UiTestWaitAsync(0.1);
             var scrollBefore = canvas.ScrollPosition;
@@ -2658,6 +2761,9 @@ public partial class MainTrackerWindow
             var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
             await UiTestWaitForAsync(() => slot.Model.RaceStateKnown ? slot : null, "the server to say whether the room is a race");
             UiTestExpect(slot.IsRaceRoom && slot.RaceRestricted, "a race room didn't restrict its slot");
+            // The map shows no logic here (no engine runs in this test), and says race mode hides it exactly when the slot does.
+            UiTestExpect(slot.MapTracker.LogicHidden && (slot.MapTracker.Logic == AP_Atlas.UI.MapTrackerControl.LogicShown.Hidden) == slot.LogicHidden,
+                $"the map's logic is {slot.MapTracker.Logic} while the slot hides logic: {slot.LogicHidden}");
             UiTestExpect(await slot.ExplainLocationAsync(2000) == null, "a race room's slot answered \"why\"");
             // The Sphere Tracker reads it from the slot, and remembers it for the multiworld (while offline too).
             UiTestExpect(_spheres.HiddenBecause(profile)?.Contains("race") == true, "the Sphere Tracker didn't hide a race room's spheres");

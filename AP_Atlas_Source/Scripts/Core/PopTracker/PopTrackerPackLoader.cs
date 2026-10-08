@@ -152,6 +152,23 @@ namespace AP_Atlas.Core.PopTracker
             lock (_cacheLock) _packCache[zipPath] = (lastWriteUtc, pack);
         }
 
+        /// <summary>
+        /// The installed packs changed (one installed, deleted or replaced): connected slots load a pack they now have,
+        /// and let go of one that's gone. Raised on the main thread.
+        /// </summary>
+        public static event Action PacksChanged;
+
+        /// <summary>Tells connected slots the installed packs changed (main thread).</summary>
+        public static void NotifyPacksChanged() => PacksChanged?.Invoke();
+
+        /// <summary>Whether a loaded pack is still the one in its zip (the file is there, unchanged since it was read).</summary>
+        public static bool IsCurrent(LoadedPack pack)
+        {
+            if (pack == null || string.IsNullOrEmpty(pack.SourcePath)) return false;
+            var info = new System.IO.FileInfo(pack.SourcePath);
+            return info.Exists && ReferenceEquals(GetCachedPack(pack.SourcePath, info.LastWriteTimeUtc), pack);
+        }
+
         public static string GetPacksDirectory()
         {
             string dir = Path.Combine(DataManager.GetDataDirectory(), "packs");

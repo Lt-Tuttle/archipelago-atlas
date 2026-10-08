@@ -611,9 +611,9 @@ namespace AP_Atlas.UI
 
             (string badge, Color color) = isChecked == true ? ("Checked", Muted)
                 : owner?.LogicHidden == true ? ("Open", ThemeColors.LogicHidden)
-                : inLogic == true ? ("In logic", Good)
-                : glitched ? ("Sequence break", Warn)
-                : inLogic == false ? ("Out of logic", Bad)
+                : inLogic == true ? ("In logic", ThemeColors.MapColourForText(AP_Atlas.Core.Maps.MapPinState.InLogic))
+                : glitched ? ("Sequence break", ThemeColors.MapColourForText(AP_Atlas.Core.Maps.MapPinState.SequenceBreak))
+                : inLogic == false ? ("Out of logic", ThemeColors.MapColourForText(AP_Atlas.Core.Maps.MapPinState.OutOfLogic))
                 : ("Logic unknown", ThemeColors.TextSubtle);
             SetHeader("Location", name,
                 $"{Colored(game, ThemeColors.TextMuted)}  ·  {PlayerLink(view, ownerPlayer)}'s world" + (special ? "  " + Colored("◆ Special", Annotations.SpecialColor) : ""),

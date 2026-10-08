@@ -158,8 +158,10 @@ namespace AP_Atlas.UI
             {
                 if (!GodotObject.IsInstanceValid(pin.Control)) continue;
                 float size = ScreenSizeOf(pin);
-                pin.Control.Size = new Vector2(size, size);
+                // The minimum first: Godot clamps a size to the minimum as it's set, so a pin shrunk by a zoom out kept
+                // its old size (big and off its point) until the map was drawn again.
                 pin.Control.CustomMinimumSize = new Vector2(size, size);
+                pin.Control.Size = new Vector2(size, size);
                 pin.Control.Position = new Vector2(pin.X * _zoom - size / 2, pin.Y * _zoom - size / 2);
                 pin.Control.PivotOffset = new Vector2(size / 2, size / 2);
             }

@@ -236,7 +236,7 @@ elseif ($optedOut -lt $nullableOptOutLimit) {
 }
 
 # Colour literals outside the palettes: the count ratchets down (see the rules above).
-$colourLiteralLimit = 31
+$colourLiteralLimit = 29
 $paletteFiles = @('ThemeColors.cs', 'CheeseColors.cs', 'Annotations.cs')
 $colourLiterals = 0
 foreach ($file in $files) {

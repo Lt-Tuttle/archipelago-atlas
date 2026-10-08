@@ -127,6 +127,7 @@ namespace AP_Atlas.Core
             await TestAsync("Pack Doctor: an analysis reads its own snapshot, never the fixes as they change", PackDoctorReadsASnapshot);
             await TestAsync("Settings saved from a background thread are written on the main thread, and the log says so", OffThreadSavesMoveToTheMainThread);
             Test("Palette: every text and state colour reads on every surface (contrast 4.5 for text, 3 for quiet text and marks), and text on every accent preset", PaletteReadsOnEverySurface);
+            Test("Map pins: PopTracker's colours (and the colour-blind-safe set) tell every state apart, and each open state stands out from the pin's border", MapPinColoursAreDistinct);
             await TestAsync("Settings saved by an older Atlas still load: settings it no longer has are ignored, never taken for damage", OlderSettingsStillLoad);
 
             string ap = System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_AP");

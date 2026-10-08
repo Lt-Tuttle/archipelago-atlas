@@ -247,6 +247,7 @@ namespace AP_Atlas.Core
                         return;
                     }
                     _logAction($"Deleted the map pack {Path.GetFileName(zipPath)}.", null);
+                    PopTrackerPackLoader.NotifyPacksChanged();
                     RefreshPackList();
                     foreach (Node n in _inspectorContainer.GetChildren()) n.QueueFree();
                     _inspectorContainer.AddChild(new Label { Text = "Select a map pack to view details.", HorizontalAlignment = HorizontalAlignment.Center });
@@ -392,7 +393,11 @@ namespace AP_Atlas.Core
                     if (!GodotObject.IsInstanceValid(this)) return;
                     _logAction($"Map packs ready ({sw.ElapsedMilliseconds} ms).", "gray");
                 }
-                _packListSignature = PackFolderSignature(files);
+                // A pack copied into the folder by hand (seen at a rescan) reaches connected slots too.
+                string signature = PackFolderSignature(files);
+                bool changed = _packListSignature != null && signature != _packListSignature;
+                _packListSignature = signature;
+                if (changed) PopTrackerPackLoader.NotifyPacksChanged();
                 using (PerfMonitor.Measure("Build map pack list"))
                 {
                     BuildPackRows(files);
@@ -796,6 +801,7 @@ namespace AP_Atlas.Core
             }
             if (!GodotObject.IsInstanceValid(this)) return;
             _logAction($"Installed {safeName} from {where}.", "lime");
+            PopTrackerPackLoader.NotifyPacksChanged();
             await RefreshPackListAsync();
         }
 
@@ -906,6 +912,7 @@ namespace AP_Atlas.Core
                         System.IO.File.Copy(path, temp, true);
                         System.IO.File.Move(temp, destPath, true);
                         _logAction($"Installed the map pack {System.IO.Path.GetFileName(path)}.", "lime");
+                        PopTrackerPackLoader.NotifyPacksChanged();
                         RefreshPackList();
                     }
                     catch (Exception ex)

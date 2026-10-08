@@ -271,7 +271,10 @@ public partial class SlotTrackerControl : MarginContainer
         if (!GodotObject.IsInstanceValid(this)) return;
         SyncAccuracyBanner();
         bool problem = !LogicHidden && !Model.Logic.Running && EngineProblem != null;
-        if (_mapTracker != null) _mapTracker.LogicHidden = LogicHidden || !Model.Logic.Running;
+        if (_mapTracker != null)
+            _mapTracker.Logic = LogicHidden ? AP_Atlas.UI.MapTrackerControl.LogicShown.Hidden
+                : !Model.Logic.Running ? AP_Atlas.UI.MapTrackerControl.LogicShown.NotRunning
+                : AP_Atlas.UI.MapTrackerControl.LogicShown.Running;
         if (_logicTree != null) _logicTree.Visible = !LogicHidden && !problem;
         // Key Items repeats the empty state only when it changes (this runs on every logic change; a burst brings many).
         string emptyState = _progressionTracker != null && _progressionTracker.ShowingEmptyState ? LogicEmptyState("") : null;
@@ -453,7 +456,7 @@ public partial class SlotTrackerControl : MarginContainer
         using var __perf = AP_Atlas.Core.PerfMonitor.Measure($"[{_slotName}] Map colors, hints and listeners");
         if (_mapTracker != null && Session != null)
         {
-            _mapTracker.UpdateLogicColors(Model.Logic.Reachable, Session.Locations.AllLocationsChecked, Model.HintedLocations);
+            _mapTracker.UpdateLogicColors(Model.Logic.Reachable, Session.Locations.AllLocationsChecked, Model.HintedLocations, Model.Logic.Engine?.LastGlitchedLocations);
         }
         _hintTracker?.Refresh();
         StateChanged?.Invoke();

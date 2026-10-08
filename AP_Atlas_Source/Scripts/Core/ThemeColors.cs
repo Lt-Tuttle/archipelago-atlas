@@ -60,6 +60,59 @@ namespace AP_Atlas.Core
             return colourBlindSafe ? palette.ColourBlindSafe : palette;
         }
 
+        // ---- The Map Tracker's pins: PopTracker's colours by default; Settings → Appearance changes them ----
+
+        private static Dictionary<string, Color> _mapColours = new();
+
+        /// <summary>Raised on the main thread after the user changed a map colour (the maps redraw).</summary>
+        public static event Action? MapColoursChanged;
+
+        /// <summary>
+        /// A pin state's colour as Atlas ships it: PopTracker's (bright green in logic, red out of logic, orange for some,
+        /// yellow for a sequence break, dark grey checked), or with colour-blind-safe colours on, Okabe and Ito's blue,
+        /// orange, reddish purple and yellow; logic not known is the palette's quiet blue.
+        /// </summary>
+        public static Color DefaultMapColour(AP_Atlas.Core.Maps.MapPinState state, Palette palette)
+        {
+            bool safe = palette.Name.EndsWith(Palette.ColourBlindSafeSuffix, StringComparison.Ordinal);
+            return state switch
+            {
+                AP_Atlas.Core.Maps.MapPinState.InLogic => new Color(safe ? "#56B4E9" : "#20FF20"),
+                AP_Atlas.Core.Maps.MapPinState.OutOfLogic => new Color(safe ? "#E69F00" : "#CF1010"),
+                AP_Atlas.Core.Maps.MapPinState.Mixed => new Color(safe ? "#CC79A7" : "#FF9F20"),
+                AP_Atlas.Core.Maps.MapPinState.SequenceBreak => new Color(safe ? "#F0E442" : "#FFFF20"),
+                AP_Atlas.Core.Maps.MapPinState.Checked => new Color("#3F3F3F"),
+                _ => palette.LogicHidden
+            };
+        }
+
+        /// <summary>A pin state's colour: the user's, or the default for the palette in use.</summary>
+        public static Color MapColour(AP_Atlas.Core.Maps.MapPinState state) =>
+            _mapColours.TryGetValue(AP_Atlas.Core.Maps.MapPinLogic.Key(state), out var colour) ? colour : DefaultMapColour(state, Current);
+
+        /// <summary>A pin state's colour made readable as text on the surface (Properties' badges).</summary>
+        public static Color MapColourForText(AP_Atlas.Core.Maps.MapPinState state) => Readable(MapColour(state), Surface, 3.0, Current.IsDark);
+
+        /// <summary>The line around a pin, and around the pin with the keyboard focus.</summary>
+        public static Color MapPinBorder => new Color("#000000");
+        public static Color MapPinFocus => new Color("#FFFFFF");
+
+        /// <summary>Whether the user changed any map colour.</summary>
+        public static bool MapColoursChangedByUser => _mapColours.Count > 0;
+
+        /// <summary>The user's map colours ("in-logic" → "#RRGGBB"); a key Atlas doesn't know, or a colour it can't read, is ignored.</summary>
+        public static void SetMapColours(IReadOnlyDictionary<string, string>? hexByKey)
+        {
+            var colours = new Dictionary<string, Color>();
+            foreach (var state in AP_Atlas.Core.Maps.MapPinLogic.All)
+            {
+                string key = AP_Atlas.Core.Maps.MapPinLogic.Key(state);
+                if (hexByKey != null && hexByKey.TryGetValue(key, out var hex) && Color.HtmlIsValid(hex ?? "")) colours[key] = Color.FromHtml(hex);
+            }
+            _mapColours = colours;
+            MapColoursChanged?.Invoke();
+        }
+
         public static void SetPalette(Palette palette)
         {
             if (ReferenceEquals(palette, Current)) return;

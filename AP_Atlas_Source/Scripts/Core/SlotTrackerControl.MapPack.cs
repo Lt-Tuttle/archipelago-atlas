@@ -24,10 +24,14 @@ public partial class SlotTrackerControl : MarginContainer
     /// <summary>The pack's images, used while this slot is open (released when it ends).</summary>
     private IDisposable _packImages;
 
+    /// <summary>Counts the loads, so only the newest one's pack is kept (packs can change twice in a row).</summary>
+    private int _packLoads;
+
     private async Task LoadMapPackAsync()
     {
         string game = Session?.ConnectionInfo?.Game;
         if (string.IsNullOrEmpty(game)) return;
+        int load = ++_packLoads;
 
         // The pack, and its images decoded here, off the main thread (a big pack takes seconds).
         var (pack, images) = await System.Threading.Tasks.Task.Run(() =>
@@ -36,7 +40,7 @@ public partial class SlotTrackerControl : MarginContainer
             return (found, found == null ? null : AP_Atlas.Core.PopTracker.PackImages.Use(found));
         });
 
-        if (_ended || !GodotObject.IsInstanceValid(this) || _mapTracker == null)
+        if (_ended || !GodotObject.IsInstanceValid(this) || _mapTracker == null || load != _packLoads)
         {
             images?.Dispose();
             return;
@@ -252,6 +256,35 @@ public partial class SlotTrackerControl : MarginContainer
     }
     /// <summary>The loaded pack with the user's fixes applied (what the views show).</summary>
     public AP_Atlas.Core.PopTracker.LoadedPack EffectivePack { get; private set; }
+
+    /// <summary>
+    /// The installed packs changed: a slot without a pack loads one that matches its game now; a slot whose pack was
+    /// deleted or replaced lets go of it (its map shows the empty state again) and loads what's there now. No reconnect.
+    /// </summary>
+    private void OnPacksChanged()
+    {
+        if (_ended || Session == null || !GodotObject.IsInstanceValid(this)) return;
+        if (Pack != null && AP_Atlas.Core.PopTracker.PopTrackerPackLoader.IsCurrent(Pack)) return;
+        if (Pack != null) UnloadMapPack();
+        LoadMapPack();
+    }
+
+    /// <summary>Lets go of the slot's pack: its images, its scripts, its maps and Key Items' grids.</summary>
+    private void UnloadMapPack()
+    {
+        string name = Pack?.Manifest?.Name;
+        _packImages?.Dispose();
+        _packImages = null;
+        _scripts?.Stop();
+        Pack = null;
+        EffectivePack = null;
+        PackIndex = null;
+        _mapTracker?.ClearPack();
+        _progressionTracker?.SetPack(null, null);
+        AppendDebugLog($"[MapTracker] The map pack '{name}' was removed or replaced.");
+        UpdateKeyItemsUI();
+        StateChanged?.Invoke();
+    }
 
     private void OnPackFixesChanged(string packKey)
     {

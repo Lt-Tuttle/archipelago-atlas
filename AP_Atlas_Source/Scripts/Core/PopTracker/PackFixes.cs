@@ -415,6 +415,8 @@ namespace AP_Atlas.Core.PopTracker
                     MapBg = kv.Value.MapBg,
                     Img = kv.Value.Img,
                     LocationSize = kv.Value.LocationSize,
+                    LocationBorderThickness = kv.Value.LocationBorderThickness,
+                    LocationShape = kv.Value.LocationShape,
                     Id = kv.Value.Id,
                     BackgroundTexture = kv.Value.BackgroundTexture
                 }, StringComparer.OrdinalIgnoreCase),
@@ -568,7 +570,7 @@ namespace AP_Atlas.Core.PopTracker
             X = p.X,
             Y = p.Y,
             MapRef = p.MapRef,
-            MapLocations = p.MapLocations?.Select(m => new PopTrackerMapLocation { Map = m.Map, X = m.X, Y = m.Y }).ToList(),
+            MapLocations = p.MapLocations?.Select(m => new PopTrackerMapLocation { Map = m.Map, X = m.X, Y = m.Y, Size = m.Size, BorderThickness = m.BorderThickness, Shape = m.Shape }).ToList(),
             AccessRulesRaw = p.AccessRulesRaw,
             Sections = p.Sections,
             Children = new List<PopTrackerLocation>(),
