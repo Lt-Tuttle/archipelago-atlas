@@ -76,6 +76,9 @@ namespace AP_Atlas.UI
         /// <summary>Every game the page lists, by section (for tests).</summary>
         public IReadOnlyList<GameEntry> Games => _games;
 
+        /// <summary>Every game the page would list, the games of the user's own slots first, then A to Z (the Add a slot dialog's list).</summary>
+        public List<string> GameNames() => CollectGames().OrderByDescending(g => g.Played).ThenBy(g => g.Game, StringComparer.OrdinalIgnoreCase).Select(g => g.Game).ToList();
+
         /// <summary>The games the list shows now (after the search), in order (for tests).</summary>
         public List<string> ShownGames { get; private set; } = new();
 
@@ -638,7 +641,7 @@ namespace AP_Atlas.UI
 
         private void AskThenLoad(string game, bool again, Action? then = null)
         {
-            PermissionDialog.Ask(this, _hooks.Settings, Permissions.GitHubLookups, null, _tr("The releases of the {0} apworld, from every project that publishes it.").Replace("{0}", game), allowed =>
+            PermissionDialog.Ask(_dialogParent ?? this, _hooks.Settings, Permissions.GitHubLookups, null, _tr("The releases of the {0} apworld, from every project that publishes it.").Replace("{0}", game), allowed =>
             {
                 if (!allowed || !IsInstanceValid(this)) return;
                 if (!LoadVersions(game, again, then)) _hooks.Toast(_tr("Wait for the current task to finish first."), ThemeColors.TextSubtle);
@@ -780,9 +783,13 @@ namespace AP_Atlas.UI
 
         public override void _ExitTree() => _running?.Cancel();
 
-        /// <summary>The newest full release of the game's apworld across its projects, after the user trusts the project (asked once).</summary>
-        private void InstallNewest(string game)
+        // Where the permission and trust questions open: the page, or the window when another page's dialog asked (the page is hidden then).
+        private Node? _dialogParent;
+
+        /// <summary>The newest full release of the game's apworld across its projects, after the user trusts the project (asked once); also from the Add a slot dialog.</summary>
+        internal void InstallNewest(string game, Node? dialogParent = null)
         {
+            _dialogParent = dialogParent;
             void Offer()
             {
                 var install = AtlasEngine.Current;
@@ -813,7 +820,7 @@ namespace AP_Atlas.UI
                 Go();
                 return;
             }
-            Dialogs.Confirm(this, _tr("Trust this project?"),
+            Dialogs.Confirm(_dialogParent ?? this, _tr("Trust this project?"),
                 _tr("Install {0} {1} from github.com/{2}? Apworlds are programs that run inside the logic engine, so only continue if you trust this project. The file is checked against its published SHA-256 when there is one.")
                     .Replace("{0}", game).Replace("{1}", version.Version).Replace("{2}", repo),
                 _tr("Trust and install"), () =>

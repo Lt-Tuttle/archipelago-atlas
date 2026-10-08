@@ -18,6 +18,32 @@ public partial class MainTrackerWindow
     /// <summary>How wide Properties starts on a fresh settings file (its minimum is narrower; the user's own drag is kept after that).</summary>
     internal const int PropertiesStartWidth = 360;
     private const int PaneSeparation = 8, OuterMargins = 16;
+    /// <summary>The bottom pane's smallest height, and the share of the content's height it starts with on a fresh settings file (a third).</summary>
+    internal const int BottomPaneMinHeight = 150, BottomPaneStartFraction = 3;
+    private bool _bottomPanePlaced;
+
+    /// <summary>
+    /// On a fresh settings file, once the window is laid out: the bottom pane takes a third of the height instead of the
+    /// split's half (which squeezed the Multiworlds editor's slot rows); the user's own drag is kept after that, as for
+    /// Properties. The split's offset counts from its default position, so it's taken from the laid-out sizes.
+    /// </summary>
+    private void PlaceBottomPaneOnFresh()
+    {
+        if (_bottomPanePlaced || _contentSplit == null || _bottomPane == null || !_bottomPane.Visible) return;
+        if (!_appSettings.Fresh || _appSettings.SplitContentOffset != 0)
+        {
+            _bottomPanePlaced = true;
+            return;
+        }
+        float height = _contentSplit.Size.Y - PaneSeparation, current = _bottomPane.Size.Y;
+        if (height <= 0 || current <= 0) return; // not laid out yet
+        int wanted = Math.Max(BottomPaneMinHeight, (int)(height / BottomPaneStartFraction));
+        int offset = (int)(current - wanted); // a positive offset moves the divider down
+        _contentSplit.SplitOffsets = new[] { offset };
+        _appSettings.SplitContentOffset = offset;
+        DataManager.SaveSettingsSoon(_appSettings);
+        _bottomPanePlaced = true;
+    }
 
     /// <summary>
     /// The explorer's width for the tool that shows: the width the user dragged it to for that tool, else the width a

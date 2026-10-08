@@ -301,6 +301,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         rightColumn.AddChild(globalTabHBox);
         _contentSplit = new VSplitContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, SplitOffsets = new[] { _appSettings.SplitContentOffset } };
         _contentSplit.Dragged += (offset) => { _appSettings.SplitContentOffset = (int)offset; DataManager.SaveSettingsSoon(_appSettings); };
+        _contentSplit.Resized += () => AP_Atlas.UI.Ui.Defer(this, PlaceBottomPaneOnFresh); // once, on a fresh settings file: a third for the bottom pane
         _contentSplit.AddThemeConstantOverride("separation", 8);
         rightColumn.AddChild(_contentSplit);
         // --- 5. CONTENT STAGE ---

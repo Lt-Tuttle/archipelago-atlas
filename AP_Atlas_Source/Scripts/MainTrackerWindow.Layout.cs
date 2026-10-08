@@ -21,7 +21,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     private VBoxContainer _debugLogVBox;
     private void BuildBottomPanel()
     {
-        _bottomPane = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, CustomMinimumSize = new Godot.Vector2(0, 150) };
+        _bottomPane = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, CustomMinimumSize = new Godot.Vector2(0, BottomPaneMinHeight) };
         _bottomPane.AddThemeConstantOverride("separation", 0);
         var bottomHeader = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         _bottomPane.AddChild(bottomHeader);
@@ -585,6 +585,9 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             SetFontSizeRecursive(child, size);
         }
     }
+    private GridContainer _editorGrid; // the Multiworlds editor's label | box columns
+    /// <summary>The Multiworlds editor's grid of labels and boxes (for tests).</summary>
+    internal GridContainer EditorGrid => _editorGrid;
     private void BuildConnectionTab()
     {
         _connectionSidebarContent = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
@@ -592,7 +595,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _connectionSidebarContent.AddChild(listScroll);
         _profileListContainer = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         listScroll.AddChild(_profileListContainer);
-        var addButton = new Button { Text = "+ Add Multiworld" };
+        var addButton = new Button { Text = Tr("+ Add Multiworld") };
         addButton.Pressed += OnAddProfilePressed;
         _connectionSidebarContent.AddChild(addButton);
         _midLeftVBox.AddChild(_connectionSidebarContent);
@@ -602,28 +605,41 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _connectionPanel.AddThemeConstantOverride("margin_right", 20);
         _connectionPanel.AddThemeConstantOverride("margin_bottom", 20);
         _contentStage.AddChild(_connectionPanel);
+        // The whole editor scrolls as one (a short window used to squeeze the slot rows under the boxes above them).
+        var editorScroll = new ScrollContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
+        _connectionPanel.AddChild(editorScroll);
         var rightVbox = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        _connectionPanel.AddChild(rightVbox);
-        var title = new Label { Text = "Multiworld Details", HorizontalAlignment = HorizontalAlignment.Center };
+        editorScroll.AddChild(rightVbox);
+        var title = new Label { Text = Tr("Multiworld Details"), HorizontalAlignment = HorizontalAlignment.Center };
         title.SetMeta("font_size_ratio", 1.7f);
         rightVbox.AddChild(title);
         rightVbox.AddChild(new HSeparator());
         // What's typed goes into the multiworld at once (so nothing is lost when another is selected); Save writes it to disk.
-        // Over each box, its label and an (i) that says what goes there, where it comes from and whether it's needed.
+        // Each box beside its label and an (i) that says what goes there, where it comes from and whether it's needed, in two
+        // aligned columns (the labels used to sit above the boxes, which cost a row of height each).
         Button Info(string title, string what, string from, string required) =>
             AP_Atlas.UI.Kit.InfoButton(Tr(title), Tr(what), Tr(from), Tr(required), () => OpenHelp("guide:Multiworlds"), text => Tr(text));
         HBoxContainer Labelled(string label, Button info)
         {
-            var row = new HBoxContainer();
+            var row = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ShrinkBegin, SizeFlagsVertical = SizeFlags.ShrinkCenter };
             row.AddThemeConstantOverride("separation", 2);
             row.AddChild(new Label { Text = Tr(label) });
             row.AddChild(info);
             return row;
         }
+        var grid = _editorGrid = new GridContainer { Columns = 2, SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        grid.AddThemeConstantOverride("h_separation", 10);
+        grid.AddThemeConstantOverride("v_separation", 6);
+        rightVbox.AddChild(grid);
+        void Field(string label, Button info, Control box)
+        {
+            grid.AddChild(Labelled(label, info));
+            box.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+            grid.AddChild(box);
+        }
         _nameInput = new LineEdit { PlaceholderText = Tr("A name for this multiworld"), SizeFlagsHorizontal = SizeFlags.ExpandFill, AccessibilityName = Tr("Name") };
         _nameInput.TextChanged += text => EditSelected(profile => profile.Name = text);
-        rightVbox.AddChild(Labelled("Name:", Info("Name", "Any name that tells this multiworld apart from your others: the async's name, the host's, the date.", "Yours to choose. It shows on Home, in the slots panel and in Properties.", "Required.")));
-        rightVbox.AddChild(_nameInput);
+        Field("Name:", Info("Name", "Any name that tells this multiworld apart from your others: the async's name, the host's, the date.", "Yours to choose. It shows on Home, in the slots panel and in Properties.", "Required."), _nameInput);
         _roomLinkInput = new LineEdit { PlaceholderText = Tr("https://archipelago.gg/room/… (optional)"), SizeFlagsHorizontal = SizeFlags.ExpandFill, AccessibilityName = Tr("Room link") };
         _roomLinkInput.TextChanged += text => EditSelected(profile => profile.RoomLink = text.Trim());
         var roomRow = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
@@ -631,12 +647,10 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         roomRow.AddChild(_roomLinkInput);
         _fillFromRoomButton = AP_Atlas.UI.Kit.Button(Tr("Fill from link"), Tr("Reads the room's status page once (the port it runs on and its players) and fills in the server address and the slots. Atlas asks first, and never requests the room's own page."), FillFromRoomLink);
         roomRow.AddChild(_fillFromRoomButton);
-        rightVbox.AddChild(Labelled("Room link:", Info("Room link", "The room's address on archipelago.gg, as the host shared it: https://archipelago.gg/room/…", "From the host, or the multiworld's Discord thread. Fill from link reads the room's status page once, with your permission, and fills in the server address and the slots.", "Optional. Without it, type the server address and the slots yourself.")));
-        rightVbox.AddChild(roomRow);
+        Field("Room link:", Info("Room link", "The room's address on archipelago.gg, as the host shared it: https://archipelago.gg/room/…", "From the host, or the multiworld's Discord thread. Fill from link reads the room's status page once, with your permission, and fills in the server address and the slots.", "Optional. Without it, type the server address and the slots yourself."), roomRow);
         _serverInput = new LineEdit { PlaceholderText = Tr("archipelago.gg:12345"), SizeFlagsHorizontal = SizeFlags.ExpandFill, AccessibilityName = Tr("Server address") };
         _serverInput.TextChanged += text => EditSelected(profile => profile.ServerUrl = text.Trim());
-        rightVbox.AddChild(Labelled("Server address:", Info("Server address", "The server and the room's port, the way the room page shows them: archipelago.gg:12345. The port changes when a room is restarted.", "From the room page on archipelago.gg, or Fill from link. For a room hosted elsewhere, its host's address and port.", "Required to connect.")));
-        rightVbox.AddChild(_serverInput);
+        Field("Server address:", Info("Server address", "The server and the room's port, the way the room page shows them: archipelago.gg:12345. The port changes when a room is restarted.", "From the room page on archipelago.gg, or Fill from link. For a room hosted elsewhere, its host's address and port.", "Required to connect."), _serverInput);
         _passwordInput = new LineEdit { PlaceholderText = Tr("Password (optional)"), Secret = true, SizeFlagsHorizontal = SizeFlags.ExpandFill, AccessibilityName = Tr("Password") };
         _passwordInput.TextChanged += text => EditSelected(profile => profile.Password = text);
         _passwordToggle = AP_Atlas.UI.Kit.Button("", Tr("Show the password"), () => SetPasswordShown(_passwordInput.Secret));
@@ -645,37 +659,32 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         passwordRow.AddThemeConstantOverride("separation", 6);
         passwordRow.AddChild(_passwordInput);
         passwordRow.AddChild(_passwordToggle);
-        rightVbox.AddChild(Labelled("Password:", Info("Password", "The room's password, if the host set one.", "From the host. Atlas keeps it encrypted for your Windows account and sends it only to this room's server.", "Optional: most rooms have none.")));
-        rightVbox.AddChild(passwordRow);
+        Field("Password:", Info("Password", "The room's password, if the host set one.", "From the host. Atlas keeps it encrypted for your Windows account and sends it only to this room's server.", "Optional: most rooms have none."), passwordRow);
         _cheeseInput = new LineEdit { PlaceholderText = Tr("Cheese Tracker link, or the archipelago.gg room link (optional)"), SizeFlagsHorizontal = SizeFlags.ExpandFill, AccessibilityName = Tr("Cheese Tracker link") };
         _cheeseInput.TextChanged += (_) => MarkDirty();
-        rightVbox.AddChild(Labelled("Cheese Tracker:", Info("Cheese Tracker", "The multiworld's page on Cheese Tracker, the shared tracker many asyncs use, or the archipelago.gg room link, which Atlas looks up there.", "From the host or the Discord thread, if the async uses Cheese Tracker. Save Settings checks it online and links it; the Cheese Tracker tab then shows it.", "Optional.")));
-        rightVbox.AddChild(_cheeseInput);
+        Field("Cheese Tracker:", Info("Cheese Tracker", "The multiworld's page on Cheese Tracker, the shared tracker many asyncs use, or the archipelago.gg room link, which Atlas looks up there.", "From the host or the Discord thread, if the async uses Cheese Tracker. Save Settings checks it online and links it; the Cheese Tracker tab then shows it.", "Optional."), _cheeseInput);
         _sphereInput = new LineEdit { PlaceholderText = Tr("https://spheretracker.de/room/… (optional)"), SizeFlagsHorizontal = SizeFlags.ExpandFill, AccessibilityName = Tr("Sphere Tracker link") };
         _sphereInput.TextChanged += (_) => MarkDirty();
-        rightVbox.AddChild(Labelled("Sphere Tracker:", Info("Sphere Tracker", "The host's room on spheretracker.de (spheretracker.de/room/…), which shows the multiworld sphere by sphere.", "Only from the host: Atlas uses the host's room and no other (anything else would be cheating), and asks you to confirm when it can't tell the host made it. Save Settings checks it online.", "Optional. Hidden in race mode.")));
-        rightVbox.AddChild(_sphereInput);
+        Field("Sphere Tracker:", Info("Sphere Tracker", "The host's room on spheretracker.de (spheretracker.de/room/…), which shows the multiworld sphere by sphere.", "Only from the host: Atlas uses the host's room and no other (anything else would be cheating), and asks you to confirm when it can't tell the host made it. Save Settings checks it online.", "Optional. Hidden in race mode."), _sphereInput);
         rightVbox.AddChild(new HSeparator());
         rightVbox.AddChild(Labelled("Slots:", Info("Slots", "The names of the slots you play in this multiworld, exactly as in your YAMLs (a slot is one player's game).", "From your YAMLs, or Fill from link (the room's players). Connect a slot from its row; its stats and links are kept under its name.", "At least one, to connect.")));
-        var slotScroll = new ScrollContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        rightVbox.AddChild(slotScroll);
-        _slotsListVBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        slotScroll.AddChild(_slotsListVBox);
+        // The slot rows take the spare height; the editor's scroll takes over when they need more.
+        _slotsListVBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
+        rightVbox.AddChild(_slotsListVBox);
         var buttonRow = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
         rightVbox.AddChild(buttonRow);
-        _addSlotButton = new Button { Text = "+ Add Slot" };
-        _addSlotButton.Pressed += OnAddSlotPressed;
+        _addSlotButton = AP_Atlas.UI.Kit.Button(Tr("+ Add Slot"), Tr("Adds a slot: its name, its game, its YAML, whether its logic is ready in the Atlas Engine, and Connect now."), OnAddSlotPressed);
         buttonRow.AddChild(_addSlotButton);
         _addYamlButton = AP_Atlas.UI.Kit.Button(Tr("Add YAML…"), Tr("Keeps a player YAML in Atlas's YAML folder and adds a slot for each player it names, with the YAML tied to that slot."), OnAddYamlPressed);
         buttonRow.AddChild(_addYamlButton);
-        _saveButton = new Button { Text = "Save Settings" };
+        _saveButton = new Button { Text = Tr("Save Settings") };
         _saveButton.Pressed += OnSaveProfilePressed;
         buttonRow.AddChild(_saveButton);
-        _deleteButton = new Button { Text = "Delete Profile" };
+        _deleteButton = new Button { Text = Tr("Delete Profile") };
         _deleteButton.Pressed += OnDeleteProfilePressed;
         buttonRow.AddChild(_deleteButton);
         rightVbox.AddChild(new HSeparator());
-        _statusLabel = new Label { Text = "Status: Disconnected", HorizontalAlignment = HorizontalAlignment.Center };
+        _statusLabel = new Label { Text = Tr("Status: Disconnected"), HorizontalAlignment = HorizontalAlignment.Center };
         rightVbox.AddChild(_statusLabel);
     }
     /// <summary>Styles a VS Code-like tab strip whose selected tab is underlined (top border) in the accent color.</summary>

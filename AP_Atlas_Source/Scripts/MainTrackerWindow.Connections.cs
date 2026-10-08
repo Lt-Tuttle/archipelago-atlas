@@ -236,7 +236,10 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     private void OnConnectSlotPressed(string slotName, MultiworldProfile profile) => AP_Atlas.Core.Async.Fire(OnConnectSlotPressedAsync(slotName, profile), $"connecting {slotName}");
     private async Task OnConnectSlotPressedAsync(string slotName, MultiworldProfile profile)
     {
-        if (_isConnectingSlot) return;
+        // One connect at a time through the window (the overlay names it): a press while one runs (a reconnect's own
+        // attempt, Connect All, Connect now from the Add a slot dialog) waits its turn instead of being dropped without a word.
+        for (int waited = 0; _isConnectingSlot && waited < 900 && !_shuttingDown; waited++) await Task.Delay(100);
+        if (_isConnectingSlot || _shuttingDown) return;
         _isConnectingSlot = true;
         try
         {

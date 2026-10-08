@@ -138,8 +138,10 @@ public partial class MainTrackerWindow
             DeveloperModeAsync);
         await ScenarioAsync("Accessibility: every button takes the keyboard focus (Tab reaches it, Enter presses it; a kit button can opt out beside a field), the theme draws a focus ring on every kind of control that takes the focus, Tab from the Settings search box moves on, a symbol-only kit button is named by its tooltip, and no button anywhere in the window shows only a symbol without a name for screen readers",
             AccessibilityAsync);
-        await ScenarioAsync("Multiworlds page: a room link fills in the server address and the slots from the room's status page (asked first; never the room's page) and is kept, and asks before replacing a typed address; Add YAML keeps the file in Atlas's YAML folder and adds a slot per player it names (a placeholder name asks for the slot's name), each tied to it, and a slot's details show its game, YAML and map following (saved per slot); unsaved edits ask Save / Don't save / Cancel before another multiworld is selected, one is added, the page is left or Atlas closes (Cancel keeps everything, Don't save puts the multiworld back, Save writes it to disk); the eye shows the password until another multiworld is selected; every box has an (i) that explains it and leads to the guide; the Sphere Tracker box keeps a refused link and says why, and links the host's room once the user confirms the host made it; Home shows no address for a multiworld without one; a slot's rename takes effect on Enter or on leaving the field, never per keystroke, and its saved stats follow it; after a reconnect gives up, one status read (at most every ten minutes) offers the room's new port, or says the room is asleep; a connection the server refuses shows as a card",
+        await ScenarioAsync("Multiworlds page: the editor scrolls as one with each label beside its box; a room link fills in the server address and the slots from the room's status page (asked first; never the room's page) and is kept, and asks before replacing a typed address; Add YAML keeps the file in Atlas's YAML folder and adds a slot per player it names (a placeholder name asks for the slot's name), each tied to it, and a slot's details show its game, YAML and map following (saved per slot); unsaved edits ask Save / Don't save / Cancel before another multiworld is selected, one is added, the page is left or Atlas closes (Cancel keeps everything, Don't save puts the multiworld back, Save writes it to disk); the eye shows the password until another multiworld is selected; every box has an (i) that explains it and leads to the guide; the Sphere Tracker box keeps a refused link and says why, and links the host's room once the user confirms the host made it; Home shows no address for a multiworld without one; a slot's rename takes effect on Enter or on leaving the field, never per keystroke, and its saved stats follow it; after a reconnect gives up, one status read (at most every ten minutes) offers the room's new port, or says the room is asleep; a connection the server refuses shows as a card",
             MultiworldsPageAsync);
+        await ScenarioAsync("Add a slot: + Add Slot opens a dialog (no placeholder row is added): Connect now follows the server address; a duplicate name keeps it open and says so; typed words find the game and the engine line says whether its logic is ready (Set up the Atlas Engine without an engine); a YAML names the slot and its game, with a choice when it names several players; Add keeps the slot with its game and YAML on disk and connects it",
+            AddSlotDialogAsync);
         await ScenarioAsync("Updates: nothing is asked of GitHub without the permission and the daily setting; with them, one read a day finds a newer version of the channel (an unchanged list is confirmed, never sent again) and offers it as a card with its notes; a download whose hash doesn't match the release's SHA256SUMS is refused and nothing is staged, a good one is staged ready for a restart; the swap moves the installed files aside and the release's in (PortableData untouched), the supervisor puts the previous version back when the new Atlas ends before its window and the Atlas put back says so, a started one confirms the note; a folder Atlas can't write to is said so",
             UpdatesWithoutGodotErrorsAsync);
         await ScenarioAsync("Data folder: a program folder that can't be written to needs a choice (the override and a writable folder don't, and nothing outside Atlas's folder is touched then); the dialog names the folder and the problem, Continue takes the local app data folder by default and makes it, another folder that can't be used is refused with the reason and the dialog stays, a usable one is taken and remembered in the pointer file, and Quit chooses nothing",
@@ -1337,6 +1339,74 @@ public partial class MainTrackerWindow
         UiTestExpect(refusing.Count == 0, $"{refusing.Count} buttons refuse the keyboard focus: {string.Join(", ", refusing.Take(8))}");
     }
 
+    private async Task AddSlotDialogAsync()
+    {
+        await using var server = new FakeArchipelagoServer();
+        server.Slots.Add("Carol"); // the room knows the slot the YAML names
+        var profile = new MultiworldProfile { Name = "Add slot test", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Tester");
+        profile.SavedStats["Tester"] = new SlotStats { GameName = "Test Game" };
+        var bare = new MultiworldProfile { Name = "Bare" };
+        string yaml = System.IO.Path.Combine(DataManager.GetDataDirectory(), "uitest_add_slot.yaml");
+        string carolKey = AP_Atlas.Core.Annotations.SlotKey(profile.Id, "Carol");
+        _profiles.Add(profile);
+        _profiles.Add(bare);
+        RefreshProfileList();
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        host.ShowTool(AP_Atlas.UI.Tool.Connections);
+        AP_Atlas.UI.AddSlotDialog? Dialog() => GetChildren().OfType<AP_Atlas.UI.AddSlotDialog>().FirstOrDefault(d => !d.IsQueuedForDeletion());
+        try
+        {
+            // Without a server address Connect now starts off, with one on; the press adds no placeholder row.
+            SelectProfile(bare);
+            _addSlotButton!.EmitSignal(BaseButton.SignalName.Pressed);
+            var dialog = await UiTestWaitForAsync(Dialog, "the Add a slot dialog");
+            UiTestExpect(dialog.Title == "Add a slot" && !dialog.ConnectNow.ButtonPressed && !bare.Slots.Contains("New Slot"), "the dialog for a multiworld without a server starts with Connect now on, or the press added a slot");
+            dialog.EmitSignal(AcceptDialog.SignalName.Canceled);
+            await UiTestWaitAsync(0.1);
+            SelectProfile(profile);
+            _addSlotButton.EmitSignal(BaseButton.SignalName.Pressed);
+            dialog = await UiTestWaitForAsync(Dialog, "the dialog for a multiworld with a server");
+            UiTestExpect(dialog.ConnectNow.ButtonPressed, "Connect now isn't on for a multiworld with a server address");
+            // A duplicate name keeps the dialog open and says so; nothing is added.
+            dialog.NameInput.Text = "Tester";
+            dialog.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(Dialog() == dialog && dialog.ProblemText.Contains("Tester") && profile.Slots.Count == 1, $"a duplicate name was taken, or not explained (\"{dialog.ProblemText}\")");
+            // The game: typed words narrow the list; the engine line follows the choice (no engine in this folder: Set up the Atlas Engine).
+            dialog.GameSearch.Text = "test game";
+            dialog.GameSearch.EmitSignal(LineEdit.SignalName.TextChanged, dialog.GameSearch.Text);
+            UiTestExpect(dialog.ShownGames.Contains("Test Game") && dialog.CurrentGame == "Test Game", $"typing \"test game\" lists {string.Join(", ", dialog.ShownGames)} (game: {dialog.CurrentGame})");
+            UiTestExpect(dialog.StatusText.Contains("isn't set up") && dialog.StatusActionText == "Set up the Atlas Engine", $"the engine line reads \"{dialog.StatusText}\" with \"{dialog.StatusActionText}\"");
+            // A YAML names the slot and its game: two players give a choice, the first filled in.
+            AP_Atlas.Core.SafeFile.WriteAllText(yaml, "name: Carol\ngame: Test Game\n---\nname: Dave\ngame: Other Game\n");
+            dialog.TakeYaml(yaml);
+            UiTestExpect(dialog.PlayerChoices().SequenceEqual(new[] { "Carol (Test Game)", "Dave (Other Game)" }) && dialog.NameInput.Text == "Carol" && dialog.CurrentGame == "Test Game",
+                $"the YAML's players aren't offered, or the first isn't filled in: {string.Join(", ", dialog.PlayerChoices())}; name \"{dialog.NameInput.Text}\", game \"{dialog.CurrentGame}\"");
+            dialog.ChoosePlayer(1);
+            UiTestExpect(dialog.NameInput.Text == "Dave" && dialog.CurrentGame == "Other Game", "choosing the second player didn't fill in its name and game");
+            dialog.ChoosePlayer(0);
+            // Add with Connect now: the slot is on disk with its game and its kept YAML, the dialog is gone, and the slot connects.
+            dialog.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
+            var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Carol"), "the new slot's view");
+            UiTestExpect(profile.Slots.SequenceEqual(new[] { "Tester", "Carol" }) && profile.SavedStats.TryGetValue("Carol", out var carol) && carol.GameName == "Test Game"
+                && _appSettings.SlotYamlPaths.TryGetValue(carolKey, out var kept) && System.IO.File.Exists(kept) && !string.Equals(kept, yaml, StringComparison.OrdinalIgnoreCase)
+                && DataManager.LoadProfiles().Any(p => p.Id == profile.Id && p.Slots.Contains("Carol")) && Dialog() == null,
+                "the slot wasn't added with its game and kept YAML, saved to disk, with the dialog closed");
+        }
+        finally
+        {
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+            if (_profiles.Contains(profile)) DeleteProfile(profile);
+            if (_profiles.Contains(bare)) DeleteProfile(bare);
+            _appSettings.SlotYamlPaths.Remove(carolKey);
+            var library = AP_Atlas.Core.Games.YamlLibrary.Load(DataManager.GetDataDirectory());
+            foreach (var entry in library.For("Test Game").Concat(library.For("Other Game")).Where(e => e.File == "uitest_add_slot.yaml").Distinct().ToList()) library.Remove(entry);
+            AP_Atlas.Core.SafeFile.Delete(yaml);
+        }
+    }
+
     private async Task MultiworldsPageAsync()
     {
         const string roomId = "AbCdEfGhIjKlMnOpQrStUw";
@@ -1489,6 +1559,18 @@ public partial class MainTrackerWindow
             // Every box has an (i) that explains it in plain words and leads to the guide's Multiworlds section.
             var infos = _connectionPanel!.FindChildren("*", nameof(Button), true, false).OfType<Button>().Where(b => b.HasMeta("info_button")).ToList();
             UiTestExpect(infos.Count == 7 && infos.All(b => !string.IsNullOrEmpty(b.AccessibilityName) && AP_Atlas.UI.Kit.InfoOf(b) != null), $"{infos.Count} (i) buttons, not one per box, or unnamed");
+            // The editor scrolls as one (the slot rows used to be squeezed under the boxes), each label beside its box in two aligned columns.
+            IEnumerable<Node> Ancestors(Node node)
+            {
+                for (var up = node.GetParent(); up != null; up = up.GetParent()) yield return up;
+            }
+            var editorScroll = Ancestors(_nameInput!).OfType<ScrollContainer>().FirstOrDefault();
+            UiTestExpect(editorScroll != null && Ancestors(_slotsListVBox).OfType<ScrollContainer>().FirstOrDefault() == editorScroll,
+                "the editor's boxes and its slot rows don't scroll as one");
+            var serverLabel = EditorGrid.GetChildren().OfType<HBoxContainer>().First(h => h.GetChildren().OfType<Label>().Any(l => l.Text == "Server address:"));
+            UiTestExpect(EditorGrid.Columns == 2 && _serverInput!.GetParent() == EditorGrid && serverLabel.GlobalPosition.X < _serverInput.GlobalPosition.X
+                && Math.Abs(serverLabel.GlobalPosition.Y + serverLabel.Size.Y / 2 - (_serverInput.GlobalPosition.Y + _serverInput.Size.Y / 2)) <= 4,
+                $"the server label isn't beside its box: label at {serverLabel.GlobalPosition} ({serverLabel.Size}), box at {_serverInput.GlobalPosition} ({_serverInput.Size})");
             var serverInfo = infos.First(b => AP_Atlas.UI.Kit.InfoOf(b)!.Value.Title == "Server address");
             serverInfo.EmitSignal(BaseButton.SignalName.Pressed);
             var explain = await UiTestWaitForAsync(() => serverInfo.GetChildren().OfType<AcceptDialog>().FirstOrDefault(), "the server box's explanation");
@@ -1972,6 +2054,10 @@ public partial class MainTrackerWindow
         // On a fresh settings file (this run's), Properties starts wider than its minimum.
         UiTestExpect(_appSettings.SplitCenterRightOffset == -PropertiesStartWidth && _propertiesSidebar.Size.X >= PropertiesStartWidth - 2,
             $"Properties starts {_propertiesSidebar.Size.X} wide (split offset {_appSettings.SplitCenterRightOffset}), not {PropertiesStartWidth}");
+        // And the bottom pane takes about a third of the content's height (the split's half squeezed the Multiworlds editor), never under its minimum.
+        float contentHeight = _contentSplit.Size.Y - 8, bottomShare = bottomPane.Size.Y / contentHeight;
+        UiTestExpect(_appSettings.SplitContentOffset > 0 && bottomPane.Size.Y >= BottomPaneMinHeight && bottomShare >= 0.25f && bottomShare <= 0.42f,
+            $"the bottom pane starts {bottomPane.Size.Y} of {contentHeight} high (split offset {_appSettings.SplitContentOffset}), not about a third");
         // The View menu's check marks follow the parts as the menu opens.
         var (viewMenu, viewItems) = _commandItems.First(menu => menu.Value.ContainsValue("view.slots-panel"));
         bool Checked(string command)
