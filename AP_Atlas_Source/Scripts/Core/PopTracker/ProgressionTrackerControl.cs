@@ -136,6 +136,86 @@ namespace AP_Atlas.Core.PopTracker
         private IEnumerable<PackItemGrid> VisibleGrids() =>
             _pack?.ItemGridGroups.Where(g => !g.LooksLikeSettings) ?? Enumerable.Empty<PackItemGrid>();
 
+        // ---- Layouts ----
+
+        private OptionButton _layoutPicker;
+        private List<string> _layoutIds = new List<string>();
+        private bool _syncingLayout;
+
+        private string SlotKey => AP_Atlas.Core.Annotations.SlotKey(_profileId ?? "", _slotName ?? "");
+
+        /// <summary>The layouts on offer, by id: the pack's roots (in PopTracker's order) and the two Atlas builds (for tests).</summary>
+        public List<string> LayoutChoices()
+        {
+            var ids = new List<string>();
+            if (_pack != null) ids.AddRange(_pack.LayoutGrids.Keys.OrderBy(k => Array.IndexOf(RootOrder, k) is var i && i >= 0 ? i : 99).ThenBy(k => k));
+            ids.Add(KeyItemsLayouts.Vertical);
+            ids.Add(KeyItemsLayouts.Horizontal);
+            return ids;
+        }
+
+        private static readonly string[] RootOrder = { "tracker_default", "tracker_horizontal", "tracker_vertical", "tracker_broadcast" };
+
+        /// <summary>The layout in use: the slot's choice when the pack still offers it, else the pack's first root, else Vertical.</summary>
+        public string CurrentLayout
+        {
+            get
+            {
+                var choices = LayoutChoices();
+                if (_appSettings != null && _appSettings.KeyItemsLayout.TryGetValue(SlotKey, out var chosen) && choices.Contains(chosen)) return chosen;
+                return _pack != null && _pack.LayoutGrids.Count > 0 ? choices[0] : KeyItemsLayouts.Vertical;
+            }
+        }
+
+        /// <summary>Uses a layout for this slot (remembered) and draws the tiles again.</summary>
+        public void SetLayout(string id)
+        {
+            if (_appSettings == null || !LayoutChoices().Contains(id)) return;
+            _appSettings.KeyItemsLayout[SlotKey] = id;
+            DataManager.SaveSettingsSoon(_appSettings);
+            RenderActiveMode();
+        }
+
+        private void SyncLayoutPicker()
+        {
+            if (_layoutPicker == null) return;
+            _syncingLayout = true;
+            _layoutIds = LayoutChoices();
+            _layoutPicker.Clear();
+            foreach (var id in _layoutIds) _layoutPicker.AddItem(Tr(KeyItemsLayouts.NameOf(id)));
+            int index = _layoutIds.IndexOf(CurrentLayout);
+            if (index >= 0) _layoutPicker.Selected = index;
+            _layoutPicker.Visible = _isVisualMode && (_pack != null || _layoutIds.Count > 0);
+            _syncingLayout = false;
+        }
+
+        /// <summary>The grids of the pack's root layout in use, or null for a built layout.</summary>
+        private List<PackItemGrid> RootGrids(string layout) =>
+            _pack != null && _pack.LayoutGrids.TryGetValue(layout, out var grids) ? grids.Where(g => !g.LooksLikeSettings).ToList() : null;
+
+        /// <summary>The built layouts' blocks: the pack's item groups, or, without a pack, the progression items by category.</summary>
+        private List<LayoutBlock> BuiltBlocks()
+        {
+            var grids = VisibleGrids().ToList();
+            if (grids.Count > 0) return KeyItemsLayouts.Blocks(grids);
+            var pool = _logicEngine?.LastItemPool ?? new List<WorldItemInfo>();
+            var items = pool.Where(i => (i.Flags & 1) != 0 && !string.IsNullOrEmpty(i.Name)).Select(i => (Code: "atlas_pool_" + i.Id, Category: InferItemType(i.Name))).ToList();
+            if (items.Count == 0) items = pool.Where(i => !string.IsNullOrEmpty(i.Name)).Select(i => (Code: "atlas_pool_" + i.Id, Category: InferItemType(i.Name))).ToList();
+            return KeyItemsLayouts.BlocksByCategory(items);
+        }
+
+        /// <summary>A tile's definition: the pack's item, or a plain one for a pool item (a game without a pack).</summary>
+        private PopTrackerItem TileDefinition(string code)
+        {
+            if (_pack != null && _pack.ItemsByCode.TryGetValue(code, out var itemDef)) return itemDef;
+            if (code.StartsWith("atlas_pool_", StringComparison.Ordinal) && long.TryParse(code.Substring("atlas_pool_".Length), out long id))
+            {
+                var item = _logicEngine?.LastItemPool?.FirstOrDefault(i => i.Id == id);
+                if (item != null) return new PopTrackerItem { Name = item.Name, Type = "toggle", Img = "", CodesRaw = code };
+            }
+            return null;
+        }
+
         /// <summary>The Archipelago name a grid code stands for (falls back to the pack's display name).</summary>
         private string ApNameFor(string code, PopTrackerItem itemDef)
         {
@@ -184,6 +264,15 @@ namespace AP_Atlas.Core.PopTracker
             viewHBox.AddChild(_btnViewVisual);
             viewHBox.AddChild(_btnViewText);
             toolbar.AddChild(viewHBox);
+
+            // The layout: the pack's own root layouts, then the two Atlas builds from the item groups; kept per slot.
+            _layoutPicker = new OptionButton { TooltipText = Tr("How the tiles are laid out: the pack's own layouts, or Atlas's by item group (stacked, or side by side)"), AccessibilityName = Tr("Key Items layout"), Visible = false };
+            _layoutPicker.ItemSelected += index =>
+            {
+                if (_syncingLayout || index < 0 || index >= _layoutIds.Count) return;
+                SetLayout(_layoutIds[(int)index]);
+            };
+            toolbar.AddChild(_layoutPicker);
 
             var sep1 = new VSeparator();
             toolbar.AddChild(sep1);
@@ -365,12 +454,39 @@ namespace AP_Atlas.Core.PopTracker
         private void RenderVisualMode(string filter)
         {
             foreach (Node n in _visualGrid.GetChildren()) n.QueueFree();
+            SyncLayoutPicker();
 
             float baseSize = 64f * _appSettings.KeyItemZoom;
-            var grids = VisibleGrids().ToList();
+            string layout = CurrentLayout;
+            var grids = RootGrids(layout) ?? VisibleGrids().ToList();
             // The pack's tile sizes are kept relative to its most common size (e.g. DS3's 62px Cinders beside 40px keys).
             int commonSize = grids.Count == 0 ? 32 : grids.GroupBy(g => g.ItemSize).OrderByDescending(g => g.Count()).First().Key;
             string lastHeader = null;
+
+            // A built layout: the item groups as blocks, stacked (Vertical) or side by side (Horizontal), each under its header.
+            if (KeyItemsLayouts.IsBuilt(layout))
+            {
+                var blocks = BuiltBlocks();
+                Container host = layout == KeyItemsLayouts.Horizontal ? new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center } : new VBoxContainer();
+                host.AddThemeConstantOverride("separation", layout == KeyItemsLayouts.Horizontal ? 18 : 6);
+                host.SetMeta("built_layout", layout);
+                _visualGrid.AddChild(host);
+                foreach (var block in blocks)
+                {
+                    var box = new VBoxContainer { SizeFlagsVertical = SizeFlags.ShrinkBegin };
+                    if (blocks.Count > 1 || !string.IsNullOrEmpty(block.Header))
+                    {
+                        var header = new Label { Text = block.Header, HorizontalAlignment = HorizontalAlignment.Center };
+                        header.AddThemeColorOverride("font_color", ThemeColors.Accent);
+                        box.AddChild(header);
+                    }
+                    float blockSize = baseSize * Math.Clamp(block.ItemSize / (float)Math.Max(1, commonSize), 0.6f, 1.8f);
+                    foreach (var row in block.Rows) box.AddChild(TileRow(row, blockSize, filter));
+                    host.AddChild(box);
+                }
+                RenderSeedSettings(baseSize, commonSize, filter);
+                return;
+            }
 
             foreach (var grid in grids)
             {
@@ -384,49 +500,65 @@ namespace AP_Atlas.Core.PopTracker
                 float scale = Math.Clamp(grid.ItemSize / (float)Math.Max(1, commonSize), 0.6f, 1.8f);
                 float zoomSize = baseSize * scale;
 
-                foreach (var row in grid.Rows)
-                {
-                    var rowContainer = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
-                    _visualGrid.AddChild(rowContainer);
-
-                    foreach (var code in row)
-                    {
-                        if (string.IsNullOrWhiteSpace(code) || !_pack.ItemsByCode.TryGetValue(code, out var itemDef))
-                        {
-                            // Empty cell (or a code the pack doesn't define): keep the grid's spacing.
-                            rowContainer.AddChild(new Control { CustomMinimumSize = new Vector2(zoomSize, zoomSize) });
-                            continue;
-                        }
-
-                        string apName = ApNameFor(code, itemDef);
-                        bool isSearchMatch = string.IsNullOrEmpty(filter) ||
-                                             (itemDef.Name ?? "").ToLowerInvariant().Contains(filter) ||
-                                             apName.ToLowerInvariant().Contains(filter);
-
-                        int receivedQty = _index != null
-                            ? _index.ReceivedCount(code, _receivedById, n => _receivedCounts.GetValueOrDefault(n))
-                            : _receivedCounts.GetValueOrDefault(itemDef.Name ?? "");
-
-                        // The pack's own scripts know this item best (stages, counts); the mapping still lights
-                        // tiles the scripts miss (e.g. an outdated script id the user re-linked in the Doctor).
-                        int? stage = null;
-                        var state = ScriptState?.Invoke(code);
-                        if (state != null && state.Touched)
-                        {
-                            bool consumable = (itemDef.Type ?? "") == "consumable";
-                            int scriptQty = consumable ? state.Count : state.Active ? Math.Max(1, state.Stage) : 0;
-                            receivedQty = Math.Max(receivedQty, scriptQty);
-                            if (state.Active && (itemDef.Type ?? "").StartsWith("progressive")) stage = state.Stage;
-                        }
-
-                        var tile = CreateVisualTile(itemDef, apName, receivedQty, zoomSize, stage);
-                        if (!isSearchMatch) tile.Modulate = new Color(0.2f, 0.2f, 0.2f, 0.2f);
-                        rowContainer.AddChild(tile);
-                    }
-                }
+                foreach (var row in grid.Rows) _visualGrid.AddChild(TileRow(row, zoomSize, filter));
             }
 
             RenderSeedSettings(baseSize, commonSize, filter);
+        }
+
+        /// <summary>The visual view's shape (for tests): the tile rows drawn straight under the grid, and the built layout's id when one hosts them.</summary>
+        public (int Rows, string Built) VisualShape()
+        {
+            int rows = 0;
+            string built = null;
+            foreach (Node n in _visualGrid.GetChildren())
+            {
+                if (n.IsQueuedForDeletion()) continue;
+                if (n.HasMeta("built_layout")) built = n.GetMeta("built_layout").AsString();
+                else if (n is HBoxContainer) rows++;
+            }
+            return (rows, built);
+        }
+
+        /// <summary>One row of tiles (an empty cell, or a code nothing defines, keeps the row's spacing).</summary>
+        private HBoxContainer TileRow(List<string> row, float zoomSize, string filter)
+        {
+            var rowContainer = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
+            foreach (var code in row)
+            {
+                var itemDef = string.IsNullOrWhiteSpace(code) ? null : TileDefinition(code);
+                if (itemDef == null)
+                {
+                    rowContainer.AddChild(new Control { CustomMinimumSize = new Vector2(zoomSize, zoomSize) });
+                    continue;
+                }
+
+                string apName = ApNameFor(code, itemDef);
+                bool isSearchMatch = string.IsNullOrEmpty(filter) ||
+                                     (itemDef.Name ?? "").ToLowerInvariant().Contains(filter) ||
+                                     apName.ToLowerInvariant().Contains(filter);
+
+                int receivedQty = _index != null
+                    ? _index.ReceivedCount(code, _receivedById, n => _receivedCounts.GetValueOrDefault(n))
+                    : _receivedCounts.GetValueOrDefault(itemDef.Name ?? "");
+
+                // The pack's own scripts know this item best (stages, counts); the mapping still lights
+                // tiles the scripts miss (e.g. an outdated script id the user re-linked in the Doctor).
+                int? stage = null;
+                var state = ScriptState?.Invoke(code);
+                if (state != null && state.Touched)
+                {
+                    bool consumable = (itemDef.Type ?? "") == "consumable";
+                    int scriptQty = consumable ? state.Count : state.Active ? Math.Max(1, state.Stage) : 0;
+                    receivedQty = Math.Max(receivedQty, scriptQty);
+                    if (state.Active && (itemDef.Type ?? "").StartsWith("progressive")) stage = state.Stage;
+                }
+
+                var tile = CreateVisualTile(itemDef, apName, receivedQty, zoomSize, stage);
+                if (!isSearchMatch) tile.Modulate = new Color(0.2f, 0.2f, 0.2f, 0.2f);
+                rowContainer.AddChild(tile);
+            }
+            return rowContainer;
         }
 
         /// <summary>Gets the pack scripts' state for a code (null when the scripts aren't running). Set by the owner.</summary>

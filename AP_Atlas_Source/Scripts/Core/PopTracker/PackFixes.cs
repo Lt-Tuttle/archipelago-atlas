@@ -426,6 +426,8 @@ namespace AP_Atlas.Core.PopTracker
                     LooksLikeSettings = g.LooksLikeSettings,
                     Rows = g.Rows.Select(r => new List<string>(r)).ToList()
                 }).ToList(),
+                Variant = original.Variant,
+                VariantKey = original.VariantKey,
                 Maps = original.Maps.ToDictionary(kv => kv.Key, kv => new PopTrackerMap
                 {
                     Name = kv.Value.Name,
@@ -439,6 +441,11 @@ namespace AP_Atlas.Core.PopTracker
                 }, StringComparer.OrdinalIgnoreCase),
                 Locations = original.Locations.Select(ClonePin).ToList()
             };
+
+            // The root layouts share the merged list's grids: the copies made above stand in for the originals in each root.
+            var copies = original.ItemGridGroups.Zip(e.ItemGridGroups, (o, c) => (Original: o, Copy: c)).ToDictionary(p => p.Original, p => p.Copy);
+            foreach (var kv in original.LayoutGrids)
+                e.LayoutGrids[kv.Key] = kv.Value.Select(g => copies.TryGetValue(g, out var copy) ? copy : g).ToList();
 
             // Grids: shown/hidden, size, reordered rows.
             foreach (var gf in f.Grids)

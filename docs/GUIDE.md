@@ -59,6 +59,8 @@ The **Chat** tab's filters sit in one row: Chat, Hints and System (the kinds of 
 
 Key Items (Ctrl+2) shows the progression items you've received. The Visual view is the pack's own item grid (when the pack has one), with each tile as the pack's scripts show it; the Text view lists the items. Collected and Missing filter the list, the search box narrows it, and Item Size changes the tiles. Seed settings the pack shows are read from the slot's options.
 
+**Layout:** the choice beside Visual / Text lists the pack's own layouts (PopTracker's default, horizontal, vertical and broadcast, whichever the pack has) and two Atlas builds from the pack's item groups: Vertical (by group) stacks each group under its header, Horizontal (by group) sets the groups side by side. The pack's default layout is used until you pick another; the choice is kept per slot.
+
 ## Logic Tracker
 
 **BK** (nothing to do until someone sends you something): while logic runs and checks remain but none of them is in logic, the Logic Tracker and Key Items say so above their lists, with the count done ("BK: 12 of 40 checks done; nothing is in logic right now. Items from other players open the next ones."), and the slot's card says BK. It goes the moment a check comes into logic.

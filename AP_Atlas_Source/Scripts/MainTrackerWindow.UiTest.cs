@@ -172,7 +172,7 @@ public partial class MainTrackerWindow
             PackImagesFollowTheirUsersAsync);
         await ScenarioAsync("Pack Doctor: on a pack's first check, a tile whose name matches an item exactly (once punctuation is ignored) is linked by itself as an automatic fix; the Recommended tab lists what's left, Apply on a row writes the fix, the row goes after the check and the status says so; Undo takes the automatic link back",
             PackDoctorAsync);
-        await ScenarioAsync("Map packs reach connected slots: the chat's filters sit in one row; the Chat and System Log tabs carry a dot for lines that arrived while they weren't showing, cleared when shown; a slot without a pack offers \"Find a map pack for <game>…\" on its map, which shows Map Packs and searches GitHub once; a pack chosen from the results downloads with a progress line, installs with a card and reaches the slot's map; a pack installed while a slot is connected shows on its map at once, without a reconnect; deleted, the map says there's no pack again; another pack for the game takes its place",
+        await ScenarioAsync("Map packs reach connected slots: Key Items offers the pack's layouts and two Atlas builds by item group, kept per slot; the chat's filters sit in one row; the Chat and System Log tabs carry a dot for lines that arrived while they weren't showing, cleared when shown; a slot without a pack offers \"Find a map pack for <game>…\" on its map, which shows Map Packs and searches GitHub once; a pack chosen from the results downloads with a progress line, installs with a card and reaches the slot's map; a pack installed while a slot is connected shows on its map at once, without a reconnect; deleted, the map says there's no pack again; another pack for the game takes its place",
             PacksReachConnectedSlotsAsync);
         await ScenarioAsync("Live map following: a pack whose scripts follow the game switches the map to the tab the room's data storage names, at connect and when it changes (Atlas asks the server about the key and never writes the room's data); with the switch off, the map stays; the switch is remembered per slot",
             LiveMapFollowingAsync);
@@ -2858,7 +2858,8 @@ public partial class MainTrackerWindow
             // picking the other reads the pack again as that variant (its own items) and is remembered for the slot.
             FakeMapPack.Write(second, "UI test second pack", "Test Game",
                 files: new Dictionary<string, string> { ["var_b/items/items.json"] = """[{"name":"Lantern","type":"toggle","img":"images/sword.png","codes":"lantern"}]""" },
-                variantsJson: """{"standard":{"display_name":"Standard"},"var_b":{"display_name":"Variant B"}}""");
+                variantsJson: """{"standard":{"display_name":"Standard"},"var_b":{"display_name":"Variant B"}}""",
+                layoutsJson: """{"tracker_default":{"type":"itemgrid","rows":[["sword","shield"]]},"tracker_horizontal":{"type":"group","header":"Gear","content":{"type":"itemgrid","rows":[["sword"],["shield"]]}}}""");
             AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
             var replacement = await UiTestWaitForAsync(() => slot.Pack, "the second pack");
             UiTestExpect(replacement.Manifest.Name == "UI test second pack" && !slot.MapTracker.ShowingEmptyState, "the second pack didn't take the first one's place");
@@ -2871,6 +2872,21 @@ public partial class MainTrackerWindow
             UiTestExpect(asVariant.ItemsByCode.ContainsKey("lantern") && !asVariant.ItemsByCode.ContainsKey("sword") && _appSettings.PackVariants.TryGetValue(slotKey, out var kept) && kept == "var_b",
                 "the variant's own items weren't read, or the choice wasn't kept for the slot");
             _appSettings.PackVariants.Remove(slotKey);
+            // Key Items offers the pack's two layouts and Atlas's two built ones; a pack layout draws its own rows, a built one its
+            // blocks side by side; the choice is kept for the slot.
+            host.ShowTool(AP_Atlas.UI.Tool.KeyItems);
+            await UiTestWaitAsync(0.2);
+            var keyItems = slot.ProgressionTracker;
+            UiTestExpect(keyItems.LayoutChoices().SequenceEqual(new[] { "tracker_default", "tracker_horizontal", AP_Atlas.Core.PopTracker.KeyItemsLayouts.Vertical, AP_Atlas.Core.PopTracker.KeyItemsLayouts.Horizontal })
+                && keyItems.CurrentLayout == "tracker_default" && keyItems.VisualShape().Rows == 1,
+                $"Key Items offers {string.Join(", ", keyItems.LayoutChoices())} with {keyItems.CurrentLayout} in use ({keyItems.VisualShape().Rows} rows)");
+            keyItems.SetLayout("tracker_horizontal");
+            UiTestExpect(keyItems.VisualShape().Rows == 2 && keyItems.VisualShape().Built == null, $"the pack's horizontal layout isn't drawn as its two rows: {keyItems.VisualShape()}");
+            keyItems.SetLayout(AP_Atlas.Core.PopTracker.KeyItemsLayouts.Horizontal);
+            UiTestExpect(keyItems.VisualShape().Built == AP_Atlas.Core.PopTracker.KeyItemsLayouts.Horizontal && _appSettings.KeyItemsLayout.TryGetValue(slotKey, out var layoutKept) && layoutKept == AP_Atlas.Core.PopTracker.KeyItemsLayouts.Horizontal,
+                "the built horizontal layout isn't drawn as blocks side by side, or wasn't kept for the slot");
+            _appSettings.KeyItemsLayout.Remove(slotKey);
+            host.ShowTool(AP_Atlas.UI.Tool.MapTracker);
         }
         finally
         {

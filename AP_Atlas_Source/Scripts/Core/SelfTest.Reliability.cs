@@ -465,6 +465,44 @@ namespace AP_Atlas.Core
         /// the script's call, as in Lua. Library functions that could hurt Atlas in one step are safe: collectgarbage
         /// collects nothing, and the json and dynamic modules aren't there.
         /// </summary>
+        private static void KeyItemsLayoutsAreKeptApart()
+        {
+            string zip = Path.Combine(AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory(), "selftest_layouts.zip");
+            try
+            {
+                // Three roots: default and vertical share one grid; horizontal has its own, under a group header.
+                AP_Atlas.Core.Testing.FakeMapPack.Write(zip, "Self-test layouts pack", "Self Test Game L", layoutsJson:
+                    """{"tracker_default":{"type":"itemgrid","rows":[["sword","shield"]]},"tracker_vertical":{"type":"itemgrid","rows":[["sword","shield"]]}""" +
+                    ""","tracker_horizontal":{"type":"group","header":"Gear","content":{"type":"itemgrid","rows":[["sword"],["shield"]]}}}""");
+                var pack = AP_Atlas.Core.PopTracker.PopTrackerPackLoader.LoadPackForGame("Self Test Game L");
+                Expect(pack != null && pack.LayoutGrids.Keys.OrderBy(k => k).SequenceEqual(new[] { "tracker_default", "tracker_horizontal", "tracker_vertical" }),
+                    "the pack's root layouts weren't kept apart: " + string.Join(", ", pack?.LayoutGrids.Keys ?? Enumerable.Empty<string>()));
+                if (pack == null) return;
+                Expect(pack.ItemGridGroups.Count == 2 && ReferenceEquals(pack.LayoutGrids["tracker_default"][0], pack.LayoutGrids["tracker_vertical"][0]),
+                    $"a grid two roots share isn't one grid ({pack.ItemGridGroups.Count} merged grids)");
+                Expect(pack.LayoutGrids["tracker_horizontal"].Count == 1 && pack.LayoutGrids["tracker_horizontal"][0].Header == "Gear" && pack.LayoutGrids["tracker_horizontal"][0].Rows.Count == 2,
+                    "the horizontal root's own grid wasn't kept with its header and rows");
+                // The built layouts' blocks: consecutive grids under one header (else layout key) make a block.
+                var blocks = AP_Atlas.Core.PopTracker.KeyItemsLayouts.Blocks(new[]
+                {
+                    new AP_Atlas.Core.PopTracker.PackItemGrid { Header = "Gear", Rows = { new List<string> { "a" } } },
+                    new AP_Atlas.Core.PopTracker.PackItemGrid { Header = "Gear", Rows = { new List<string> { "b" } } },
+                    new AP_Atlas.Core.PopTracker.PackItemGrid { LayoutKey = "keys_grid", Rows = { new List<string> { "c" } } },
+                    new AP_Atlas.Core.PopTracker.PackItemGrid { Rows = { new List<string> { "d" } } }
+                });
+                Expect(blocks.Select(b => b.Header).SequenceEqual(new[] { "Gear", "keys_grid", "Items" }) && blocks[0].Rows.Count == 2, "the blocks don't follow the headers: " + string.Join(", ", blocks.Select(b => b.Header)));
+                var byCategory = AP_Atlas.Core.PopTracker.KeyItemsLayouts.BlocksByCategory(Enumerable.Range(0, 8).Select(i => ($"i{i}", i < 7 ? "Key" : "Ring")), perRow: 3);
+                Expect(byCategory.Count == 2 && byCategory[0].Header == "Key" && byCategory[0].Rows.Count == 3 && byCategory[0].Rows[2].Count == 1 && byCategory[1].Rows.Count == 1,
+                    "the blocks by category aren't in rows of three");
+                Expect(AP_Atlas.Core.PopTracker.KeyItemsLayouts.NameOf("tracker_default") == "Default (pack)" && AP_Atlas.Core.PopTracker.KeyItemsLayouts.NameOf(AP_Atlas.Core.PopTracker.KeyItemsLayouts.Horizontal) == "Horizontal (by group)",
+                    "a layout's name is wrong");
+            }
+            finally
+            {
+                SafeFile.Delete(zip);
+            }
+        }
+
         private static void PackVariantsAreReadApart()
         {
             string zip = Path.Combine(AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory(), "selftest_variants.zip");

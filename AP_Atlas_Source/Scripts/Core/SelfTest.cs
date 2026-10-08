@@ -105,6 +105,7 @@ namespace AP_Atlas.Core
             await TestAsync("GitHub: a rate limit is reported as one (never as 'not found') and waited out; unchanged answers come from the cache", GitHubLimitsAreRespected);
             await TestAsync("Apworld projects: projects of the same name are found by one search and kept; a search GitHub couldn't finish is never remembered as 'no other projects'", SameNameProjectsAreFoundOnce);
             Test("Map packs: a pack read as one of its variants takes the variant's own files; the default read stays, both kept once; an unknown variant is the default", PackVariantsAreReadApart);
+            Test("Key Items layouts: a pack's root layouts keep their own grids (a grid two roots share is one grid), and Atlas builds blocks from the item groups", KeyItemsLayoutsAreKeptApart);
             Test("JSON: deeply nested input is refused instead of crashing", DeepJsonIsRefused);
             Test("Godot writes no log or shader cache outside Atlas's folder; its own warnings go to Atlas's log", GodotWritesNothingOutside);
             Test("Connections keep the games' names in Atlas's folder, never in the connection library's own cache", ConnectionsKeepNamesInside);

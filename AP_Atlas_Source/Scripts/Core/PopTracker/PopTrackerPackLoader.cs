@@ -22,6 +22,12 @@ namespace AP_Atlas.Core.PopTracker
         /// <summary>The variant this pack was read as (the manifest's default, or the one asked for).</summary>
         public string Variant { get; set; } = "";
 
+        /// <summary>
+        /// The pack's root layouts, each with its own grids in its own order (tracker_default, tracker_horizontal, …),
+        /// for Key Items' layout choice; <see cref="ItemGridGroups"/> stays the merged list every root's grids share.
+        /// </summary>
+        public Dictionary<string, List<PackItemGrid>> LayoutGrids { get; set; } = new Dictionary<string, List<PackItemGrid>>(StringComparer.OrdinalIgnoreCase);
+
         /// <summary>The variant asked for when the pack was read (null: the default), the cache's key besides the zip.</summary>
         public string VariantKey { get; set; }
         public Dictionary<string, PopTrackerItem> ItemsByCode { get; set; } = new Dictionary<string, PopTrackerItem>(StringComparer.OrdinalIgnoreCase);
@@ -671,13 +677,21 @@ namespace AP_Atlas.Core.PopTracker
             if (layouts.Count == 0) return;
             ExtractTabMaps(layouts, pack);
 
+            // Every root's grids go into the merged list once (the same grid reached through another root is one grid), and
+            // into that root's own list, so a layout can be shown as the pack lays it out.
             var seen = new HashSet<string>();
+            var merged = new Dictionary<string, PackItemGrid>();
+            List<PackItemGrid> current = null;
             void AddGrid(PackItemGrid grid)
             {
                 if (grid.Rows.Count == 0) return;
                 string signature = string.Join(";", grid.Rows.Select(r => string.Join(",", r)));
-                if (!seen.Add(signature)) return; // the same grid reached through another root layout
-                pack.ItemGridGroups.Add(grid);
+                if (seen.Add(signature))
+                {
+                    pack.ItemGridGroups.Add(grid);
+                    merged[signature] = grid;
+                }
+                if (current != null && !current.Contains(merged[signature])) current.Add(merged[signature]);
             }
 
             void Walk(JToken token, string header, string layoutKey, HashSet<string> visiting)
@@ -754,7 +768,13 @@ namespace AP_Atlas.Core.PopTracker
 
             var roots = RootLayoutKeys.Where(layouts.ContainsKey).ToList();
             if (roots.Count == 0) roots = layouts.Keys.Where(k => k.StartsWith("tracker", StringComparison.OrdinalIgnoreCase)).ToList();
-            foreach (var root in roots) Walk(layouts[root], "", root, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { root });
+            foreach (var root in roots)
+            {
+                current = new List<PackItemGrid>();
+                Walk(layouts[root], "", root, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { root });
+                if (current.Count > 0) pack.LayoutGrids[root] = current;
+            }
+            current = null;
 
             // No tracker layout: fall back to every layout key, in file order.
             if (pack.ItemGridGroups.Count == 0)

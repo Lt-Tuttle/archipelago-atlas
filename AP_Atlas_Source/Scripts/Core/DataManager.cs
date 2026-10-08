@@ -90,6 +90,8 @@ public class AppSettings
     public Dictionary<string, bool> MapFollowGame { get; set; } = new Dictionary<string, bool>();
     /// <summary>The map pack variant each slot uses (slot key → variant id); absent: the pack's default.</summary>
     public Dictionary<string, string> PackVariants { get; set; } = new Dictionary<string, string>();
+    /// <summary>Key Items' layout per slot (slot key → a pack root such as tracker_default, or atlas:vertical / atlas:horizontal); absent: the pack's default.</summary>
+    public Dictionary<string, string> KeyItemsLayout { get; set; } = new Dictionary<string, string>();
     /// <summary>Slot key ("profileId|slotName") → the apworld version the user chose for that slot's seed (the version picker).</summary>
     public Dictionary<string, SlotApworldChoice> SlotApworlds { get; set; } = new Dictionary<string, SlotApworldChoice>();
 
@@ -396,6 +398,7 @@ public static class DataManager
         settings.MapColours ??= new Dictionary<string, string>();
         settings.MapFollowGame ??= new Dictionary<string, bool>();
         settings.PackVariants ??= new Dictionary<string, string>();
+        settings.KeyItemsLayout ??= new Dictionary<string, string>();
         settings.SlotApworlds ??= new Dictionary<string, SlotApworldChoice>();
         settings.UiZoom = System.Math.Clamp(settings.UiZoom, 50, 200);
         if (settings.MapMarkerStyle is not ("round" or "square" or "diamond")) settings.MapMarkerStyle = "round";
