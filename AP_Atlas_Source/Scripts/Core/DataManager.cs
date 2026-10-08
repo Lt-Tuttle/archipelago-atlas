@@ -172,7 +172,8 @@ public class MultiworldProfile
 {
     public string Id { get; set; } = System.Guid.NewGuid().ToString();
     public string Name { get; set; } = "New Multiworld";
-    public string ServerUrl { get; set; } = "archipelago.gg:38281";
+    /// <summary>The server and the room's port as the room page shows them ("archipelago.gg:12345"); empty until typed or filled from the room link.</summary>
+    public string ServerUrl { get; set; } = "";
 
     /// <summary>The room's link, as the host shared it (https://archipelago.gg/room/…), for the one status read Atlas makes about it; empty when none.</summary>
     public string RoomLink { get; set; } = "";

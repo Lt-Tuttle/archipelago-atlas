@@ -57,6 +57,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     private List<MultiworldProfile> _profiles = new();
     private AP_Atlas.Core.CheeseTracker.CheeseTrackerService _cheese;
     private LineEdit _cheeseInput;
+    private LineEdit _sphereInput;
+    private Button _passwordToggle;
     private AP_Atlas.UI.CheeseTrackerTab _cheeseTab;
     private AP_Atlas.Core.Spheres.SphereService _spheres;
     private AP_Atlas.UI.SphereTrackerTab _sphereTab;
@@ -439,7 +441,9 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     {
         if (what == NotificationWMCloseRequest)
         {
-            GracefulShutdown();
+            // Closing with unsaved edits on the Multiworlds page asks first.
+            if (HasUnsavedEdits && !_shuttingDown) GuardUnsaved(GracefulShutdown);
+            else GracefulShutdown();
         }
         // Moved to a monitor with another display scale: the window follows it (the notification reaches every node under the window).
         else if (what == NotificationWMDpiChange && _appSettings != null)
@@ -489,6 +493,17 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
 
     void AP_Atlas.UI.IPropertiesHost.ShowTool(AP_Atlas.UI.Tool tool)
     {
+        // Leaving the Multiworlds page with unsaved edits asks first: Save / Don't save / Cancel.
+        if (_currentTool == AP_Atlas.UI.Tool.Connections && tool != AP_Atlas.UI.Tool.Connections && HasUnsavedEdits)
+        {
+            _activityBar?.Select(AP_Atlas.UI.Tool.Connections);
+            GuardUnsaved(() =>
+            {
+                _activityBar?.Select(tool);
+                if (_currentTool != tool) ShowTool(tool);
+            });
+            return;
+        }
         _activityBar?.Select(tool);
         if (_currentTool != tool) ShowTool(tool);
     }
@@ -496,7 +511,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     void AP_Atlas.UI.IPropertiesHost.SelectProfile(string profileId)
     {
         var profile = _profiles.FirstOrDefault(p => p.Id == profileId);
-        if (profile != null) SelectProfile(profile);
+        if (profile != null) SelectProfileGuarded(profile);
     }
 
     void AP_Atlas.UI.IPropertiesHost.Toast(string message, Godot.Color color) => ShowToast(message, color);

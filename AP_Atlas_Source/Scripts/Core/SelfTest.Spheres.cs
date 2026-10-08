@@ -25,7 +25,7 @@ namespace AP_Atlas.Core
         private const string OtherRoomId = "ZyXwVuTsRqPoNmLkJiHgFA";
 
         /// <summary>A room page laid out like spheretracker.de's open-locations page (names made up).</summary>
-        private static string SphereRoomPage(string trackerId, string creator, string rows = null) =>
+        internal static string SphereRoomPage(string trackerId, string creator, string rows = null) =>
             "<!doctype html><html><head><title>Room | Sphere Tracker</title><style>table{}</style></head><body>" +
             "<header><h1 class=\"topbar-title\">Sphere Tracker</h1></header><script>var t = '<table><tr><td>x</td></tr></table>';</script>" +
             "<section class=\"card\"><a href=\"/room/x/claim\" class=\"btn nav\">Claim your Slots</a>" +

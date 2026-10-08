@@ -13,6 +13,94 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     private Button _fillFromRoomButton;
     /// <summary>The selected multiworld has edits not yet written to disk.</summary>
     private bool _dirty;
+    /// <summary>The selected multiworld as it was when selected or last saved: what Don't save goes back to.</summary>
+    private ProfileEdits _editBaseline;
+
+    /// <summary>Whether the selected multiworld has edits that would be lost: typed into it, or into the link boxes.</summary>
+    private bool HasUnsavedEdits => _dirty && _selectedProfile != null;
+
+    private sealed record ProfileEdits(string Name, string RoomLink, string ServerUrl, string Password, List<string> Slots, Dictionary<string, SlotStats> Stats);
+
+    private static ProfileEdits SnapshotEdits(MultiworldProfile profile) =>
+        new(profile.Name, profile.RoomLink ?? "", profile.ServerUrl ?? "", profile.Password ?? "", profile.Slots.ToList(), new Dictionary<string, SlotStats>(profile.SavedStats));
+
+    /// <summary>Don't save: the selected multiworld goes back to how it was when selected or last saved, in memory and on the page.</summary>
+    private void DiscardProfileEdits()
+    {
+        if (_selectedProfile == null || _editBaseline == null) return;
+        var profile = _selectedProfile;
+        var baseline = _editBaseline;
+        profile.Name = baseline.Name;
+        profile.RoomLink = baseline.RoomLink;
+        profile.ServerUrl = baseline.ServerUrl;
+        profile.Password = baseline.Password;
+        profile.Slots.Clear();
+        profile.Slots.AddRange(baseline.Slots);
+        // A renamed slot's stats go back under its old name; stats a connection added meanwhile stay.
+        foreach (var (name, stats) in baseline.Stats)
+            if (!profile.SavedStats.ContainsKey(name)) profile.SavedStats[name] = stats;
+        foreach (string name in profile.SavedStats.Keys.ToList())
+            if (!baseline.Stats.ContainsKey(name) && baseline.Stats.ContainsValue(profile.SavedStats[name])) profile.SavedStats.Remove(name);
+        _dirty = false;
+        _saveButton.RemoveThemeColorOverride("font_color");
+        FillEditor(profile);
+        RefreshProfileList();
+    }
+
+    /// <summary>Save: every edit to disk, and the link boxes checked and linked.</summary>
+    private void CommitProfileEdits()
+    {
+        if (_selectedProfile == null) return;
+        SaveProfileEdits(announce: true);
+        string cheeseLink = _cheeseInput.Text.Trim();
+        if (cheeseLink != (_selectedProfile.CheeseTrackerUrl ?? "")) LinkCheeseFromEditor(_selectedProfile, cheeseLink);
+        string sphereLink = _sphereInput.Text.Trim();
+        if (sphereLink != (_selectedProfile.SphereTrackerUrl ?? "")) LinkSphereFromEditor(_selectedProfile, sphereLink);
+    }
+
+    /// <summary>Runs <paramref name="proceed"/> now, or after Save / Don't save when the selected multiworld has unsaved edits (Cancel runs nothing).</summary>
+    private void GuardUnsaved(Action proceed)
+    {
+        if (!HasUnsavedEdits)
+        {
+            proceed();
+            return;
+        }
+        AP_Atlas.UI.Dialogs.SaveChanges(this, _selectedProfile.Name, CommitProfileEdits, DiscardProfileEdits, proceed, text => Tr(text));
+    }
+
+    private void LinkSphereFromEditor(MultiworldProfile profile, string text) => AP_Atlas.Core.Async.Fire(LinkSphereFromEditorAsync(profile, text), "linking the sphere tracker");
+
+    /// <summary>The Sphere Tracker box, on Save: emptied, the room is unlinked; changed, the room is checked and linked (the host's room only); a refused link stays in the box with the reason below.</summary>
+    private async Task LinkSphereFromEditorAsync(MultiworldProfile profile, string text)
+    {
+        if (_spheres == null) return;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            _spheres.UnlinkSphereSite(profile.Id);
+            ShowToast(Tr("{0} is no longer linked to a sphere tracker").Replace("{0}", profile.Name), AP_Atlas.Core.ThemeColors.TextSubtle);
+            return;
+        }
+        string error = await AP_Atlas.UI.SphereLinkFlow.CheckAndLinkAsync(this, _spheres, profile, text, ShowToast, () =>
+        {
+            if (_selectedProfile == profile && _sphereInput != null) _sphereInput.Text = profile.SphereTrackerUrl ?? "";
+            UpdateSidebar();
+        });
+        if (!IsInstanceValid(this) || error == null || _selectedProfile != profile) return;
+        _statusLabel.Text = Tr("Sphere Tracker: {0}").Replace("{0}", error);
+        _statusLabel.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Error);
+        MarkDirty();
+    }
+
+    /// <summary>Whether the password box shows its text; hidden again whenever another multiworld is selected.</summary>
+    private void SetPasswordShown(bool shown)
+    {
+        if (_passwordInput == null || _passwordToggle == null) return;
+        _passwordInput.Secret = !shown;
+        _passwordToggle.Icon = AP_Atlas.UI.LucideTextures.Get(shown ? "eye-off" : "eye", AP_Atlas.Core.ThemeColors.TextMuted, 1.0f);
+        _passwordToggle.TooltipText = shown ? Tr("Hide the password") : Tr("Show the password");
+        _passwordToggle.AccessibilityName = _passwordToggle.TooltipText;
+    }
     /// <summary>When each multiworld's room status was last read after a failed reconnect (the steady clock), so it's read at most every ten minutes.</summary>
     private readonly Dictionary<string, DateTime> _roomChecks = new();
     internal static readonly TimeSpan RoomCheckSpacing = TimeSpan.FromMinutes(10);
@@ -38,6 +126,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _sessions?.UpdateLogins(_selectedProfile.Id, _selectedProfile.ServerUrl, string.IsNullOrEmpty(_selectedProfile.Password) ? null : _selectedProfile.Password);
         DataManager.SaveProfiles(_profiles);
         _dirty = false;
+        _editBaseline = SnapshotEdits(_selectedProfile);
         _saveButton.RemoveThemeColorOverride("font_color");
         RefreshProfileList();
         if (announce) LogToSystem($"Profile '{_selectedProfile.Name}' saved.", "green");
@@ -69,7 +158,20 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
 
     private static bool IsDefaultSlotName(string name) => name is "Player1" or "New Slot";
 
-    private void FillFromRoomLink() => AP_Atlas.Core.Async.Fire(FillFromRoomLinkAsync(), "filling in a multiworld from its room link");
+    private void FillFromRoomLink()
+    {
+        // A typed server address would be replaced (slots the user named stay): ask first.
+        var profile = _selectedProfile;
+        bool replaces = profile != null && !string.IsNullOrWhiteSpace(profile.ServerUrl);
+        if (!replaces)
+        {
+            AP_Atlas.Core.Async.Fire(FillFromRoomLinkAsync(), "filling in a multiworld from its room link");
+            return;
+        }
+        AP_Atlas.UI.Dialogs.Confirm(this, Tr("Fill in from the room?"),
+            Tr("The room's status page gives the server address and the players. The address typed here, {0}, will be replaced; slots you named stay, and the room's players are added beside them.").Replace("{0}", profile.ServerUrl),
+            Tr("Fill in"), () => AP_Atlas.Core.Async.Fire(FillFromRoomLinkAsync(), "filling in a multiworld from its room link"));
+    }
 
     /// <summary>One read of the room's status page (with permission): the server address from its port, the slots from its players.</summary>
     private async Task FillFromRoomLinkAsync()
@@ -166,11 +268,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         {
             var btn = new Button { Text = profile.Name };
             btn.SetMeta("profile_id", profile.Id);
-            btn.Pressed += () =>
-            {
-                SelectProfile(profile);
-                AP_Atlas.Core.Inspector.Inspect(AP_Atlas.Core.InspectTarget.ForProfile(profile.Id));
-            };
+            btn.Pressed += () => SelectProfileGuarded(profile, () => AP_Atlas.Core.Inspector.Inspect(AP_Atlas.Core.InspectTarget.ForProfile(profile.Id)));
             _profileListContainer.AddChild(btn);
         }
         SetFontSizeRecursive(_profileListContainer, _appSettings.ExplorerFontSize);
@@ -217,13 +315,37 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             }
         }
     }
+    /// <summary>
+    /// Shows a multiworld in the editor. Unsaved edits of the one selected until now must have been saved or discarded
+    /// first (<see cref="GuardUnsaved"/> asks); they're never written silently.
+    /// </summary>
     private void SelectProfile(MultiworldProfile profile)
     {
-        // Edits of the multiworld selected until now are kept: written to disk before another one takes its place.
-        if (_dirty && _selectedProfile != null && _selectedProfile != profile) SaveProfileEdits(announce: false);
         _selectedProfile = profile;
         _dirty = false;
         _saveButton.RemoveThemeColorOverride("font_color");
+        FillEditor(profile);
+        _editBaseline = profile == null ? null : SnapshotEdits(profile);
+    }
+
+    /// <summary>Selects a multiworld from the list: unsaved edits of the current one ask first; <paramref name="then"/> runs once it's selected (or at once when it already is).</summary>
+    private void SelectProfileGuarded(MultiworldProfile profile, Action then = null)
+    {
+        if (_selectedProfile == profile)
+        {
+            then?.Invoke();
+            return;
+        }
+        GuardUnsaved(() =>
+        {
+            SelectProfile(profile);
+            then?.Invoke();
+        });
+    }
+
+    private void FillEditor(MultiworldProfile profile)
+    {
+        SetPasswordShown(false);
         if (profile == null)
         {
             _nameInput.Text = "";
@@ -231,12 +353,15 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             _serverInput.Text = "";
             _passwordInput.Text = "";
             _cheeseInput.Text = "";
+            _sphereInput.Text = "";
             _nameInput.Editable = false;
             _roomLinkInput.Editable = false;
             _fillFromRoomButton.Disabled = true;
             _serverInput.Editable = false;
             _passwordInput.Editable = false;
+            _passwordToggle.Disabled = true;
             _cheeseInput.Editable = false;
+            _sphereInput.Editable = false;
             _saveButton.Disabled = true;
             _deleteButton.Disabled = true;
             _addSlotButton.Disabled = true;
@@ -245,15 +370,18 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         }
         _nameInput.Text = profile.Name;
         _roomLinkInput.Text = profile.RoomLink ?? "";
-        _serverInput.Text = profile.ServerUrl;
-        _passwordInput.Text = profile.Password;
+        _serverInput.Text = profile.ServerUrl ?? "";
+        _passwordInput.Text = profile.Password ?? "";
         _cheeseInput.Text = profile.CheeseTrackerUrl ?? "";
+        _sphereInput.Text = profile.SphereTrackerUrl ?? "";
         _nameInput.Editable = true;
         _roomLinkInput.Editable = true;
         _fillFromRoomButton.Disabled = false;
         _serverInput.Editable = true;
         _passwordInput.Editable = true;
+        _passwordToggle.Disabled = false;
         _cheeseInput.Editable = true;
+        _sphereInput.Editable = true;
         _saveButton.Disabled = false;
         _deleteButton.Disabled = false;
         _addSlotButton.Disabled = false;
@@ -415,7 +543,9 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     /// A new multiworld, shown where it can be filled in: the Multiworlds page with it selected and its name ready to
     /// type. A new one that was never touched is selected again instead of adding another beside it.
     /// </summary>
-    private void OnAddProfilePressed()
+    private void OnAddProfilePressed() => GuardUnsaved(AddProfile);
+
+    private void AddProfile()
     {
         var untouched = _profiles.FirstOrDefault(IsUntouchedNew);
         var profile = untouched;
@@ -444,15 +574,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         && string.IsNullOrEmpty(profile.RoomLink) && string.IsNullOrEmpty(profile.Password)
         && string.IsNullOrEmpty(profile.CheeseTrackerUrl) && string.IsNullOrEmpty(profile.SphereTrackerUrl)
         && profile.SavedStats.Count == 0;
-    private void OnSaveProfilePressed()
-    {
-        if (_selectedProfile != null)
-        {
-            SaveProfileEdits(announce: true);
-            string cheeseLink = _cheeseInput.Text.Trim();
-            if (cheeseLink != (_selectedProfile.CheeseTrackerUrl ?? "")) LinkCheeseFromEditor(_selectedProfile, cheeseLink);
-        }
-    }
+    private void OnSaveProfilePressed() => CommitProfileEdits();
     private void LinkCheeseFromEditor(MultiworldProfile profile, string text) => AP_Atlas.Core.Async.Fire(LinkCheeseFromEditorAsync(profile, text), "linking Cheese Tracker");
     private async Task LinkCheeseFromEditorAsync(MultiworldProfile profile, string text)
     {

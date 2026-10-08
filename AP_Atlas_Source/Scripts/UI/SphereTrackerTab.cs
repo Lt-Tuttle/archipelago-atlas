@@ -456,62 +456,14 @@ namespace AP_Atlas.UI
         /// <summary>Reads the room once; links it at once if its creator runs the multiworld's Cheese Tracker, else asks.</summary>
         private void CheckAndLink(MultiworldProfile profile, string text) => AP_Atlas.Core.Async.Fire(CheckAndLinkAsync(profile, text), "checking the spheretracker.de room");
 
-        private async Task CheckAndLinkAsync(MultiworldProfile profile, string text)
-        {
-            SphereRoomCheck check;
-            try
+        // One flow links a room, from here or from the Multiworlds page's box: SphereLinkFlow.
+        private Task CheckAndLinkAsync(MultiworldProfile profile, string text) =>
+            SphereLinkFlow.CheckAndLinkAsync(this, _spheres, profile, text, Toast, () =>
             {
-                check = await _spheres.CheckRoomAsync(profile.Id, text);
-            }
-            catch (Exception ex)
-            {
-                if (IsInstanceValid(this)) Toast("Checking the room failed: " + ex.Message, ThemeColors.Error);
-                return;
-            }
-            if (!IsInstanceValid(this)) return;
-            if (check.Error != null)
-            {
-                Toast(check.Error, ThemeColors.Error);
-                return;
-            }
-            if (check.ByOrganizer)
-            {
-                FinishLink(profile, check, confirmed: false);
-                return;
-            }
-            string room = string.IsNullOrWhiteSpace(check.Data?.RoomName) ? "This room" : $"The room \"{check.Data.RoomName}\"";
-            string question, requirement;
-            if (check.Creator.Length == 0)
-            {
-                question = $"{room} doesn't say who created it. Only link it if {profile.Name}'s host created it and shared the link.";
-                requirement = $"{profile.Name}'s host created this room";
-            }
-            else if (check.Organizer != null)
-            {
-                question = $"{room} was created by {check.Creator}, but Cheese Tracker says {profile.Name} is organized by {check.Organizer}. Only link it if {check.Creator} is the host.";
-                requirement = $"{check.Creator} is {profile.Name}'s host";
-            }
-            else
-            {
-                question = $"{room} was created by {check.Creator}. Atlas can't tell who hosts {profile.Name} (once it's linked to Cheese Tracker, Atlas checks this itself), so only link it if {check.Creator} is the host.";
-                requirement = $"{check.Creator} is {profile.Name}'s host";
-            }
-            Dialogs.Confirm(this, "Is this the host's room?", question, "Link", () => FinishLink(profile, check, confirmed: true), requirement);
-        }
-
-        private void FinishLink(MultiworldProfile profile, SphereRoomCheck check, bool confirmed)
-        {
-            string error = _spheres.LinkRoom(check, confirmed);
-            if (error != null)
-            {
-                Toast(error, ThemeColors.Error);
-                return;
-            }
-            Toast(check.ByOrganizer ? $"Linked: the room was created by {check.Creator}, who runs {profile.Name}'s Cheese Tracker." : $"Linked {profile.Name}'s sphere tracker.", ThemeColors.TextSubtle);
-            _settingsSignature = null;
-            InvalidateSidebar();
-            WatchShown();
-            Refresh();
-        }
+                _settingsSignature = null;
+                InvalidateSidebar();
+                WatchShown();
+                Refresh();
+            });
     }
 }

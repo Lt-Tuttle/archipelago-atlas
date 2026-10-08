@@ -254,7 +254,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         if (_shuttingDown || _sessions == null) return false;
         if (string.IsNullOrWhiteSpace(profile.ServerUrl))
         {
-            _statusLabel.Text = "Status: Server URL cannot be empty";
+            _statusLabel.Text = Tr("Enter the server address first: archipelago.gg and the room's port, as the room page shows them.");
             _statusLabel.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Error);
             ShowStatus(Tr("Can't connect: the server address is empty"));
             return false;

@@ -37,7 +37,7 @@ You need:
 |---|---|
 | Build | `dotnet build AP_Atlas_Source/AP_Atlas.sln` |
 | Run | `Launch_The_Archipelago_Atlas.bat` |
-| Self-test and UI test | `AP_Atlas_Source/Tools/run_selftest.ps1` (builds, then runs the self-test and the UI test, each in a new, empty scratch folder; never your real data). Set `ATLAS_SELFTEST_SETUP=1` to also set up the portable engine from nothing (about 55 MB of downloads), after changing engine setup. While working on a few checks, `ATLAS_SELFTEST_ONLY` and `ATLAS_UITEST_ONLY` (part of a check's or scenario's name) run only those |
+| Self-test and UI test | `AP_Atlas_Source/Tools/run_selftest.ps1` (builds, then runs the self-test and the UI test, each in a new, empty scratch folder; never your real data). While working on one UI scenario, `-Only "words"` runs only the scenarios whose name contains the words (the self-test still runs in full). Set `ATLAS_SELFTEST_SETUP=1` to also set up the portable engine from nothing (about 55 MB of downloads), after changing engine setup. While working on a few checks, `ATLAS_SELFTEST_ONLY` and `ATLAS_UITEST_ONLY` (part of a check's or scenario's name) run only those |
 | Guard rails | `AP_Atlas_Source/Tools/check_guards.ps1` |
 | Pre-push checks | Turn them on once per clone: `git config core.hooksPath .githooks`. Every push then first runs the guard rails, the build, formatting and the unit tests (about a minute), and stops if one fails. Never skip them (`--no-verify`) |
 | Unit tests | `dotnet test --solution AP_Atlas_Source/AP_Atlas.sln` (`AP_Atlas.Core.Tests`: fast, no Godot) |

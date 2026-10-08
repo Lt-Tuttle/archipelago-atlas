@@ -167,7 +167,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## Lucide icons
 
 https://lucide.dev
-License: ISC. The activity bar's icons (map, key-round, route, logs, lightbulb, users, orbit, globe, package, cpu, settings, house), from Lucide 1.52.0. None of them is among the icons Lucide derives from Feather.
+License: ISC. The activity bar's icons (map, key-round, route, logs, lightbulb, users, orbit, globe, package, cpu, settings, house, gamepad-2), the checklist's marks (circle, circle-check), external-link, and the Multiworlds page's eye, eye-off and info, from Lucide 1.52.0. Lucide began as a fork of Feather (MIT, credited above): of these, circle, circle-check, external-link, eye, eye-off and info have Feather counterparts; the rest are Lucide's own.
 
 ```
 ISC License

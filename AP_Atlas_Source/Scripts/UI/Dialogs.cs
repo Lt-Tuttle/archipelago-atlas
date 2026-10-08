@@ -29,6 +29,45 @@ namespace AP_Atlas.UI
             dialog.PopupCentered(new Vector2I(500, 0));
         }
 
+        /// <summary>
+        /// Unsaved edits are about to be left behind: Save / Don't save / Cancel. Save and Don't save run
+        /// <paramref name="save"/> or <paramref name="discard"/> and then <paramref name="proceed"/>; Cancel leaves everything
+        /// as it is. Typed values never vanish silently.
+        /// </summary>
+        public static void SaveChanges(Node parent, string name, Action save, Action discard, Action proceed, Func<string, string> tr)
+        {
+            var dialog = new ConfirmationDialog { Title = tr("Unsaved changes"), OkButtonText = tr("Save"), CancelButtonText = tr("Cancel"), DialogHideOnOk = false };
+            var box = new VBoxContainer();
+            box.AddChild(new Label { Text = tr("Save the changes to {0}?").Replace("{0}", name), AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(420, 0) });
+            dialog.AddChild(box);
+            dialog.AddButton(tr("Don't save"), true, "discard");
+            bool answered = false;
+            dialog.CustomAction += action =>
+            {
+                if (action != "discard" || answered) return;
+                answered = true;
+                dialog.QueueFree();
+                discard();
+                proceed();
+            };
+            dialog.Confirmed += () =>
+            {
+                if (answered) return;
+                answered = true;
+                dialog.QueueFree();
+                save();
+                proceed();
+            };
+            dialog.Canceled += () =>
+            {
+                if (answered) return;
+                answered = true;
+                dialog.QueueFree();
+            };
+            parent.AddChild(dialog);
+            dialog.PopupCentered(new Vector2I(480, 0));
+        }
+
         /// <summary>A toggle that lights up when on, rather than a check box (the theme hides an empty check box); OK waits for it.</summary>
         private static Button Requirement(ConfirmationDialog dialog, string requirement)
         {

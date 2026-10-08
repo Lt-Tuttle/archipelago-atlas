@@ -571,9 +571,20 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         rightVbox.AddChild(title);
         rightVbox.AddChild(new HSeparator());
         // What's typed goes into the multiworld at once (so nothing is lost when another is selected); Save writes it to disk.
-        _nameInput = new LineEdit { PlaceholderText = "Profile Name", SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        // Over each box, its label and an (i) that says what goes there, where it comes from and whether it's needed.
+        Button Info(string title, string what, string from, string required) =>
+            AP_Atlas.UI.Kit.InfoButton(Tr(title), Tr(what), Tr(from), Tr(required), () => OpenHelp("guide:Multiworlds"), text => Tr(text));
+        HBoxContainer Labelled(string label, Button info)
+        {
+            var row = new HBoxContainer();
+            row.AddThemeConstantOverride("separation", 2);
+            row.AddChild(new Label { Text = Tr(label) });
+            row.AddChild(info);
+            return row;
+        }
+        _nameInput = new LineEdit { PlaceholderText = Tr("A name for this multiworld"), SizeFlagsHorizontal = SizeFlags.ExpandFill, AccessibilityName = Tr("Name") };
         _nameInput.TextChanged += text => EditSelected(profile => profile.Name = text);
-        rightVbox.AddChild(new Label { Text = "Profile Name:" });
+        rightVbox.AddChild(Labelled("Name:", Info("Name", "Any name that tells this multiworld apart from your others: the async's name, the host's, the date.", "Yours to choose. It shows on Home, in the slots panel and in Properties.", "Required.")));
         rightVbox.AddChild(_nameInput);
         _roomLinkInput = new LineEdit { PlaceholderText = Tr("https://archipelago.gg/room/… (optional)"), SizeFlagsHorizontal = SizeFlags.ExpandFill, AccessibilityName = Tr("Room link") };
         _roomLinkInput.TextChanged += text => EditSelected(profile => profile.RoomLink = text.Trim());
@@ -582,22 +593,32 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         roomRow.AddChild(_roomLinkInput);
         _fillFromRoomButton = AP_Atlas.UI.Kit.Button(Tr("Fill from link"), Tr("Reads the room's status page once (the port it runs on and its players) and fills in the server address and the slots. Atlas asks first, and never requests the room's own page."), FillFromRoomLink);
         roomRow.AddChild(_fillFromRoomButton);
-        rightVbox.AddChild(new Label { Text = Tr("Room link:") });
+        rightVbox.AddChild(Labelled("Room link:", Info("Room link", "The room's address on archipelago.gg, as the host shared it: https://archipelago.gg/room/…", "From the host, or the multiworld's Discord thread. Fill from link reads the room's status page once, with your permission, and fills in the server address and the slots.", "Optional. Without it, type the server address and the slots yourself.")));
         rightVbox.AddChild(roomRow);
-        _serverInput = new LineEdit { PlaceholderText = "Server (e.g. archipelago.gg:38281)", SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        _serverInput = new LineEdit { PlaceholderText = Tr("archipelago.gg:12345"), SizeFlagsHorizontal = SizeFlags.ExpandFill, AccessibilityName = Tr("Server address") };
         _serverInput.TextChanged += text => EditSelected(profile => profile.ServerUrl = text.Trim());
-        rightVbox.AddChild(new Label { Text = "Server Address:" });
+        rightVbox.AddChild(Labelled("Server address:", Info("Server address", "The server and the room's port, the way the room page shows them: archipelago.gg:12345. The port changes when a room is restarted.", "From the room page on archipelago.gg, or Fill from link. For a room hosted elsewhere, its host's address and port.", "Required to connect.")));
         rightVbox.AddChild(_serverInput);
-        _passwordInput = new LineEdit { PlaceholderText = "Password (Optional)", Secret = true, SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        _passwordInput = new LineEdit { PlaceholderText = Tr("Password (optional)"), Secret = true, SizeFlagsHorizontal = SizeFlags.ExpandFill, AccessibilityName = Tr("Password") };
         _passwordInput.TextChanged += text => EditSelected(profile => profile.Password = text);
-        rightVbox.AddChild(new Label { Text = "Password:" });
-        rightVbox.AddChild(_passwordInput);
-        _cheeseInput = new LineEdit { PlaceholderText = "Cheese Tracker link, or the archipelago.gg room link (optional)", SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        _passwordToggle = AP_Atlas.UI.Kit.Button("", Tr("Show the password"), () => SetPasswordShown(_passwordInput.Secret));
+        _passwordToggle.Icon = AP_Atlas.UI.LucideTextures.Get("eye", AP_Atlas.Core.ThemeColors.TextMuted, 1.0f);
+        var passwordRow = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        passwordRow.AddThemeConstantOverride("separation", 6);
+        passwordRow.AddChild(_passwordInput);
+        passwordRow.AddChild(_passwordToggle);
+        rightVbox.AddChild(Labelled("Password:", Info("Password", "The room's password, if the host set one.", "From the host. Atlas keeps it encrypted for your Windows account and sends it only to this room's server.", "Optional: most rooms have none.")));
+        rightVbox.AddChild(passwordRow);
+        _cheeseInput = new LineEdit { PlaceholderText = Tr("Cheese Tracker link, or the archipelago.gg room link (optional)"), SizeFlagsHorizontal = SizeFlags.ExpandFill, AccessibilityName = Tr("Cheese Tracker link") };
         _cheeseInput.TextChanged += (_) => MarkDirty();
-        rightVbox.AddChild(new Label { Text = "Cheese Tracker:", TooltipText = "Links this multiworld to its Cheese Tracker page (the Cheese Tracker tab shows it; its Settings explain what Atlas does with it)", MouseFilter = MouseFilterEnum.Pass });
+        rightVbox.AddChild(Labelled("Cheese Tracker:", Info("Cheese Tracker", "The multiworld's page on Cheese Tracker, the shared tracker many asyncs use, or the archipelago.gg room link, which Atlas looks up there.", "From the host or the Discord thread, if the async uses Cheese Tracker. Save Settings checks it online and links it; the Cheese Tracker tab then shows it.", "Optional.")));
         rightVbox.AddChild(_cheeseInput);
+        _sphereInput = new LineEdit { PlaceholderText = Tr("https://spheretracker.de/room/… (optional)"), SizeFlagsHorizontal = SizeFlags.ExpandFill, AccessibilityName = Tr("Sphere Tracker link") };
+        _sphereInput.TextChanged += (_) => MarkDirty();
+        rightVbox.AddChild(Labelled("Sphere Tracker:", Info("Sphere Tracker", "The host's room on spheretracker.de (spheretracker.de/room/…), which shows the multiworld sphere by sphere.", "Only from the host: Atlas uses the host's room and no other (anything else would be cheating), and asks you to confirm when it can't tell the host made it. Save Settings checks it online.", "Optional. Hidden in race mode.")));
+        rightVbox.AddChild(_sphereInput);
         rightVbox.AddChild(new HSeparator());
-        rightVbox.AddChild(new Label { Text = "Multiworld Slots:" });
+        rightVbox.AddChild(Labelled("Slots:", Info("Slots", "The names of the slots you play in this multiworld, exactly as in your YAMLs (a slot is one player's game).", "From your YAMLs, or Fill from link (the room's players). Connect a slot from its row; its stats and links are kept under its name.", "At least one, to connect.")));
         var slotScroll = new ScrollContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
         rightVbox.AddChild(slotScroll);
         _slotsListVBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };

@@ -41,6 +41,10 @@
 .PARAMETER ScratchRoot
     Where to make the scratch folder (default: the system temp folder). CI points this at its own temp folder so the
     output can be kept as an artifact.
+
+.PARAMETER Only
+    For working on one UI scenario: runs only the scenarios whose name contains this text (the others are skipped and
+    counted as skipped). The self-test still runs in full. Never used in CI, where a skipped scenario fails the run.
 #>
 param(
     [string]$Godot = $env:ATLAS_GODOT,
@@ -49,7 +53,8 @@ param(
     [switch]$NoBuild,
     [switch]$Keep,
     [int]$TimeoutMinutes = 20,
-    [string]$ScratchRoot = [System.IO.Path]::GetTempPath()
+    [string]$ScratchRoot = [System.IO.Path]::GetTempPath(),
+    [string]$Only
 )
 
 $ErrorActionPreference = 'Stop'
@@ -132,6 +137,7 @@ function Invoke-AtlasTest([string]$Slug, [string]$Title, [string]$Mode, [string]
     $psi.EnvironmentVariables['ATLAS_DATA_DIR'] = $data
     if ($ArchipelagoDir -and $Mode -eq 'ATLAS_SELFTEST') { $psi.EnvironmentVariables['ATLAS_SELFTEST_AP'] = $ArchipelagoDir }
     if ($python -and $Mode -eq 'ATLAS_UITEST') { $psi.EnvironmentVariables['ATLAS_UITEST_PYTHON'] = $python }
+    if ($Only -and $Mode -eq 'ATLAS_UITEST') { $psi.EnvironmentVariables['ATLAS_UITEST_ONLY'] = $Only }
     # Both runs share the stand-ins, so one footprint check covers them.
     $script:outside = Set-StandInUserFolders $psi $scratch
 

@@ -425,7 +425,7 @@ namespace AP_Atlas.UI
                 text.AddThemeConstantOverride("separation", 2);
                 text.AddChild(new Label { Text = profile.Name, ClipText = true });
                 var games = profile.SavedStats.Values.Select(s => s.GameName).Where(g => !string.IsNullOrWhiteSpace(g)).Distinct().Take(3).ToList();
-                string line = _tr("Slots: {0}").Replace("{0}", profile.Slots.Count.ToString()) + "  ·  " + profile.ServerUrl + (games.Count > 0 ? "  ·  " + string.Join(", ", games) : "");
+                string line = _tr("Slots: {0}").Replace("{0}", profile.Slots.Count.ToString()) + (string.IsNullOrWhiteSpace(profile.ServerUrl) ? "" : "  ·  " + profile.ServerUrl) + (games.Count > 0 ? "  ·  " + string.Join(", ", games) : "");
                 var detail = Small(line);
                 detail.ClipText = true;
                 detail.AutowrapMode = TextServer.AutowrapMode.Off;

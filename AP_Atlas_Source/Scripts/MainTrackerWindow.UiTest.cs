@@ -136,7 +136,7 @@ public partial class MainTrackerWindow
             DeveloperModeAsync);
         await ScenarioAsync("Accessibility: every button takes the keyboard focus (Tab reaches it, Enter presses it; a kit button can opt out beside a field), the theme draws a focus ring on every kind of control that takes the focus, Tab from the Settings search box moves on, a symbol-only kit button is named by its tooltip, and no button anywhere in the window shows only a symbol without a name for screen readers",
             AccessibilityAsync);
-        await ScenarioAsync("Multiworlds page: a room link fills in the server address and the slots from the room's status page (asked first; never the room's page) and is kept; edits of a multiworld are kept when another is selected and written to disk; a slot's rename takes effect on Enter or on leaving the field, never per keystroke, and its saved stats follow it; after a reconnect gives up, one status read (at most every ten minutes) offers the room's new port, or says the room is asleep; a connection the server refuses shows as a card",
+        await ScenarioAsync("Multiworlds page: a room link fills in the server address and the slots from the room's status page (asked first; never the room's page) and is kept, and asks before replacing a typed address; unsaved edits ask Save / Don't save / Cancel before another multiworld is selected, one is added, the page is left or Atlas closes (Cancel keeps everything, Don't save puts the multiworld back, Save writes it to disk); the eye shows the password until another multiworld is selected; every box has an (i) that explains it and leads to the guide; the Sphere Tracker box keeps a refused link and says why, and links the host's room once the user confirms the host made it; Home shows no address for a multiworld without one; a slot's rename takes effect on Enter or on leaving the field, never per keystroke, and its saved stats follow it; after a reconnect gives up, one status read (at most every ten minutes) offers the room's new port, or says the room is asleep; a connection the server refuses shows as a card",
             MultiworldsPageAsync);
         await ScenarioAsync("Updates: nothing is asked of GitHub without the permission and the daily setting; with them, one read a day finds a newer version of the channel (an unchanged list is confirmed, never sent again) and offers it as a card with its notes; a download whose hash doesn't match the release's SHA256SUMS is refused and nothing is staged, a good one is staged ready for a restart; the swap moves the installed files aside and the release's in (PortableData untouched), the supervisor puts the previous version back when the new Atlas ends before its window and the Atlas put back says so, a started one confirms the note; a folder Atlas can't write to is said so",
             UpdatesWithoutGodotErrorsAsync);
@@ -1240,15 +1240,114 @@ public partial class MainTrackerWindow
             await FillFromRoomLinkAsync();
             UiTestExpect(site.Requests.Count == 1 && _alertLog.Entries.Any(e => e.Message.Contains("room's own link")), "a tracker link was read as a room link, or the user wasn't told");
 
-            // Edits are kept when another multiworld is selected, and written to disk.
+            // Unsaved edits never vanish silently: selecting another multiworld asks Save / Don't save / Cancel.
             SelectProfile(profile);
-            _nameInput.Text = "Room test, edited";
-            _nameInput.EmitSignal(LineEdit.SignalName.TextChanged, _nameInput.Text);
+            void TypeInto(LineEdit box, string text)
+            {
+                box.Text = text;
+                box.EmitSignal(LineEdit.SignalName.TextChanged, text);
+            }
+            ConfirmationDialog? Question() => GetChildren().OfType<ConfirmationDialog>().FirstOrDefault(d => d.Title == "Unsaved changes" && !d.IsQueuedForDeletion());
+            Button DontSaveOf(ConfirmationDialog ask) => ask.FindChildren("*", nameof(Button), true, false).OfType<Button>().First(b => b.Text == "Don't save");
+            TypeInto(_nameInput, "Room test, edited");
             UiTestExpect(profile.Name == "Room test, edited" && _dirty, "typing a name didn't reach the multiworld");
-            SelectProfile(other);
+            // The eye shows the password; another multiworld hides it again.
+            UiTestExpect(_passwordInput.Secret, "the password shows by default");
+            TypeInto(_passwordInput, "hunter2");
+            _passwordToggle!.EmitSignal(BaseButton.SignalName.Pressed);
+            UiTestExpect(!_passwordInput.Secret && _passwordToggle.TooltipText == "Hide the password" && _passwordToggle.AccessibilityName == "Hide the password", "the eye didn't show the password, or isn't named for it");
+            SelectProfileGuarded(other);
+            var ask = await UiTestWaitForAsync(Question, "the Save / Don't save / Cancel question");
+            UiTestExpect(_selectedProfile == profile, "another multiworld was selected before the question was answered");
+            // Cancel: nothing moves and the edits stay.
+            ask.EmitSignal(AcceptDialog.SignalName.Canceled);
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(Question() == null && _selectedProfile == profile && _dirty && _nameInput.Text == "Room test, edited" && profile.Password == "hunter2", "Cancel changed something");
+            // Don't save: the multiworld goes back to how it was, the other is selected.
+            SelectProfileGuarded(other);
+            ask = await UiTestWaitForAsync(Question, "the question again");
+            DontSaveOf(ask).EmitSignal(BaseButton.SignalName.Pressed);
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(_selectedProfile == other && profile.Name == "Room test" && profile.Password == "" && _passwordInput.Secret && !DataManager.LoadProfiles().Any(p => p.Name == "Room test, edited"),
+                $"Don't save kept the edit (\"{profile.Name}\", password \"{profile.Password}\"), or didn't move on");
+            // Save: written to disk, then the other is selected.
+            SelectProfileGuarded(profile);
+            UiTestExpect(_selectedProfile == profile && Question() == null, "an unedited multiworld asked before another was selected");
+            TypeInto(_nameInput, "Room test, saved");
+            SelectProfileGuarded(other);
+            ask = await UiTestWaitForAsync(Question, "the question before Save");
+            ask.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(_selectedProfile == other && !_dirty && DataManager.LoadProfiles().Any(p => p.Id == profile.Id && p.Name == "Room test, saved" && p.RoomLink == roomLink),
+                "Save didn't write the edit to disk, or didn't move on");
+            SelectProfileGuarded(profile);
+            UiTestExpect(_nameInput.Text == "Room test, saved" && !_dirty, "the saved name isn't shown");
+            // Leaving the page, closing Atlas and Add ask too; Cancel keeps everything as it is.
+            TypeInto(_nameInput, "Room test, leaving");
+            host.ShowTool(AP_Atlas.UI.Tool.Home);
+            ask = await UiTestWaitForAsync(Question, "the question on leaving the page");
+            UiTestExpect(ShownContent() == _connectionPanel, "the page was left before the question was answered");
+            ask.EmitSignal(AcceptDialog.SignalName.Canceled);
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(ShownContent() == _connectionPanel && _dirty && _nameInput.Text == "Room test, leaving", "Cancel on leaving the page changed something");
+            _Notification((int)NotificationWMCloseRequest);
+            ask = await UiTestWaitForAsync(Question, "the question on closing Atlas");
+            ask.EmitSignal(AcceptDialog.SignalName.Canceled);
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(!_shuttingDown && _dirty, "Cancel on closing didn't keep Atlas open with the edit");
+            int count = _profiles.Count;
+            OnAddProfilePressed();
+            ask = await UiTestWaitForAsync(Question, "the question on Add");
+            UiTestExpect(_profiles.Count == count, "a multiworld was added before the question was answered");
+            DontSaveOf(ask).EmitSignal(BaseButton.SignalName.Pressed);
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(_profiles.Count == count + 1 && _selectedProfile != profile && profile.Name == "Room test, saved", "Don't save on Add didn't add the multiworld with the edit dropped");
+            DeleteProfile(_selectedProfile!);
             SelectProfile(profile);
-            UiTestExpect(_nameInput.Text == "Room test, edited" && !_dirty && DataManager.LoadProfiles().Any(p => p.Id == profile.Id && p.Name == "Room test, edited" && p.RoomLink == roomLink),
-                "the edited name was lost when another multiworld was selected, or wasn't written to disk");
+            // Fill from link asks before it replaces a typed server address; Cancel reads nothing.
+            _roomLinkInput.Text = roomLink;
+            int reads = site.Requests.Count;
+            _fillFromRoomButton!.EmitSignal(BaseButton.SignalName.Pressed);
+            var fillAsk = await UiTestWaitForAsync(() => GetChildren().OfType<ConfirmationDialog>().FirstOrDefault(d => d.Title == "Fill in from the room?"), "the question before replacing the address");
+            fillAsk.EmitSignal(AcceptDialog.SignalName.Canceled);
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(site.Requests.Count == reads && profile.ServerUrl == "127.0.0.1:40000", "Cancel on Fill from link read the room, or changed the address");
+            // Every box has an (i) that explains it in plain words and leads to the guide's Multiworlds section.
+            var infos = _connectionPanel!.FindChildren("*", nameof(Button), true, false).OfType<Button>().Where(b => b.HasMeta("info_button")).ToList();
+            UiTestExpect(infos.Count == 7 && infos.All(b => !string.IsNullOrEmpty(b.AccessibilityName) && AP_Atlas.UI.Kit.InfoOf(b) != null), $"{infos.Count} (i) buttons, not one per box, or unnamed");
+            var serverInfo = infos.First(b => AP_Atlas.UI.Kit.InfoOf(b)!.Value.Title == "Server address");
+            serverInfo.EmitSignal(BaseButton.SignalName.Pressed);
+            var explain = await UiTestWaitForAsync(() => serverInfo.GetChildren().OfType<AcceptDialog>().FirstOrDefault(), "the server box's explanation");
+            UiTestExpect(explain.FindChildren("*", nameof(Label), true, false).OfType<Label>().Any(l => l.Text.Contains("archipelago.gg:12345")), "the explanation doesn't show the address's shape");
+            explain.FindChildren("*", nameof(Button), true, false).OfType<Button>().First(b => b.Text == "Guide").EmitSignal(BaseButton.SignalName.Pressed);
+            var help = await UiTestWaitForAsync(() => GetChildren().OfType<AP_Atlas.UI.HelpWindow>().FirstOrDefault(), "the Help window");
+            UiTestExpect(help.CurrentPageId == "guide:Multiworlds", $"Guide opened \"{help.CurrentPageId}\"");
+            help.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
+            await UiTestWaitAsync(0.1);
+            // The Sphere Tracker box: a link that isn't a room keeps its text and says why; the host's room links once the user confirms the host made it.
+            await using var sphereSite = new FakeWebSite { ContentType = "text/html" };
+            const string sphereRoom = "HostRoom";
+            sphereSite.Respond = path => path.StartsWith("/room/" + sphereRoom, StringComparison.Ordinal) ? (200, AP_Atlas.Core.SelfTest.SphereRoomPage("AbCdEfGhIjKlMnOpQrStUx", "HostPerson")) : (404, "");
+            TypeInto(_sphereInput!, "https://example.com/room/x");
+            _saveButton!.EmitSignal(BaseButton.SignalName.Pressed);
+            await UiTestWaitForAsync(() => _statusLabel.Text.StartsWith("Sphere Tracker:", StringComparison.Ordinal) ? _statusLabel : null, "the sphere box's refusal");
+            UiTestExpect(_sphereInput.Text == "https://example.com/room/x" && string.IsNullOrEmpty(profile.SphereTrackerUrl) && _dirty, "a refused sphere link was dropped or linked");
+            AP_Atlas.Core.Spheres.SphereSite.TestSite = sphereSite.Site; // the fake site stands in for spheretracker.de
+            TypeInto(_sphereInput, sphereSite.Site + "/room/" + sphereRoom);
+            _saveButton.EmitSignal(BaseButton.SignalName.Pressed);
+            var hostAsk = await UiTestWaitForAsync(() => GetChildren().OfType<ConfirmationDialog>().FirstOrDefault(d => d.Title == "Is this the host's room?"), "the host question");
+            UiTestExpect(hostAsk.GetOkButton().Disabled, "Link was offered before the host statement was confirmed");
+            hostAsk.FindChildren("*", nameof(Button), true, false).OfType<Button>().First(b => b.ToggleMode).ButtonPressed = true;
+            hostAsk.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
+            await UiTestWaitForAsync(() => string.IsNullOrEmpty(profile.SphereTrackerUrl) ? null : profile, "the linked room");
+            UiTestExpect(profile.SphereTrackerUrl.Contains("/room/" + sphereRoom) && _sphereInput.Text == profile.SphereTrackerUrl && !_dirty, $"the room wasn't linked as the host's (\"{profile.SphereTrackerUrl}\")");
+            // Home's line for a multiworld without a server address shows no empty address.
+            host.ShowTool(AP_Atlas.UI.Tool.Home);
+            UiTestExpect(ShownContent() != _connectionPanel && Question() == null, "leaving the page with everything saved asked, or didn't leave");
+            _homePage!.Refresh();
+            var lines = _homePage.FindChildren("*", nameof(Label), true, false).OfType<Label>().Select(l => l.Text).Where(t => t.StartsWith("Slots: ", StringComparison.Ordinal)).ToList();
+            UiTestExpect(lines.Contains("Slots: 0"), $"Home's line for a multiworld without a server reads: {string.Join(" | ", lines)}");
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
 
             // A slot's rename: not per keystroke; on Enter, with its saved stats; a duplicate is refused.
             profile.SavedStats["Alice"] = new SlotStats { GameName = "Test Game" };
@@ -1310,6 +1409,8 @@ public partial class MainTrackerWindow
         finally
         {
             AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.RoomStatusReads, null, false);
+            AP_Atlas.Core.Spheres.SphereSite.TestSite = null;
+            if (_dirty) DiscardProfileEdits(); // so leaving the page below asks nothing
             if (_profiles.Contains(profile)) DeleteProfile(profile);
             if (_profiles.Contains(other)) DeleteProfile(other);
             host.ShowTool(AP_Atlas.UI.Tool.Home);

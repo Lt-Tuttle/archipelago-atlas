@@ -32,6 +32,53 @@ namespace AP_Atlas.UI
         /// <summary>The theme type variation of a quiet button: no background until hovered, a tint while pressed.</summary>
         public const string QuietButton = "QuietButton";
 
+        /// <summary>
+        /// A small (i) beside a box: pressed, it explains in three lines what goes there, where it comes from and whether
+        /// it's needed, with a Guide button that opens the matching section. Named for screen readers after its box.
+        /// </summary>
+        public static Button InfoButton(string title, string whatToType, string whereFrom, string requiredNote, Action openGuide, Func<string, string> tr)
+        {
+            var button = new Button { TooltipText = tr("What goes here"), ThemeTypeVariation = QuietButton, Icon = LucideTextures.Get("info", ThemeColors.TextMuted, 1.0f), AccessibilityName = tr("About {0}").Replace("{0}", title) };
+            button.SetMeta("info_button", true);
+            button.SetMeta("info_title", title);
+            button.SetMeta("info_text", whatToType);
+            button.SetMeta("info_from", whereFrom);
+            button.SetMeta("info_required", requiredNote);
+            button.Pressed += () =>
+            {
+                var dialog = new AcceptDialog { Title = title, OkButtonText = tr("Close") };
+                var box = new VBoxContainer { CustomMinimumSize = new Vector2(420, 0) };
+                box.AddThemeConstantOverride("separation", 8);
+                box.AddChild(Wrapped(Text(whatToType)));
+                box.AddChild(Wrapped(Muted(whereFrom)));
+                box.AddChild(Wrapped(Subtle(requiredNote)));
+                dialog.AddChild(box);
+                dialog.AddButton(tr("Guide"), true, "guide");
+                dialog.CustomAction += action =>
+                {
+                    if (action != "guide") return;
+                    dialog.QueueFree();
+                    openGuide();
+                };
+                dialog.Confirmed += dialog.QueueFree;
+                dialog.Canceled += dialog.QueueFree;
+                button.AddChild(dialog);
+                dialog.PopupCentered();
+            };
+            return button;
+        }
+
+        private static Label Wrapped(Label label)
+        {
+            label.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+            label.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+            return label;
+        }
+
+        /// <summary>What an (i) button explains, for tests: its box's title and the three lines.</summary>
+        public static (string Title, string WhatToType, string WhereFrom, string RequiredNote)? InfoOf(Button button) =>
+            button.HasMeta("info_button") ? (button.GetMeta("info_title").AsString(), button.GetMeta("info_text").AsString(), button.GetMeta("info_from").AsString(), button.GetMeta("info_required").AsString()) : null;
+
         /// <summary>Text with no letter or digit (a glyph such as "◀" or "…"): no name for a screen reader to read.</summary>
         public static bool IsSymbolOnly(string? text) => string.IsNullOrEmpty(text) || !System.Linq.Enumerable.Any(text, char.IsLetterOrDigit);
 
