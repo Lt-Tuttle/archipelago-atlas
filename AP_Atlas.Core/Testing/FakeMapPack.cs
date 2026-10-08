@@ -23,8 +23,10 @@ internal static class FakeMapPack
     /// <param name="mapWidth">The map image's size (a test that zooms and drags the map wants one bigger than the view).</param>
     /// <param name="locationsJson">The pack's locations/locations.json in place of the two usual pins.</param>
     /// <param name="layoutsJson">The pack's layouts/tracker.json in place of the usual item grid.</param>
+    /// <param name="variantsJson">The manifest's "variants" object (e.g. {"standard":{"display_name":"Standard"},"var_b":{"display_name":"B"}}), or null for none.</param>
     public static void Write(string zipPath, string name, string game, string? initLua = null, IReadOnlyDictionary<string, string>? files = null,
-        IReadOnlyDictionary<string, byte[]>? binaryFiles = null, int mapWidth = MapWidth, int mapHeight = MapHeight, string? locationsJson = null, string? layoutsJson = null)
+        IReadOnlyDictionary<string, byte[]>? binaryFiles = null, int mapWidth = MapWidth, int mapHeight = MapHeight, string? locationsJson = null, string? layoutsJson = null,
+        string? variantsJson = null)
     {
         if (File.Exists(zipPath)) File.Delete(zipPath);
         using var zip = ZipFile.Open(zipPath, ZipArchiveMode.Create);
@@ -38,7 +40,7 @@ internal static class FakeMapPack
             using var stream = zip.CreateEntry(entry).Open();
             stream.Write(data);
         }
-        Text("pack/manifest.json", $$"""{"name":"{{name}}","game_name":"{{game}}","package_version":"1.0","author":"Atlas tests"}""");
+        Text("pack/manifest.json", $$"""{"name":"{{name}}","game_name":"{{game}}","package_version":"1.0","author":"Atlas tests"{{(variantsJson != null ? ",\"variants\":" + variantsJson : "")}}}""");
         Text("pack/items/items.json",
             """[{"name":"Sword","type":"toggle","img":"images/sword.png","codes":"sword"},{"name":"Shield","type":"toggle","img":"images/broken.png","codes":"shield"}]""");
         Text("pack/layouts/tracker.json", layoutsJson ?? """{"tracker_default":{"type":"itemgrid","rows":[["sword","shield"]]}}""");

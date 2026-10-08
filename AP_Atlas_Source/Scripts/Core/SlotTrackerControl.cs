@@ -168,6 +168,7 @@ public partial class SlotTrackerControl : MarginContainer
             _appSettings.MapFollowGame[FollowKey] = on;
             DataManager.SaveSettingsSoon(_appSettings);
         };
+        _mapTracker.VariantPicked += SetPackVariant;
         _mapTracker.IsExcluded = IsExcluded;
         _mapTracker.MarkerLookup = id =>
         {

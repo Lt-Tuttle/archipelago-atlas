@@ -138,7 +138,7 @@ public partial class MainTrackerWindow
             DeveloperModeAsync);
         await ScenarioAsync("Accessibility: every button takes the keyboard focus (Tab reaches it, Enter presses it; a kit button can opt out beside a field), the theme draws a focus ring on every kind of control that takes the focus, Tab from the Settings search box moves on, a symbol-only kit button is named by its tooltip, and no button anywhere in the window shows only a symbol without a name for screen readers",
             AccessibilityAsync);
-        await ScenarioAsync("Multiworlds page: a room link fills in the server address and the slots from the room's status page (asked first; never the room's page) and is kept, and asks before replacing a typed address; unsaved edits ask Save / Don't save / Cancel before another multiworld is selected, one is added, the page is left or Atlas closes (Cancel keeps everything, Don't save puts the multiworld back, Save writes it to disk); the eye shows the password until another multiworld is selected; every box has an (i) that explains it and leads to the guide; the Sphere Tracker box keeps a refused link and says why, and links the host's room once the user confirms the host made it; Home shows no address for a multiworld without one; a slot's rename takes effect on Enter or on leaving the field, never per keystroke, and its saved stats follow it; after a reconnect gives up, one status read (at most every ten minutes) offers the room's new port, or says the room is asleep; a connection the server refuses shows as a card",
+        await ScenarioAsync("Multiworlds page: a room link fills in the server address and the slots from the room's status page (asked first; never the room's page) and is kept, and asks before replacing a typed address; Add YAML keeps the file in Atlas's YAML folder and adds a slot per player it names (a placeholder name asks for the slot's name), each tied to it, and a slot's details show its game, YAML and map following (saved per slot); unsaved edits ask Save / Don't save / Cancel before another multiworld is selected, one is added, the page is left or Atlas closes (Cancel keeps everything, Don't save puts the multiworld back, Save writes it to disk); the eye shows the password until another multiworld is selected; every box has an (i) that explains it and leads to the guide; the Sphere Tracker box keeps a refused link and says why, and links the host's room once the user confirms the host made it; Home shows no address for a multiworld without one; a slot's rename takes effect on Enter or on leaving the field, never per keystroke, and its saved stats follow it; after a reconnect gives up, one status read (at most every ten minutes) offers the room's new port, or says the room is asleep; a connection the server refuses shows as a card",
             MultiworldsPageAsync);
         await ScenarioAsync("Updates: nothing is asked of GitHub without the permission and the daily setting; with them, one read a day finds a newer version of the channel (an unchanged list is confirmed, never sent again) and offers it as a card with its notes; a download whose hash doesn't match the release's SHA256SUMS is refused and nothing is staged, a good one is staged ready for a restart; the swap moves the installed files aside and the release's in (PortableData untouched), the supervisor puts the previous version back when the new Atlas ends before its window and the Atlas put back says so, a started one confirms the note; a folder Atlas can't write to is said so",
             UpdatesWithoutGodotErrorsAsync);
@@ -1322,6 +1322,7 @@ public partial class MainTrackerWindow
         var profile = new MultiworldProfile { Name = "Room test" };
         profile.Slots.Add("Player1"); // as New Multiworld makes one
         var other = new MultiworldProfile { Name = "Other" };
+        string yamlFile = System.IO.Path.Combine(DataManager.GetDataDirectory(), "uitest_two_players.yaml");
         _profiles.Add(profile);
         _profiles.Add(other);
         RefreshProfileList();
@@ -1408,6 +1409,44 @@ public partial class MainTrackerWindow
             await UiTestWaitAsync(0.1);
             UiTestExpect(_profiles.Count == count + 1 && _selectedProfile != profile && profile.Name == "Room test, saved", "Don't save on Add didn't add the multiworld with the edit dropped");
             DeleteProfile(_selectedProfile!);
+            SelectProfile(profile);
+            // Add YAML: the file is kept in Atlas's YAML folder, a slot is added per player it names (a placeholder name asks
+            // for the slot's room name), each tied to the YAML; the page is dirty until saved. A slot's details show the YAML
+            // and the follow switch, which saves for the slot.
+            AP_Atlas.Core.SafeFile.WriteAllText(yamlFile, "name: Carol\ngame: Atlas Test Game\n---\nname: Dave{number}\ngame:\n  Atlas Test Game: 1\n  Other Test Game: 1\n");
+            AddYamlToProfile(yamlFile);
+            var nameAsk = await UiTestWaitForAsync(() => GetChildren().OfType<ConfirmationDialog>().FirstOrDefault(d => d.Title == "Slot name" && !d.IsQueuedForDeletion()), "the question for the placeholder name");
+            UiTestExpect(nameAsk.FindChildren("*", nameof(Label), true, false).OfType<Label>().Any(l => l.Text.Contains("Dave{number}")), "the question doesn't show the YAML's pattern");
+            var nameBox = nameAsk.FindChildren("*", nameof(LineEdit), true, false).OfType<LineEdit>().First();
+            nameBox.Text = "Dave";
+            nameAsk.EmitSignal(AcceptDialog.SignalName.Confirmed);
+            await UiTestWaitAsync(0.2);
+            string yamlsFolder = System.IO.Path.GetFullPath(AP_Atlas.Core.Games.GameFiles.YamlsFolder(DataManager.GetDataDirectory()));
+            string carolKey = AP_Atlas.Core.Annotations.SlotKey(profile.Id, "Carol"), daveKey = AP_Atlas.Core.Annotations.SlotKey(profile.Id, "Dave");
+            UiTestExpect(profile.Slots.SequenceEqual(new[] { "Alice", "Bob", "Carol", "Dave" }) && _dirty, $"the YAML's players weren't added as slots: {string.Join(", ", profile.Slots)} (dirty: {_dirty})");
+            UiTestExpect(_appSettings.SlotYamlPaths.TryGetValue(carolKey, out var carolYaml) && System.IO.Path.GetFullPath(carolYaml).StartsWith(yamlsFolder, StringComparison.OrdinalIgnoreCase)
+                && _appSettings.SlotYamlPaths.TryGetValue(daveKey, out var daveYaml) && daveYaml == carolYaml, "the kept YAML isn't tied to each of its slots");
+            UiTestExpect(profile.SavedStats.TryGetValue("Carol", out var carolStats) && carolStats.GameName == "Atlas Test Game" && !profile.SavedStats.ContainsKey("Dave"),
+                "a one-game player's game wasn't noted (or a two-game player's was guessed)");
+            UiTestExpect(SlotRows().Select(row => row.GetMeta("slot_name").AsString()).SequenceEqual(new[] { "Alice", "Bob", "Carol", "Dave" }), "the slot rows don't show the added slots");
+            ToggleSlotDetails("Carol");
+            await UiTestWaitAsync(0.1);
+            var carolDetails = SlotDetailsOf("Carol") ?? throw new InvalidOperationException("Carol's details didn't open");
+            var labels = carolDetails.FindChildren("*", nameof(Label), true, false).OfType<Label>().Select(l => l.Text).ToList();
+            UiTestExpect(labels.Contains("Atlas Test Game") && labels.Any(l => l == System.IO.Path.GetFileName(carolYaml!)), $"the details don't name the game and the YAML: {string.Join(" | ", labels)}");
+            var followSwitch = carolDetails.FindChildren("*", nameof(CheckBox), true, false).OfType<CheckBox>().First();
+            UiTestExpect(followSwitch.ButtonPressed, "following the game's map isn't on to begin with");
+            followSwitch.ButtonPressed = false;
+            UiTestExpect(_appSettings.MapFollowGame.TryGetValue(carolKey, out bool follows) && !follows, "turning the follow switch off in the details didn't save for the slot");
+            _appSettings.MapFollowGame.Remove(carolKey);
+            // Don't save: the added slots go (the YAML stays kept, for next time).
+            SelectProfileGuarded(other);
+            ask = await UiTestWaitForAsync(Question, "the question after Add YAML");
+            DontSaveOf(ask).EmitSignal(BaseButton.SignalName.Pressed);
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(profile.Slots.SequenceEqual(new[] { "Alice", "Bob" }) && System.IO.File.Exists(carolYaml), "Don't save didn't drop the added slots, or dropped the kept YAML");
+            _appSettings.SlotYamlPaths.Remove(carolKey);
+            _appSettings.SlotYamlPaths.Remove(daveKey);
             SelectProfile(profile);
             // Fill from link asks before it replaces a typed server address; Cancel reads nothing.
             _roomLinkInput.Text = roomLink;
@@ -2718,11 +2757,23 @@ public partial class MainTrackerWindow
             AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
             await UiTestWaitForAsync(() => slot.Pack == null && slot.MapTracker.ShowingEmptyState ? slot : null, "the map to say the pack is gone");
             UiTestExpect(AP_Atlas.Core.PopTracker.PackImages.UsersOf(pack) == 0, "the deleted pack's images are still used");
-            // Another pack for the game takes its place.
-            FakeMapPack.Write(second, "UI test second pack", "Test Game");
+            // Another pack for the game takes its place. It has two variants: the map offers them, the pack's default in use;
+            // picking the other reads the pack again as that variant (its own items) and is remembered for the slot.
+            FakeMapPack.Write(second, "UI test second pack", "Test Game",
+                files: new Dictionary<string, string> { ["var_b/items/items.json"] = """[{"name":"Lantern","type":"toggle","img":"images/sword.png","codes":"lantern"}]""" },
+                variantsJson: """{"standard":{"display_name":"Standard"},"var_b":{"display_name":"Variant B"}}""");
             AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
             var replacement = await UiTestWaitForAsync(() => slot.Pack, "the second pack");
             UiTestExpect(replacement.Manifest.Name == "UI test second pack" && !slot.MapTracker.ShowingEmptyState, "the second pack didn't take the first one's place");
+            UiTestExpect(replacement.Variant == "standard" && slot.MapTracker.VariantOptions.SequenceEqual(new[] { "standard", "var_b" }) && slot.MapTracker.VariantPicker.Selected == 0,
+                $"the map doesn't offer the pack's variants with the default chosen: {string.Join(", ", slot.MapTracker.VariantOptions)}");
+            slot.MapTracker.VariantPicker.Selected = 1;
+            slot.MapTracker.VariantPicker.EmitSignal(OptionButton.SignalName.ItemSelected, 1);
+            var asVariant = await UiTestWaitForAsync(() => slot.Pack is { Variant: "var_b" } p ? p : null, "the slot to read the pack again as the chosen variant");
+            string slotKey = AP_Atlas.Core.Annotations.SlotKey(profile.Id, "Tester");
+            UiTestExpect(asVariant.ItemsByCode.ContainsKey("lantern") && !asVariant.ItemsByCode.ContainsKey("sword") && _appSettings.PackVariants.TryGetValue(slotKey, out var kept) && kept == "var_b",
+                "the variant's own items weren't read, or the choice wasn't kept for the slot");
+            _appSettings.PackVariants.Remove(slotKey);
         }
         finally
         {

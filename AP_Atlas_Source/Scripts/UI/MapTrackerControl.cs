@@ -41,6 +41,34 @@ namespace AP_Atlas.UI
         /// <summary>The user turned "Follow the game's current map" on or off.</summary>
         public event Action<bool> FollowToggled;
 
+        /// <summary>The user picked one of the pack's variants (its id).</summary>
+        public event Action<string> VariantPicked;
+
+        private HBoxContainer _variantRow;
+        private OptionButton _variantPicker;
+        private List<string> _variantIds = new List<string>();
+        private bool _syncingVariant;
+
+        /// <summary>The variants the picker offers, by id (for tests); empty when the pack has one or none.</summary>
+        public IReadOnlyList<string> VariantOptions => _variantIds;
+
+        /// <summary>The variant picker (for tests).</summary>
+        public OptionButton VariantPicker => _variantPicker;
+
+        /// <summary>Offers the pack's variants (shown only when there's more than one), with the one in use chosen.</summary>
+        public void SetVariants(IReadOnlyList<(string Id, string Name)> variants, string current)
+        {
+            if (_variantPicker == null) return;
+            _syncingVariant = true;
+            _variantPicker.Clear();
+            _variantIds = variants.Select(v => v.Id).ToList();
+            foreach (var (id, name) in variants) _variantPicker.AddItem(name == id ? id : $"{name} ({id})");
+            int index = _variantIds.IndexOf(current ?? "");
+            if (index >= 0) _variantPicker.Selected = index;
+            _variantRow.Visible = variants.Count > 1;
+            _syncingVariant = false;
+        }
+
         /// <summary>The user pressed "Find a map pack for {game}…" on the empty state (the owner searches GitHub for one).</summary>
         public event Action FindPackRequested;
 
@@ -301,6 +329,19 @@ namespace AP_Atlas.UI
             viewRow.AddChild(Kit.Button("−", "Zoom out", () => _canvas.ZoomAtCenter(1 / MapCanvas.WheelStep)));
             viewRow.AddChild(Kit.Button("+", "Zoom in", () => _canvas.ZoomAtCenter(MapCanvas.WheelStep)));
             box.AddChild(viewRow);
+            // Shown only when the pack has more than one variant: which one this slot uses (remembered per slot).
+            _variantRow = new HBoxContainer { Visible = false };
+            _variantRow.AddThemeConstantOverride("separation", 6);
+            var variantLabel = new Label { Text = Translate("Pack variant:") };
+            variantLabel.AddThemeColorOverride("font_color", ThemeColors.TextMuted);
+            _variantRow.AddChild(variantLabel);
+            _variantPicker = new OptionButton { SizeFlagsHorizontal = SizeFlags.ExpandFill, AccessibilityName = Translate("Pack variant"), TooltipText = Translate("The pack's variants (its author's versions of the maps and items); the pack's default unless you pick another for this slot.") };
+            _variantPicker.ItemSelected += index =>
+            {
+                if (!_syncingVariant && index >= 0 && index < _variantIds.Count) VariantPicked?.Invoke(_variantIds[(int)index]);
+            };
+            _variantRow.AddChild(_variantPicker);
+            box.AddChild(_variantRow);
             // Shown only when the pack's scripts can switch the map to where the player is.
             _followBox = new CheckBox
             {
@@ -575,6 +616,7 @@ namespace AP_Atlas.UI
         public void ClearPack()
         {
             FollowAvailable = false;
+            if (_variantRow != null) _variantRow.Visible = false;
             _pack = null;
             _index = null;
             _currentMapId = "";

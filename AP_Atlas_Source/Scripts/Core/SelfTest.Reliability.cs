@@ -465,6 +465,34 @@ namespace AP_Atlas.Core
         /// the script's call, as in Lua. Library functions that could hurt Atlas in one step are safe: collectgarbage
         /// collects nothing, and the json and dynamic modules aren't there.
         /// </summary>
+        private static void PackVariantsAreReadApart()
+        {
+            string zip = Path.Combine(AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory(), "selftest_variants.zip");
+            try
+            {
+                AP_Atlas.Core.Testing.FakeMapPack.Write(zip, "Self-test variant pack", "Self Test Game V",
+                    files: new Dictionary<string, string> { ["var_b/items/items.json"] = """[{"name":"Lantern","type":"toggle","img":"images/sword.png","codes":"lantern"}]""" },
+                    variantsJson: """{"standard":{"display_name":"Standard"},"var_b":{"display_name":"Variant B"}}""");
+                var standard = AP_Atlas.Core.PopTracker.PopTrackerPackLoader.LoadPackForGame("Self Test Game V");
+                Expect(standard != null && standard.Variant == "standard" && standard.VariantKey == null && standard.ItemsByCode.ContainsKey("sword") && !standard.ItemsByCode.ContainsKey("lantern"),
+                    "the default read didn't take the base items");
+                var variants = AP_Atlas.Core.PopTracker.PopTrackerPackLoader.VariantsOf(standard?.Manifest);
+                Expect(variants.Count == 2 && variants.Select(v => v.Id).SequenceEqual(new[] { "standard", "var_b" }) && variants[1].Name == "Variant B", "the pack's variants weren't listed, default first, with their names");
+                var b = AP_Atlas.Core.PopTracker.PopTrackerPackLoader.LoadPackForGame("Self Test Game V", "var_b", null);
+                Expect(b != null && b.Variant == "var_b" && b.VariantKey == "var_b" && b.ItemsByCode.ContainsKey("lantern") && !b.ItemsByCode.ContainsKey("sword"),
+                    "the variant read didn't take the variant's own items in place of the base ones");
+                Expect(!ReferenceEquals(standard, b) && ReferenceEquals(AP_Atlas.Core.PopTracker.PopTrackerPackLoader.LoadPackForGame("Self Test Game V", "var_b", null), b)
+                    && ReferenceEquals(AP_Atlas.Core.PopTracker.PopTrackerPackLoader.LoadPackForGame("Self Test Game V"), standard), "a pack and its variant aren't each kept once");
+                Expect(AP_Atlas.Core.PopTracker.PopTrackerPackLoader.IsCurrent(b) && AP_Atlas.Core.PopTracker.PopTrackerPackLoader.IsCurrent(standard), "a variant read isn't current");
+                var unknown = AP_Atlas.Core.PopTracker.PopTrackerPackLoader.LoadPackForGame("Self Test Game V", "no_such", null);
+                Expect(ReferenceEquals(unknown, standard), "a variant the manifest doesn't list isn't read as the default");
+            }
+            finally
+            {
+                SafeFile.Delete(zip);
+            }
+        }
+
         private static async Task PackScriptsReadTheRoomAndFollowTheMap()
         {
             string zip = Scratch("selftest_follow.zip");

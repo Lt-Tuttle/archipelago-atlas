@@ -25,6 +25,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     private LineEdit _passwordInput;
     private VBoxContainer _slotsListVBox;
     private Button _addSlotButton;
+    private Button _addYamlButton;
     private Button _connectAllBtn;
     private Button _saveButton;
     private Button _deleteButton;

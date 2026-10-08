@@ -18,6 +18,12 @@ namespace AP_Atlas.Core.PopTracker
 
         /// <summary>Folder inside the zip that holds manifest.json ("" when it's at the root).</summary>
         public string RootPrefix { get; set; } = "";
+
+        /// <summary>The variant this pack was read as (the manifest's default, or the one asked for).</summary>
+        public string Variant { get; set; } = "";
+
+        /// <summary>The variant asked for when the pack was read (null: the default), the cache's key besides the zip.</summary>
+        public string VariantKey { get; set; }
         public Dictionary<string, PopTrackerItem> ItemsByCode { get; set; } = new Dictionary<string, PopTrackerItem>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>Every itemgrid in the pack's tracker layout, in display order, with its group header and size.</summary>
@@ -145,17 +151,20 @@ namespace AP_Atlas.Core.PopTracker
         private static readonly Dictionary<string, (DateTime lastWrite, LoadedPack pack)> _packCache = new Dictionary<string, (DateTime, LoadedPack)>(StringComparer.OrdinalIgnoreCase);
         private static readonly object _cacheLock = new object();
 
-        private static LoadedPack GetCachedPack(string zipPath, DateTime lastWriteUtc)
+        // A pack read as one of its variants is cached beside the default (the zip path alone keys the default).
+        private static string CacheKey(string zipPath, string variantKey) => string.IsNullOrEmpty(variantKey) ? zipPath : zipPath + "\n" + variantKey;
+
+        private static LoadedPack GetCachedPack(string zipPath, DateTime lastWriteUtc, string variantKey = null)
         {
             lock (_cacheLock)
             {
-                return _packCache.TryGetValue(zipPath, out var cached) && cached.lastWrite == lastWriteUtc ? cached.pack : null;
+                return _packCache.TryGetValue(CacheKey(zipPath, variantKey), out var cached) && cached.lastWrite == lastWriteUtc ? cached.pack : null;
             }
         }
 
         private static void CachePack(string zipPath, DateTime lastWriteUtc, LoadedPack pack)
         {
-            lock (_cacheLock) _packCache[zipPath] = (lastWriteUtc, pack);
+            lock (_cacheLock) _packCache[CacheKey(zipPath, pack.VariantKey)] = (lastWriteUtc, pack);
         }
 
         /// <summary>
@@ -172,7 +181,7 @@ namespace AP_Atlas.Core.PopTracker
         {
             if (pack == null || string.IsNullOrEmpty(pack.SourcePath)) return false;
             var info = new System.IO.FileInfo(pack.SourcePath);
-            return info.Exists && ReferenceEquals(GetCachedPack(pack.SourcePath, info.LastWriteTimeUtc), pack);
+            return info.Exists && ReferenceEquals(GetCachedPack(pack.SourcePath, info.LastWriteTimeUtc, pack.VariantKey), pack);
         }
 
         public static string GetPacksDirectory()
@@ -200,12 +209,18 @@ namespace AP_Atlas.Core.PopTracker
             var cached = GetCachedPack(zipPath, info.LastWriteTimeUtc);
             if (cached != null) return cached;
 
-            var pack = TryLoadZipPack(zipPath, null, logDebug);
+            var pack = TryLoadZipPack(zipPath, null, null, logDebug);
             if (pack != null) CachePack(zipPath, info.LastWriteTimeUtc, pack);
             return pack;
         }
 
-        public static LoadedPack LoadPackForGame(string targetGameName, Action<string> logDebug = null)
+        public static LoadedPack LoadPackForGame(string targetGameName, Action<string> logDebug = null) => LoadPackForGame(targetGameName, null, logDebug);
+
+        /// <summary>
+        /// The installed pack for a game, read as one of its variants (<paramref name="variant"/>; null, or a variant the
+        /// manifest doesn't list, means the pack's default): the variant's own files take the place of the base ones.
+        /// </summary>
+        public static LoadedPack LoadPackForGame(string targetGameName, string variant, Action<string> logDebug)
         {
             string packsDir = GetPacksDirectory();
             if (!Directory.Exists(packsDir)) return null;
@@ -213,28 +228,50 @@ namespace AP_Atlas.Core.PopTracker
             foreach (var file in Directory.GetFiles(packsDir, "*.zip"))
             {
                 var info = new System.IO.FileInfo(file);
+                // The default read (cached per zip) says which game the pack is for; a variant is read only for the game's pack, and cached beside it.
                 var cached = GetCachedPack(file, info.LastWriteTimeUtc);
-                if (cached != null)
+                if (cached == null)
                 {
-                    if (IsPackForGame(cached.Manifest, targetGameName)) return cached;
-                    continue;
+                    cached = TryLoadZipPack(file, targetGameName, null, logDebug);
+                    if (cached == null) continue;
+                    CachePack(file, info.LastWriteTimeUtc, cached);
                 }
-
-                var pack = TryLoadZipPack(file, targetGameName, logDebug);
-                if (pack != null)
+                else if (!IsPackForGame(cached.Manifest, targetGameName)) continue;
+                if (VariantOf(cached.Manifest, variant) == cached.Variant) return cached;
+                var asVariant = GetCachedPack(file, info.LastWriteTimeUtc, variant);
+                if (asVariant == null)
                 {
-                    CachePack(file, info.LastWriteTimeUtc, pack);
-                    return pack;
+                    asVariant = TryLoadZipPack(file, targetGameName, variant, logDebug);
+                    if (asVariant != null) CachePack(file, info.LastWriteTimeUtc, asVariant);
                 }
+                return asVariant ?? cached;
             }
 
             return null;
         }
 
+        /// <summary>The variant a pack is read as: the one asked for when the manifest lists it, else the pack's default.</summary>
+        public static string VariantOf(PopTrackerManifest manifest, string requested) =>
+            !string.IsNullOrEmpty(requested) && manifest?.Variants != null && manifest.Variants.ContainsKey(requested) ? requested : PackScriptHost.DefaultVariant(manifest);
+
+        /// <summary>A pack's variants (id and display name), the default first; one entry for a pack without variants.</summary>
+        public static List<(string Id, string Name)> VariantsOf(PopTrackerManifest manifest)
+        {
+            var list = new List<(string, string)>();
+            string first = PackScriptHost.DefaultVariant(manifest);
+            if (manifest?.Variants == null) return list;
+            foreach (var prop in manifest.Variants.Properties().OrderBy(p => p.Name == first ? 0 : 1))
+            {
+                string name = (prop.Value as JObject)?["display_name"]?.ToString();
+                list.Add((prop.Name, string.IsNullOrWhiteSpace(name) ? prop.Name : name));
+            }
+            return list;
+        }
+
         private static bool IsPackForGame(PopTrackerManifest manifest, string targetGameName) =>
             manifest != null && (IsGameNameMatch(manifest.GameName, targetGameName) || IsGameNameMatch(manifest.Name, targetGameName));
 
-        private static LoadedPack TryLoadZipPack(string zipPath, string targetGameName, Action<string> logDebug = null)
+        private static LoadedPack TryLoadZipPack(string zipPath, string targetGameName, string requestedVariant, Action<string> logDebug = null)
         {
             try
             {
@@ -298,8 +335,10 @@ namespace AP_Atlas.Core.PopTracker
                     var pack = new LoadedPack { Manifest = manifest, SourcePath = zipPath, RootPrefix = rootPrefix };
 
                     // 2. Read items
-                    // The default variant's own files take the place of the base ones of the same name (as PopTracker reads them).
-                    string variant = PackScriptHost.DefaultVariant(manifest);
+                    // The variant's own files (the pack's default, or the one asked for) take the place of the base ones of the same name (as PopTracker reads them).
+                    string variant = VariantOf(manifest, requestedVariant);
+                    pack.Variant = variant;
+                    pack.VariantKey = variant != PackScriptHost.DefaultVariant(manifest) ? requestedVariant : null;
                     var itemEntries = FolderEntries(archive, rootPrefix, variant, "items", variantFirst: true);
                     foreach (var entry in itemEntries)
                     {
@@ -621,7 +660,7 @@ namespace AP_Atlas.Core.PopTracker
         private static void ExtractLayoutGrids(SafeZip archive, string rootPrefix, LoadedPack pack, Action<string> logDebug)
         {
             var layouts = new Dictionary<string, JToken>(StringComparer.OrdinalIgnoreCase);
-            var layoutEntries = FolderEntries(archive, rootPrefix, PackScriptHost.DefaultVariant(pack.Manifest), "layouts", variantFirst: false);
+            var layoutEntries = FolderEntries(archive, rootPrefix, string.IsNullOrEmpty(pack.Variant) ? PackScriptHost.DefaultVariant(pack.Manifest) : pack.Variant, "layouts", variantFirst: false);
             foreach (var entry in layoutEntries)
             {
                 if (ParseJsonLenient(archive, entry, pack, logDebug) is JObject obj)

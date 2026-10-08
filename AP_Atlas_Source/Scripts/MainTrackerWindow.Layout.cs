@@ -630,6 +630,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _addSlotButton = new Button { Text = "+ Add Slot" };
         _addSlotButton.Pressed += OnAddSlotPressed;
         buttonRow.AddChild(_addSlotButton);
+        _addYamlButton = AP_Atlas.UI.Kit.Button(Tr("Add YAML…"), Tr("Keeps a player YAML in Atlas's YAML folder and adds a slot for each player it names, with the YAML tied to that slot."), OnAddYamlPressed);
+        buttonRow.AddChild(_addYamlButton);
         _saveButton = new Button { Text = "Save Settings" };
         _saveButton.Pressed += OnSaveProfilePressed;
         buttonRow.AddChild(_saveButton);

@@ -429,6 +429,17 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             lineEdit.FocusEntered += () =>
                 AP_Atlas.Core.Inspector.Inspect(AP_Atlas.Core.InspectTarget.ForProfile(rowProfileId, lineEdit.Text));
             row.AddChild(lineEdit);
+            // The slot's game, when known (its YAML, its saved stats or its connection).
+            string game = GameOfSlot(_selectedProfile, slotName);
+            if (game != null)
+            {
+                var gameLabel = AP_Atlas.UI.Kit.Muted(game);
+                gameLabel.ClipText = true;
+                gameLabel.CustomMinimumSize = new Godot.Vector2(90, 0);
+                gameLabel.SizeFlagsVertical = Godot.Control.SizeFlags.ShrinkCenter;
+                gameLabel.TooltipText = game;
+                row.AddChild(gameLabel);
+            }
             var connectBtn = new Button
             {
                 Name = "ConnectBtn",
@@ -506,7 +517,20 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                     });
             };
             row.AddChild(delBtn);
+            // A collapsed section with the slot's own settings: its YAML, pack variant, apworld version and map following.
+            var details = new VBoxContainer { Visible = false };
+            details.SetMeta("slot_details", slotName);
+            var detailsToggle = AP_Atlas.UI.Kit.Button(Tr("▸ Details"), Tr("This slot's YAML, map pack variant, apworld version and map following."), () => { }, flat: true, small: true);
+            string detailsProfileId = _selectedProfile.Id;
+            detailsToggle.Pressed += () =>
+            {
+                details.Visible = !details.Visible;
+                detailsToggle.Text = details.Visible ? Tr("▾ Details") : Tr("▸ Details");
+                if (details.Visible) FillSlotDetails(details, detailsProfileId, lineEdit.Text);
+            };
+            row.AddChild(detailsToggle);
             _slotsListVBox.AddChild(row);
+            _slotsListVBox.AddChild(details);
         }
         if (_selectedProfile.Slots.Count > 1)
         {
@@ -538,6 +562,271 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         MarkDirty();
         PopulateSlotsList();
         RefreshProfileListStyles();
+    }
+
+    // ---- A slot's own settings, and slots from a YAML ----
+
+    /// <summary>The slot's game, when Atlas knows it: a connected slot's, the saved stats', or its YAML's (the first game it may roll).</summary>
+    private string GameOfSlot(MultiworldProfile profile, string slotName)
+    {
+        if (profile == null) return null;
+        var live = LiveSlotOf(profile.Id, slotName);
+        if (!string.IsNullOrEmpty(live?.Game)) return live.Game;
+        if (profile.SavedStats.TryGetValue(slotName, out var stats) && !string.IsNullOrWhiteSpace(stats.GameName)) return stats.GameName;
+        string yaml = SlotYamlPath(profile.Id, slotName);
+        if (yaml != null && System.IO.File.Exists(yaml))
+        {
+            try
+            {
+                var player = AP_Atlas.Core.YamlExclusions.Players(System.IO.File.ReadAllText(yaml)).FirstOrDefault(p => AP_Atlas.Core.YamlExclusions.NameMatches(p.Name, slotName) || string.IsNullOrEmpty(p.Name));
+                if (player.Games != null && player.Games.Count > 0) return player.Games[0];
+            }
+            catch (Exception ex) { AP_Atlas.Core.Logger.LogDebug($"Couldn't read the YAML linked to {slotName}: {ex.Message}"); }
+        }
+        return null;
+    }
+
+    private SlotTrackerControl LiveSlotOf(string profileId, string slotName) =>
+        ActiveSlotNodes().OfType<SlotTrackerControl>().FirstOrDefault(s => GodotObject.IsInstanceValid(s) && s.ProfileId == profileId && s.SlotName == slotName);
+
+    private string SlotYamlPath(string profileId, string slotName) =>
+        _appSettings.SlotYamlPaths.TryGetValue(AP_Atlas.Core.Annotations.SlotKey(profileId, slotName), out var path) && !string.IsNullOrEmpty(path) ? path : null;
+
+    /// <summary>Links (or with null, unlinks) a YAML to a slot of a multiworld, connected or not; a connected slot's logic restarts on it.</summary>
+    private void LinkSlotYaml(string profileId, string slotName, string path)
+    {
+        var live = LiveSlotOf(profileId, slotName);
+        if (live != null)
+        {
+            live.LinkYaml(path);
+            return;
+        }
+        string key = AP_Atlas.Core.Annotations.SlotKey(profileId, slotName);
+        if (string.IsNullOrEmpty(path)) _appSettings.SlotYamlPaths.Remove(key);
+        else _appSettings.SlotYamlPaths[key] = path;
+        DataManager.SaveSettings(_appSettings);
+    }
+
+    /// <summary>The details section of a slot's row (for tests), or null while it's collapsed.</summary>
+    internal VBoxContainer SlotDetailsOf(string slotName) =>
+        _slotsListVBox.GetChildren().OfType<VBoxContainer>().FirstOrDefault(v => v.HasMeta("slot_details") && v.GetMeta("slot_details").AsString() == slotName && v.Visible);
+
+    /// <summary>Opens (or closes) a slot row's details (for tests).</summary>
+    internal void ToggleSlotDetails(string slotName)
+    {
+        var row = _slotsListVBox.GetChildren().OfType<HBoxContainer>().FirstOrDefault(r => r.HasMeta("slot_name") && r.GetMeta("slot_name").AsString() == slotName);
+        row?.GetChildren().OfType<Button>().LastOrDefault(b => b.Text.EndsWith("Details"))?.EmitSignal(BaseButton.SignalName.Pressed);
+    }
+
+    private void FillSlotDetails(VBoxContainer details, string profileId, string slotName)
+    {
+        foreach (Node child in details.GetChildren()) child.QueueFree();
+        var profile = _profiles.FirstOrDefault(p => p.Id == profileId);
+        if (profile == null) return;
+        var indent = new MarginContainer();
+        indent.AddThemeConstantOverride("margin_left", 24);
+        indent.AddThemeConstantOverride("margin_bottom", 6);
+        details.AddChild(indent);
+        var grid = new GridContainer { Columns = 2 };
+        grid.AddThemeConstantOverride("h_separation", 10);
+        grid.AddThemeConstantOverride("v_separation", 6);
+        indent.AddChild(grid);
+        void Row(string label, Control value)
+        {
+            var l = AP_Atlas.UI.Kit.Muted(label);
+            l.SizeFlagsVertical = Godot.Control.SizeFlags.ShrinkCenter;
+            grid.AddChild(l);
+            grid.AddChild(value);
+        }
+        HBoxContainer Line()
+        {
+            var h = new HBoxContainer { SizeFlagsHorizontal = Godot.Control.SizeFlags.ExpandFill };
+            h.AddThemeConstantOverride("separation", 6);
+            return h;
+        }
+        void Refill() => FillSlotDetails(details, profileId, slotName);
+        var live = LiveSlotOf(profileId, slotName);
+        string game = GameOfSlot(profile, slotName);
+        string key = AP_Atlas.Core.Annotations.SlotKey(profileId, slotName);
+
+        // The game.
+        Row(Tr("Game"), AP_Atlas.UI.Kit.Text(game ?? Tr("Not known yet (from its YAML, or once it connects)")));
+
+        // The YAML: linked or not, kept in Atlas's folder or elsewhere.
+        string yaml = SlotYamlPath(profileId, slotName);
+        var yamlLine = Line();
+        var yamlLabel = AP_Atlas.UI.Kit.Text(yaml != null ? System.IO.Path.GetFileName(yaml) : Tr("None linked (most games don't need one)"));
+        yamlLabel.ClipText = true;
+        yamlLabel.SizeFlagsHorizontal = Godot.Control.SizeFlags.ExpandFill;
+        yamlLabel.TooltipText = yaml ?? "";
+        yamlLine.AddChild(yamlLabel);
+        yamlLine.AddChild(AP_Atlas.UI.Kit.Button(yaml != null ? Tr("Change…") : Tr("Link…"), Tr("The player YAML this slot was rolled from; logic rebuilds the world from it when the server's data isn't enough."), () =>
+            PickYamlFor(path => { LinkSlotYaml(profileId, slotName, path); Refill(); }), small: true));
+        if (yaml != null)
+        {
+            yamlLine.AddChild(AP_Atlas.UI.Kit.Button(Tr("Unlink"), null, () => { LinkSlotYaml(profileId, slotName, null); Refill(); }, small: true));
+            string yamlsFolder = System.IO.Path.GetFullPath(AP_Atlas.Core.Games.GameFiles.YamlsFolder(DataManager.GetDataDirectory()));
+            if (!System.IO.Path.GetFullPath(yaml).StartsWith(yamlsFolder, StringComparison.OrdinalIgnoreCase) && System.IO.File.Exists(yaml))
+                yamlLine.AddChild(AP_Atlas.UI.Kit.Button(Tr("Keep in Atlas's YAML folder"), Tr("Copies the file into Atlas's YAML folder and links the copy, so it stays with Atlas."), () =>
+                {
+                    var library = AP_Atlas.Core.Games.YamlLibrary.Load(DataManager.GetDataDirectory());
+                    var (entry, problem) = library.Add(yaml);
+                    if (entry == null) ShowToast(Tr("That YAML can't be kept: {0}.").Replace("{0}", problem ?? ""), AP_Atlas.Core.ThemeColors.Error);
+                    else LinkSlotYaml(profileId, slotName, library.PathOf(entry));
+                    Refill();
+                }, small: true));
+        }
+        Row(Tr("YAML"), yamlLine);
+
+        // The map pack's variant, when its pack has more than one.
+        var pack = game != null ? AP_Atlas.Core.PopTracker.PopTrackerPackLoader.LoadPackForGame(game) : null;
+        var variants = pack != null ? AP_Atlas.Core.PopTracker.PopTrackerPackLoader.VariantsOf(pack.Manifest) : new List<(string Id, string Name)>();
+        if (variants.Count > 1)
+        {
+            var picker = new OptionButton { SizeFlagsHorizontal = Godot.Control.SizeFlags.ExpandFill, AccessibilityName = Tr("Pack variant") };
+            string chosen = _appSettings.PackVariants.TryGetValue(key, out var v) && !string.IsNullOrEmpty(v) ? v : pack.Variant;
+            for (int i = 0; i < variants.Count; i++)
+            {
+                picker.AddItem(variants[i].Name == variants[i].Id ? variants[i].Id : $"{variants[i].Name} ({variants[i].Id})");
+                if (variants[i].Id == chosen) picker.Selected = i;
+            }
+            picker.ItemSelected += index =>
+            {
+                string id = variants[(int)index].Id;
+                if (live != null) live.SetPackVariant(id);
+                else
+                {
+                    _appSettings.PackVariants[key] = id;
+                    DataManager.SaveSettingsSoon(_appSettings);
+                }
+            };
+            Row(Tr("Pack variant"), picker);
+        }
+
+        // The apworld version chosen for the slot's seed.
+        var apworldLine = Line();
+        var choice = _appSettings.SlotApworlds.TryGetValue(key, out var c) ? c : null;
+        apworldLine.AddChild(AP_Atlas.UI.Kit.Text(choice != null ? Tr("{0} ({1}) for its seed").Replace("{0}", choice.Version).Replace("{1}", choice.Source)
+            : live != null && live.ApworldMatchesSeed == true ? Tr("The installed apworld matches its seed") : Tr("The engine's installed version")));
+        if (live != null && (live.ApworldMatchesSeed == false || live.UsingSeedApworld))
+            apworldLine.AddChild(AP_Atlas.UI.Kit.Button(Tr("Choose the version…"), Tr("Lists the game's releases; pick the one the seed's host used."), live.OpenApworldPicker, small: true));
+        Row(Tr("Apworld"), apworldLine);
+
+        // Following the game's map.
+        bool follows = !_appSettings.MapFollowGame.TryGetValue(key, out bool on) || on;
+        var follow = new CheckBox { Text = Tr("Follow the game's current map"), ButtonPressed = follows, TooltipText = Tr("With a pack whose scripts can, the map switches to where you are in the game.") };
+        follow.Toggled += isOn =>
+        {
+            if (live != null) live.SetFollowGame(isOn);
+            else
+            {
+                _appSettings.MapFollowGame[key] = isOn;
+                DataManager.SaveSettingsSoon(_appSettings);
+            }
+        };
+        Row(Tr("Map"), follow);
+        SetFontSizeRecursive(details, _appSettings.SlotsFontSize);
+    }
+
+    private void PickYamlFor(Action<string> chosen)
+    {
+        var dialog = new FileDialog
+        {
+            FileMode = FileDialog.FileModeEnum.OpenFile,
+            Access = FileDialog.AccessEnum.Filesystem,
+            Filters = new[] { "*.yaml, *.yml ; Archipelago player YAML" },
+            UseNativeDialog = true,
+            Title = Tr("A player YAML")
+        };
+        if (!string.IsNullOrWhiteSpace(_appSettings.LastYamlFolder) && System.IO.Directory.Exists(_appSettings.LastYamlFolder)) dialog.CurrentDir = _appSettings.LastYamlFolder;
+        dialog.FileSelected += path =>
+        {
+            dialog.QueueFree();
+            _appSettings.LastYamlFolder = System.IO.Path.GetDirectoryName(path) ?? "";
+            chosen(path);
+        };
+        dialog.Canceled += dialog.QueueFree;
+        AddChild(dialog);
+        dialog.PopupCentered(new Vector2I(900, 600));
+    }
+
+    private void OnAddYamlPressed()
+    {
+        if (_selectedProfile == null) return;
+        PickYamlFor(path => AddYamlToProfile(path));
+    }
+
+    /// <summary>
+    /// Keeps a YAML in Atlas's YAML folder and adds a slot to the selected multiworld for each player it names, the YAML
+    /// tied to each (a name with placeholders, "{player}" or "{number}", asks for the slot's room name). The page is
+    /// marked dirty: Save writes the slots, Don't save drops them (the YAML stays kept). Also used by tests.
+    /// </summary>
+    internal void AddYamlToProfile(string path)
+    {
+        var profile = _selectedProfile;
+        if (profile == null) return;
+        var library = AP_Atlas.Core.Games.YamlLibrary.Load(DataManager.GetDataDirectory());
+        var (entry, problem) = library.Add(path);
+        if (entry == null)
+        {
+            ShowToast(Tr("That YAML can't be added: {0}.").Replace("{0}", problem ?? ""), AP_Atlas.Core.ThemeColors.Error);
+            return;
+        }
+        string kept = library.PathOf(entry);
+        List<(string Name, List<string> Games)> players;
+        try { players = AP_Atlas.Core.YamlExclusions.Players(System.IO.File.ReadAllText(kept)); }
+        catch (Exception ex)
+        {
+            ShowToast(Tr("The YAML couldn't be read: {0}").Replace("{0}", ex.Message), AP_Atlas.Core.ThemeColors.Error);
+            return;
+        }
+        if (players.Count == 0)
+        {
+            ShowToast(Tr("{0} names no player with a game, so no slot was added (it's kept in Atlas's YAML folder).").Replace("{0}", entry.File), AP_Atlas.Core.ThemeColors.Warning);
+            return;
+        }
+        var added = new List<string>();
+        void Next(int index)
+        {
+            if (index >= players.Count)
+            {
+                if (added.Count > 0)
+                {
+                    MarkDirty();
+                    PopulateSlotsList();
+                    RefreshProfileListStyles();
+                    ShowToast(Tr("Added {0} from {1}; Save Settings keeps the slots.").Replace("{0}", string.Join(", ", added)).Replace("{1}", entry.File), AP_Atlas.Core.ThemeColors.TextSubtle);
+                }
+                return;
+            }
+            var (name, games) = players[index];
+            void Take(string slotName)
+            {
+                slotName = (slotName ?? "").Trim();
+                if (slotName.Length == 0 || _selectedProfile != profile) { Next(index + 1); return; }
+                if (!profile.Slots.Contains(slotName))
+                {
+                    // A new multiworld's placeholder slot gives way to the YAML's first player.
+                    if (profile.Slots.Count == 1 && IsDefaultSlotName(profile.Slots[0]) && !profile.SavedStats.ContainsKey(profile.Slots[0])) profile.Slots.Clear();
+                    profile.Slots.Add(slotName);
+                    added.Add(slotName);
+                }
+                if (games.Count == 1)
+                {
+                    if (!profile.SavedStats.TryGetValue(slotName, out var stats)) profile.SavedStats[slotName] = stats = new SlotStats();
+                    if (string.IsNullOrWhiteSpace(stats.GameName)) stats.GameName = games[0];
+                }
+                _appSettings.SlotYamlPaths[AP_Atlas.Core.Annotations.SlotKey(profile.Id, slotName)] = kept;
+                DataManager.SaveSettings(_appSettings);
+                Next(index + 1);
+            }
+            if (string.IsNullOrWhiteSpace(name) || name.Contains('{'))
+                AP_Atlas.UI.Dialogs.Prompt(this, Tr("Slot name"),
+                    string.Format(Tr("{0} names its player \"{1}\", a pattern Archipelago fills in when it rolls. What is this slot called in the room?"), entry.File, string.IsNullOrWhiteSpace(name) ? "?" : name),
+                    "", "Player1", Tr("Add slot"), Take);
+            else Take(name);
+        }
+        Next(0);
     }
     /// <summary>
     /// A new multiworld, shown where it can be filled in: the Multiworlds page with it selected and its name ready to

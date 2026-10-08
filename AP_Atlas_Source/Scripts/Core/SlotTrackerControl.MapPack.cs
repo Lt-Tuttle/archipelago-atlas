@@ -37,9 +37,10 @@ public partial class SlotTrackerControl : MarginContainer
         int load = ++_packLoads;
 
         // The pack, and its images decoded here, off the main thread (a big pack takes seconds).
+        string variant = PackVariant;
         var (pack, images) = await System.Threading.Tasks.Task.Run(() =>
         {
-            var found = AP_Atlas.Core.PopTracker.PopTrackerPackLoader.LoadPackForGame(game, null);
+            var found = AP_Atlas.Core.PopTracker.PopTrackerPackLoader.LoadPackForGame(game, variant, null);
             return (found, found == null ? null : AP_Atlas.Core.PopTracker.PackImages.Use(found));
         });
 
@@ -56,7 +57,8 @@ public partial class SlotTrackerControl : MarginContainer
             Pack = pack;
             RebuildPackIndex();
             StartPackScripts();
-            AppendDebugLog($"[MapTracker] Loaded pack '{pack.Manifest?.Name}' for {game}.");
+            _mapTracker.SetVariants(AP_Atlas.Core.PopTracker.PopTrackerPackLoader.VariantsOf(pack.Manifest), pack.Variant);
+            AppendDebugLog($"[MapTracker] Loaded pack '{pack.Manifest?.Name}' for {game}" + (string.IsNullOrEmpty(pack.Variant) ? "." : $" (variant {pack.Variant})."));
             // First use of a pack (or a new version): let the Pack Doctor check it in the background.
             AP_Atlas.Core.Async.Fire(AP_Atlas.Core.PopTracker.PackDoctorService.CheckAsync(pack), "checking a map pack");
             RaiseStateChanged();
@@ -288,6 +290,28 @@ public partial class SlotTrackerControl : MarginContainer
 
     /// <summary>Whether the map follows the game's current map (on unless the user turned it off for this slot).</summary>
     private bool FollowGame => !_appSettings.MapFollowGame.TryGetValue(FollowKey, out bool on) || on;
+
+    /// <summary>Turns following the game's map on or off for this slot (the Multiworlds page's details and the map's switch).</summary>
+    public void SetFollowGame(bool on)
+    {
+        _appSettings.MapFollowGame[FollowKey] = on;
+        DataManager.SaveSettingsSoon(_appSettings);
+        if (_mapTracker != null) _mapTracker.FollowGame = on;
+    }
+
+    /// <summary>The map pack variant chosen for this slot (null: the pack's default).</summary>
+    public string PackVariant => _appSettings.PackVariants.TryGetValue(FollowKey, out var v) && !string.IsNullOrEmpty(v) ? v : null;
+
+    /// <summary>Uses one of the pack's variants for this slot (remembered), reading the pack again as that variant.</summary>
+    public void SetPackVariant(string variant)
+    {
+        if (string.IsNullOrEmpty(variant)) _appSettings.PackVariants.Remove(FollowKey);
+        else _appSettings.PackVariants[FollowKey] = variant;
+        DataManager.SaveSettingsSoon(_appSettings);
+        if (_ended || Session == null || !GodotObject.IsInstanceValid(this)) return;
+        if (Pack != null) UnloadMapPack();
+        LoadMapPack();
+    }
 
     /// <summary>The room's data storage, read for the pack's scripts on this slot's connection (made when they first ask).</summary>
     private AP_Atlas.Core.Connections.DataStorageReads _storageReads;

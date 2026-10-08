@@ -169,7 +169,7 @@ namespace AP_Atlas.Core.PopTracker
         public static PackScriptHost Load(LoadedPack pack)
         {
             if (pack == null || string.IsNullOrEmpty(pack.SourcePath) || !File.Exists(pack.SourcePath)) return null;
-            string variant = DefaultVariant(pack.Manifest);
+            string variant = string.IsNullOrEmpty(pack.Variant) ? DefaultVariant(pack.Manifest) : pack.Variant;
             using var zip = SafeZip.Open(pack.SourcePath);
             string root = pack.RootPrefix ?? "";
             var entries = new Dictionary<string, ZipArchiveEntry>(StringComparer.OrdinalIgnoreCase);
