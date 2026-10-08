@@ -246,6 +246,9 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         // Layout: [slots] | [tabs over (explorer | content) over terminal] | [properties].
         // The explorer lives inside the content area, so showing or hiding it only resizes the content stage:
         // the tabs and terminal never move, and the tab bar's menu sits at the content's top-right corner.
+        // Properties starts wider than its minimum on a fresh settings file (a negative offset widens the second pane: 0 is
+        // the first pane's end, clamped to the second's minimum); the user's own drag is kept after that.
+        if (_appSettings.Fresh && _appSettings.SplitCenterRightOffset == 0) _appSettings.SplitCenterRightOffset = -PropertiesStartWidth;
         var centerRightSplit = new HSplitContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, SplitOffsets = new[] { _appSettings.SplitCenterRightOffset } };
         centerRightSplit.Dragged += (offset) => { _appSettings.SplitCenterRightOffset = (int)offset; DataManager.SaveSettingsSoon(_appSettings); };
         centerRightSplit.AddThemeConstantOverride("separation", 8);

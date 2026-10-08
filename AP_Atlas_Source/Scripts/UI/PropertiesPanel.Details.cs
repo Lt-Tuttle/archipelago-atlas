@@ -1290,7 +1290,7 @@ namespace AP_Atlas.UI
 
             bool hidden = view.LogicHidden;
             SetHeader("Map", pm.Name, Colored(map.Pack.Manifest?.Name ?? "", ThemeColors.TextMuted),
-                hidden ? ThemeColors.LogicHidden : inLogic > 0 ? Good : Muted, hidden ? $"{inLogic + outLogic} open" : $"{inLogic} in logic");
+                hidden ? ThemeColors.LogicHidden : inLogic > 0 ? Good : Muted, hidden ? $"{inLogic + outLogic} open" : $"{inLogic} of {inLogic + outLogic} in logic");
             BeginActions();
             AddAction("Open map", "Show this map in the Map Tracker", () => { Go(view, Tool.MapTracker); map.ShowMap(t.MapId); });
             EndActions();

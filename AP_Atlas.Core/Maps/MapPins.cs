@@ -3,9 +3,10 @@ using System;
 namespace AP_Atlas.Core.Maps;
 
 /// <summary>
-/// What a map pin's colour says, as PopTracker colours its locations: every open check in logic, some of them (mixed),
-/// reachable only by sequence breaks (the game's glitch logic), none, all checked, or logic not known (not running, or
-/// hidden by race mode).
+/// What a map pin's colour says, as PopTracker colours its locations: every open check in logic, some of them (mixed:
+/// drawn half in logic, half out), reachable only by sequence breaks (the game's glitch logic), none, all checked, or
+/// logic not known (not running, or hidden by race mode); a hinted pin has its own colours, in or out of logic (or
+/// while logic isn't known), so a hint never hides the pin's logic.
 /// </summary>
 public enum MapPinState
 {
@@ -14,31 +15,43 @@ public enum MapPinState
     Mixed,
     SequenceBreak,
     Checked,
-    LogicUnknown
+    LogicUnknown,
+    HintedInLogic,
+    HintedOutOfLogic,
+    HintedUnknown
 }
 
 /// <summary>A pin's state from its open checks and what logic says about them.</summary>
 public static class MapPinLogic
 {
-    /// <summary>Every state, in the order the legend and the settings list them.</summary>
+    /// <summary>
+    /// Every state with a colour of its own, in the order the legend and the settings list them. Mixed isn't one: a mixed
+    /// pin is drawn half in the in-logic colour, half in the out-of-logic colour.
+    /// </summary>
     public static readonly MapPinState[] All =
     {
-        MapPinState.InLogic, MapPinState.Mixed, MapPinState.SequenceBreak, MapPinState.OutOfLogic, MapPinState.Checked, MapPinState.LogicUnknown
+        MapPinState.InLogic, MapPinState.SequenceBreak, MapPinState.OutOfLogic, MapPinState.HintedInLogic, MapPinState.HintedOutOfLogic,
+        MapPinState.HintedUnknown, MapPinState.Checked, MapPinState.LogicUnknown
     };
 
     /// <param name="open">The pin's checks still to do (those that count: excluded ones left out unless shown).</param>
     /// <param name="reachable">How many of them logic can reach.</param>
     /// <param name="glitchedOnly">How many of the rest the game's glitch logic can reach.</param>
     /// <param name="logicKnown">Whether logic is running and shown (not before the engine runs, never in race mode).</param>
-    public static MapPinState StateOf(int open, int reachable, int glitchedOnly, bool logicKnown)
+    /// <param name="hinted">Whether any of the open checks is hinted (a hinted pin counts as in logic when any check is).</param>
+    public static MapPinState StateOf(int open, int reachable, int glitchedOnly, bool logicKnown, bool hinted = false)
     {
         if (open <= 0) return MapPinState.Checked;
-        if (!logicKnown) return MapPinState.LogicUnknown;
+        if (!logicKnown) return hinted ? MapPinState.HintedUnknown : MapPinState.LogicUnknown;
         reachable = Math.Clamp(reachable, 0, open);
+        if (hinted) return reachable > 0 ? MapPinState.HintedInLogic : MapPinState.HintedOutOfLogic;
         if (reachable == open) return MapPinState.InLogic;
         if (reachable > 0) return MapPinState.Mixed;
         return glitchedOnly > 0 ? MapPinState.SequenceBreak : MapPinState.OutOfLogic;
     }
+
+    /// <summary>Whether a pin of this state is drawn in two colours (half in logic, half out).</summary>
+    public static bool IsSplit(MapPinState state) => state == MapPinState.Mixed;
 
     /// <summary>The state in plain words, as a tooltip and the legend say it.</summary>
     public static string Title(MapPinState state) => state switch
@@ -47,6 +60,9 @@ public static class MapPinLogic
         MapPinState.Mixed => "Some in logic",
         MapPinState.SequenceBreak => "Sequence break",
         MapPinState.OutOfLogic => "Out of logic",
+        MapPinState.HintedInLogic => "Hinted, in logic",
+        MapPinState.HintedOutOfLogic => "Hinted, out of logic",
+        MapPinState.HintedUnknown => "Hinted",
         MapPinState.Checked => "Checked",
         _ => "Logic unknown"
     };
@@ -58,6 +74,9 @@ public static class MapPinLogic
         MapPinState.Mixed => "mixed",
         MapPinState.SequenceBreak => "sequence-break",
         MapPinState.OutOfLogic => "out-of-logic",
+        MapPinState.HintedInLogic => "hinted-in-logic",
+        MapPinState.HintedOutOfLogic => "hinted-out-of-logic",
+        MapPinState.HintedUnknown => "hinted",
         MapPinState.Checked => "checked",
         _ => "logic-unknown"
     };

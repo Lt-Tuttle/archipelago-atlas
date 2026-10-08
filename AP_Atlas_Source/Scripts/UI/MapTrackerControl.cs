@@ -9,8 +9,9 @@ using AP_Atlas.Core.Maps;
 namespace AP_Atlas.UI
 {
     /// <summary>
-    /// The Map Tracker: a map pack's maps with a pin per location, coloured by what logic says (in logic, hinted, out of
-    /// logic, checked, excluded, not in the seed; neutral colours in race mode), on a <see cref="MapCanvas"/> shared with
+    /// The Map Tracker: a map pack's maps with a pin per location, coloured by what logic says (in logic, some in logic as
+    /// a pin split down the middle, hinted in or out of logic, out of logic, checked, excluded, not in the seed; neutral
+    /// colours in race mode), on a <see cref="MapCanvas"/> shared with
     /// the Pack Doctor's editor. The explorer lists the maps with their counts; the display options and the legend sit
     /// above it. The view (the map point at the middle, and the zoom) is remembered per map.
     /// </summary>
@@ -399,24 +400,44 @@ namespace AP_Atlas.UI
             var entries = new List<(Color Color, string Text)>();
             if (_logic == LogicShown.Running)
             {
-                foreach (var state in MapPinLogic.All.Where(s => s != MapPinState.LogicUnknown)) entries.Add((ThemeColors.MapColour(state), MapPinLogic.Title(state)));
+                // In logic, then the half-and-half pin (some in logic), then the rest; the "logic unknown" colours don't occur.
+                foreach (var state in MapPinLogic.All.Where(s => s != MapPinState.LogicUnknown && s != MapPinState.HintedUnknown))
+                {
+                    entries.Add((ThemeColors.MapColour(state), MapPinLogic.Title(state)));
+                    if (state == MapPinState.InLogic) entries.Add((ThemeColors.MapColour(MapPinState.InLogic), MapPinLogic.Title(MapPinState.Mixed)));
+                }
             }
             else
             {
                 entries.Add((ThemeColors.MapColour(MapPinState.LogicUnknown), _logic == LogicShown.Hidden ? "Open: logic hidden by race mode" : "Open: logic not running"));
+                entries.Add((ThemeColors.MapColour(MapPinState.HintedUnknown), MapPinLogic.Title(MapPinState.HintedUnknown)));
                 entries.Add((ThemeColors.MapColour(MapPinState.Checked), MapPinLogic.Title(MapPinState.Checked)));
             }
             LegendEntries = entries;
             var flow = new HFlowContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
             flow.AddThemeConstantOverride("h_separation", 10);
             flow.AddThemeConstantOverride("v_separation", 2);
-            void Add(StyleBoxFlat swatchStyle, string text)
+            string markerStyle = _appSettings.MapMarkerStyle;
+            void Add(StyleBoxFlat swatchStyle, string text, Color? splitRight)
             {
                 var item = new HBoxContainer();
                 item.AddThemeConstantOverride("separation", 4);
-                var swatch = new Panel { CustomMinimumSize = new Vector2(10, 10), SizeFlagsVertical = SizeFlags.ShrinkCenter };
-                ShapePin(swatchStyle, swatch, _appSettings.MapMarkerStyle, 10);
-                swatch.AddThemeStyleboxOverride("panel", swatchStyle);
+                Control swatch;
+                if (splitRight is { } right)
+                {
+                    // The half-and-half swatch is drawn like the pin: the left half the in-logic colour, the right half out of logic.
+                    var split = new MapPinButton { SplitRight = right, Shape = MapPinGeometry.FromSetting(markerStyle), Border = 1, MouseFilter = MouseFilterEnum.Ignore, FocusMode = FocusModeEnum.None, AccessibilityName = text };
+                    foreach (var name in new[] { "normal", "hover", "pressed", "focus", "disabled", "hover_pressed" }) split.AddThemeStyleboxOverride(name, swatchStyle);
+                    swatch = split;
+                }
+                else
+                {
+                    swatch = new Panel();
+                    swatch.AddThemeStyleboxOverride("panel", swatchStyle);
+                }
+                swatch.CustomMinimumSize = new Vector2(10, 10);
+                swatch.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+                ShapePin(swatchStyle, swatch, markerStyle, 10);
                 item.AddChild(swatch);
                 var label = new Label { Text = text };
                 label.SetMeta("font_size_ratio", 0.85f);
@@ -424,10 +445,9 @@ namespace AP_Atlas.UI
                 item.AddChild(label);
                 flow.AddChild(item);
             }
-            foreach (var (color, text) in entries) Add(new StyleBoxFlat { BgColor = color, BorderColor = ThemeColors.MapPinBorder, BorderWidthTop = 1, BorderWidthBottom = 1, BorderWidthLeft = 1, BorderWidthRight = 1 }, text);
-            // A hint is a ring around the pin, in the hint's colour, so the pin keeps its logic colour.
-            var ring = new StyleBoxFlat { DrawCenter = false, BorderColor = _logic == LogicShown.Running ? ThemeColors.Hinted : ThemeColors.HintedNeutral, BorderWidthTop = 2, BorderWidthBottom = 2, BorderWidthLeft = 2, BorderWidthRight = 2 };
-            Add(ring, "Hinted (a ring)");
+            foreach (var (color, text) in entries)
+                Add(new StyleBoxFlat { BgColor = color, BorderColor = ThemeColors.MapPinBorder, BorderWidthTop = 1, BorderWidthBottom = 1, BorderWidthLeft = 1, BorderWidthRight = 1 }, text,
+                    text == MapPinLogic.Title(MapPinState.Mixed) ? ThemeColors.MapColour(MapPinState.OutOfLogic) : null);
             var dim = new Label { Text = "Dimmed: excluded, or not in your seed" };
             dim.SetMeta("font_size_ratio", 0.85f);
             dim.AddThemeColorOverride("font_color", ThemeColors.TextSubtle);
@@ -863,7 +883,8 @@ namespace AP_Atlas.UI
                 float size = geometry.Size * _appSettings.MapNodeScale;
                 var ids = GetLocationIds(loc);
                 Color nodeColor;
-                Color? hintRing = null;
+                Color? splitRight = null;
+                var shape = geometry.Shape;
                 bool dim = false;
                 string stateNote;
                 if (ids.Count == 0)
@@ -898,22 +919,25 @@ namespace AP_Atlas.UI
                     {
                         int reachable = counted.Count(_reachableLocs.Contains);
                         int glitched = counted.Count(id => !_reachableLocs.Contains(id) && _glitchedLocs.Contains(id));
-                        var state = MapPinLogic.StateOf(counted.Count, reachable, glitched, !LogicHidden);
-                        nodeColor = ThemeColors.MapColour(state);
                         bool anyHinted = counted.Any(_hintedLocs.Contains);
-                        if (anyHinted) hintRing = LogicHidden ? ThemeColors.HintedNeutral : reachable > 0 ? ThemeColors.Hinted : ThemeColors.HintedOutOfLogic;
+                        var state = MapPinLogic.StateOf(counted.Count, reachable, glitched, !LogicHidden, anyHinted);
+                        // A pin with some checks in logic is drawn half in logic, half out; a hinted pin has its own colours.
+                        nodeColor = ThemeColors.MapColour(MapPinLogic.IsSplit(state) ? MapPinState.InLogic : state);
+                        if (MapPinLogic.IsSplit(state)) splitRight = ThemeColors.MapColour(MapPinState.OutOfLogic);
                         string stateText = state != MapPinState.LogicUnknown ? MapPinLogic.Title(state)
                             : _logic == LogicShown.Hidden ? "Open" : "Open (logic isn't running)";
-                        if (state == MapPinState.Mixed) stateText += $": {reachable} of {counted.Count}";
-                        stateNote = "\n" + stateText + (anyHinted ? ", hinted" : "");
+                        if (MapPinLogic.IsSplit(state)) stateText += $": {reachable} of {counted.Count}";
+                        stateNote = "\n" + stateText;
                         if (excludedOpen > 0) stateNote += $"\n{excludedOpen} excluded";
                     }
                 }
-                var btn = new Button
+                var btn = new MapPinButton
                 {
                     TooltipText = loc.Name + stateNote,
                     MouseDefaultCursorShape = CursorShape.PointingHand,
-                    AccessibilityName = loc.Name + stateNote.Replace("\n", ": ")
+                    AccessibilityName = loc.Name + stateNote.Replace("\n", ": "),
+                    SplitRight = splitRight,
+                    Shape = shape
                 };
                 // Dimmed pins stay clickable, so an excluded check can be included again from Properties.
                 if (dim) btn.Modulate = new Color(1f, 1f, 1f, DimAlpha);
@@ -927,14 +951,13 @@ namespace AP_Atlas.UI
                     BorderWidthRight = border,
                     BorderColor = ThemeColors.MapPinBorder
                 };
-                // A hint is a ring in the hint's colour; a flag the user set takes the ring (it's their own mark), and a special location gets a gold glow.
+                // A flag the user set is a ring in the flag's colour (their own mark), and a special location gets a gold glow.
                 void Ring(Color color)
                 {
                     style.BorderColor = color;
                     int ring = Math.Max(3, (int)(size * 0.18f));
                     style.BorderWidthTop = style.BorderWidthBottom = style.BorderWidthLeft = style.BorderWidthRight = ring;
                 }
-                if (hintRing is { } hintColor) Ring(hintColor);
                 if (MarkerLookup != null && ids.Count > 0)
                 {
                     int flag = 0;
@@ -958,6 +981,7 @@ namespace AP_Atlas.UI
                     }
                 }
                 ShapePin(style, btn, MapPinGeometry.SettingOf(geometry.Shape), size);
+                btn.Border = style.BorderWidthLeft;
                 var hoverStyle = (StyleBoxFlat)style.Duplicate();
                 hoverStyle.BgColor = nodeColor.Lightened(0.2f);
                 var focusStyle = (StyleBoxFlat)style.Duplicate();

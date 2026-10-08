@@ -39,6 +39,16 @@ public partial class SlotTrackerControl : MarginContainer
     /// <summary>The Logic Tracker says the goal is in logic (go mode).</summary>
     public bool GoModeShown => _goModeLabel != null && _goModeLabel.Visible;
 
+    /// <summary>Whether the slot is BK: logic runs, checks remain and none is in logic (the Logic Tracker, Key Items and the slot card say so).</summary>
+    public bool Bk => Model.Bk;
+
+    /// <summary>The BK banner's text.</summary>
+    public string BkText =>
+        $"BK: {Model.CheckedLocationsCount} of {Model.TotalLocationsCount} checks done; nothing is in logic right now. Items from other players open the next ones.";
+
+    /// <summary>Whether the Logic Tracker shows its BK banner (for tests).</summary>
+    public bool BkShown => _bkLabel != null && _bkLabel.Visible;
+
     /// <summary>What the Logic Tracker shows instead of its list (race mode, an engine problem), or null while the list shows.</summary>
     public string LogicNoticeShown => _logicNotice != null && _logicNotice.Visible ? _logicNoticeText.Text : null;
 
@@ -80,7 +90,7 @@ public partial class SlotTrackerControl : MarginContainer
     private Action<string> _appendDebugLog;
 
     // --- Logic Tracker view ---
-    private Label _engineStatusLabel, _goModeLabel;
+    private Label _engineStatusLabel, _goModeLabel, _bkLabel;
     private Tree _logicTree;
 
     // --- Item History view ---

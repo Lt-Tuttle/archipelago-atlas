@@ -15,6 +15,8 @@ public partial class MainTrackerWindow
     // The panes' smallest widths, in logical units (the scale multiplies them). Together with the activity bar, margins and
     // separators they must fit the window, or a pane hides itself: Properties first, then the explorer, then the slots.
     internal const int SlotsMinWidth = 320, ExplorerMinWidth = 220, ContentMinWidth = 480, PropertiesMinWidth = 250;
+    /// <summary>How wide Properties starts on a fresh settings file (its minimum is narrower; the user's own drag is kept after that).</summary>
+    internal const int PropertiesStartWidth = 360;
     private const int PaneSeparation = 8, OuterMargins = 16;
 
     /// <summary>The parts hidden because the window is too narrow for them (their settings untouched; they return with the width).</summary>

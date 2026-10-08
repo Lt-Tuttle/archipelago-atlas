@@ -56,11 +56,13 @@ public partial class MainTrackerWindow
     /// <summary>What each pin colour means, for its row on the Settings page.</summary>
     private static string MapColourDescription(AP_Atlas.Core.Maps.MapPinState state) => state switch
     {
-        AP_Atlas.Core.Maps.MapPinState.InLogic => "Every open check at the pin is in logic (PopTracker's bright green).",
-        AP_Atlas.Core.Maps.MapPinState.Mixed => "Some of the pin's open checks are in logic, some aren't (PopTracker's orange).",
+        AP_Atlas.Core.Maps.MapPinState.InLogic => "Every open check at the pin is in logic (PopTracker's bright green). A pin with some checks in logic is drawn half in this colour, half in the out-of-logic colour.",
         AP_Atlas.Core.Maps.MapPinState.SequenceBreak => "Reachable only with the game's glitch or sequence-break logic (PopTracker's yellow).",
         AP_Atlas.Core.Maps.MapPinState.OutOfLogic => "None of the pin's open checks is in logic yet (PopTracker's red).",
-        AP_Atlas.Core.Maps.MapPinState.Checked => "Every check at the pin is done (PopTracker's dark grey).",
+        AP_Atlas.Core.Maps.MapPinState.HintedInLogic => "A hinted check at the pin, and it's in logic (sky blue).",
+        AP_Atlas.Core.Maps.MapPinState.HintedOutOfLogic => "A hinted check at the pin, none of them in logic yet (violet).",
+        AP_Atlas.Core.Maps.MapPinState.HintedUnknown => "A hinted check at the pin while logic isn't known (lavender).",
+        AP_Atlas.Core.Maps.MapPinState.Checked => "Every check at the pin is done (a dark grey).",
         _ => "Logic isn't known: the engine isn't running yet, or logic is hidden (see Settings → Multiworld)."
     };
 

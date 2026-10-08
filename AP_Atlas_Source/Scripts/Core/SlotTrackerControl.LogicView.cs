@@ -38,6 +38,10 @@ public partial class SlotTrackerControl : MarginContainer
         _goModeLabel = new Label { Text = "GO MODE: your goal is in logic", Visible = false, TooltipText = "Everything the goal needs is reachable with what this slot has now" };
         _goModeLabel.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Success);
         toolbar.AddChild(_goModeLabel);
+        // BK: nothing is in logic while checks remain; said above the list (Key Items and the slot card say it too).
+        _bkLabel = new Label { Visible = false, AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        _bkLabel.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Warning);
+        vbox.AddChild(_bkLabel);
         _engineStatusLabel = new Label { Text = "Logic not running", SizeFlagsHorizontal = SizeFlags.ExpandFill, HorizontalAlignment = HorizontalAlignment.Right };
         toolbar.AddChild(_engineStatusLabel);
 
@@ -173,6 +177,13 @@ public partial class SlotTrackerControl : MarginContainer
         using var __perf = AP_Atlas.Core.PerfMonitor.Measure($"[{_slotName}] Logic Tracker refresh");
         if (_logicTree == null || Session == null) return;
         if (_goModeLabel != null) _goModeLabel.Visible = !LogicHidden && Model.Logic.GoalInLogic == true;
+        bool bk = Model.Bk;
+        if (_bkLabel != null)
+        {
+            if (bk) _bkLabel.Text = BkText;
+            _bkLabel.Visible = bk;
+        }
+        if (_progressionTracker != null) _progressionTracker.Banner = bk ? BkText : null;
 
         var steps = Model.Logic.Steps;
         bool full = forceFull || _logicTree.GetRoot() == null || _logicRenderedRun != Model.Logic.Run || _logicRenderedSteps > steps.Count ||

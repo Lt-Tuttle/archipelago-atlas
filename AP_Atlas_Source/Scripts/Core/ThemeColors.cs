@@ -68,9 +68,11 @@ namespace AP_Atlas.Core
         public static event Action? MapColoursChanged;
 
         /// <summary>
-        /// A pin state's colour as Atlas ships it: PopTracker's (bright green in logic, red out of logic, orange for some,
-        /// yellow for a sequence break, dark grey checked), or with colour-blind-safe colours on, Okabe and Ito's blue,
-        /// orange, reddish purple and yellow; logic not known is the palette's quiet blue.
+        /// A pin state's colour as Atlas ships it: PopTracker's (bright green in logic, red out of logic, yellow for a
+        /// sequence break, dark grey checked), or with colour-blind-safe colours on, Okabe and Ito's blue, orange and
+        /// yellow; a hinted pin is sky blue in logic and violet out of it (bluish green and vermilion in the safe set),
+        /// lavender (grey in the safe set) while logic isn't known; logic not known is the palette's quiet blue. A mixed
+        /// pin has no colour of its own: it's drawn half in logic, half out (its colour here serves text only).
         /// </summary>
         public static Color DefaultMapColour(AP_Atlas.Core.Maps.MapPinState state, Palette palette)
         {
@@ -81,7 +83,10 @@ namespace AP_Atlas.Core
                 AP_Atlas.Core.Maps.MapPinState.OutOfLogic => new Color(safe ? "#E69F00" : "#CF1010"),
                 AP_Atlas.Core.Maps.MapPinState.Mixed => new Color(safe ? "#CC79A7" : "#FF9F20"),
                 AP_Atlas.Core.Maps.MapPinState.SequenceBreak => new Color(safe ? "#F0E442" : "#FFFF20"),
-                AP_Atlas.Core.Maps.MapPinState.Checked => new Color("#3F3F3F"),
+                AP_Atlas.Core.Maps.MapPinState.HintedInLogic => new Color(safe ? "#009E73" : "#30B0FF"),
+                AP_Atlas.Core.Maps.MapPinState.HintedOutOfLogic => new Color(safe ? "#D55E00" : "#D040FF"),
+                AP_Atlas.Core.Maps.MapPinState.HintedUnknown => new Color(safe ? "#999999" : "#9A80E0"),
+                AP_Atlas.Core.Maps.MapPinState.Checked => new Color("#333333"),
                 _ => palette.LogicHidden
             };
         }

@@ -55,6 +55,20 @@ namespace AP_Atlas.Core.PopTracker
         /// <summary>The text mode has its empty state to show (no items known yet), not items.</summary>
         public bool ShowingEmptyState => _logicEngine == null || _logicEngine.LastItemPool == null || _logicEngine.LastItemPool.Count == 0;
 
+        private Label _banner;
+
+        /// <summary>A line above the items (the slot's BK banner); null or empty for none.</summary>
+        public string Banner
+        {
+            get => _banner != null && _banner.Visible ? _banner.Text : null;
+            set
+            {
+                if (_banner == null) return;
+                _banner.Text = value ?? "";
+                _banner.Visible = !string.IsNullOrEmpty(value);
+            }
+        }
+
         /// <summary>The text mode's rows, for tests.</summary>
         public Tree TextTree => _textTree;
 
@@ -156,6 +170,9 @@ namespace AP_Atlas.Core.PopTracker
             _scriptNote = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill, Visible = false };
             _scriptNote.AddThemeColorOverride("font_color", ThemeColors.Warning);
             AddChild(_scriptNote);
+            _banner = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill, Visible = false };
+            _banner.AddThemeColorOverride("font_color", ThemeColors.Warning);
+            AddChild(_banner);
 
             // View Mode Segmented Control
             var viewHBox = new HBoxContainer();

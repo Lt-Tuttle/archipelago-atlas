@@ -184,6 +184,8 @@ public partial class MainTrackerWindow
             RaceRoomRestrictsAsync);
         await ScenarioAsync("Logic: the slot's logic follows its items and checks step by step; after an engine crash, an engine update or a restart it's rebuilt from scratch on a new engine; race mode can hide it",
             LogicFollowsTheSlotAsync);
+        await ScenarioAsync("BK: with logic running, checks left and none of them in logic, the Logic Tracker and Key Items say so with the count done, and the slot card says BK; an item that opens a check ends it",
+            BkAsync);
         await ScenarioAsync("Shared engines: a multiworld's slots share its engines; when one slot's request brings an engine down, a slot sharing it (even one still starting) starts again in 2 s, and only the slot whose request it was counts the failure",
             SharedEnginesAsync);
         await ScenarioAsync("Cheese Tracker: its suggestion for a connected slot follows the slot's logic (unblocked, then go mode), says nothing while race mode hides logic, and changes nothing by itself",
@@ -1679,6 +1681,16 @@ public partial class MainTrackerWindow
         UiTestExpect(quiet.ThemeTypeVariation == AP_Atlas.UI.Kit.QuietButton && !quiet.Flat && quiet.GetThemeStylebox("hover") is StyleBoxFlat && quiet.GetThemeStylebox("pressed") is StyleBoxFlat
             && quiet.GetThemeStylebox("normal") is StyleBoxEmpty, "a quiet kit button has no hover or pressed look");
         quiet.QueueFree();
+        // A checked box or switch keeps the text colour (no accent fill behind it, unlike a pressed button): readable in every theme.
+        var box = new CheckBox { Text = "Checked", ButtonPressed = true };
+        var toggle = new CheckButton { Text = "On", ButtonPressed = true };
+        AddChild(box);
+        AddChild(toggle);
+        UiTestExpect(box.GetThemeColor("font_pressed_color") == AP_Atlas.Core.ThemeColors.Text && box.GetThemeColor("font_hover_pressed_color") == AP_Atlas.Core.ThemeColors.Text
+            && toggle.GetThemeColor("font_pressed_color") == AP_Atlas.Core.ThemeColors.Text && button.GetThemeColor("font_pressed_color") == AP_Atlas.Core.ThemeColors.TextOnAccent,
+            "a checked box's text isn't the text colour (or a pressed button's isn't the colour on the accent)");
+        box.QueueFree();
+        toggle.QueueFree();
         // Its text lines wrap and take the palette's colours.
         UiTestExpect(AP_Atlas.UI.Kit.Text("t").GetThemeColor("font_color") == AP_Atlas.Core.ThemeColors.Text
             && AP_Atlas.UI.Kit.Muted("t").GetThemeColor("font_color") == AP_Atlas.Core.ThemeColors.TextMuted
@@ -1888,6 +1900,9 @@ public partial class MainTrackerWindow
     {
         var host = (AP_Atlas.UI.IPropertiesHost)this;
         var bottomPane = _bottomPane ?? throw new InvalidOperationException("The bottom pane wasn't built.");
+        // On a fresh settings file (this run's), Properties starts wider than its minimum.
+        UiTestExpect(_appSettings.SplitCenterRightOffset == -PropertiesStartWidth && _propertiesSidebar.Size.X >= PropertiesStartWidth - 2,
+            $"Properties starts {_propertiesSidebar.Size.X} wide (split offset {_appSettings.SplitCenterRightOffset}), not {PropertiesStartWidth}");
         // The View menu's check marks follow the parts as the menu opens.
         var (viewMenu, viewItems) = _commandItems.First(menu => menu.Value.ContainsValue("view.slots-panel"));
         bool Checked(string command)
@@ -3191,6 +3206,39 @@ public partial class MainTrackerWindow
         {
             AP_Atlas.Core.RaceRules.SetHideAllLogic(false);
             AP_Atlas.Core.RaceRules.SetMode(AP_Atlas.Core.RaceModeSetting.FollowServer);
+            ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.Connections);
+            DeleteProfile(profile);
+            AtlasEngine.TestPython = null;
+        }
+    }
+
+    private async Task BkAsync()
+    {
+        StartFakeEngine(UiTestPython());
+        await using var server = LogicWorldServer();
+        var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Tester");
+        _profiles.Add(profile);
+        try
+        {
+            await OnConnectSlotPressedAsync("Tester", profile);
+            var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
+            ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.LogicTracker);
+            await UiTestWaitForAsync(() => slot.LogicSettled ? slot : null, "the slot's logic to start");
+            UiTestExpect(!slot.Bk && !slot.BkShown && string.IsNullOrEmpty(slot.ProgressionTracker.Banner), "a slot with a check in logic is said to be BK");
+            // The one check in logic is done: nothing is in logic and three remain. BK, said on the Logic Tracker, Key Items and the slot card.
+            await server.BroadcastAsync(FakeArchipelagoServer.LocationsChecked(2000));
+            await UiTestWaitForAsync(() => slot.Bk && slot.BkShown ? slot : null, "the Logic Tracker to say BK");
+            UiTestExpect(slot.BkText.StartsWith("BK: 1 of 4 checks done") && slot.ProgressionTracker.Banner == slot.BkText, $"the BK banner says \"{slot.BkText}\"; Key Items says \"{slot.ProgressionTracker.Banner}\"");
+            await UiTestWaitForAsync(() => _activeSessionsList.FindChildren("StatusFooter", nameof(Label), true, false).OfType<Label>().FirstOrDefault(l => l.Text.Contains("BK")), "the slot card to say BK");
+            // An item from another player opens the door: BK is over everywhere.
+            await server.BroadcastAsync(FakeArchipelagoServer.ReceivedItems(0, new long[] { 1000 }, flags: 1));
+            await UiTestWaitForAsync(() => !slot.Bk && !slot.BkShown && string.IsNullOrEmpty(slot.ProgressionTracker.Banner) ? slot : null, "BK to end when a check opens");
+            await UiTestWaitForAsync(() => _activeSessionsList.FindChildren("StatusFooter", nameof(Label), true, false).OfType<Label>().FirstOrDefault(l => l.Text.Contains("Live") && !l.Text.Contains("BK")), "the slot card to stop saying BK");
+        }
+        finally
+        {
             ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.Connections);
             DeleteProfile(profile);
             AtlasEngine.TestPython = null;

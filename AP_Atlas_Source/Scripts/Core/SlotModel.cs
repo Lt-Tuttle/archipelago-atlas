@@ -297,6 +297,12 @@ namespace AP_Atlas.Core
             }
         }
 
+        /// <summary>
+        /// BK ("burger king", as players say it): logic runs and is shown, checks remain, and none of them is in logic.
+        /// Items from other players open the next ones.
+        /// </summary>
+        public bool Bk => Logic.Running && !LogicHidden && CheckedLocationsCount < TotalLocationsCount && ActiveLogicCount == 0;
+
         /// <summary>The checks of a logic step that aren't excluded (by the seed or by you).</summary>
         public List<long> ShownLocations(IReadOnlyList<long>? locations) =>
             locations == null ? new List<long>() : locations.Where(location => !IsExcluded(location)).ToList();

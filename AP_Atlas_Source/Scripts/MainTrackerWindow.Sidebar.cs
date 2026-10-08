@@ -418,9 +418,9 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         SetFontSizeRecursive(_activeSessionsList, _appSettings.SlotsFontSize);
     }
 
-    /// <summary>A live slot's footer: race mode when it applies, else go mode when the goal is in logic.</summary>
+    /// <summary>A live slot's footer: race mode when it applies, else go mode when the goal is in logic, else BK when nothing is.</summary>
     private static string LiveText(SlotTrackerControl slot) =>
-        slot == null ? "● Live" : slot.RaceRestricted ? "● Live · Race mode" : slot.GoalInLogic == true ? "● Live · Go mode!" : "● Live";
+        slot == null ? "● Live" : slot.RaceRestricted ? "● Live · Race mode" : slot.GoalInLogic == true ? "● Live · Go mode!" : slot.Bk ? "● Live · BK" : "● Live";
     private void UpdateSlotStatuses()
     {
         using var __perf = AP_Atlas.Core.PerfMonitor.Measure("Update slot status lights");

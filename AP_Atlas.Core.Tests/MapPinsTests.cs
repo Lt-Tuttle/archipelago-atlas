@@ -18,12 +18,26 @@ public sealed class MapPinsTests
     public void A_pins_state_follows_its_open_checks(int open, int reachable, int glitched, bool known, MapPinState expected) =>
         Assert.Equal(expected, MapPinLogic.StateOf(open, reachable, glitched, known));
 
+    [Theory]
+    [InlineData(3, 3, 0, true, MapPinState.HintedInLogic)]
+    [InlineData(3, 1, 0, true, MapPinState.HintedInLogic)]
+    [InlineData(3, 0, 1, true, MapPinState.HintedOutOfLogic)]
+    [InlineData(3, 0, 0, true, MapPinState.HintedOutOfLogic)]
+    [InlineData(3, 3, 0, false, MapPinState.HintedUnknown)]
+    [InlineData(0, 0, 0, true, MapPinState.Checked)]
+    public void A_hinted_pin_keeps_its_logic_in_its_own_colours(int open, int reachable, int glitched, bool known, MapPinState expected) =>
+        Assert.Equal(expected, MapPinLogic.StateOf(open, reachable, glitched, known, hinted: true));
+
     [Fact]
-    public void Every_state_has_a_title_and_a_distinct_key()
+    public void Every_state_has_a_title_and_a_distinct_key_and_only_a_mixed_pin_is_split()
     {
-        Assert.Equal(6, MapPinLogic.All.Length);
-        Assert.Equal(6, MapPinLogic.All.Select(MapPinLogic.Key).Distinct().Count());
-        Assert.All(MapPinLogic.All, state => Assert.False(string.IsNullOrWhiteSpace(MapPinLogic.Title(state))));
+        Assert.Equal(8, MapPinLogic.All.Length);
+        Assert.DoesNotContain(MapPinState.Mixed, MapPinLogic.All);
+        var every = Enum.GetValues<MapPinState>();
+        Assert.Equal(every.Length, every.Select(MapPinLogic.Key).Distinct().Count());
+        Assert.All(every, state => Assert.False(string.IsNullOrWhiteSpace(MapPinLogic.Title(state))));
+        Assert.True(MapPinLogic.IsSplit(MapPinState.Mixed));
+        Assert.All(MapPinLogic.All, state => Assert.False(MapPinLogic.IsSplit(state)));
     }
 
     [Fact]

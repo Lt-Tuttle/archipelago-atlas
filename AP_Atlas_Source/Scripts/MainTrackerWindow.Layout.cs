@@ -352,8 +352,10 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         {
             theme.SetColor("font_hover_color", type, text);
             theme.SetColor("font_focus_color", type, text);
-            theme.SetColor("font_hover_pressed_color", type, textOnAccent);
-            theme.SetColor("font_pressed_color", type, textOnAccent);
+            // A pressed button sits on the accent; a checked box or switch has no fill, so its text keeps the text colour.
+            bool fill = type is not ("CheckBox" or "CheckButton");
+            theme.SetColor("font_hover_pressed_color", type, fill ? textOnAccent : text);
+            theme.SetColor("font_pressed_color", type, fill ? textOnAccent : text);
         }
         theme.SetColor("font_disabled_color", "Button", new Godot.Color(text, 0.35f));
         theme.SetColor("placeholder_color", "LineEdit", muted);
