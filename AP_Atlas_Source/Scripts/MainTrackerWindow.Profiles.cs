@@ -945,6 +945,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         }
         else ShowToast(string.IsNullOrWhiteSpace(text) ? $"{profile.Name} is no longer linked to Cheese Tracker" : $"{profile.Name} is linked to Cheese Tracker", AP_Atlas.Core.ThemeColors.TextSubtle);
         if (_selectedProfile == profile && _cheeseInput != null) _cheeseInput.Text = profile.CheeseTrackerUrl ?? "";
+        if (_currentTool == AP_Atlas.UI.Tool.Home) _homePage?.Refresh(); // the Cheese step's tick
     }
     private void OnDeleteProfilePressed()
     {

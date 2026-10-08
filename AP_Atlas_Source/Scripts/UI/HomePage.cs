@@ -15,7 +15,14 @@ namespace AP_Atlas.UI
     {
         /// <summary>A tool card's smallest width, and a feature card's, in logical units: the grids' columns come from them.</summary>
         public const int ToolCardWidth = 270, FeatureCardWidth = 340;
+        /// <summary>The checklist's widest, so a step's button stays beside its text at any window width (the mark, the text, the button).</summary>
+        public const int StepsWidth = 660;
         private GridContainer? _tools, _features;
+        private VBoxContainer? _stepsBox;
+        private HBoxContainer? _allDoneRow;
+        private Button? _showStepsButton;
+        private Button? _addMultiworldButton;
+        private bool _showSteps;
 
         /// <summary>The tool cards' columns and the feature cards' (for tests).</summary>
         public int ToolColumns => _tools?.Columns ?? 0;
@@ -23,7 +30,13 @@ namespace AP_Atlas.UI
 
         private void Reflow(float width)
         {
-            if (_tools == null || _features == null || width <= 0) return;
+            if (width <= 0) return;
+            if (_stepsBox != null)
+            {
+                float stepsWidth = Math.Min(StepsWidth, width);
+                if (Math.Abs(_stepsBox.CustomMinimumSize.X - stepsWidth) > 0.5f) _stepsBox.CustomMinimumSize = new Vector2(stepsWidth, 0);
+            }
+            if (_tools == null || _features == null) return;
             int toolColumns = Math.Clamp((int)(width / ToolCardWidth), 1, 3), featureColumns = Math.Clamp((int)(width / FeatureCardWidth), 1, 2);
             if (_tools.Columns != toolColumns) _tools.Columns = toolColumns;
             if (_features.Columns != featureColumns) _features.Columns = featureColumns;
@@ -39,7 +52,13 @@ namespace AP_Atlas.UI
             public Func<string, string, bool> IsSlotLive { get; init; } = (_, _) => false;
             public Func<int> ContentFontSize { get; init; } = () => 14;
             public Action SetUpEngine { get; init; } = () => { };
+            /// <summary>Takes the user to the Multiworlds page with a new multiworld selected (the empty list's button).</summary>
             public Action AddMultiworld { get; init; } = () => { };
+            /// <summary>The steps' quick setup, each a small dialog on Home: a new multiworld, connecting a slot, finding a map pack, linking Cheese Tracker.</summary>
+            public Action QuickAddMultiworld { get; init; } = () => { };
+            public Action QuickConnect { get; init; } = () => { };
+            public Action QuickFindPack { get; init; } = () => { };
+            public Action QuickLinkCheese { get; init; } = () => { };
             public Action<Tool> ShowTool { get; init; } = _ => { };
             /// <summary>Connects every slot of a multiworld that isn't connected yet.</summary>
             public Action<MultiworldProfile> Connect { get; init; } = _ => { };
@@ -87,18 +106,21 @@ namespace AP_Atlas.UI
 
         private sealed class Step
         {
-            public Step(string id, Func<bool> done, TextureRect mark, Button button)
+            public Step(string id, Func<bool> done, TextureRect mark, Button button, Control row)
             {
                 Id = id;
                 Done = done;
                 Mark = mark;
                 Button = button;
+                Row = row;
             }
 
             public string Id { get; }
             public Func<bool> Done { get; }
             public TextureRect Mark { get; }
             public Button Button { get; }
+            /// <summary>The step's row: hidden once the step is done, unless the user shows the steps again.</summary>
+            public Control Row { get; }
             public bool LastDone { get; set; }
         }
 
@@ -151,21 +173,41 @@ namespace AP_Atlas.UI
             header.AddChild(titles);
             body.AddChild(header);
 
-            // Getting started: each step reads Atlas's state and has the button that does it.
+            // Getting started: each step reads Atlas's state and has the button that sets it up in a small dialog here. The
+            // steps sit in a box no wider than StepsWidth, so each button stays beside its text at any window width; a done
+            // step disappears, and once every step is done one line says so (Show steps brings them back, ticked).
             body.AddChild(Kit.Heading(_tr("Getting started"), 1.25f));
-            var steps = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            var steps = _stepsBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ShrinkBegin, CustomMinimumSize = new Vector2(StepsWidth, 0) };
             steps.AddThemeConstantOverride("separation", 8);
             body.AddChild(steps);
             AddStep(steps, "engine", "Set up the Atlas Engine", "Downloads Archipelago into Atlas's own folder, about 55 MB. Nothing else on your PC changes.",
                 "Set up…", hooks.EngineReady, hooks.SetUpEngine);
-            AddStep(steps, "multiworld", "Add a multiworld", "Its server, its password and the slots you play.",
-                "Add…", () => hooks.Profiles().Count > 0, hooks.AddMultiworld);
+            AddStep(steps, "multiworld", "Add a multiworld", "Its name, its server and the slots you play.",
+                "New…", () => hooks.Profiles().Count > 0, hooks.QuickAddMultiworld);
             AddStep(steps, "connect", "Connect a slot", "From then on Atlas follows the room: items, checks, hints and chat.",
-                "Multiworlds", () => hooks.Profiles().Any(p => p.SavedStats.Count > 0 || p.Slots.Any(slot => hooks.IsSlotLive(p.Id, slot))), () => hooks.ShowTool(Tool.Connections));
+                "Connect…", () => hooks.Profiles().Any(p => p.SavedStats.Values.Any(s => s.TotalCount > 0 || s.SlotNumber > 0) || p.Slots.Any(slot => hooks.IsSlotLive(p.Id, slot))), hooks.QuickConnect);
             AddStep(steps, "pack", "Install a map pack", "A PopTracker pack puts your checks on the game's map. The Pack Doctor looks it over first.",
-                "Map Packs", hooks.AnyPackInstalled, () => hooks.ShowTool(Tool.MapPacks));
+                "Find a pack…", hooks.AnyPackInstalled, hooks.QuickFindPack);
             AddStep(steps, "cheese", "Link Cheese Tracker, if your multiworld uses it", "Your async multiworld's shared tracker, kept up to date from Atlas's logic.",
-                "Cheese Tracker", () => hooks.Profiles().Any(p => !string.IsNullOrWhiteSpace(p.CheeseTrackerUrl)), hooks.OpenCheeseSettings);
+                "Link…", () => hooks.Profiles().Any(p => !string.IsNullOrWhiteSpace(p.CheeseTrackerUrl)), hooks.QuickLinkCheese);
+            var allDone = _allDoneRow = new HBoxContainer { Visible = false };
+            allDone.AddThemeConstantOverride("separation", 12);
+            allDone.AddChild(new TextureRect
+            {
+                Texture = LucideTextures.Get("circle-check", AP_Atlas.Core.ThemeColors.Heading, 1.0f),
+                CustomMinimumSize = new Vector2(22, 22),
+                StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+                ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+                SizeFlagsVertical = SizeFlags.ShrinkCenter
+            });
+            allDone.AddChild(new Label { Text = _tr("You're set up."), SizeFlagsVertical = SizeFlags.ShrinkCenter });
+            _showStepsButton = Kit.Button(_tr("Show steps"), _tr("Shows the steps again, each with its tick."), () =>
+            {
+                _showSteps = !_showSteps;
+                Refresh();
+            }, flat: true, small: true);
+            allDone.AddChild(_showStepsButton);
+            steps.AddChild(allDone);
 
             // The user's multiworlds, the most recently played first.
             body.AddChild(Kit.Heading(_tr("Your multiworlds"), 1.25f));
@@ -298,6 +340,21 @@ namespace AP_Atlas.UI
 
         public Button StepButtonOf(string id) => StepOf(id).Button;
 
+        /// <summary>Whether a step's row shows (a done step is hidden until Show steps).</summary>
+        public bool StepShown(string id) => StepOf(id).Row.Visible;
+
+        /// <summary>Whether the "You're set up." line shows (every step done).</summary>
+        public bool AllDoneShown => _allDoneRow?.Visible == true;
+
+        public Button? ShowStepsButton => _showStepsButton;
+
+        /// <summary>The empty multiworld list's "Add a multiworld…" button (null while multiworlds exist).</summary>
+        public Button? AddMultiworldButton => _addMultiworldButton;
+
+        /// <summary>The checklist box's width and right edge, in the window (for tests).</summary>
+        public float StepsBoxWidth => _stepsBox?.Size.X ?? 0;
+        public float StepsBoxRight => _stepsBox == null ? 0 : _stepsBox.GlobalPosition.X + _stepsBox.Size.X;
+
         /// <summary>The multiworlds shown, most recently played first.</summary>
         public IReadOnlyList<string> RecentProfileIds { get; private set; } = Array.Empty<string>();
 
@@ -339,7 +396,11 @@ namespace AP_Atlas.UI
                 step.LastDone = step.Done();
                 step.Mark.Texture = LucideTextures.Get(step.LastDone ? "circle-check" : "circle", step.LastDone ? AP_Atlas.Core.ThemeColors.Heading : AP_Atlas.Core.ThemeColors.TextSubtle);
                 step.Mark.TooltipText = step.LastDone ? _tr("Done") : _tr("Not yet");
+                step.Row.Visible = _showSteps || !step.LastDone;
             }
+            bool allDone = _steps.All(s => s.LastDone);
+            if (_allDoneRow != null) _allDoneRow.Visible = allDone;
+            if (_showStepsButton != null) _showStepsButton.Text = _showSteps ? _tr("Hide steps") : _tr("Show steps");
             RefreshRecents();
             RefreshWhatsNew();
             MainTrackerWindow.SetFontSizeRecursive(this, _hooks.ContentFontSize());
@@ -384,7 +445,7 @@ namespace AP_Atlas.UI
             button.Pressed += act;
             row.AddChild(button);
             into.AddChild(row);
-            _steps.Add(new Step(id, done, mark, button));
+            _steps.Add(new Step(id, done, mark, button, row));
         }
 
         private void RefreshRecents()
@@ -404,7 +465,7 @@ namespace AP_Atlas.UI
                 var row = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
                 row.AddThemeConstantOverride("separation", 12);
                 row.AddChild(Small(_tr("No multiworlds yet.")));
-                var add = new Button { Text = _tr("Add a multiworld…") };
+                var add = _addMultiworldButton = new Button { Text = _tr("Add a multiworld…") };
                 add.Pressed += () => _hooks.AddMultiworld();
                 row.AddChild(add);
                 _recents.AddChild(row);

@@ -8,7 +8,7 @@ Atlas is an unofficial community tool: it isn't affiliated with or endorsed by t
 
 Atlas opens on Home (Ctrl+8) unless Settings → Behaviour → Open on says otherwise. Its header carries Atlas's icon and wordmark, which take the theme's colours and your accent. It has:
 
-- **Getting started:** the steps to a working Atlas, each with a tick once it's done and a button that does it: set up the Atlas Engine (the tick appears the moment the setup finishes), add a multiworld (which takes you to the Multiworlds page with the new one selected, its name ready to type), connect a slot, install a map pack, and link Cheese Tracker if your multiworld uses it.
+- **Getting started:** the steps to a working Atlas, each with a button that sets it up in a small window right here: set up the Atlas Engine (the tick appears the moment the setup finishes); **New…** makes a multiworld (its name, server and password, and its slots, typed or from a YAML, which names a slot and its game); **Connect…** lists every multiworld's slots with a Connect button each; **Find a pack…** searches GitHub once for a map pack of a game your slots play (or another you type) and shows what it found on the Map Packs page; **Link…** links a multiworld to its Cheese Tracker page. A step disappears once it's done, and when every step is done the section says "You're set up." with Show steps to see them again, ticked. The buttons sit beside their text at any window width.
 - **Your multiworlds:** the ones you've played most recently, each with a Connect button that connects every slot of it in turn.
 - **Tools:** a card per tool.
 - A tip, which changes each time Home shows.

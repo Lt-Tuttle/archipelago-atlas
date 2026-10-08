@@ -20,6 +20,10 @@ public partial class MainTrackerWindow
             ContentFontSize = () => _appSettings.ContentFontSize,
             SetUpEngine = OpenEngineSetup,
             AddMultiworld = OnAddProfilePressed,
+            QuickAddMultiworld = () => AP_Atlas.UI.QuickSetup.NewMultiworld(this, QuickHooks()),
+            QuickConnect = () => AP_Atlas.UI.QuickSetup.ConnectSlots(this, QuickHooks()),
+            QuickFindPack = () => AP_Atlas.UI.QuickSetup.FindPack(this, QuickHooks()),
+            QuickLinkCheese = () => AP_Atlas.UI.QuickSetup.LinkCheese(this, QuickHooks()),
             ShowTool = host.ShowTool,
             Connect = ConnectEverySlot,
             OpenCheeseSettings = OpenCheeseSettings,
@@ -34,6 +38,47 @@ public partial class MainTrackerWindow
         page.Visible = false;
         _homePage = page;
         return page;
+    }
+
+    /// <summary>What Home's quick-setup dialogs need from the window.</summary>
+    private AP_Atlas.UI.QuickSetup.Hooks QuickHooks() => new AP_Atlas.UI.QuickSetup.Hooks
+    {
+        Tr = text => Tr(text),
+        Profiles = () => _profiles,
+        IsSlotLive = IsSlotLive,
+        ConnectSlot = (profile, slot) => OnConnectSlotPressed(slot, profile),
+        ConnectAll = ConnectEverySlot,
+        PlayedGames = () => _profiles.SelectMany(p => p.SavedStats.Values.Select(s => s.GameName))
+            .Concat(ActiveSlotNodes().OfType<SlotTrackerControl>().Select(slot => slot.Game))
+            .Where(game => !string.IsNullOrWhiteSpace(game)).Distinct(System.StringComparer.OrdinalIgnoreCase).ToList(),
+        FindPack = FindMapPack,
+        PickYaml = PickYamlFor,
+        KeepYaml = KeepYamlForSlots,
+        Create = draft => CreateProfileFromDraft(draft),
+        LinkCheese = LinkCheeseFromEditor,
+    };
+
+    /// <summary>
+    /// A multiworld from Home's New multiworld dialog: saved, selected on the Multiworlds page (Home stays where it is),
+    /// each slot's game noted and its YAML tied to it.
+    /// </summary>
+    internal MultiworldProfile CreateProfileFromDraft(AP_Atlas.UI.NewMultiworldDraft draft)
+    {
+        var profile = new MultiworldProfile { Name = draft.Name.Trim(), ServerUrl = (draft.Server ?? "").Trim(), Password = draft.Password ?? "" };
+        foreach (string slot in draft.Slots.Select(s => s.Trim()).Where(s => s.Length > 0).Distinct())
+        {
+            profile.Slots.Add(slot);
+            if (draft.GameBySlot.TryGetValue(slot, out var game) && !string.IsNullOrWhiteSpace(game)) profile.SavedStats[slot] = new SlotStats { GameName = game };
+            if (draft.YamlBySlot.TryGetValue(slot, out var yaml) && !string.IsNullOrEmpty(yaml)) _appSettings.SlotYamlPaths[AP_Atlas.Core.Annotations.SlotKey(profile.Id, slot)] = yaml;
+        }
+        _profiles.Add(profile);
+        DataManager.SaveProfiles(_profiles);
+        DataManager.SaveSettings(_appSettings);
+        RefreshProfileList();
+        SelectProfile(profile);
+        UpdateSidebar();
+        _homePage?.Refresh();
+        return profile;
     }
 
     /// <summary>The engine changed (any thread): Home's checklist ticks the engine step as soon as the setup is done.</summary>

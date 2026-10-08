@@ -124,7 +124,7 @@ public partial class MainTrackerWindow
             KeyboardShortcutsAsync);
         await ScenarioAsync("Privacy & permissions: a section of the Settings page lists every permission Atlas can ask for with its state (asks each time, allowed until Atlas closes, always allowed, not until Atlas restarts) and every trusted apworld source; a kept answer and a trusted source can be taken back, which is saved; the section is found by its words",
             PrivacyAsync);
-        await ScenarioAsync("Home: Ctrl+8 shows it on its own; every tool has a card with a line and every link is https; the checklist ticks the engine as it is and nothing else in a fresh folder, then a multiworld and a pack once they exist; a tip shows and Next tip goes around; the multiworld is listed and one click connects its slot, ticks the step and says Connected; a tool's card shows the tool",
+        await ScenarioAsync("Home: Ctrl+8 shows it on its own; every tool has a card with a line and every link is https; the checklist keeps each button beside its text; it ticks the engine as it is and nothing else in a fresh folder, then a multiworld and a pack once they exist, and hides each done step; a tip shows and Next tip goes around; the multiworld is listed and one click connects its slot, ticks the step and says Connected; a tool's card shows the tool; each step sets itself up in a dialog on Home (a new multiworld with its slot, connecting a slot, finding a map pack for a slot's game, linking Cheese Tracker); when every step is done one line says so and Show steps brings them back",
             HomeAsync);
         await ScenarioAsync("Games page: the Games tool lists every game in its group (community games from the index, the games your multiworlds play as added by you), with the games of your own slots first (from their saved stats and their linked YAMLs, each once), typed words narrow the list, a game's page walks its setup through (the apworld, a map pack, your YAML, the files it needs) with each step ticked as Atlas finds it; a YAML added once is listed under every game it names; the game's folders are inside Atlas's data folder; once GitHub may be asked, the page lists every version of every project (the game's own, and one of the same name found by one search), newest first with pre-releases marked and the newest full release named, and downloads nothing without a press; Add YAML offers the places a YAML may be; the release-files dialog fits the window with a check box per file; a Discord home is named on its link",
             GamesPageAsync);
@@ -937,6 +937,22 @@ public partial class MainTrackerWindow
         UiTestExpect(!home.StepDone("multiworld") && !home.StepDone("connect") && !home.StepDone("pack") && !home.StepDone("cheese"),
             $"steps done before anything happened: {string.Join(", ", home.StepIds.Where(home.StepDone))}");
         UiTestExpect(home.RecentProfileIds.Count == 0, "multiworlds listed while there are none");
+        // The checklist's buttons sit beside their text: the box is capped, and a step's button ends within it.
+        var engineButton = home.StepButtonOf("engine");
+        UiTestExpect(home.StepsBoxWidth <= AP_Atlas.UI.HomePage.StepsWidth + 1 && home.StepsBoxWidth < home.Size.X - 48 - 1 && engineButton.GlobalPosition.X + engineButton.Size.X <= home.StepsBoxRight + 1,
+            $"the checklist is {home.StepsBoxWidth} wide in a page {home.Size.X} wide (right edge {home.StepsBoxRight}); the engine button ends at {engineButton.GlobalPosition.X + engineButton.Size.X}");
+        // The empty list's "Add a multiworld…" takes the user to the Multiworlds page with the new one selected, its name
+        // ready to type; a second Add selects it again instead of adding another.
+        int beforeAdd = _profiles.Count;
+        home.AddMultiworldButton!.EmitSignal(BaseButton.SignalName.Pressed);
+        UiTestExpect(ShownContent() == _connectionPanel && _selectedProfile != null && _selectedProfile.Name == "New Multiworld" && _profiles.Count == beforeAdd + 1,
+            "Add a multiworld… didn't show the new multiworld on the Multiworlds page");
+        UiTestExpect(_nameInput.HasFocus(), "the new multiworld's name box isn't ready to type into");
+        var untouched = _selectedProfile;
+        OnAddProfilePressed();
+        UiTestExpect(_profiles.Count == beforeAdd + 1 && _selectedProfile == untouched, "a second Add made another untouched multiworld");
+        DeleteProfile(untouched);
+        host.ShowTool(AP_Atlas.UI.Tool.Home);
         // The engine changing (setup finished) makes Home re-read its state: the engine step ticks without a visit.
         int refreshes = home.RefreshCount;
         AP_Atlas.Core.EngineSetup.AtlasEngine.NotifyChanged();
@@ -949,6 +965,7 @@ public partial class MainTrackerWindow
         UiTestExpect(home.TipIndex == (tip + 1) % AP_Atlas.UI.HomePage.Tips.Length && home.TipText.Contains(AP_Atlas.UI.HomePage.Tips[home.TipIndex]), "Next tip didn't show the next one");
 
         await using var server = new FakeArchipelagoServer();
+        server.Slots.Add("Quill"); // the slot the quick dialog adds (no "Tester" in it: the crash report scenario checks its log for that word)
         server.Games["Test Game"] = new FakeGame("0123456789abcdef0123456789abcdef01234567",
             new Dictionary<string, long> { ["Sword"] = 1000 }, new Dictionary<string, long> { ["Cave Chest"] = 2000 });
         var profile = new MultiworldProfile { Name = "Home test", ServerUrl = server.Url.ToString() };
@@ -957,6 +974,8 @@ public partial class MainTrackerWindow
         _profiles.Add(profile);
         string zip = System.IO.Path.Combine(AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory(), "uitest_home_pack.zip");
         FakeMapPack.Write(zip, "Home test pack", "Test Game");
+        string? cheeseSiteBefore = _appSettings.CheeseInstanceUrl;
+        var cheeseSpacingBefore = CheeseClient.Spacing;
         try
         {
             // A multiworld and a pack: their steps tick when Home shows again, and the multiworld is listed with a Connect button.
@@ -973,26 +992,102 @@ public partial class MainTrackerWindow
             // A tool's card shows the tool.
             home.ToolCardOf(AP_Atlas.UI.Tool.MapPacks).EmitSignal(BaseButton.SignalName.Pressed);
             UiTestExpect(ShownContent() == _packManagerPanel, "the Map Packs card didn't show Map Packs");
-            // Add a multiworld from Home: the Multiworlds page shows the new one selected, its name ready to type; a
-            // second press selects it again instead of adding another.
+            // Done steps are hidden (the multiworld, the connect and the pack steps are done; the engine and Cheese ones aren't).
             host.ShowTool(AP_Atlas.UI.Tool.Home);
+            UiTestExpect(!home.StepShown("multiworld") && !home.StepShown("connect") && !home.StepShown("pack") && home.StepShown("cheese") && !home.AllDoneShown,
+                $"the done steps aren't hidden: shown {string.Join(", ", home.StepIds.Where(home.StepShown))}");
+            AcceptDialog? QuickDialog(string id) => GetChildren().OfType<AcceptDialog>().FirstOrDefault(d => d.HasMeta("quick_setup") && d.GetMeta("quick_setup").AsString() == id && !d.IsQueuedForDeletion());
+            // The multiworld step: a small dialog on Home (no page jump); Create saves the multiworld with its slot, selects it and ticks the step.
             int before = _profiles.Count;
             home.StepButtonOf("multiworld").EmitSignal(BaseButton.SignalName.Pressed);
-            UiTestExpect(ShownContent() == _connectionPanel && _selectedProfile != null && _selectedProfile.Name == "New Multiworld" && _profiles.Count == before + 1,
-                "Add from Home didn't show the new multiworld on the Multiworlds page");
-            UiTestExpect(_nameInput.HasFocus(), "the new multiworld's name box isn't ready to type into");
-            var added = _selectedProfile;
-            OnAddProfilePressed();
-            UiTestExpect(_profiles.Count == before + 1 && _selectedProfile == added, "a second Add made another untouched multiworld");
+            var newDialog = await UiTestWaitForAsync(() => QuickDialog("new-multiworld"), "the New multiworld dialog");
+            UiTestExpect(ShownContent() == home, "the multiworld step left Home");
+            ((LineEdit)newDialog.FindChild("NameBox", true, false)).Text = "Quick MW";
+            ((LineEdit)newDialog.FindChild("ServerBox", true, false)).Text = server.Url.ToString();
+            var slotsBox = (VBoxContainer)newDialog.FindChild("SlotsBox", true, false);
+            slotsBox.GetChildren().OfType<HBoxContainer>().First().GetChild<LineEdit>(0).Text = "Quill";
+            newDialog.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
+            await UiTestWaitAsync(0.1);
+            var added = _profiles.FirstOrDefault(p => p.Name == "Quick MW");
+            UiTestExpect(added != null && _profiles.Count == before + 1 && added.Slots.SequenceEqual(new[] { "Quill" }) && added.ServerUrl == server.Url.ToString() && _selectedProfile == added
+                && DataManager.LoadProfiles().Any(p => p.Id == added.Id && p.Slots.Contains("Quill")) && ShownContent() == home && QuickDialog("new-multiworld") == null,
+                "the New multiworld dialog didn't make the multiworld with its slot, saved and selected, with Home staying");
+            // The connect step: a dialog listing every multiworld's slots; Connect brings the slot's view and the button says so.
+            home.StepButtonOf("connect").EmitSignal(BaseButton.SignalName.Pressed);
+            var connectDialog = await UiTestWaitForAsync(() => QuickDialog("connect-slots"), "the Connect a slot dialog");
+            var connectButtons = connectDialog.FindChildren("*", nameof(Button), true, false).OfType<Button>().Where(b => b.HasMeta("connect_slot")).ToList();
+            var testerButton = connectButtons.First(b => b.GetMeta("connect_slot").AsString() == profile.Id + "|Tester");
+            var tester2Button = connectButtons.First(b => b.GetMeta("connect_slot").AsString() == added!.Id + "|Quill");
+            UiTestExpect(testerButton.Disabled && testerButton.Text == "Connected" && !tester2Button.Disabled, "the dialog doesn't tell a connected slot from one to connect");
+            tester2Button.EmitSignal(BaseButton.SignalName.Pressed);
+            await UiTestWaitForAsync(() => SlotView(added!.Id, "Quill"), "the slot's view from the quick dialog");
+            UiTestExpect(tester2Button.Disabled, "the Connect button didn't disable itself");
+            connectDialog.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
+            await UiTestWaitAsync(0.1);
+            // The pack step: a dialog offering the slots' games (the first chosen); Search GitHub shows the Map Packs page with the results (a fake GitHub).
+            await using var github = new AP_Atlas.Core.Testing.FakeWebSite();
+            // One result, so the search stops at its first query (an empty answer makes it try a broader one).
+            github.Respond = path => path.StartsWith("/search/repositories")
+                ? (200, "{\"items\":[{\"full_name\":\"packs/test-game-poptracker\",\"description\":\"A PopTracker pack for Test Game\",\"html_url\":\"https://github.com/packs/test-game-poptracker\",\"stargazers_count\":3}]}")
+                : (404, "{}");
+            AP_Atlas.Core.GitHubApi.TestSite = github.Site;
+            AP_Atlas.Core.GitHubApi.ResetForTests();
+            home.StepButtonOf("pack").EmitSignal(BaseButton.SignalName.Pressed);
+            var packDialog = await UiTestWaitForAsync(() => QuickDialog("find-pack"), "the Find a map pack dialog");
+            var gameChoice = (OptionButton)packDialog.FindChild("GameChoice", true, false);
+            UiTestExpect(gameChoice.ItemCount > 0 && gameChoice.GetItemText(gameChoice.Selected) == "Test Game", $"the pack dialog offers {gameChoice.ItemCount} game(s), first {(gameChoice.ItemCount > 0 ? gameChoice.GetItemText(0) : "")}");
+            packDialog.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
+            await UiTestWaitForAsync(() => ShownContent() == _packManagerPanel ? _packManagerPanel : null, "the Map Packs page");
+            var results = await UiTestWaitForAsync(() => _packManagerPanel.GetChildren().OfType<AcceptDialog>().FirstOrDefault(d => d.Title == "Map packs on GitHub"), "the search results", 20);
+            UiTestExpect(github.Requests.Count(r => r.StartsWith("/search/")) == 1, $"GitHub was searched {github.Requests.Count(r => r.StartsWith("/search/"))} times");
+            results.EmitSignal(AcceptDialog.SignalName.Confirmed);
+            await UiTestWaitAsync(0.1);
             host.ShowTool(AP_Atlas.UI.Tool.Home);
-            UiTestExpect(home.StepDone("multiworld"), "the multiworld step isn't ticked after Add");
-            DeleteProfile(added);
+            // The Cheese step: a dialog with the multiworld and its link (a fake Cheese Tracker); Link links it and ticks the step.
+            await using var cheese = new FakeCheeseServer(new CtTracker
+            {
+                Id = 1,
+                TrackerId = FakeCheeseServer.TrackerId,
+                Title = "Quick MW on Cheese",
+                Games = new List<CtGame> { new CtGame { Id = 21, Position = 1, Name = "Quill", Game = "Test Game", Availability = "open", Progression = "bk" } },
+                Hints = new List<CtHint>()
+            });
+            _appSettings.CheeseInstanceUrl = cheese.Site;
+            CheeseClient.Spacing = TimeSpan.Zero;
+            home.StepButtonOf("cheese").EmitSignal(BaseButton.SignalName.Pressed);
+            var cheeseDialog = await UiTestWaitForAsync(() => QuickDialog("link-cheese"), "the Link Cheese Tracker dialog");
+            var multiworldChoice = (OptionButton)cheeseDialog.FindChild("MultiworldChoice", true, false);
+            for (int i = 0; i < multiworldChoice.ItemCount; i++)
+                if (multiworldChoice.GetItemText(i) == "Quick MW") multiworldChoice.Selected = i;
+            ((LineEdit)cheeseDialog.FindChild("LinkBox", true, false)).Text = cheese.TrackerUrl;
+            cheeseDialog.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
+            await UiTestWaitForAsync(() => string.IsNullOrEmpty(added!.CheeseTrackerUrl) ? null : added, "the Cheese Tracker link");
+            await UiTestWaitForAsync(() => home.StepDone("cheese") ? home : null, "the Cheese step's tick");
+            // Every step done (a page whose hooks say so): one line, no steps; Show steps brings them back, ticked.
+            var done = new AP_Atlas.UI.HomePage(text => Tr(text), new AP_Atlas.UI.HomePage.Hooks
+            {
+                EngineReady = () => true,
+                Profiles = () => new[] { added! },
+                AnyPackInstalled = () => true,
+                IsSlotLive = (_, _) => true,
+            });
+            AddChild(done);
+            done.Refresh();
+            UiTestExpect(done.AllDoneShown && done.StepIds.All(id => !done.StepShown(id)), $"with every step done, the page shows {string.Join(", ", done.StepIds.Where(done.StepShown))} and the line {done.AllDoneShown}");
+            done.ShowStepsButton!.EmitSignal(BaseButton.SignalName.Pressed);
+            UiTestExpect(done.StepIds.All(id => done.StepShown(id) && done.StepDone(id)) && done.ShowStepsButton.Text == "Hide steps", "Show steps didn't bring the ticked steps back");
+            RemoveChild(done);
+            done.QueueFree();
         }
         finally
         {
+            AP_Atlas.Core.GitHubApi.TestSite = null;
             AP_Atlas.Core.SafeFile.Delete(zip);
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
             DeleteProfile(profile);
+            foreach (var quick in _profiles.Where(p => p.Name == "Quick MW").ToList()) DeleteProfile(quick);
+            _appSettings.CheeseInstanceUrl = cheeseSiteBefore;
+            CheeseClient.Spacing = cheeseSpacingBefore;
         }
     }
 
