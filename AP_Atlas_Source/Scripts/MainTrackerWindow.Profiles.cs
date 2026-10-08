@@ -85,6 +85,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         {
             if (_selectedProfile == profile && _sphereInput != null) _sphereInput.Text = profile.SphereTrackerUrl ?? "";
             UpdateSidebar();
+            if (_currentTool == AP_Atlas.UI.Tool.Home) _homePage?.Refresh(); // the Sphere step's tick
         });
         if (!IsInstanceValid(this) || error == null || _selectedProfile != profile) return;
         _statusLabel.Text = Tr("Sphere Tracker: {0}").Replace("{0}", error);

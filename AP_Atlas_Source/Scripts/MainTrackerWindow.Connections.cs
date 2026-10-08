@@ -372,6 +372,11 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         slotTracker.ShowToast = ShowToast;
         slotTracker.ShowActionToast = ShowToast;
         slotTracker.OpenEngineSetup = OpenEngineSetup;
+        slotTracker.OpenGamesPageFor = game =>
+        {
+            ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.Games);
+            if (!string.IsNullOrEmpty(game)) _gamesPage?.Select(game);
+        };
         slotTracker.FindMapPack = FindMapPack;
         slotTracker.NewChatLines += () => MarkTerminalTabNew(0);
         slotTracker.AccuracyChanged += () => _propertiesPanel?.QueueRefresh();

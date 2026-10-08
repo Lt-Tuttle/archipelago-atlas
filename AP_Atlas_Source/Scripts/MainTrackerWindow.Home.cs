@@ -24,6 +24,16 @@ public partial class MainTrackerWindow
             QuickConnect = () => AP_Atlas.UI.QuickSetup.ConnectSlots(this, QuickHooks()),
             QuickFindPack = () => AP_Atlas.UI.QuickSetup.FindPack(this, QuickHooks()),
             QuickLinkCheese = () => AP_Atlas.UI.QuickSetup.LinkCheese(this, QuickHooks()),
+            QuickLinkSphere = () => AP_Atlas.UI.QuickSetup.LinkSphere(this, QuickHooks()),
+            OpenSphereSettings = () => ShowSphereTab(AP_Atlas.UI.SphereTrackerTab.SettingsView),
+            OpenEngineWindow = () => OpenEngineWindow(),
+            IsStepSkipped = id => _appSettings.SkippedHomeSteps.Contains(id),
+            SetStepSkipped = (id, skipped) =>
+            {
+                if (skipped) { if (!_appSettings.SkippedHomeSteps.Contains(id)) _appSettings.SkippedHomeSteps.Add(id); }
+                else _appSettings.SkippedHomeSteps.Remove(id);
+                DataManager.SaveSettingsSoon(_appSettings);
+            },
             ShowTool = host.ShowTool,
             Connect = ConnectEverySlot,
             OpenCheeseSettings = OpenCheeseSettings,
@@ -56,6 +66,7 @@ public partial class MainTrackerWindow
         KeepYaml = KeepYamlForSlots,
         Create = draft => CreateProfileFromDraft(draft),
         LinkCheese = LinkCheeseFromEditor,
+        LinkSphere = LinkSphereFromEditor,
     };
 
     /// <summary>

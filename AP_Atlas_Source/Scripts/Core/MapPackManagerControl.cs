@@ -725,9 +725,12 @@ namespace AP_Atlas.Core
             return queries;
         }
 
+        // The results dialog that's open (closed by itself once a pack chosen from it is installed).
+        private AcceptDialog _candidatesDialog;
+
         private void ShowPackCandidates(List<(string Game, List<PackCandidate> Candidates, string Problem)> results, int wanted)
         {
-            var dialog = new AcceptDialog { Title = "Map packs on GitHub", OkButtonText = "Close", MinSize = new Vector2I(760, 520) };
+            var dialog = _candidatesDialog = new AcceptDialog { Title = "Map packs on GitHub", OkButtonText = "Close", MinSize = new Vector2I(760, 520) };
             var scroll = new ScrollContainer { CustomMinimumSize = new Vector2(720, 460), HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
             var box = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
             box.AddThemeConstantOverride("separation", 10);
@@ -872,6 +875,12 @@ namespace AP_Atlas.Core
             if (!GodotObject.IsInstanceValid(this)) return;
             _logAction($"Installed {safeName} from {where}.", "lime");
             SayInstalled(dest);
+            if (_candidatesDialog != null && GodotObject.IsInstanceValid(_candidatesDialog))
+            {
+                _candidatesDialog.Hide();
+                _candidatesDialog.QueueFree();
+            }
+            _candidatesDialog = null;
             PopTrackerPackLoader.NotifyPacksChanged();
             await RefreshPackListAsync();
         }

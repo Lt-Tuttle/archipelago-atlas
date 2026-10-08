@@ -116,7 +116,7 @@ public partial class MainTrackerWindow
             ActivityBarAsync);
         await ScenarioAsync("Slot picker: the tool header lists the connected slots with the selected one chosen; picking one shows its view, Ctrl+Tab and Ctrl+Shift+Tab go through them around the end, a slot selected elsewhere shows as picked, a tool that isn't per slot hides it, and a slot that ends leaves it",
             SlotPickerAsync);
-        await ScenarioAsync("Window parts: the View menu hides and shows the slots panel, the explorer (whatever tool shows), Properties, the bottom pane and the status bar, remembering each; each tool's explorer has its own width (Map Packs and Games start at 320); focus mode leaves the content alone and, off again, brings each part back as the user had it",
+        await ScenarioAsync("Window parts: the View menu hides and shows the slots panel, the explorer (whatever tool shows), Properties, the bottom pane and the status bar, remembering each; each tool's explorer has its own width (Map Packs starts at 400, Games at 360); focus mode leaves the content alone and, off again, brings each part back as the user had it",
             WindowPartsAsync);
         await ScenarioAsync("Settings page: Ctrl+, shows it with the search box ready and the sections in the explorer; each kind of row changes its setting at once and saves it (a toggle, a choice, a number, a window part, a bottom pane tab); a setting changed elsewhere shows as it is; typed words narrow the rows; a section jump scrolls",
             SettingsPageAsync);
@@ -124,7 +124,7 @@ public partial class MainTrackerWindow
             KeyboardShortcutsAsync);
         await ScenarioAsync("Privacy & permissions: a section of the Settings page lists every permission Atlas can ask for with its state (asks each time, allowed until Atlas closes, always allowed, not until Atlas restarts) and every trusted apworld source; a kept answer and a trusted source can be taken back, which is saved; the section is found by its words",
             PrivacyAsync);
-        await ScenarioAsync("Home: Ctrl+8 shows it on its own; every tool has a card with a line and every link is https; the checklist keeps each button beside its text; it ticks the engine as it is and nothing else in a fresh folder, then a multiworld and a pack once they exist, and hides each done step; a tip shows and Next tip goes around; the multiworld is listed and one click connects its slot, ticks the step and says Connected; a tool's card shows the tool; each step sets itself up in a dialog on Home (a new multiworld with its slot, connecting a slot, finding a map pack for a slot's game, linking Cheese Tracker); when every step is done one line says so and Show steps brings them back",
+        await ScenarioAsync("Home: Ctrl+8 shows it on its own; every tool has a card with a line and every link is https; the checklist keeps each button beside its text; it ticks the engine as it is and nothing else in a fresh folder, then a multiworld and a pack once they exist, and hides each done step; a tip shows and Next tip goes around; the multiworld is listed and one click connects its slot, ticks the step and says Connected; a tool's card shows the tool; each step sets itself up in a dialog on Home (a new multiworld with its slot, connecting a slot, finding a map pack for a slot's game, linking Cheese Tracker, linking the host's Sphere Tracker room) or opens the page where it's done by hand; Skip hides a step and is remembered, Unskip brings it back; the multiworld list keeps Connect beside the text; when every step is done one line says so and Show steps brings them back",
             HomeAsync);
         await ScenarioAsync("Games page: the Games tool lists every game in its group (community games from the index, the games your multiworlds play as added by you), with the games of your own slots first (from their saved stats and their linked YAMLs, each once), typed words narrow the list, a game's page walks its setup through (the apworld, a map pack, your YAML, the files it needs) with each step ticked as Atlas finds it; a YAML added once is listed under every game it names; the game's folders are inside Atlas's data folder; once GitHub may be asked, the page lists every version of every project (the game's own, and one of the same name found by one search), newest first with pre-releases marked and the newest full release named, and downloads nothing without a press; Add YAML offers the places a YAML may be; the release-files dialog fits the window with a check box per file; a Discord home is named on its link",
             GamesPageAsync);
@@ -188,6 +188,8 @@ public partial class MainTrackerWindow
             RaceRoomRestrictsAsync);
         await ScenarioAsync("Logic: the slot's logic follows its items and checks step by step; after an engine crash, an engine update or a restart it's rebuilt from scratch on a new engine; race mode can hide it",
             LogicFollowsTheSlotAsync);
+        await ScenarioAsync("Logic banner: when the engine runs but the game's apworld is missing, the Logic Tracker's banner offers the Games page (not the engine setup), and pressing it shows the Games page on the game",
+            LogicBannerAsync);
         await ScenarioAsync("BK: with logic running, checks left and none of them in logic, the Logic Tracker and Key Items say so with the count done, and the slot card says BK; an item that opens a check ends it",
             BkAsync);
         await ScenarioAsync("Shared engines: a multiworld's slots share its engines; when one slot's request brings an engine down, a slot sharing it (even one still starting) starts again in 2 s, and only the slot whose request it was counts the failure",
@@ -548,6 +550,13 @@ public partial class MainTrackerWindow
                 AP_Atlas.Core.Inspector.Inspect(target);
                 await UiTestWaitAsync(0.1);
                 UiTestExpect(_propertiesPanel.Current?.Key == target.Key, "Properties didn't follow a request after it was moved");
+                // The long sections (a multiworld's Slots) start collapsed, the short ones open; a section the user opens stays open.
+                UiTestExpect(_propertiesPanel.SectionCollapsed("Slots") == true && _propertiesPanel.SectionCollapsed("Overview") == false,
+                    $"Slots collapsed: {_propertiesPanel.SectionCollapsed("Slots")}, Overview collapsed: {_propertiesPanel.SectionCollapsed("Overview")}");
+                _propertiesPanel.ToggleSection("Slots");
+                UiTestExpect(_propertiesPanel.SectionCollapsed("Slots") == false && _appSettings.ExpandedPropertySections.Contains("Slots"), "opening Slots wasn't remembered");
+                _propertiesPanel.ToggleSection("Slots");
+                UiTestExpect(_propertiesPanel.SectionCollapsed("Slots") == true && !_appSettings.ExpandedPropertySections.Contains("Slots"), "closing Slots again wasn't remembered");
             }
             finally
             {
@@ -920,6 +929,34 @@ public partial class MainTrackerWindow
         }
     }
 
+    private async Task LogicBannerAsync()
+    {
+        var engine = StartFakeEngine(UiTestPython());
+        engine.StartError = ("world_missing", "Test Game isn't installed in the logic engine.");
+        engine.Apply();
+        await using var server = LogicWorldServer();
+        var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Tester");
+        _profiles.Add(profile);
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        try
+        {
+            await OnConnectSlotPressedAsync("Tester", profile);
+            var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
+            host.ShowTool(AP_Atlas.UI.Tool.LogicTracker);
+            await UiTestWaitForAsync(() => slot.EngineProblem?.Code == "world_missing" && slot.LogicNoticeButtons().Contains("Open the Games page") ? slot : null, "the banner's Games page button");
+            UiTestExpect(!slot.LogicNoticeButtons().Contains("Set up Atlas Engine…"), $"the banner offers the engine setup for a missing apworld: {string.Join(", ", slot.LogicNoticeButtons())}");
+            slot.PressLogicNotice("Open the Games page");
+            await UiTestWaitForAsync(() => ShownContent() == _gamesPage && _gamesPage!.SelectedGame == "Test Game" ? _gamesPage : null, "the Games page on the game");
+        }
+        finally
+        {
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+            DeleteProfile(profile);
+        }
+    }
+
     private async Task HomeAsync()
     {
         var host = (AP_Atlas.UI.IPropertiesHost)this;
@@ -939,8 +976,18 @@ public partial class MainTrackerWindow
         UiTestExpect(home.RecentProfileIds.Count == 0, "multiworlds listed while there are none");
         // The checklist's buttons sit beside their text: the box is capped, and a step's button ends within it.
         var engineButton = home.StepButtonOf("engine");
-        UiTestExpect(home.StepsBoxWidth <= AP_Atlas.UI.HomePage.StepsWidth + 1 && home.StepsBoxWidth < home.Size.X - 48 - 1 && engineButton.GlobalPosition.X + engineButton.Size.X <= home.StepsBoxRight + 1,
+        UiTestExpect(home.StepsBoxWidth <= Math.Min(AP_Atlas.UI.HomePage.StepsWidth, home.Size.X - 48) + 1 && engineButton.GlobalPosition.X + engineButton.Size.X <= home.StepsBoxRight + 1,
             $"the checklist is {home.StepsBoxWidth} wide in a page {home.Size.X} wide (right edge {home.StepsBoxRight}); the engine button ends at {engineButton.GlobalPosition.X + engineButton.Size.X}");
+        // Each step has its quick setup, a "go to the page" button and Skip; a skipped step hides and is remembered, Unskip brings it back.
+        UiTestExpect(home.StepIds.All(id => home.OpenButtonOf(id).Visible && home.SkipButtonOf(id).Text == "Skip") && home.OpenButtonOf("pack").Text == "Open Map Packs" && home.OpenButtonOf("sphere").Text == "Open Sphere Tracker",
+            "a step lacks its page button or Skip");
+        home.SkipButtonOf("sphere").EmitSignal(BaseButton.SignalName.Pressed);
+        UiTestExpect(!home.StepShown("sphere") && home.StepSkipped("sphere") && _appSettings.SkippedHomeSteps.Contains("sphere") && home.SkipButtonOf("sphere").Text == "Unskip", "Skip didn't hide the step and remember it");
+        home.SkipButtonOf("sphere").EmitSignal(BaseButton.SignalName.Pressed);
+        UiTestExpect(home.StepShown("sphere") && !home.StepSkipped("sphere") && !_appSettings.SkippedHomeSteps.Contains("sphere"), "Unskip didn't bring the step back");
+        home.OpenButtonOf("pack").EmitSignal(BaseButton.SignalName.Pressed);
+        UiTestExpect(ShownContent() == _packManagerPanel, "the pack step's page button didn't open Map Packs");
+        host.ShowTool(AP_Atlas.UI.Tool.Home);
         // The empty list's "Add a multiworld…" takes the user to the Multiworlds page with the new one selected, its name
         // ready to type; a second Add selects it again instead of adding another.
         int beforeAdd = _profiles.Count;
@@ -984,6 +1031,10 @@ public partial class MainTrackerWindow
             UiTestExpect(home.StepDone("multiworld") && home.StepDone("pack") && !home.StepDone("connect"),
                 $"after a multiworld and a pack, the steps done are {string.Join(", ", home.StepIds.Where(home.StepDone))}");
             UiTestExpect(home.RecentProfileIds.SequenceEqual(new[] { profile.Id }) && !home.ConnectButtonOf(profile.Id).Disabled, "the new multiworld isn't listed with a Connect button");
+            // The list is capped like the checklist, so Connect sits beside the multiworld's text.
+            var connectButton = home.ConnectButtonOf(profile.Id);
+            UiTestExpect(home.RecentsWidth <= Math.Min(AP_Atlas.UI.HomePage.StepsWidth, home.Size.X - 48) + 1 && connectButton.GlobalPosition.X + connectButton.Size.X <= home.RecentsRight + 1,
+                $"the multiworld list is {home.RecentsWidth} wide; Connect ends at {connectButton.GlobalPosition.X + connectButton.Size.X} against {home.RecentsRight}");
             // One click connects its slot; the step ticks and the button says so.
             home.ConnectButtonOf(profile.Id).EmitSignal(BaseButton.SignalName.Pressed);
             await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
@@ -994,7 +1045,7 @@ public partial class MainTrackerWindow
             UiTestExpect(ShownContent() == _packManagerPanel, "the Map Packs card didn't show Map Packs");
             // Done steps are hidden (the multiworld, the connect and the pack steps are done; the engine and Cheese ones aren't).
             host.ShowTool(AP_Atlas.UI.Tool.Home);
-            UiTestExpect(!home.StepShown("multiworld") && !home.StepShown("connect") && !home.StepShown("pack") && home.StepShown("cheese") && !home.AllDoneShown,
+            UiTestExpect(!home.StepShown("multiworld") && !home.StepShown("connect") && !home.StepShown("pack") && home.StepShown("cheese") && home.StepShown("sphere") && !home.AllDoneShown,
                 $"the done steps aren't hidden: shown {string.Join(", ", home.StepIds.Where(home.StepShown))}");
             AcceptDialog? QuickDialog(string id) => GetChildren().OfType<AcceptDialog>().FirstOrDefault(d => d.HasMeta("quick_setup") && d.GetMeta("quick_setup").AsString() == id && !d.IsQueuedForDeletion());
             // The multiworld step: a small dialog on Home (no page jump); Create saves the multiworld with its slot, selects it and ticks the step.
@@ -1063,6 +1114,26 @@ public partial class MainTrackerWindow
             cheeseDialog.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
             await UiTestWaitForAsync(() => string.IsNullOrEmpty(added!.CheeseTrackerUrl) ? null : added, "the Cheese Tracker link");
             await UiTestWaitForAsync(() => home.StepDone("cheese") ? home : null, "the Cheese step's tick");
+            // The Sphere step: a dialog with the multiworld and the host's room (a fake spheretracker.de); the host question is confirmed, the room links and the step ticks.
+            await using var sphereSite = new FakeWebSite { ContentType = "text/html" };
+            sphereSite.Respond = path => path.StartsWith("/room/HostRoom", StringComparison.Ordinal) ? (200, AP_Atlas.Core.SelfTest.SphereRoomPage("AbCdEfGhIjKlMnOpQrStUx", "HostPerson")) : (404, "");
+            AP_Atlas.Core.Spheres.SphereSite.TestSite = sphereSite.Site;
+            home.StepButtonOf("sphere").EmitSignal(BaseButton.SignalName.Pressed);
+            var sphereDialog = await UiTestWaitForAsync(() => QuickDialog("link-sphere"), "the Link Sphere Tracker dialog");
+            var sphereChoice = (OptionButton)sphereDialog.FindChild("MultiworldChoice", true, false);
+            for (int i = 0; i < sphereChoice.ItemCount; i++)
+                if (sphereChoice.GetItemText(i) == "Quick MW") sphereChoice.Selected = i;
+            ((LineEdit)sphereDialog.FindChild("LinkBox", true, false)).Text = sphereSite.Site + "/room/HostRoom";
+            sphereDialog.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
+            var linkedOrAsked = await UiTestWaitForAsync(() => !string.IsNullOrEmpty(added!.SphereTrackerUrl) ? (object)added
+                : GetChildren().OfType<ConfirmationDialog>().FirstOrDefault(d => d.Title == "Is this the host's room?"), "the room to link, or the host question");
+            if (linkedOrAsked is ConfirmationDialog hostAsk)
+            {
+                hostAsk.FindChildren("*", nameof(Button), true, false).OfType<Button>().First(b => b.ToggleMode).ButtonPressed = true;
+                hostAsk.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
+            }
+            await UiTestWaitForAsync(() => string.IsNullOrEmpty(added!.SphereTrackerUrl) ? null : added, "the linked room");
+            await UiTestWaitForAsync(() => home.StepDone("sphere") ? home : null, "the Sphere step's tick");
             // Every step done (a page whose hooks say so): one line, no steps; Show steps brings them back, ticked.
             var done = new AP_Atlas.UI.HomePage(text => Tr(text), new AP_Atlas.UI.HomePage.Hooks
             {
@@ -1082,6 +1153,8 @@ public partial class MainTrackerWindow
         finally
         {
             AP_Atlas.Core.GitHubApi.TestSite = null;
+            AP_Atlas.Core.Spheres.SphereSite.TestSite = null;
+            _appSettings.SkippedHomeSteps.Clear();
             AP_Atlas.Core.SafeFile.Delete(zip);
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
             DeleteProfile(profile);
@@ -1181,6 +1254,10 @@ public partial class MainTrackerWindow
             UiTestExpect(versions[0].Prerelease && versions[0].Project == "github.com/fork/atlas-test" && !versions[1].Prerelease && versions[2].Project == "github.com/owner/atlas-test",
                 $"the table doesn't name each version's project or mark the pre-release: {string.Join("; ", versions.Select(v => $"{v.Version} {v.Project}{(v.Prerelease ? " pre" : "")}"))}");
             UiTestExpect(page.VersionsLine.Contains("Newest known: 1.2.0 from github.com/fork/atlas-test") && page.VersionsLine.Contains("fork or re-upload"), $"the line above the table says: {page.VersionsLine}");
+            // A check box per row says which version "Install the selected version" takes.
+            UiTestExpect(page.PickedVersion == null, "a version is ticked before any press");
+            page.PickVersionForTests("1.2.0");
+            UiTestExpect(page.PickedVersion == "1.2.0", $"ticking 1.2.0 picked {page.PickedVersion}");
             UiTestExpect(github.Requests.Count(r => r.StartsWith("/search/")) == 1, $"GitHub was searched {github.Requests.Count(r => r.StartsWith("/search/"))} times, not once");
             UiTestExpect(!github.Requests.Any(r => r.StartsWith("/dl/")), "a version was downloaded without a press");
             UiTestExpect(page.Steps().Any(s => s.Title == "A map pack" && !s.Done), "the map pack step is missing");
@@ -2185,15 +2262,15 @@ public partial class MainTrackerWindow
         _commands!.Run("view.slots-panel");
         _commands.Run("view.properties-panel");
         await UiTestWaitAsync(0.05);
-        UiTestExpect(_explorerSplit.SplitOffsets[0] == 320 && _midLeftSidebar.Size.X >= 318, $"Map Packs' explorer starts {_midLeftSidebar.Size.X} wide (offset {_explorerSplit.SplitOffsets[0]}), not 320");
-        _explorerSplit.EmitSignal(SplitContainer.SignalName.Dragged, 400);
+        UiTestExpect(_explorerSplit.SplitOffsets[0] == 400 && _midLeftSidebar.Size.X >= 398, $"Map Packs' explorer starts {_midLeftSidebar.Size.X} wide (offset {_explorerSplit.SplitOffsets[0]}), not 400");
+        _explorerSplit.EmitSignal(SplitContainer.SignalName.Dragged, 450);
         host.ShowTool(AP_Atlas.UI.Tool.Connections);
         await UiTestWaitAsync(0.05);
         UiTestExpect(_explorerSplit.SplitOffsets[0] == 0 && _midLeftSidebar.Size.X < 318 && !_appSettings.ExplorerSplitOffsets.ContainsKey("connections"),
             $"the Multiworlds explorer is {_midLeftSidebar.Size.X} wide (offset {_explorerSplit.SplitOffsets[0]}) after a drag on Map Packs'");
         host.ShowTool(AP_Atlas.UI.Tool.MapPacks);
         await UiTestWaitAsync(0.05);
-        UiTestExpect(_appSettings.ExplorerSplitOffsets.TryGetValue("map-packs", out int packsOffset) && packsOffset == 400 && _explorerSplit.SplitOffsets[0] == 400 && _midLeftSidebar.Size.X >= 398,
+        UiTestExpect(_appSettings.ExplorerSplitOffsets.TryGetValue("map-packs", out int packsOffset) && packsOffset == 450 && _explorerSplit.SplitOffsets[0] == 450 && _midLeftSidebar.Size.X >= 448,
             $"the drag on Map Packs' explorer isn't kept for it (offset {packsOffset}, {_midLeftSidebar.Size.X} wide)");
         _appSettings.ExplorerSplitOffsets.Remove("map-packs");
         ApplyExplorerOffset(AP_Atlas.UI.Tool.MapPacks);
@@ -3042,9 +3119,9 @@ public partial class MainTrackerWindow
             var question = await UiTestWaitForAsync(() => _packManagerPanel.GetChildren().OfType<ConfirmationDialog>().FirstOrDefault(d => d.Title == "Install a map pack"), "the question before the download", 20);
             UiTestExpect(!System.IO.File.Exists(fromGitHub) && !github.Requests.Any(r => r.StartsWith("/dl/")), "the pack was downloaded before the question was answered");
             question.EmitSignal(AcceptDialog.SignalName.Confirmed);
-            results.EmitSignal(AcceptDialog.SignalName.Confirmed);
             var fromSearch = await UiTestWaitForAsync(() => slot.Pack, "the slot to load the pack found on GitHub", 20);
             UiTestExpect(fromSearch.Manifest.Name == "UI test GitHub pack" && System.IO.File.Exists(fromGitHub), "the pack from GitHub wasn't installed for the slot");
+            UiTestExpect(!IsInstanceValid(results) || results.IsQueuedForDeletion() || !results.Visible, "the results dialog stayed open after the pack installed");
             UiTestExpect(_packManagerPanel.DownloadText.StartsWith("Downloading uitest_github_pack.zip") && _packManagerPanel.DownloadText.Contains(" of ") && !_packManagerPanel.Downloading,
                 $"no progress line was shown for the download: \"{_packManagerPanel.DownloadText}\"");
             UiTestExpect(_alertLog.Entries.Any(e => e.Message.Contains("Installed UI test GitHub pack") && e.Message.Contains("Test Game")), "no card said the pack was installed");

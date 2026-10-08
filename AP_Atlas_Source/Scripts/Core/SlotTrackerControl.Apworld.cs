@@ -138,8 +138,12 @@ public partial class SlotTrackerControl : MarginContainer
                 AddButton("Restart now", "Start the logic engine again now", RetryLogicEngine);
                 break;
             case "no_engine":
-            case "world_missing":
                 AddButton("Set up Atlas Engine…", "Download and check what logic needs", () => OpenEngineSetup?.Invoke());
+                AddButton("Try again", "Start the logic engine again", RetryLogicEngine);
+                break;
+            case "world_missing":
+                // The engine runs; this game's apworld is what's missing, and the game's page installs it.
+                AddButton("Open the Games page", "Install the game's apworld in the Atlas Engine from its page", () => OpenGamesPageFor?.Invoke(Game));
                 AddButton("Try again", "Start the logic engine again", RetryLogicEngine);
                 break;
             default:
@@ -218,6 +222,17 @@ public partial class SlotTrackerControl : MarginContainer
 
     /// <summary>Opens the Atlas Engine setup window (set by MainTrackerWindow).</summary>
     public Action OpenEngineSetup { get; set; }
+
+    /// <summary>Shows the Games page on a game (set by MainTrackerWindow): the banner's way to a missing apworld.</summary>
+    public Action<string> OpenGamesPageFor { get; set; }
+
+    /// <summary>The logic banner's buttons, by text (for tests).</summary>
+    internal List<string> LogicNoticeButtons() =>
+        _logicNoticeActions == null ? new List<string>() : _logicNoticeActions.GetChildren().OfType<Button>().Where(b => !b.IsQueuedForDeletion()).Select(b => b.Text).ToList();
+
+    /// <summary>Presses one of the logic banner's buttons (for tests).</summary>
+    internal void PressLogicNotice(string text) =>
+        _logicNoticeActions?.GetChildren().OfType<Button>().FirstOrDefault(b => !b.IsQueuedForDeletion() && b.Text == text)?.EmitSignal(BaseButton.SignalName.Pressed);
 
     /// <summary>The player YAML linked to this slot, if the file still exists.</summary>
     public string LinkedYamlPath => Model.Logic.LinkedYamlPath;

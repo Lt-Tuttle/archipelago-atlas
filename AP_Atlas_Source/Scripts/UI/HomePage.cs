@@ -16,7 +16,7 @@ namespace AP_Atlas.UI
         /// <summary>A tool card's smallest width, and a feature card's, in logical units: the grids' columns come from them.</summary>
         public const int ToolCardWidth = 270, FeatureCardWidth = 340;
         /// <summary>The checklist's widest, so a step's button stays beside its text at any window width (the mark, the text, the button).</summary>
-        public const int StepsWidth = 660;
+        public const int StepsWidth = 720;
         private GridContainer? _tools, _features;
         private VBoxContainer? _stepsBox;
         private HBoxContainer? _allDoneRow;
@@ -31,11 +31,9 @@ namespace AP_Atlas.UI
         private void Reflow(float width)
         {
             if (width <= 0) return;
-            if (_stepsBox != null)
-            {
-                float stepsWidth = Math.Min(StepsWidth, width);
-                if (Math.Abs(_stepsBox.CustomMinimumSize.X - stepsWidth) > 0.5f) _stepsBox.CustomMinimumSize = new Vector2(stepsWidth, 0);
-            }
+            float stepsWidth = Math.Min(StepsWidth, width);
+            if (_stepsBox != null && Math.Abs(_stepsBox.CustomMinimumSize.X - stepsWidth) > 0.5f) _stepsBox.CustomMinimumSize = new Vector2(stepsWidth, 0);
+            if (Math.Abs(_recents.CustomMinimumSize.X - stepsWidth) > 0.5f) _recents.CustomMinimumSize = new Vector2(stepsWidth, 0);
             if (_tools == null || _features == null) return;
             int toolColumns = Math.Clamp((int)(width / ToolCardWidth), 1, 3), featureColumns = Math.Clamp((int)(width / FeatureCardWidth), 1, 2);
             if (_tools.Columns != toolColumns) _tools.Columns = toolColumns;
@@ -59,6 +57,13 @@ namespace AP_Atlas.UI
             public Action QuickConnect { get; init; } = () => { };
             public Action QuickFindPack { get; init; } = () => { };
             public Action QuickLinkCheese { get; init; } = () => { };
+            public Action QuickLinkSphere { get; init; } = () => { };
+            /// <summary>The steps' "go to the page" buttons.</summary>
+            public Action OpenSphereSettings { get; init; } = () => { };
+            public Action OpenEngineWindow { get; init; } = () => { };
+            /// <summary>Which steps the user skipped (kept in the settings).</summary>
+            public Func<string, bool> IsStepSkipped { get; init; } = _ => false;
+            public Action<string, bool> SetStepSkipped { get; init; } = (_, _) => { };
             public Action<Tool> ShowTool { get; init; } = _ => { };
             /// <summary>Connects every slot of a multiworld that isn't connected yet.</summary>
             public Action<MultiworldProfile> Connect { get; init; } = _ => { };
@@ -106,22 +111,28 @@ namespace AP_Atlas.UI
 
         private sealed class Step
         {
-            public Step(string id, Func<bool> done, TextureRect mark, Button button, Control row)
+            public Step(string id, Func<bool> done, TextureRect mark, Button button, Button open, Button skip, Control row)
             {
                 Id = id;
                 Done = done;
                 Mark = mark;
                 Button = button;
+                Open = open;
+                Skip = skip;
                 Row = row;
             }
 
             public string Id { get; }
             public Func<bool> Done { get; }
             public TextureRect Mark { get; }
+            /// <summary>The quick-setup button, the "go to the page" button and Skip (Unskip once skipped).</summary>
             public Button Button { get; }
-            /// <summary>The step's row: hidden once the step is done, unless the user shows the steps again.</summary>
+            public Button Open { get; }
+            public Button Skip { get; }
+            /// <summary>The step's row: hidden once the step is done or skipped, unless the user shows the steps again.</summary>
             public Control Row { get; }
             public bool LastDone { get; set; }
+            public bool Skipped { get; set; }
         }
 
         private readonly Func<string, string> _tr;
@@ -180,16 +191,21 @@ namespace AP_Atlas.UI
             var steps = _stepsBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ShrinkBegin, CustomMinimumSize = new Vector2(StepsWidth, 0) };
             steps.AddThemeConstantOverride("separation", 8);
             body.AddChild(steps);
+            // Each step: the quick setup here, a quieter button to the page where it's done by hand (the step ticks either way,
+            // since it reads Atlas's state), and Skip for a step that doesn't apply.
             AddStep(steps, "engine", "Set up the Atlas Engine", "Downloads Archipelago into Atlas's own folder, about 55 MB. Nothing else on your PC changes.",
-                "Set up…", hooks.EngineReady, hooks.SetUpEngine);
+                "Set up…", hooks.EngineReady, hooks.SetUpEngine, "Engine window", hooks.OpenEngineWindow);
             AddStep(steps, "multiworld", "Add a multiworld", "Its name, its server and the slots you play.",
-                "New…", () => hooks.Profiles().Count > 0, hooks.QuickAddMultiworld);
+                "New…", () => hooks.Profiles().Count > 0, hooks.QuickAddMultiworld, "Open Multiworlds", () => hooks.ShowTool(Tool.Connections));
             AddStep(steps, "connect", "Connect a slot", "From then on Atlas follows the room: items, checks, hints and chat.",
-                "Connect…", () => hooks.Profiles().Any(p => p.SavedStats.Values.Any(s => s.TotalCount > 0 || s.SlotNumber > 0) || p.Slots.Any(slot => hooks.IsSlotLive(p.Id, slot))), hooks.QuickConnect);
+                "Connect…", () => hooks.Profiles().Any(p => p.SavedStats.Values.Any(s => s.TotalCount > 0 || s.SlotNumber > 0) || p.Slots.Any(slot => hooks.IsSlotLive(p.Id, slot))), hooks.QuickConnect,
+                "Open Multiworlds", () => hooks.ShowTool(Tool.Connections));
             AddStep(steps, "pack", "Install a map pack", "A PopTracker pack puts your checks on the game's map. The Pack Doctor looks it over first.",
-                "Find a pack…", hooks.AnyPackInstalled, hooks.QuickFindPack);
+                "Find a pack…", hooks.AnyPackInstalled, hooks.QuickFindPack, "Open Map Packs", () => hooks.ShowTool(Tool.MapPacks));
             AddStep(steps, "cheese", "Link Cheese Tracker, if your multiworld uses it", "Your async multiworld's shared tracker, kept up to date from Atlas's logic.",
-                "Link…", () => hooks.Profiles().Any(p => !string.IsNullOrWhiteSpace(p.CheeseTrackerUrl)), hooks.QuickLinkCheese);
+                "Link…", () => hooks.Profiles().Any(p => !string.IsNullOrWhiteSpace(p.CheeseTrackerUrl)), hooks.QuickLinkCheese, "Open Cheese Tracker", hooks.OpenCheeseSettings);
+            AddStep(steps, "sphere", "Link Sphere Tracker, if the host shared a room", "The host's spheretracker.de room shows the multiworld sphere by sphere.",
+                "Link…", () => hooks.Profiles().Any(p => !string.IsNullOrWhiteSpace(p.SphereTrackerUrl)), hooks.QuickLinkSphere, "Open Sphere Tracker", hooks.OpenSphereSettings);
             var allDone = _allDoneRow = new HBoxContainer { Visible = false };
             allDone.AddThemeConstantOverride("separation", 12);
             allDone.AddChild(new TextureRect
@@ -212,7 +228,8 @@ namespace AP_Atlas.UI
             // The user's multiworlds, the most recently played first.
             body.AddChild(Kit.Heading(_tr("Your multiworlds"), 1.25f));
             _recents.AddThemeConstantOverride("separation", 6);
-            _recents.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+            _recents.SizeFlagsHorizontal = SizeFlags.ShrinkBegin; // capped like the checklist, so Connect sits beside the text
+            _recents.CustomMinimumSize = new Vector2(StepsWidth, 0);
             body.AddChild(_recents);
 
             // The tools.
@@ -343,6 +360,16 @@ namespace AP_Atlas.UI
         /// <summary>Whether a step's row shows (a done step is hidden until Show steps).</summary>
         public bool StepShown(string id) => StepOf(id).Row.Visible;
 
+        public bool StepSkipped(string id) => StepOf(id).Skipped;
+
+        public Button OpenButtonOf(string id) => StepOf(id).Open;
+
+        public Button SkipButtonOf(string id) => StepOf(id).Skip;
+
+        /// <summary>The multiworld list's width and right edge (for tests).</summary>
+        public float RecentsWidth => _recents.Size.X;
+        public float RecentsRight => _recents.GlobalPosition.X + _recents.Size.X;
+
         /// <summary>Whether the "You're set up." line shows (every step done).</summary>
         public bool AllDoneShown => _allDoneRow?.Visible == true;
 
@@ -394,11 +421,15 @@ namespace AP_Atlas.UI
             foreach (var step in _steps)
             {
                 step.LastDone = step.Done();
+                step.Skipped = _hooks.IsStepSkipped(step.Id);
                 step.Mark.Texture = LucideTextures.Get(step.LastDone ? "circle-check" : "circle", step.LastDone ? AP_Atlas.Core.ThemeColors.Heading : AP_Atlas.Core.ThemeColors.TextSubtle);
-                step.Mark.TooltipText = step.LastDone ? _tr("Done") : _tr("Not yet");
-                step.Row.Visible = _showSteps || !step.LastDone;
+                step.Mark.TooltipText = step.LastDone ? _tr("Done") : step.Skipped ? _tr("Skipped") : _tr("Not yet");
+                step.Row.Visible = _showSteps || (!step.LastDone && !step.Skipped);
+                step.Skip.Text = step.Skipped ? _tr("Unskip") : _tr("Skip");
+                step.Skip.TooltipText = step.Skipped ? _tr("Shows this step again.") : _tr("Hides this step; Show steps lists it again, with Unskip.");
+                step.Skip.Visible = !step.LastDone;
             }
-            bool allDone = _steps.All(s => s.LastDone);
+            bool allDone = _steps.All(s => s.LastDone || s.Skipped);
             if (_allDoneRow != null) _allDoneRow.Visible = allDone;
             if (_showStepsButton != null) _showStepsButton.Text = _showSteps ? _tr("Hide steps") : _tr("Show steps");
             RefreshRecents();
@@ -421,7 +452,7 @@ namespace AP_Atlas.UI
             _tip.Text = _tr("Tip: {0}").Replace("{0}", _tr(Tips[_tipIndex]));
         }
 
-        private void AddStep(VBoxContainer into, string id, string title, string description, string buttonText, Func<bool> done, Action act)
+        private void AddStep(VBoxContainer into, string id, string title, string description, string buttonText, Func<bool> done, Action act, string openText, Action open)
         {
             var row = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
             row.AddThemeConstantOverride("separation", 12);
@@ -444,8 +475,18 @@ namespace AP_Atlas.UI
             var button = new Button { Text = _tr(buttonText), SizeFlagsVertical = SizeFlags.ShrinkCenter };
             button.Pressed += act;
             row.AddChild(button);
+            var openButton = Kit.Button(_tr(openText), _tr("Goes to the page where this is set up by hand; the step ticks either way."), open, flat: true, small: true);
+            openButton.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+            row.AddChild(openButton);
+            var skip = Kit.Button(_tr("Skip"), null, () =>
+            {
+                _hooks.SetStepSkipped(id, !_hooks.IsStepSkipped(id));
+                Refresh();
+            }, flat: true, small: true);
+            skip.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+            row.AddChild(skip);
             into.AddChild(row);
-            _steps.Add(new Step(id, done, mark, button, row));
+            _steps.Add(new Step(id, done, mark, button, openButton, skip, row));
         }
 
         private void RefreshRecents()

@@ -99,6 +99,10 @@ public class AppSettings
 
     // Properties panel: titles of sections the user collapsed, and the flag color used by the F shortcut.
     public List<string> CollapsedPropertySections { get; set; } = new List<string> { "Advanced" };
+    /// <summary>Sections the user opened that start collapsed (PropertiesPanel.CollapsedByDefault).</summary>
+    public List<string> ExpandedPropertySections { get; set; } = new List<string>();
+    /// <summary>Home's Getting started steps the user skipped (step ids).</summary>
+    public List<string> SkippedHomeSteps { get; set; } = new List<string>();
     public int LastFlagColor { get; set; } = 3;
 
     // Race mode: when restrictions apply, and whether they hide all logic or only the "why" explanations.
@@ -371,6 +375,8 @@ public static class DataManager
         // Older or hand-edited files can leave collections null.
         settings.MapCameras ??= new Dictionary<string, MapCameraSave>();
         settings.CollapsedPropertySections ??= new List<string>();
+        settings.ExpandedPropertySections ??= new List<string>();
+        settings.SkippedHomeSteps ??= new List<string>();
         settings.SlotYamlPaths ??= new Dictionary<string, string>();
         settings.LastYamlFolder ??= "";
         settings.PermissionsAllowed ??= new List<string>();

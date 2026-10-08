@@ -68,6 +68,8 @@ namespace AP_Atlas.UI
         private readonly Dictionary<string, List<ApworldVersion>> _versions = new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _versionsAsked = new(StringComparer.OrdinalIgnoreCase);
         private AtlasTable? _versionsTable;
+        // The version ticked in the table (its row key): what "Install the selected version" installs.
+        private string? _pickedVersionKey;
         private string _versionsLine = "";
 
         /// <summary>The explorer's content: the search, the sort and the list.</summary>
@@ -583,6 +585,7 @@ namespace AP_Atlas.UI
                 table.Tree.CustomMinimumSize = new Vector2(0, 50 + 36 * Math.Min(5, choices.Count));
                 table.SetColumns(new[]
                 {
+                    new AtlasTable.Column { Id = "pick", Title = "", MinWidth = 34, Ratio = 0, Sortable = false },
                     new AtlasTable.Column { Id = "version", Title = "Version", MinWidth = 130, Ratio = 0 },
                     new AtlasTable.Column { Id = "project", Title = "Project", MinWidth = 160, Ratio = 3 },
                     new AtlasTable.Column { Id = "have", Title = "Atlas has it", MinWidth = 120, Ratio = 2 },
@@ -601,6 +604,7 @@ namespace AP_Atlas.UI
                         SearchText = c.Version + " " + c.Source,
                         Cells = new[]
                         {
+                            new AtlasTable.Cell("") { Background = background },
                             new AtlasTable.Cell(c.Version + (c.Prerelease ? " " + _tr("(pre-release)") : ""), c.Prerelease ? ThemeColors.TextMuted : null,
                                 c.Prerelease ? _tr("The project marked this release a pre-release.") : null, choices.Count - i) { Background = background },
                             new AtlasTable.Cell(c.Source) { Background = background },
@@ -609,8 +613,30 @@ namespace AP_Atlas.UI
                         }
                     });
                 }
+                // A check box per row says which version "Install the selected version" takes (the tree's own selection alone was hard to see).
+                if (_pickedVersionKey != null && rows.All(r => r.Key != _pickedVersionKey)) _pickedVersionKey = null;
+                table.Customize = (item, row) =>
+                {
+                    item.SetCellMode(0, TreeItem.TreeCellMode.Check);
+                    item.SetEditable(0, true);
+                    item.SetChecked(0, row.Key == _pickedVersionKey);
+                    item.SetText(0, "");
+                };
+                void Pick(string? key)
+                {
+                    if (_pickedVersionKey == key) return;
+                    _pickedVersionKey = key;
+                    table.SetRows(rows);
+                    if (key != null) table.Select(key);
+                    if (installSelected != null) installSelected.Disabled = PickedChoice(rows) is not ApworldChoice { Url: not null } and not ApworldChoice { LocalFile: not null };
+                }
+                table.Tree.ItemEdited += () =>
+                {
+                    var edited = table.Tree.GetEdited();
+                    if (edited != null && edited.GetMetadata(0).VariantType == Variant.Type.String) Pick(edited.GetMetadata(0).AsString());
+                };
+                table.SelectionChanged += row => { if (row != null) Pick(row.Key); };
                 table.SetRows(rows);
-                table.SelectionChanged += row => { if (installSelected != null) installSelected.Disabled = row?.Tag is not ApworldChoice { Url: not null } and not ApworldChoice { LocalFile: not null }; };
                 box.AddChild(table);
                 _versionsTable = table;
             }
@@ -621,7 +647,7 @@ namespace AP_Atlas.UI
             {
                 installSelected = Kit.Button(_tr("Install the selected version"), _tr("Installs the version selected in the table in the Atlas Engine (a pre-release too, if that's what the seed's host used)."), () =>
                 {
-                    if (_versionsTable?.Selected?.Tag is not ApworldChoice choice) return;
+                    if (PickedChoice(_versionsTable?.Rows) is not ApworldChoice choice) return;
                     if (VersionOf(game, choice) is { } v) ConfirmInstall(game, RepoOf(choice), v);
                     else if (choice.LocalFile != null)
                         Run(_tr("Installing {0}…").Replace("{0}", Path.GetFileName(choice.LocalFile)), (log, ct) => AtlasEngine.InstallApworldAsync(AtlasEngine.Current, choice.LocalFile, log, ct),
@@ -637,6 +663,27 @@ namespace AP_Atlas.UI
             buttons.AddChild(Kit.Button(_tr("Add a project…"), _tr("Paste the GitHub link of a project that publishes this game's apworld."), AddProject));
             box.AddChild(buttons);
             return indent;
+        }
+
+        /// <summary>The version ticked in the versions table, or null.</summary>
+        private ApworldChoice? PickedChoice(IReadOnlyList<AtlasTable.Row>? rows) =>
+            _pickedVersionKey == null ? null : rows?.FirstOrDefault(r => r.Key == _pickedVersionKey)?.Tag as ApworldChoice;
+
+        /// <summary>The version ticked in the table (for tests).</summary>
+        public string? PickedVersion => PickedChoice(_versionsTable?.Rows)?.Version;
+
+        /// <summary>Ticks a version's row as a click on its check box does (for tests).</summary>
+        public void PickVersionForTests(string version)
+        {
+            var row = _versionsTable?.Rows.FirstOrDefault(r => r.Tag is ApworldChoice c && c.Version == version);
+            if (row == null || _versionsTable == null) return;
+            _versionsTable.Select(row.Key);
+            // The table's SelectionChanged isn't raised by Select (it's the user's), so the pick follows here.
+            if (_pickedVersionKey != row.Key)
+            {
+                _pickedVersionKey = row.Key;
+                _versionsTable.SetRows(_versionsTable.Rows.ToList());
+            }
         }
 
         private void AskThenLoad(string game, bool again, Action? then = null)

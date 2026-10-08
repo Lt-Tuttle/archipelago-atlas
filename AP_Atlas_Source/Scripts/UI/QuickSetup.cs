@@ -33,6 +33,7 @@ namespace AP_Atlas.UI
             public required Func<string, (string Kept, List<(string Name, List<string> Games)> Players)?> KeepYaml { get; init; }
             public required Action<NewMultiworldDraft> Create { get; init; }
             public required Action<MultiworldProfile, string> LinkCheese { get; init; }
+            public required Action<MultiworldProfile, string> LinkSphere { get; init; }
         }
 
         // ---- The pieces the dialogs share ----
@@ -326,6 +327,45 @@ namespace AP_Atlas.UI
                 hooks.FindPack(game);
             };
             return Show(parent, dialog, "find-pack");
+        }
+
+        // ---- Link Sphere Tracker ----
+
+        /// <summary>A multiworld and the host's spheretracker.de room, checked online and linked (the host's room only).</summary>
+        public static ConfirmationDialog LinkSphere(Node parent, Hooks hooks)
+        {
+            var tr = hooks.Tr;
+            var dialog = new ConfirmationDialog { Title = tr("Link Sphere Tracker"), OkButtonText = tr("Link"), DialogHideOnOk = false };
+            var box = Body(dialog, tr("spheretracker.de shows a multiworld sphere by sphere. Paste the room the host created and shared (spheretracker.de/room/…): Atlas uses the host's room and no other, and asks you to confirm when it can't tell the host made it. Spheres are hidden in race mode."));
+            var grid = Grid(box);
+            var profiles = hooks.Profiles().ToList();
+            var choice = new OptionButton { Name = "MultiworldChoice", AccessibilityName = tr("Multiworld") };
+            foreach (var profile in profiles) choice.AddItem(profile.Name);
+            if (profiles.Count > 0) choice.Selected = 0;
+            Row(grid, tr("Multiworld"), choice);
+            var link = new LineEdit { Name = "LinkBox", PlaceholderText = tr("https://spheretracker.de/room/…"), AccessibilityName = tr("Sphere Tracker room link") };
+            Row(grid, tr("Room link"), link);
+            var problem = Problem(box);
+            dialog.Confirmed += () =>
+            {
+                if (profiles.Count == 0 || choice.Selected < 0 || choice.Selected >= profiles.Count)
+                {
+                    Say(problem, tr("Make a multiworld first (New… on the step above)."));
+                    return;
+                }
+                if (link.Text.Trim().Length == 0)
+                {
+                    Say(problem, tr("Paste the room link first."));
+                    return;
+                }
+                var profile = profiles[choice.Selected];
+                string text = link.Text.Trim();
+                Close(dialog);
+                hooks.LinkSphere(profile, text);
+            };
+            Show(parent, dialog, "link-sphere");
+            Ui.Defer(dialog, () => link.GrabFocus());
+            return dialog;
         }
 
         // ---- Link Cheese Tracker ----

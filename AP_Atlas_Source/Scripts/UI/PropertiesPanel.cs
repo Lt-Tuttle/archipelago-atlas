@@ -384,11 +384,49 @@ namespace AP_Atlas.UI
 
         // --- Sections ---
 
+        /// <summary>The sections that are lists (many rows) and so start collapsed; the user's own toggle is remembered per section.</summary>
+        internal static readonly HashSet<string> CollapsedByDefault = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "Seed settings", "Slot data", "Flagged & noted", "Pins with open checks", "All copies", "With", "Logic", "Hinted locations", "Logic impact", "◆ Special", "Slots", "Cheese Tracker", "Advanced"
+        };
+
+        /// <summary>A section's key in the settings: its title without a count or a name ("All copies (3)" → "All copies", "With Alice" → "With").</summary>
+        internal static string SectionKey(string title)
+        {
+            int paren = title.IndexOf(" (", StringComparison.Ordinal);
+            if (paren > 0) title = title.Substring(0, paren);
+            return title.StartsWith("With ", StringComparison.Ordinal) ? "With" : title;
+        }
+
+        /// <summary>Whether a section starts collapsed: the user's choice when there is one, else the default for lists.</summary>
+        internal bool IsSectionCollapsed(string title)
+        {
+            string key = SectionKey(title);
+            var collapsed = _host.Settings.CollapsedPropertySections ??= new List<string>();
+            var expanded = _host.Settings.ExpandedPropertySections ??= new List<string>();
+            if (collapsed.Contains(key)) return true;
+            if (expanded.Contains(key)) return false;
+            return CollapsedByDefault.Contains(key);
+        }
+
+        /// <summary>Whether the section with this title shows collapsed now, or null when it isn't shown (for tests).</summary>
+        internal bool? SectionCollapsed(string title)
+        {
+            var header = _content.GetChildren().OfType<Button>().FirstOrDefault(b => !b.IsQueuedForDeletion() && b.HasMeta("section") && b.GetMeta("section").AsString() == title);
+            return header == null ? null : header.Text.StartsWith("▶", StringComparison.Ordinal);
+        }
+
+        /// <summary>Opens or closes a section as its header does (for tests).</summary>
+        internal void ToggleSection(string title) =>
+            _content.GetChildren().OfType<Button>().FirstOrDefault(b => !b.IsQueuedForDeletion() && b.HasMeta("section") && b.GetMeta("section").AsString() == title)?.EmitSignal(BaseButton.SignalName.Pressed);
+
         /// <summary>Starts a collapsible section. Subsequent rows go into it until the next section.</summary>
         private void Section(string title)
         {
+            string key = SectionKey(title);
             var collapsed = _host.Settings.CollapsedPropertySections ??= new List<string>();
-            bool isCollapsed = collapsed.Contains(title);
+            var expanded = _host.Settings.ExpandedPropertySections ??= new List<string>();
+            bool isCollapsed = IsSectionCollapsed(title);
 
             var header = new Button
             {
@@ -399,6 +437,7 @@ namespace AP_Atlas.UI
             };
             header.AddThemeColorOverride("font_color", ThemeColors.AccentText(ThemeColors.Surface));
             header.AddThemeColorOverride("font_hover_color", ThemeColors.Link);
+            header.SetMeta("section", title);
             _content.AddChild(header);
 
             var margin = new MarginContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, Visible = !isCollapsed };
@@ -414,8 +453,17 @@ namespace AP_Atlas.UI
                 bool nowCollapsed = margin.Visible;
                 margin.Visible = !nowCollapsed;
                 header.Text = (nowCollapsed ? "▶  " : "▼  ") + title;
-                if (nowCollapsed) { if (!collapsed.Contains(title)) collapsed.Add(title); }
-                else collapsed.Remove(title);
+                // Remembered against the default: a list closed stays closed, a list opened stays open.
+                if (nowCollapsed)
+                {
+                    expanded.Remove(key);
+                    if (!CollapsedByDefault.Contains(key) && !collapsed.Contains(key)) collapsed.Add(key);
+                }
+                else
+                {
+                    collapsed.Remove(key);
+                    if (CollapsedByDefault.Contains(key) && !expanded.Contains(key)) expanded.Add(key);
+                }
                 DataManager.SaveSettings(_host.Settings);
             };
             _plainText.AppendLine("[" + title + "]");
