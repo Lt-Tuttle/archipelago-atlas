@@ -75,7 +75,10 @@ namespace AP_Atlas.Core.Reports
         public static readonly string[] Headings = { "## Game and versions", "## Steps", "## Generation", "## Logic", "## Pins", "## Key Items", "## Scripts", NotesHeading };
         public static readonly string[] NotePrompts = { "What looked wrong on the map?", "Which items showed wrongly?", "Anything the real game would need (ROM, client, mod)?", "Other" };
 
-        public static string FileStem(string game, DateTime localNow) => GameFiles.SafeName(game).Replace(' ', '_') + "-" + localNow.ToString("yyyyMMdd-HHmm", CultureInfo.InvariantCulture);
+        public static string FileStem(string game, DateTime localNow) => StemPrefix(game) + localNow.ToString("yyyyMMdd-HHmm", CultureInfo.InvariantCulture);
+
+        /// <summary>What every report file of a game starts with ("Dark_Souls_III-"), for finding them again.</summary>
+        public static string StemPrefix(string game) => GameFiles.SafeName(game).Replace(' ', '_') + "-";
 
         public static string Percent(int part, int total) => total <= 0 ? "n/a" : (100.0 * part / total).ToString("0", CultureInfo.InvariantCulture) + "%";
 

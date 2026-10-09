@@ -21,6 +21,17 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     {
         if (_shuttingDown) return;
         _shuttingDown = true;
+        // From the first moment: a close that hangs before it gets to quitting (a wait that never comes back) still ends,
+        // instead of leaving a process without a window that holds the data folder. Called off for an update's swap,
+        // which keeps its own time and may keep Atlas open.
+        using var closing = new System.Threading.CancellationTokenSource();
+        var closingToken = closing.Token;
+        AP_Atlas.Core.Async.Fire(Task.Run(async () =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(30), closingToken).ConfigureAwait(false);
+            AP_Atlas.Core.Logger.LogWarning("Closing Atlas took more than 30 seconds; ending it now.");
+            System.Environment.Exit(0);
+        }, closingToken).ContinueWith(_ => { }, TaskScheduler.Default), "watching Atlas close", tellUser: false);
         try
         {
             var win = GetWindow();
@@ -39,6 +50,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             DataManager.SaveSettings(_appSettings);
             // What changed during the session (slot stats, links) is kept even if nothing else saved the profiles.
             DataManager.SaveProfiles(_profiles);
+            AP_Atlas.Core.Logger.LogInfo("Closing: settings and multiworlds saved.");
             ShowStatus(Tr("Closing connections…"));
             LogToSystem("Shutting down... Disconnecting active slots...", "yellow");
             AP_Atlas.Core.EngineSetup.SoloTestRunner.StopAll(); // a solo test's server ends with Atlas
@@ -55,6 +67,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         {
             GD.PrintErr($"Error during shutdown: {ex}");
         }
+        await closing.CancelAsync();
         if (andThen != null)
         {
             string problem;

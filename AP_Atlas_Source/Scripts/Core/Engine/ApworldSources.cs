@@ -585,7 +585,8 @@ namespace AP_Atlas.Core.EngineSetup
                 else
                 {
                     log?.Invoke("GitHub couldn't be fully searched just now, so Atlas will look again next time.");
-                    if (record != null) found = record.Repos.Concat(publishing).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                    // A record from an older or damaged file may lack its list.
+                    if (record != null) found = (record.Repos ?? new List<string>()).Concat(publishing).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
                 }
             }
             foreach (var repo in found)

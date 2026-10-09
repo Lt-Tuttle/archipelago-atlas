@@ -1053,6 +1053,7 @@ public partial class MainTrackerWindow
             await UiTestWaitAsync(0.1);
             button = _gamesPage.FindChildren("*", nameof(Button), true, false).OfType<Button>().FirstOrDefault(b => b.HasMeta("solo_test_button"));
             UiTestExpect(button != null && button.Text == Tr("Test this game…") && !_gamesPage.FindChildren("*", nameof(Button), true, false).OfType<Button>().Any(b => b.HasMeta("solo_stop_button")), "the Games page still says the test runs");
+            UiTestExpect(_gamesPage.Steps().Any(s => s.Title == Tr("A solo test") && s.Done), "the game's page doesn't find the report it just wrote (Last tested)");
             dialog.EmitSignal(AcceptDialog.SignalName.Confirmed);
             await UiTestWaitAsync(0.1);
             UiTestExpect(!GodotObject.IsInstanceValid(dialog) || dialog.IsQueuedForDeletion(), "Close with nothing running didn't close the window");

@@ -580,10 +580,14 @@ namespace AP_Atlas.UI
             text.AddChild(Kit.Text(title));
             text.AddChild(Wrapped(Kit.Muted(detail)));
             row.AddChild(text);
-            foreach (var b in buttons)
+            // The buttons go under the text (beside it, they squeezed the text to a word per line in a narrow window).
+            if (buttons.Count > 0)
             {
-                b.SizeFlagsVertical = SizeFlags.ShrinkBegin;
-                row.AddChild(b);
+                var actions = new HFlowContainer();
+                actions.AddThemeConstantOverride("h_separation", 8);
+                actions.AddThemeConstantOverride("v_separation", 6);
+                foreach (var b in buttons) actions.AddChild(b);
+                text.AddChild(actions);
             }
             row.SetMeta("step_done", done);
             row.SetMeta("step_title", title);
@@ -595,7 +599,7 @@ namespace AP_Atlas.UI
         {
             string folder = SoloTestRunner.ReportsFolder;
             if (!Directory.Exists(folder)) return null;
-            string stem = GameFiles.SafeName(game) + "-";
+            string stem = AP_Atlas.Core.Reports.SoloTestReport.StemPrefix(game);
             var newest = Directory.GetFiles(folder, stem + "*.md").OrderByDescending(f => f, StringComparer.Ordinal).FirstOrDefault();
             if (newest == null) return null;
             string when = Path.GetFileNameWithoutExtension(newest).Substring(stem.Length);

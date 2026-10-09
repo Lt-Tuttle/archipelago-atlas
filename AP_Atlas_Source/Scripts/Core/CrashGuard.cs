@@ -1,5 +1,7 @@
 #nullable disable
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
@@ -75,6 +77,58 @@ namespace AP_Atlas.Core
                 // Not held (another Atlas had it): nothing to give up.
             }
             mutex.Dispose();
+        }
+
+        /// <summary>
+        /// The other Atlas processes started from this program file, with whether each has a window and its age (for
+        /// <see cref="InstanceCheck.LeftoversToEnd"/>). Only processes of this exact file: another program, or another
+        /// Atlas folder, is never listed. A process that can't be looked at is left out.
+        /// </summary>
+        public static List<InstanceCheck.Twin> Twins()
+        {
+            var twins = new List<InstanceCheck.Twin>();
+            string exe = Environment.ProcessPath;
+            if (string.IsNullOrEmpty(exe)) return twins;
+            using var self = Process.GetCurrentProcess();
+            foreach (var process in Process.GetProcessesByName(self.ProcessName))
+            {
+                using (process)
+                {
+                    try
+                    {
+                        if (process.Id == self.Id || !string.Equals(process.MainModule?.FileName, exe, StringComparison.OrdinalIgnoreCase)) continue;
+                        twins.Add(new InstanceCheck.Twin(process.Id, process.MainWindowHandle != IntPtr.Zero, DateTime.Now - process.StartTime)); // wall clock: Windows gives a process's start only as a local time
+                    }
+                    catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException)
+                    {
+                        // It ended meanwhile, or Windows won't show it to this user: not one to offer.
+                    }
+                }
+            }
+            return twins;
+        }
+
+        /// <summary>Ends the leftover processes (and what they started), then takes the data folder; false when it's still held.</summary>
+        public static bool EndLeftoversAndAcquire(IReadOnlyList<int> ids)
+        {
+            foreach (int id in ids)
+            {
+                try
+                {
+                    using var process = Process.GetProcessById(id);
+                    process.Kill(entireProcessTree: true);
+                    process.WaitForExit(5000);
+                    Logger.LogWarning($"Ended an earlier Atlas (process {id}) that had no window and still held the data folder.");
+                }
+                catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
+                {
+                    // Gone already (fine), or not ours to end (the folder stays held and the caller says so).
+                    Logger.LogWarning($"Couldn't end the earlier Atlas (process {id}): {ex.Message}");
+                }
+            }
+            _instanceMutex?.Dispose();
+            _instanceMutex = null;
+            return TryAcquireInstance();
         }
 
         /// <summary>True when this is the only Atlas using its data folder (held until Atlas exits).</summary>

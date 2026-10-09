@@ -78,6 +78,7 @@ public class SoloTestReportTests
         Assert.DoesNotContain("fine", twice.Substring(twice.IndexOf(SoloTestReport.NotesHeading, StringComparison.Ordinal)));
         Assert.Contains("(nothing)", twice);
         Assert.Equal("Dark_Souls_III-20261008-1402", SoloTestReport.FileStem("Dark Souls III", new DateTime(2026, 10, 8, 14, 2, 0)));
+        Assert.StartsWith(SoloTestReport.StemPrefix("Dark Souls III"), SoloTestReport.FileStem("Dark Souls III", DateTime.Now));
         Assert.Equal("n/a", SoloTestReport.Percent(3, 0));
         Assert.Equal("50%", SoloTestReport.Percent(1, 2));
     }

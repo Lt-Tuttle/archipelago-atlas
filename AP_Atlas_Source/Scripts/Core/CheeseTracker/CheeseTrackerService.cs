@@ -877,7 +877,11 @@ namespace AP_Atlas.Core.CheeseTracker
 
         private void TurnAutoOff(string key)
         {
-            bool changed = _settings.CheeseAutoSlots.Remove(key) | _settings.CheeseAutoPaused.Remove(key) | _settings.CheeseAutoLastSet.Remove(key);
+            // All three are removed, whichever held the key.
+            bool changed = false;
+            if (_settings.CheeseAutoSlots.Remove(key)) changed = true;
+            if (_settings.CheeseAutoPaused.Remove(key)) changed = true;
+            if (_settings.CheeseAutoLastSet.Remove(key)) changed = true;
             if (changed) DataManager.SaveSettings(_settings);
         }
 

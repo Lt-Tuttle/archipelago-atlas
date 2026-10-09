@@ -123,6 +123,24 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     {
         if (!AP_Atlas.Core.CrashGuard.TryAcquireInstance())
         {
+            // An earlier Atlas whose window is gone but whose process lives on holds the folder: offer to end it (a built
+            // Atlas only: from the editor, the program file is Godot's, shared with other projects).
+            var leftovers = OS.HasFeature("editor") ? new List<int>() : AP_Atlas.Core.InstanceCheck.LeftoversToEnd(AP_Atlas.Core.CrashGuard.Twins());
+            if (leftovers.Count > 0)
+            {
+                AP_Atlas.UI.Dialogs.Confirm(this, Tr("Atlas didn't finish closing"),
+                    Tr("An earlier Atlas from this folder is still running without a window: it didn't finish closing last time, and it holds your data folder. End it and start? Everything it had to save was saved as it closed."),
+                    Tr("End it and start"), () =>
+                    {
+                        if (AP_Atlas.Core.CrashGuard.EndLeftoversAndAcquire(leftovers)) ContinueStartup();
+                        else
+                        {
+                            OS.Alert("The earlier Atlas couldn't be ended. Close it in Task Manager (it's listed as The Archipelago Atlas), then start Atlas again.", "Atlas is already open");
+                            GetTree().Quit();
+                        }
+                    }, onCancel: () => GetTree().Quit());
+                return;
+            }
             OS.Alert("The Archipelago Atlas is already running from this folder.\n\nOnly one copy can use the same data at a time, " +
                      "so your profiles and notes can't be overwritten by a second window.", "Atlas is already open");
             GetTree().Quit();
@@ -261,7 +279,11 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         centerRightSplit.AddChild(rightColumn);
         var rightOfSidebarSplit = _explorerSplit = new HSplitContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, SplitOffsets = new[] { _appSettings.SplitRightSidebarOffset } };
         // A drag is kept for the tool that shows: each tool's explorer has its own width (ApplyExplorerOffset).
-        rightOfSidebarSplit.Dragged += (offset) => { if (_currentTool != null) _appSettings.ExplorerSplitOffsets[_currentTool.Id] = (int)offset; DataManager.SaveSettingsSoon(_appSettings); };
+        rightOfSidebarSplit.Dragged += (offset) =>
+        {
+            if (_currentTool != null) _appSettings.ExplorerSplitOffsets[_currentTool.Id] = (int)offset;
+            DataManager.SaveSettingsSoon(_appSettings);
+        };
         rightOfSidebarSplit.AddThemeConstantOverride("separation", 8);
         // --- 3. MID LEFT EXPLORER SIDEBAR ---
         _midLeftSidebar = new PanelContainer { SizeFlagsVertical = SizeFlags.ExpandFill, CustomMinimumSize = new Godot.Vector2(ExplorerMinWidth, 0), Visible = false };
