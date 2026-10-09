@@ -272,8 +272,11 @@ namespace AP_Atlas.UI
             leftVBox.AddChild(listScroll);
             var listMargin = new MarginContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
             listScroll.AddChild(listMargin);
+            var listBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            listMargin.AddChild(listBox);
             _mapListContainer = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            listMargin.AddChild(_mapListContainer);
+            listBox.AddChild(_mapListContainer);
+            BuildUnplacedList(listBox);
             // --- The canvas ---
             var rightPanel = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
             rightPanel.AddThemeStyleboxOverride("panel", new StyleBoxFlat { BgColor = ThemeColors.SurfaceDeep });
@@ -282,6 +285,7 @@ namespace AP_Atlas.UI
             _canvas = new MapCanvas();
             _canvas.ViewChanged += SaveCurrentView;
             rightPanel.AddChild(_canvas);
+            BuildPicturelessParts(rightPanel);
             _emptyStateContainer = new CenterContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
             var emptyVBox = new VBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
             emptyVBox.AddThemeConstantOverride("separation", 20);
@@ -746,6 +750,7 @@ namespace AP_Atlas.UI
         private void RefreshMapListCounters()
         {
             using var __perf = AP_Atlas.Core.PerfMonitor.Measure("Map Tracker: map list counters");
+            RefreshUnplaced();
             if (_pack == null || _session == null) return;
             var mapCounts = new Dictionary<string, MapStat>(StringComparer.OrdinalIgnoreCase);
             foreach (var map in _pack.Maps.Values) mapCounts[map.Id] = new MapStat();
@@ -857,6 +862,202 @@ namespace AP_Atlas.UI
         }
 
         /// <summary>Remembers the view (the map point at the middle, and the zoom) for the map; a fit before the view has a size isn't kept.</summary>
+        // ---- A map without a picture, and checks without a pin ----
+
+        private ScrollContainer _checklist;
+        private VBoxContainer _checklistBox;
+        private Label _unplacedNote;
+        private Button _unplacedHeader;
+        private VBoxContainer _unplacedBox;
+        private bool _unplacedOpen = true;
+
+        /// <summary>Whether the shown map is drawn as a checklist (its pack has no usable picture for it).</summary>
+        public bool ChecklistShown => _checklist is { Visible: true };
+
+        /// <summary>The checklist's rows by their location's name (for tests).</summary>
+        public List<string> ChecklistRows() => _checklistBox == null ? new List<string>()
+            : _checklistBox.FindChildren("*", nameof(Button), true, false).OfType<Button>().Where(b => b.HasMeta("checklist_row")).Select(b => b.GetMeta("checklist_row").AsString()).ToList();
+
+        /// <summary>The seed's checks that have no pin on any of the pack's maps and aren't done, by name (for tests and Properties).</summary>
+        public List<string> UnplacedNames { get; private set; } = new List<string>();
+
+        /// <summary>The note on the map about checks without a pin, or null when none shows.</summary>
+        public string UnplacedNote => _unplacedNote is { Visible: true } ? _unplacedNote.Text : null;
+
+        /// <summary>The checklist's header text (for tests).</summary>
+        public string ChecklistNote { get; private set; } = "";
+
+        private bool HasPicture(PopTrackerMap map) =>
+            _pack.HasMapBackground(map) && (Background(map) != null || !_pack.ImagesChecked || !_pack.BrokenImages.Contains((_pack.MapBackgroundPath(map) ?? "").TrimStart('/')));
+
+        private void BuildPicturelessParts(Control rightPanel)
+        {
+            _checklist = new ScrollContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill, Visible = false, HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
+            var margin = new MarginContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            foreach (string side in new[] { "margin_left", "margin_right", "margin_top", "margin_bottom" }) margin.AddThemeConstantOverride(side, 16);
+            _checklistBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            _checklistBox.AddThemeConstantOverride("separation", 4);
+            margin.AddChild(_checklistBox);
+            _checklist.AddChild(margin);
+            rightPanel.AddChild(_checklist);
+            // The count of checks without a pin, at the map's top right; clicks go through to the map.
+            var noteMargin = new MarginContainer { MouseFilter = MouseFilterEnum.Ignore };
+            noteMargin.AddThemeConstantOverride("margin_top", 8);
+            noteMargin.AddThemeConstantOverride("margin_right", 12);
+            _unplacedNote = new Label { HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, MouseFilter = MouseFilterEnum.Ignore, Visible = false };
+            _unplacedNote.AddThemeColorOverride("font_color", ThemeColors.Text);
+            _unplacedNote.AddThemeColorOverride("font_outline_color", ThemeColors.SurfaceDeep);
+            _unplacedNote.AddThemeConstantOverride("outline_size", 4);
+            noteMargin.AddChild(_unplacedNote);
+            rightPanel.AddChild(noteMargin);
+        }
+
+        private void ShowChecklist(bool on)
+        {
+            if (_checklist == null) return;
+            if (_checklist.Visible != on) _checklist.Visible = on;
+            if (_canvas.Visible == on) _canvas.Visible = !on;
+        }
+
+        /// <summary>The shown map's locations as rows grouped by their place in the pack, each coloured as its pin would be and opening it in Properties.</summary>
+        private void RenderChecklist(PopTrackerMap map)
+        {
+            foreach (Node child in _checklistBox.GetChildren())
+            {
+                _checklistBox.RemoveChild(child);
+                child.QueueFree();
+            }
+            string file = string.IsNullOrEmpty(map.Img) ? map.MapBg : map.Img;
+            ChecklistNote = string.IsNullOrEmpty(file)
+                ? Translate("The pack has no picture for \"{0}\", so its locations are listed here instead. Pick one to see it in Properties.").Replace("{0}", map.Name)
+                : Translate("The pack's picture for \"{0}\" ({1}) isn't in the pack, or can't be read, so its locations are listed here instead. Pick one to see it in Properties.").Replace("{0}", map.Name).Replace("{1}", file);
+            var note = new Label { Text = ChecklistNote, AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(240, 0) };
+            note.AddThemeColorOverride("font_color", ThemeColors.TextMuted);
+            _checklistBox.AddChild(note);
+            string group = null;
+            var rows = PlacementsOn(map.Id).Select(p => p.Loc).Distinct()
+                .OrderBy(l => Parent(l.FullPath), StringComparer.OrdinalIgnoreCase).ThenBy(l => l.Name, StringComparer.OrdinalIgnoreCase).ToList();
+            foreach (var loc in rows)
+            {
+                var ids = GetLocationIds(loc);
+                var look = Look(ids);
+                if (look.Skip) continue;
+                string parent = Parent(loc.FullPath);
+                if (parent != group)
+                {
+                    group = parent;
+                    if (!string.IsNullOrEmpty(parent))
+                    {
+                        var heading = Kit.Text(parent.Replace("/", " / "), ThemeColors.Heading);
+                        _checklistBox.AddChild(heading);
+                    }
+                }
+                var row = new HBoxContainer();
+                row.AddThemeConstantOverride("separation", 8);
+                var swatch = new MapPinButton
+                {
+                    CustomMinimumSize = new Vector2(16, 16),
+                    SizeFlagsVertical = SizeFlags.ShrinkCenter,
+                    SplitRight = look.SplitRight,
+                    Border = 1,
+                    MouseFilter = MouseFilterEnum.Ignore,
+                    FocusMode = FocusModeEnum.None
+                };
+                swatch.AddThemeStyleboxOverride("normal", new StyleBoxFlat
+                {
+                    BgColor = look.Color,
+                    BorderColor = ThemeColors.MapPinBorder,
+                    BorderWidthLeft = 1,
+                    BorderWidthTop = 1,
+                    BorderWidthRight = 1,
+                    BorderWidthBottom = 1,
+                    CornerRadiusTopLeft = 8,
+                    CornerRadiusTopRight = 8,
+                    CornerRadiusBottomLeft = 8,
+                    CornerRadiusBottomRight = 8
+                });
+                row.AddChild(swatch);
+                int open = ids.Count(id => !_checkedLocs.Contains(id));
+                var pinIds = ids;
+                string pinName = loc.Name, pinMap = map.Id;
+                var name = Kit.Button(loc.Name + (ids.Count > 1 ? $"  ({open} of {ids.Count} open)" : ""), loc.Name + look.StateNote, () => PinPicked?.Invoke(pinMap, pinName, pinIds), flat: true);
+                name.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+                name.Alignment = HorizontalAlignment.Left;
+                name.SetMeta("checklist_row", loc.Name);
+                if (look.Dim) name.Modulate = new Color(1f, 1f, 1f, DimAlpha);
+                row.AddChild(name);
+                _checklistBox.AddChild(row);
+            }
+        }
+
+        private static string Parent(string fullPath)
+        {
+            string path = (fullPath ?? "").TrimEnd('/');
+            int cut = path.LastIndexOf('/');
+            return cut > 0 ? path[..cut] : "";
+        }
+
+        /// <summary>
+        /// The seed's checks that no pin of the pack places on a map: listed under "Not on the map" in the explorer (coloured
+        /// by logic, each opening in Properties) and counted on the map. Checks that are done or excluded aren't counted.
+        /// </summary>
+        private void RefreshUnplaced()
+        {
+            if (_unplacedBox == null) return;
+            foreach (Node child in _unplacedBox.GetChildren())
+            {
+                _unplacedBox.RemoveChild(child);
+                child.QueueFree();
+            }
+            var unplaced = new List<(long Id, string Name)>();
+            if (_pack != null && _session != null && _pack.Maps.Count > 0)
+                foreach (long id in _session.Locations.AllMissingLocations)
+                    if (!_locIdToMap.ContainsKey(id) && !Excluded(id))
+                        unplaced.Add((id, _session.Locations.GetLocationNameFromId(id) ?? id.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+            unplaced.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+            UnplacedNames = unplaced.Select(u => u.Name).ToList();
+            bool any = unplaced.Count > 0;
+            _unplacedHeader.Visible = any;
+            _unplacedHeader.Text = (_unplacedOpen ? "▾ " : "▸ ") + Translate("Not on the map ({0})").Replace("{0}", unplaced.Count.ToString());
+            _unplacedBox.Visible = any && _unplacedOpen;
+            _unplacedNote.Visible = any;
+            _unplacedNote.Text = unplaced.Count == 1 ? Translate("1 of your checks isn't on this pack's maps: see Not on the map, on the left.")
+                : Translate("{0} of your checks aren't on this pack's maps: see Not on the map, on the left.").Replace("{0}", unplaced.Count.ToString());
+            if (!_unplacedOpen) return;
+            foreach (var (id, name) in unplaced)
+            {
+                var look = Look(new List<long> { id });
+                long locationId = id;
+                string locationName = name;
+                var button = Kit.Button(name, name + look.StateNote, () => PinPicked?.Invoke(null, locationName, new List<long> { locationId }), flat: true, small: true);
+                button.Alignment = HorizontalAlignment.Left;
+                button.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+                button.AddThemeColorOverride("font_color", ThemeColors.MapColourForText(look.SplitRight != null ? MapPinState.InLogic : StateFor(id)));
+                button.SetMeta("unplaced_row", name);
+                _unplacedBox.AddChild(button);
+            }
+        }
+
+        private MapPinState StateFor(long id) =>
+            LogicHidden || _logic != LogicShown.Running ? MapPinState.LogicUnknown
+            : _hintedLocs.Contains(id) ? (_reachableLocs.Contains(id) ? MapPinState.HintedInLogic : MapPinState.HintedOutOfLogic)
+            : _reachableLocs.Contains(id) ? MapPinState.InLogic
+            : _glitchedLocs.Contains(id) ? MapPinState.SequenceBreak : MapPinState.OutOfLogic;
+
+        private void BuildUnplacedList(VBoxContainer explorer)
+        {
+            _unplacedHeader = Kit.Button("", Translate("The seed's checks this pack has no pin for. They're tracked like any other; pick one to see it in Properties."), () =>
+            {
+                _unplacedOpen = !_unplacedOpen;
+                RefreshUnplaced();
+            }, flat: true);
+            _unplacedHeader.Alignment = HorizontalAlignment.Left;
+            _unplacedHeader.Visible = false;
+            explorer.AddChild(_unplacedHeader);
+            _unplacedBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, Visible = false };
+            explorer.AddChild(_unplacedBox);
+        }
+
         private void SaveCurrentView()
         {
             if (_restoringView || string.IsNullOrEmpty(_currentMapId) || _appSettings == null || !_canvas.HasView) return;
@@ -903,14 +1104,67 @@ namespace AP_Atlas.UI
             RenderLocations();
         }
 
+        /// <summary>How a pin (or a checklist row) looks for its checks: its colour, its right half's when split, dimmed, its note; Skip when the display options hide it.</summary>
+        private readonly record struct PinLook(bool Skip, Color Color, Color? SplitRight, bool Dim, string StateNote)
+        {
+            public static readonly PinLook Hidden = new(true, default, null, false, "");
+        }
+
+        private PinLook Look(List<long> ids)
+        {
+            int excludedMode = _appSettings.MapExcludedMode, notInSeedMode = _appSettings.MapNotInSeedMode;
+            if (ids.Count == 0)
+            {
+                // No check of this pin exists in the seed (turned off by options, or the pack doesn't match).
+                if (notInSeedMode == ModeHide) return PinLook.Hidden;
+                var colour = ThemeColors.MapColour(LogicHidden ? MapPinState.LogicUnknown : MapPinState.OutOfLogic);
+                bool dimmed = notInSeedMode == ModeDim;
+                return new PinLook(false, dimmed ? ThemeColors.TextSubtle : colour, null, dimmed, "\n(Not in your seed, or not matched to it)");
+            }
+            var open = ids.Where(id => !_checkedLocs.Contains(id)).ToList();
+            int excludedOpen = open.Count(Excluded);
+            // Excluded checks don't color the pin unless they're shown like any other check.
+            var counted = excludedMode == ModeShow ? open : open.Where(id => !Excluded(id)).ToList();
+            if (open.Count == 0)
+                return _appSettings.MapHideChecked ? PinLook.Hidden
+                    : new PinLook(false, ThemeColors.MapColour(MapPinState.Checked), null, false, "\n" + MapPinLogic.Title(MapPinState.Checked));
+            if (counted.Count == 0)
+            {
+                // Everything left here is excluded.
+                if (excludedMode == ModeHide) return PinLook.Hidden;
+                return new PinLook(false, ThemeColors.TextSubtle, null, true, excludedOpen == 1 ? "\nExcluded" : $"\nExcluded ({excludedOpen} checks)");
+            }
+            int reachable = counted.Count(_reachableLocs.Contains);
+            int glitched = counted.Count(id => !_reachableLocs.Contains(id) && _glitchedLocs.Contains(id));
+            bool anyHinted = counted.Any(_hintedLocs.Contains);
+            var state = MapPinLogic.StateOf(counted.Count, reachable, glitched, !LogicHidden, anyHinted);
+            // A pin with some checks in logic is drawn half in logic, half out; a hinted pin has its own colours.
+            bool split = MapPinLogic.IsSplit(state);
+            string stateText = state != MapPinState.LogicUnknown ? MapPinLogic.Title(state)
+                : _logic == LogicShown.Hidden ? "Open" : "Open (logic isn't running)";
+            if (split) stateText += $": {reachable} of {counted.Count}";
+            string note = "\n" + stateText + (excludedOpen > 0 ? $"\n{excludedOpen} excluded" : "");
+            return new PinLook(false, ThemeColors.MapColour(split ? MapPinState.InLogic : state), split ? ThemeColors.MapColour(MapPinState.OutOfLogic) : null, false, note);
+        }
+
         private void RenderLocations(HashSet<long> newlyUnlocked = null)
         {
             using var __perf = AP_Atlas.Core.PerfMonitor.Measure("Map Tracker: draw markers");
             if (_pack == null || string.IsNullOrEmpty(_currentMapId))
             {
                 _canvas.SetPins(Array.Empty<MapCanvas.Pin>());
+                ShowChecklist(false);
                 return;
             }
+            // A map whose pack ships no picture (or one that can't be read): its locations as a checklist, not dots on nothing.
+            if (_pack.Maps.TryGetValue(_currentMapId, out var shownMap) && !HasPicture(shownMap))
+            {
+                ShowChecklist(true);
+                _canvas.SetPins(Array.Empty<MapCanvas.Pin>());
+                RenderChecklist(shownMap);
+                return;
+            }
+            ShowChecklist(false);
             int excludedMode = _appSettings.MapExcludedMode, notInSeedMode = _appSettings.MapNotInSeedMode;
             _pack.Maps.TryGetValue(_currentMapId, out var currentMap);
             // Atlas's own size for the pins when the pack sets none: from the map's image.
@@ -926,55 +1180,13 @@ namespace AP_Atlas.UI
                 // The border sits outside the fill, as PopTracker draws it, so a pack's thick border doesn't eat the colour.
                 float borderMap = geometry.Border * _appSettings.MapNodeScale;
                 var ids = GetLocationIds(loc);
-                Color nodeColor;
-                Color? splitRight = null;
                 var shape = geometry.Shape;
-                bool dim = false;
-                string stateNote;
-                if (ids.Count == 0)
-                {
-                    // No check of this pin exists in the seed (turned off by options, or the pack doesn't match).
-                    if (notInSeedMode == ModeHide) continue;
-                    nodeColor = ThemeColors.MapColour(LogicHidden ? MapPinState.LogicUnknown : MapPinState.OutOfLogic);
-                    if (notInSeedMode == ModeDim) { nodeColor = ThemeColors.TextSubtle; dim = true; }
-                    stateNote = "\n(Not in your seed, or not matched to it)";
-                }
-                else
-                {
-                    var open = ids.Where(id => !_checkedLocs.Contains(id)).ToList();
-                    int excludedOpen = open.Count(Excluded);
-                    // Excluded checks don't color the pin unless they're shown like any other check.
-                    var counted = excludedMode == ModeShow ? open : open.Where(id => !Excluded(id)).ToList();
-                    if (open.Count == 0)
-                    {
-                        if (_appSettings.MapHideChecked) continue;
-                        nodeColor = ThemeColors.MapColour(MapPinState.Checked);
-                        stateNote = "\n" + MapPinLogic.Title(MapPinState.Checked);
-                    }
-                    else if (counted.Count == 0)
-                    {
-                        // Everything left here is excluded.
-                        if (excludedMode == ModeHide) continue;
-                        dim = true;
-                        nodeColor = ThemeColors.TextSubtle;
-                        stateNote = excludedOpen == 1 ? "\nExcluded" : $"\nExcluded ({excludedOpen} checks)";
-                    }
-                    else
-                    {
-                        int reachable = counted.Count(_reachableLocs.Contains);
-                        int glitched = counted.Count(id => !_reachableLocs.Contains(id) && _glitchedLocs.Contains(id));
-                        bool anyHinted = counted.Any(_hintedLocs.Contains);
-                        var state = MapPinLogic.StateOf(counted.Count, reachable, glitched, !LogicHidden, anyHinted);
-                        // A pin with some checks in logic is drawn half in logic, half out; a hinted pin has its own colours.
-                        nodeColor = ThemeColors.MapColour(MapPinLogic.IsSplit(state) ? MapPinState.InLogic : state);
-                        if (MapPinLogic.IsSplit(state)) splitRight = ThemeColors.MapColour(MapPinState.OutOfLogic);
-                        string stateText = state != MapPinState.LogicUnknown ? MapPinLogic.Title(state)
-                            : _logic == LogicShown.Hidden ? "Open" : "Open (logic isn't running)";
-                        if (MapPinLogic.IsSplit(state)) stateText += $": {reachable} of {counted.Count}";
-                        stateNote = "\n" + stateText;
-                        if (excludedOpen > 0) stateNote += $"\n{excludedOpen} excluded";
-                    }
-                }
+                var look = Look(ids);
+                if (look.Skip) continue;
+                Color nodeColor = look.Color;
+                Color? splitRight = look.SplitRight;
+                bool dim = look.Dim;
+                string stateNote = look.StateNote;
                 var btn = new MapPinButton
                 {
                     TooltipText = loc.Name + stateNote,

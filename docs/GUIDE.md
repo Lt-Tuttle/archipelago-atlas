@@ -63,6 +63,10 @@ Key Items (Ctrl+3) shows the progression items you've received. The Visual view 
 
 **Layout:** the choice beside Visual / Text lists the pack's own layouts (PopTracker's default, horizontal, vertical and broadcast, whichever the pack has) and two Atlas builds from the pack's item groups: Vertical (by group) stacks each group under its header, Horizontal (by group) sets the groups side by side. The pack's default layout is used until you pick another; the choice is kept per slot.
 
+**Maps without a picture.** A map whose pack ships no picture for it (or one Atlas can't read) is shown as a list of its locations, grouped as the pack groups them, each coloured as its pin would be; pick one to see it in Properties. The note at the top names the missing picture.
+
+**Not on the map.** The seed's checks that the pack has no pin for are listed under **Not on the map** in the explorer (coloured by logic; pick one to see it in Properties), and the map says how many there are. Done and excluded checks aren't counted.
+
 ## Logic Tracker
 
 While logic can't run, a banner above the list says why and offers the way out: Set up Atlas Engine… when the engine isn't set up, **Open the Games page** when the engine runs but the game's apworld isn't in it (the game's page installs it), Link YAML… when the world needs the player's YAML.

@@ -174,6 +174,8 @@ public partial class MainTrackerWindow
             SlotPanelMovesWholeAsync);
         await ScenarioAsync("Map packs: a slot's pack has its images while the slot is connected (its map shows them), the Pack Doctor's while its window is open; then they're freed once another pack is used",
             PackImagesFollowTheirUsersAsync);
+        await ScenarioAsync("Maps without a picture and checks without a pin: a map whose pack ships no usable picture lists its locations (named in a note, each opening in Properties) instead of dots on nothing, and a map with its picture shows its pins; the seed's checks no pin places are listed under Not on the map and counted on the map, and a check that's done leaves the list",
+            PicturelessMapsAsync);
         await ScenarioAsync("Pack Doctor: on a pack's first check, a tile whose name matches an item exactly (once punctuation is ignored) is linked by itself as an automatic fix; the pack's row on the Map Packs page offers Review N, which opens the Doctor on Recommended; the Recommended tab lists what's left, Apply on a row writes the fix, the row goes after the check and the status says so; Undo takes the automatic link back",
             PackDoctorAsync);
         await ScenarioAsync("Map packs reach connected slots: Key Items offers the pack's layouts and two Atlas builds by item group, kept per slot; the chat's filters sit in one row; the Chat and System Log tabs carry a dot for lines that arrived while they weren't showing, cleared when shown; a slot without a pack offers \"Find a map pack for <game>…\" on its map, which shows Map Packs and searches GitHub once; a pack chosen from the results downloads with a progress line, installs with a card and reaches the slot's map; a pack installed while a slot is connected shows on its map at once, without a reconnect; deleted, the map says there's no pack again; another pack for the game takes its place",
@@ -3191,6 +3193,59 @@ public partial class MainTrackerWindow
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
             if (_profiles.Contains(profile)) DeleteProfile(profile);
             foreach (string file in new[] { zip, other }) AP_Atlas.Core.SafeFile.Delete(file);
+        }
+    }
+
+    private async Task PicturelessMapsAsync()
+    {
+        string zip = System.IO.Path.Combine(AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory(), "uitest_pictureless_pack.zip");
+        // "Broken" is a map whose picture can't be read; "Hidden Chest" has no pin anywhere.
+        // The game has its own checksum here: names other scenarios cached for "Test Game" lack these locations.
+        FakeMapPack.Write(zip, "UI test pictureless pack", "Test Game", locationsJson:
+            """[{"name":"Cave","sections":[{"name":"Cave Chest"}],"map_locations":[{"map":"World","x":10,"y":10}]},""" +
+            """{"name":"Far","sections":[{"name":"Far Chest"}],"map_locations":[{"map":"World","x":500,"y":10}]},""" +
+            """{"name":"Lone","sections":[{"name":"Lone Chest"}],"map_locations":[{"map":"Broken","x":40,"y":40}]}]""");
+        await using var server = new FakeArchipelagoServer();
+        server.Games["Test Game"] = new FakeGame("fedcba9876543210fedcba9876543210fe1c7e57", new Dictionary<string, long> { ["Sword"] = 1000 },
+            new Dictionary<string, long> { ["Cave Chest"] = 2000, ["Far Chest"] = 2001, ["Lone Chest"] = 2002, ["Hidden Chest"] = 2003 });
+        var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Tester");
+        _profiles.Add(profile);
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        try
+        {
+            await OnConnectSlotPressedAsync("Tester", profile);
+            var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
+            var pack = await UiTestWaitForAsync(() => slot.Pack is { ImagesChecked: true } p ? p : null, "the slot's map pack, its images checked");
+            host.ShowTool(AP_Atlas.UI.Tool.MapTracker);
+            var map = slot.MapTracker;
+            int picked = 0;
+            string sent = "nothing";
+            map.PinPicked += (_, name, ids) => { sent = name + " with " + ids.Count + " check(s)"; if (name == "Lone" && ids.Count == 1) picked++; };
+            // The map without a picture is a checklist, its picture named, its location a row that opens in Properties.
+            map.ShowMap(pack.Maps.Values.First(m => m.Name == "Broken").Id);
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(map.ChecklistShown && map.ChecklistRows().SequenceEqual(new[] { "Lone" }) && map.ChecklistNote.Contains("images/broken.png"),
+                $"the map without a picture isn't a checklist naming its picture: {map.ChecklistShown}, rows {string.Join(", ", map.ChecklistRows())}, note {map.ChecklistNote}");
+            map.FindChildren("*", nameof(Button), true, false).OfType<Button>().First(b => b.HasMeta("checklist_row")).EmitSignal(BaseButton.SignalName.Pressed);
+            UiTestExpect(picked == 1, $"a checklist row doesn't open its location (it sent {sent})");
+            // The map with its picture shows its pins.
+            map.ShowMap(pack.Maps.Values.First(m => m.Name == "World").Id);
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(!map.ChecklistShown, "a map with its picture is drawn as a checklist");
+            // The check no pin places: listed and counted; done, it leaves.
+            await UiTestWaitForAsync(() => map.UnplacedNames.SequenceEqual(new[] { "Hidden Chest" }) ? map : null, "the check without a pin under Not on the map");
+            UiTestExpect(map.UnplacedNote?.Contains("1 of your checks") == true, $"the map doesn't count the check without a pin: {map.UnplacedNote}");
+            UiTestExpect(map.SidebarContent.FindChildren("*", nameof(Button), true, false).OfType<Button>().Any(b => b.HasMeta("unplaced_row") && b.GetMeta("unplaced_row").AsString() == "Hidden Chest"), "Not on the map has no row for the check");
+            await server.BroadcastAsync(FakeArchipelagoServer.LocationsChecked(2003));
+            await UiTestWaitForAsync(() => map.UnplacedNames.Count == 0 && map.UnplacedNote == null ? map : null, "the done check to leave Not on the map");
+        }
+        finally
+        {
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+            if (_profiles.Contains(profile)) DeleteProfile(profile);
+            AP_Atlas.Core.SafeFile.Delete(zip);
         }
     }
 
