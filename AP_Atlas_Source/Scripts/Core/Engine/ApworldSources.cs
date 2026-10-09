@@ -359,6 +359,36 @@ namespace AP_Atlas.Core.EngineSetup
             return copies;
         }
 
+        /// <summary>
+        /// The English documents the game's installed apworld bundles: its setup guide (docs/setup_en.md) and its game page
+        /// (docs/en_&lt;Game&gt;.md), as (apworld file, entry, whether it's the setup guide), the guide first. One look at the
+        /// zip's listing through SafeZip; nothing is read or written.
+        /// </summary>
+        public static List<(string File, string Entry, bool Setup)> BundledDocuments(EngineInstall install, string game)
+        {
+            var docs = new List<(string, string, bool)>();
+            if (install == null) return docs;
+            string file = InstalledCopies(install, game).Select(c => c.File).FirstOrDefault();
+            if (file == null) return docs;
+            try
+            {
+                using var zip = SafeZip.Open(file);
+                foreach (var entry in zip.Entries.OrderBy(e => e.FullName, StringComparer.Ordinal))
+                {
+                    string name = entry.FullName;
+                    if (!name.Contains("/docs/", StringComparison.OrdinalIgnoreCase) || !name.EndsWith(".md", StringComparison.OrdinalIgnoreCase)) continue;
+                    string leaf = Path.GetFileName(name);
+                    bool setup = string.Equals(leaf, "setup_en.md", StringComparison.OrdinalIgnoreCase);
+                    if (setup || leaf.StartsWith("en_", StringComparison.OrdinalIgnoreCase)) docs.Add((file, name, setup));
+                }
+            }
+            catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+            {
+                Logger.LogWarning($"Couldn't list the documents in {Path.GetFileName(file)}: {ex.Message}");
+            }
+            return docs.OrderBy(d => d.Item3 ? 0 : 1).ToList();
+        }
+
         /// <summary>The games an engine has from .apworld files (one look at its world folders).</summary>
         public static HashSet<string> GamesWithApworldFiles(EngineInstall install)
         {

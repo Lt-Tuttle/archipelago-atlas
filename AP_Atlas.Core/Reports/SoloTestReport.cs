@@ -61,7 +61,7 @@ namespace AP_Atlas.Core.Reports
 
     /// <summary>Everything a solo test found; the report is written from it (the JSON twin is it as-is).</summary>
     public sealed record SoloTestResult(string Game, DateTime StartedLocal, SoloVersions Versions, IReadOnlyList<SoloStepRecord> Steps,
-        SoloGeneration? Generation, SoloLogic? Logic, SoloPins? Pins, SoloKeyItems? KeyItems, SoloScripts? Scripts, string? ServerAddress, SoloOwnerNotes? Notes, int Schema = 1);
+        SoloGeneration? Generation, SoloLogic? Logic, SoloPins? Pins, SoloKeyItems? KeyItems, SoloScripts? Scripts, string? ServerAddress, SoloOwnerNotes? Notes, IReadOnlyList<SoloFinding>? Findings = null, int Schema = 2);
 
     /// <summary>
     /// The solo test's report: Markdown for people (fixed headings in a fixed order, so reports of different games and
@@ -72,7 +72,8 @@ namespace AP_Atlas.Core.Reports
     {
         public const string Folder = "solo-tests";
         public const string NotesHeading = "## Owner's notes";
-        public static readonly string[] Headings = { "## Game and versions", "## Steps", "## Generation", "## Logic", "## Pins", "## Key Items", "## Scripts", NotesHeading };
+        public const string FindingsHeading = "## Findings", AuthorHeading = "## For the pack's author";
+        public static readonly string[] Headings = { "## Game and versions", "## Steps", "## Generation", "## Logic", "## Pins", "## Key Items", "## Scripts", FindingsHeading, AuthorHeading, NotesHeading };
         public static readonly string[] NotePrompts = { "What looked wrong on the map?", "Which items showed wrongly?", "Anything the real game would need (ROM, client, mod)?", "Other" };
 
         public static string FileStem(string game, DateTime localNow) => StemPrefix(game) + localNow.ToString("yyyyMMdd-HHmm", CultureInfo.InvariantCulture);
@@ -195,12 +196,66 @@ namespace AP_Atlas.Core.Reports
                 }
             }
             sb.AppendLine();
+            AppendFindings(sb, r, Line);
+            sb.AppendLine();
+            AppendForAuthor(sb, r, Line);
+            sb.AppendLine();
             sb.AppendLine(NotesHeading);
             sb.AppendLine();
             if (r.Notes == null) sb.AppendLine("(none yet)");
             else AppendNotes(sb, r.Notes, scrubber);
             return sb.ToString();
         }
+
+        /// <summary>
+        /// Every finding, grouped by kind, most serious first: what was found (with examples), what it means for the user,
+        /// and what Atlas did. Nothing is left out; a kind of a thousand findings is one group with its count.
+        /// </summary>
+        private static void AppendFindings(StringBuilder sb, SoloTestResult r, Func<string, string> line)
+        {
+            sb.AppendLine(FindingsHeading);
+            sb.AppendLine();
+            if (r.Findings == null) { sb.AppendLine("Not gathered: the test ended before the pack and logic were scored."); return; }
+            if (r.Findings.Count == 0) { sb.AppendLine("Nothing found: the pack and logic matched the game everywhere the test looked."); return; }
+            foreach (var f in r.Findings)
+            {
+                sb.AppendLine("### " + SeverityWord(f.Severity) + ": " + line(f.Summary) + " (" + f.Area + ")");
+                sb.AppendLine();
+                if (f.Examples.Count > 0)
+                    sb.AppendLine("- Found: " + line(string.Join("; ", f.Examples)).Replace("\n", " ") + (f.Count > f.Examples.Count && f.Count > 1 ? "; and " + (f.Count - f.Examples.Count) + " more" : ""));
+                sb.AppendLine("- For you: " + line(f.ForUser));
+                sb.AppendLine("- Atlas: " + line(f.AtlasDid));
+                sb.AppendLine();
+            }
+        }
+
+        /// <summary>
+        /// What the pack's author could fix, written for them: one line per kind with its examples, ready to paste into an
+        /// issue by the user's choice. Only the pack's own problems; Atlas never sends it.
+        /// </summary>
+        private static void AppendForAuthor(StringBuilder sb, SoloTestResult r, Func<string, string> line)
+        {
+            sb.AppendLine(AuthorHeading);
+            sb.AppendLine();
+            if (r.Versions.PackName == null) { sb.AppendLine("No map pack was tested."); return; }
+            var forAuthor = (r.Findings ?? Array.Empty<SoloFinding>()).Where(f => f.ForAuthor != null).ToList();
+            if (forAuthor.Count == 0) { sb.AppendLine("Nothing for the author: what the test found is Atlas's to handle, or nothing."); return; }
+            sb.AppendLine("Written for the author of " + line(r.Versions.PackName) + (r.Versions.PackVersion != null ? " " + line(r.Versions.PackVersion) : "")
+                + (r.Versions.PackSource != null ? " (" + line(r.Versions.PackSource) + ")" : "") + ", if you choose to pass it on. Checked by The Archipelago Atlas against "
+                + line(r.Game) + "'s apworld " + line(r.Versions.ApworldVersion ?? "(version unknown)") + " on a one-player seed with default options.");
+            sb.AppendLine();
+            foreach (var f in forAuthor)
+                sb.AppendLine("- " + line(f.ForAuthor!) + " (" + f.Count + ")" + (f.Examples.Count > 0 ? " For example: " + line(string.Join("; ", f.Examples.Take(5))).Replace("\n", " ") + "." : ""));
+        }
+
+        private static string SeverityWord(string severity) => severity switch
+        {
+            "Problem" => "Problem",
+            "Warning" => "Check",
+            "AutoFixed" => "Handled",
+            "Ignored" => "Ignored",
+            _ => "Note"
+        };
 
         private static string NotScoredPack(SoloTestResult r) => r.Versions.PackName == null ? "Not scored: no map pack."
             : r.Logic == null ? "Not scored: the slot didn't connect, so the pack wasn't used." : "Not scored: the Pack Doctor's check of the pack didn't finish during the test.";

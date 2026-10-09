@@ -503,33 +503,13 @@ namespace AP_Atlas.UI
         private List<(string Id, string Text, string Tip, Func<string> Markdown)> ApworldDocuments(string game)
         {
             var docs = new List<(string, string, string, Func<string>)>();
-            var install = AtlasEngine.Current;
-            if (install == null) return docs;
-            string? file = ApworldSources.InstalledCopies(install, game).Select(c => c.File).FirstOrDefault();
-            if (file == null) return docs;
-            try
-            {
-                using var zip = SafeZip.Open(file);
-                foreach (var entry in zip.Entries.OrderBy(e => e.FullName, StringComparer.Ordinal))
-                {
-                    string name = entry.FullName;
-                    if (!name.Contains("/docs/", StringComparison.OrdinalIgnoreCase) || !name.EndsWith(".md", StringComparison.OrdinalIgnoreCase)) continue;
-                    string leaf = Path.GetFileName(name);
-                    bool setup = string.Equals(leaf, "setup_en.md", StringComparison.OrdinalIgnoreCase);
-                    bool about = leaf.StartsWith("en_", StringComparison.OrdinalIgnoreCase);
-                    if (!setup && !about) continue;
-                    string entryName = name;
-                    docs.Add(("apworld:" + game + ":" + (setup ? "setup" : "about"),
-                        setup ? _tr("Setup guide (from the apworld)") : _tr("About the game (from the apworld)"),
-                        _tr("The apworld's own document ({0}), shown in the Help window; its links open in your browser.").Replace("{0}", leaf),
-                        () => ReadApworldText(file, entryName)));
-                }
-            }
-            catch (Exception ex)
-            {
-                AP_Atlas.Core.Logger.LogWarning($"Couldn't list the documents in {Path.GetFileName(file)}: {ex.Message}");
-            }
-            return docs.OrderBy(d => d.Item1.EndsWith(":setup", StringComparison.Ordinal) ? 0 : 1).ToList();
+            if (AtlasEngine.Current is not { } install) return docs;
+            foreach (var (file, entryName, setup) in ApworldSources.BundledDocuments(install, game))
+                docs.Add(("apworld:" + game + ":" + (setup ? "setup" : "about"),
+                    setup ? _tr("Setup guide (from the apworld)") : _tr("About the game (from the apworld)"),
+                    _tr("The apworld's own document ({0}), shown in the Help window; its links open in your browser.").Replace("{0}", Path.GetFileName(entryName)),
+                    () => ReadApworldText(file, entryName)));
+            return docs;
         }
 
         private static string ReadApworldText(string file, string entryName)

@@ -104,6 +104,9 @@ namespace AP_Atlas.Core.EngineSetup
             int yamlOptions = 0;
             string? yamlFrom = null;
             int reachableAtConnect = 0, excludedAtConnect = 0;
+            // What the test found, for the report's Findings (grouped and explained by FindingCatalog).
+            var rawFindings = new List<SoloRawFinding>();
+            List<SoloFinding>? findings = null;
             List<string> notReached = new(), beyondSphere0 = new();
             try
             {
@@ -255,6 +258,13 @@ namespace AP_Atlas.Core.EngineSetup
                         player?.ChecksumMatch ?? slot!.ApworldMatchesSeed, slot!.ActiveLogicCount, slot.TotalLocationsCount, slot.EngineYamlInfo?["source"]?.ToString(), slot.EngineProblem?.Message,
                         reachableAtConnect, excludedAtConnect, notReached, beyondSphere0);
                     parts.Add(player?.Exact == true ? "logic exact" : "logic differs");
+                    foreach (var step in player?.Steps.Where(s => s.LateCount > 0 || s.EarlyCount > 0) ?? Enumerable.Empty<SeedTestStep>())
+                        rawFindings.Add(new SoloRawFinding("logic:differs:" + step.Sphere, "Logic", "Problem", "Sphere " + step.Sphere + ": " + step.LateCount + " too late, " + step.EarlyCount + " too early",
+                            null, step.Late.Take(5).Select(n => "late: " + n).Concat(step.Early.Take(5).Select(n => "early: " + n)).ToList()));
+                    foreach (string name in notReached) rawFindings.Add(new SoloRawFinding("sphere0:notreached:" + name, "Logic", "Problem", name));
+                    foreach (string name in beyondSphere0) rawFindings.Add(new SoloRawFinding("sphere0:beyond:" + name, "Logic", "Problem", name));
+                    if (ApworldSources.BundledDocuments(install!, Game).Any(d => d.Setup))
+                        rawFindings.Add(new SoloRawFinding("setup:guide", "Setup", "Info", "docs/setup_en.md in the apworld"));
                     if (slot.Pack != null)
                     {
                         progress?.Report(new SoloTestProgress(SoloTestStep.Score, SoloStepOutcome.Running, "checking the pack", null));
@@ -275,11 +285,25 @@ namespace AP_Atlas.Core.EngineSetup
                             keyItems = new SoloKeyItems(doctor.TilesTotal, doctor.TilesLinked, doctor.TilesByScript);
                             parts.Add("pins " + SoloTestReport.Percent(pins.LocationsPlaced, pins.LocationsTotal));
                         }
+                        if (doctor != null)
+                        {
+                            foreach (var f in doctor.Findings)
+                                rawFindings.Add(new SoloRawFinding(f.Key, f.Category, f.Ignored ? "Ignored" : f.Severity.ToString(), f.Title, f.Detail, f.Details));
+                            if (doctor.Index != null)
+                                foreach (long id in slot.Session.Locations.AllLocations.Where(id => !doctor.Index.ByLocation.ContainsKey(id)))
+                                {
+                                    string name = slot.Session.Locations.GetLocationNameFromId(id) ?? id.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                                    rawFindings.Add(new SoloRawFinding("seed:unplaced:" + id, "Locations", "Warning", name));
+                                }
+                        }
                         var host = slot.PackScripts;
                         scripts = new SoloScripts(host != null && doctor?.ScriptsRan == true, host?.UnsupportedApis.OrderBy(a => a).ToList() ?? new List<string>(), host?.IgnoredWrites.OrderBy(a => a).ToList() ?? new List<string>(),
                             host?.Errors.ToList() ?? new List<string>(), host?.FollowsMaps ?? false, host?.ReadsGameMemory ?? false, host?.Stopped ?? false, host?.StopReason,
                             doctor?.Findings.Count(f => f.Category == "Scripts") ?? 0);
                     }
+                    findings = FindingCatalog.Group(rawFindings);
+                    int needing = findings.Where(f => f.Severity is "Problem" or "Warning").Sum(f => f.Count);
+                    parts.Add(needing == 0 ? "no findings to check" : needing + " finding(s) to check");
                     return Done(string.Join(", ", parts));
                 });
             }
@@ -293,7 +317,7 @@ namespace AP_Atlas.Core.EngineSetup
                 {
                     var engine = install == null ? "none" : install.Describe();
                     var versions = new SoloVersions(Game, apworldVersion, apworldSource, apworldChecksum, engine, pack?.Manifest.Name, pack?.Manifest.GetActualVersion(), SoloTestReport.PublicSource(pack?.Manifest.VersionsUrl), hooks.AtlasVersionLine());
-                    _result = new SoloTestResult(Game, started, versions, _steps.ToList(), generation, logic, pins, keyItems, scripts, ServerAddress, _notes);
+                    _result = new SoloTestResult(Game, started, versions, _steps.ToList(), generation, logic, pins, keyItems, scripts, ServerAddress, _notes, findings);
                     (_reportMd, _reportJson) = SoloTestReport.Write(ReportsFolder, _result, _scrubber!, DateTime.Now);
                     return Task.FromResult(Done("written to " + Path.GetFileName(_reportMd)));
                 });
