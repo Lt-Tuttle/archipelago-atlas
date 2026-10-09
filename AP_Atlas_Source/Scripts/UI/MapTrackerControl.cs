@@ -281,6 +281,7 @@ namespace AP_Atlas.UI
             listMargin.AddChild(listBox);
             _mapListContainer = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
             listBox.AddChild(_mapListContainer);
+            BuildAttentionList(listBox);
             BuildUnplacedList(listBox);
             // --- The canvas ---
             var rightPanel = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
@@ -1142,6 +1143,64 @@ namespace AP_Atlas.UI
             : _hintedLocs.Contains(id) ? (_reachableLocs.Contains(id) ? MapPinState.HintedInLogic : MapPinState.HintedOutOfLogic)
             : _reachableLocs.Contains(id) ? MapPinState.InLogic
             : _glitchedLocs.Contains(id) ? MapPinState.SequenceBreak : MapPinState.OutOfLogic;
+
+        // ---- Attention: the pack's problems that matter for this seed, each opening its fix in the Pack Doctor ----
+
+        /// <summary>One row of the Attention group: the finding's key, what it says in plain words, its tooltip, and what opens its fix.</summary>
+        public readonly record struct AttentionRow(string Key, string Text, string Tip, Action Open);
+
+        private Button _attentionHeader;
+        private VBoxContainer _attentionBox;
+        private bool _attentionOpen = true;
+        private IReadOnlyList<AttentionRow> _attention = Array.Empty<AttentionRow>();
+
+        /// <summary>The Attention group's rows as shown (for tests).</summary>
+        public IReadOnlyList<AttentionRow> AttentionRows() => _attention;
+
+        /// <summary>Presses one Attention row (for tests).</summary>
+        public void PressAttention(string key) => _attention.FirstOrDefault(r => r.Key == key).Open?.Invoke();
+
+        /// <summary>Shows the pack's problems that matter for this seed (the slot works them out from the Pack Doctor's report); empty hides the group.</summary>
+        public void SetAttention(IReadOnlyList<AttentionRow> rows)
+        {
+            _attention = rows ?? Array.Empty<AttentionRow>();
+            if (_attentionBox == null) return;
+            foreach (Node child in _attentionBox.GetChildren())
+            {
+                _attentionBox.RemoveChild(child);
+                child.QueueFree();
+            }
+            bool any = _attention.Count > 0;
+            _attentionHeader.Visible = any;
+            _attentionHeader.Text = (_attentionOpen ? "▾ " : "▸ ") + Translate("Attention ({0})").Replace("{0}", _attention.Count.ToString());
+            _attentionBox.Visible = any && _attentionOpen;
+            if (!_attentionOpen) return;
+            foreach (var row in _attention)
+            {
+                var open = row.Open;
+                var button = Kit.Button(row.Text, row.Tip, () => open?.Invoke(), flat: true, small: true);
+                button.Alignment = HorizontalAlignment.Left;
+                button.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+                button.ClipText = true;
+                button.AddThemeColorOverride("font_color", ThemeColors.Warning);
+                button.SetMeta("attention_row", row.Key);
+                _attentionBox.AddChild(button);
+            }
+        }
+
+        private void BuildAttentionList(VBoxContainer explorer)
+        {
+            _attentionHeader = Kit.Button("", Translate("What this pack gets wrong for your seed, in plain words: pins that match no check, tiles without an item or image, a missing map picture, a script that stopped. Pick one to open its fix in the Pack Doctor."), () =>
+            {
+                _attentionOpen = !_attentionOpen;
+                SetAttention(_attention);
+            }, flat: true);
+            _attentionHeader.Alignment = HorizontalAlignment.Left;
+            _attentionHeader.Visible = false;
+            explorer.AddChild(_attentionHeader);
+            _attentionBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, Visible = false };
+            explorer.AddChild(_attentionBox);
+        }
 
         private void BuildUnplacedList(VBoxContainer explorer)
         {

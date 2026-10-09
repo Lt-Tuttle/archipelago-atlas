@@ -67,6 +67,8 @@ Key Items (Ctrl+3) shows the progression items you've received. The Visual view 
 
 **Follow my checks.** When you check a location that's on another map, the map switches to it. It's on by default for packs that can't follow the game themselves (a pack that can uses its own following), and it waits a few seconds after you move or zoom the map. Turn it off per slot in the map's options.
 
+**Attention.** What the pack gets wrong for your seed, in plain words, as a group in the explorer: pins that match none of your checks, tiles without an item or image, a missing map picture, a script that stopped or failed. Pick one and the Pack Doctor opens on the tab that fixes it. Problems you ignored in the Doctor stay out; the solo test's report still lists everything.
+
 **Not on the map.** The seed's checks that the pack has no pin for are listed under **Not on the map** in the explorer (coloured by logic; pick one to see it in Properties), and the map says how many there are. Done and excluded checks aren't counted.
 
 ## Logic Tracker

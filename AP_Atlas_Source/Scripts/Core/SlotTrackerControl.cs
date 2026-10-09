@@ -238,6 +238,7 @@ public partial class SlotTrackerControl : MarginContainer
         AP_Atlas.Core.Annotations.Changed += OnAnnotationsChanged;
         AP_Atlas.Core.PopTracker.PackFixes.Changed += OnPackFixesChanged;
         AP_Atlas.Core.PopTracker.PopTrackerPackLoader.PacksChanged += OnPacksChanged;
+        AP_Atlas.Core.PopTracker.PackDoctorService.ReportReady += OnDoctorReport;
         // Keep this slot's options for offline use (setting indicators, the Pack Doctor).
         DataManager.SaveSlotData(ProfileId, _slotName, Game, _slotData);
         AP_Atlas.UI.Ui.Defer(this, RequestGameNames);
@@ -543,6 +544,7 @@ public partial class SlotTrackerControl : MarginContainer
         AP_Atlas.Core.Annotations.Changed -= OnAnnotationsChanged;
         AP_Atlas.Core.PopTracker.PackFixes.Changed -= OnPackFixesChanged;
         AP_Atlas.Core.PopTracker.PopTrackerPackLoader.PacksChanged -= OnPacksChanged;
+        AP_Atlas.Core.PopTracker.PackDoctorService.ReportReady -= OnDoctorReport;
         StopWatchingForScripts();
         Session.Socket.PacketReceived -= OnDataPackagePacket;
         Model.Changed -= OnModelChanged;

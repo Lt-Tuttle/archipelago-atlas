@@ -8,6 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 Development toward the first public beta, 0.1.0.
 
 ### Added
+- **Attention, in the Map Tracker's explorer:** what the pack gets wrong for your seed (pins matching none of your checks, tiles without an item or image, a missing map picture, a stopped or failing script), in plain words, each opening the Pack Doctor on the tab that fixes it.
 - **A Pack Doctor you can work through:** the Recommended tab groups its rows by kind with the group's meaning, says under each row what to do, puts the rows about your seed first (the rest behind "Show more"), narrows them by words, pins or tiles, or a map, and applies or ignores the selection in one undoable step.
 - **The map's legend sits under the map** (the explorer's top was getting crowded), the checklist of a map without a picture lists each check of a pin, and the pack variant choice lives with Key Items (the Map Tracker offers it only when a variant changes maps).
 - **Follow my checks** in the Map Tracker: when you check a location on another map, the map switches to it; on by default for packs that can't follow the game themselves, kept per slot, and it never moves the map while you're looking around.

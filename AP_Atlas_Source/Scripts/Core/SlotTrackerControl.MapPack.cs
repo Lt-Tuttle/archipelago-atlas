@@ -22,6 +22,9 @@ public partial class SlotTrackerControl : MarginContainer
     /// <summary>Shows the Map Packs page and searches GitHub for a game's packs (set by MainTrackerWindow; the user pressed for it).</summary>
     public Action<string> FindMapPack { get; set; }
 
+    /// <summary>Opens the Pack Doctor for a pack's zip on a tab (set by the window; the Map Tracker's Attention rows use it).</summary>
+    public Action<string, string> OpenPackDoctor { get; set; }
+
     private void LoadMapPack() => AP_Atlas.Core.Async.Fire(LoadMapPackAsync(), $"loading {_slotName}'s map pack");
 
     /// <summary>The pack's images, used while this slot is open (released when it ends).</summary>
@@ -64,6 +67,7 @@ public partial class SlotTrackerControl : MarginContainer
             AppendDebugLog($"[MapTracker] Loaded pack '{pack.Manifest?.Name}' for {game}" + (string.IsNullOrEmpty(pack.Variant) ? "." : $" (variant {pack.Variant})."));
             // First use of a pack (or a new version): let the Pack Doctor check it in the background.
             AP_Atlas.Core.Async.Fire(AP_Atlas.Core.PopTracker.PackDoctorService.CheckAsync(pack), "checking a map pack");
+            RefreshAttention();
             RaiseStateChanged();
         }
         else
@@ -364,6 +368,7 @@ public partial class SlotTrackerControl : MarginContainer
         EffectivePack = null;
         PackIndex = null;
         _mapTracker?.ClearPack();
+        _mapTracker?.SetAttention(null);
         _progressionTracker?.SetPack(null, null);
         AppendDebugLog($"[MapTracker] The map pack '{name}' was removed or replaced.");
         UpdateKeyItemsUI();
@@ -373,5 +378,59 @@ public partial class SlotTrackerControl : MarginContainer
     private void OnPackFixesChanged(string packKey)
     {
         if (Pack != null && AP_Atlas.Core.PopTracker.PackFixes.KeyFor(Pack) == packKey) RebuildPackIndex();
+    }
+
+    /// <summary>The Pack Doctor checked a pack: when it's this slot's, the Attention group follows the new report.</summary>
+    private void OnDoctorReport(string packKey)
+    {
+        if (Pack != null && AP_Atlas.Core.PopTracker.PackFixes.KeyFor(Pack) == packKey) AP_Atlas.UI.Ui.Defer(this, RefreshAttention);
+    }
+
+    /// <summary>The kinds of Doctor findings the Attention group shows, and the Doctor tab that fixes each.</summary>
+    private static readonly Dictionary<string, string> AttentionTabs = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["loc:unmatched"] = "Recommended",
+        ["tile:unlinked"] = "Recommended",
+        ["tile:unknown"] = "Recommended",
+        ["tile:noimage"] = "Key Items",
+        ["map:nobg"] = "Maps",
+        ["script:stopped"] = "Overview",
+        ["script:error"] = "Overview",
+        ["script:load"] = "Overview",
+    };
+
+    private const int AttentionCap = 60;
+
+    /// <summary>
+    /// What the pack gets wrong for this seed, from the Doctor's report: pin sections whose suggested checks include one of
+    /// this seed's (every tile without an item or image, every missing map picture, a stopped or failing script), each
+    /// opening the Doctor on the tab that fixes it. Findings the user ignored stay out.
+    /// </summary>
+    private void RefreshAttention()
+    {
+        if (_mapTracker == null || _ended) return;
+        if (Pack == null || !AP_Atlas.Core.PopTracker.PackDoctorService.Reports.TryGetValue(AP_Atlas.Core.PopTracker.PackFixes.KeyFor(Pack), out var report) || report == null)
+        {
+            _mapTracker.SetAttention(null);
+            return;
+        }
+        var seed = new HashSet<long>((IEnumerable<long>)Session?.Locations?.AllLocations ?? Enumerable.Empty<long>());
+        var rows = new List<AP_Atlas.UI.MapTrackerControl.AttentionRow>();
+        string zip = Pack.SourcePath;
+        foreach (var f in report.Findings.Where(f => !f.Ignored && f.Severity >= AP_Atlas.Core.PopTracker.FindingSeverity.Warning))
+        {
+            string kind = AP_Atlas.Core.Reports.FindingCatalog.KindOf(f.Key);
+            if (!AttentionTabs.TryGetValue(kind, out string tab)) continue;
+            if (kind == "loc:unmatched" && (f.Suggestions.Count == 0 || !AP_Atlas.Core.Reports.FindingCatalog.MattersToSeed(f.Suggestions.Select(s => s.Id), seed))) continue;
+            string toDo = AP_Atlas.Core.Reports.FindingCatalog.ToDo(kind);
+            string tip = f.Title + (string.IsNullOrEmpty(f.Detail) ? "" : "\n" + f.Detail) + (toDo == null ? "" : "\n" + toDo) + "\n" + Tr("Opens the Pack Doctor on {0}.").Replace("{0}", tab);
+            string tabFor = tab;
+            rows.Add(new AP_Atlas.UI.MapTrackerControl.AttentionRow(f.Key, f.Title, tip, () => OpenPackDoctor?.Invoke(zip, tabFor)));
+            if (rows.Count >= AttentionCap) break;
+        }
+        int more = report.Findings.Count(f => !f.Ignored && f.Severity >= AP_Atlas.Core.PopTracker.FindingSeverity.Warning) - rows.Count;
+        if (rows.Count >= AttentionCap && more > 0)
+            rows.Add(new AP_Atlas.UI.MapTrackerControl.AttentionRow("more", Tr("… and {0} more in the Pack Doctor").Replace("{0}", more.ToString()), Tr("Opens the Pack Doctor's Overview."), () => OpenPackDoctor?.Invoke(zip, "Overview")));
+        _mapTracker.SetAttention(rows);
     }
 }

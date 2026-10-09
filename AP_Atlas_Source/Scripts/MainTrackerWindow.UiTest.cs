@@ -176,7 +176,7 @@ public partial class MainTrackerWindow
             PackImagesFollowTheirUsersAsync);
         await ScenarioAsync("Maps without a picture and checks without a pin: a map whose pack ships no usable picture lists its locations (named in a note, each opening in Properties) instead of dots on nothing, and a map with its picture shows its pins; the seed's checks no pin places are listed under Not on the map and counted on the map, and a check that's done leaves the list; Follow my checks is on for a pack that can't follow the game, shows the map of a check made on another map, leaves the map alone while the user zooms it, and is kept per slot",
             PicturelessMapsAsync);
-        await ScenarioAsync("Pack Doctor: on a pack's first check, a tile whose name matches an item exactly (once punctuation is ignored) is linked by itself as an automatic fix; the pack's row on the Map Packs page offers Review N, which opens the Doctor on Recommended; the Recommended tab lists what's left, Apply on a row writes the fix, the row goes after the check and the status says so; the rows are grouped by kind with what to do under each, filters by words, kind and map narrow them, Ignore selected hides the selection in one step and Undo brings it back; Undo takes the automatic link back",
+        await ScenarioAsync("Pack Doctor: on a pack's first check, a tile whose name matches an item exactly (once punctuation is ignored) is linked by itself as an automatic fix; the pack's row on the Map Packs page offers Review N, which opens the Doctor on Recommended; the Recommended tab lists what's left, Apply on a row writes the fix, the row goes after the check and the status says so; the rows are grouped by kind with what to do under each, filters by words, kind and map narrow them, Ignore selected hides the selection in one step and Undo brings it back; Undo takes the automatic link back; the Map Tracker's Attention group lists the pack's problems for this seed in plain words and opens the Doctor on the fixing tab",
             PackDoctorAsync);
         await ScenarioAsync("Map packs reach connected slots: Key Items offers the pack's layouts and two Atlas builds by item group, kept per slot; the chat's filters sit in one row; the Chat and System Log tabs carry a dot for lines that arrived while they weren't showing, cleared when shown; a slot without a pack offers \"Find a map pack for <game>…\" on its map, which shows Map Packs and searches GitHub once; a pack chosen from the results downloads with a progress line, installs with a card and reaches the slot's map; a pack installed while a slot is connected shows on its map at once, without a reconnect; deleted, the map says there's no pack again; another pack for the game takes its place",
             PacksReachConnectedSlotsAsync);
@@ -3335,6 +3335,17 @@ public partial class MainTrackerWindow
             UiTestExpect(AP_Atlas.Core.PopTracker.PackFixes.Undo(key) && AP_Atlas.Core.PopTracker.PackFixes.Undo(key) && AP_Atlas.Core.PopTracker.PackFixes.Get(key).Tiles.Count == 0,
                 "Undo didn't take the automatic link back");
             window.EmitSignal(Window.SignalName.CloseRequested);
+            await UiTestWaitForAsync(() => !GodotObject.IsInstanceValid(window) || window.IsQueuedForDeletion() || !window.Visible ? this : null, "the Doctor window to close");
+            // The Map Tracker's Attention group lists the pack's problems for this seed (both pins, back after the undos) and opens the Doctor on the fixing tab.
+            await UiTestWaitForAsync(() => slot.MapTracker.AttentionRows().Any(r => r.Key == far.Key) && slot.MapTracker.AttentionRows().Any(r => r.Key == pin.Key) ? slot : null, "the Attention group to list both unlinked pins");
+            // After the undos the Sword tile is unlinked again, so it's listed too; the broken map picture and the Shield's missing image as well.
+            UiTestExpect(slot.MapTracker.AttentionRows().All(r => r.Text.Length > 0 && r.Tip.Contains("Opens the Pack Doctor"))
+                && new[] { "tile:unlinked:sword", "tile:noimage:shield", "map:nobg:Broken" }.All(k => slot.MapTracker.AttentionRows().Any(r => r.Key == k)),
+                $"the Attention rows aren't in plain words with their way to the Doctor, or miss a problem: {string.Join(" | ", slot.MapTracker.AttentionRows().Select(r => r.Key + ": " + r.Text))}");
+            slot.MapTracker.PressAttention(far.Key);
+            var reopened = await UiTestWaitForAsync(() => GetTree().Root.GetChildren().OfType<AP_Atlas.UI.PackDoctorWindow>().FirstOrDefault(w => w.Visible), "the Doctor window from the Attention row");
+            UiTestExpect(reopened.CurrentTabTitle == "Recommended", $"the Attention row opened the Doctor on {reopened.CurrentTabTitle}, not Recommended");
+            reopened.EmitSignal(Window.SignalName.CloseRequested);
         }
         finally
         {
