@@ -176,7 +176,7 @@ public partial class MainTrackerWindow
             PackImagesFollowTheirUsersAsync);
         await ScenarioAsync("Maps without a picture and checks without a pin: a map whose pack ships no usable picture lists its locations (named in a note, each opening in Properties) instead of dots on nothing, and a map with its picture shows its pins; the seed's checks no pin places are listed under Not on the map and counted on the map, and a check that's done leaves the list; Follow my checks is on for a pack that can't follow the game, shows the map of a check made on another map, leaves the map alone while the user zooms it, and is kept per slot",
             PicturelessMapsAsync);
-        await ScenarioAsync("Pack Doctor: on a pack's first check, a tile whose name matches an item exactly (once punctuation is ignored) is linked by itself as an automatic fix; the pack's row on the Map Packs page offers Review N, which opens the Doctor on Recommended; the Recommended tab lists what's left, Apply on a row writes the fix, the row goes after the check and the status says so; Undo takes the automatic link back",
+        await ScenarioAsync("Pack Doctor: on a pack's first check, a tile whose name matches an item exactly (once punctuation is ignored) is linked by itself as an automatic fix; the pack's row on the Map Packs page offers Review N, which opens the Doctor on Recommended; the Recommended tab lists what's left, Apply on a row writes the fix, the row goes after the check and the status says so; the rows are grouped by kind with what to do under each, filters by words, kind and map narrow them, Ignore selected hides the selection in one step and Undo brings it back; Undo takes the automatic link back",
             PackDoctorAsync);
         await ScenarioAsync("Map packs reach connected slots: Key Items offers the pack's layouts and two Atlas builds by item group, kept per slot; the chat's filters sit in one row; the Chat and System Log tabs carry a dot for lines that arrived while they weren't showing, cleared when shown; a slot without a pack offers \"Find a map pack for <game>…\" on its map, which shows Map Packs and searches GitHub once; a pack chosen from the results downloads with a progress line, installs with a card and reaches the slot's map; a pack installed while a slot is connected shows on its map at once, without a reconnect; deleted, the map says there's no pack again; another pack for the game takes its place",
             PacksReachConnectedSlotsAsync);
@@ -3270,12 +3270,15 @@ public partial class MainTrackerWindow
     {
         string zip = System.IO.Path.Combine(AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory(), "uitest_doctor_pack.zip");
         // "Sword!" matches the game's "Sword" once punctuation is ignored (the index alone wouldn't link it); the pin "Cave" / "Chest" is close to
-        // "Cave Chest Room" but not exact (a game location named "Cave Chest" would pair by itself from the pin's name and the section's).
+        // "Cave Chest Room" and "Far" / "Lantern" to "Far Lantern Box", neither exact (a game location named "Cave Chest" would pair by itself
+        // from the pin's name and the section's).
         FakeMapPack.Write(zip, "UI test doctor pack", "Doctor Test Game",
-            itemsJson: """[{"name":"Sword!","type":"toggle","img":"images/sword.png","codes":"sword"},{"name":"Shield","type":"toggle","img":"images/broken.png","codes":"shield"}]""");
+            itemsJson: """[{"name":"Sword!","type":"toggle","img":"images/sword.png","codes":"sword"},{"name":"Shield","type":"toggle","img":"images/broken.png","codes":"shield"}]""",
+            locationsJson: """[{"name":"Cave","sections":[{"name":"Chest"}],"map_locations":[{"map":"World","x":10,"y":10}]},""" +
+                           """{"name":"Far","sections":[{"name":"Lantern"}],"map_locations":[{"map":"World","x":500,"y":10}]}]""");
         await using var server = new FakeArchipelagoServer { SlotGame = "Doctor Test Game" };
         server.Games["Doctor Test Game"] = new FakeGame("d0c70123456789abcdef0123456789abcdef0123",
-            new Dictionary<string, long> { ["Sword"] = 1000, ["Shield"] = 1001 }, new Dictionary<string, long> { ["Cave Chest Room"] = 2000, ["Far Lantern"] = 2001 });
+            new Dictionary<string, long> { ["Sword"] = 1000, ["Shield"] = 1001 }, new Dictionary<string, long> { ["Cave Chest Room"] = 2000, ["Far Lantern Box"] = 2001 });
         var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
         profile.Slots.Clear();
         profile.Slots.Add("Tester");
@@ -3310,6 +3313,24 @@ public partial class MainTrackerWindow
             await UiTestWaitForAsync(() => AP_Atlas.Core.PopTracker.PackFixes.Get(key).Links.FirstOrDefault(l => l.Subject == "link:Cave|Chest" && l.ApLocationId == 2000), "the pin's link to be written");
             await UiTestWaitForAsync(() => window.StatusText.StartsWith("Applied") && window.StatusText.Contains("Done") ? window : null, "the status to say the apply landed");
             UiTestExpect(!window.RecommendedRows().Any(r => r.Key == pin.Key), "the applied row is still suggested after the check");
+            // The rows are grouped by kind with what to do under each; filters narrow them; the selection is ignored in one step, and Undo brings it back.
+            var far = window.RecommendedRows().FirstOrDefault(r => r.Key == "loc:unmatched:Far|Lantern");
+            UiTestExpect(far.Key != null, $"the Far pin isn't a suggestion: {string.Join(", ", window.RecommendedRows().Select(r => r.Key))}");
+            UiTestExpect(window.RecommendedGroupTitles().Any(t => t.Contains("pin sections aren't linked")) && (window.RecommendedToDo(far.Key) ?? "").StartsWith("Pick the check this pin stands for", StringComparison.Ordinal),
+                $"the Recommended tab lacks its group or the row's what-to-do line: {string.Join(" | ", window.RecommendedGroupTitles())} / {window.RecommendedToDo(far.Key)}");
+            window.SetRecommendedFilter("nothing-like-this", 0, null);
+            UiTestExpect(window.RecommendedShownKeys().Count == 0, "a filter by words didn't narrow the rows");
+            window.SetRecommendedFilter("", 2, null);
+            UiTestExpect(!window.RecommendedShownKeys().Contains(far.Key), "the tiles-only filter still shows a pin");
+            window.SetRecommendedFilter("Far", 0, "World");
+            UiTestExpect(window.RecommendedShownKeys().SequenceEqual(new[] { far.Key }), $"the word and map filters didn't leave the Far pin alone: {string.Join(", ", window.RecommendedShownKeys())}");
+            window.SelectShownRecommendations();
+            window.IgnoreSelectedRecommendations();
+            await UiTestWaitForAsync(() => window.HasReport && AP_Atlas.Core.PopTracker.PackFixes.Get(key).Ignored.Contains(far.Key) && !window.RecommendedRows().Any(r => r.Key == far.Key) ? window : null, "the Far pin to be ignored");
+            UiTestExpect(window.StatusText.Contains("Ignored"), $"the status doesn't say what was ignored: {window.StatusText}");
+            AP_Atlas.Core.PopTracker.PackFixes.Undo(key);
+            await UiTestWaitForAsync(() => !AP_Atlas.Core.PopTracker.PackFixes.Get(key).Ignored.Contains(far.Key) ? window : null, "Undo to bring the ignored pin back");
+            window.SetRecommendedFilter("", 0, null);
             // Undo twice: the pin link, then the automatic tile link.
             UiTestExpect(AP_Atlas.Core.PopTracker.PackFixes.Undo(key) && AP_Atlas.Core.PopTracker.PackFixes.Undo(key) && AP_Atlas.Core.PopTracker.PackFixes.Get(key).Tiles.Count == 0,
                 "Undo didn't take the automatic link back");

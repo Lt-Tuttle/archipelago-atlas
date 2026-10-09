@@ -23,6 +23,9 @@ namespace AP_Atlas.Core.PopTracker
         /// <summary>Asks the user to review a pack: (pack key, message). The host shows a toast with a button.</summary>
         public static event Action<string, string> ReviewSuggested;
 
+        /// <summary>The locations of the seed a connected slot of a game plays (set by the window; null or empty when none).</summary>
+        public static Func<string, IEnumerable<long>> SeedLocations { get; set; }
+
         private static AppSettings _settings;
         private static readonly HashSet<string> _running = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         // Packs whose fixes changed while a check ran: checked once more when it ends, so the edit isn't lost to the snapshot.
@@ -91,6 +94,8 @@ namespace AP_Atlas.Core.PopTracker
                 var slotData = DataManager.LatestSlotDataForGame(game) ?? DataManager.LatestSlotDataForGame(original.Manifest?.GameName);
                 var inputs = PackDoctor.Prepare(original, names);
                 var report = await Task.Run(() => PackDoctor.Analyze(inputs, slotData));
+                try { report.SeedLocationIds = new HashSet<long>(SeedLocations?.Invoke(game) ?? Enumerable.Empty<long>()); }
+                catch (Exception ex) { Logger.LogDebug("The seed's locations for the Pack Doctor couldn't be read: " + ex.Message); }
                 Reports[key] = report;
                 ReportReady?.Invoke(key);
 

@@ -140,6 +140,12 @@ public class SoloTestReportTests
         Assert.Equal("file:nomapping", FindingCatalog.KindOf("file:nomapping"));
         Assert.Equal("auto", FindingCatalog.KindOf("auto:tile:x"));
         Assert.Equal("brand", FindingCatalog.KindOf("brand:new"));
+        foreach (string fixable in new[] { "loc:unmatched", "tile:unlinked", "tile:unknown" }) Assert.False(string.IsNullOrEmpty(FindingCatalog.ToDo(fixable)), fixable + " has no what-to-do line");
+        Assert.Null(FindingCatalog.ToDo("map:nobg"));
+        Assert.True(FindingCatalog.MattersToSeed(new long[] { 5, 9 }, new HashSet<long> { 9 }));
+        Assert.False(FindingCatalog.MattersToSeed(new long[] { 5 }, new HashSet<long> { 9 }));
+        Assert.True(FindingCatalog.MattersToSeed(new long[] { 5 }, null));
+        Assert.True(FindingCatalog.MattersToSeed(new long[] { 5 }, new HashSet<long>()));
         Assert.Contains("brand", FindingCatalog.Explain("brand").Summary);
     }
 

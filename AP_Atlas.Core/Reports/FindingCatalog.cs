@@ -22,8 +22,18 @@ namespace AP_Atlas.Core.Reports
     /// </summary>
     public static class FindingCatalog
     {
-        /// <summary>One kind's explanation. {n} in the summary is the count.</summary>
-        public sealed record Entry(string Summary, string ForUser, string AtlasDid, string? ForAuthor = null);
+        /// <summary>One kind's explanation. {n} in the summary is the count; ToDo is the line under a row the user can fix.</summary>
+        public sealed record Entry(string Summary, string ForUser, string AtlasDid, string? ForAuthor = null, string? ToDo = null);
+
+        /// <summary>What to do about one finding of a kind the Pack Doctor can fix, or null for a kind that has nothing to pick.</summary>
+        public static string? ToDo(string kind) => Entries.TryGetValue(kind, out var entry) ? entry.ToDo : null;
+
+        /// <summary>
+        /// Whether a row is about this seed: one of its candidate locations is in the seed. With no seed known (no slot
+        /// connected), everything matters.
+        /// </summary>
+        public static bool MattersToSeed(IEnumerable<long> candidates, IReadOnlyCollection<long>? seed) =>
+            seed == null || seed.Count == 0 || candidates.Any(seed.Contains);
 
         /// <summary>The severities in the order the report shows them.</summary>
         public static readonly IReadOnlyList<string> SeverityOrder = new[] { "Problem", "Warning", "Info", "AutoFixed", "Ignored" };
@@ -108,11 +118,13 @@ namespace AP_Atlas.Core.Reports
             ["tile:unknown"] = new("{n} grid cells use codes no pack item defines",
                 "Those cells are empty unless Atlas can name them.",
                 "Left the cells out, or showed the linked item's name where one is linked.",
-                "The item grid uses codes that no item in the pack defines."),
+                "The item grid uses codes that no item in the pack defines.",
+                "Pick the game's item to put a tile there, or Ignore it to leave the cell empty."),
             ["tile:unlinked"] = new("{n} tiles aren't linked to one of the game's items",
                 "They never light up when the item arrives.",
                 "Left them unlit and listed them for review.",
-                "These tiles name no item of the game (no code or name matches)."),
+                "These tiles name no item of the game (no code or name matches).",
+                "Pick the game's item this tile stands for (the best match is chosen; Choose… lists every name), or Ignore it to leave the tile unlit."),
             ["tile:noimage"] = new("{n} tiles have no image",
                 "Each shows as a framed tile with the item's name instead of a picture.",
                 "Showed the item's name on the tile, and named the missing file in its tooltip.",
@@ -125,7 +137,8 @@ namespace AP_Atlas.Core.Reports
             ["loc:unmatched"] = new("{n} pin sections aren't linked to one of the game's checks",
                 "They stay red and never clear.",
                 "Left them as they are and listed them for review (each can be linked or ignored in the Pack Doctor).",
-                "These pin sections match no location of the apworld by name or mapping."),
+                "These pin sections match no location of the apworld by name or mapping.",
+                "Pick the check this pin stands for (the best match is chosen; Choose… lists every name), or Ignore it if the game doesn't have it."),
             ["loc:composed"] = new("{n} pin sections were matched by their pin's name and their own",
                 "They're usually right (\"Wave 10 Completed\" under \"Brawler\" is the game's \"Wave 10 Completed (Brawler)\").",
                 "Paired them from the pin's name and the section's."),

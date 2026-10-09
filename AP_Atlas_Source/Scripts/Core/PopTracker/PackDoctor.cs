@@ -70,6 +70,8 @@ namespace AP_Atlas.Core.PopTracker
         public int TilesTotal, TilesLinked, TilesByScript;
         public int SectionsTotal, SectionsLinked, SectionsByScript, SectionsByName, SectionsLoose, SectionsByFix;
         public int ApLocationsTotal, ApLocationsPlaced;
+        /// <summary>The locations of the seed a connected slot of this game plays (empty when none is connected): the Recommended tab puts their rows first.</summary>
+        public HashSet<long> SeedLocationIds = new HashSet<long>();
         /// <summary>Game locations no pin holds, by name (the first forty, sorted), for reports.</summary>
         public List<string> UnplacedSample = new List<string>();
 

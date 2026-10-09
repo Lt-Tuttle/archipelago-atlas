@@ -187,6 +187,10 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         AP_Atlas.Core.EngineSetup.AtlasEngine.Changed += OnEngineChangedForHome;
         AP_Atlas.Core.EngineSetup.SoloTestRunner.StateChanged += OnSoloTestChanged;
         AP_Atlas.Core.PopTracker.PackDoctorService.Initialize(_appSettings);
+        // The Doctor's Recommended tab puts the rows about a connected slot's seed first.
+        AP_Atlas.Core.PopTracker.PackDoctorService.SeedLocations = game => ActiveSlotNodes().OfType<SlotTrackerControl>()
+            .Where(s => GodotObject.IsInstanceValid(s) && s.Session?.Locations != null && string.Equals(s.Game, game, StringComparison.OrdinalIgnoreCase))
+            .SelectMany(s => s.Session.Locations.AllLocations).ToList();
         AP_Atlas.Core.PopTracker.PackDoctorService.ReviewSuggested += OnPackReviewSuggested;
         _profiles = DataManager.LoadProfiles();
         StartSessions();
