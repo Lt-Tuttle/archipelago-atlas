@@ -1,0 +1,35 @@
+# CodeQL's configuration for Atlas: the security-and-quality suite, without the rules that are style notes or don't
+# fit a Godot program. Every security rule and every error-level rule stays. Decided with the owner on 2026-10-09:
+# about 1,600 open alerts were almost all these, which buried any real new finding.
+name: Atlas CodeQL config
+
+queries:
+  - uses: security-and-quality
+
+query-filters:
+  # Godot frees a node with its tree; the analyzer can't see that, so every node a method makes is "not disposed".
+  - exclude:
+      id: cs/local-not-disposed
+  # Path.Combine with a rooted second part: Atlas's paths are its own folders, and SafeFile checks where it writes.
+  - exclude:
+      id: cs/path-combine
+  # A catch of every exception: Atlas's own guard rail (Tools/check_guards.ps1) requires each one to log or say why.
+  - exclude:
+      id: cs/catch-of-all-exceptions
+  - exclude:
+      id: cs/empty-catch-block
+  # Style notes.
+  - exclude:
+      id: cs/linq/missed-where
+  - exclude:
+      id: cs/linq/missed-select
+  - exclude:
+      id: cs/linq/missed-all
+  - exclude:
+      id: cs/missed-readonly-modifier
+  - exclude:
+      id: cs/xmldoc/missing-summary
+  - exclude:
+      id: cs/missed-ternary-operator
+  - exclude:
+      id: cs/nested-if-statements
