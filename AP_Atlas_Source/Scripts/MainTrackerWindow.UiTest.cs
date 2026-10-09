@@ -118,7 +118,7 @@ public partial class MainTrackerWindow
             DialogsStandAsTallAsTheirContentAsync);
         await ScenarioAsync("Slot picker: the tool header lists the connected slots with the selected one chosen; picking one shows its view, Ctrl+Tab and Ctrl+Shift+Tab go through them around the end, a slot selected elsewhere shows as picked, a tool that isn't per slot hides it, and a slot that ends leaves it",
             SlotPickerAsync);
-        await ScenarioAsync("Window parts: the View menu hides and shows the slots panel, the explorer (whatever tool shows), Properties, the bottom pane and the status bar, remembering each; each tool's explorer has its own width (Map Packs starts at 400, Games at 360); focus mode leaves the content alone and, off again, brings each part back as the user had it",
+        await ScenarioAsync("Window parts: the View menu hides and shows the slots panel, the explorer (whatever tool shows), Properties, the bottom pane and the status bar, remembering each; each tool's explorer has its own width (Map Packs starts at 480, Games at 360, the Map Tracker at 340); focus mode leaves the content alone and, off again, brings each part back as the user had it",
             WindowPartsAsync);
         await ScenarioAsync("Settings page: Ctrl+, shows it with the search box ready and the sections in the explorer; each kind of row changes its setting at once and saves it (a toggle, a choice, a number, a window part, a bottom pane tab); a setting changed elsewhere shows as it is; typed words narrow the rows; a section jump scrolls",
             SettingsPageAsync);
@@ -2487,15 +2487,15 @@ public partial class MainTrackerWindow
         _commands!.Run("view.slots-panel");
         _commands.Run("view.properties-panel");
         await UiTestWaitAsync(0.05);
-        UiTestExpect(_explorerSplit.SplitOffsets[0] == 400 && _midLeftSidebar.Size.X >= 398, $"Map Packs' explorer starts {_midLeftSidebar.Size.X} wide (offset {_explorerSplit.SplitOffsets[0]}), not 400");
-        _explorerSplit.EmitSignal(SplitContainer.SignalName.Dragged, 450);
+        UiTestExpect(_explorerSplit.SplitOffsets[0] == 480 && _midLeftSidebar.Size.X >= 478, $"Map Packs' explorer starts {_midLeftSidebar.Size.X} wide (offset {_explorerSplit.SplitOffsets[0]}), not 480");
+        _explorerSplit.EmitSignal(SplitContainer.SignalName.Dragged, 520);
         host.ShowTool(AP_Atlas.UI.Tool.Connections);
         await UiTestWaitAsync(0.05);
         UiTestExpect(_explorerSplit.SplitOffsets[0] == 0 && _midLeftSidebar.Size.X < 318 && !_appSettings.ExplorerSplitOffsets.ContainsKey("connections"),
             $"the Multiworlds explorer is {_midLeftSidebar.Size.X} wide (offset {_explorerSplit.SplitOffsets[0]}) after a drag on Map Packs'");
         host.ShowTool(AP_Atlas.UI.Tool.MapPacks);
         await UiTestWaitAsync(0.05);
-        UiTestExpect(_appSettings.ExplorerSplitOffsets.TryGetValue("map-packs", out int packsOffset) && packsOffset == 450 && _explorerSplit.SplitOffsets[0] == 450 && _midLeftSidebar.Size.X >= 448,
+        UiTestExpect(_appSettings.ExplorerSplitOffsets.TryGetValue("map-packs", out int packsOffset) && packsOffset == 520 && _explorerSplit.SplitOffsets[0] == 520 && _midLeftSidebar.Size.X >= 518,
             $"the drag on Map Packs' explorer isn't kept for it (offset {packsOffset}, {_midLeftSidebar.Size.X} wide)");
         _appSettings.ExplorerSplitOffsets.Remove("map-packs");
         ApplyExplorerOffset(AP_Atlas.UI.Tool.MapPacks);
@@ -3292,7 +3292,7 @@ public partial class MainTrackerWindow
             UiTestExpect(!map.ChecklistShown, "a map with its picture is drawn as a checklist");
             // The check no pin places: listed and counted; done, it leaves.
             await UiTestWaitForAsync(() => map.UnplacedNames.SequenceEqual(new[] { "Hidden Chest" }) ? map : null, "the check without a pin under Not on the map");
-            UiTestExpect(map.UnplacedNote?.Contains("1 of your checks") == true, $"the map doesn't count the check without a pin: {map.UnplacedNote}");
+            UiTestExpect(map.UnplacedNote?.Contains("1 check not on these maps") == true, $"the map doesn't count the check without a pin: {map.UnplacedNote}");
             UiTestExpect(map.SidebarContent.FindChildren("*", nameof(Button), true, false).OfType<Button>().Any(b => b.HasMeta("unplaced_row") && b.GetMeta("unplaced_row").AsString() == "Hidden Chest"), "Not on the map has no row for the check");
             await server.BroadcastAsync(FakeArchipelagoServer.LocationsChecked(2003));
             await UiTestWaitForAsync(() => map.UnplacedNames.Count == 0 && map.UnplacedNote == null ? map : null, "the done check to leave Not on the map");

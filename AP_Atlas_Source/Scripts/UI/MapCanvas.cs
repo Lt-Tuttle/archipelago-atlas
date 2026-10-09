@@ -72,7 +72,9 @@ namespace AP_Atlas.UI
             _surface.AddChild(_noImage);
             _scroll.Resized += () =>
             {
-                if (_fitWhenSized && HasView) FitToView();
+                if (!HasView) return;
+                if (_viewWhenSized is { } pending) SetView(pending.Center, pending.Zoom);
+                else if (_fitWhenSized) FitToView();
             };
             _scroll.GetHScrollBar().ValueChanged += _ => ViewChanged?.Invoke();
             _scroll.GetVScrollBar().ValueChanged += _ => ViewChanged?.Invoke();
@@ -87,6 +89,11 @@ namespace AP_Atlas.UI
 
         /// <summary>The scrolling area has a size (before the window laid it out, a fit would be meaningless).</summary>
         public bool HasView => _scroll.Size.X > 0 && _scroll.Size.Y > 0;
+
+        private (Vector2 Center, float Zoom)? _viewWhenSized;
+
+        /// <summary>A saved view waiting for the map to have a size (for tests).</summary>
+        public bool ViewPending => _viewWhenSized != null;
 
         /// <summary>The map point at the middle of the view, in map pixels.</summary>
         public Vector2 Center => (ScrollPosition + _scroll.Size / 2) / _zoom;
@@ -221,6 +228,13 @@ namespace AP_Atlas.UI
         public void SetView(Vector2 center, float zoom)
         {
             _fitWhenSized = false;
+            if (!HasView)
+            {
+                // No size yet (the map loaded while its tab was hidden): applied once the view has one.
+                _viewWhenSized = (center, zoom);
+                return;
+            }
+            _viewWhenSized = null;
             _zoom = Math.Clamp(zoom, MinZoom, MaxZoom);
             Layout();
             var target = center * _zoom - _scroll.Size / 2;

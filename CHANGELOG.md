@@ -270,6 +270,11 @@ Development toward the first public beta, 0.1.0.
   - An image you choose for a Pack Doctor fix is checked the same way before it's copied.
 
 ### Fixed
+- **A map's saved view** is applied once the map has a size: a map loaded while its tab was hidden came up tiny at the top left.
+- **The note about checks not on the map** is a small pill at the map's top right instead of a line across the map.
+- **The Map Tracker's explorer** starts wider (340) with Attention collapsed; Sort and Fit/zoom share one line, and the two map switches share one line; "Follow the game's current map" is now "Auto map tabbing", greyed and marked unsupported when the pack can't say where you are; the legend's dimmed note sits in its row.
+- **The Map Packs list** starts wider (480) with two-line rows: the pack's name and game, then its version, contents, the Doctor's word and the buttons.
+- **The solo test window's pack choices** sit in one column on the left (Install beside each pack, Continue without a pack under them).
 - **A start inventory now counts in logic.** The server sends start inventory items with no flags and they aren't in the item pool, so Atlas never told the logic engine about them: checks a game opens from the start showed as out of logic (found by the Brotato solo test: five checks the generator's sphere 0 had were missing at connect). Items the server didn't find in a location are now always sent.
 - **Hint markers aren't checks.** A pack's "… - hint" sections and pins (PopTracker's hint tracking) were counted as unlinked checks (Brotato: over four thousand to review); they're left out of the pairing and the counts now, and listed once in the Pack Doctor.
 - **Pin sections named after their pin pair by themselves.** A pin "Brawler" with a section "Wave 10 Completed" is the game's "Wave 10 Completed (Brawler)" (and "A - B" is "B (A)"); the Doctor lists these matches so you can check any that look off.

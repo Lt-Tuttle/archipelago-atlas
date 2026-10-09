@@ -269,6 +269,11 @@ namespace AP_Atlas.UI
             _sortDropdown.Selected = _appSettings.MapSortIndex;
             _sortDropdown.ItemSelected += (idx) => { _appSettings.MapSortIndex = (int)idx; DataManager.SaveSettings(_appSettings); RefreshMapList(); };
             sortHBox.AddChild(_sortDropdown);
+            // The view beside the sort: fit, zoom (the wheel zooms around the cursor; drag to move).
+            sortHBox.AddThemeConstantOverride("separation", 6);
+            sortHBox.AddChild(Kit.Button("Fit", "Show the whole map (the wheel zooms around the cursor; drag to move)", () => _canvas.FitToView(), small: true));
+            sortHBox.AddChild(Kit.Button("−", "Zoom out", () => _canvas.ZoomAtCenter(1 / MapCanvas.WheelStep), small: true));
+            sortHBox.AddChild(Kit.Button("+", "Zoom in", () => _canvas.ZoomAtCenter(MapCanvas.WheelStep), small: true));
             var sortVBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
             sortVBox.AddChild(sortHBox);
             sortVBox.AddChild(BuildDisplayOptions());
@@ -344,13 +349,6 @@ namespace AP_Atlas.UI
         private Control BuildDisplayOptions()
         {
             var box = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            // The view: fit, zoom.
-            var viewRow = new HBoxContainer();
-            viewRow.AddThemeConstantOverride("separation", 4);
-            viewRow.AddChild(Kit.Button("Fit", "Show the whole map (the wheel zooms around the cursor; drag to move)", () => _canvas.FitToView()));
-            viewRow.AddChild(Kit.Button("−", "Zoom out", () => _canvas.ZoomAtCenter(1 / MapCanvas.WheelStep)));
-            viewRow.AddChild(Kit.Button("+", "Zoom in", () => _canvas.ZoomAtCenter(MapCanvas.WheelStep)));
-            box.AddChild(viewRow);
             // Shown only when the pack has more than one variant: which one this slot uses (remembered per slot).
             _variantRow = new HBoxContainer { Visible = false };
             _variantRow.AddThemeConstantOverride("separation", 6);
@@ -365,10 +363,13 @@ namespace AP_Atlas.UI
             _variantRow.AddChild(_variantPicker);
             box.AddChild(_variantRow);
             // Shown only when the pack's scripts can switch the map to where the player is.
+            var switches = new HFlowContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            switches.AddThemeConstantOverride("h_separation", 12);
+            box.AddChild(switches);
             _followBox = new CheckBox
             {
-                Text = Translate("Follow the game's current map"),
-                TooltipText = Translate("The pack switches the map to where you are in the game, from what the game's client tells the room. Turn it off to look around on your own."),
+                Text = Translate("Auto map tabbing"),
+                TooltipText = Translate("The pack switches the map to where you are in the game, from what the game's client tells the room. Turn it off to look around on your own. Greyed when the pack can't say where you are."),
                 Visible = false,
                 ButtonPressed = true
             };
@@ -376,7 +377,7 @@ namespace AP_Atlas.UI
             {
                 if (!_syncingFollow) FollowToggled?.Invoke(on);
             };
-            box.AddChild(_followBox);
+            switches.AddChild(_followBox);
             _followChecksBox = new CheckBox
             {
                 Text = Translate("Follow my checks"),
@@ -387,7 +388,7 @@ namespace AP_Atlas.UI
             {
                 if (!_syncingFollow) FollowChecksToggled?.Invoke(on);
             };
-            box.AddChild(_followChecksBox);
+            switches.AddChild(_followChecksBox);
             _displayToggle = new Button { Text = "▸ Display", ThemeTypeVariation = "QuietButton", Alignment = HorizontalAlignment.Left, TooltipText = "Node size and which pins the map shows" };
             box.AddChild(_displayToggle);
             var panel = new VBoxContainer { Visible = false, SizeFlagsHorizontal = SizeFlags.ExpandFill };
@@ -519,11 +520,11 @@ namespace AP_Atlas.UI
             foreach (var (color, text) in entries)
                 Add(new StyleBoxFlat { BgColor = color, BorderColor = ThemeColors.MapPinBorder, BorderWidthTop = 1, BorderWidthBottom = 1, BorderWidthLeft = 1, BorderWidthRight = 1 }, text,
                     text == MapPinLogic.Title(MapPinState.Mixed) ? ThemeColors.MapColour(MapPinState.OutOfLogic) : null);
-            var dim = new Label { Text = "Dimmed: excluded, or not in your seed" };
+            var dim = new Label { Text = "Dimmed: excluded, or not in your seed", SizeFlagsVertical = SizeFlags.ShrinkCenter };
             dim.SetMeta("font_size_ratio", 0.85f);
             dim.AddThemeColorOverride("font_color", ThemeColors.TextSubtle);
+            flow.AddChild(dim);
             _legend.AddChild(flow);
-            _legend.AddChild(dim);
         }
 
         private void SyncDisplayControls()
@@ -651,6 +652,7 @@ namespace AP_Atlas.UI
         public void ClearPack()
         {
             FollowAvailable = false;
+            if (_followBox != null) _followBox.Visible = false;
             if (_variantRow != null) _variantRow.Visible = false;
             _pack = null;
             _index = null;
@@ -663,11 +665,20 @@ namespace AP_Atlas.UI
             if (_emptyStateContainer != null) _emptyStateContainer.Visible = true;
         }
 
-        /// <summary>Whether the pack can follow the game's map (its scripts switch tabs): the switch shows only then.</summary>
+        private bool _followAvailable;
+
+        /// <summary>Whether the pack can follow the game's map (its scripts switch tabs): the switch is greyed and says so otherwise.</summary>
         public bool FollowAvailable
         {
-            get => _followBox?.Visible == true;
-            set { if (_followBox != null) _followBox.Visible = value; }
+            get => _followAvailable;
+            set
+            {
+                _followAvailable = value;
+                if (_followBox == null) return;
+                _followBox.Visible = _pack != null;
+                _followBox.Disabled = !value;
+                _followBox.Text = value ? Translate("Auto map tabbing") : Translate("Auto map tabbing (unsupported)");
+            }
         }
 
         /// <summary>Whether the map follows the game's current map (the switch's state; set without telling anyone).</summary>
@@ -945,6 +956,7 @@ namespace AP_Atlas.UI
         private ScrollContainer _checklist;
         private VBoxContainer _checklistBox;
         private Label _unplacedNote;
+        private PanelContainer _unplacedPill;
         private Button _unplacedHeader;
         private VBoxContainer _unplacedBox;
         private bool _unplacedOpen = true;
@@ -979,14 +991,33 @@ namespace AP_Atlas.UI
             _checklist.AddChild(margin);
             rightPanel.AddChild(_checklist);
             // The count of checks without a pin, at the map's top right; clicks go through to the map.
+            // A small pill at the map's top right (a full-width label sat over the middle of the map).
             var noteMargin = new MarginContainer { MouseFilter = MouseFilterEnum.Ignore };
             noteMargin.AddThemeConstantOverride("margin_top", 8);
             noteMargin.AddThemeConstantOverride("margin_right", 12);
-            _unplacedNote = new Label { HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, MouseFilter = MouseFilterEnum.Ignore, Visible = false };
+            _unplacedPill = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ShrinkEnd, SizeFlagsVertical = SizeFlags.ShrinkBegin, MouseFilter = MouseFilterEnum.Ignore, Visible = false };
+            _unplacedPill.AddThemeStyleboxOverride("panel", new StyleBoxFlat
+            {
+                BgColor = ThemeColors.SurfaceSunken,
+                BorderColor = ThemeColors.TextSubtle,
+                BorderWidthLeft = 1,
+                BorderWidthTop = 1,
+                BorderWidthRight = 1,
+                BorderWidthBottom = 1,
+                CornerRadiusTopLeft = 10,
+                CornerRadiusTopRight = 10,
+                CornerRadiusBottomLeft = 10,
+                CornerRadiusBottomRight = 10,
+                ContentMarginLeft = 10,
+                ContentMarginRight = 10,
+                ContentMarginTop = 3,
+                ContentMarginBottom = 3
+            });
+            _unplacedNote = new Label { MouseFilter = MouseFilterEnum.Ignore };
+            _unplacedNote.SetMeta("font_size_ratio", 0.9f);
             _unplacedNote.AddThemeColorOverride("font_color", ThemeColors.Text);
-            _unplacedNote.AddThemeColorOverride("font_outline_color", ThemeColors.SurfaceDeep);
-            _unplacedNote.AddThemeConstantOverride("outline_size", 4);
-            noteMargin.AddChild(_unplacedNote);
+            _unplacedPill.AddChild(_unplacedNote);
+            noteMargin.AddChild(_unplacedPill);
             rightPanel.AddChild(noteMargin);
         }
 
@@ -1121,8 +1152,9 @@ namespace AP_Atlas.UI
             _unplacedHeader.Text = (_unplacedOpen ? "▾ " : "▸ ") + Translate("Not on the map ({0})").Replace("{0}", unplaced.Count.ToString());
             _unplacedBox.Visible = any && _unplacedOpen;
             _unplacedNote.Visible = any;
-            _unplacedNote.Text = unplaced.Count == 1 ? Translate("1 of your checks isn't on this pack's maps: see Not on the map, on the left.")
-                : Translate("{0} of your checks aren't on this pack's maps: see Not on the map, on the left.").Replace("{0}", unplaced.Count.ToString());
+            if (_unplacedPill != null) _unplacedPill.Visible = any;
+            _unplacedNote.Text = unplaced.Count == 1 ? Translate("1 check not on these maps (see Not on the map)")
+                : Translate("{0} checks not on these maps (see Not on the map)").Replace("{0}", unplaced.Count.ToString());
             if (!_unplacedOpen) return;
             foreach (var (id, name) in unplaced)
             {
@@ -1151,7 +1183,7 @@ namespace AP_Atlas.UI
 
         private Button _attentionHeader;
         private VBoxContainer _attentionBox;
-        private bool _attentionOpen = true;
+        private bool _attentionOpen;
         private IReadOnlyList<AttentionRow> _attention = Array.Empty<AttentionRow>();
 
         /// <summary>The Attention group's rows as shown (for tests).</summary>

@@ -234,18 +234,23 @@ namespace AP_Atlas.UI
                     : _tr("Packs on GitHub for {0}. Packs are made by the community: check who made it before installing.").Replace("{0}", game);
                 foreach (var c in candidates)
                 {
+                    // The button first, so every choice sits in one column on the left.
                     var row = new HBoxContainer();
                     row.AddThemeConstantOverride("separation", 8);
+                    string repo = c.Repo;
+                    var install = Kit.Button(_tr("Install"), _tr("Downloads this pack's newest release and installs it."), () => PickPack(new PackChoice(repo)), small: true);
+                    install.CustomMinimumSize = new Vector2(170, 0);
+                    row.AddChild(install);
                     var info = Kit.Text(c.Repo + "  ★" + c.Stars + (string.IsNullOrWhiteSpace(c.Description) ? "" : " · " + c.Description));
                     info.ClipText = true;
                     info.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
                     info.TooltipText = c.Description ?? "";
                     row.AddChild(info);
-                    string repo = c.Repo;
-                    row.AddChild(Kit.Button(_tr("Install"), _tr("Downloads this pack's newest release and installs it."), () => PickPack(new PackChoice(repo)), small: true));
                     _packBox.AddChild(row);
                 }
-                _packBox.AddChild(Kit.Button(_tr("Continue without a pack"), _tr("Pins, Key Items and the pack's scripts aren't scored then."), () => PickPack(new PackChoice(null)), small: true));
+                var without = Kit.Button(_tr("Continue without a pack"), _tr("Pins, Key Items and the pack's scripts aren't scored then."), () => PickPack(new PackChoice(null)), small: true);
+                without.SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin;
+                _packBox.AddChild(without);
                 WindowFit.RequestShrink(this);
             }, "looking for packs for " + game);
             return _packChoice.Task;

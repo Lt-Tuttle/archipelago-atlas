@@ -460,30 +460,26 @@ namespace AP_Atlas.Core
                     var hbox = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
                     var infoVBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
 
-                    var titleLbl = new Label { Text = manifest.Name };
+                    // Two lines: the name and its game; then the version, what it holds, the Doctor's word and the buttons (which wrap when the list is narrow).
+                    var titleRow = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+                    titleRow.AddThemeConstantOverride("separation", 10);
+                    var titleLbl = new Label { Text = manifest.Name, SizeFlagsHorizontal = SizeFlags.ExpandFill, ClipText = true, TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis };
                     titleLbl.SetMeta("font_size_ratio", 1.15f);
                     titleLbl.AddThemeColorOverride("font_color", ThemeColors.Text);
-                    infoVBox.AddChild(titleLbl);
+                    titleRow.AddChild(titleLbl);
+                    var gameLbl = new Label { Text = manifest.GameName, SizeFlagsVertical = SizeFlags.ShrinkCenter };
+                    gameLbl.SetMeta("font_size_ratio", 0.85f);
+                    gameLbl.AddThemeColorOverride("font_color", ThemeColors.TextMuted);
+                    titleRow.AddChild(gameLbl);
+                    infoVBox.AddChild(titleRow);
 
-                    var detailLbl = new Label { Text = $"Game: {manifest.GameName} | v{manifest.GetActualVersion()}" };
-                    detailLbl.SetMeta("font_size_ratio", 0.85f);
+                    var capsHbox = new HFlowContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+                    capsHbox.AddThemeConstantOverride("h_separation", 12);
+                    capsHbox.AddThemeConstantOverride("v_separation", 4);
+                    var detailLbl = new Label { Text = $"v{manifest.GetActualVersion()} · {pack.ItemsByCode.Count} items · {pack.Maps.Count} maps · {pack.Locations.Count} pins", SizeFlagsVertical = SizeFlags.ShrinkCenter };
+                    detailLbl.SetMeta("font_size_ratio", 0.8f);
                     detailLbl.AddThemeColorOverride("font_color", ThemeColors.TextMuted);
-                    infoVBox.AddChild(detailLbl);
-
-                    var capsHbox = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-                    capsHbox.AddThemeConstantOverride("separation", 15);
-                    var itemIndicator = new Label { Text = $"Items: {pack.ItemsByCode.Count}" };
-                    itemIndicator.SetMeta("font_size_ratio", 0.8f);
-                    itemIndicator.AddThemeColorOverride("font_color", pack.ItemsByCode.Count > 0 ? ThemeColors.Success : ThemeColors.TextSubtle);
-                    capsHbox.AddChild(itemIndicator);
-                    var mapIndicator = new Label { Text = $"Maps: {pack.Maps.Count}" };
-                    mapIndicator.SetMeta("font_size_ratio", 0.8f);
-                    mapIndicator.AddThemeColorOverride("font_color", pack.Maps.Count > 0 ? ThemeColors.Success : ThemeColors.TextSubtle);
-                    capsHbox.AddChild(mapIndicator);
-                    var locIndicator = new Label { Text = $"Locs: {pack.Locations.Count}" };
-                    locIndicator.SetMeta("font_size_ratio", 0.8f);
-                    locIndicator.AddThemeColorOverride("font_color", pack.Locations.Count > 0 ? ThemeColors.Success : ThemeColors.TextSubtle);
-                    capsHbox.AddChild(locIndicator);
+                    capsHbox.AddChild(detailLbl);
                     // Pack Doctor status (filled in when a check finishes).
                     string key = PackFixes.KeyFor(pack);
                     var doctorBadge = new Label { Name = "DoctorBadge", SizeFlagsVertical = SizeFlags.ShrinkCenter };

@@ -53,7 +53,7 @@ Without a pack for the game, the Map Tracker says so and offers **Find a map pac
 
 **Follow the game's current map:** some packs switch the map to where you are in the game, from what the game's client tells the room (Dark Souls Remastered's, for one, when its client is set to share your location). With such a pack, a switch under Fit turns following on or off for that slot (on to begin with). The pack's scripts may read the room's data storage for this; Atlas never writes the room's data storage for a pack.
 
-- The map scrolls and zooms like a document: the wheel zooms around the cursor, any mouse button drags it, **Fit** (and −, +) are above the display options, and the view is remembered per map. The **legend** under the map says what the pin colours mean; a pin's tooltip says its state and the checks it covers.
+- The map scrolls and zooms like a document: the wheel zooms around the cursor, any mouse button drags it, **Fit** (and −, +) are above the display options, and the view is remembered per map. The **legend** under the map says what the pin colours mean (and that dimmed pins are excluded or not in your seed); a pin's tooltip says its state and the checks it covers.
 
 The **Chat** tab's filters sit in one row: Chat, Hints and System (the kinds of line), then Progression, Useful, Filler and Traps (the kinds of item in item lines). The Chat and System Log tabs show a small dot when lines arrived while the tab wasn't showing; showing the tab clears it.
 
@@ -65,9 +65,11 @@ Key Items (Ctrl+3) shows the progression items you've received. The Visual view 
 
 **Maps without a picture.** A map whose pack ships no picture for it (or one Atlas can't read) is shown as a list of its checks, grouped by the pack's pins, each coloured as its pin would be; pick one to see it in Properties. The note at the top names the missing picture. A pin's sections that aren't in your seed (a pack's hint markers, for one) are one line with their count.
 
+**Auto map tabbing** (the switch beside Follow my checks, greyed and marked unsupported when the pack can't say where you are) switches the map to where you are in the game, from what the game's client tells the room.
+
 **Follow my checks.** When you check a location that's on another map, the map switches to it. It's on by default for packs that can't follow the game themselves (a pack that can uses its own following), and it waits a few seconds after you move or zoom the map. Turn it off per slot in the map's options.
 
-**Attention.** What the pack gets wrong for your seed, in plain words, as a group in the explorer: pins that match none of your checks, tiles without an item or image, a missing map picture, a script that stopped or failed. Pick one and the Pack Doctor opens on the tab that fixes it. Problems you ignored in the Doctor stay out; the solo test's report still lists everything.
+**Attention.** What the pack gets wrong for your seed, in plain words, as a group in the explorer (collapsed until you open it): pins that match none of your checks, tiles without an item or image, a missing map picture, a script that stopped or failed. Pick one and the Pack Doctor opens on the tab that fixes it. Problems you ignored in the Doctor stay out; the solo test's report still lists everything.
 
 **Not on the map.** The seed's checks that the pack has no pin for are listed under **Not on the map** in the explorer (coloured by logic; pick one to see it in Properties), and the map says how many there are. Done and excluded checks aren't counted.
 
