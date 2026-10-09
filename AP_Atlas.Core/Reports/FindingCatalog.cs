@@ -126,6 +126,12 @@ namespace AP_Atlas.Core.Reports
                 "They stay red and never clear.",
                 "Left them as they are and listed them for review (each can be linked or ignored in the Pack Doctor).",
                 "These pin sections match no location of the apworld by name or mapping."),
+            ["loc:composed"] = new("{n} pin sections were matched by their pin's name and their own",
+                "They're usually right (\"Wave 10 Completed\" under \"Brawler\" is the game's \"Wave 10 Completed (Brawler)\").",
+                "Paired them from the pin's name and the section's."),
+            ["loc:hints"] = new("Sections that are hint markers, not checks",
+                "PopTracker packs track hints with \"… - hint\" sections; they aren't checks and don't count.",
+                "Left them out of the pairing and the counts."),
             ["loc:loose"] = new("{n} pin sections were matched by a partial name",
                 "They're usually right.",
                 "Matched them on the name's part before \" - \"."),
@@ -204,7 +210,9 @@ namespace AP_Atlas.Core.Reports
                         ? new[] { items[0].Title }.Concat(items[0].Detail is { Length: > 0 } d ? new[] { d } : Array.Empty<string>()).Concat(items[0].Details ?? Array.Empty<string>()).Take(examples).ToList()
                         : items.Select(f => f.Title).Distinct().Take(examples).ToList();
                     bool ignored = g.Key.Severity == "Ignored";
-                    return new SoloFinding(g.Key.Kind, items[0].Area, g.Key.Severity, items.Count, entry.Summary.Replace("{n}", items.Count.ToString()), shown,
+                    // One finding keeps its own words as the summary (a count of one reads oddly: "1 maps have no picture").
+                    string summary = items.Count == 1 && entry.Summary.Contains("{n}") ? items[0].Title : entry.Summary.Replace("{n}", items.Count.ToString());
+                    return new SoloFinding(g.Key.Kind, items[0].Area, g.Key.Severity, items.Count, summary, shown,
                         entry.ForUser, ignored ? "You chose to ignore these in the Pack Doctor." : entry.AtlasDid, ignored ? null : entry.ForAuthor);
                 })
                 .OrderBy(f => Rank(f.Severity)).ThenByDescending(f => f.Count).ThenBy(f => f.Kind, StringComparer.Ordinal)

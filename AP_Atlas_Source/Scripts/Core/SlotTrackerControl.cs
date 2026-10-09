@@ -174,6 +174,7 @@ public partial class SlotTrackerControl : MarginContainer
             DataManager.SaveSettingsSoon(_appSettings);
         };
         _mapTracker.VariantPicked += SetPackVariant;
+        _progressionTracker.VariantPicked += SetPackVariant;
         _mapTracker.IsExcluded = IsExcluded;
         _mapTracker.MarkerLookup = id =>
         {

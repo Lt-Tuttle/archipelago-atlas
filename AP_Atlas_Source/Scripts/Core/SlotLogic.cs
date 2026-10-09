@@ -378,8 +378,9 @@ namespace AP_Atlas.Core
             if (missing.Count == 0) return true;
 
             var poolProgression = PoolProgressionIds();
+            // A start inventory arrives with no flags and isn't in the pool (location -2): LogicItemRule keeps it.
             var progression = Session.Items.AllItemsReceived
-                .Where(i => i.Flags.HasFlag(ItemFlags.Advancement) || i.Flags.HasFlag(ItemFlags.NeverExclude) || poolProgression.Contains(i.ItemId))
+                .Where(i => AP_Atlas.Core.LogicItemRule.Counts(i.Flags.HasFlag(ItemFlags.Advancement), i.Flags.HasFlag(ItemFlags.NeverExclude), poolProgression.Contains(i.ItemId), i.LocationId))
                 .ToList();
             if (progression.Count == _evaluated && _startingDone) return true;
 

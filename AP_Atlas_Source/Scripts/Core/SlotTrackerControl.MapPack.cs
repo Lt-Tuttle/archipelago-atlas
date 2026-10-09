@@ -57,7 +57,10 @@ public partial class SlotTrackerControl : MarginContainer
             Pack = pack;
             RebuildPackIndex();
             StartPackScripts();
-            _mapTracker.SetVariants(AP_Atlas.Core.PopTracker.PopTrackerPackLoader.VariantsOf(pack.Manifest), pack.Variant);
+            // The variant choice lives with Key Items (variants mostly change the tiles' layout); the map offers it only when a variant changes maps.
+            var variants = AP_Atlas.Core.PopTracker.PopTrackerPackLoader.VariantsOf(pack.Manifest);
+            _progressionTracker.SetVariants(variants, pack.Variant);
+            _mapTracker.SetVariants(pack.VariantsChangeMaps ? variants : new List<(string Id, string Name)>(), pack.Variant);
             AppendDebugLog($"[MapTracker] Loaded pack '{pack.Manifest?.Name}' for {game}" + (string.IsNullOrEmpty(pack.Variant) ? "." : $" (variant {pack.Variant})."));
             // First use of a pack (or a new version): let the Pack Doctor check it in the background.
             AP_Atlas.Core.Async.Fire(AP_Atlas.Core.PopTracker.PackDoctorService.CheckAsync(pack), "checking a map pack");

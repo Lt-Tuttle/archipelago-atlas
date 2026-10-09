@@ -14,6 +14,8 @@ namespace AP_Atlas.Core.PopTracker
         Name,
         /// <summary>A looser name match (e.g. the part before " - ").</summary>
         LooseName,
+        /// <summary>The pin's name and the section's together ("Brawler" / "Wave 10 Completed" ↔ "Wave 10 Completed (Brawler)"), or "A - B" ↔ "B (A)".</summary>
+        ComposedName,
         /// <summary>A fix the user made in the Pack Doctor.</summary>
         UserFix,
     }
@@ -117,19 +119,21 @@ namespace AP_Atlas.Core.PopTracker
                 Add(id, match.Value.Pin, match.Value.Section, MatchSource.MappingScript);
             }
 
-            // 3. Names, for sections the scripts didn't cover.
+            // 3. Names, for sections the scripts didn't cover. Hint markers (PopTracker's "… - hint" sections) aren't checks.
             foreach (var pin in Pack.Locations)
             {
                 if (pin.Sections != null && pin.Sections.Count > 0)
                 {
                     foreach (var sec in pin.Sections)
                     {
+                        if (IsHintMarker(pin, sec)) { HintMarkerSections++; continue; }
                         if (IsCovered(pin, sec)) continue;
                         string name = !string.IsNullOrEmpty(sec.Name) ? sec.Name : pin.Name;
-                        if (TryNameMatch(name, out long id, out var source)) Add(id, pin, sec, source);
+                        if (TryNameMatch(name, out long id, out var source) || TryComposedMatch(pin, sec, out id, out source)) Add(id, pin, sec, source);
                     }
                 }
-                else if (!IsCovered(pin, null) && TryNameMatch(pin.Name, out long id, out var source))
+                else if (IsHintMarker(pin, null)) HintMarkerSections++;
+                else if (!IsCovered(pin, null) && (TryNameMatch(pin.Name, out long id, out var source) || TryComposedMatch(pin, null, out id, out source)))
                 {
                     Add(id, pin, null, source);
                 }
@@ -138,6 +142,50 @@ namespace AP_Atlas.Core.PopTracker
 
         private bool IsCovered(PopTrackerLocation pin, PopTrackerSection section) =>
             IdsByPin.TryGetValue(pin, out var ids) && ids.Any(id => ByLocation[id].Any(m => m.Pin == pin && m.Section == section));
+
+        /// <summary>Sections and pins that are hint markers in PopTracker packs ("Brawler - hint" / "Wave 1 Completed - hint", "Overworld Hints"): not checks.</summary>
+        public static bool IsHintMarker(PopTrackerLocation pin, PopTrackerSection section)
+        {
+            static bool Marker(string name)
+            {
+                string n = (name ?? "").Trim().ToLowerInvariant();
+                return n.EndsWith(" - hint", StringComparison.Ordinal) || n.EndsWith(" hint", StringComparison.Ordinal) || n.EndsWith(" hints", StringComparison.Ordinal) || n == "hint" || n == "hints";
+            }
+            if (section != null && Marker(section.Name)) return true;
+            if (Marker(pin?.Name)) return true;
+            foreach (string part in (pin?.FullPath ?? "").Split('/')) if (Marker(part)) return true;
+            return false;
+        }
+
+        /// <summary>How many of the pack's sections are hint markers (left out of the pairing).</summary>
+        public int HintMarkerSections { get; private set; }
+
+        /// <summary>
+        /// Names many packs build from the pin and the section: "Wave 10 Completed (Brawler)" from pin "Brawler" and
+        /// section "Wave 10 Completed" (or "Brawler - Wave 10 Completed", "Brawler: Wave 10 Completed"); and a pin or
+        /// section "A - B" for the game's "B (A)".
+        /// </summary>
+        private bool TryComposedMatch(PopTrackerLocation pin, PopTrackerSection section, out long id, out MatchSource source)
+        {
+            source = MatchSource.ComposedName;
+            id = 0;
+            var candidates = new List<string>();
+            string own = section != null && !string.IsNullOrEmpty(section.Name) ? section.Name.Trim() : null;
+            string pinName = (pin?.Name ?? "").Trim();
+            if (own != null && pinName.Length > 0)
+            {
+                candidates.Add(own + " (" + pinName + ")");
+                candidates.Add(pinName + " - " + own);
+                candidates.Add(pinName + ": " + own);
+                candidates.Add(pinName + " " + own);
+            }
+            string reorder = own ?? pinName;
+            int dash = reorder.IndexOf(" - ", StringComparison.Ordinal);
+            if (dash > 0) candidates.Add(reorder[(dash + 3)..].Trim() + " (" + reorder[..dash].Trim() + ")");
+            foreach (string candidate in candidates)
+                if (_locationIdsByName.TryGetValue(candidate, out id)) return true;
+            return false;
+        }
 
         private bool TryNameMatch(string name, out long id, out MatchSource source)
         {
@@ -207,6 +255,10 @@ namespace AP_Atlas.Core.PopTracker
 
         public List<long> IdsFor(PopTrackerLocation pin) => IdsByPin.TryGetValue(pin, out var ids) ? ids : new List<long>();
 
+        /// <summary>The ids one section of a pin stands for (every id of the pin when the section is null).</summary>
+        public List<long> IdsFor(PopTrackerLocation pin, PopTrackerSection section) =>
+            section == null ? IdsFor(pin) : IdsFor(pin).Where(id => ByLocation.TryGetValue(id, out var matches) && matches.Any(m => m.Pin == pin && m.Section == section)).ToList();
+
         /// <summary>Sections (or section-less pins) no AP location was paired with.</summary>
         public IEnumerable<(PopTrackerLocation Pin, PopTrackerSection Section)> UnmatchedSections()
         {
@@ -214,9 +266,9 @@ namespace AP_Atlas.Core.PopTracker
             {
                 if (pin.Sections != null && pin.Sections.Count > 0)
                 {
-                    foreach (var sec in pin.Sections) if (!IsCovered(pin, sec)) yield return (pin, sec);
+                    foreach (var sec in pin.Sections) if (!IsHintMarker(pin, sec) && !IsCovered(pin, sec)) yield return (pin, sec);
                 }
-                else if (!IsCovered(pin, null)) yield return (pin, null);
+                else if (!IsHintMarker(pin, null) && !IsCovered(pin, null)) yield return (pin, null);
             }
         }
 

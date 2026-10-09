@@ -30,6 +30,8 @@ namespace AP_Atlas.UI
         private readonly Label _packStatus, _outcome;
         private readonly List<TextEdit> _notes = new();
         private CancellationTokenSource? _cts;
+        /// <summary>The content's width (less wrapping) and the height past which it scrolls.</summary>
+        private const int ContentWidth = 860, ContentHeight = 600;
         private TaskCompletionSource<PackChoice?>? _packChoice;
 
         private SoloTestDialog(string game, Func<string, string> tr, SoloTestHooks hooks)
@@ -43,12 +45,16 @@ namespace AP_Atlas.UI
             // Not exclusive: the owner looks at the Map Tracker, Key Items and the Logic Tracker while this window stays open.
             Exclusive = false;
             SetMeta("solo_test", game);
-            var box = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(600, 0) };
+            var box = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(ContentWidth, 0) };
             box.AddThemeConstantOverride("separation", 8);
-            AddChild(box);
+            // The window grows with its content up to a height, then the content scrolls (the notes' boxes were cut off).
+            var scroll = new ScrollContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, SizeFlagsVertical = Control.SizeFlags.ExpandFill, HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
+            AddChild(scroll);
+            scroll.AddChild(box);
+            box.MinimumSizeChanged += () => scroll.CustomMinimumSize = new Vector2(0, Math.Min(box.GetCombinedMinimumSize().Y, ContentHeight));
             var intro = Kit.Muted(tr("Atlas installs what's missing (asking as always before anything is downloaded), makes a YAML with the game's default options, generates a one-player seed in the engine (minutes for a big game), hosts it on this PC only (127.0.0.1, no password), connects a slot called AtlasTest with that YAML, scores its logic and the pack, and writes a report in Atlas's folder with a few questions for you at the end. Atlas stays usable meanwhile; Close keeps the test and its server going, and Test this game… on the Games page brings this window back."));
             intro.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-            intro.CustomMinimumSize = new Vector2(600, 0);
+            intro.CustomMinimumSize = new Vector2(ContentWidth, 0);
             box.AddChild(intro);
             var buttons = new HBoxContainer();
             buttons.AddThemeConstantOverride("separation", 8);
@@ -99,7 +105,7 @@ namespace AP_Atlas.UI
             // The end: the outcome, the owner's four answers, the report folder, the server.
             _outcome = Kit.Text("");
             _outcome.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-            _outcome.CustomMinimumSize = new Vector2(600, 0);
+            _outcome.CustomMinimumSize = new Vector2(ContentWidth, 0);
             _outcome.Visible = false;
             box.AddChild(_outcome);
             _notesBox = new VBoxContainer { Visible = false };
@@ -137,7 +143,7 @@ namespace AP_Atlas.UI
             }
             var dialog = new SoloTestDialog(game, tr, hooks);
             parent.AddChild(dialog);
-            WindowFit.Pop(dialog, 640);
+            WindowFit.Pop(dialog, ContentWidth + 60, ContentHeight + 120);
             if (SoloTestRunner.Running is { } other && other != dialog._runner)
             {
                 dialog._start.Disabled = true;

@@ -3226,7 +3226,7 @@ public partial class MainTrackerWindow
             // The map without a picture is a checklist, its picture named, its location a row that opens in Properties.
             map.ShowMap(pack.Maps.Values.First(m => m.Name == "Broken").Id);
             await UiTestWaitAsync(0.1);
-            UiTestExpect(map.ChecklistShown && map.ChecklistRows().SequenceEqual(new[] { "Lone" }) && map.ChecklistNote.Contains("images/broken.png"),
+            UiTestExpect(map.ChecklistShown && map.ChecklistRows().SequenceEqual(new[] { "Lone Chest" }) && map.ChecklistNote.Contains("images/broken.png"),
                 $"the map without a picture isn't a checklist naming its picture: {map.ChecklistShown}, rows {string.Join(", ", map.ChecklistRows())}, note {map.ChecklistNote}");
             map.FindChildren("*", nameof(Button), true, false).OfType<Button>().First(b => b.HasMeta("checklist_row")).EmitSignal(BaseButton.SignalName.Pressed);
             UiTestExpect(picked == 1, $"a checklist row doesn't open its location (it sent {sent})");
@@ -3269,12 +3269,13 @@ public partial class MainTrackerWindow
     private async Task PackDoctorAsync()
     {
         string zip = System.IO.Path.Combine(AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory(), "uitest_doctor_pack.zip");
-        // "Sword!" matches the game's "Sword" once punctuation is ignored (the index alone wouldn't link it); the pin "Cave" / "Chest" is close to "Cave Chest" but not exact.
+        // "Sword!" matches the game's "Sword" once punctuation is ignored (the index alone wouldn't link it); the pin "Cave" / "Chest" is close to
+        // "Cave Chest Room" but not exact (a game location named "Cave Chest" would pair by itself from the pin's name and the section's).
         FakeMapPack.Write(zip, "UI test doctor pack", "Doctor Test Game",
             itemsJson: """[{"name":"Sword!","type":"toggle","img":"images/sword.png","codes":"sword"},{"name":"Shield","type":"toggle","img":"images/broken.png","codes":"shield"}]""");
         await using var server = new FakeArchipelagoServer { SlotGame = "Doctor Test Game" };
         server.Games["Doctor Test Game"] = new FakeGame("d0c70123456789abcdef0123456789abcdef0123",
-            new Dictionary<string, long> { ["Sword"] = 1000, ["Shield"] = 1001 }, new Dictionary<string, long> { ["Cave Chest"] = 2000, ["Far Chest"] = 2001 });
+            new Dictionary<string, long> { ["Sword"] = 1000, ["Shield"] = 1001 }, new Dictionary<string, long> { ["Cave Chest Room"] = 2000, ["Far Lantern"] = 2001 });
         var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
         profile.Slots.Clear();
         profile.Slots.Add("Tester");
@@ -3437,10 +3438,11 @@ public partial class MainTrackerWindow
             AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
             var replacement = await UiTestWaitForAsync(() => slot.Pack, "the second pack");
             UiTestExpect(replacement.Manifest.Name == "UI test second pack" && !slot.MapTracker.ShowingEmptyState, "the second pack didn't take the first one's place");
-            UiTestExpect(replacement.Variant == "standard" && slot.MapTracker.VariantOptions.SequenceEqual(new[] { "standard", "var_b" }) && slot.MapTracker.VariantPicker.Selected == 0,
-                $"the map doesn't offer the pack's variants with the default chosen: {string.Join(", ", slot.MapTracker.VariantOptions)}");
-            slot.MapTracker.VariantPicker.Selected = 1;
-            slot.MapTracker.VariantPicker.EmitSignal(OptionButton.SignalName.ItemSelected, 1);
+            UiTestExpect(replacement.Variant == "standard" && slot.ProgressionTracker.VariantOptions.SequenceEqual(new[] { "standard", "var_b" }) && slot.ProgressionTracker.VariantPicker.Selected == 0,
+                $"Key Items doesn't offer the pack's variants with the default chosen: {string.Join(", ", slot.ProgressionTracker.VariantOptions)}");
+            UiTestExpect(!slot.MapTracker.VariantRowVisible, "the map offers a variant choice though no variant changes its maps");
+            slot.ProgressionTracker.VariantPicker.Selected = 1;
+            slot.ProgressionTracker.VariantPicker.EmitSignal(OptionButton.SignalName.ItemSelected, 1);
             var asVariant = await UiTestWaitForAsync(() => slot.Pack is { Variant: "var_b" } p ? p : null, "the slot to read the pack again as the chosen variant");
             string slotKey = AP_Atlas.Core.Annotations.SlotKey(profile.Id, "Tester");
             UiTestExpect(asVariant.ItemsByCode.ContainsKey("lantern") && !asVariant.ItemsByCode.ContainsKey("sword") && _appSettings.PackVariants.TryGetValue(slotKey, out var kept) && kept == "var_b",
@@ -3819,10 +3821,17 @@ public partial class MainTrackerWindow
             await ExpectTreeAsync(slot, "with the Sword and the Shield", "── Base Logic (Starting Reachable) ──", "Cave Chest", "── Unlocked by: Sword (1 checks) ──", "Locked Door",
                 "── Unlocked by: Shield (1 checks) ──", "Tower Top");
 
+            // A start inventory item: the server sends it with location -2 and no flags, and it isn't in the item pool, yet the
+            // engine must hear of it (a start inventory's progression opened nothing before).
+            int askedBeforeStart = engine.Requests("steps").Count;
+            await server.BroadcastAsync(FakeArchipelagoServer.ReceivedItems(2, new long[] { 1002 }, location: -2));
+            await UiTestWaitForAsync(() => engine.Requests("steps").Count > askedBeforeStart ? slot : null, "the engine to be asked about the start inventory item");
+            await UiTestWaitForAsync(() => slot.LogicSettled ? slot : null, "logic to settle after the start inventory item");
+            UiTestExpect(Ids(engine.Requests("steps")[^1]["items"]).SequenceEqual(new long[] { 1002 }), "the start inventory item wasn't the one the engine was asked about");
             // Filler changes nothing about logic, so the engine isn't asked.
             int asked = engine.Requests("steps").Count;
-            await server.BroadcastAsync(FakeArchipelagoServer.ReceivedItems(2, new long[] { 1002 }));
-            await UiTestWaitForAsync(() => slot.Session.Items.AllItemsReceived.Count == 3 ? slot : null, "the Rupee to arrive");
+            await server.BroadcastAsync(FakeArchipelagoServer.ReceivedItems(3, new long[] { 1002 }));
+            await UiTestWaitForAsync(() => slot.Session.Items.AllItemsReceived.Count == 4 ? slot : null, "the Rupee to arrive");
             await UiTestWaitAsync(0.3);
             UiTestExpect(engine.Requests("steps").Count == asked && slot.LogicSettled, "the engine was asked about filler");
 
@@ -3832,7 +3841,7 @@ public partial class MainTrackerWindow
 
             // The engine crashes on the Gem. Nothing half-done is kept: logic is unknown until a new engine has rebuilt it
             // from scratch, which starts after 2 seconds (the first of its restarts).
-            await server.BroadcastAsync(FakeArchipelagoServer.ReceivedItems(3, new long[] { 1099 }, flags: 1));
+            await server.BroadcastAsync(FakeArchipelagoServer.ReceivedItems(4, new long[] { 1099 }, flags: 1));
             await UiTestWaitForAsync(() => slot.EngineProblem?.Code == "restarting" ? slot : null, "the crash to be noticed");
             var sinceCrash = System.Diagnostics.Stopwatch.StartNew();
             // A crash shows twice (the failed request, the ended process), but counts once: the first restart is after
@@ -3853,7 +3862,8 @@ public partial class MainTrackerWindow
             var rebuilt = journal.SkipWhile(entry => entry != restarted).Select(entry => entry["request"]).OfType<JObject>().ToList();
             UiTestExpect(rebuilt.Count > 0 && (string?)rebuilt[0]["action"] == "init", "the new engine wasn't started for the slot first");
             var asks = rebuilt.Where(r => (string?)r["action"] == "steps").Select(r => $"{(bool?)r["start"]}: [{string.Join(",", Ids(r["base"]))}] then [{string.Join(",", Ids(r["items"]))}]").ToList();
-            UiTestExpect(asks.SequenceEqual(new[] { "True: [] then [1000,1001,1099]" }), $"the new engine was asked: {string.Join("; ", asks)}");
+            // The start inventory item (1002) is rebuilt with the rest: the engine must hear of it again.
+            UiTestExpect(asks.SequenceEqual(new[] { "True: [] then [1000,1001,1002,1099]" }), $"the new engine was asked: {string.Join("; ", asks)}");
             UiTestExpect(slot.UnlockStepOf(2003) == (3, 3, "Gem") && slot.EngineProblem == null, $"the vault's step is {slot.UnlockStepOf(2003)}");
 
             // An engine update, as setup runs one: it pauses the slots using the engine, changes its files, then lets
@@ -3923,7 +3933,7 @@ public partial class MainTrackerWindow
             // starts again (after 2 s: the restart above gave it a fresh set of tries).
             engine.ShortSteps = true;
             engine.Apply();
-            await server.BroadcastAsync(FakeArchipelagoServer.ReceivedItems(4, new long[] { 1000 }, flags: 1));
+            await server.BroadcastAsync(FakeArchipelagoServer.ReceivedItems(5, new long[] { 1000 }, flags: 1));
             await UiTestWaitForAsync(() => slot.EngineProblem?.Code == "restarting" ? slot : null, "a broken answer to be a failure");
             UiTestExpect(slot.EngineProblem?.Message?.Contains("didn't say what each item opened") == true && slot.EngineProblem.Message.Contains("in 2 s"),
                 $"a broken answer: {slot.EngineProblem?.Message}");

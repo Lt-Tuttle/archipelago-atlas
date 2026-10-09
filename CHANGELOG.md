@@ -8,6 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 Development toward the first public beta, 0.1.0.
 
 ### Added
+- **The map's legend sits under the map** (the explorer's top was getting crowded), the checklist of a map without a picture lists each check of a pin, and the pack variant choice lives with Key Items (the Map Tracker offers it only when a variant changes maps).
 - **Follow my checks** in the Map Tracker: when you check a location on another map, the map switches to it; on by default for packs that can't follow the game themselves, kept per slot, and it never moves the map while you're looking around.
 - **Maps without a picture and checks without a pin:** a map whose pack ships no usable picture lists its locations, coloured by logic and grouped as in the pack, instead of dots on a blank map, with the missing picture named; the seed's checks that the pack has no pin for are listed under Not on the map in the Map Tracker's explorer and counted on the map.
 - **Findings in the solo test report:** every problem the test and the Pack Doctor found, grouped by kind with a count and examples (a pack's thousands of findings become a few groups), each explained: what it means for you and what Atlas did about it; ignored ones are listed as yours. A section for the pack's author names only the pack's own problems, ready to paste into an issue if you choose. The seed's own checks that have no pin on any map are listed separately from the game's.
@@ -266,6 +267,10 @@ Development toward the first public beta, 0.1.0.
   - An image you choose for a Pack Doctor fix is checked the same way before it's copied.
 
 ### Fixed
+- **A start inventory now counts in logic.** The server sends start inventory items with no flags and they aren't in the item pool, so Atlas never told the logic engine about them: checks a game opens from the start showed as out of logic (found by the Brotato solo test: five checks the generator's sphere 0 had were missing at connect). Items the server didn't find in a location are now always sent.
+- **Hint markers aren't checks.** A pack's "… - hint" sections and pins (PopTracker's hint tracking) were counted as unlinked checks (Brotato: over four thousand to review); they're left out of the pairing and the counts now, and listed once in the Pack Doctor.
+- **Pin sections named after their pin pair by themselves.** A pin "Brawler" with a section "Wave 10 Completed" is the game's "Wave 10 Completed (Brawler)" (and "A - B" is "B (A)"); the Doctor lists these matches so you can check any that look off.
+- **The solo test window** is wider and scrolls when its notes don't fit, instead of cutting them off.
 - **A solo test report keeps the map pack's public source readable** ("from github.com/owner/pack"): the scrubber hid every web address, a public project's place too. The JSON twin names steps and outcomes instead of numbering them.
 - **An Atlas that didn't finish closing** no longer leaves the next start at "Atlas is already open" with no Atlas in sight: a built Atlas finds an earlier one from the same folder that has no window and offers to end it and start; closing is watched from its first moment (30 seconds), not only after the window goes.
 - **A game's page finds its last solo test again** ("Last tested"): reports are saved with underscores for spaces, and the page looked for the name with spaces.

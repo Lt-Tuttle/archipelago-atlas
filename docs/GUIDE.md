@@ -49,11 +49,11 @@ Each pin is coloured the way PopTracker colours it: green when every open check 
 
 Without a pack for the game, the Map Tracker says so and offers **Find a map pack for <game>…**: one search of GitHub for the game's PopTracker packs, when you press, with what it found shown on the Map Packs page for you to choose from (nothing is installed until you do). A chosen pack downloads with a progress line on that page, and a card says when it's installed. A pack you install while the slot is connected shows on its map at once, and a pack you delete leaves it; no reconnect.
 
-**Pack variant:** a pack with several variants (its author's versions of the maps and items, such as a game's modes) shows a Pack variant choice above the display options; the pack's default is used until you pick another for that slot, and the choice is kept per slot. The same choice sits in the slot's details on the Multiworlds page.
+**Pack variant:** a pack with several variants (its author's versions of the layouts and items, most often the tiles' orientation) offers the choice in Key Items' toolbar; the Map Tracker offers it too only when a variant brings its own maps or locations. The pack's default is used until you pick another for that slot, and the choice is kept per slot. The same choice sits in the slot's details on the Multiworlds page.
 
 **Follow the game's current map:** some packs switch the map to where you are in the game, from what the game's client tells the room (Dark Souls Remastered's, for one, when its client is set to share your location). With such a pack, a switch under Fit turns following on or off for that slot (on to begin with). The pack's scripts may read the room's data storage for this; Atlas never writes the room's data storage for a pack.
 
-- The map scrolls and zooms like a document: the wheel zooms around the cursor, any mouse button drags it, **Fit** (and −, +) are above the display options, and the view is remembered per map. The **legend** under the display options says what the pin colours mean; a pin's tooltip says its state and the checks it covers.
+- The map scrolls and zooms like a document: the wheel zooms around the cursor, any mouse button drags it, **Fit** (and −, +) are above the display options, and the view is remembered per map. The **legend** under the map says what the pin colours mean; a pin's tooltip says its state and the checks it covers.
 
 The **Chat** tab's filters sit in one row: Chat, Hints and System (the kinds of line), then Progression, Useful, Filler and Traps (the kinds of item in item lines). The Chat and System Log tabs show a small dot when lines arrived while the tab wasn't showing; showing the tab clears it.
 
@@ -63,7 +63,7 @@ Key Items (Ctrl+3) shows the progression items you've received. The Visual view 
 
 **Layout:** the choice beside Visual / Text lists the pack's own layouts (PopTracker's default, horizontal, vertical and broadcast, whichever the pack has) and two Atlas builds from the pack's item groups: Vertical (by group) stacks each group under its header, Horizontal (by group) sets the groups side by side. The pack's default layout is used until you pick another; the choice is kept per slot.
 
-**Maps without a picture.** A map whose pack ships no picture for it (or one Atlas can't read) is shown as a list of its locations, grouped as the pack groups them, each coloured as its pin would be; pick one to see it in Properties. The note at the top names the missing picture.
+**Maps without a picture.** A map whose pack ships no picture for it (or one Atlas can't read) is shown as a list of its checks, grouped by the pack's pins, each coloured as its pin would be; pick one to see it in Properties. The note at the top names the missing picture. A pin's sections that aren't in your seed (a pack's hint markers, for one) are one line with their count.
 
 **Follow my checks.** When you check a location that's on another map, the map switches to it. It's on by default for packs that can't follow the game themselves (a pack that can uses its own following), and it waits a few seconds after you move or zoom the map. Turn it off per slot in the map's options.
 

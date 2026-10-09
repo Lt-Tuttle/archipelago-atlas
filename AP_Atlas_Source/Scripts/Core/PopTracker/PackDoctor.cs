@@ -587,6 +587,7 @@ namespace AP_Atlas.Core.PopTracker
                         case MatchSource.MappingScript: report.SectionsByScript++; break;
                         case MatchSource.Name: report.SectionsByName++; break;
                         case MatchSource.LooseName: report.SectionsLoose++; break;
+                        case MatchSource.ComposedName: report.SectionsByName++; break;
                         case MatchSource.UserFix: report.SectionsByFix++; break;
                     }
                 }
@@ -630,6 +631,31 @@ namespace AP_Atlas.Core.PopTracker
                     Title = $"{loose.Count} pin sections were matched by partial name",
                     Detail = "These matched the part of an Archipelago name before \" - \". They're usually right; check any that look off.",
                     Details = loose.Take(200).Select(l => $"{l.Match.Pin.FullPath} / {l.Match.Section?.Name ?? l.Match.Pin.Name}  →  {index.LocationName(l.Id)}").ToList()
+                });
+            }
+
+            var composed = index.ByLocation.SelectMany(kv => kv.Value.Where(m => m.Source == MatchSource.ComposedName).Select(m => (Id: kv.Key, Match: m))).ToList();
+            if (composed.Count > 0)
+            {
+                add(new Finding
+                {
+                    Key = "loc:composed",
+                    Category = "Locations",
+                    Severity = FindingSeverity.Info,
+                    Title = $"{composed.Count} pin sections were matched by their pin's name and their own",
+                    Detail = "A pin \"Brawler\" with a section \"Wave 10 Completed\" was paired with the game's \"Wave 10 Completed (Brawler)\" (or \"A - B\" with \"B (A)\"). They're usually right; check any that look off.",
+                    Details = composed.Take(200).Select(l => $"{l.Match.Pin.FullPath} / {l.Match.Section?.Name ?? l.Match.Pin.Name}  →  {index.LocationName(l.Id)}").ToList()
+                });
+            }
+            if (index.HintMarkerSections > 0)
+            {
+                add(new Finding
+                {
+                    Key = "loc:hints",
+                    Category = "Locations",
+                    Severity = FindingSeverity.Info,
+                    Title = $"{index.HintMarkerSections} sections are hint markers, not checks",
+                    Detail = "Sections and pins named \"… - hint\" (or \"… Hints\") are PopTracker's hint tracking. Atlas leaves them out of the pairing and the counts."
                 });
             }
 

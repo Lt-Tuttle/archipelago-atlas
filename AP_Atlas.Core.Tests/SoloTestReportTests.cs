@@ -104,9 +104,9 @@ public class SoloTestReportTests
     public void Findings_are_grouped_explained_and_the_author_gets_only_the_packs_problems()
     {
         string md = SoloTestReport.Markdown(Full(), new Scrubber(null));
-        int problem = md.IndexOf("### Problem: 1 maps have no picture (Maps)", StringComparison.Ordinal);
+        int problem = md.IndexOf("### Problem: Map \"Crates\" has no background (Maps)", StringComparison.Ordinal);
         int check = md.IndexOf("### Check: 2 tiles have no image (Key Items)", StringComparison.Ordinal);
-        int handled = md.IndexOf("### Handled: Atlas linked 1 pins or tiles", StringComparison.Ordinal);
+        int handled = md.IndexOf("### Handled: Linked tile 'x' to X (the names match) (Key Items)", StringComparison.Ordinal);
         Assert.True(problem > 0 && check > problem && handled > check, "the groups aren't there, most serious first");
         Assert.Contains("- Found: Tile \"jack\" has no image; Tile \"golem\" has no image", md);
         Assert.Contains("- Found: Map \"Crates\" has no background; 'images/maps/Crates.png' isn't in the pack.", md);
@@ -130,7 +130,7 @@ public class SoloTestReportTests
             "script:load", "script:none", "script:stopped", "script:error", "script:unsupported", "script:follows-maps", "script:writes",
             "script:unread-files", "script:noautotracking", "settings:noslotdata", "settings:summary", "settings:missing", "grid:hidden",
             "tile:unknown", "tile:unlinked", "tile:noimage", "itemmap:stale", "loc:unmatched", "loc:loose", "locmap:dangling", "locmap:stale",
-            "loc:unplaced", "map:nobg", "map:empty", "map:outside",
+            "loc:unplaced", "loc:composed", "loc:hints", "map:nobg", "map:empty", "map:outside",
             "logic:differs", "sphere0:notreached", "sphere0:beyond", "seed:unplaced", "setup:guide",
         };
         var missing = kinds.Where(k => !FindingCatalog.Kinds.Contains(k)).ToList();

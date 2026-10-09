@@ -30,6 +30,8 @@ namespace AP_Atlas.Core.PopTracker
 
         /// <summary>The variant asked for when the pack was read (null: the default), the cache's key besides the zip.</summary>
         public string VariantKey { get; set; }
+        /// <summary>Whether any variant brings its own maps or locations (then the Map Tracker offers the choice too; else only Key Items does).</summary>
+        public bool VariantsChangeMaps { get; set; }
         public Dictionary<string, PopTrackerItem> ItemsByCode { get; set; } = new Dictionary<string, PopTrackerItem>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>Every itemgrid in the pack's tracker layout, in display order, with its group header and size.</summary>
@@ -345,6 +347,9 @@ namespace AP_Atlas.Core.PopTracker
                     string variant = VariantOf(manifest, requestedVariant);
                     pack.Variant = variant;
                     pack.VariantKey = variant != PackScriptHost.DefaultVariant(manifest) ? requestedVariant : null;
+                    pack.VariantsChangeMaps = manifest?.Variants != null && manifest.Variants.Properties().Any(v =>
+                        archive.Entries.Any(e => e.FullName.StartsWith(rootPrefix + v.Name + "/maps/", StringComparison.OrdinalIgnoreCase)
+                            || e.FullName.StartsWith(rootPrefix + v.Name + "/locations/", StringComparison.OrdinalIgnoreCase)));
                     var itemEntries = FolderEntries(archive, rootPrefix, variant, "items", variantFirst: true);
                     foreach (var entry in itemEntries)
                     {

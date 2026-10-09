@@ -245,7 +245,7 @@ namespace AP_Atlas.Core.Reports
                 + line(r.Game) + "'s apworld " + line(r.Versions.ApworldVersion ?? "(version unknown)") + " on a one-player seed with default options.");
             sb.AppendLine();
             foreach (var f in forAuthor)
-                sb.AppendLine("- " + line(f.ForAuthor!) + " (" + f.Count + ")" + (f.Examples.Count > 0 ? " For example: " + line(string.Join("; ", f.Examples.Take(5))).Replace("\n", " ") + "." : ""));
+                sb.AppendLine("- " + line(f.ForAuthor!) + " (" + f.Count + ")" + (f.Examples.Count > 0 ? " For example: " + line(string.Join("; ", f.Examples.Take(5))).Replace("\n", " ").TrimEnd('.') + "." : ""));
         }
 
         private static string SeverityWord(string severity) => severity switch

@@ -132,6 +132,39 @@ namespace AP_Atlas.Core.PopTracker
             RefreshData();
         }
 
+        // ---- The pack's variant ----
+
+        private OptionButton _variantPicker;
+        private readonly List<string> _variantIds = new List<string>();
+        private bool _syncingVariant;
+
+        /// <summary>The user picked another variant of the pack for this slot.</summary>
+        public event Action<string> VariantPicked;
+
+        /// <summary>The variants on offer, by id (for tests).</summary>
+        public IReadOnlyList<string> VariantOptions => _variantIds;
+
+        /// <summary>The picker (for tests).</summary>
+        public OptionButton VariantPicker => _variantPicker;
+
+        /// <summary>Offers the pack's variants (shown when there's more than one) with the current one chosen.</summary>
+        public void SetVariants(IReadOnlyList<(string Id, string Name)> variants, string current)
+        {
+            if (_variantPicker == null) return;
+            _syncingVariant = true;
+            _variantIds.Clear();
+            _variantPicker.Clear();
+            foreach (var (id, name) in variants)
+            {
+                _variantIds.Add(id);
+                _variantPicker.AddItem(name);
+            }
+            int index = _variantIds.IndexOf(current ?? "");
+            if (index >= 0) _variantPicker.Selected = index;
+            _variantPicker.Visible = variants.Count > 1;
+            _syncingVariant = false;
+        }
+
         /// <summary>The grids Key Items shows: item grids, without the pack's settings toggles.</summary>
         private IEnumerable<PackItemGrid> VisibleGrids() =>
             _pack?.ItemGridGroups.Where(g => !g.LooksLikeSettings) ?? Enumerable.Empty<PackItemGrid>();
@@ -273,6 +306,14 @@ namespace AP_Atlas.Core.PopTracker
                 SetLayout(_layoutIds[(int)index]);
             };
             toolbar.AddChild(_layoutPicker);
+            // The pack's variant (its author's versions of the layouts, most often the tiles' orientation), when it has more than one.
+            _variantPicker = new OptionButton { TooltipText = Tr("The pack's variants (its author's versions of the layouts and items); the pack's default unless you pick another for this slot"), AccessibilityName = Tr("Pack variant"), Visible = false };
+            _variantPicker.ItemSelected += index =>
+            {
+                if (_syncingVariant || index < 0 || index >= _variantIds.Count) return;
+                VariantPicked?.Invoke(_variantIds[(int)index]);
+            };
+            toolbar.AddChild(_variantPicker);
 
             var sep1 = new VSeparator();
             toolbar.AddChild(sep1);

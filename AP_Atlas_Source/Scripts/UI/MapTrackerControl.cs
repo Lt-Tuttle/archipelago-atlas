@@ -244,6 +244,9 @@ namespace AP_Atlas.UI
         {
             _appSettings = appSettings;
             if (_appSettings.MapCameras == null) _appSettings.MapCameras = new Dictionary<string, MapCameraSave>();
+            // The legend lives under the map (it crowded the explorer's top); it's built with the display options below.
+            _legend = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            _legend.AddThemeConstantOverride("separation", 2);
             SizeFlagsHorizontal = SizeFlags.ExpandFill;
             SizeFlagsVertical = SizeFlags.ExpandFill;
             // --- The explorer: sort, display options, the legend, the maps ---
@@ -284,10 +287,22 @@ namespace AP_Atlas.UI
             rightPanel.AddThemeStyleboxOverride("panel", new StyleBoxFlat { BgColor = ThemeColors.SurfaceDeep });
             AddChild(rightPanel);
             _canvasPanel = rightPanel;
+            var column = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
+            rightPanel.AddChild(column);
+            var stage = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
+            stage.AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
+            column.AddChild(stage);
             _canvas = new MapCanvas();
             _canvas.ViewChanged += SaveCurrentView;
-            rightPanel.AddChild(_canvas);
-            BuildPicturelessParts(rightPanel);
+            stage.AddChild(_canvas);
+            BuildPicturelessParts(stage);
+            var legendMargin = new MarginContainer();
+            legendMargin.AddThemeConstantOverride("margin_left", 10);
+            legendMargin.AddThemeConstantOverride("margin_right", 10);
+            legendMargin.AddThemeConstantOverride("margin_top", 6);
+            legendMargin.AddThemeConstantOverride("margin_bottom", 6);
+            legendMargin.AddChild(_legend);
+            column.AddChild(legendMargin);
             _emptyStateContainer = new CenterContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
             var emptyVBox = new VBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
             emptyVBox.AddThemeConstantOverride("separation", 20);
@@ -440,9 +455,6 @@ namespace AP_Atlas.UI
             panel.AddChild(_hideCheckedBox);
             SyncDisplayControls();
 
-            _legend = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            _legend.AddThemeConstantOverride("separation", 2);
-            box.AddChild(_legend);
             BuildLegend();
             return box;
         }
@@ -672,6 +684,9 @@ namespace AP_Atlas.UI
 
         /// <summary>The switch (for tests).</summary>
         internal CheckBox FollowBox => _followBox;
+
+        /// <summary>Whether the pack variant row shows on the map (only when a variant changes maps or locations; for tests).</summary>
+        internal bool VariantRowVisible => _variantRow is { Visible: true };
 
         private CheckBox _followChecksBox;
         private bool _checksSeen;
@@ -997,58 +1012,80 @@ namespace AP_Atlas.UI
             note.AddThemeColorOverride("font_color", ThemeColors.TextMuted);
             _checklistBox.AddChild(note);
             string group = null;
-            var rows = PlacementsOn(map.Id).Select(p => p.Loc).Distinct()
+            var pins = PlacementsOn(map.Id).Select(p => p.Loc).Distinct()
                 .OrderBy(l => Parent(l.FullPath), StringComparer.OrdinalIgnoreCase).ThenBy(l => l.Name, StringComparer.OrdinalIgnoreCase).ToList();
-            foreach (var loc in rows)
+            foreach (var loc in pins)
             {
-                var ids = GetLocationIds(loc);
-                var look = Look(ids);
-                if (look.Skip) continue;
-                string parent = Parent(loc.FullPath);
-                if (parent != group)
-                {
-                    group = parent;
-                    if (!string.IsNullOrEmpty(parent))
+                // Each check of the pin is a row (a pin with sections: one per section that stands for a check of this seed);
+                // sections that aren't in the seed are one line, so a pack's thousands of hint markers don't become rows.
+                var sections = loc.Sections is { Count: > 0 } ? loc.Sections.Where(s => !PackIndex.IsHintMarker(loc, s)).ToList() : new List<PopTrackerSection>();
+                var rows = new List<(string Name, List<long> Ids)>();
+                int notInSeed = 0;
+                if (sections.Count == 0) rows.Add((loc.Name, GetLocationIds(loc)));
+                else
+                    foreach (var sec in sections)
                     {
-                        var heading = Kit.Text(parent.Replace("/", " / "), ThemeColors.Heading);
-                        _checklistBox.AddChild(heading);
+                        var ids = _index?.IdsFor(loc, sec) ?? new List<long>();
+                        if (ids.Count == 0) notInSeed++;
+                        else rows.Add((string.IsNullOrEmpty(sec.Name) ? loc.Name : sec.Name, ids));
                     }
+                string heading = sections.Count > 0 ? loc.FullPath.TrimEnd('/') : Parent(loc.FullPath);
+                bool headed = false;
+                void Head()
+                {
+                    if (headed || heading == group) { headed = true; return; }
+                    group = heading;
+                    headed = true;
+                    if (!string.IsNullOrEmpty(heading)) _checklistBox.AddChild(Kit.Text(heading.Replace("/", " / "), ThemeColors.Heading));
                 }
-                var row = new HBoxContainer();
-                row.AddThemeConstantOverride("separation", 8);
-                var swatch = new MapPinButton
+                foreach (var (rowName, ids) in rows)
                 {
-                    CustomMinimumSize = new Vector2(16, 16),
-                    SizeFlagsVertical = SizeFlags.ShrinkCenter,
-                    SplitRight = look.SplitRight,
-                    Border = 1,
-                    MouseFilter = MouseFilterEnum.Ignore,
-                    FocusMode = FocusModeEnum.None
-                };
-                swatch.AddThemeStyleboxOverride("normal", new StyleBoxFlat
+                    var look = Look(ids);
+                    if (look.Skip) continue;
+                    Head();
+                    var row = new HBoxContainer();
+                    row.AddThemeConstantOverride("separation", 8);
+                    var swatch = new MapPinButton
+                    {
+                        CustomMinimumSize = new Vector2(16, 16),
+                        SizeFlagsVertical = SizeFlags.ShrinkCenter,
+                        SplitRight = look.SplitRight,
+                        Border = 1,
+                        MouseFilter = MouseFilterEnum.Ignore,
+                        FocusMode = FocusModeEnum.None
+                    };
+                    swatch.AddThemeStyleboxOverride("normal", new StyleBoxFlat
+                    {
+                        BgColor = look.Color,
+                        BorderColor = ThemeColors.MapPinBorder,
+                        BorderWidthLeft = 1,
+                        BorderWidthTop = 1,
+                        BorderWidthRight = 1,
+                        BorderWidthBottom = 1,
+                        CornerRadiusTopLeft = 8,
+                        CornerRadiusTopRight = 8,
+                        CornerRadiusBottomLeft = 8,
+                        CornerRadiusBottomRight = 8
+                    });
+                    row.AddChild(swatch);
+                    int open = ids.Count(id => !_checkedLocs.Contains(id));
+                    var pinIds = ids;
+                    string pinName = loc.Name, pinMap = map.Id;
+                    var name = Kit.Button(rowName + (ids.Count > 1 ? $"  ({open} of {ids.Count} open)" : ""), rowName + look.StateNote, () => PinPicked?.Invoke(pinMap, pinName, pinIds), flat: true);
+                    name.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+                    name.Alignment = HorizontalAlignment.Left;
+                    name.SetMeta("checklist_row", rowName);
+                    if (look.Dim) name.Modulate = new Color(1f, 1f, 1f, DimAlpha);
+                    row.AddChild(name);
+                    _checklistBox.AddChild(row);
+                }
+                if (notInSeed > 0 && _appSettings.MapNotInSeedMode != ModeHide)
                 {
-                    BgColor = look.Color,
-                    BorderColor = ThemeColors.MapPinBorder,
-                    BorderWidthLeft = 1,
-                    BorderWidthTop = 1,
-                    BorderWidthRight = 1,
-                    BorderWidthBottom = 1,
-                    CornerRadiusTopLeft = 8,
-                    CornerRadiusTopRight = 8,
-                    CornerRadiusBottomLeft = 8,
-                    CornerRadiusBottomRight = 8
-                });
-                row.AddChild(swatch);
-                int open = ids.Count(id => !_checkedLocs.Contains(id));
-                var pinIds = ids;
-                string pinName = loc.Name, pinMap = map.Id;
-                var name = Kit.Button(loc.Name + (ids.Count > 1 ? $"  ({open} of {ids.Count} open)" : ""), loc.Name + look.StateNote, () => PinPicked?.Invoke(pinMap, pinName, pinIds), flat: true);
-                name.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-                name.Alignment = HorizontalAlignment.Left;
-                name.SetMeta("checklist_row", loc.Name);
-                if (look.Dim) name.Modulate = new Color(1f, 1f, 1f, DimAlpha);
-                row.AddChild(name);
-                _checklistBox.AddChild(row);
+                    Head();
+                    var rest = Kit.Muted(Translate("{0} not in your seed, or not matched to it").Replace("{0}", notInSeed.ToString()));
+                    rest.SetMeta("font_size_ratio", 0.9f);
+                    _checklistBox.AddChild(rest);
+                }
             }
         }
 

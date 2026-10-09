@@ -673,11 +673,12 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
     /// A ReceivedItems packet: the slot gets these items (item ids, from location 0, sent by player 0), with these item
     /// flags (1 progression, 2 useful, 4 trap; 0 is filler, and also what an item sent with the server's /send has).
     /// </summary>
-    public static JObject ReceivedItems(int index, IEnumerable<long> items, int flags = 0) => new()
+    /// <param name="location">Where the items were found: 0 as a found item; -2 as a start inventory (as MultiServer sends it, player 0, no flags).</param>
+    public static JObject ReceivedItems(int index, IEnumerable<long> items, int flags = 0, long location = 0) => new()
     {
         ["cmd"] = "ReceivedItems",
         ["index"] = index,
-        ["items"] = new JArray(items.Select(item => new JObject { ["item"] = item, ["location"] = 0, ["player"] = 0, ["flags"] = flags, ["class"] = "NetworkItem" }))
+        ["items"] = new JArray(items.Select(item => new JObject { ["item"] = item, ["location"] = location, ["player"] = 0, ["flags"] = flags, ["class"] = "NetworkItem" }))
     };
 
     /// <summary>
