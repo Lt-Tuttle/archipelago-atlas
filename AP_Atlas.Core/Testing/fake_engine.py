@@ -215,3 +215,80 @@ def serve(*args):
 
 
 components = [Component('UltimateBridge', serve)]
+# ---- The solo test's components (Scripts/Core/Engine/SoloTest.cs), faked: a YAML, a seed, a server, a seed test ----
+# The rules' "solo" object drives them: {"host_port": the port of the test's fake server, "generate_error": a failure
+# answered until the request skips the game's patch output, "generate_seconds": a wait}. Each request is journaled with
+# its component's name.
+
+
+def _solo_request(component):
+    line = sys.stdin.readline()
+    req = json.loads(line) if line and line.strip() else {}
+    note({'component': component, 'request': req})
+    return req, read_rules().get('solo') or {}
+
+
+def yaml_template(*args):
+    req, solo = _solo_request('AtlasYamlTemplate')
+    game, name, out_dir = req.get('game') or 'Test Game', req.get('player_name') or 'AtlasTest', req.get('output_dir') or HERE
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, name + '.yaml')
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write('# Fake template\nname: ' + name + '\ndescription: Atlas solo test (every option at its default)\ngame: ' + game + '\n' + game + ':\n  progression_balancing: 50\n  accessibility: full\n  fake_option: 1\n')
+    send({'ok': True, 'path': path, 'game': game, 'from': 'template', 'options': 3, 'hidden_world': False, 'versions': versions(),
+          'data_checksum': read_rules().get('data_checksum'), 'world_version': 'fake', 'seconds': 0.1})
+
+
+def generate(*args):
+    req, solo = _solo_request('AtlasGenerate')
+    rules = read_rules()
+    if solo.get('generate_seconds'):
+        time.sleep(solo['generate_seconds'])
+    if solo.get('generate_error') and not req.get('skip_patch_games'):
+        error = solo['generate_error']
+        send({'ok': False, 'error': error, 'error_type': error.split(':')[0], 'stage': 'generate', 'trace': 'Traceback: ' + error, 'seconds': 0.1})
+        return
+    out_dir = req.get('output_dir') or HERE
+    os.makedirs(out_dir, exist_ok=True)
+    beside = os.path.dirname(os.path.abspath(out_dir))
+    zip_path = os.path.join(out_dir, 'AP_FAKE.zip')
+    multidata = os.path.join(beside, 'AP_FAKE.archipelago')
+    spoiler = os.path.join(beside, 'AP_FAKE_Spoiler.txt')
+    import zipfile
+    with zipfile.ZipFile(zip_path, 'w') as z:
+        z.writestr('AP_FAKE.archipelago', 'fake')
+    with open(multidata, 'wb') as f:
+        f.write(b'fake multidata')
+    with open(spoiler, 'w', encoding='utf-8') as f:
+        f.write('Fake spoiler\n')
+    locations = rules.get('locations') or []
+    sphere0 = sum(1 for loc in locations if not loc.get('needs'))
+    spheres = 1 + len({len(loc.get('needs') or []) for loc in locations if loc.get('needs')})
+    send({'ok': True, 'seed': 1, 'seed_name': 'FAKE', 'zip': zip_path, 'multidata': multidata, 'spoiler': spoiler,
+          'players': [{'slot': 1, 'name': 'AtlasTest', 'game': 'Test Game', 'locations': len(locations), 'items': len(locations)}],
+          'spheres': spheres, 'sphere0': sphere0, 'patch_skipped': list(req.get('skip_patch_games') or []), 'seconds': 0.2})
+
+
+def host(*args):
+    req, solo = _solo_request('AtlasHost')
+    note({'event': 'start'})
+    send({'id': req.get('id'), 'event': 'hosting', 'host': '127.0.0.1', 'port': int(solo.get('host_port') or 0), 'seed_name': 'FAKE', 'players': ['AtlasTest']})
+    while sys.stdin.readline():
+        pass  # served until Atlas ends the process
+
+
+def seed_test(*args):
+    req, solo = _solo_request('AtlasSeedTest')
+    rules = read_rules()
+    locations = rules.get('locations') or []
+    steps, cumulative = [], 0
+    for sphere, size in enumerate(sorted({len(loc.get('needs') or []) for loc in locations})):
+        cumulative += sum(1 for loc in locations if len(loc.get('needs') or []) == size)
+        steps.append({'sphere': sphere, 'expected': cumulative, 'reachable': cumulative, 'late_count': 0, 'early_count': 0, 'late': [], 'early': []})
+    send({'seed': req.get('seed'), 'seed_name': 'FAKE', 'generator': 'fake', 'spheres': len(steps),
+          'players': [{'player': 1, 'name': 'AtlasTest', 'game': 'Test Game', 'seed_checksum': rules.get('data_checksum'), 'local_checksum': rules.get('data_checksum'),
+                       'checksum_match': True, 'rebuild': {'source': 'linked', 'file': 'AtlasTest.yaml', 'match': True, 'expected': len(locations), 'got': len(locations), 'missing': 0, 'extra': 0},
+                       'steps': steps, 'exact': True, 'seconds': 0.1}]})
+
+
+components += [Component('AtlasYamlTemplate', yaml_template), Component('AtlasGenerate', generate), Component('AtlasHost', host), Component('AtlasSeedTest', seed_test)]

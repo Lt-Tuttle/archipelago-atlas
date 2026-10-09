@@ -143,6 +143,21 @@ namespace AP_Atlas.Core
             return names.Distinct().ToList();
         }
 
+        /// <summary>Every document of a YAML text that parses as a mapping (for the solo test's check).</summary>
+        internal static IEnumerable<Dictionary<string, object>> Documents(string text)
+        {
+            foreach (var docText in SplitDocuments(text ?? ""))
+            {
+                Dictionary<string, object> doc;
+                try { doc = Parse(docText) as Dictionary<string, object>; }
+                catch (Exception) { continue; } // not a mapping, or not YAML: left out
+                if (doc != null) yield return doc;
+            }
+        }
+
+        /// <summary>A document's scalar by key (case-insensitive), or null.</summary>
+        internal static string Scalar(Dictionary<string, object> doc, string key) => Str(Get(doc, key));
+
         private static object Get(Dictionary<string, object> map, string key) =>
             map.FirstOrDefault(kv => string.Equals(kv.Key, key, StringComparison.OrdinalIgnoreCase)).Value;
 

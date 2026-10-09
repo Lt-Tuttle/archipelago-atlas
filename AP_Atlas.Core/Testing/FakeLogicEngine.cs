@@ -115,6 +115,14 @@ internal sealed class FakeLogicEngine
     /// <summary>Before each answer, the engine writes one line this many characters long on standard error (0: none).</summary>
     public int FloodErrors { get; set; }
 
+    /// <summary>The solo test's fake server port (the fake Archipelago server standing in for the hosted seed).</summary>
+    public int HostPort { get; set; }
+
+    /// <summary>The fake generator fails with this until a request skips the game's patch output (a world that wants a ROM).</summary>
+    public string? GenerateError { get; set; }
+
+    public double GenerateSeconds { get; set; }
+
     /// <summary>Writes the rules. The engine reads them for every request, so changes apply to the next one.</summary>
     public void Apply()
     {
@@ -133,7 +141,8 @@ internal sealed class FakeLogicEngine
             ["boot_error"] = BootError,
             ["spawn_child"] = SpawnChild,
             ["short_steps"] = ShortSteps,
-            ["flood"] = new JObject { ["stdout"] = FloodAnswers, ["stderr"] = FloodErrors }
+            ["flood"] = new JObject { ["stdout"] = FloodAnswers, ["stderr"] = FloodErrors },
+            ["solo"] = new JObject { ["host_port"] = HostPort, ["generate_error"] = GenerateError, ["generate_seconds"] = GenerateSeconds }
         };
         // Replaced whole, so the engine never reads half a file. It may be reading the old one this moment: then retry.
         string temp = _rules + ".tmp";
@@ -173,6 +182,10 @@ internal sealed class FakeLogicEngine
     /// <summary>The requests of one kind (init, update, explain) the engine received, oldest first.</summary>
     public IReadOnlyList<JObject> Requests(string action) =>
         Journal().Select(entry => entry["request"] as JObject).OfType<JObject>().Where(request => (string?)request["action"] == action).ToList();
+
+    /// <summary>The requests one of the solo test's components received (AtlasYamlTemplate, AtlasGenerate, AtlasHost, AtlasSeedTest), oldest first.</summary>
+    public IReadOnlyList<JObject> ComponentRequests(string component) =>
+        Journal().Where(entry => (string?)entry["component"] == component).Select(entry => entry["request"] as JObject).OfType<JObject>().ToList();
 
     /// <summary>How many times an engine process started, and how many crashed on purpose.</summary>
     public int Starts => Journal().Count(entry => (string?)entry["event"] == "start");

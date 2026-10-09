@@ -25,6 +25,8 @@ namespace AP_Atlas.UI
         public required Action OpenEngineSetup { get; init; }
         /// <summary>Shows the Map Packs page and searches GitHub for a game's packs (one search, when pressed).</summary>
         public required Action<string> FindPack { get; init; }
+        /// <summary>Opens the solo test for a game ("Test this game…").</summary>
+        public required Action<string> StartSoloTest { get; init; }
     }
 
     /// <summary>
@@ -422,6 +424,13 @@ namespace AP_Atlas.UI
                 (toolCount > 0 ? _tr("{0} file(s) in the game's folder.").Replace("{0}", toolCount.ToString()) + " " : "") +
                 _tr("Some games need a client, a patcher or a .bat from their release. Atlas keeps them in the game's folder and never runs them: the setup guide says what to do with each."),
                 toolButtons);
+            // 5. The solo test: the whole chain on a one-player seed hosted on this PC, and a report for the owner.
+            string? lastReport = LastSoloReport(game);
+            var testButton = Kit.Button(_tr("Test this game…"), _tr("Installs what's missing, generates a one-player seed with the game's default options, hosts it on this PC and connects a test slot, then writes a report you can hand back."), () => _hooks.StartSoloTest(game), enabled: engineReady);
+            testButton.SetMeta("solo_test_button", true);
+            Step(steps, lastReport != null, _tr("A solo test"),
+                lastReport != null ? _tr("Last tested: {0}.").Replace("{0}", lastReport) : _tr("Runs the game end to end here, with nothing on archipelago.gg, and writes a report under Atlas's reports folder."),
+                new List<Button> { testButton });
             foreach (var record in records.Where(r => File.Exists(Path.Combine(tools, r.File))))
             {
                 var toolRow = new HBoxContainer();
@@ -505,6 +514,18 @@ namespace AP_Atlas.UI
             row.SetMeta("step_done", done);
             row.SetMeta("step_title", title);
             steps.AddChild(row);
+        }
+
+        /// <summary>The newest solo test report for a game, as a line ("2026-10-08 14:02"), or null.</summary>
+        private static string? LastSoloReport(string game)
+        {
+            string folder = SoloTestRunner.ReportsFolder;
+            if (!Directory.Exists(folder)) return null;
+            string stem = GameFiles.SafeName(game) + "-";
+            var newest = Directory.GetFiles(folder, stem + "*.md").OrderByDescending(f => f, StringComparer.Ordinal).FirstOrDefault();
+            if (newest == null) return null;
+            string when = Path.GetFileNameWithoutExtension(newest).Substring(stem.Length);
+            return when.Length == 13 ? when.Substring(0, 4) + "-" + when.Substring(4, 2) + "-" + when.Substring(6, 2) + " " + when.Substring(9, 2) + ":" + when.Substring(11, 2) : when;
         }
 
         /// <summary>The page's checklist: each step's title and whether it's done (for tests).</summary>
@@ -686,12 +707,18 @@ namespace AP_Atlas.UI
             }
         }
 
-        private void AskThenLoad(string game, bool again, Action? then = null)
+        private void AskThenLoad(string game, bool again, Action? then = null, Action? notLoaded = null)
         {
             PermissionDialog.Ask(_dialogParent ?? this, _hooks.Settings, Permissions.GitHubLookups, null, _tr("The releases of the {0} apworld, from every project that publishes it.").Replace("{0}", game), allowed =>
             {
-                if (!allowed || !IsInstanceValid(this)) return;
-                if (!LoadVersions(game, again, then)) _hooks.Toast(_tr("Wait for the current task to finish first."), ThemeColors.TextSubtle);
+                if (!allowed || !IsInstanceValid(this))
+                {
+                    notLoaded?.Invoke();
+                    return;
+                }
+                if (LoadVersions(game, again, then)) return;
+                _hooks.Toast(_tr("Wait for the current task to finish first."), ThemeColors.TextSubtle);
+                notLoaded?.Invoke();
             });
         }
 
@@ -800,6 +827,14 @@ namespace AP_Atlas.UI
         private bool Run<T>(string starting, Func<Action<string>, CancellationToken, Task<T>> work, Func<T, string> done)
         {
             if (_progress.Visible) return false;
+            Async.Fire(RunAsync(starting, work, done), starting);
+            return true;
+        }
+
+        /// <summary>One operation at a time, with its progress in the status line: the work's result, or default when it was stopped, failed or couldn't start.</summary>
+        private async Task<T?> RunAsync<T>(string starting, Func<Action<string>, CancellationToken, Task<T>> work, Func<T, string> done)
+        {
+            if (_progress.Visible) return default;
             var cts = _running = new CancellationTokenSource();
             _progress.Visible = true;
             _status.Text = starting;
@@ -808,24 +843,22 @@ namespace AP_Atlas.UI
                 AP_Atlas.Core.Logger.LogInfo(line);
                 Ui.Defer(this, () => { if (_progress.Visible) _status.Text = line.Trim(); });
             }
-            Async.Fire(async () =>
+            string message;
+            T? result = default;
+            try
             {
-                string message;
-                try
-                {
-                    var result = await Task.Run(() => work(Log, cts.Token));
-                    message = done(result);
-                }
-                catch (OperationCanceledException) { message = _tr("Stopped."); }
-                catch (Exception ex) { message = _tr("It didn't work: {0}").Replace("{0}", ex.Message); }
-                Ui.Defer(this, () =>
-                {
-                    _progress.Visible = false;
-                    _status.Text = message;
-                    Refresh();
-                });
-            }, starting);
-            return true;
+                result = await Task.Run(() => work(Log, cts.Token));
+                message = done(result);
+            }
+            catch (OperationCanceledException) { message = _tr("Stopped."); }
+            catch (Exception ex) { message = _tr("It didn't work: {0}").Replace("{0}", ex.Message); }
+            Ui.Defer(this, () =>
+            {
+                _progress.Visible = false;
+                _status.Text = message;
+                Refresh();
+            });
+            return result;
         }
 
         public override void _ExitTree() => _running?.Cancel();
@@ -834,9 +867,13 @@ namespace AP_Atlas.UI
         private Node? _dialogParent;
 
         /// <summary>The newest full release of the game's apworld across its projects, after the user trusts the project (asked once); also from the Add a slot dialog.</summary>
-        internal void InstallNewest(string game, Node? dialogParent = null)
+        internal void InstallNewest(string game, Node? dialogParent = null) => Async.Fire(InstallNewestAsync(game, dialogParent), "installing " + game);
+
+        /// <summary>Installs the newest full release and says whether it happened (the permission and trust questions asked as always; a refusal is false).</summary>
+        internal Task<bool> InstallNewestAsync(string game, Node? dialogParent = null)
         {
             _dialogParent = dialogParent;
+            var done = new TaskCompletionSource<bool>();
             void Offer()
             {
                 var install = AtlasEngine.Current;
@@ -845,23 +882,29 @@ namespace AP_Atlas.UI
                 if (newest == null || VersionOf(game, newest) is not { } version)
                 {
                     _status.Text = _tr("No release of {0} is known. Add the game's project, or choose its file.").Replace("{0}", game);
+                    done.TrySetResult(false);
                     return;
                 }
-                ConfirmInstall(game, RepoOf(newest), version);
+                ConfirmInstall(game, RepoOf(newest), version, done);
             }
             if (_versions.ContainsKey(game)) Offer();
-            else AskThenLoad(game, again: false, Offer);
+            else AskThenLoad(game, again: false, Offer, () => done.TrySetResult(false));
+            return done.Task;
         }
 
-        private void ConfirmInstall(string game, string? repo, ApworldVersion version)
+        private void ConfirmInstall(string game, string? repo, ApworldVersion version, TaskCompletionSource<bool>? done = null)
         {
-            void Go() => Run(_tr("Installing {0} {1}…").Replace("{0}", game).Replace("{1}", version.Version), async (log, ct) =>
+            void Go() => Async.Fire(async () =>
             {
-                var install = AtlasEngine.Current;
-                string file = await ApworldSources.DownloadAsync(game, ApworldSources.Find(game)?.Apworld, version, log, ct);
-                return await AtlasEngine.InstallApworldAsync(install, file, log, ct);
-            }, ok => ok ? _tr("{0} {1} is in the Atlas Engine; connected slots restart their logic on it.").Replace("{0}", game).Replace("{1}", version.Version)
-                       : _tr("{0} {1} couldn't be installed: the log says why.").Replace("{0}", game).Replace("{1}", version.Version));
+                bool ok = await RunAsync(_tr("Installing {0} {1}…").Replace("{0}", game).Replace("{1}", version.Version), async (log, ct) =>
+                {
+                    var install = AtlasEngine.Current;
+                    string file = await ApworldSources.DownloadAsync(game, ApworldSources.Find(game)?.Apworld, version, log, ct);
+                    return await AtlasEngine.InstallApworldAsync(install, file, log, ct);
+                }, ok => ok ? _tr("{0} {1} is in the Atlas Engine; connected slots restart their logic on it.").Replace("{0}", game).Replace("{1}", version.Version)
+                           : _tr("{0} {1} couldn't be installed: the log says why.").Replace("{0}", game).Replace("{1}", version.Version));
+                done?.TrySetResult(ok);
+            }, "installing " + game);
             if (repo == null || ApworldSources.IsRepoApproved(_hooks.Settings, repo))
             {
                 Go();
@@ -874,7 +917,7 @@ namespace AP_Atlas.UI
                 {
                     ApworldSources.ApproveRepo(_hooks.Settings, repo);
                     Go();
-                }, _tr("github.com/{0} is a project I trust").Replace("{0}", repo));
+                }, _tr("github.com/{0} is a project I trust").Replace("{0}", repo), () => done?.TrySetResult(false));
         }
 
         private void InstallFile(string game)

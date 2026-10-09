@@ -1028,6 +1028,215 @@ def atlas_check(*args):
     send(out)
 
 
+# ---- The solo test: a YAML from the game's own options, a one-player seed, a server on this PC ----
+# Three components the "Test this game…" chain runs (Scripts/Core/Engine/SoloTest.cs). They use Archipelago's own
+# generator and server inside the engine, so a solo seed is made and hosted without archipelago.gg; the server binds the
+# loopback address only.
+
+
+def _log_to_stderr():
+    # Archipelago's generator and server log through the root logger: a handler on standard error makes their progress
+    # lines reach Atlas's live log line (the channel stays for answers).
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(logging.Formatter('%(message)s'))
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    root.addHandler(handler)
+
+
+def _read_request():
+    line = sys.stdin.readline()
+    return json.loads(line) if line and line.strip() else {}
+
+
+def _failure(error, **extra):
+    out = {'ok': False, 'error': (type(error).__name__ + ': ' + str(error))[:400] if isinstance(error, BaseException) else str(error)[:400],
+           'trace': traceback.format_exc()[-1500:]}
+    out.update(extra)
+    return out
+
+
+def atlas_yaml_template(*args):
+    # A player YAML for one game with every option at its default, from Archipelago's own option templates (the same
+    # rendering the Launcher's "Generate Template Options" makes), the player named as asked.
+    # stdin: {"game", "player_name", "output_dir"}; one answer line.
+    import time
+    protect_channel()
+    req = _read_request()
+    started = time.time()
+    game, player_name, output_dir = req.get('game') or '', req.get('player_name') or 'AtlasTest', req.get('output_dir') or ''
+    try:
+        from worlds.AutoWorld import AutoWorldRegister
+        import Options
+        from Utils import get_file_safe_name
+        cls = AutoWorldRegister.world_types.get(game)
+        if cls is None:
+            send({'ok': False, 'code': 'world_missing', 'error': game + ' is not installed in this engine.'})
+            return
+        os.makedirs(output_dir, exist_ok=True)
+        text, source = None, 'template'
+        try:
+            # The templates go to a throwaway folder: generate_yaml_templates writes every world's and clears *.yaml first.
+            tmp = tempfile.mkdtemp(prefix='atlas_tpl_')
+            try:
+                Options.generate_yaml_templates(tmp, True)
+                with open(os.path.join(tmp, get_file_safe_name(game) + '.yaml'), encoding='utf-8-sig') as f:
+                    text = f.read()
+            finally:
+                shutil.rmtree(tmp, ignore_errors=True)
+            text = re.sub(r'^name:.*$', 'name: ' + player_name, text, count=1, flags=re.M)
+            text = re.sub(r'^description:.*$', 'description: Atlas solo test (every option at its default)', text, count=1, flags=re.M)
+        except Exception as e:
+            note('The option template of ' + game + ' could not be made (' + type(e).__name__ + ': ' + str(e) + '); plain defaults instead.')
+            text, source = None, 'defaults'
+        import yaml
+        if text is None:
+            options = {}
+            for key, option in cls.options_dataclass.type_hints.items():
+                default = getattr(option, 'default', None)
+                if isinstance(default, (set, frozenset, tuple)):
+                    default = list(default)
+                options[key] = default
+            text = yaml.safe_dump({'name': player_name, 'description': 'Atlas solo test (every option at its default)', 'game': game, game: options},
+                                  sort_keys=False, allow_unicode=True)
+        doc = yaml.safe_load(text)
+        if not isinstance(doc, dict) or doc.get('name') != player_name or doc.get('game') != game or not isinstance(doc.get(game), dict):
+            raise ValueError('the YAML made for ' + game + ' does not name the player, the game and its options as expected')
+        path = os.path.join(output_dir, player_name + '.yaml')
+        with open(path, 'w', encoding='utf-8-sig') as f:
+            f.write(text)
+        out = {'ok': True, 'path': path, 'game': game, 'from': source, 'options': len(doc[game]), 'hidden_world': bool(getattr(cls, 'hidden', False)),
+               'versions': versions(), 'seconds': round(time.time() - started, 2)}
+        out.update(world_identity(cls))
+        send(out)
+    except Exception as e:
+        send(_failure(e, code='template_failed'))
+
+
+def _skip_patch_output(games):
+    # A world whose output needs a file this PC doesn't have (a base ROM) still generates: its output step is switched off
+    # in this process only; the server data and the spoiler are all the tracker needs.
+    from worlds.AutoWorld import AutoWorldRegister
+    for game in games or []:
+        cls = AutoWorldRegister.world_types.get(game)
+        if cls is None:
+            continue
+        cls.stage_assert_generate = classmethod(lambda c, multiworld: None)
+        cls.generate_output = lambda self, output_directory: None
+        if hasattr(cls, 'stage_generate_output'):
+            cls.stage_generate_output = classmethod(lambda c, multiworld, output_directory: None)
+
+
+def atlas_generate(*args):
+    # One seed from the players folder, with Archipelago's own generator, into the output folder; the server data
+    # (.archipelago) and the spoiler are put beside the zip. stdin: {"players_dir", "output_dir", "spoiler": 3, "seed",
+    # "skip_patch_games": [], "skip_prog_balancing": false}; one answer line at the end (progress goes to standard error).
+    import time
+    import zipfile
+    protect_channel()
+    _log_to_stderr()
+    req = _read_request()
+    started = time.time()
+    stage = 'setup'
+    try:
+        import Generate
+        import Main
+        players_dir, output_dir = req.get('players_dir') or '', req.get('output_dir') or ''
+        os.makedirs(output_dir, exist_ok=True)
+        _skip_patch_output(req.get('skip_patch_games'))
+        argv = ['--player_files_path', players_dir, '--outputpath', output_dir, '--spoiler', str(req.get('spoiler', 3)), '--multi', '1']
+        if req.get('seed') is not None:
+            argv += ['--seed', str(req['seed'])]
+        if req.get('skip_prog_balancing'):
+            argv.append('--skip_prog_balancing')
+        stage = 'generate'
+        gen_args = Generate.mystery_argparse(argv)
+        gen_args, seed = Generate.main(gen_args)
+        stage = 'output'
+        multiworld = Main.main(gen_args, seed)
+        seed_name = multiworld.seed_name
+        zip_path = os.path.join(output_dir, 'AP_' + seed_name + '.zip')
+        beside = os.path.dirname(os.path.abspath(output_dir))
+        multidata_path, spoiler_path = None, None
+        with zipfile.ZipFile(zip_path) as z:
+            for name in z.namelist():
+                base = os.path.basename(name)
+                if base.lower().endswith('.archipelago') or base.lower().endswith('_spoiler.txt'):
+                    target = os.path.join(beside, base)
+                    with z.open(name) as src, open(target, 'wb') as dst:
+                        shutil.copyfileobj(src, dst)
+                    if base.lower().endswith('.archipelago'):
+                        multidata_path = target
+                    else:
+                        spoiler_path = target
+        if multidata_path is None:
+            raise FileNotFoundError('the generated archive holds no .archipelago file')
+        stage = 'read'
+        data = load_multidata(multidata_path)
+        players = []
+        for slot, info in (data.get('slot_info') or {}).items():
+            locations = data.get('locations', {}).get(slot) or {}
+            players.append({'slot': slot, 'name': getattr(info, 'name', None) or str(info), 'game': getattr(info, 'game', None) or '',
+                            'locations': len(locations), 'items': len(locations)})
+        spheres = data.get('spheres') or []
+        sphere0 = 0
+        if spheres:
+            first = spheres[0]
+            sphere0 = sum(len(v) for v in first.values()) if isinstance(first, dict) else len(first)
+        send({'ok': True, 'seed': seed, 'seed_name': seed_name, 'zip': zip_path, 'multidata': multidata_path, 'spoiler': spoiler_path,
+              'players': players, 'spheres': len(spheres), 'sphere0': sphere0, 'patch_skipped': list(req.get('skip_patch_games') or []),
+              'seconds': round(time.time() - started, 2)})
+    except BaseException as e:
+        if isinstance(e, KeyboardInterrupt):
+            raise
+        send(_failure(e, error_type=type(e).__name__, stage=stage, seconds=round(time.time() - started, 2)))
+
+
+def atlas_host(*args):
+    # Archipelago's own server for a generated seed, on this PC only (127.0.0.1, a free port the OS picks, no password,
+    # nothing saved); long-lived: it answers once with the port and then serves until Atlas ends the process.
+    # stdin: {"id", "multidata", "host": "127.0.0.1", "port": 0}; answer: {"id", "event": "hosting", ...} or "host_failed".
+    protect_channel()
+    _log_to_stderr()
+    req = _read_request()
+    rid = req.get('id')
+    try:
+        import asyncio
+        import functools
+        import MultiServer
+        import websockets
+        args = MultiServer.parse_args()  # host.yaml's defaults (sys.argv holds the launcher's name alone)
+        args.multidata = req.get('multidata')
+        args.host = '127.0.0.1'
+        args.port = 0
+        args.password = None
+        args.server_password = None
+        args.disable_save = True
+        args.auto_shutdown = 0
+
+        async def run():
+            ctx = MultiServer.Context(args.host, args.port, args.server_password, args.password, args.location_check_points,
+                                      args.hint_cost, not args.disable_item_cheat, args.release_mode, args.collect_mode,
+                                      args.countdown_mode, args.remaining_mode, args.auto_shutdown, args.compatibility, args.log_network)
+            ctx.load(args.multidata, False)
+            ctx.init_save(False)
+            ctx.server = websockets.serve(functools.partial(MultiServer.server, ctx=ctx), host='127.0.0.1', port=0,
+                                          extensions=[MultiServer.server_per_message_deflate_factory])
+            served = await ctx.server
+            port = served.sockets[0].getsockname()[1]
+            send({'id': rid, 'event': 'hosting', 'host': '127.0.0.1', 'port': port, 'seed_name': getattr(ctx, 'seed_name', ''),
+                  'players': [getattr(s, 'name', str(s)) for s in ctx.slot_info.values()]})
+            await ctx.exit_event.wait()  # never set here: Atlas ends the process when the test ends
+
+        asyncio.run(run())
+    except BaseException as e:
+        if isinstance(e, KeyboardInterrupt):
+            raise
+        out = _failure(e)
+        out.update({'id': rid, 'event': 'host_failed'})
+        send(out)
+
+
 from worlds.LauncherComponents import Component, components, Type
 components.append(Component('UltimateBridge', None, func=launch_bridge, component_type=Type.CLIENT))
 components.append(Component('AtlasNames', None, func=atlas_names, component_type=Type.CLIENT))
@@ -1035,3 +1244,6 @@ components.append(Component('AtlasCheck', None, func=atlas_check, component_type
 components.append(Component('AtlasSeedTest', None, func=atlas_seed_test, component_type=Type.CLIENT))
 components.append(Component('AtlasChecksum', None, func=atlas_checksum, component_type=Type.CLIENT))
 components.append(Component('AtlasGameSweep', None, func=atlas_game_sweep, component_type=Type.CLIENT))
+components.append(Component('AtlasYamlTemplate', None, func=atlas_yaml_template, component_type=Type.CLIENT))
+components.append(Component('AtlasGenerate', None, func=atlas_generate, component_type=Type.CLIENT))
+components.append(Component('AtlasHost', None, func=atlas_host, component_type=Type.CLIENT))

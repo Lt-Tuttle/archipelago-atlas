@@ -41,6 +41,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             DataManager.SaveProfiles(_profiles);
             ShowStatus(Tr("Closing connections…"));
             LogToSystem("Shutting down... Disconnecting active slots...", "yellow");
+            AP_Atlas.Core.EngineSetup.SoloTestRunner.StopAll(); // a solo test's server ends with Atlas
             // Close every session (connected slots and any still connecting) with a proper close frame, so the server
             // drops them at once instead of waiting for a timeout.
             if (_sessions != null)

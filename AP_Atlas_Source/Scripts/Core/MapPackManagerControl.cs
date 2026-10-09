@@ -611,7 +611,7 @@ namespace AP_Atlas.Core
         // Finding packs on GitHub: only when asked, at most two searches per game, nothing installed without the user's OK
         // =====================================================================
 
-        private sealed class PackCandidate
+        internal sealed class PackCandidate
         {
             public string Repo, Description, HtmlUrl;
             public int Stars;
@@ -683,7 +683,7 @@ namespace AP_Atlas.Core
             ShowPackCandidates(results, missing.Count);
         }
 
-        private static async Task<(List<PackCandidate> Candidates, string Problem)> SearchPacksAsync(string game)
+        internal static async Task<(List<PackCandidate> Candidates, string Problem)> SearchPacksAsync(string game)
         {
             var list = new List<PackCandidate>();
             foreach (var query in SearchQueries(game))
@@ -791,17 +791,23 @@ namespace AP_Atlas.Core
         /// <summary>Looks up the project's latest release, then shows exactly what would be downloaded and asks.</summary>
         private void InstallFromRepo(string game, string repo) => AP_Atlas.Core.Async.Fire(InstallFromRepoAsync(game, repo), $"looking up {repo}'s latest release");
 
-        private async Task InstallFromRepoAsync(string game, string repo)
+        private Task InstallFromRepoAsync(string game, string repo) => InstallPackFromRepoAsync(game, repo, confirm: true);
+
+        /// <summary>
+        /// Installs a project's newest released pack (or its current files) for a game, asking first unless told not to
+        /// (the solo test, which said what it does); true once the pack is in Atlas's packs folder.
+        /// </summary>
+        internal async Task<bool> InstallPackFromRepoAsync(string game, string repo, bool confirm)
         {
             GitHubApi.Result release;
             _showOverlayAction();
             try { release = await GitHubApi.GetAsync($"/repos/{repo}/releases/latest"); }
             finally { _hideOverlayAction(); }
-            if (!GodotObject.IsInstanceValid(this)) return;
+            if (!GodotObject.IsInstanceValid(this)) return false;
             if (release.Unknown)
             {
                 _logAction($"Couldn't read {repo}'s releases: {release.Message}", "orange");
-                return;
+                return false;
             }
             string where = "github.com/" + repo, url = null, fileName = null, text;
             long size = 0;
@@ -827,12 +833,14 @@ namespace AP_Atlas.Core
             }
             text += "\n\nMap packs are made by the community, and their scripts run inside Atlas's sandbox. Only install packs from projects you trust.";
             string downloadUrl = url, file = fileName;
-            AP_Atlas.UI.Dialogs.Confirm(this, "Install a map pack", text, "Download and install", () => DownloadPack(downloadUrl, file, where));
+            if (!confirm) return await DownloadPackAsync(downloadUrl, file, where);
+            var answered = new TaskCompletionSource<bool>();
+            AP_Atlas.UI.Dialogs.Confirm(this, "Install a map pack", text, "Download and install", () => AP_Atlas.Core.Async.Fire(async () => answered.TrySetResult(await DownloadPackAsync(downloadUrl, file, where)), "downloading a map pack"),
+                null, () => answered.TrySetResult(false));
+            return await answered.Task;
         }
 
-        private void DownloadPack(string url, string fileName, string where) => AP_Atlas.Core.Async.Fire(DownloadPackAsync(url, fileName, where), "downloading a map pack");
-
-        private async Task DownloadPackAsync(string url, string fileName, string where)
+        private async Task<bool> DownloadPackAsync(string url, string fileName, string where)
         {
             string packsDir = System.IO.Path.Combine(DataManager.GetDataDirectory(), "packs");
             Directory.CreateDirectory(packsDir);
@@ -856,23 +864,23 @@ namespace AP_Atlas.Core
             {
                 PoliteHttp.TryDelete(temp);
                 Failed($"Couldn't download the pack from {where}: {r.Message}");
-                return;
+                return false;
             }
             string problem = CheckPackZip(temp);
             if (problem != null)
             {
                 PoliteHttp.TryDelete(temp);
                 Failed($"The download from {where} wasn't installed: {problem}.");
-                return;
+                return false;
             }
             try { File.Move(temp, dest, true); }
             catch (Exception ex)
             {
                 PoliteHttp.TryDelete(temp);
                 Failed($"Couldn't install the pack: {ex.Message}");
-                return;
+                return false;
             }
-            if (!GodotObject.IsInstanceValid(this)) return;
+            if (!GodotObject.IsInstanceValid(this)) return true;
             _logAction($"Installed {safeName} from {where}.", "lime");
             SayInstalled(dest);
             if (_candidatesDialog != null && GodotObject.IsInstanceValid(_candidatesDialog))
@@ -883,6 +891,7 @@ namespace AP_Atlas.Core
             _candidatesDialog = null;
             PopTrackerPackLoader.NotifyPacksChanged();
             await RefreshPackListAsync();
+            return true;
         }
 
         private void Failed(string message)

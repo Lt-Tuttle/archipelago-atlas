@@ -8,7 +8,7 @@ namespace AP_Atlas.UI
     public static class Dialogs
     {
         /// <summary>Asks to confirm; with <paramref name="requirement"/>, a statement the user has to switch on first.</summary>
-        public static void Confirm(Node parent, string title, string text, string okText, Action onConfirm, string requirement = null)
+        public static void Confirm(Node parent, string title, string text, string okText, Action onConfirm, string requirement = null, Action onCancel = null)
         {
             // The text is a label of a set width (the dialog's own wrapped text leaves a tall empty gap below it).
             var dialog = new ConfirmationDialog { Title = title, OkButtonText = okText, DialogHideOnOk = false };
@@ -24,7 +24,11 @@ namespace AP_Atlas.UI
                 dialog.QueueFree();
                 onConfirm();
             };
-            dialog.Canceled += () => dialog.QueueFree();
+            dialog.Canceled += () =>
+            {
+                dialog.QueueFree();
+                onCancel?.Invoke();
+            };
             parent.AddChild(dialog);
             WindowFit.Pop(dialog, 500);
         }

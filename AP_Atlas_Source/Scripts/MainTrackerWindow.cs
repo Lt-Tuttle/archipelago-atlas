@@ -420,7 +420,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             Toast = ShowToast,
             ShowTool = tool => ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(tool),
             OpenEngineSetup = OpenEngineSetup,
-            FindPack = FindMapPack
+            FindPack = FindMapPack,
+            StartSoloTest = StartSoloTest
         });
         _gamesPage.Visible = false;
         _contentStage.AddChild(_gamesPage);

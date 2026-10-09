@@ -1,0 +1,111 @@
+using AP_Atlas.Core.Games;
+using AP_Atlas.Core.Reports;
+using Newtonsoft.Json;
+
+namespace AP_Atlas.Core.Tests;
+
+public class SoloTestReportTests
+{
+    private static SoloTestResult Full() => new("Dark Souls III", new DateTime(2026, 10, 8, 14, 2, 0),
+        new SoloVersions("Dark Souls III", "3.0.0", "github.com/nex3/DS3", "0123456789abcdef", "Atlas portable engine", "DS3 pack", "1.4", "https://example.org/versions.json", "0.1.0-beta.1"),
+        new[] { new SoloStepRecord(SoloTestStep.Apworld, SoloStepOutcome.Skipped, "already in the engine", 0.2), new SoloStepRecord(SoloTestStep.Generate, SoloStepOutcome.Done, @"seed A1B2 in C:\Users\kimj\x", 94.2) },
+        new SoloGeneration("A1B2", 42, 512, 512, 17, 23, 94.2, true, null, 41, "template"),
+        new SoloLogic(true, 17, 0, 0, "exact: Atlas's logic matches the seed at every one of 17 spheres", true, 23, 512, "linked", null),
+        new SoloPins(512, 500, 300, 290, 10, 2, 7), new SoloKeyItems(80, 78, 60),
+        new SoloScripts(true, new[] { "Archipelago.LocationChecks" }, new[] { "ds3_map" }, Array.Empty<string>(), true, false, false, null, 1), "127.0.0.1:54321", null);
+
+    [Fact]
+    public void Markdown_has_every_heading_in_order_and_says_not_scored_for_missing_parts()
+    {
+        var scrubber = new Scrubber("kimj", names: new[] { "Tester" });
+        string full = SoloTestReport.Markdown(Full(), scrubber);
+        int last = -1;
+        foreach (string heading in SoloTestReport.Headings)
+        {
+            int at = full.IndexOf(heading + Environment.NewLine, StringComparison.Ordinal);
+            Assert.True(at > last, heading + " is missing or out of order");
+            last = at;
+        }
+        Assert.Contains("(none yet)", full);
+        Assert.Contains("500 of 512 (98%)", full);
+        Assert.Contains("patch output was skipped", full);
+
+        var bare = Full() with { Generation = null, Logic = null, Pins = null, KeyItems = null, Scripts = null };
+        string sparse = SoloTestReport.Markdown(bare, scrubber);
+        foreach (string heading in SoloTestReport.Headings) Assert.Contains(heading, sparse);
+        Assert.Equal(5, sparse.Split("Not scored:").Length - 1);
+    }
+
+    [Fact]
+    public void Paths_and_addresses_are_scrubbed_and_numbers_survive()
+    {
+        var scrubber = new Scrubber("kimj", names: new[] { "Tester" });
+        string md = SoloTestReport.Markdown(Full(), scrubber);
+        Assert.DoesNotContain(@"C:\Users", md);
+        Assert.Contains("<path>", md);
+        Assert.Contains("| Generate | Done | 94.2 s |", md);
+        string json = SoloTestReport.Json(Full(), scrubber);
+        Assert.Contains("<ip>", json);
+        Assert.DoesNotContain("127.0.0.1", json);
+        Assert.DoesNotContain("kimj", json);
+        Assert.Contains("\"Sphere0\": 23", json);
+        var back = JsonConvert.DeserializeObject<SoloTestResult>(json);
+        Assert.NotNull(back);
+        Assert.Equal(1, back!.Schema);
+        Assert.Equal(23, back.Generation!.Sphere0);
+    }
+
+    [Fact]
+    public void Notes_replace_earlier_notes_and_the_file_stem_is_stable()
+    {
+        var scrubber = new Scrubber(null);
+        string md = SoloTestReport.Markdown(Full(), scrubber);
+        var notes = new SoloOwnerNotes("The Firelink pin sits in the sea.", "", "A ROM? No: the game itself.", "fine");
+        string once = SoloTestReport.WithNotes(md, notes);
+        string twice = SoloTestReport.WithNotes(once, notes with { Other = "changed" });
+        Assert.Equal(1, twice.Split(SoloTestReport.NotesHeading).Length - 1);
+        Assert.Contains("Firelink pin", twice);
+        Assert.Contains("changed", twice);
+        Assert.DoesNotContain("fine", twice.Substring(twice.IndexOf(SoloTestReport.NotesHeading, StringComparison.Ordinal)));
+        Assert.Contains("(nothing)", twice);
+        Assert.Equal("Dark_Souls_III-20261008-1402", SoloTestReport.FileStem("Dark Souls III", new DateTime(2026, 10, 8, 14, 2, 0)));
+        Assert.Equal("n/a", SoloTestReport.Percent(3, 0));
+        Assert.Equal("50%", SoloTestReport.Percent(1, 2));
+    }
+
+    [Fact]
+    public void Write_makes_both_files_in_the_folder()
+    {
+        using var dir = new TempFolder();
+        var (md, json) = SoloTestReport.Write(dir.Path, Full(), new Scrubber(null), new DateTime(2026, 10, 8, 14, 2, 0));
+        Assert.True(File.Exists(md) && File.Exists(json));
+        Assert.EndsWith("Dark_Souls_III-20261008-1402.md", md);
+        Assert.Contains("# Solo test: Dark Souls III", File.ReadAllText(md));
+    }
+}
+
+public class SoloYamlTests
+{
+    [Fact]
+    public void A_template_with_comments_and_a_bom_passes()
+    {
+        string text = "\uFEFF# Archipelago options\nname: AtlasTest\ndescription: Atlas solo test\ngame: Dark Souls III\nDark Souls III:\n  progression_balancing: 50\n  accessibility: full\n  # a comment\n  enable_dlc: 'false'\n";
+        var check = SoloYaml.Inspect(text);
+        Assert.True(check.Ok, string.Join("; ", check.Problems));
+        Assert.Equal("Dark Souls III", check.Game);
+        Assert.Equal(3, check.Options);
+    }
+
+    [Theory]
+    [InlineData("name: Player{number}\ngame: X\nX:\n  a: 1\n", "name")]
+    [InlineData("name: AtlasTest\ngame: X\n", "no section")]
+    [InlineData("name: AtlasTest\nX:\n  a: 1\n", "no game")]
+    [InlineData("name: AtlasTest\ngame: X\nX:\n  a: 1\n---\nname: AtlasTest\ngame: Y\nY:\n  b: 1\n", "2 documents")]
+    [InlineData("", "no document")]
+    public void Problems_are_named(string text, string expected)
+    {
+        var check = SoloYaml.Inspect(text);
+        Assert.False(check.Ok);
+        Assert.Contains(check.Problems, p => p.Contains(expected, StringComparison.OrdinalIgnoreCase));
+    }
+}

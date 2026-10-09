@@ -192,6 +192,8 @@ public partial class MainTrackerWindow
             LogicFollowsTheSlotAsync);
         await ScenarioAsync("Logic banner: when the engine runs but the game's apworld is missing, the Logic Tracker's banner offers the Games page (not the engine setup), and pressing it shows the Games page on the game",
             LogicBannerAsync);
+        await ScenarioAsync("Solo test: Test this game… on a game's page runs the whole chain against the fake engine (the apworld already there, a pack installed, a YAML from the engine, a seed generated again without the game's patch output when the first try wants a ROM, a server on this PC, the AtlasTest slot connected with the YAML, logic and the pack scored) and writes a scrubbed report with a JSON twin; the owner's notes land in it once; Stop ends the server and removes the test multiworld; a generation that fails outright ends the chain with the report saying so",
+            SoloTestAsync);
         await ScenarioAsync("BK: with logic running, checks left and none of them in logic, the Logic Tracker and Key Items say so with the count done, and the slot card says BK; an item that opens a check ends it",
             BkAsync);
         await ScenarioAsync("Shared engines: a multiworld's slots share its engines; when one slot's request brings an engine down, a slot sharing it (even one still starting) starts again in 2 s, and only the slot whose request it was counts the failure",
@@ -932,6 +934,112 @@ public partial class MainTrackerWindow
         }
     }
 
+    private async Task SoloTestAsync()
+    {
+        var engine = StartFakeEngine(UiTestPython());
+        await using var server = LogicWorldServer();
+        server.Slots.Add(AP_Atlas.Core.EngineSetup.SoloTestRunner.SlotName);
+        engine.HostPort = server.Url.Port;
+        engine.GenerateError = "FileNotFoundError: Zelda no Densetsu.sfc";
+        engine.Apply();
+        var checkBefore = AtlasEngine.State.LastCheck;
+        AtlasEngine.State.LastCheck = new EngineCheckResult { Games = new List<string> { "Test Game" }, TrackerLoads = true };
+        string zip = System.IO.Path.Combine(AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory(), "uitest_solo_pack.zip");
+        FakeMapPack.Write(zip, "UI test solo pack", "Test Game", initLua: FakeMapPack.FollowingInitLua);
+        AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        string reports = AP_Atlas.Core.EngineSetup.SoloTestRunner.ReportsFolder;
+        AP_Atlas.UI.SoloTestDialog? Dialog() => GetChildren().OfType<AP_Atlas.UI.SoloTestDialog>().FirstOrDefault(d => !d.IsQueuedForDeletion());
+        try
+        {
+            host.ShowTool(AP_Atlas.UI.Tool.Games);
+            _gamesPage!.Select("Test Game");
+            await UiTestWaitAsync(0.2);
+            var button = _gamesPage.FindChildren("*", nameof(Button), true, false).OfType<Button>().FirstOrDefault(b => b.HasMeta("solo_test_button"));
+            UiTestExpect(button != null && !button.Disabled, "the game's page has no enabled Test this game… button");
+            button!.EmitSignal(BaseButton.SignalName.Pressed);
+            var dialog = await UiTestWaitForAsync(Dialog, "the solo test dialog");
+            dialog.StartForTests();
+            await UiTestWaitForAsync(() => dialog.StepStates()[AP_Atlas.Core.Reports.SoloTestStep.Report] == AP_Atlas.Core.Reports.SoloStepOutcome.Done ? dialog : null, "the chain to end", 90);
+            var states = dialog.StepStates();
+            UiTestExpect(states[AP_Atlas.Core.Reports.SoloTestStep.Apworld] == AP_Atlas.Core.Reports.SoloStepOutcome.Skipped && states[AP_Atlas.Core.Reports.SoloTestStep.MapPack] == AP_Atlas.Core.Reports.SoloStepOutcome.Skipped
+                && states.Where(s => s.Key is not AP_Atlas.Core.Reports.SoloTestStep.Apworld and not AP_Atlas.Core.Reports.SoloTestStep.MapPack).All(s => s.Value == AP_Atlas.Core.Reports.SoloStepOutcome.Done),
+                $"the steps ended as {string.Join(", ", states.Select(s => s.Key + ":" + s.Value))}");
+            // The engine saw one template request, two generations (the second without the game's patch output), one host and one seed test.
+            var generates = engine.ComponentRequests("AtlasGenerate");
+            UiTestExpect(engine.ComponentRequests("AtlasYamlTemplate").Count == 1 && generates.Count == 2 && generates[1]["skip_patch_games"]?.ToString().Contains("Test Game") == true
+                && engine.ComponentRequests("AtlasHost").Count == 1 && engine.ComponentRequests("AtlasSeedTest").Count == 1,
+                $"the engine saw {engine.ComponentRequests("AtlasYamlTemplate").Count} template, {generates.Count} generate, {engine.ComponentRequests("AtlasHost").Count} host and {engine.ComponentRequests("AtlasSeedTest").Count} seed test requests");
+            // The test multiworld points at the hosted server; the slot logged in by its name with the YAML linked, and its logic settled.
+            var runner = dialog.Runner;
+            var profile = runner.Profile;
+            UiTestExpect(profile != null && profile.Name == "Solo test: Test Game" && profile.ServerUrl == "ws://127.0.0.1:" + server.Url.Port && runner.ServerAddress == profile.ServerUrl,
+                $"the test multiworld is {profile?.Name} at {profile?.ServerUrl} (server {runner.ServerAddress})");
+            UiTestExpect(server.Count("Connect") == 1, $"{server.Count("Connect")} logins reached the test server");
+            string yamlKey = AP_Atlas.Core.Annotations.SlotKey(profile!.Id, AP_Atlas.Core.EngineSetup.SoloTestRunner.SlotName);
+            var init = engine.Requests("init").LastOrDefault();
+            UiTestExpect(init != null && (string?)init["player_name"] == "AtlasTest" && ((string?)init["yaml_path"] ?? "").EndsWith("AtlasTest.yaml", StringComparison.OrdinalIgnoreCase)
+                && _appSettings.SlotYamlPaths.TryGetValue(yamlKey, out var linked) && linked.EndsWith("AtlasTest.yaml", StringComparison.OrdinalIgnoreCase),
+                $"the slot's logic didn't start from the test YAML: {init?["yaml_path"]}");
+            var slot = SlotView(profile.Id, AP_Atlas.Core.EngineSetup.SoloTestRunner.SlotName);
+            UiTestExpect(slot != null && slot.LogicSettled && slot.ActiveLogicCount == 1, $"the test slot's logic: settled {slot?.LogicSettled}, {slot?.ActiveLogicCount} in logic");
+            // The report: both files, the eight headings in order, scrubbed; the JSON twin parses.
+            var mds = System.IO.Directory.GetFiles(reports, "Test_Game-*.md");
+            UiTestExpect(mds.Length == 1 && System.IO.File.Exists(System.IO.Path.ChangeExtension(mds[0], ".json")), $"{mds.Length} report(s) written");
+            string md = await System.IO.File.ReadAllTextAsync(mds[0]);
+            int last = -1;
+            foreach (string heading in AP_Atlas.Core.Reports.SoloTestReport.Headings)
+            {
+                int at = md.IndexOf(heading, StringComparison.Ordinal);
+                UiTestExpect(at > last, $"the report lacks {heading} in its place");
+                last = at;
+            }
+            UiTestExpect(md.Contains("exact") && md.Contains("patch output was skipped") && md.Contains("<path>") && !md.Contains("C:\\") && !md.Contains(":\\"), "the report isn't scored and scrubbed as expected");
+            var json = Newtonsoft.Json.Linq.JObject.Parse(await System.IO.File.ReadAllTextAsync(System.IO.Path.ChangeExtension(mds[0], ".json")));
+            UiTestExpect((int?)json["Schema"] == 1 && (int?)json["Generation"]?["Sphere0"] == 1 && (bool?)json["Logic"]?["Exact"] == true, "the JSON twin lacks the numbers");
+            // The owner's notes land once, even saved twice.
+            dialog.FillNotesForTests(new AP_Atlas.Core.Reports.SoloOwnerNotes("A pin in the sea.", "", "Nothing", ""));
+            dialog.SaveNotesForTests();
+            dialog.SaveNotesForTests();
+            md = await System.IO.File.ReadAllTextAsync(mds[0]);
+            UiTestExpect(md.Split("A pin in the sea.").Length == 2 && md.Split(AP_Atlas.Core.Reports.SoloTestReport.NotesHeading).Length == 2, "the notes weren't written once");
+            // Stop: the server ends, the slot disconnects and the test multiworld goes.
+            int running = AP_Atlas.Core.EngineSetup.ProcessJob.RunningUnder(AtlasEngine.ArchipelagoDir);
+            dialog.StopServerForTests();
+            await UiTestWaitForAsync(() => !_profiles.Contains(profile) && SlotView(profile.Id, AP_Atlas.Core.EngineSetup.SoloTestRunner.SlotName) == null ? this : null, "the test multiworld to go");
+            await UiTestWaitForAsync(() => AP_Atlas.Core.EngineSetup.ProcessJob.RunningUnder(AtlasEngine.ArchipelagoDir) < running ? this : null, "the test server to end");
+            UiTestExpect(runner.ServerAddress == null && !_appSettings.SlotYamlPaths.ContainsKey(yamlKey), "the server address or the YAML link stayed");
+            dialog.EmitSignal(AcceptDialog.SignalName.Confirmed);
+            await UiTestWaitAsync(0.1);
+            // A generation that fails outright: the chain ends there, the report says so.
+            engine.GenerateError = "ValueError: fill failed";
+            engine.Apply();
+            foreach (string old in mds) System.IO.File.Delete(old);
+            button.EmitSignal(BaseButton.SignalName.Pressed);
+            dialog = await UiTestWaitForAsync(Dialog, "the dialog again");
+            dialog.StartForTests();
+            await UiTestWaitForAsync(() => dialog.StepStates()[AP_Atlas.Core.Reports.SoloTestStep.Report] == AP_Atlas.Core.Reports.SoloStepOutcome.Done ? dialog : null, "the second chain to end", 60);
+            states = dialog.StepStates();
+            UiTestExpect(states[AP_Atlas.Core.Reports.SoloTestStep.Generate] == AP_Atlas.Core.Reports.SoloStepOutcome.Failed && states[AP_Atlas.Core.Reports.SoloTestStep.Host] == AP_Atlas.Core.Reports.SoloStepOutcome.Pending
+                && states[AP_Atlas.Core.Reports.SoloTestStep.Connect] == AP_Atlas.Core.Reports.SoloStepOutcome.Pending, $"a failed generation didn't end the chain: {string.Join(", ", states.Select(s => s.Key + ":" + s.Value))}");
+            var failed = System.IO.Directory.GetFiles(reports, "Test_Game-*.md");
+            UiTestExpect(failed.Length >= 1 && (await System.IO.File.ReadAllTextAsync(failed.OrderBy(f => f).Last())).Contains("Not scored: generation failed"), "the report of a failed generation doesn't say so");
+            dialog.EmitSignal(AcceptDialog.SignalName.Confirmed);
+            await UiTestWaitAsync(0.1);
+        }
+        finally
+        {
+            AtlasEngine.State.LastCheck = checkBefore;
+            Dialog()?.EmitSignal(AcceptDialog.SignalName.Confirmed);
+            AP_Atlas.Core.EngineSetup.SoloTestRunner.StopAll();
+            foreach (var solo in _profiles.Where(p => p.Name.StartsWith("Solo test:", StringComparison.Ordinal)).ToList()) DeleteProfile(solo);
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+            AP_Atlas.Core.SafeFile.Delete(zip);
+            AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
+            if (System.IO.Directory.Exists(reports)) foreach (string file in System.IO.Directory.GetFiles(reports, "Test_Game-*")) System.IO.File.Delete(file);
+        }
+    }
+
     private async Task LogicBannerAsync()
     {
         var engine = StartFakeEngine(UiTestPython());
@@ -1216,7 +1324,7 @@ public partial class MainTrackerWindow
             await UiTestWaitAsync(0.1);
             UiTestExpect(page.SelectedGame == "Atlas Test Game", "selecting a game didn't show its page");
             var steps = page.Steps();
-            UiTestExpect(steps.Count == 4 && steps.All(s => !s.Done), $"the game's page has the steps {string.Join("; ", steps.Select(s => s.Title + (s.Done ? " (done)" : "")))}");
+            UiTestExpect(steps.Count == 5 && steps.All(s => !s.Done) && steps[4].Title.StartsWith("A solo test", StringComparison.Ordinal), $"the game's page has the steps {string.Join("; ", steps.Select(s => s.Title + (s.Done ? " (done)" : "")))}");
             // A YAML naming two games is listed under both, and ticks the step.
             AP_Atlas.Core.SafeFile.WriteAllText(yaml, "name: Me\ngame:\n  Atlas Test Game: 1\n  Other Test Game: 1\n");
             var entry = page.AddYamlFile(yaml) ?? throw new InvalidOperationException("the YAML wasn't added");
