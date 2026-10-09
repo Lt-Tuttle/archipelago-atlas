@@ -147,6 +147,9 @@ namespace AP_Atlas.Core.PopTracker
         /// <summary>The picker (for tests).</summary>
         public OptionButton VariantPicker => _variantPicker;
 
+        /// <summary>The layout picker (for tests).</summary>
+        public OptionButton LayoutPicker => _layoutPicker;
+
         /// <summary>Offers the pack's variants (shown when there's more than one) with the current one chosen.</summary>
         public void SetVariants(IReadOnlyList<(string Id, string Name)> variants, string current)
         {
@@ -189,24 +192,90 @@ namespace AP_Atlas.Core.PopTracker
 
         private static readonly string[] RootOrder = { "tracker_default", "tracker_horizontal", "tracker_vertical", "tracker_broadcast" };
 
-        /// <summary>The layout in use: the slot's choice when the pack still offers it, else the pack's first root, else Vertical.</summary>
+        /// <summary>The slot's own choice of layout, when the pack still offers it (null: Atlas picks the one that fits).</summary>
+        private string ChosenLayout => _appSettings != null && _appSettings.KeyItemsLayout.TryGetValue(SlotKey, out var chosen) && LayoutChoices().Contains(chosen) ? chosen : null;
+
+        /// <summary>The layout in use: the slot's choice when the pack still offers it, else the pack root Atlas found to fit the view (its first root until measured), else Vertical.</summary>
         public string CurrentLayout
         {
             get
             {
-                var choices = LayoutChoices();
-                if (_appSettings != null && _appSettings.KeyItemsLayout.TryGetValue(SlotKey, out var chosen) && choices.Contains(chosen)) return chosen;
-                return _pack != null && _pack.LayoutGrids.Count > 0 ? choices[0] : KeyItemsLayouts.Vertical;
+                if (ChosenLayout is { } chosen) return chosen;
+                if (_pack != null && _pack.LayoutGrids.Count > 0) return _autoLayout != null && _pack.LayoutGrids.ContainsKey(_autoLayout) ? _autoLayout : LayoutChoices()[0];
+                return KeyItemsLayouts.Vertical;
             }
         }
 
         /// <summary>Uses a layout for this slot (remembered) and draws the tiles again.</summary>
         public void SetLayout(string id)
         {
-            if (_appSettings == null || !LayoutChoices().Contains(id)) return;
-            _appSettings.KeyItemsLayout[SlotKey] = id;
+            if (_appSettings == null) return;
+            if (id == KeyItemsLayouts.Auto)
+            {
+                // Back to Atlas's pick: measured again for this view.
+                _appSettings.KeyItemsLayout.Remove(SlotKey);
+                _autoMeasured.Clear();
+                _autoLayout = null;
+            }
+            else
+            {
+                if (!LayoutChoices().Contains(id)) return;
+                _appSettings.KeyItemsLayout[SlotKey] = id;
+            }
             DataManager.SaveSettingsSoon(_appSettings);
             RenderActiveMode();
+        }
+
+        // ---- Atlas's pick: the pack root that fits the view ----
+
+        private string _autoLayout;
+        private readonly Dictionary<string, (float Width, float Height)> _autoMeasured = new Dictionary<string, (float, float)>();
+        private Vector2 _autoView;
+        private string _autoPack;
+
+        /// <summary>The layout Atlas picked for the view (null while it's the pack's first root or the user chose one; for tests).</summary>
+        public string AutoLayout => ChosenLayout == null ? _autoLayout : null;
+
+        /// <summary>
+        /// After a draw with no choice made: the content's minimum against the view. The current root is measured; an unmeasured
+        /// root is drawn next to measure it; with every root measured, the first that fits (else the least overflowing) is used.
+        /// Measured again when the view's size changes by more than a tenth, or the pack changes.
+        /// </summary>
+        private void MeasureForAutoLayout()
+        {
+            if (!IsInstanceValid(this) || _pack == null || _visualScroll == null || _visualGrid == null || ChosenLayout != null || !_isVisualMode) return;
+            var roots = _pack.LayoutGrids.Keys.OrderBy(k => Array.IndexOf(RootOrder, k) is var i && i >= 0 ? i : 99).ThenBy(k => k).ToList();
+            if (roots.Count < 2) return;
+            var view = _visualScroll.Size;
+            if (view.X <= 0 || view.Y <= 0) return;
+            string packId = _pack.SourcePath + "|" + _pack.Variant;
+            if (packId != _autoPack || Math.Abs(view.X - _autoView.X) > _autoView.X * 0.1f || Math.Abs(view.Y - _autoView.Y) > _autoView.Y * 0.1f)
+            {
+                _autoMeasured.Clear();
+                _autoPack = packId;
+                _autoView = view;
+            }
+            string drawn = CurrentLayout;
+            if (!KeyItemsLayouts.IsBuilt(drawn) && roots.Contains(drawn))
+            {
+                var size = _visualGrid.GetCombinedMinimumSize();
+                _autoMeasured[drawn] = (size.X, size.Y);
+            }
+            string next = roots.FirstOrDefault(r => !_autoMeasured.ContainsKey(r));
+            if (next != null)
+            {
+                _autoLayout = next;
+                RenderActiveMode();
+                return;
+            }
+            string pick = KeyItemsLayouts.PickFitting(roots.Select(r => (r, _autoMeasured[r].Width, _autoMeasured[r].Height)).ToList(), view.X, view.Y) ?? roots[0];
+            if (pick != drawn)
+            {
+                _autoLayout = pick;
+                RenderActiveMode();
+            }
+            else _autoLayout = pick;
+            SyncLayoutPicker();
         }
 
         private void SyncLayoutPicker()
@@ -215,8 +284,12 @@ namespace AP_Atlas.Core.PopTracker
             _syncingLayout = true;
             _layoutIds = LayoutChoices();
             _layoutPicker.Clear();
+            // Atlas's pick first, named after the root it settled on; then every layout to choose from.
+            bool packRoots = _pack != null && _pack.LayoutGrids.Count > 0;
+            if (packRoots) _layoutPicker.AddItem(Tr("Auto ({0})").Replace("{0}", Tr(KeyItemsLayouts.NameOf(ChosenLayout == null ? CurrentLayout : (_autoLayout ?? _layoutIds[0])))));
             foreach (var id in _layoutIds) _layoutPicker.AddItem(Tr(KeyItemsLayouts.NameOf(id)));
-            int index = _layoutIds.IndexOf(CurrentLayout);
+            int offset = packRoots ? 1 : 0;
+            int index = ChosenLayout is { } chosen ? _layoutIds.IndexOf(chosen) + offset : packRoots ? 0 : _layoutIds.IndexOf(CurrentLayout);
             if (index >= 0) _layoutPicker.Selected = index;
             _layoutPicker.Visible = _isVisualMode && (_pack != null || _layoutIds.Count > 0);
             _syncingLayout = false;
@@ -302,8 +375,11 @@ namespace AP_Atlas.Core.PopTracker
             _layoutPicker = new OptionButton { TooltipText = Tr("How the tiles are laid out: the pack's own layouts, or Atlas's by item group (stacked, or side by side)"), AccessibilityName = Tr("Key Items layout"), Visible = false };
             _layoutPicker.ItemSelected += index =>
             {
-                if (_syncingLayout || index < 0 || index >= _layoutIds.Count) return;
-                SetLayout(_layoutIds[(int)index]);
+                if (_syncingLayout || index < 0) return;
+                bool packRoots = _pack != null && _pack.LayoutGrids.Count > 0;
+                if (packRoots && index == 0) { SetLayout(KeyItemsLayouts.Auto); return; }
+                int at = (int)index - (packRoots ? 1 : 0);
+                if (at >= 0 && at < _layoutIds.Count) SetLayout(_layoutIds[at]);
             };
             toolbar.AddChild(_layoutPicker);
             // The pack's variant (its author's versions of the layouts, most often the tiles' orientation), when it has more than one.
@@ -345,6 +421,7 @@ namespace AP_Atlas.Core.PopTracker
 
             // Visual Mode Container
             _visualScroll = new ScrollContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, Visible = false };
+            _visualScroll.Resized += () => { if (_visualScroll.Visible && ChosenLayout == null) AP_Atlas.UI.Ui.NextFrame(this, MeasureForAutoLayout); };
             var visualCenter = new CenterContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
             _visualScroll.AddChild(visualCenter);
             _visualGrid = new VBoxContainer();
@@ -485,6 +562,7 @@ namespace AP_Atlas.Core.PopTracker
             if (_isVisualMode && _pack != null)
             {
                 RenderVisualMode(filter);
+                if (ChosenLayout == null && _pack.LayoutGrids.Count > 1) AP_Atlas.UI.Ui.NextFrame(this, MeasureForAutoLayout);
             }
             else
             {

@@ -8,6 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 Development toward the first public beta, 0.1.0.
 
 ### Added
+- **Key Items picks the layout that fits:** until you choose one, the first of the pack's layouts whose tiles fit the view without scrolling is used (named "Auto (…)" in the Layout choice), measured again when the view's size changes.
 - **Fix what Atlas can:** one click links every pin and tile of a pack whose best match is confident (85% or more, no clash) and sets the rest aside, in one undoable step, with a card saying what was done: offered when a pack with matches to decide is first used, on the Map Tracker's Attention group, on the pack's row (Fix), and on the Pack Doctor's Recommended tab.
 - **Test every ready game…** on the Games page's overview: the solo test over every game the engine has a map pack for (or every game it has), without a server or a slot: a seed each, Atlas's logic scored against the seed's spheres and the pack by the Pack Doctor, one report per game and a summary table; nothing downloaded or asked, Atlas usable meanwhile.
 - **Attention, in the Map Tracker's explorer:** what the pack gets wrong for your seed (pins matching none of your checks, tiles without an item or image, a missing map picture, a stopped or failing script), in plain words, each opening the Pack Doctor on the tab that fixes it.

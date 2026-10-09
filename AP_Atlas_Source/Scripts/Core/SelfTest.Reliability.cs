@@ -769,6 +769,16 @@ namespace AP_Atlas.Core
         /// The Pack Doctor analyses a snapshot taken on the main thread: a fix edited while an analysis runs doesn't change
         /// it under the analysis, and the next snapshot sees the edit. The pack's own mapping is linked as usual.
         /// </summary>
+        private static Task KeyItemsAutoLayoutPicks()
+        {
+            var measured = new List<(string Id, float Width, float Height)> { ("tracker_default", 300f, 900f), ("tracker_horizontal", 1100f, 400f), ("tracker_vertical", 280f, 1400f) };
+            Expect(AP_Atlas.Core.PopTracker.KeyItemsLayouts.PickFitting(measured, 1200f, 500f) == "tracker_horizontal", "a view the horizontal root fits (and the default overflows) doesn't get the horizontal root");
+            Expect(AP_Atlas.Core.PopTracker.KeyItemsLayouts.PickFitting(measured, 400f, 1000f) == "tracker_default", "a view the default fits keeps the default (the pack's order wins among those that fit)");
+            Expect(AP_Atlas.Core.PopTracker.KeyItemsLayouts.PickFitting(measured, 300f, 300f) == "tracker_default", "with nothing fitting, the least overflowing root (the default: 3× the height, against the horizontal's 3.7× the width) isn't picked");
+            Expect(AP_Atlas.Core.PopTracker.KeyItemsLayouts.PickFitting(new List<(string, float, float)>(), 100f, 100f) == null, "no roots gives no pick");
+            return Task.CompletedTask;
+        }
+
         private static async Task PackDoctorReadsASnapshot()
         {
             var pack = new PopTracker.LoadedPack

@@ -23,6 +23,28 @@ namespace AP_Atlas.Core.PopTracker
         public const string Vertical = "atlas:vertical";
         public const string Horizontal = "atlas:horizontal";
 
+        /// <summary>The picker's first entry: Atlas picks the pack layout that fits the view until the user chooses one.</summary>
+        public const string Auto = "atlas:auto";
+
+        /// <summary>
+        /// The layout to use when the user hasn't chosen: the first (in the pack's order) whose content fits the view without
+        /// scrolling; else the one that overflows the least. A layout's size is its content's minimum once drawn.
+        /// </summary>
+        public static string? PickFitting(IReadOnlyList<(string Id, float Width, float Height)> measured, float viewWidth, float viewHeight)
+        {
+            if (measured.Count == 0) return null;
+            foreach (var (id, w, h) in measured)
+                if (w <= viewWidth + 0.5f && h <= viewHeight + 0.5f) return id;
+            string best = measured[0].Id;
+            float bestOverflow = float.MaxValue;
+            foreach (var (id, w, h) in measured)
+            {
+                float overflow = Math.Max(viewWidth <= 0 ? 0 : w / viewWidth, viewHeight <= 0 ? 0 : h / viewHeight);
+                if (overflow < bestOverflow) { bestOverflow = overflow; best = id; }
+            }
+            return best;
+        }
+
         /// <summary>Whether a layout id is one Atlas builds (not a pack root).</summary>
         public static bool IsBuilt(string? id) => id == Vertical || id == Horizontal;
 
