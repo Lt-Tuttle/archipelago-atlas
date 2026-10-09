@@ -9,7 +9,7 @@ public class SoloTestReportTests
     private static SoloTestResult Full() => new("Dark Souls III", new DateTime(2026, 10, 8, 14, 2, 0),
         new SoloVersions("Dark Souls III", "3.0.0", "github.com/nex3/DS3", "0123456789abcdef", "Atlas portable engine", "DS3 pack", "1.4", "https://example.org/versions.json", "0.1.0-beta.1"),
         new[] { new SoloStepRecord(SoloTestStep.Apworld, SoloStepOutcome.Skipped, "already in the engine", 0.2), new SoloStepRecord(SoloTestStep.Generate, SoloStepOutcome.Done, @"seed A1B2 in C:\Users\kimj\x", 94.2) },
-        new SoloGeneration("A1B2", 42, 512, 512, 17, 23, 94.2, true, null, 41, "template"),
+        new SoloGeneration("A1B2", "41097051284819253226", 512, 512, 17, 23, 94.2, true, null, 41, "template"),
         new SoloLogic(true, 17, 0, 0, "exact: Atlas's logic matches the seed at every one of 17 spheres", true, 23, 512, "linked", null),
         new SoloPins(512, 500, 300, 290, 10, 2, 7), new SoloKeyItems(80, 78, 60),
         new SoloScripts(true, new[] { "Archipelago.LocationChecks" }, new[] { "ds3_map" }, Array.Empty<string>(), true, false, false, null, 1), "127.0.0.1:54321", null);
@@ -28,12 +28,15 @@ public class SoloTestReportTests
         }
         Assert.Contains("(none yet)", full);
         Assert.Contains("500 of 512 (98%)", full);
+        Assert.Contains("(41097051284819253226)", full);
         Assert.Contains("patch output was skipped", full);
 
         var bare = Full() with { Generation = null, Logic = null, Pins = null, KeyItems = null, Scripts = null };
         string sparse = SoloTestReport.Markdown(bare, scrubber);
         foreach (string heading in SoloTestReport.Headings) Assert.Contains(heading, sparse);
         Assert.Equal(5, sparse.Split("Not scored:").Length - 1);
+        Assert.Contains("the pack wasn't used", sparse);
+        Assert.Contains("no map pack", SoloTestReport.Markdown(bare with { Versions = bare.Versions with { PackName = null } }, scrubber));
     }
 
     [Fact]

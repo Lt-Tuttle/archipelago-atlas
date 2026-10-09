@@ -994,7 +994,7 @@ public partial class MainTrackerWindow
                 UiTestExpect(at > last, $"the report lacks {heading} in its place");
                 last = at;
             }
-            UiTestExpect(md.Contains("exact") && md.Contains("patch output was skipped") && md.Contains("<path>") && !md.Contains("C:\\") && !md.Contains(":\\"), "the report isn't scored and scrubbed as expected");
+            UiTestExpect(md.Contains("exact") && md.Contains("patch output was skipped") && md.Contains("engine\\solo\\Test Game\\players\\AtlasTest.yaml") && !md.Contains(DataManager.GetDataDirectory()) && !md.Contains(":\\"), "the report isn't scored and scrubbed as expected");
             var json = Newtonsoft.Json.Linq.JObject.Parse(await System.IO.File.ReadAllTextAsync(System.IO.Path.ChangeExtension(mds[0], ".json")));
             UiTestExpect((int?)json["Schema"] == 1 && (int?)json["Generation"]?["Sphere0"] == 1 && (bool?)json["Logic"]?["Exact"] == true, "the JSON twin lacks the numbers");
             // The owner's notes land once, even saved twice.

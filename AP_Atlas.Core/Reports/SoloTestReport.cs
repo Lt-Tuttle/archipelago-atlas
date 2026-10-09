@@ -39,7 +39,8 @@ namespace AP_Atlas.Core.Reports
     /// <summary>What the test ran on: the apworld, the engine, the pack and Atlas itself.</summary>
     public sealed record SoloVersions(string Game, string? ApworldVersion, string? ApworldSource, string? ApworldChecksum, string Engine, string? PackName, string? PackVersion, string? PackSource, string Atlas);
 
-    public sealed record SoloGeneration(string? SeedName, long? Seed, int Locations, int Items, int Spheres, int Sphere0, double Seconds, bool PatchSkipped, string? Error, int YamlOptions, string? YamlFrom);
+    /// <remarks>The seed is text: Archipelago's seeds have up to twenty digits, more than a 64-bit number holds.</remarks>
+    public sealed record SoloGeneration(string? SeedName, string? Seed, int Locations, int Items, int Spheres, int Sphere0, double Seconds, bool PatchSkipped, string? Error, int YamlOptions, string? YamlFrom);
 
     public sealed record SoloLogic(bool? Exact, int Spheres, int Late, int Early, string Verdict, bool? ChecksumMatch, int ActiveAtConnect, int TotalLocations, string? YamlSource, string? EngineProblem);
 
@@ -104,7 +105,7 @@ namespace AP_Atlas.Core.Reports
                 if (g.Error != null) sb.AppendLine("Not scored: generation failed (" + Line(g.Error) + ").");
                 else
                 {
-                    sb.AppendLine("- Seed: " + Line(g.SeedName ?? "?") + (g.Seed.HasValue ? " (" + g.Seed.Value.ToString(CultureInfo.InvariantCulture) + ")" : ""));
+                    sb.AppendLine("- Seed: " + Line(g.SeedName ?? "?") + (!string.IsNullOrEmpty(g.Seed) ? " (" + Line(g.Seed) + ")" : ""));
                     sb.AppendLine("- Locations: " + g.Locations + "; items: " + g.Items);
                     sb.AppendLine("- Spheres: " + g.Spheres + "; in sphere 0: " + g.Sphere0);
                     sb.AppendLine("- Time: " + g.Seconds.ToString("0.0", CultureInfo.InvariantCulture) + " s");
@@ -128,7 +129,7 @@ namespace AP_Atlas.Core.Reports
             sb.AppendLine();
             sb.AppendLine(Headings[4]);
             sb.AppendLine();
-            if (r.Pins == null) sb.AppendLine("Not scored: no map pack.");
+            if (r.Pins == null) sb.AppendLine(NotScoredPack(r));
             else
             {
                 var p = r.Pins;
@@ -139,12 +140,12 @@ namespace AP_Atlas.Core.Reports
             sb.AppendLine();
             sb.AppendLine(Headings[5]);
             sb.AppendLine();
-            if (r.KeyItems == null) sb.AppendLine("Not scored: no map pack.");
+            if (r.KeyItems == null) sb.AppendLine(NotScoredPack(r));
             else sb.AppendLine("- Tiles linked: " + r.KeyItems.TilesLinked + " of " + r.KeyItems.TilesTotal + " (" + Percent(r.KeyItems.TilesLinked, r.KeyItems.TilesTotal) + "); by the pack's scripts: " + r.KeyItems.TilesByScript);
             sb.AppendLine();
             sb.AppendLine(Headings[6]);
             sb.AppendLine();
-            if (r.Scripts == null) sb.AppendLine("Not scored: no map pack.");
+            if (r.Scripts == null) sb.AppendLine(NotScoredPack(r));
             else
             {
                 var s = r.Scripts;
@@ -166,6 +167,8 @@ namespace AP_Atlas.Core.Reports
             else AppendNotes(sb, r.Notes, scrubber);
             return sb.ToString();
         }
+
+        private static string NotScoredPack(SoloTestResult r) => r.Versions.PackName == null ? "Not scored: no map pack." : "Not scored: the slot didn't connect, so the pack wasn't used.";
 
         private static void AppendNotes(StringBuilder sb, SoloOwnerNotes notes, Scrubber? scrubber)
         {

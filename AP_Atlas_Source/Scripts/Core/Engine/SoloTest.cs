@@ -151,7 +151,9 @@ namespace AP_Atlas.Core.EngineSetup
                     yamlOptions = check.Options;
                     yamlFrom = answer["from"]?.ToString();
                     apworldChecksum ??= answer["data_checksum"]?.ToString();
-                    return Done(check.Options + " options at their defaults, in " + _yamlPath);
+                    // The world's own version, when the install didn't record a release (an install from the Games page doesn't).
+                    apworldVersion ??= answer["world_version"]?.ToString() is { Length: > 0 } worldVersion ? worldVersion + " (the world's own number)" : null;
+                    return Done(check.Options + " options at their defaults, in " + Path.GetRelativePath(DataManager.GetDataDirectory(), _yamlPath!));
                 });
                 if (!failed) failed = !await StepAsync(SoloTestStep.Generate, progress, ct, async () =>
                 {
@@ -175,7 +177,7 @@ namespace AP_Atlas.Core.EngineSetup
                     }
                     _multidataPath = answer["multidata"]?.ToString();
                     var player = (answer["players"] as JArray)?.OfType<JObject>().FirstOrDefault();
-                    generation = new SoloGeneration(answer["seed_name"]?.ToString(), (long?)answer["seed"], (int?)player?["locations"] ?? 0, (int?)player?["items"] ?? 0,
+                    generation = new SoloGeneration(answer["seed_name"]?.ToString(), answer["seed"]?.ToString(), (int?)player?["locations"] ?? 0, (int?)player?["items"] ?? 0,
                         (int?)answer["spheres"] ?? 0, (int?)answer["sphere0"] ?? 0, (double?)answer["seconds"] ?? 0, patchSkipped, null, yamlOptions, yamlFrom);
                     return Done("seed " + generation.SeedName + ": " + generation.Locations + " locations, " + generation.Spheres + " spheres" + (patchSkipped ? "; the patch output was skipped" : ""));
                 });
@@ -250,7 +252,7 @@ namespace AP_Atlas.Core.EngineSetup
                 await StepAsync(SoloTestStep.Report, progress, CancellationToken.None, () =>
                 {
                     var engine = install == null ? "none" : install.Describe();
-                    var versions = new SoloVersions(Game, apworldVersion, apworldSource, apworldChecksum, engine, pack?.Manifest.Name, pack?.Manifest.GetActualVersion(), pack?.Manifest.VersionsUrl, hooks.AtlasVersionLine());
+                    var versions = new SoloVersions(Game, apworldVersion, apworldSource, apworldChecksum, engine, pack?.Manifest.Name, pack?.Manifest.GetActualVersion(), string.IsNullOrWhiteSpace(pack?.Manifest.VersionsUrl) ? null : pack!.Manifest.VersionsUrl, hooks.AtlasVersionLine());
                     _result = new SoloTestResult(Game, started, versions, _steps.ToList(), generation, logic, pins, keyItems, scripts, ServerAddress, _notes);
                     (_reportMd, _reportJson) = SoloTestReport.Write(ReportsFolder, _result, _scrubber!, DateTime.Now);
                     return Task.FromResult(Done("written to " + Path.GetFileName(_reportMd)));
