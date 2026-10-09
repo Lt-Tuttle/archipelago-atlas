@@ -65,6 +65,7 @@ namespace AP_Atlas.Core.EngineSetup
         private readonly List<SoloStepRecord> _steps = new();
         private EngineProcess? _host;
         private string? _yamlPath, _multidataPath, _reportMd, _reportJson;
+        private List<string> _sphere0Names = new();
         private SoloTestResult? _result;
         private Scrubber? _scrubber;
         private SoloOwnerNotes? _notes;
@@ -102,6 +103,8 @@ namespace AP_Atlas.Core.EngineSetup
             SlotTrackerControl? slot = null;
             int yamlOptions = 0;
             string? yamlFrom = null;
+            int reachableAtConnect = 0, excludedAtConnect = 0;
+            List<string> notReached = new(), beyondSphere0 = new();
             try
             {
                 bool failed = !await StepAsync(SoloTestStep.Apworld, progress, ct, async () =>
@@ -182,6 +185,7 @@ namespace AP_Atlas.Core.EngineSetup
                         return Failed(error);
                     }
                     _multidataPath = answer["multidata"]?.ToString();
+                    _sphere0Names = (answer["sphere0_locations"] as JArray)?.Select(t => t.ToString()).ToList() ?? new List<string>();
                     var player = (answer["players"] as JArray)?.OfType<JObject>().FirstOrDefault();
                     generation = new SoloGeneration(answer["seed_name"]?.ToString(), answer["seed"]?.ToString(), (int?)player?["locations"] ?? 0, (int?)player?["items"] ?? 0,
                         (int?)answer["spheres"] ?? 0, (int?)answer["sphere0"] ?? 0, (double?)answer["seconds"] ?? 0, patchSkipped, null, yamlOptions, yamlFrom);
@@ -218,7 +222,28 @@ namespace AP_Atlas.Core.EngineSetup
                         await Task.Delay(200, ct);
                     }
                     string problem = slot.EngineProblem?.Message ?? "";
-                    return slot.EngineProblem != null ? Failed("logic didn't start: " + problem) : slot.LogicSettled ? Done(slot.ActiveLogicCount + " of " + slot.TotalLocationsCount + " locations in logic at connect") : Failed("logic didn't settle in time");
+                    if (slot.EngineProblem != null) return Failed("logic didn't start: " + problem);
+                    if (!slot.LogicSettled) return Failed("logic didn't settle in time");
+                    // The server's starting items may still be landing: wait until the reachable set holds still for a moment.
+                    int lastCount = -1, same = 0;
+                    var still = Deadline.In(TimeSpan.FromSeconds(15));
+                    while (!still.Passed && same < 6)
+                    {
+                        int count = slot.Model.Logic.Reachable.Count;
+                        same = count == lastCount ? same + 1 : 0;
+                        lastCount = count;
+                        await Task.Delay(250, ct);
+                    }
+                    var reachable = slot.Model.Logic.Reachable.ToList();
+                    reachableAtConnect = reachable.Count;
+                    excludedAtConnect = reachable.Count(id => slot.Model.IsExcluded(id));
+                    var reachableNames = new HashSet<string>(reachable.Select(id => slot.Session.Locations.GetLocationNameFromId(id) ?? id.ToString(System.Globalization.CultureInfo.InvariantCulture)), StringComparer.Ordinal);
+                    notReached = _sphere0Names.Where(name => !reachableNames.Contains(name)).ToList();
+                    var sphere0 = new HashSet<string>(_sphere0Names, StringComparer.Ordinal);
+                    beyondSphere0 = reachableNames.Where(name => !sphere0.Contains(name)).OrderBy(n => n, StringComparer.Ordinal).ToList();
+                    bool identical = _sphere0Names.Count > 0 && notReached.Count == 0 && beyondSphere0.Count == 0;
+                    return Done(reachableAtConnect + " of " + slot.TotalLocationsCount + " locations reachable at connect (" + slot.ActiveLogicCount + " to do, " + excludedAtConnect + " excluded by the seed)"
+                        + (_sphere0Names.Count == 0 ? "" : identical ? "; sphere 0 identical" : "; sphere 0 differs: " + notReached.Count + " not reached, " + beyondSphere0.Count + " beyond"));
                 });
                 if (!failed) await StepAsync(SoloTestStep.Score, progress, ct, async () =>
                 {
@@ -227,12 +252,21 @@ namespace AP_Atlas.Core.EngineSetup
                     var report = await SeedVerifier.VerifyAsync(install!, _multidataPath!, line => progress?.Report(new SoloTestProgress(SoloTestStep.Score, SoloStepOutcome.Running, "replaying the seed's spheres", line)), ct);
                     var player = report.Players.FirstOrDefault(p => p.Name == SlotName) ?? report.Players.FirstOrDefault();
                     logic = new SoloLogic(player?.Error == null ? player?.Exact : null, player?.Steps.Count ?? 0, player?.Late ?? 0, player?.Early ?? 0, player?.Verdict ?? (report.Error ?? "the seed test didn't run"),
-                        player?.ChecksumMatch ?? slot!.ApworldMatchesSeed, slot!.ActiveLogicCount, slot.TotalLocationsCount, slot.EngineYamlInfo?["source"]?.ToString(), slot.EngineProblem?.Message);
+                        player?.ChecksumMatch ?? slot!.ApworldMatchesSeed, slot!.ActiveLogicCount, slot.TotalLocationsCount, slot.EngineYamlInfo?["source"]?.ToString(), slot.EngineProblem?.Message,
+                        reachableAtConnect, excludedAtConnect, notReached, beyondSphere0);
                     parts.Add(player?.Exact == true ? "logic exact" : "logic differs");
                     if (slot.Pack != null)
                     {
                         progress?.Report(new SoloTestProgress(SoloTestStep.Score, SoloStepOutcome.Running, "checking the pack", null));
                         var original = PopTrackerPackLoader.InspectZipPack(slot.Pack.SourcePath);
+                        // The slot's own first check of the pack may be running (a check asked for meanwhile answers with the last
+                        // report, or nothing): wait for it, then check with the fixes as they are now.
+                        var doctorWait = Deadline.In(TimeSpan.FromSeconds(120));
+                        while (original != null && PackDoctorService.IsChecking(PackFixes.KeyFor(original)) && !doctorWait.Passed)
+                        {
+                            ct.ThrowIfCancellationRequested();
+                            await Task.Delay(250, ct);
+                        }
                         var doctor = original != null ? await PackDoctorService.CheckAsync(original, prompt: false) : null;
                         if (doctor != null)
                         {

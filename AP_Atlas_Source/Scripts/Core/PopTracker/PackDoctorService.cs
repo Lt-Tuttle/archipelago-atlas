@@ -33,6 +33,9 @@ namespace AP_Atlas.Core.PopTracker
         /// the running check delivers isn't the last word. False once the last report of a sequence is delivered.
         /// </summary>
         public static bool IsBusy(string packKey) => _checkAgain.Contains(packKey);
+
+        /// <summary>Whether a check of the pack is running now (a check asked for meanwhile answers with the last report, or null).</summary>
+        public static bool IsChecking(string packKey) => _running.Contains(packKey);
         private static readonly HashSet<string> _localFetchAttempted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         public static void Initialize(AppSettings settings)

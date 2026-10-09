@@ -266,7 +266,8 @@ def generate(*args):
     spheres = 1 + len({len(loc.get('needs') or []) for loc in locations if loc.get('needs')})
     send({'ok': True, 'seed': 1, 'seed_name': 'FAKE', 'zip': zip_path, 'multidata': multidata, 'spoiler': spoiler,
           'players': [{'slot': 1, 'name': 'AtlasTest', 'game': 'Test Game', 'locations': len(locations), 'items': len(locations)}],
-          'spheres': spheres, 'sphere0': sphere0, 'patch_skipped': list(req.get('skip_patch_games') or []), 'seconds': 0.2})
+          'spheres': spheres, 'sphere0': sphere0, 'sphere0_locations': sorted(loc['name'] for loc in locations if not loc.get('needs')),
+          'patch_skipped': list(req.get('skip_patch_games') or []), 'seconds': 0.2})
 
 
 def host(*args):

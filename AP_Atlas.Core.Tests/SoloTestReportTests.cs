@@ -10,7 +10,7 @@ public class SoloTestReportTests
         new SoloVersions("Dark Souls III", "3.0.0", "github.com/nex3/DS3", "0123456789abcdef", "Atlas portable engine", "DS3 pack", "1.4", "https://example.org/versions.json", "0.1.0-beta.1"),
         new[] { new SoloStepRecord(SoloTestStep.Apworld, SoloStepOutcome.Skipped, "already in the engine", 0.2), new SoloStepRecord(SoloTestStep.Generate, SoloStepOutcome.Done, @"seed A1B2 in C:\Users\kimj\x", 94.2) },
         new SoloGeneration("A1B2", "41097051284819253226", 512, 512, 17, 23, 94.2, true, null, 41, "template"),
-        new SoloLogic(true, 17, 0, 0, "exact: Atlas's logic matches the seed at every one of 17 spheres", true, 23, 512, "linked", null),
+        new SoloLogic(true, 17, 0, 0, "exact: Atlas's logic matches the seed at every one of 17 spheres", true, 23, 512, "linked", null, 28, 5, new[] { "Firelink Shrine: Coiled Sword" }, Array.Empty<string>()),
         new SoloPins(512, 500, 300, 290, 10, 2, 7), new SoloKeyItems(80, 78, 60),
         new SoloScripts(true, new[] { "Archipelago.LocationChecks" }, new[] { "ds3_map" }, Array.Empty<string>(), true, false, false, null, 1), "127.0.0.1:54321", null);
 
@@ -29,6 +29,9 @@ public class SoloTestReportTests
         Assert.Contains("(none yet)", full);
         Assert.Contains("500 of 512 (98%)", full);
         Assert.Contains("(41097051284819253226)", full);
+        Assert.Contains("28 of 512 locations reachable (23 to do, 5 excluded by the seed)", full);
+        Assert.Contains("In sphere 0 but not reachable at connect (1): Firelink Shrine: Coiled Sword", full);
+        Assert.Contains("identical", SoloTestReport.Markdown(Full() with { Logic = Full().Logic! with { NotReached = null } }, scrubber));
         Assert.Contains("patch output was skipped", full);
 
         var bare = Full() with { Generation = null, Logic = null, Pins = null, KeyItems = null, Scripts = null };
@@ -36,6 +39,7 @@ public class SoloTestReportTests
         foreach (string heading in SoloTestReport.Headings) Assert.Contains(heading, sparse);
         Assert.Equal(5, sparse.Split("Not scored:").Length - 1);
         Assert.Contains("the pack wasn't used", sparse);
+        Assert.Contains("didn't finish during the test", SoloTestReport.Markdown(bare with { Logic = Full().Logic }, scrubber));
         Assert.Contains("no map pack", SoloTestReport.Markdown(bare with { Versions = bare.Versions with { PackName = null } }, scrubber));
     }
 

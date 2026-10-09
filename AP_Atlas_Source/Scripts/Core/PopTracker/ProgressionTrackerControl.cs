@@ -633,6 +633,14 @@ namespace AP_Atlas.Core.PopTracker
             }
         }
 
+        /// <summary>The caption of a tile without an image: the item's own name, or the last part of a path-like pack name ("characters/base/jack" → "jack").</summary>
+        private static string TileCaption(PopTrackerItem itemDef, string apName)
+        {
+            string name = !string.IsNullOrEmpty(apName) && apName != itemDef.Name ? apName : itemDef.Name ?? "";
+            int cut = name.LastIndexOf('/');
+            return cut >= 0 && cut < name.Length - 1 ? name[(cut + 1)..] : name;
+        }
+
         private Control CreateVisualTile(PopTrackerItem itemDef, string apName, int receivedQty, float zoomSize, int? stage = null, bool isSetting = false)
         {
             var container = new PanelContainer { CustomMinimumSize = new Vector2(zoomSize, zoomSize), MouseDefaultCursorShape = isSetting ? CursorShape.Arrow : CursorShape.PointingHand };
@@ -693,6 +701,40 @@ namespace AP_Atlas.Core.PopTracker
             if (matchedTex != null)
             {
                 texRect.Texture = matchedTex;
+            }
+            else
+            {
+                // The pack has no image for this item (or it can't be read): the item's name on a plain tile, never a blank.
+                var frame = new Panel { MouseFilter = MouseFilterEnum.Ignore };
+                frame.SetAnchorsPreset(LayoutPreset.FullRect);
+                frame.AddThemeStyleboxOverride("panel", new StyleBoxFlat
+                {
+                    BgColor = ThemeColors.SurfaceSunken,
+                    BorderColor = ThemeColors.TextSubtle,
+                    BorderWidthLeft = 1,
+                    BorderWidthTop = 1,
+                    BorderWidthRight = 1,
+                    BorderWidthBottom = 1,
+                    CornerRadiusTopLeft = 3,
+                    CornerRadiusTopRight = 3,
+                    CornerRadiusBottomLeft = 3,
+                    CornerRadiusBottomRight = 3
+                });
+                texRect.AddChild(frame);
+                var nameLabel = new Label
+                {
+                    Text = TileCaption(itemDef, apName),
+                    AutowrapMode = TextServer.AutowrapMode.WordSmart,
+                    ClipText = true,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    MouseFilter = MouseFilterEnum.Ignore
+                };
+                nameLabel.SetAnchorsPreset(LayoutPreset.FullRect);
+                nameLabel.AddThemeFontSizeOverride("font_size", Math.Max(8, (int)(zoomSize / 4.5f)));
+                nameLabel.AddThemeColorOverride("font_color", ThemeColors.Text);
+                texRect.AddChild(nameLabel);
+                container.TooltipText += "\nNo image in the pack: " + (imgPath ?? "(none named)");
             }
 
             if (receivedQty == 0)

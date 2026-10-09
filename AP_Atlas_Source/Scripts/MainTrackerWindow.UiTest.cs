@@ -996,7 +996,8 @@ public partial class MainTrackerWindow
             }
             UiTestExpect(md.Contains("exact") && md.Contains("patch output was skipped") && md.Contains("engine\\solo\\Test Game\\players\\AtlasTest.yaml") && !md.Contains(DataManager.GetDataDirectory()) && !md.Contains(":\\"), "the report isn't scored and scrubbed as expected");
             var json = Newtonsoft.Json.Linq.JObject.Parse(await System.IO.File.ReadAllTextAsync(System.IO.Path.ChangeExtension(mds[0], ".json")));
-            UiTestExpect((int?)json["Schema"] == 1 && (int?)json["Generation"]?["Sphere0"] == 1 && (bool?)json["Logic"]?["Exact"] == true, "the JSON twin lacks the numbers");
+            UiTestExpect((int?)json["Schema"] == 1 && (int?)json["Generation"]?["Sphere0"] == 1 && (bool?)json["Logic"]?["Exact"] == true && (int?)json["Logic"]?["ReachableAtConnect"] == 1
+                && json["Logic"]?["NotReached"] is Newtonsoft.Json.Linq.JArray { Count: 0 } && json["Logic"]?["BeyondSphere0"] is Newtonsoft.Json.Linq.JArray { Count: 0 } && md.Contains("Sphere 0 and the live logic at connect: identical"), "the JSON twin lacks the numbers, or sphere 0 wasn't compared by name");
             // The owner's notes land once, even saved twice.
             dialog.FillNotesForTests(new AP_Atlas.Core.Reports.SoloOwnerNotes("A pin in the sea.", "", "Nothing", ""));
             dialog.SaveNotesForTests();

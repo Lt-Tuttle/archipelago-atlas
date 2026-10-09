@@ -890,7 +890,7 @@ namespace AP_Atlas.UI
             _restoringView = true;
             try
             {
-                _canvas.SetMap(background, background?.GetSize() ?? PinExtent(mapId));
+                _canvas.SetMap(background, background?.GetSize() ?? PinExtent(mapId), background == null ? (string.IsNullOrEmpty(map.Img) ? map.MapBg : map.Img) : null);
                 if (_appSettings?.MapCameras != null && _appSettings.MapCameras.TryGetValue(mapId, out var state) && state.Zoom > 0)
                     _canvas.SetView(new Vector2(state.X, state.Y), state.Zoom);
                 else

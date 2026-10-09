@@ -42,7 +42,12 @@ namespace AP_Atlas.Core.Reports
     /// <remarks>The seed is text: Archipelago's seeds have up to twenty digits, more than a 64-bit number holds.</remarks>
     public sealed record SoloGeneration(string? SeedName, string? Seed, int Locations, int Items, int Spheres, int Sphere0, double Seconds, bool PatchSkipped, string? Error, int YamlOptions, string? YamlFrom);
 
-    public sealed record SoloLogic(bool? Exact, int Spheres, int Late, int Early, string Verdict, bool? ChecksumMatch, int ActiveAtConnect, int TotalLocations, string? YamlSource, string? EngineProblem);
+    /// <param name="ActiveAtConnect">Reachable locations to do (not checked, not excluded by the seed) once logic settled.</param>
+    /// <param name="ReachableAtConnect">Every reachable location then (what sphere 0 counts).</param>
+    /// <param name="NotReached">Sphere 0's locations the live logic didn't reach at connect.</param>
+    /// <param name="BeyondSphere0">Locations the live logic reached at connect that sphere 0 doesn't hold.</param>
+    public sealed record SoloLogic(bool? Exact, int Spheres, int Late, int Early, string Verdict, bool? ChecksumMatch, int ActiveAtConnect, int TotalLocations, string? YamlSource, string? EngineProblem,
+        int ReachableAtConnect = 0, int ExcludedAtConnect = 0, IReadOnlyList<string>? NotReached = null, IReadOnlyList<string>? BeyondSphere0 = null);
 
     public sealed record SoloPins(int LocationsTotal, int LocationsPlaced, int SectionsTotal, int SectionsLinked, int SectionsUnmatched, int DanglingPaths, int NeedsReview);
 
@@ -122,7 +127,16 @@ namespace AP_Atlas.Core.Reports
                 var l = r.Logic;
                 sb.AppendLine("- Verdict: " + Line(l.Verdict));
                 sb.AppendLine("- Spheres compared: " + l.Spheres + "; shown too late: " + l.Late + "; too early: " + l.Early);
-                sb.AppendLine("- At connect: " + l.ActiveAtConnect + " of " + l.TotalLocations + " locations in logic" + (r.Generation != null && r.Generation.Error == null ? "; the generator's sphere 0 has " + r.Generation.Sphere0 : ""));
+                sb.AppendLine("- At connect: " + l.ReachableAtConnect + " of " + l.TotalLocations + " locations reachable (" + l.ActiveAtConnect + " to do, " + l.ExcludedAtConnect + " excluded by the seed)"
+                    + (r.Generation != null && r.Generation.Error == null ? "; the generator's sphere 0 has " + r.Generation.Sphere0 : ""));
+                if (r.Generation != null && r.Generation.Error == null)
+                {
+                    var notReached = l.NotReached ?? Array.Empty<string>();
+                    var beyond = l.BeyondSphere0 ?? Array.Empty<string>();
+                    if (notReached.Count == 0 && beyond.Count == 0) sb.AppendLine("- Sphere 0 and the live logic at connect: identical");
+                    if (notReached.Count > 0) sb.AppendLine("- In sphere 0 but not reachable at connect (" + notReached.Count + "): " + Line(string.Join("; ", notReached.Take(25))) + (notReached.Count > 25 ? "; …" : ""));
+                    if (beyond.Count > 0) sb.AppendLine("- Reachable at connect but not in sphere 0 (" + beyond.Count + "): " + Line(string.Join("; ", beyond.Take(25))) + (beyond.Count > 25 ? "; …" : ""));
+                }
                 sb.AppendLine("- YAML source: " + Line(l.YamlSource ?? "unknown") + "; apworld matches the seed: " + (l.ChecksumMatch == null ? "unknown" : l.ChecksumMatch.Value ? "yes" : "no"));
                 if (l.EngineProblem != null) sb.AppendLine("- Engine problem: " + Line(l.EngineProblem));
             }
@@ -168,7 +182,8 @@ namespace AP_Atlas.Core.Reports
             return sb.ToString();
         }
 
-        private static string NotScoredPack(SoloTestResult r) => r.Versions.PackName == null ? "Not scored: no map pack." : "Not scored: the slot didn't connect, so the pack wasn't used.";
+        private static string NotScoredPack(SoloTestResult r) => r.Versions.PackName == null ? "Not scored: no map pack."
+            : r.Logic == null ? "Not scored: the slot didn't connect, so the pack wasn't used." : "Not scored: the Pack Doctor's check of the pack didn't finish during the test.";
 
         private static void AppendNotes(StringBuilder sb, SoloOwnerNotes notes, Scrubber? scrubber)
         {

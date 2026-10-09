@@ -63,8 +63,10 @@ namespace AP_Atlas.UI
             _scroll.AddChild(_surface);
             _background = new TextureRect { ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.Scale, MouseFilter = MouseFilterEnum.Ignore };
             _surface.AddChild(_background);
-            _noImage = new Label { Text = "This map has no usable image. Its pins are still shown where they go.", Position = new Vector2(10, 10), MouseFilter = MouseFilterEnum.Ignore, Visible = false };
-            _noImage.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextMuted);
+            _noImage = new Label { Position = new Vector2(10, 10), MouseFilter = MouseFilterEnum.Ignore, Visible = false };
+            _noImage.Text = Tr("This map has no usable image. Its pins are still shown where they go.");
+            _noImage.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Text);
+            _noImage.AddThemeFontSizeOverride("font_size", 16);
             _surface.AddChild(_noImage);
             _scroll.Resized += () =>
             {
@@ -100,12 +102,15 @@ namespace AP_Atlas.UI
         public IReadOnlyList<Pin> Pins => _pins;
 
         /// <summary>Shows a map: its image (or none) and its size in map pixels. The view stays where it was; the host restores or fits it.</summary>
-        public void SetMap(Texture2D? background, Vector2 size)
+        public void SetMap(Texture2D? background, Vector2 size, string? missingImage = null)
         {
             _mapSize = size.X > 0 && size.Y > 0 ? size : new Vector2(1600, 1000);
             _background.Texture = background;
             _background.Visible = background != null;
             _noImage.Visible = background == null;
+            // The file is named so a pack's missing or unreadable image is seen for what it is, not taken for an Atlas fault.
+            _noImage.Text = string.IsNullOrEmpty(missingImage) ? Tr("This map has no usable image. Its pins are still shown where they go.")
+                : Tr("The map's image \"{0}\" isn't in the pack, or can't be read. Its pins are still shown where they go.").Replace("{0}", missingImage);
             Layout();
         }
 

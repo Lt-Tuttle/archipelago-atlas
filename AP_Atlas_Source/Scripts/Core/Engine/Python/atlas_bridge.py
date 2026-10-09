@@ -1180,12 +1180,22 @@ def atlas_generate(*args):
                             'locations': len(locations), 'items': len(locations)})
         spheres = data.get('spheres') or []
         sphere0 = 0
+        sphere0_names = []
         if spheres:
             first = spheres[0]
             sphere0 = sum(len(v) for v in first.values()) if isinstance(first, dict) else len(first)
+            # The names of sphere 0 (every player's), so Atlas can say which of them its live logic missed.
+            if isinstance(first, dict):
+                packages = data.get('datapackage') or {}
+                for player, ids in first.items():
+                    info = (data.get('slot_info') or {}).get(player)
+                    game = getattr(info, 'game', None) or ''
+                    id_to_name = {v: k for k, v in ((packages.get(game) or {}).get('location_name_to_id') or {}).items()}
+                    sphere0_names.extend(id_to_name.get(i, str(i)) for i in ids)
+                sphere0_names.sort()
         send({'ok': True, 'seed': seed, 'seed_name': seed_name, 'zip': zip_path, 'multidata': multidata_path, 'spoiler': spoiler_path,
-              'players': players, 'spheres': len(spheres), 'sphere0': sphere0, 'patch_skipped': list(req.get('skip_patch_games') or []),
-              'seconds': round(time.time() - started, 2)})
+              'players': players, 'spheres': len(spheres), 'sphere0': sphere0, 'sphere0_locations': sphere0_names,
+              'patch_skipped': list(req.get('skip_patch_games') or []), 'seconds': round(time.time() - started, 2)})
     except BaseException as e:
         if isinstance(e, KeyboardInterrupt):
             raise
