@@ -29,6 +29,8 @@ namespace AP_Atlas.UI
         public required Action<string> StartSoloTest { get; init; }
         /// <summary>Ends the running solo test's server (its slot and multiworld go).</summary>
         public required Action StopSoloTest { get; init; }
+        /// <summary>Opens the batch solo test ("Test every ready game…").</summary>
+        public required Action StartSoloBatch { get; init; }
         /// <summary>Shows a document (an apworld's bundled guide: id, title, Markdown) in the Help window.</summary>
         public required Action<string, string, string> OpenDocument { get; init; }
     }
@@ -312,6 +314,9 @@ namespace AP_Atlas.UI
             row.AddThemeConstantOverride("h_separation", 8);
             row.AddChild(Kit.Button(_tr("Check every game"), _tr("Rebuilds each game in the engine with default options and computes its starting logic (a minute or two)."), () =>
                 Run(_tr("Checking every game…"), (log, ct) => GameSweep.RunAsync(install, log, ct), _ => _tr("Checked every game."))));
+            var batch = Kit.Button(_tr("Test every ready game…"), _tr("The solo test over every game the engine has a map pack for (or every game): a seed each, logic and the pack scored, one report per game and a summary; no server, no slot, nothing downloaded."), _hooks.StartSoloBatch);
+            batch.SetMeta("solo_batch_button", true);
+            row.AddChild(batch);
             row.AddChild(Kit.Button(_tr("Open the games folder"), _tr("Where Atlas keeps each game's apworld releases and files."), () => OpenFolder(GameFiles.GamesFolder(DataManager.GetDataDirectory()))));
             row.AddChild(Kit.Button(_tr("Open the YAML folder"), _tr("Where Atlas keeps the YAMLs you add."), () => OpenFolder(GameFiles.YamlsFolder(DataManager.GetDataDirectory()))));
             _detail.AddChild(row);
@@ -585,6 +590,9 @@ namespace AP_Atlas.UI
             string when = Path.GetFileNameWithoutExtension(newest).Substring(stem.Length);
             return when.Length == 13 ? when.Substring(0, 4) + "-" + when.Substring(4, 2) + "-" + when.Substring(6, 2) + " " + when.Substring(9, 2) + ":" + when.Substring(11, 2) : when;
         }
+
+        /// <summary>Shows the overview (no game selected), as the page does when nothing is picked (for tests).</summary>
+        public void ShowOverviewForTests() => ShowOverview();
 
         /// <summary>The page's checklist: each step's title and whether it's done (for tests).</summary>
         public List<(string Title, bool Done)> Steps() =>

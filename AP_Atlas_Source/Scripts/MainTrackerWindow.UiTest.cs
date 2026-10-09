@@ -196,6 +196,8 @@ public partial class MainTrackerWindow
             LogicBannerAsync);
         await ScenarioAsync("Solo test: Test this game… on a game's page runs the whole chain against the fake engine (the apworld already there, a pack installed, a YAML from the engine, a seed generated again without the game's patch output when the first try wants a ROM, a server on this PC, the AtlasTest slot connected with the YAML, logic and the pack scored) and writes a scrubbed report with a JSON twin; the owner's notes land in it once; Stop ends the server and removes the test multiworld; a generation that fails outright ends the chain with the report saying so",
             SoloTestAsync);
+        await ScenarioAsync("Solo batch: Test every ready game… on the Games page runs the solo test over the games with a pack without a server or a slot (Host and Connect skipped, nothing installed, no multiworld made), writes a report per game saying so and a summary table naming each game's logic and pack scores",
+            SoloBatchAsync);
         await ScenarioAsync("BK: with logic running, checks left and none of them in logic, the Logic Tracker and Key Items say so with the count done, and the slot card says BK; an item that opens a check ends it",
             BkAsync);
         await ScenarioAsync("Shared engines: a multiworld's slots share its engines; when one slot's request brings an engine down, a slot sharing it (even one still starting) starts again in 2 s, and only the slot whose request it was counts the failure",
@@ -1089,6 +1091,60 @@ public partial class MainTrackerWindow
             AP_Atlas.Core.SafeFile.Delete(apworld);
             AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
             if (System.IO.Directory.Exists(reports)) foreach (string file in System.IO.Directory.GetFiles(reports, "Test_Game-*")) System.IO.File.Delete(file);
+        }
+    }
+
+    private async Task SoloBatchAsync()
+    {
+        var engine = StartFakeEngine(UiTestPython());
+        engine.Apply();
+        var checkBefore = AtlasEngine.State.LastCheck;
+        AtlasEngine.State.LastCheck = new EngineCheckResult { Games = new List<string> { "Test Game", "Packless Game" }, TrackerLoads = true };
+        string zip = System.IO.Path.Combine(AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory(), "uitest_batch_pack.zip");
+        FakeMapPack.Write(zip, "UI test batch pack", "Test Game");
+        AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        string reports = AP_Atlas.Core.EngineSetup.SoloTestRunner.ReportsFolder;
+        int profilesBefore = _profiles.Count;
+        AP_Atlas.UI.SoloBatchDialog? Dialog() => GetChildren().OfType<AP_Atlas.UI.SoloBatchDialog>().FirstOrDefault(d => !d.IsQueuedForDeletion());
+        try
+        {
+            host.ShowTool(AP_Atlas.UI.Tool.Games);
+            _gamesPage!.ShowOverviewForTests();
+            await UiTestWaitAsync(0.2);
+            var button = _gamesPage.FindChildren("*", nameof(Button), true, false).OfType<Button>().FirstOrDefault(b => b.HasMeta("solo_batch_button"));
+            UiTestExpect(button != null && !button.Disabled, "the Games overview has no enabled Test every ready game… button");
+            button!.EmitSignal(BaseButton.SignalName.Pressed);
+            var dialog = await UiTestWaitForAsync(Dialog, "the batch dialog");
+            // Only the game with a pack is ready; the other joins with the box ticked.
+            UiTestExpect(AP_Atlas.Core.EngineSetup.SoloBatch.ReadyGames(AtlasEngine.Current, false).SequenceEqual(new[] { "Test Game" })
+                && AP_Atlas.Core.EngineSetup.SoloBatch.ReadyGames(AtlasEngine.Current, true).SequenceEqual(new[] { "Packless Game", "Test Game" }), "the ready games aren't the ones with a pack (or every game with the box ticked)");
+            dialog.StartForTests();
+            await UiTestWaitForAsync(() => dialog.Done ? dialog : null, "the batch to end", 90);
+            UiTestExpect(dialog.SummaryPath != null && System.IO.File.Exists(dialog.SummaryPath), "the batch wrote no summary");
+            string summary = await System.IO.File.ReadAllTextAsync(dialog.SummaryPath!);
+            UiTestExpect(summary.Contains("| Test Game | ok | exact") && summary.Contains("placed") && !summary.Contains("Packless"), $"the summary doesn't score Test Game: {summary}");
+            UiTestExpect(dialog.Rows().Count == 1 && dialog.Rows()[0].Text.Contains("exact"), $"the dialog's row doesn't say the outcome: {string.Join(" | ", dialog.Rows().Select(r => r.Text))}");
+            var mds = System.IO.Directory.GetFiles(reports, "Test_Game-*.md");
+            UiTestExpect(mds.Length == 1, $"{mds.Length} report(s) written for Test Game");
+            string md = await System.IO.File.ReadAllTextAsync(mds[0]);
+            UiTestExpect(md.Contains("| Host | Skipped") && md.Contains("| Connect | Skipped") && md.Contains("Not connected (a batch run)") && md.Contains("exact") && md.Contains("Game locations on a map"),
+                "the game's report doesn't say the batch skipped the server and still scored logic and the pack");
+            UiTestExpect(engine.ComponentRequests("AtlasHost").Count == 0 && engine.ComponentRequests("AtlasGenerate").Count == 1 && engine.ComponentRequests("AtlasSeedTest").Count == 1,
+                $"the engine saw {engine.ComponentRequests("AtlasHost").Count} host, {engine.ComponentRequests("AtlasGenerate").Count} generate and {engine.ComponentRequests("AtlasSeedTest").Count} seed test requests");
+            UiTestExpect(_profiles.Count == profilesBefore, "a batch run made a multiworld");
+            dialog.EmitSignal(AcceptDialog.SignalName.Confirmed);
+            await UiTestWaitAsync(0.1);
+        }
+        finally
+        {
+            AtlasEngine.State.LastCheck = checkBefore;
+            Dialog()?.EmitSignal(AcceptDialog.SignalName.Confirmed);
+            AP_Atlas.Core.EngineSetup.SoloTestRunner.StopAll();
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+            AP_Atlas.Core.SafeFile.Delete(zip);
+            AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
+            if (System.IO.Directory.Exists(reports)) foreach (string file in System.IO.Directory.GetFiles(reports).Where(f => System.IO.Path.GetFileName(f).StartsWith("Test_Game-") || System.IO.Path.GetFileName(f).StartsWith("batch-"))) System.IO.File.Delete(file);
         }
     }
 

@@ -47,7 +47,7 @@ namespace AP_Atlas.Core.Reports
     /// <param name="NotReached">Sphere 0's locations the live logic didn't reach at connect.</param>
     /// <param name="BeyondSphere0">Locations the live logic reached at connect that sphere 0 doesn't hold.</param>
     public sealed record SoloLogic(bool? Exact, int Spheres, int Late, int Early, string Verdict, bool? ChecksumMatch, int ActiveAtConnect, int TotalLocations, string? YamlSource, string? EngineProblem,
-        int ReachableAtConnect = 0, int ExcludedAtConnect = 0, IReadOnlyList<string>? NotReached = null, IReadOnlyList<string>? BeyondSphere0 = null);
+        int ReachableAtConnect = 0, int ExcludedAtConnect = 0, IReadOnlyList<string>? NotReached = null, IReadOnlyList<string>? BeyondSphere0 = null, bool Connected = true);
 
     public sealed record SoloPins(int LocationsTotal, int LocationsPlaced, int SectionsTotal, int SectionsLinked, int SectionsUnmatched, int DanglingPaths, int NeedsReview,
         IReadOnlyList<string>? Unplaced = null, IReadOnlyList<string>? ToReview = null);
@@ -145,9 +145,10 @@ namespace AP_Atlas.Core.Reports
                 var l = r.Logic;
                 sb.AppendLine("- Verdict: " + Line(l.Verdict));
                 sb.AppendLine("- Spheres compared: " + l.Spheres + "; shown too late: " + l.Late + "; too early: " + l.Early);
-                sb.AppendLine("- At connect: " + l.ReachableAtConnect + " of " + l.TotalLocations + " locations reachable (" + l.ActiveAtConnect + " to do, " + l.ExcludedAtConnect + " excluded by the seed)"
+                if (!l.Connected) sb.AppendLine("- Not connected (a batch run): logic scored against the seed's spheres only.");
+                else sb.AppendLine("- At connect: " + l.ReachableAtConnect + " of " + l.TotalLocations + " locations reachable (" + l.ActiveAtConnect + " to do, " + l.ExcludedAtConnect + " excluded by the seed)"
                     + (r.Generation != null && r.Generation.Error == null ? "; the generator's sphere 0 has " + r.Generation.Sphere0 : ""));
-                if (r.Generation != null && r.Generation.Error == null)
+                if (l.Connected && r.Generation != null && r.Generation.Error == null)
                 {
                     var notReached = l.NotReached ?? Array.Empty<string>();
                     var beyond = l.BeyondSphere0 ?? Array.Empty<string>();

@@ -84,7 +84,8 @@ namespace AP_Atlas.Core.EngineSetup
         }
 
         /// <summary>Runs the whole chain; a failed step ends it, the report is written either way. Runs on the main thread (the hooks touch the window).</summary>
-        public async Task<SoloTestResult> RunAsync(SoloTestHooks hooks, IProgress<SoloTestProgress>? progress, CancellationToken ct)
+        /// <param name="connect">False for a batch run: no server and no slot (Host and Connect are skipped, logic is scored against the seed's spheres only, the installed pack by the Doctor), and nothing is installed or asked.</param>
+        public async Task<SoloTestResult> RunAsync(SoloTestHooks hooks, IProgress<SoloTestProgress>? progress, CancellationToken ct, bool connect = true)
         {
             if (Busy) throw new InvalidOperationException("This test is already running.");
             Busy = true;
@@ -122,6 +123,7 @@ namespace AP_Atlas.Core.EngineSetup
                         check = await AtlasEngine.RunCheckAsync(install, line => progress?.Report(new SoloTestProgress(SoloTestStep.Apworld, SoloStepOutcome.Running, "checking the engine", line)), ct);
                     }
                     bool has = check?.Games.Contains(Game, StringComparer.OrdinalIgnoreCase) == true;
+                    if (!has && !connect) return Failed("the engine doesn't have this game's apworld (a batch run installs nothing)");
                     if (!has)
                     {
                         progress?.Report(new SoloTestProgress(SoloTestStep.Apworld, SoloStepOutcome.Running, "installing the apworld", null));
@@ -141,6 +143,7 @@ namespace AP_Atlas.Core.EngineSetup
                 {
                     pack = InstalledPackFor(Game);
                     if (pack != null) return Skipped("using " + pack.Manifest.Name + " " + pack.Manifest.GetActualVersion());
+                    if (!connect) return Done("no pack installed (a batch run looks for none): Pins, Key Items and Scripts aren't scored");
                     progress?.Report(new SoloTestProgress(SoloTestStep.MapPack, SoloStepOutcome.Running, "looking for a pack on GitHub", null));
                     var choice = await hooks.ChoosePackAsync(Game);
                     if (choice?.Repo == null) return Done("no pack: Pins, Key Items and Scripts aren't scored");
@@ -194,7 +197,12 @@ namespace AP_Atlas.Core.EngineSetup
                         (int?)answer["spheres"] ?? 0, (int?)answer["sphere0"] ?? 0, (double?)answer["seconds"] ?? 0, patchSkipped, null, yamlOptions, yamlFrom);
                     return Done("seed " + generation.SeedName + ": " + generation.Locations + " locations, " + generation.Spheres + " spheres" + (patchSkipped ? "; the patch output was skipped" : ""));
                 });
-                if (!failed) failed = !await StepAsync(SoloTestStep.Host, progress, ct, async () =>
+                if (!failed && !connect)
+                {
+                    await StepAsync(SoloTestStep.Host, progress, ct, () => Task.FromResult(Skipped("batch run: no server")));
+                    await StepAsync(SoloTestStep.Connect, progress, ct, () => Task.FromResult(Skipped("batch run: not connected")));
+                }
+                if (!failed && connect) failed = !await StepAsync(SoloTestStep.Host, progress, ct, async () =>
                 {
                     AtlasEngine.InstallBridge(install!);
                     _host = EngineProcess.Start(install!.StartInfo("AtlasHost"), install.Root, line => Logger.LogDebug("[solo host] " + line));
@@ -206,7 +214,7 @@ namespace AP_Atlas.Core.EngineSetup
                     ServerAddress = "ws://127.0.0.1:" + answer.Reply["port"];
                     return Done("serving on " + ServerAddress);
                 });
-                if (!failed) failed = !await StepAsync(SoloTestStep.Connect, progress, ct, async () =>
+                if (!failed && connect) failed = !await StepAsync(SoloTestStep.Connect, progress, ct, async () =>
                 {
                     var profile = new MultiworldProfile { Name = "Solo test: " + Game, ServerUrl = ServerAddress ?? "" };
                     profile.Slots.Clear();
@@ -255,8 +263,8 @@ namespace AP_Atlas.Core.EngineSetup
                     var report = await SeedVerifier.VerifyAsync(install!, _multidataPath!, line => progress?.Report(new SoloTestProgress(SoloTestStep.Score, SoloStepOutcome.Running, "replaying the seed's spheres", line)), ct);
                     var player = report.Players.FirstOrDefault(p => p.Name == SlotName) ?? report.Players.FirstOrDefault();
                     logic = new SoloLogic(player?.Error == null ? player?.Exact : null, player?.Steps.Count ?? 0, player?.Late ?? 0, player?.Early ?? 0, player?.Verdict ?? (report.Error ?? "the seed test didn't run"),
-                        player?.ChecksumMatch ?? slot!.ApworldMatchesSeed, slot!.ActiveLogicCount, slot.TotalLocationsCount, slot.EngineYamlInfo?["source"]?.ToString(), slot.EngineProblem?.Message,
-                        reachableAtConnect, excludedAtConnect, notReached, beyondSphere0);
+                        player?.ChecksumMatch ?? slot?.ApworldMatchesSeed, slot?.ActiveLogicCount ?? 0, slot?.TotalLocationsCount ?? generation?.Locations ?? 0, slot?.EngineYamlInfo?["source"]?.ToString(), slot?.EngineProblem?.Message,
+                        reachableAtConnect, excludedAtConnect, notReached, beyondSphere0, slot != null);
                     parts.Add(player?.Exact == true ? "logic exact" : "logic differs");
                     foreach (var step in player?.Steps.Where(s => s.LateCount > 0 || s.EarlyCount > 0) ?? Enumerable.Empty<SeedTestStep>())
                         rawFindings.Add(new SoloRawFinding("logic:differs:" + step.Sphere, "Logic", "Problem", "Sphere " + step.Sphere + ": " + step.LateCount + " too late, " + step.EarlyCount + " too early",
@@ -265,10 +273,10 @@ namespace AP_Atlas.Core.EngineSetup
                     foreach (string name in beyondSphere0) rawFindings.Add(new SoloRawFinding("sphere0:beyond:" + name, "Logic", "Problem", name));
                     if (ApworldSources.BundledDocuments(install!, Game).Any(d => d.Setup))
                         rawFindings.Add(new SoloRawFinding("setup:guide", "Setup", "Info", "docs/setup_en.md in the apworld"));
-                    if (slot.Pack != null)
+                    if ((slot?.Pack ?? pack) is { } scored)
                     {
                         progress?.Report(new SoloTestProgress(SoloTestStep.Score, SoloStepOutcome.Running, "checking the pack", null));
-                        var original = PopTrackerPackLoader.InspectZipPack(slot.Pack.SourcePath);
+                        var original = PopTrackerPackLoader.InspectZipPack(scored.SourcePath);
                         // The slot's own first check of the pack may be running (a check asked for meanwhile answers with the last
                         // report, or nothing): wait for it, then check with the fixes as they are now.
                         var doctorWait = Deadline.In(TimeSpan.FromSeconds(120));
@@ -289,15 +297,15 @@ namespace AP_Atlas.Core.EngineSetup
                         {
                             foreach (var f in doctor.Findings)
                                 rawFindings.Add(new SoloRawFinding(f.Key, f.Category, f.Ignored ? "Ignored" : f.Severity.ToString(), f.Title, f.Detail, f.Details));
-                            if (doctor.Index != null)
+                            if (doctor.Index != null && slot != null)
                                 foreach (long id in slot.Session.Locations.AllLocations.Where(id => !doctor.Index.ByLocation.ContainsKey(id)))
                                 {
                                     string name = slot.Session.Locations.GetLocationNameFromId(id) ?? id.ToString(System.Globalization.CultureInfo.InvariantCulture);
                                     rawFindings.Add(new SoloRawFinding("seed:unplaced:" + id, "Locations", "Warning", name));
                                 }
                         }
-                        var host = slot.PackScripts;
-                        scripts = new SoloScripts(host != null && doctor?.ScriptsRan == true, host?.UnsupportedApis.OrderBy(a => a).ToList() ?? new List<string>(), host?.IgnoredWrites.OrderBy(a => a).ToList() ?? new List<string>(),
+                        var host = slot?.PackScripts;
+                        if (slot != null) scripts = new SoloScripts(host != null && doctor?.ScriptsRan == true, host?.UnsupportedApis.OrderBy(a => a).ToList() ?? new List<string>(), host?.IgnoredWrites.OrderBy(a => a).ToList() ?? new List<string>(),
                             host?.Errors.ToList() ?? new List<string>(), host?.FollowsMaps ?? false, host?.ReadsGameMemory ?? false, host?.Stopped ?? false, host?.StopReason,
                             doctor?.Findings.Count(f => f.Category == "Scripts") ?? 0);
                     }
@@ -357,6 +365,7 @@ namespace AP_Atlas.Core.EngineSetup
         /// <summary>Every test server ended (Atlas is closing; the job object is the backstop).</summary>
         public static void StopAll()
         {
+            SoloBatch.CancelRunning();
             foreach (var runner in _all.ToList()) runner.StopServer(null);
             _all.Clear();
         }
@@ -371,7 +380,7 @@ namespace AP_Atlas.Core.EngineSetup
                 || error.Contains("rom", StringComparison.OrdinalIgnoreCase);
         }
 
-        private static LoadedPack? InstalledPackFor(string game)
+        internal static LoadedPack? InstalledPackFor(string game)
         {
             string packs = PopTrackerPackLoader.GetPacksDirectory();
             if (!Directory.Exists(packs)) return null;

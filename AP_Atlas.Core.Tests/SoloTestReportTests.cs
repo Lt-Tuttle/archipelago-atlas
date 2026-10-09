@@ -42,6 +42,9 @@ public class SoloTestReportTests
         Assert.Contains("- To review: Pin \"Asylum\" matches no check", full);
         Assert.Contains("In sphere 0 but not reachable at connect (1): Firelink Shrine: Coiled Sword", full);
         Assert.Contains("identical", SoloTestReport.Markdown(Full() with { Logic = Full().Logic! with { NotReached = null } }, scrubber));
+        string batch = SoloTestReport.Markdown(Full() with { Logic = Full().Logic! with { Connected = false } }, scrubber);
+        Assert.Contains("Not connected (a batch run)", batch);
+        Assert.DoesNotContain("At connect:", batch);
         Assert.Contains("patch output was skipped", full);
 
         var bare = Full() with { Generation = null, Logic = null, Pins = null, KeyItems = null, Scripts = null };

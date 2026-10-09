@@ -10,6 +10,9 @@ public partial class MainTrackerWindow
     /// <summary>"Test this game…" on a game's page.</summary>
     private void StartSoloTest(string game) => AP_Atlas.UI.SoloTestDialog.Open(this, game, text => Tr(text), SoloHooks());
 
+    /// <summary>"Test every ready game…" on the Games page's overview.</summary>
+    private void StartSoloBatch() => AP_Atlas.UI.SoloBatchDialog.Open(this, text => Tr(text), SoloHooks());
+
     /// <summary>"Stop the test server" on the Games page: the running test's server, slot and multiworld go.</summary>
     private void StopSoloTest() => SoloTestRunner.Running?.StopServer(SoloHooks());
 

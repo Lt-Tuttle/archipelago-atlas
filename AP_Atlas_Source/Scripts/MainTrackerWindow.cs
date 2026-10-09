@@ -450,6 +450,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             OpenEngineSetup = OpenEngineSetup,
             FindPack = FindMapPack,
             StartSoloTest = StartSoloTest,
+            StartSoloBatch = StartSoloBatch,
             StopSoloTest = StopSoloTest,
             OpenDocument = OpenDocument
         });
