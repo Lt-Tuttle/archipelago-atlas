@@ -176,7 +176,7 @@ public partial class MainTrackerWindow
             PackImagesFollowTheirUsersAsync);
         await ScenarioAsync("Maps without a picture and checks without a pin: a map whose pack ships no usable picture lists its locations (named in a note, each opening in Properties) instead of dots on nothing, and a map with its picture shows its pins; the seed's checks no pin places are listed under Not on the map and counted on the map, and a check that's done leaves the list; Follow my checks is on for a pack that can't follow the game, shows the map of a check made on another map, leaves the map alone while the user zooms it, and is kept per slot",
             PicturelessMapsAsync);
-        await ScenarioAsync("Pack Doctor: on a pack's first check, a tile whose name matches an item exactly (once punctuation is ignored) is linked by itself as an automatic fix; the pack's row on the Map Packs page offers Review N, which opens the Doctor on Recommended; the Recommended tab lists what's left, Apply on a row writes the fix, the row goes after the check and the status says so; the rows are grouped by kind with what to do under each, filters by words, kind and map narrow them, Ignore selected hides the selection in one step and Undo brings it back; Undo takes the automatic link back; the Map Tracker's Attention group lists the pack's problems for this seed in plain words and opens the Doctor on the fixing tab",
+        await ScenarioAsync("Pack Doctor: on a pack's first check, a tile whose name matches an item exactly (once punctuation is ignored) is linked by itself as an automatic fix; the pack's row on the Map Packs page offers Review N, which opens the Doctor on Recommended; the Recommended tab lists what's left, Apply on a row writes the fix, the row goes after the check and the status says so; the rows are grouped by kind with what to do under each, filters by words, kind and map narrow them, Ignore selected hides the selection in one step and Undo brings it back; Undo takes the automatic link back; the Map Tracker's Attention group lists the pack's problems for this seed in plain words and opens the Doctor on the fixing tab; Fix what Atlas can (the pack row's Fix, the Attention group's button) links the confident matches and sets the rest aside in one undoable step, said in a card",
             PackDoctorAsync);
         await ScenarioAsync("Map packs reach connected slots: Key Items offers the pack's layouts and two Atlas builds by item group, kept per slot; the chat's filters sit in one row; the Chat and System Log tabs carry a dot for lines that arrived while they weren't showing, cleared when shown; a slot without a pack offers \"Find a map pack for <game>…\" on its map, which shows Map Packs and searches GitHub once; a pack chosen from the results downloads with a progress line, installs with a card and reaches the slot's map; a pack installed while a slot is connected shows on its map at once, without a reconnect; deleted, the map says there's no pack again; another pack for the game takes its place",
             PacksReachConnectedSlotsAsync);
@@ -3402,6 +3402,23 @@ public partial class MainTrackerWindow
             var reopened = await UiTestWaitForAsync(() => GetTree().Root.GetChildren().OfType<AP_Atlas.UI.PackDoctorWindow>().FirstOrDefault(w => w.Visible), "the Doctor window from the Attention row");
             UiTestExpect(reopened.CurrentTabTitle == "Recommended", $"the Attention row opened the Doctor on {reopened.CurrentTabTitle}, not Recommended");
             reopened.EmitSignal(Window.SignalName.CloseRequested);
+            // "Fix what Atlas can" (the pack row's Fix, the Attention group's button and the card all run it): the exact tile is linked,
+            // the pins without a confident match are set aside, one undoable step; a card says what was done.
+            host.ShowTool(AP_Atlas.UI.Tool.MapPacks);
+            await UiTestWaitForAsync(() => _packManagerPanel.FixButtonFor(key) is { Visible: true } b ? b : null, "the pack row's Fix button");
+            int cardsBefore = _alertLog.Entries.Count;
+            slot.MapTracker.PressFixAll();
+            await UiTestWaitForAsync(() => AP_Atlas.Core.PopTracker.PackFixes.Get(key).Tiles.Any(t => t.Code == "sword" && t.ApItemId == 1000 && t.Automatic) ? slot : null, "the Sword to be linked by Fix what Atlas can");
+            // Each pin is linked (its best match scores enough) or set aside; either way nothing fixable is left, and the card says so.
+            var fixedFile = AP_Atlas.Core.PopTracker.PackFixes.Get(key);
+            bool Handled(string subject, string? findingKey) => fixedFile.Ignored.Contains(findingKey) || fixedFile.Links.Any(l => l.Subject == subject);
+            UiTestExpect(Handled("link:Far|Lantern", far.Key) && Handled("link:Cave|Chest", pin.Key),
+                $"the pins weren't linked or set aside: ignored {string.Join(", ", fixedFile.Ignored)}, links {string.Join(", ", fixedFile.Links.Select(l => l.Subject))}");
+            UiTestExpect(_alertLog.Entries.Count > cardsBefore && _alertLog.Entries[0].Message.Contains("linked") && _alertLog.Entries[0].Message.Contains("Undo"),
+                $"no card said what was fixed: {(_alertLog.Entries.Count > 0 ? _alertLog.Entries[0].Message : "none")}");
+            await UiTestWaitForAsync(() => AP_Atlas.Core.PopTracker.PackDoctorService.Reports.TryGetValue(key, out var after) && AP_Atlas.Core.PopTracker.PackDoctor.Recommendations(after).Count == 0 ? slot : null, "nothing left to suggest after the fix");
+            UiTestExpect(AP_Atlas.Core.PopTracker.PackFixes.Undo(key) && AP_Atlas.Core.PopTracker.PackFixes.Get(key).Ignored.Count == 0 && AP_Atlas.Core.PopTracker.PackFixes.Get(key).Tiles.Count == 0 && AP_Atlas.Core.PopTracker.PackFixes.Get(key).Links.Count == 0,
+                "one Undo didn't reverse the whole fix");
         }
         finally
         {

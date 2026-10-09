@@ -25,7 +25,7 @@ namespace AP_Atlas.Core.PopTracker
         public string Source { get; set; }
 
         [JsonIgnore]
-        public bool Automatic => Source == "automatic";
+        public bool Automatic => Source is "automatic" or "suggested";
     }
 
     /// <summary>A Key Items tile: which AP item it tracks, hidden, or a replacement image.</summary>

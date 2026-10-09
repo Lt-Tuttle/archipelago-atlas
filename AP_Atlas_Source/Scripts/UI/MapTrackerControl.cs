@@ -1192,10 +1192,20 @@ namespace AP_Atlas.UI
         /// <summary>Presses one Attention row (for tests).</summary>
         public void PressAttention(string key) => _attention.FirstOrDefault(r => r.Key == key).Open?.Invoke();
 
-        /// <summary>Shows the pack's problems that matter for this seed (the slot works them out from the Pack Doctor's report); empty hides the group.</summary>
-        public void SetAttention(IReadOnlyList<AttentionRow> rows)
+        private Action _fixAll;
+        private Button _fixAllButton;
+
+        /// <summary>Presses "Fix what Atlas can" (for tests).</summary>
+        public void PressFixAll() => _fixAll?.Invoke();
+
+        /// <summary>
+        /// Shows the pack's problems that matter for this seed (the slot works them out from the Pack Doctor's report); empty
+        /// hides the group. <paramref name="fixAll"/> links the confident matches and sets the rest aside (null: no button).
+        /// </summary>
+        public void SetAttention(IReadOnlyList<AttentionRow> rows, Action fixAll = null)
         {
             _attention = rows ?? Array.Empty<AttentionRow>();
+            _fixAll = fixAll;
             if (_attentionBox == null) return;
             foreach (Node child in _attentionBox.GetChildren())
             {
@@ -1207,6 +1217,12 @@ namespace AP_Atlas.UI
             _attentionHeader.Text = (_attentionOpen ? "▾ " : "▸ ") + Translate("Attention ({0})").Replace("{0}", _attention.Count.ToString());
             _attentionBox.Visible = any && _attentionOpen;
             if (!_attentionOpen) return;
+            if (fixAll != null)
+            {
+                _fixAllButton = Kit.Button(Translate("Fix what Atlas can"), Translate("Links every pin and tile whose best match is confident (85% or more, no clash) and sets the rest aside, in one step; a card says what was done, and Undo in the Pack Doctor reverses it."), () => fixAll(), small: true);
+                _fixAllButton.SetMeta("attention_fix", true);
+                _attentionBox.AddChild(_fixAllButton);
+            }
             foreach (var row in _attention)
             {
                 var open = row.Open;

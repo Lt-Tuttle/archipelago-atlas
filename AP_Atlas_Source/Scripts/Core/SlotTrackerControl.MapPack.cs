@@ -25,6 +25,9 @@ public partial class SlotTrackerControl : MarginContainer
     /// <summary>Opens the Pack Doctor for a pack's zip on a tab (set by the window; the Map Tracker's Attention rows use it).</summary>
     public Action<string, string> OpenPackDoctor { get; set; }
 
+    /// <summary>"Fix what Atlas can" for a pack by its key (set by the window; the result shows as a card).</summary>
+    public Action<string> FixWhatAtlasCan { get; set; }
+
     private void LoadMapPack() => AP_Atlas.Core.Async.Fire(LoadMapPackAsync(), $"loading {_slotName}'s map pack");
 
     /// <summary>The pack's images, used while this slot is open (released when it ends).</summary>
@@ -431,6 +434,8 @@ public partial class SlotTrackerControl : MarginContainer
         int more = report.Findings.Count(f => !f.Ignored && f.Severity >= AP_Atlas.Core.PopTracker.FindingSeverity.Warning) - rows.Count;
         if (rows.Count >= AttentionCap && more > 0)
             rows.Add(new AP_Atlas.UI.MapTrackerControl.AttentionRow("more", Tr("… and {0} more in the Pack Doctor").Replace("{0}", more.ToString()), Tr("Opens the Pack Doctor's Overview."), () => OpenPackDoctor?.Invoke(zip, "Overview")));
-        _mapTracker.SetAttention(rows);
+        string packKey = AP_Atlas.Core.PopTracker.PackFixes.KeyFor(Pack);
+        bool fixable = report.Findings.Any(f => !f.Ignored && (f.Actions.HasFlag(AP_Atlas.Core.PopTracker.FindingActions.LinkItem) || f.Actions.HasFlag(AP_Atlas.Core.PopTracker.FindingActions.LinkLocation)));
+        _mapTracker.SetAttention(rows, fixable && FixWhatAtlasCan != null ? () => FixWhatAtlasCan(packKey) : null);
     }
 }

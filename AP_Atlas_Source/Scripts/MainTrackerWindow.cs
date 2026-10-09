@@ -84,6 +84,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         AP_Atlas.Core.Logger.OnLogMessage -= OnLogMessageReceived;
         AP_Atlas.Core.Annotations.Changed -= OnAnnotationsChanged;
         AP_Atlas.Core.PopTracker.PackDoctorService.ReviewSuggested -= OnPackReviewSuggested;
+        AP_Atlas.Core.PopTracker.PackDoctorService.FixSuggested -= OnPackFixSuggested;
         AP_Atlas.Core.EngineSetup.AtlasEngine.PartsChanged -= OnEnginePartsChanged;
         AP_Atlas.Core.EngineSetup.AtlasEngine.Changed -= OnEngineChangedForHome;
         AP_Atlas.Core.EngineSetup.SoloTestRunner.StateChanged -= OnSoloTestChanged;
@@ -192,6 +193,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             .Where(s => GodotObject.IsInstanceValid(s) && s.Session?.Locations != null && string.Equals(s.Game, game, StringComparison.OrdinalIgnoreCase))
             .SelectMany(s => s.Session.Locations.AllLocations).ToList();
         AP_Atlas.Core.PopTracker.PackDoctorService.ReviewSuggested += OnPackReviewSuggested;
+        AP_Atlas.Core.PopTracker.PackDoctorService.FixSuggested += OnPackFixSuggested;
         _profiles = DataManager.LoadProfiles();
         StartSessions();
         // Services read the slots themselves (their models), never their panels.
@@ -406,6 +408,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _packManagerPanel.FontSize = () => _appSettings.ContentFontSize;
         _packManagerPanel.Visible = false;
         _packManagerPanel.OpenDoctor = (path, tab) => OpenPackDoctor(path, tab);
+        _packManagerPanel.FixPack = FixWhatAtlasCan;
         _packManagerPanel.Toast = ShowToast;
         _packManagerPanel.OnDataRefreshed += () =>
         {

@@ -115,7 +115,9 @@ namespace AP_Atlas.Core.PopTracker
                 bool newOrChanged = fixes.ReviewedVersion != version;
                 if (prompt && newOrChanged && needs > 0)
                 {
-                    ReviewSuggested?.Invoke(key, $"Pack Doctor: {original.Manifest?.Name} has {needs} thing{(needs == 1 ? "" : "s")} to review.");
+                    int fixable = report.Findings.Count(f => !f.Ignored && (f.Actions.HasFlag(FindingActions.LinkItem) || f.Actions.HasFlag(FindingActions.LinkLocation)));
+                    if (fixable > 0) FixSuggested?.Invoke(key, fixable, original.Manifest?.Name ?? key);
+                    else ReviewSuggested?.Invoke(key, $"Pack Doctor: {original.Manifest?.Name} has {needs} thing{(needs == 1 ? "" : "s")} to review.");
                 }
                 return report;
             }
@@ -176,6 +178,82 @@ namespace AP_Atlas.Core.PopTracker
             });
             return exact.Count;
         }
+
+        /// <summary>What "Fix what Atlas can" did: the rows linked (name → match, score) and the rows set aside (ignored).</summary>
+        public sealed class SuggestedFixResult
+        {
+            public List<string> Linked = new List<string>();
+            public List<string> SetAside = new List<string>();
+            public bool Nothing => Linked.Count == 0 && SetAside.Count == 0;
+
+            /// <summary>One line for a card or the status line.</summary>
+            public string Describe(string packName) => Nothing ? $"{packName}: nothing to fix."
+                : $"{packName}: linked {Linked.Count} match{(Linked.Count == 1 ? "" : "es")} and set aside {SetAside.Count} {(SetAside.Count == 1 ? "row" : "rows")} with no confident match. Undo in the Pack Doctor reverses all of it.";
+        }
+
+        /// <summary>The confidence a match needs for "Fix what Atlas can" to link it.</summary>
+        public const double SuggestedMinScore = 0.85;
+
+        /// <summary>
+        /// Fixes what Atlas can without anyone opening the Doctor (the owner's choice, 2026-10-09): every tile and pin
+        /// section still to decide gets its best match when it scores 85% or more and clashes with nothing, and is set
+        /// aside (ignored) otherwise; one undoable step, each link marked "suggested". Main thread. The full list goes
+        /// to the log; the result says the counts.
+        /// </summary>
+        public static SuggestedFixResult ApplySuggested(string key, LoadedPack original, DoctorReport report)
+        {
+            var result = new SuggestedFixResult();
+            if (report == null) return result;
+            var fixable = report.Findings.Where(f => !f.Ignored && (f.Actions.HasFlag(FindingActions.LinkItem) || f.Actions.HasFlag(FindingActions.LinkLocation))).ToList();
+            var recs = fixable.Where(f => f.Suggestions.Count > 0).ToList();
+            var conflicts = PackDoctor.Conflicts(report, recs, f => f.Suggestions[0]);
+            var link = recs.Where(f => f.Suggestions[0].Score >= SuggestedMinScore - 0.0001 && !conflicts.ContainsKey(f.Key)).ToList();
+            var aside = fixable.Where(f => !link.Contains(f)).ToList();
+            if (link.Count == 0 && aside.Count == 0) return result;
+            PackFixes.Edit(key, $"Fix what Atlas can: link {link.Count}, set aside {aside.Count}", file =>
+            {
+                foreach (var f in link)
+                {
+                    var s = f.Suggestions[0];
+                    string subject = f.Subject.Substring(f.Subject.IndexOf(':') + 1);
+                    if (f.Actions.HasFlag(FindingActions.LinkItem))
+                    {
+                        file.Tiles.RemoveAll(t => t.Subject == f.Subject);
+                        file.Tiles.Add(new TileFix { Subject = f.Subject, Code = subject, ApItemId = s.Id, ApItemName = s.Label, Source = "suggested", AuthorStamp = PackFixes.AuthorStamp(original, f.Subject) });
+                    }
+                    else
+                    {
+                        var parts = subject.Split('|');
+                        file.Links.RemoveAll(l => l.Subject == f.Subject);
+                        file.Links.Add(new LocationLinkFix
+                        {
+                            Subject = f.Subject,
+                            PinPath = parts[0],
+                            SectionName = parts.Length > 1 ? parts[1] : "",
+                            ApLocationId = s.Id,
+                            ApLocationName = s.Label,
+                            Source = "suggested",
+                            AuthorStamp = PackFixes.AuthorStamp(original, f.Subject)
+                        });
+                    }
+                    result.Linked.Add($"{PackDoctor.RowName(report, f)} → {s.Label} ({s.Score:P0})");
+                }
+                foreach (var f in aside)
+                {
+                    if (!file.Ignored.Contains(f.Key)) file.Ignored.Add(f.Key);
+                    result.SetAside.Add(PackDoctor.RowName(report, f) + (f.Suggestions.Count > 0 ? $" (best match {f.Suggestions[0].Label}, {f.Suggestions[0].Score:P0})" : " (no match)"));
+                }
+            });
+            Logger.LogInfo($"Pack Doctor fixed what it could in '{original?.Manifest?.Name}': linked {result.Linked.Count}, set aside {result.SetAside.Count}."
+                + (result.Linked.Count > 0 ? "\n  Linked: " + string.Join("; ", result.Linked) : "") + (result.SetAside.Count > 0 ? "\n  Set aside: " + string.Join("; ", result.SetAside) : ""));
+            return result;
+        }
+
+        /// <summary>
+        /// A pack new to this version has things Atlas can fix (prompted once per version, instead of <see cref="ReviewSuggested"/>):
+        /// the pack's key, how many, and its name.
+        /// </summary>
+        public static event Action<string, int, string> FixSuggested;
 
         /// <summary>Marks a pack's current version as reviewed (no more prompts until it changes).</summary>
         public static void MarkReviewed(LoadedPack original)

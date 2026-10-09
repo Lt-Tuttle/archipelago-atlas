@@ -493,7 +493,13 @@ namespace AP_Atlas.Core
                     reviewBtn.Visible = false;
                     reviewBtn.SetMeta("pack_key", key);
                     capsHbox.AddChild(reviewBtn);
-                    UpdateDoctorBadge(doctorBadge, reviewBtn);
+                    // One click: the confident matches linked, the rest set aside (the window says what was done).
+                    var fixBtn = AP_Atlas.UI.Kit.Button(Tr("Fix"), Tr("Links every pin and tile whose best match is confident (85% or more, no clash) and sets the rest aside, in one step; Undo in the Pack Doctor reverses it."), () => FixPack?.Invoke(key), small: true);
+                    fixBtn.Name = "FixButton";
+                    fixBtn.Visible = false;
+                    fixBtn.SetMeta("pack_key", key);
+                    capsHbox.AddChild(fixBtn);
+                    UpdateDoctorBadge(doctorBadge, reviewBtn, fixBtn);
                     infoVBox.AddChild(capsHbox);
 
                     hbox.AddChild(infoVBox);
@@ -553,15 +559,20 @@ namespace AP_Atlas.Core
             _firstScanDone = true;
         }
 
-        private void UpdateDoctorBadge(Label badge, Button review)
+        /// <summary>"Fix what Atlas can" for a pack by its key (set by the window; the result shows as a card).</summary>
+        public Action<string> FixPack { get; set; }
+
+        private void UpdateDoctorBadge(Label badge, Button review, Button fix = null)
         {
             if (!GodotObject.IsInstanceValid(badge)) return;
             bool reviewValid = review != null && GodotObject.IsInstanceValid(review);
+            bool fixValid = fix != null && GodotObject.IsInstanceValid(fix);
             string key = badge.GetMeta("pack_key").AsString();
             if (!PackDoctorService.Reports.TryGetValue(key, out var report) || report == null)
             {
                 badge.Text = "";
                 if (reviewValid) review.Visible = false;
+                if (fixValid) fix.Visible = false;
                 return;
             }
             int needs = report.NeedsReview.Count();
@@ -573,7 +584,12 @@ namespace AP_Atlas.Core
                 review.Visible = needs > 0;
                 review.Text = Tr("Review {0}").Replace("{0}", needs.ToString());
             }
+            if (fixValid) fix.Visible = report.Findings.Any(f => !f.Ignored && (f.Actions.HasFlag(FindingActions.LinkItem) || f.Actions.HasFlag(FindingActions.LinkLocation)));
         }
+
+        /// <summary>A pack row's Fix button, by the pack's key (for tests).</summary>
+        internal Button FixButtonFor(string key) =>
+            _packListVBox.GetChildren().Select(row => row.FindChild("FixButton", true, false) as Button).FirstOrDefault(b => b != null && b.GetMeta("pack_key").AsString() == key);
 
         /// <summary>The Doctor's tab for a pack's review: Recommended while it suggests matches, else the Overview.</summary>
         private static string ReviewTab(string key) =>
@@ -589,7 +605,7 @@ namespace AP_Atlas.Core
             foreach (Node row in _packListVBox.GetChildren())
             {
                 var badge = row.FindChild("DoctorBadge", true, false) as Label;
-                if (badge != null && badge.GetMeta("pack_key").AsString() == key) UpdateDoctorBadge(badge, row.FindChild("ReviewButton", true, false) as Button);
+                if (badge != null && badge.GetMeta("pack_key").AsString() == key) UpdateDoctorBadge(badge, row.FindChild("ReviewButton", true, false) as Button, row.FindChild("FixButton", true, false) as Button);
             }
             if (_shownPackPath != null && PackFixes.KeyFor(PopTrackerPackLoader.InspectZipPack(_shownPackPath)) == key) ShowPackDetails(_shownPackPath);
         }

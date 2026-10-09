@@ -238,6 +238,13 @@ namespace AP_Atlas.UI
             actions.AddChild(applyAll);
             var ignoreAll = Kit.Button($"Ignore {selected} selected", "Hide every selected row in one undoable step (they stay in the report to the author)", () => IgnoreRecommendations(recs.Where(IsTicked).ToList()), selected > 0);
             actions.AddChild(ignoreAll);
+            actions.AddChild(Kit.Button("Fix what Atlas can", "Links every row whose best match is confident (85% or more, no clash) and sets the rest aside, in one undoable step", () =>
+            {
+                var result = PackDoctorService.ApplySuggested(_key, _original, _report);
+                foreach (var f in recs) { _recTicked.Remove(f.Key); _recUnticked.Remove(f.Key); _appliedKeys.Add(f.Key); }
+                _appliedText = result.Describe(_original?.Manifest?.Name ?? "the pack");
+                SetStatus(_appliedText + " Checking the pack again…");
+            }, recs.Count > 0));
             actions.AddChild(Kit.Button("Select shown", "Select every shown row at or above the confidence level", () => SelectShown(recs), shown.Count > 0));
             actions.AddChild(Kit.Button("Select none", "Clear the selection", () => { foreach (var f in recs) { _recUnticked.Add(f.Key); _recTicked.Remove(f.Key); } RenderCurrentTab(); }, recs.Count > 0));
             // The counts agree with the selection: rows at the level that aren't selected are the ones that clash.
