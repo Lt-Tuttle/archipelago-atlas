@@ -27,6 +27,8 @@ namespace AP_Atlas.UI
         public required Action<string> FindPack { get; init; }
         /// <summary>Opens the solo test for a game ("Test this game…").</summary>
         public required Action<string> StartSoloTest { get; init; }
+        /// <summary>Ends the running solo test's server (its slot and multiworld go).</summary>
+        public required Action StopSoloTest { get; init; }
     }
 
     /// <summary>
@@ -426,11 +428,23 @@ namespace AP_Atlas.UI
                 toolButtons);
             // 5. The solo test: the whole chain on a one-player seed hosted on this PC, and a report for the owner.
             string? lastReport = LastSoloReport(game);
-            var testButton = Kit.Button(_tr("Test this game…"), _tr("Installs what's missing, generates a one-player seed with the game's default options, hosts it on this PC and connects a test slot, then writes a report you can hand back."), () => _hooks.StartSoloTest(game), enabled: engineReady);
+            var running = AP_Atlas.Core.EngineSetup.SoloTestRunner.Running;
+            bool thisGameRuns = running != null && string.Equals(running.Game, game, StringComparison.OrdinalIgnoreCase);
+            var testButton = Kit.Button(thisGameRuns ? _tr("Show the test") : _tr("Test this game…"),
+                thisGameRuns ? _tr("Brings the running test's window back.") : _tr("Installs what's missing, generates a one-player seed with the game's default options, hosts it on this PC and connects a test slot, then writes a report you can hand back."),
+                () => _hooks.StartSoloTest(game), enabled: engineReady);
             testButton.SetMeta("solo_test_button", true);
+            var testButtons = new List<Button> { testButton };
+            if (thisGameRuns)
+            {
+                var stopButton = Kit.Button(_tr("Stop the test server"), _tr("Ends the server on this PC, disconnects the AtlasTest slot and removes its multiworld."), () => _hooks.StopSoloTest(), small: true, flat: true);
+                stopButton.SetMeta("solo_stop_button", true);
+                testButtons.Add(stopButton);
+            }
             Step(steps, lastReport != null, _tr("A solo test"),
-                lastReport != null ? _tr("Last tested: {0}.").Replace("{0}", lastReport) : _tr("Runs the game end to end here, with nothing on archipelago.gg, and writes a report under Atlas's reports folder."),
-                new List<Button> { testButton });
+                thisGameRuns ? (running!.Busy ? _tr("A test is running.") : _tr("The test's server is up; its slot AtlasTest is in the multiworld \"Solo test: {0}\".").Replace("{0}", game))
+                : lastReport != null ? _tr("Last tested: {0}.").Replace("{0}", lastReport) : _tr("Runs the game end to end here, with nothing on archipelago.gg, and writes a report under Atlas's reports folder."),
+                testButtons);
             foreach (var record in records.Where(r => File.Exists(Path.Combine(tools, r.File))))
             {
                 var toolRow = new HBoxContainer();

@@ -20,6 +20,8 @@ namespace AP_Atlas.Core.EngineSetup
     public sealed class SoloTestHooks
     {
         public required AppSettings Settings { get; init; }
+        /// <summary>A line for the user (a card), when the window has one.</summary>
+        public Action<string>? Notice { get; init; }
         /// <summary>Installs the newest release of the game's apworld (the permission and trust questions asked as always); false when it didn't happen.</summary>
         public required Func<string, Task<bool>> InstallApworldAsync { get; init; }
         /// <summary>Lets the user pick a pack from GitHub's results (or none).</summary>
@@ -49,6 +51,9 @@ namespace AP_Atlas.Core.EngineSetup
         public static readonly TimeSpan TemplateLimit = TimeSpan.FromMinutes(3), GenerateLimit = TimeSpan.FromMinutes(25), HostStart = TimeSpan.FromSeconds(90), ConnectWait = TimeSpan.FromSeconds(60), LogicSettle = TimeSpan.FromSeconds(180);
 
         private static readonly List<SoloTestRunner> _all = new();
+
+        /// <summary>Raised (on the main thread) when a test starts or ends, or its server stops.</summary>
+        public static event Action? StateChanged;
 
         /// <summary>The test running or hosting now, if any (one at a time).</summary>
         public static SoloTestRunner? Running => _all.LastOrDefault(r => r.Busy || r.ServerAddress != null);
@@ -82,6 +87,7 @@ namespace AP_Atlas.Core.EngineSetup
         {
             if (Busy) throw new InvalidOperationException("This test is already running.");
             Busy = true;
+            StateChanged?.Invoke();
             var started = DateTime.Now; // wall clock: shown in the report, never compared
             _scrubber = hooks.Scrubber();
             _steps.Clear();
@@ -259,6 +265,7 @@ namespace AP_Atlas.Core.EngineSetup
                 });
                 _result = _result! with { Steps = _steps.ToList() };
                 Busy = false;
+                StateChanged?.Invoke();
             }
             return _result!;
         }
@@ -286,6 +293,7 @@ namespace AP_Atlas.Core.EngineSetup
                 hooks.RemoveProfile(Profile);
             }
             Profile = null;
+            StateChanged?.Invoke();
         }
 
         /// <summary>Every test server ended (Atlas is closing; the job object is the backstop).</summary>

@@ -40,11 +40,13 @@ namespace AP_Atlas.UI
             _runner = new SoloTestRunner(game);
             Title = tr("Test {0}").Replace("{0}", game);
             OkButtonText = tr("Close");
+            // Not exclusive: the owner looks at the Map Tracker, Key Items and the Logic Tracker while this window stays open.
+            Exclusive = false;
             SetMeta("solo_test", game);
             var box = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(600, 0) };
             box.AddThemeConstantOverride("separation", 8);
             AddChild(box);
-            var intro = Kit.Muted(tr("Atlas installs what's missing (asking as always before anything is downloaded), makes a YAML with the game's default options, generates a one-player seed in the engine (minutes for a big game), hosts it on this PC only (127.0.0.1, no password), connects a slot called AtlasTest with that YAML, scores its logic and the pack, and writes a report in Atlas's folder with a few questions for you at the end."));
+            var intro = Kit.Muted(tr("Atlas installs what's missing (asking as always before anything is downloaded), makes a YAML with the game's default options, generates a one-player seed in the engine (minutes for a big game), hosts it on this PC only (127.0.0.1, no password), connects a slot called AtlasTest with that YAML, scores its logic and the pack, and writes a report in Atlas's folder with a few questions for you at the end. Atlas stays usable meanwhile; Close keeps the test and its server going, and Test this game… on the Games page brings this window back."));
             intro.AutowrapMode = TextServer.AutowrapMode.WordSmart;
             intro.CustomMinimumSize = new Vector2(600, 0);
             box.AddChild(intro);
@@ -115,7 +117,7 @@ namespace AP_Atlas.UI
             endButtons.AddChild(_saveNotes);
             _openFolder = Kit.Button(tr("Open report folder"), tr("The folder in Atlas's data folder that holds every solo test's report."), () => AP_Atlas.Core.ExternalLinks.OpenFolder(SoloTestRunner.ReportsFolder));
             endButtons.AddChild(_openFolder);
-            _stopServer = Kit.Button(tr("Stop the test server"), tr("Ends the server on this PC, disconnects the AtlasTest slot and removes its multiworld (closing this window does the same)."), StopServer);
+            _stopServer = Kit.Button(tr("Stop the test server"), tr("Ends the server on this PC, disconnects the AtlasTest slot and removes its multiworld (closing this window keeps them)."), StopServer);
             endButtons.AddChild(_stopServer);
             _notesBox.AddChild(endButtons);
             box.AddChild(_notesBox);
@@ -126,6 +128,13 @@ namespace AP_Atlas.UI
         /// <summary>Opens the dialog for a game (one test at a time: a second one says so and closes).</summary>
         public static SoloTestDialog Open(Node parent, string game, Func<string, string> tr, SoloTestHooks hooks)
         {
+            // A closed window whose test or server still runs comes back as it was.
+            var hidden = parent.GetChildren().OfType<SoloTestDialog>().FirstOrDefault(d => !d.IsQueuedForDeletion() && d._game == game);
+            if (hidden != null)
+            {
+                hidden.PopupCentered(hidden.Size);
+                return hidden;
+            }
             var dialog = new SoloTestDialog(game, tr, hooks);
             parent.AddChild(dialog);
             WindowFit.Pop(dialog, 640);
@@ -265,9 +274,14 @@ namespace AP_Atlas.UI
 
         private void OnClosed()
         {
+            // A running test or a served seed goes on without the window (the Games page brings it back or stops it).
+            if (_runner.Busy || _runner.ServerAddress != null)
+            {
+                Hide();
+                _hooks.Notice?.Invoke(_tr("The test keeps going; Test this game… on the Games page brings its window back."));
+                return;
+            }
             _packChoice?.TrySetResult(new PackChoice(null));
-            _cts?.Cancel();
-            _runner.StopServer(_hooks);
             QueueFree();
         }
 

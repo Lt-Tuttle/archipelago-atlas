@@ -1003,19 +1003,35 @@ public partial class MainTrackerWindow
             dialog.SaveNotesForTests();
             md = await System.IO.File.ReadAllTextAsync(mds[0]);
             UiTestExpect(md.Split("A pin in the sea.").Length == 2 && md.Split(AP_Atlas.Core.Reports.SoloTestReport.NotesHeading).Length == 2, "the notes weren't written once");
+            // The window doesn't block Atlas; Close while the server runs hides it, the Games page brings it back and can stop the server.
+            UiTestExpect(!dialog.Exclusive, "the solo test's window blocks the rest of Atlas");
+            dialog.EmitSignal(AcceptDialog.SignalName.Confirmed);
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(GodotObject.IsInstanceValid(dialog) && !dialog.IsQueuedForDeletion() && !dialog.Visible && runner.ServerAddress != null, "Close while the server runs didn't just hide the window");
+            await UiTestWaitAsync(0.1);
+            button = _gamesPage.FindChildren("*", nameof(Button), true, false).OfType<Button>().FirstOrDefault(b => b.HasMeta("solo_test_button"));
+            var stopButton = _gamesPage.FindChildren("*", nameof(Button), true, false).OfType<Button>().FirstOrDefault(b => b.HasMeta("solo_stop_button"));
+            UiTestExpect(button != null && button.Text == Tr("Show the test") && stopButton != null, "the Games page doesn't say the test runs");
+            button!.EmitSignal(BaseButton.SignalName.Pressed);
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(dialog.Visible && Dialog() == dialog, "the Games page didn't bring the same window back");
             // Stop: the server ends, the slot disconnects and the test multiworld goes.
             int running = AP_Atlas.Core.EngineSetup.ProcessJob.RunningUnder(AtlasEngine.ArchipelagoDir);
-            dialog.StopServerForTests();
+            stopButton!.EmitSignal(BaseButton.SignalName.Pressed);
             await UiTestWaitForAsync(() => !_profiles.Contains(profile) && SlotView(profile.Id, AP_Atlas.Core.EngineSetup.SoloTestRunner.SlotName) == null ? this : null, "the test multiworld to go");
             await UiTestWaitForAsync(() => AP_Atlas.Core.EngineSetup.ProcessJob.RunningUnder(AtlasEngine.ArchipelagoDir) < running ? this : null, "the test server to end");
             UiTestExpect(runner.ServerAddress == null && !_appSettings.SlotYamlPaths.ContainsKey(yamlKey), "the server address or the YAML link stayed");
+            await UiTestWaitAsync(0.1);
+            button = _gamesPage.FindChildren("*", nameof(Button), true, false).OfType<Button>().FirstOrDefault(b => b.HasMeta("solo_test_button"));
+            UiTestExpect(button != null && button.Text == Tr("Test this game…") && !_gamesPage.FindChildren("*", nameof(Button), true, false).OfType<Button>().Any(b => b.HasMeta("solo_stop_button")), "the Games page still says the test runs");
             dialog.EmitSignal(AcceptDialog.SignalName.Confirmed);
             await UiTestWaitAsync(0.1);
+            UiTestExpect(!GodotObject.IsInstanceValid(dialog) || dialog.IsQueuedForDeletion(), "Close with nothing running didn't close the window");
             // A generation that fails outright: the chain ends there, the report says so.
             engine.GenerateError = "ValueError: fill failed";
             engine.Apply();
             foreach (string old in mds) System.IO.File.Delete(old);
-            button.EmitSignal(BaseButton.SignalName.Pressed);
+            button!.EmitSignal(BaseButton.SignalName.Pressed);
             dialog = await UiTestWaitForAsync(Dialog, "the dialog again");
             dialog.StartForTests();
             await UiTestWaitForAsync(() => dialog.StepStates()[AP_Atlas.Core.Reports.SoloTestStep.Report] == AP_Atlas.Core.Reports.SoloStepOutcome.Done ? dialog : null, "the second chain to end", 60);

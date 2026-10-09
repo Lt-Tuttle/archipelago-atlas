@@ -86,6 +86,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         AP_Atlas.Core.PopTracker.PackDoctorService.ReviewSuggested -= OnPackReviewSuggested;
         AP_Atlas.Core.EngineSetup.AtlasEngine.PartsChanged -= OnEnginePartsChanged;
         AP_Atlas.Core.EngineSetup.AtlasEngine.Changed -= OnEngineChangedForHome;
+        AP_Atlas.Core.EngineSetup.SoloTestRunner.StateChanged -= OnSoloTestChanged;
     }
 
     // Slot cards show special-item progress, so redraw them when special marks change.
@@ -166,6 +167,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         EnginePools.Initialize();
         AP_Atlas.Core.EngineSetup.AtlasEngine.PartsChanged += OnEnginePartsChanged;
         AP_Atlas.Core.EngineSetup.AtlasEngine.Changed += OnEngineChangedForHome;
+        AP_Atlas.Core.EngineSetup.SoloTestRunner.StateChanged += OnSoloTestChanged;
         AP_Atlas.Core.PopTracker.PackDoctorService.Initialize(_appSettings);
         AP_Atlas.Core.PopTracker.PackDoctorService.ReviewSuggested += OnPackReviewSuggested;
         _profiles = DataManager.LoadProfiles();
@@ -421,7 +423,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             ShowTool = tool => ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(tool),
             OpenEngineSetup = OpenEngineSetup,
             FindPack = FindMapPack,
-            StartSoloTest = StartSoloTest
+            StartSoloTest = StartSoloTest,
+            StopSoloTest = StopSoloTest
         });
         _gamesPage.Visible = false;
         _contentStage.AddChild(_gamesPage);

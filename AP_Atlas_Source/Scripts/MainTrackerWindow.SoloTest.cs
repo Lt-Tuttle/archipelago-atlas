@@ -10,6 +10,12 @@ public partial class MainTrackerWindow
     /// <summary>"Test this game…" on a game's page.</summary>
     private void StartSoloTest(string game) => AP_Atlas.UI.SoloTestDialog.Open(this, game, text => Tr(text), SoloHooks());
 
+    /// <summary>"Stop the test server" on the Games page: the running test's server, slot and multiworld go.</summary>
+    private void StopSoloTest() => SoloTestRunner.Running?.StopServer(SoloHooks());
+
+    /// <summary>The Games page follows the test's state (its step says when one runs).</summary>
+    private void OnSoloTestChanged() => AP_Atlas.UI.Ui.Defer(this, () => { if (_gamesPage != null && _gamesPage.Visible) _gamesPage.Refresh(); });
+
     private SoloTestHooks SoloHooks() => new SoloTestHooks
     {
         Settings = _appSettings,
@@ -30,6 +36,7 @@ public partial class MainTrackerWindow
         ConnectSlotAsync = ConnectForSoloTestAsync,
         Scrubber = () => _crashReports?.Scrubber() ?? new AP_Atlas.Core.Reports.Scrubber(System.Environment.UserName),
         AtlasVersionLine = () => AP_Atlas.Core.AtlasVersion.Display,
+        Notice = text => ShowToast(text, AP_Atlas.Core.ThemeColors.Text),
     };
 
     /// <summary>Connects a slot the way its row's button does and waits for its view (null when it didn't connect in a minute).</summary>
