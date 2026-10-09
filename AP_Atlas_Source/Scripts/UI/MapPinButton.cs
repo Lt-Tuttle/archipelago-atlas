@@ -27,6 +27,17 @@ namespace AP_Atlas.UI
             if (SplitRight is { } right) DrawRightHalf(this, Size, Border, Shape, right);
         }
 
+        /// <summary>Sets the border's width on every stylebox the pin wears (the canvas scales it with the zoom).</summary>
+        public void ApplyBorderWidth(int width)
+        {
+            if ((int)Border == width) return;
+            Border = width;
+            foreach (string name in new[] { "normal", "hover", "pressed", "focus" })
+                if (HasThemeStyleboxOverride(name) && GetThemeStylebox(name) is StyleBoxFlat style)
+                    style.BorderWidthTop = style.BorderWidthBottom = style.BorderWidthLeft = style.BorderWidthRight = width;
+            QueueRedraw();
+        }
+
         /// <summary>
         /// Paints the right half of a pin's face (what's inside the border) in a colour: the right half of the disc, the
         /// right half of the square, or, for a diamond (a square turned on its corner), the half that shows to the right.

@@ -29,6 +29,8 @@ namespace AP_Atlas.UI
         public required Action<string> StartSoloTest { get; init; }
         /// <summary>Ends the running solo test's server (its slot and multiworld go).</summary>
         public required Action StopSoloTest { get; init; }
+        /// <summary>Shows a document (an apworld's bundled guide: id, title, Markdown) in the Help window.</summary>
+        public required Action<string, string, string> OpenDocument { get; init; }
     }
 
     /// <summary>
@@ -479,12 +481,70 @@ namespace AP_Atlas.UI
             }
             string? repo = entry.Repo ?? ApworldSources.Find(game)?.Repo;
             if (repo != null) links.AddChild(Kit.Button(_tr("Project ↗"), "https://github.com/" + repo, () => ExternalLinks.OpenWeb("https://github.com/" + repo)));
+            // The apworld's own documents (its setup guide says what the game itself needs: a client, a mod, a patcher).
+            foreach (var doc in ApworldDocuments(game))
+            {
+                var docButton = Kit.Button(doc.Text, doc.Tip, () => _hooks.OpenDocument(doc.Id, doc.Text, doc.Markdown()));
+                docButton.SetMeta("game_link", true);
+                links.AddChild(docButton);
+            }
             if (links.GetChildCount() > 0) _detail.AddChild(links);
 
             // Once GitHub may be asked, the projects' releases are read by themselves (once per game per session), so a
             // fork a seed's host used shows before anyone asks.
             if (entry.Section != Section.Official && anyProject && !_versions.ContainsKey(game) && !_versionsAsked.Contains(game) && Permissions.IsAllowed(_hooks.Settings, Permissions.GitHubLookups))
                 LoadVersions(game, again: false);
+        }
+
+        /// <summary>
+        /// The English documents the game's installed apworld bundles (docs/setup_en.md, docs/en_&lt;Game&gt;.md), read from the
+        /// file when pressed. One look at the zip's listing; nothing is written.
+        /// </summary>
+        private List<(string Id, string Text, string Tip, Func<string> Markdown)> ApworldDocuments(string game)
+        {
+            var docs = new List<(string, string, string, Func<string>)>();
+            var install = AtlasEngine.Current;
+            if (install == null) return docs;
+            string? file = ApworldSources.InstalledCopies(install, game).Select(c => c.File).FirstOrDefault();
+            if (file == null) return docs;
+            try
+            {
+                using var zip = SafeZip.Open(file);
+                foreach (var entry in zip.Entries.OrderBy(e => e.FullName, StringComparer.Ordinal))
+                {
+                    string name = entry.FullName;
+                    if (!name.Contains("/docs/", StringComparison.OrdinalIgnoreCase) || !name.EndsWith(".md", StringComparison.OrdinalIgnoreCase)) continue;
+                    string leaf = Path.GetFileName(name);
+                    bool setup = string.Equals(leaf, "setup_en.md", StringComparison.OrdinalIgnoreCase);
+                    bool about = leaf.StartsWith("en_", StringComparison.OrdinalIgnoreCase);
+                    if (!setup && !about) continue;
+                    string entryName = name;
+                    docs.Add(("apworld:" + game + ":" + (setup ? "setup" : "about"),
+                        setup ? _tr("Setup guide (from the apworld)") : _tr("About the game (from the apworld)"),
+                        _tr("The apworld's own document ({0}), shown in the Help window; its links open in your browser.").Replace("{0}", leaf),
+                        () => ReadApworldText(file, entryName)));
+                }
+            }
+            catch (Exception ex)
+            {
+                AP_Atlas.Core.Logger.LogWarning($"Couldn't list the documents in {Path.GetFileName(file)}: {ex.Message}");
+            }
+            return docs.OrderBy(d => d.Item1.EndsWith(":setup", StringComparison.Ordinal) ? 0 : 1).ToList();
+        }
+
+        private static string ReadApworldText(string file, string entryName)
+        {
+            try
+            {
+                using var zip = SafeZip.Open(file);
+                var entry = zip.GetEntry(entryName);
+                return entry == null ? "" : zip.ReadText(entry);
+            }
+            catch (Exception ex)
+            {
+                AP_Atlas.Core.Logger.LogWarning($"Couldn't read {entryName} in {Path.GetFileName(file)}: {ex.Message}");
+                return "";
+            }
         }
 
         /// <summary>What a game's link button says, by where the link leads, and the tooltip that explains it.</summary>

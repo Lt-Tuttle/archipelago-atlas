@@ -923,6 +923,8 @@ namespace AP_Atlas.UI
                 var geometry = MapPinGeometry.Resolve(place?.Size ?? 0f, currentMap?.LocationSize ?? 0f, fallbackSize, place?.BorderThickness ?? -1f,
                     currentMap?.LocationBorderThickness ?? -1f, place?.Shape, currentMap?.LocationShape, appShape);
                 float size = geometry.Size * _appSettings.MapNodeScale;
+                // The border sits outside the fill, as PopTracker draws it, so a pack's thick border doesn't eat the colour.
+                float borderMap = geometry.Border * _appSettings.MapNodeScale;
                 var ids = GetLocationIds(loc);
                 Color nodeColor;
                 Color? splitRight = null;
@@ -983,7 +985,7 @@ namespace AP_Atlas.UI
                 };
                 // Dimmed pins stay clickable, so an excluded check can be included again from Properties.
                 if (dim) btn.Modulate = new Color(1f, 1f, 1f, DimAlpha);
-                int border = (int)Math.Round(geometry.Border);
+                int border = (int)Math.Round(borderMap);
                 var style = new StyleBoxFlat
                 {
                     BgColor = nodeColor,
@@ -999,6 +1001,7 @@ namespace AP_Atlas.UI
                     style.BorderColor = color;
                     int ring = Math.Max(3, (int)(size * 0.18f));
                     style.BorderWidthTop = style.BorderWidthBottom = style.BorderWidthLeft = style.BorderWidthRight = ring;
+                    borderMap = ring;
                 }
                 if (MarkerLookup != null && ids.Count > 0)
                 {
@@ -1022,7 +1025,7 @@ namespace AP_Atlas.UI
                         btn.TooltipText += extra;
                     }
                 }
-                ShapePin(style, btn, MapPinGeometry.SettingOf(geometry.Shape), size);
+                ShapePin(style, btn, MapPinGeometry.SettingOf(geometry.Shape), size + 2 * borderMap);
                 btn.Border = style.BorderWidthLeft;
                 var hoverStyle = (StyleBoxFlat)style.Duplicate();
                 hoverStyle.BgColor = nodeColor.Lightened(0.2f);
@@ -1041,7 +1044,7 @@ namespace AP_Atlas.UI
                 {
                     if (_canvas.HandleWheel(ev, btn)) btn.AcceptEvent();
                 };
-                pins.Add(new MapCanvas.Pin { Key = $"{loc.Name}@{x},{y}", X = x, Y = y, Control = btn, MapSize = size });
+                pins.Add(new MapCanvas.Pin { Key = $"{loc.Name}@{x},{y}", X = x, Y = y, Control = btn, MapSize = size + 2 * borderMap, MapBorder = borderMap });
                 if (newlyUnlocked != null && ids.Any(newlyUnlocked.Contains)) pulse.Add(btn);
             }
             _canvas.SetPins(pins);

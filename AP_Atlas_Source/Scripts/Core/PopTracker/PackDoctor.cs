@@ -70,6 +70,8 @@ namespace AP_Atlas.Core.PopTracker
         public int TilesTotal, TilesLinked, TilesByScript;
         public int SectionsTotal, SectionsLinked, SectionsByScript, SectionsByName, SectionsLoose, SectionsByFix;
         public int ApLocationsTotal, ApLocationsPlaced;
+        /// <summary>Game locations no pin holds, by name (the first forty, sorted), for reports.</summary>
+        public List<string> UnplacedSample = new List<string>();
 
         /// <summary>Seed settings as the pack's scripts read them from the latest saved slot data (empty if none).</summary>
         public List<PackScriptHost.SettingInfo> Settings = new List<PackScriptHost.SettingInfo>();
@@ -595,6 +597,7 @@ namespace AP_Atlas.Core.PopTracker
             if (locNames.Count == 0) return;
             var unplaced = new HashSet<long>(index.UnplacedLocations());
             var unplacedNames = locNames.Where(kv => unplaced.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
+            report.UnplacedSample = unplacedNames.Values.OrderBy(n => n, StringComparer.Ordinal).Take(40).ToList();
 
             foreach (var (pin, sec) in index.UnmatchedSections())
             {

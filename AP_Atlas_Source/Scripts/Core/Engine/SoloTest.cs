@@ -271,7 +271,7 @@ namespace AP_Atlas.Core.EngineSetup
                         if (doctor != null)
                         {
                             pins = new SoloPins(doctor.ApLocationsTotal, doctor.ApLocationsPlaced, doctor.SectionsTotal, doctor.SectionsLinked, Math.Max(0, doctor.SectionsTotal - doctor.SectionsLinked),
-                                doctor.Index?.DanglingPaths.Count ?? 0, doctor.NeedsReview.Count());
+                                doctor.Index?.DanglingPaths.Count ?? 0, doctor.NeedsReview.Count(), doctor.UnplacedSample.ToList(), doctor.NeedsReview.Select(f => f.Title).Take(20).ToList());
                             keyItems = new SoloKeyItems(doctor.TilesTotal, doctor.TilesLinked, doctor.TilesByScript);
                             parts.Add("pins " + SoloTestReport.Percent(pins.LocationsPlaced, pins.LocationsTotal));
                         }

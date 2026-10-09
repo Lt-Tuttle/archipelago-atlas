@@ -20,8 +20,10 @@ namespace AP_Atlas.UI
             /// <summary>The pin's place in map pixels.</summary>
             public float X, Y;
             public Control Control = null!;
-            /// <summary>The pin's size in map pixels; 0 for <see cref="FixedPinSize"/> on screen whatever the zoom.</summary>
+            /// <summary>The pin's size in map pixels (the border included); 0 for <see cref="FixedPinSize"/> on screen whatever the zoom.</summary>
             public float MapSize;
+            /// <summary>The pin's border in map pixels (0: left as the pin was styled); scaled with the zoom like the size.</summary>
+            public float MapBorder;
         }
 
         public const float FixedPinSize = 22f;
@@ -169,6 +171,9 @@ namespace AP_Atlas.UI
                 pin.Control.Size = new Vector2(size, size);
                 pin.Control.Position = new Vector2(pin.X * _zoom - size / 2, pin.Y * _zoom - size / 2);
                 pin.Control.PivotOffset = new Vector2(size / 2, size / 2);
+                // The border scales with the pin (a fixed border swallowed a zoomed-out pin's colour), never past its middle.
+                if (pin.MapBorder > 0 && pin.MapSize > 0 && pin.Control is MapPinButton button)
+                    button.ApplyBorderWidth(Math.Clamp((int)Math.Round(pin.MapBorder * (size / pin.MapSize)), 1, Math.Max(1, (int)(size / 2) - 1)));
             }
             if (_ring != null && GodotObject.IsInstanceValid(_ring)) _ring.Position = _ringAt * _zoom - _ring.Size / 2;
         }

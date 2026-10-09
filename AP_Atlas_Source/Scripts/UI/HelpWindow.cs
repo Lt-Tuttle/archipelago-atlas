@@ -77,6 +77,7 @@ namespace AP_Atlas.UI
         /// <summary>The topic showing.</summary>
         public string CurrentPageId { get; private set; } = "";
 
+
         /// <summary>The topic's text as shown, without markup (for tests).</summary>
         public string ShownText => _text.GetParsedText();
 
@@ -86,6 +87,23 @@ namespace AP_Atlas.UI
             parent.AddChild(this);
             Select(pageId);
             PopupCentered();
+        }
+
+        /// <summary>Shows a document that isn't one of Atlas's own (an apworld's setup guide), as a topic of its own; the same id replaces it.</summary>
+        public void ShowDocument(string id, string title, string markdown)
+        {
+            int index = _pages.FindIndex(p => p.Id == id);
+            if (index < 0)
+            {
+                _pages.Add((id, title, () => markdown));
+                _topics.AddItem(title);
+            }
+            else
+            {
+                _pages[index] = (id, title, () => markdown);
+                _topics.SetItemText(index, title);
+            }
+            Select(id);
         }
 
         /// <summary>Shows a topic by id; an unknown one shows the first.</summary>

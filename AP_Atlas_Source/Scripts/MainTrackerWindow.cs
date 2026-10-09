@@ -424,7 +424,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             OpenEngineSetup = OpenEngineSetup,
             FindPack = FindMapPack,
             StartSoloTest = StartSoloTest,
-            StopSoloTest = StopSoloTest
+            StopSoloTest = StopSoloTest,
+            OpenDocument = OpenDocument
         });
         _gamesPage.Visible = false;
         _contentStage.AddChild(_gamesPage);

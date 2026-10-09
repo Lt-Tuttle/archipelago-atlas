@@ -49,7 +49,8 @@ namespace AP_Atlas.Core.Reports
     public sealed record SoloLogic(bool? Exact, int Spheres, int Late, int Early, string Verdict, bool? ChecksumMatch, int ActiveAtConnect, int TotalLocations, string? YamlSource, string? EngineProblem,
         int ReachableAtConnect = 0, int ExcludedAtConnect = 0, IReadOnlyList<string>? NotReached = null, IReadOnlyList<string>? BeyondSphere0 = null);
 
-    public sealed record SoloPins(int LocationsTotal, int LocationsPlaced, int SectionsTotal, int SectionsLinked, int SectionsUnmatched, int DanglingPaths, int NeedsReview);
+    public sealed record SoloPins(int LocationsTotal, int LocationsPlaced, int SectionsTotal, int SectionsLinked, int SectionsUnmatched, int DanglingPaths, int NeedsReview,
+        IReadOnlyList<string>? Unplaced = null, IReadOnlyList<string>? ToReview = null);
 
     public sealed record SoloKeyItems(int TilesTotal, int TilesLinked, int TilesByScript);
 
@@ -150,6 +151,9 @@ namespace AP_Atlas.Core.Reports
                 sb.AppendLine("- Game locations on a map: " + p.LocationsPlaced + " of " + p.LocationsTotal + " (" + Percent(p.LocationsPlaced, p.LocationsTotal) + ")");
                 sb.AppendLine("- Pin sections linked: " + p.SectionsLinked + " of " + p.SectionsTotal + " (" + Percent(p.SectionsLinked, p.SectionsTotal) + "); unmatched: " + p.SectionsUnmatched);
                 sb.AppendLine("- Dangling paths: " + p.DanglingPaths + "; things to review: " + p.NeedsReview);
+                if (p.Unplaced is { Count: > 0 } unplaced)
+                    sb.AppendLine("- Not on any map (" + (p.LocationsTotal - p.LocationsPlaced) + (p.LocationsTotal - p.LocationsPlaced > unplaced.Count ? "; the first " + unplaced.Count : "") + "): " + Line(string.Join("; ", unplaced)));
+                if (p.ToReview is { Count: > 0 } review) sb.AppendLine("- To review: " + Line(string.Join("; ", review)));
             }
             sb.AppendLine();
             sb.AppendLine(Headings[5]);

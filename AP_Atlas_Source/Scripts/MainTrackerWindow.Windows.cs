@@ -69,6 +69,13 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         }).Open(this, pageId);
     }
 
+    /// <summary>A document from outside Atlas's own (an apworld's bundled guide) in the Help window.</summary>
+    private void OpenDocument(string id, string title, string markdown)
+    {
+        OpenHelp(id);
+        GetChildren().OfType<AP_Atlas.UI.HelpWindow>().FirstOrDefault()?.ShowDocument(id, title, markdown);
+    }
+
     /// <summary>Settings → Privacy &amp; permissions: what the user allowed Atlas to do without asking, and trusted sources.</summary>
     private void OpenPrivacy() => ShowSettings("privacy");
     /// <summary>

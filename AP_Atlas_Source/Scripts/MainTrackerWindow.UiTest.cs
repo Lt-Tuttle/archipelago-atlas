@@ -950,11 +950,39 @@ public partial class MainTrackerWindow
         var host = (AP_Atlas.UI.IPropertiesHost)this;
         string reports = AP_Atlas.Core.EngineSetup.SoloTestRunner.ReportsFolder;
         AP_Atlas.UI.SoloTestDialog? Dialog() => GetChildren().OfType<AP_Atlas.UI.SoloTestDialog>().FirstOrDefault(d => !d.IsQueuedForDeletion());
+        // An apworld file with a bundled setup guide, as a real one ships it (the fake engine doesn't read the folder).
+        string worlds = System.IO.Path.Combine(AtlasEngine.ArchipelagoDir, "custom_worlds");
+        System.IO.Directory.CreateDirectory(worlds);
+        string apworld = System.IO.Path.Combine(worlds, "test_game.apworld");
+        static void WriteApworld(string path)
+        {
+            using var stream = System.IO.File.Create(path);
+            using var archive = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Create);
+            foreach (var (name, text) in new[]
+            {
+                ("test_game/archipelago.json", "{\"game\": \"Test Game\"}"),
+                ("test_game/docs/setup_en.md", "# Test Game setup\n\nInstall the Test Game client from its release.\n"),
+                ("test_game/docs/en_Test Game.md", "# Test Game\n\nA game for tests.\n")
+            })
+            {
+                using var writer = new System.IO.StreamWriter(archive.CreateEntry(name).Open());
+                writer.Write(text);
+            }
+        }
+        WriteApworld(apworld);
         try
         {
             host.ShowTool(AP_Atlas.UI.Tool.Games);
             _gamesPage!.Select("Test Game");
             await UiTestWaitAsync(0.2);
+            // The apworld's own documents open in the Help window as topics of their own.
+            UiTestExpect(_gamesPage.LinkTexts().Contains(Tr("Setup guide (from the apworld)")) && _gamesPage.LinkTexts().Contains(Tr("About the game (from the apworld)")),
+                $"the game's page doesn't offer the apworld's documents: {string.Join(", ", _gamesPage.LinkTexts())}");
+            _gamesPage.FindChildren("*", nameof(Button), true, false).OfType<Button>().First(b => b.Text == Tr("Setup guide (from the apworld)")).EmitSignal(BaseButton.SignalName.Pressed);
+            var help = await UiTestWaitForAsync(() => GetChildren().OfType<AP_Atlas.UI.HelpWindow>().FirstOrDefault(), "the Help window");
+            UiTestExpect(help.CurrentPageId == "apworld:Test Game:setup" && help.ShownText.Contains("Install the Test Game client"), $"the Help window shows {help.CurrentPageId}, not the apworld's guide");
+            help.EmitSignal(AcceptDialog.SignalName.Confirmed);
+            await UiTestWaitAsync(0.1);
             var button = _gamesPage.FindChildren("*", nameof(Button), true, false).OfType<Button>().FirstOrDefault(b => b.HasMeta("solo_test_button"));
             UiTestExpect(button != null && !button.Disabled, "the game's page has no enabled Test this game… button");
             button!.EmitSignal(BaseButton.SignalName.Pressed);
@@ -1052,6 +1080,7 @@ public partial class MainTrackerWindow
             foreach (var solo in _profiles.Where(p => p.Name.StartsWith("Solo test:", StringComparison.Ordinal)).ToList()) DeleteProfile(solo);
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
             AP_Atlas.Core.SafeFile.Delete(zip);
+            AP_Atlas.Core.SafeFile.Delete(apworld);
             AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
             if (System.IO.Directory.Exists(reports)) foreach (string file in System.IO.Directory.GetFiles(reports, "Test_Game-*")) System.IO.File.Delete(file);
         }
@@ -3461,8 +3490,8 @@ public partial class MainTrackerWindow
             UiTestExpect(pin.Control.Position.DistanceTo(new Vector2(pin.X * canvas.Zoom, pin.Y * canvas.Zoom) - pin.Control.Size / 2) < 0.5f, $"a pin at ({pin.X}, {pin.Y}) sits at {pin.Control.Position} at zoom {canvas.Zoom}");
             // A pin that sets its own size and shape keeps them.
             var big = canvas.Pins.First(p => p.Key.StartsWith("Big@", StringComparison.Ordinal));
-            UiTestExpect(Mathf.IsEqualApprox(big.MapSize, 40f * _appSettings.MapNodeScale) && Mathf.IsEqualApprox(big.Control.Rotation, Mathf.Pi / 4)
-                && big.Control.GetThemeStylebox("normal") is StyleBoxFlat bigStyle && bigStyle.BorderWidthTop == 4,
+            UiTestExpect(Mathf.IsEqualApprox(big.MapSize, (40f + 2 * 4f) * _appSettings.MapNodeScale) && Mathf.IsEqualApprox(big.MapBorder, 4f * _appSettings.MapNodeScale) && Mathf.IsEqualApprox(big.Control.Rotation, Mathf.Pi / 4)
+                && big.Control.GetThemeStylebox("normal") is StyleBoxFlat bigStyle && bigStyle.BorderWidthTop == Math.Max(1, (int)Math.Round(big.MapBorder * (canvas.ScreenSizeOf(big) / big.MapSize))),
                 $"the pack's own pin size, shape and border weren't kept (size {big.MapSize}, turned {big.Control.Rotation})");
             // Zoomed far out and back: every pin is as big as the zoom says and sits on its point (a shrunk pin used to keep its old size).
             canvas.SetZoom(AP_Atlas.UI.MapCanvas.MinZoom);
@@ -3470,6 +3499,10 @@ public partial class MainTrackerWindow
             var misplaced = canvas.Pins.Where(p => !Mathf.IsEqualApprox(p.Control.Size.X, canvas.ScreenSizeOf(p), 0.01f)
                 || p.Control.Position.DistanceTo(new Vector2(p.X * canvas.Zoom, p.Y * canvas.Zoom) - p.Control.Size / 2) > 0.5f).Select(p => $"{p.Key} {p.Control.Size.X} for {canvas.ScreenSizeOf(p)}").ToList();
             UiTestExpect(misplaced.Count == 0, $"after zooming out, pins aren't the size the zoom says or off their point: {string.Join(", ", misplaced)}");
+            // The border shrank with the pin and never swallows its colour.
+            var swallowed = canvas.Pins.Where(p => p.MapBorder > 0 && p.Control.GetThemeStylebox("normal") is StyleBoxFlat s
+                && (s.BorderWidthTop > Math.Max(1, (int)(canvas.ScreenSizeOf(p) / 2) - 1) || s.BorderWidthTop != Math.Clamp((int)Math.Round(p.MapBorder * (canvas.ScreenSizeOf(p) / p.MapSize)), 1, Math.Max(1, (int)(canvas.ScreenSizeOf(p) / 2) - 1)))).Select(p => p.Key).ToList();
+            UiTestExpect(swallowed.Count == 0, $"after zooming out, a pin's border didn't scale with it: {string.Join(", ", swallowed)}");
             UiTestExpect(!slot.MapTracker.NodeSizeSlider.Scrollable, "the pin size slider moves with the wheel (scrolling the explorer over it changed every pin)");
             canvas.FitToView();
             for (int i = 0; i < notches; i++) canvas.ZoomAtCenter(AP_Atlas.UI.MapCanvas.WheelStep);
