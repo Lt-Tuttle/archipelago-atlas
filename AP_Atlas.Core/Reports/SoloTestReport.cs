@@ -77,6 +77,19 @@ namespace AP_Atlas.Core.Reports
 
         public static string FileStem(string game, DateTime localNow) => StemPrefix(game) + localNow.ToString("yyyyMMdd-HHmm", CultureInfo.InvariantCulture);
 
+        /// <summary>
+        /// A pack's public address as the report shows it: "github.com/owner/repo" for GitHub (its raw files' address
+        /// included), else the address without its scheme; null for none. The scrubber hides addresses with a scheme,
+        /// and a public project's place is what the report's reader needs.
+        /// </summary>
+        public static string? PublicSource(string? url)
+        {
+            if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri) || (uri.Scheme != "https" && uri.Scheme != "http")) return null;
+            var parts = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            if ((uri.Host == "github.com" || uri.Host == "raw.githubusercontent.com") && parts.Length >= 2) return "github.com/" + parts[0] + "/" + parts[1];
+            return uri.Host + uri.AbsolutePath.TrimEnd('/');
+        }
+
         /// <summary>What every report file of a game starts with ("Dark_Souls_III-"), for finding them again.</summary>
         public static string StemPrefix(string game) => GameFiles.SafeName(game).Replace(' ', '_') + "-";
 
@@ -221,7 +234,8 @@ namespace AP_Atlas.Core.Reports
         {
             // Every string value passes the same rules; the structure stays valid JSON (scrubbing the text would break
             // escaped paths).
-            var token = (JObject)JToken.FromObject(r);
+            // Steps and outcomes by name: the file is read by people and tools that don't know the enums' order.
+            var token = (JObject)JToken.FromObject(r, JsonSerializer.Create(new JsonSerializerSettings { Converters = { new Newtonsoft.Json.Converters.StringEnumConverter() } }));
             foreach (var value in token.DescendantsAndSelf().OfType<JValue>().Where(v => v.Type == JTokenType.String).ToList())
                 value.Value = scrubber.Scrub((string?)value.Value);
             return token.ToString(Formatting.Indented);

@@ -263,6 +263,7 @@ Development toward the first public beta, 0.1.0.
   - An image you choose for a Pack Doctor fix is checked the same way before it's copied.
 
 ### Fixed
+- **A solo test report keeps the map pack's public source readable** ("from github.com/owner/pack"): the scrubber hid every web address, a public project's place too. The JSON twin names steps and outcomes instead of numbering them.
 - **An Atlas that didn't finish closing** no longer leaves the next start at "Atlas is already open" with no Atlas in sight: a built Atlas finds an earlier one from the same folder that has no window and offers to end it and start; closing is watched from its first moment (30 seconds), not only after the window goes.
 - **A game's page finds its last solo test again** ("Last tested"): reports are saved with underscores for spaces, and the page looked for the name with spaces.
 - **A game's setup steps keep their text readable in a narrow window:** the buttons sit under each step's text instead of beside it.

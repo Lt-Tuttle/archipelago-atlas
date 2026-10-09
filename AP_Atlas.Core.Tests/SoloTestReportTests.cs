@@ -58,6 +58,8 @@ public class SoloTestReportTests
         Assert.DoesNotContain("127.0.0.1", json);
         Assert.DoesNotContain("kimj", json);
         Assert.Contains("\"Sphere0\": 23", json);
+        Assert.Contains("\"Step\": \"Generate\"", json);
+        Assert.Contains("\"Outcome\": \"Done\"", json);
         var back = JsonConvert.DeserializeObject<SoloTestResult>(json);
         Assert.NotNull(back);
         Assert.Equal(1, back!.Schema);
@@ -80,6 +82,12 @@ public class SoloTestReportTests
         Assert.Equal("Dark_Souls_III-20261008-1402", SoloTestReport.FileStem("Dark Souls III", new DateTime(2026, 10, 8, 14, 2, 0)));
         Assert.StartsWith(SoloTestReport.StemPrefix("Dark Souls III"), SoloTestReport.FileStem("Dark Souls III", DateTime.Now));
         Assert.Equal("n/a", SoloTestReport.Percent(3, 0));
+        Assert.Equal("github.com/routhken/Dark_Souls_Remastered_tracker", SoloTestReport.PublicSource("https://raw.githubusercontent.com/routhken/Dark_Souls_Remastered_tracker/refs/heads/main/versions.json"));
+        Assert.Equal("github.com/owner/pack", SoloTestReport.PublicSource("https://github.com/owner/pack/releases"));
+        Assert.Equal("example.org/packs/versions.json", SoloTestReport.PublicSource("https://example.org/packs/versions.json"));
+        Assert.Null(SoloTestReport.PublicSource(""));
+        Assert.Null(SoloTestReport.PublicSource("file:///C:/x.json"));
+        Assert.Contains("from github.com/a/b", SoloTestReport.Markdown(Full() with { Versions = Full().Versions with { PackSource = "github.com/a/b" } }, new Scrubber(null)));
         Assert.Equal("50%", SoloTestReport.Percent(1, 2));
     }
 

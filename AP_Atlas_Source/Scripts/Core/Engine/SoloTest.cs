@@ -292,7 +292,7 @@ namespace AP_Atlas.Core.EngineSetup
                 await StepAsync(SoloTestStep.Report, progress, CancellationToken.None, () =>
                 {
                     var engine = install == null ? "none" : install.Describe();
-                    var versions = new SoloVersions(Game, apworldVersion, apworldSource, apworldChecksum, engine, pack?.Manifest.Name, pack?.Manifest.GetActualVersion(), string.IsNullOrWhiteSpace(pack?.Manifest.VersionsUrl) ? null : pack!.Manifest.VersionsUrl, hooks.AtlasVersionLine());
+                    var versions = new SoloVersions(Game, apworldVersion, apworldSource, apworldChecksum, engine, pack?.Manifest.Name, pack?.Manifest.GetActualVersion(), SoloTestReport.PublicSource(pack?.Manifest.VersionsUrl), hooks.AtlasVersionLine());
                     _result = new SoloTestResult(Game, started, versions, _steps.ToList(), generation, logic, pins, keyItems, scripts, ServerAddress, _notes);
                     (_reportMd, _reportJson) = SoloTestReport.Write(ReportsFolder, _result, _scrubber!, DateTime.Now);
                     return Task.FromResult(Done("written to " + Path.GetFileName(_reportMd)));
