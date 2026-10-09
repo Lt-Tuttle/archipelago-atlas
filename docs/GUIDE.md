@@ -65,6 +65,8 @@ Key Items (Ctrl+3) shows the progression items you've received. The Visual view 
 
 **Maps without a picture.** A map whose pack ships no picture for it (or one Atlas can't read) is shown as a list of its locations, grouped as the pack groups them, each coloured as its pin would be; pick one to see it in Properties. The note at the top names the missing picture.
 
+**Follow my checks.** When you check a location that's on another map, the map switches to it. It's on by default for packs that can't follow the game themselves (a pack that can uses its own following), and it waits a few seconds after you move or zoom the map. Turn it off per slot in the map's options.
+
 **Not on the map.** The seed's checks that the pack has no pin for are listed under **Not on the map** in the explorer (coloured by logic; pick one to see it in Properties), and the map says how many there are. Done and excluded checks aren't counted.
 
 ## Logic Tracker

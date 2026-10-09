@@ -90,6 +90,8 @@ public class AppSettings
     public Dictionary<string, string> MapColours { get; set; } = new Dictionary<string, string>();
     /// <summary>Slot key ("profileId|slotName") → whether its Map Tracker follows the game's current map (on unless turned off).</summary>
     public Dictionary<string, bool> MapFollowGame { get; set; } = new Dictionary<string, bool>();
+    /// <summary>Slot key → whether its Map Tracker switches to the map of a location just checked (absent: on for packs that can't follow the game).</summary>
+    public Dictionary<string, bool> MapFollowChecks { get; set; } = new Dictionary<string, bool>();
     /// <summary>The map pack variant each slot uses (slot key → variant id); absent: the pack's default.</summary>
     public Dictionary<string, string> PackVariants { get; set; } = new Dictionary<string, string>();
     /// <summary>Key Items' layout per slot (slot key → a pack root such as tracker_default, or atlas:vertical / atlas:horizontal); absent: the pack's default.</summary>
@@ -405,6 +407,7 @@ public static class DataManager
         if (settings.MapNodeScale <= 0 || float.IsNaN(settings.MapNodeScale)) settings.MapNodeScale = 1f;
         settings.MapColours ??= new Dictionary<string, string>();
         settings.MapFollowGame ??= new Dictionary<string, bool>();
+        settings.MapFollowChecks ??= new Dictionary<string, bool>();
         settings.PackVariants ??= new Dictionary<string, string>();
         settings.KeyItemsLayout ??= new Dictionary<string, string>();
         settings.SlotApworlds ??= new Dictionary<string, SlotApworldChoice>();

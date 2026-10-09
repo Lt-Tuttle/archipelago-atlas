@@ -174,7 +174,7 @@ public partial class MainTrackerWindow
             SlotPanelMovesWholeAsync);
         await ScenarioAsync("Map packs: a slot's pack has its images while the slot is connected (its map shows them), the Pack Doctor's while its window is open; then they're freed once another pack is used",
             PackImagesFollowTheirUsersAsync);
-        await ScenarioAsync("Maps without a picture and checks without a pin: a map whose pack ships no usable picture lists its locations (named in a note, each opening in Properties) instead of dots on nothing, and a map with its picture shows its pins; the seed's checks no pin places are listed under Not on the map and counted on the map, and a check that's done leaves the list",
+        await ScenarioAsync("Maps without a picture and checks without a pin: a map whose pack ships no usable picture lists its locations (named in a note, each opening in Properties) instead of dots on nothing, and a map with its picture shows its pins; the seed's checks no pin places are listed under Not on the map and counted on the map, and a check that's done leaves the list; Follow my checks is on for a pack that can't follow the game, shows the map of a check made on another map, leaves the map alone while the user zooms it, and is kept per slot",
             PicturelessMapsAsync);
         await ScenarioAsync("Pack Doctor: on a pack's first check, a tile whose name matches an item exactly (once punctuation is ignored) is linked by itself as an automatic fix; the pack's row on the Map Packs page offers Review N, which opens the Doctor on Recommended; the Recommended tab lists what's left, Apply on a row writes the fix, the row goes after the check and the status says so; Undo takes the automatic link back",
             PackDoctorAsync);
@@ -3240,6 +3240,23 @@ public partial class MainTrackerWindow
             UiTestExpect(map.SidebarContent.FindChildren("*", nameof(Button), true, false).OfType<Button>().Any(b => b.HasMeta("unplaced_row") && b.GetMeta("unplaced_row").AsString() == "Hidden Chest"), "Not on the map has no row for the check");
             await server.BroadcastAsync(FakeArchipelagoServer.LocationsChecked(2003));
             await UiTestWaitForAsync(() => map.UnplacedNames.Count == 0 && map.UnplacedNote == null ? map : null, "the done check to leave Not on the map");
+            // Follow my checks: on for a pack that can't follow the game; a check on another map shows that map.
+            string worldId = pack.Maps.Values.First(m => m.Name == "World").Id, brokenId = pack.Maps.Values.First(m => m.Name == "Broken").Id;
+            UiTestExpect(map.FollowChecks && map.FollowChecksBox.Visible && !map.FollowAvailable, "Follow my checks isn't on for a pack that can't follow the game");
+            map.ShowMap(worldId);
+            await UiTestWaitAsync(AP_Atlas.UI.MapTrackerControl.UserMoveHold.TotalSeconds + 0.2); // the map's own view change on switching isn't the user's, but be sure
+            await server.BroadcastAsync(FakeArchipelagoServer.LocationsChecked(2002));
+            await UiTestWaitForAsync(() => map.CurrentMapId == brokenId ? map : null, "the map to follow the check to its map");
+            // While the user looks around, a check leaves the map where it is.
+            map.ShowMap(worldId);
+            await UiTestWaitAsync(AP_Atlas.UI.MapTrackerControl.UserMoveHold.TotalSeconds + 0.2);
+            map.Canvas.SetZoom(map.Canvas.Zoom * 1.5f);
+            map.FollowChecksBox.ButtonPressed = false;
+            UiTestExpect(_appSettings.MapFollowChecks.TryGetValue(AP_Atlas.Core.Annotations.SlotKey(profile.Id, "Tester"), out bool kept) && !kept, "turning Follow my checks off isn't kept for the slot");
+            map.FollowChecksBox.ButtonPressed = true;
+            await server.BroadcastAsync(FakeArchipelagoServer.LocationsChecked(2001));
+            await UiTestWaitForAsync(() => slot.Session.Locations.AllLocationsChecked.Count >= 3 ? map : null, "the check to arrive");
+            UiTestExpect(map.CurrentMapId == worldId, "the map moved while the user was zooming it");
         }
         finally
         {

@@ -214,6 +214,7 @@ public partial class SlotTrackerControl : MarginContainer
                 // The switch shows when the pack's scripts can move the map to where the player is (and don't need the game's memory to).
                 _mapTracker.FollowAvailable = host != null && host.FollowsMaps && !host.ReadsGameMemory;
                 _mapTracker.FollowGame = FollowGame;
+                _mapTracker.FollowChecks = FollowChecks;
             }
             if (host == null) { AppendDebugLog($"[MapTracker] The pack has no scripts/init.lua; Key Items use the pack's item mappings only."); return; }
             AppendDebugLog($"[MapTracker] Ran the pack's scripts in {ms} ms: {host.Errors.Count} error(s)" +
@@ -290,6 +291,9 @@ public partial class SlotTrackerControl : MarginContainer
 
     /// <summary>Whether the map follows the game's current map (on unless the user turned it off for this slot).</summary>
     private bool FollowGame => !_appSettings.MapFollowGame.TryGetValue(FollowKey, out bool on) || on;
+
+    /// <summary>Whether the map switches to the map of a location just checked: the user's choice, else on when the pack can't follow the game.</summary>
+    private bool FollowChecks => _appSettings.MapFollowChecks.TryGetValue(FollowKey, out bool on) ? on : _mapTracker?.FollowAvailable != true;
 
     /// <summary>Turns following the game's map on or off for this slot (the Multiworlds page's details and the map's switch).</summary>
     public void SetFollowGame(bool on)

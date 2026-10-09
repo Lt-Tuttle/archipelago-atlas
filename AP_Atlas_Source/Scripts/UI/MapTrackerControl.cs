@@ -40,6 +40,8 @@ namespace AP_Atlas.UI
 
         /// <summary>The user turned "Follow the game's current map" on or off.</summary>
         public event Action<bool> FollowToggled;
+        /// <summary>The "Follow my checks" switch was turned (by the user).</summary>
+        public event Action<bool> FollowChecksToggled;
 
         /// <summary>The user picked one of the pack's variants (its id).</summary>
         public event Action<string> VariantPicked;
@@ -359,6 +361,17 @@ namespace AP_Atlas.UI
                 if (!_syncingFollow) FollowToggled?.Invoke(on);
             };
             box.AddChild(_followBox);
+            _followChecksBox = new CheckBox
+            {
+                Text = Translate("Follow my checks"),
+                TooltipText = Translate("When you check a location on another map, the map switches to it. On by default for packs that can't follow the game themselves; it waits a few seconds after you move or zoom the map."),
+                ButtonPressed = true
+            };
+            _followChecksBox.Toggled += on =>
+            {
+                if (!_syncingFollow) FollowChecksToggled?.Invoke(on);
+            };
+            box.AddChild(_followChecksBox);
             _displayToggle = new Button { Text = "▸ Display", ThemeTypeVariation = "QuietButton", Alignment = HorizontalAlignment.Left, TooltipText = "Node size and which pins the map shows" };
             box.AddChild(_displayToggle);
             var panel = new VBoxContainer { Visible = false, SizeFlagsHorizontal = SizeFlags.ExpandFill };
@@ -559,7 +572,12 @@ namespace AP_Atlas.UI
         {
             if (reachableLocs != null) _reachableLocs = reachableLocs;
             if (glitchedLocs != null) _glitchedLocs = glitchedLocs;
-            if (checkedLocs != null) _checkedLocs = new System.Collections.Generic.HashSet<long>(checkedLocs);
+            if (checkedLocs != null)
+            {
+                var before = _checkedLocs;
+                _checkedLocs = new System.Collections.Generic.HashSet<long>(checkedLocs);
+                FollowNewChecks(checkedLocs, before);
+            }
             if (hintedLocs != null) _hintedLocs = hintedLocs;
             (_colorsRefresh ??= new ViewRefresh(this, RedrawColors, "redrawing the map's colors")).Request();
         }
@@ -654,6 +672,50 @@ namespace AP_Atlas.UI
 
         /// <summary>The switch (for tests).</summary>
         internal CheckBox FollowBox => _followBox;
+
+        private CheckBox _followChecksBox;
+        private bool _checksSeen;
+        private AP_Atlas.Core.Deadline _userMovedMap;
+
+        /// <summary>Whether the map switches to the map of a location just checked (the switch's state; set without telling anyone).</summary>
+        public bool FollowChecks
+        {
+            get => _followChecksBox?.ButtonPressed != false;
+            set
+            {
+                if (_followChecksBox == null) return;
+                _syncingFollow = true;
+                _followChecksBox.ButtonPressed = value;
+                _syncingFollow = false;
+            }
+        }
+
+        /// <summary>The "Follow my checks" switch (for tests).</summary>
+        internal CheckBox FollowChecksBox => _followChecksBox;
+
+        /// <summary>How long after the user moves or zooms the map a check leaves it where it is.</summary>
+        public static readonly TimeSpan UserMoveHold = TimeSpan.FromSeconds(4);
+
+        /// <summary>
+        /// Follow my checks: the map of the newest check among those just made, when it's another map than the one shown,
+        /// the pack doesn't follow the game itself (its own following wins), and the user hasn't just moved the map. The
+        /// first set of checks a slot reports (everything done before it connected) moves nothing.
+        /// </summary>
+        private void FollowNewChecks(IReadOnlyList<long> checkedInOrder, HashSet<long> before)
+        {
+            bool first = !_checksSeen;
+            _checksSeen = true;
+            if (first || !FollowChecks || (FollowAvailable && FollowGame) || _pack == null) return;
+            if (!_userMovedMap.Passed) return;
+            var fresh = checkedInOrder.Where(id => !before.Contains(id)).ToList();
+            if (fresh.Count == 0 || fresh.Count > 10) return; // a burst (a release, a collect) isn't the player's own step
+            for (int i = fresh.Count - 1; i >= 0; i--)
+                if (_locIdToMap.TryGetValue(fresh[i], out var mapId))
+                {
+                    if (mapId != _currentMapId && _pack.Maps.ContainsKey(mapId)) SwitchMap(mapId);
+                    return;
+                }
+        }
 
         /// <summary>
         /// Shows the map of a pack tab, as a pack's script asks (Tracker:UiHint "ActivateTab", title): the tab's first map,
@@ -1061,6 +1123,8 @@ namespace AP_Atlas.UI
         private void SaveCurrentView()
         {
             if (_restoringView || string.IsNullOrEmpty(_currentMapId) || _appSettings == null || !_canvas.HasView) return;
+            // The user is looking around: Follow my checks waits a moment before it moves the map.
+            _userMovedMap = AP_Atlas.Core.Deadline.In(UserMoveHold);
             if (_appSettings.MapCameras == null) _appSettings.MapCameras = new Dictionary<string, MapCameraSave>();
             var center = _canvas.Center;
             _appSettings.MapCameras[_currentMapId] = new MapCameraSave { X = center.X, Y = center.Y, Zoom = _canvas.Zoom };
