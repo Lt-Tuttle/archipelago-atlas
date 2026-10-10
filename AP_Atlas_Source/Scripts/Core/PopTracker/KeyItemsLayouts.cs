@@ -27,14 +27,23 @@ namespace AP_Atlas.Core.PopTracker
         public const string Auto = "atlas:auto";
 
         /// <summary>
-        /// The layout to use when the user hasn't chosen: the first (in the pack's order) whose content fits the view without
-        /// scrolling; else the one that overflows the least. A layout's size is its content's minimum once drawn.
+        /// The layout to use when the user hasn't chosen: of those whose content fits the view without scrolling, the one that
+        /// fills it best (the most of the view's area; the pack's own and Atlas's built ones alike, the owner's choice,
+        /// 2026-10-09; a near tie keeps the earlier, the pack's order first); else the one that overflows the least. A
+        /// layout's size is its content's minimum once drawn.
         /// </summary>
         public static string? PickFitting(IReadOnlyList<(string Id, float Width, float Height)> measured, float viewWidth, float viewHeight)
         {
             if (measured.Count == 0) return null;
+            string? fitting = null;
+            float bestFill = 0;
             foreach (var (id, w, h) in measured)
-                if (w <= viewWidth + 0.5f && h <= viewHeight + 0.5f) return id;
+            {
+                if (w > viewWidth + 0.5f || h > viewHeight + 0.5f) continue;
+                float fill = viewWidth <= 0 || viewHeight <= 0 ? 0 : w * h / (viewWidth * viewHeight);
+                if (fitting == null || fill > bestFill * 1.02f) { fitting = id; bestFill = fill; }
+            }
+            if (fitting != null) return fitting;
             string best = measured[0].Id;
             float bestOverflow = float.MaxValue;
             foreach (var (id, w, h) in measured)

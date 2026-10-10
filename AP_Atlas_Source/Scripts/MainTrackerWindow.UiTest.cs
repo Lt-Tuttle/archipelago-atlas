@@ -3558,12 +3558,15 @@ public partial class MainTrackerWindow
             host.ShowTool(AP_Atlas.UI.Tool.KeyItems);
             await UiTestWaitAsync(0.2);
             var keyItems = slot.ProgressionTracker;
-            UiTestExpect(keyItems.LayoutChoices().SequenceEqual(new[] { "tracker_default", "tracker_horizontal", AP_Atlas.Core.PopTracker.KeyItemsLayouts.Vertical, AP_Atlas.Core.PopTracker.KeyItemsLayouts.Horizontal })
-                && keyItems.CurrentLayout == "tracker_default" && keyItems.VisualShape().Rows == 1,
-                $"Key Items offers {string.Join(", ", keyItems.LayoutChoices())} with {keyItems.CurrentLayout} in use ({keyItems.VisualShape().Rows} rows)");
-            // Atlas's pick is named in the picker until the user chooses: the default fits this small pack, so it stays.
-            await UiTestWaitForAsync(() => keyItems.AutoLayout == "tracker_default" ? keyItems : null, "Atlas to settle on the layout that fits");
-            UiTestExpect(keyItems.LayoutPicker.GetItemText(0).StartsWith("Auto (", StringComparison.Ordinal) && keyItems.LayoutPicker.Selected == 0, $"the picker doesn't name Atlas's pick first: {keyItems.LayoutPicker.GetItemText(0)}");
+            UiTestExpect(keyItems.LayoutChoices().SequenceEqual(new[] { "tracker_default", "tracker_horizontal", AP_Atlas.Core.PopTracker.KeyItemsLayouts.Vertical, AP_Atlas.Core.PopTracker.KeyItemsLayouts.Horizontal }),
+                $"Key Items offers {string.Join(", ", keyItems.LayoutChoices())}");
+            // Atlas's pick (every layout fits this small pack: the one filling the view best) is named first in the picker and
+            // drawn until the user chooses.
+            await UiTestWaitForAsync(() => keyItems.AutoLayout != null ? keyItems : null, "Atlas to settle on the layout that fits");
+            UiTestExpect(keyItems.LayoutPicker.GetItemText(0).StartsWith("Auto (", StringComparison.Ordinal) && keyItems.LayoutPicker.Selected == 0 && keyItems.CurrentLayout == keyItems.AutoLayout,
+                $"the picker doesn't name Atlas's pick first, or it isn't drawn: {keyItems.LayoutPicker.GetItemText(0)}, {keyItems.CurrentLayout} in use, {keyItems.AutoLayout} picked");
+            keyItems.SetLayout("tracker_default");
+            UiTestExpect(keyItems.VisualShape().Rows == 1 && keyItems.VisualShape().Built == null, $"the pack's default layout isn't drawn as its one row: {keyItems.VisualShape()}");
             keyItems.SetLayout("tracker_horizontal");
             UiTestExpect(keyItems.VisualShape().Rows == 2 && keyItems.VisualShape().Built == null, $"the pack's horizontal layout isn't drawn as its two rows: {keyItems.VisualShape()}");
             keyItems.SetLayout(AP_Atlas.Core.PopTracker.KeyItemsLayouts.Horizontal);

@@ -70,7 +70,8 @@ namespace AP_Atlas.Core
             var btnVBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
             btnVBox.AddThemeConstantOverride("separation", 10);
 
-            var searchBtn = new Button { Text = "Search GitHub for Packs…", TooltipText = "Look on GitHub for map packs for your connected games. You choose what to install." };
+            // The page's main action, filled with the accent (the owner's choice, 2026-10-09); the rest plain.
+            var searchBtn = new Button { Text = "Search GitHub for Packs…", TooltipText = "Look on GitHub for map packs for your connected games. You choose what to install.", ThemeTypeVariation = AP_Atlas.UI.Kit.PrimaryButton };
             searchBtn.Pressed += OnSearchPressed;
             btnVBox.AddChild(searchBtn);
 

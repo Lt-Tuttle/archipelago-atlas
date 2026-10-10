@@ -773,7 +773,10 @@ namespace AP_Atlas.Core
         {
             var measured = new List<(string Id, float Width, float Height)> { ("tracker_default", 300f, 900f), ("tracker_horizontal", 1100f, 400f), ("tracker_vertical", 280f, 1400f) };
             Expect(AP_Atlas.Core.PopTracker.KeyItemsLayouts.PickFitting(measured, 1200f, 500f) == "tracker_horizontal", "a view the horizontal root fits (and the default overflows) doesn't get the horizontal root");
-            Expect(AP_Atlas.Core.PopTracker.KeyItemsLayouts.PickFitting(measured, 400f, 1000f) == "tracker_default", "a view the default fits keeps the default (the pack's order wins among those that fit)");
+            Expect(AP_Atlas.Core.PopTracker.KeyItemsLayouts.PickFitting(measured, 400f, 1000f) == "tracker_default", "a view only the default fits doesn't keep the default");
+            Expect(AP_Atlas.Core.PopTracker.KeyItemsLayouts.PickFitting(measured, 1200f, 1000f) == "tracker_horizontal", "of two layouts that fit, the one filling more of the view (the horizontal) isn't picked");
+            Expect(AP_Atlas.Core.PopTracker.KeyItemsLayouts.PickFitting(new List<(string, float, float)> { ("tracker_default", 500f, 400f), ("atlas:horizontal", 400f, 500f) }, 1000f, 1000f) == "tracker_default",
+                "a tie in how much of the view two layouts fill doesn't keep the earlier (the pack's own)");
             Expect(AP_Atlas.Core.PopTracker.KeyItemsLayouts.PickFitting(measured, 300f, 300f) == "tracker_default", "with nothing fitting, the least overflowing root (the default: 3× the height, against the horizontal's 3.7× the width) isn't picked");
             Expect(AP_Atlas.Core.PopTracker.KeyItemsLayouts.PickFitting(new List<(string, float, float)>(), 100f, 100f) == null, "no roots gives no pick");
             return Task.CompletedTask;

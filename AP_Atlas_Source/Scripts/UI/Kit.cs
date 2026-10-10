@@ -85,6 +85,9 @@ namespace AP_Atlas.UI
         /// <summary>Text with no letter or digit (a glyph such as "◀" or "…"): no name for a screen reader to read.</summary>
         public static bool IsSymbolOnly(string? text) => string.IsNullOrEmpty(text) || !System.Linq.Enumerable.Any(text, char.IsLetterOrDigit);
 
+        /// <summary>The theme variation of a page's one main action: a button filled with the accent.</summary>
+        public const string PrimaryButton = "PrimaryButton";
+
         /// <summary>A rich text label's font size slots: a pane's size reaches its bold, italics and code too.</summary>
         public static readonly string[] RichTextSizeSlots = { "normal_font_size", "bold_font_size", "italics_font_size", "bold_italics_font_size", "mono_font_size" };
 

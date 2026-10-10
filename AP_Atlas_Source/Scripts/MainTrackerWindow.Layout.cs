@@ -319,6 +319,15 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         theme.SetColor("font_disabled_color", "Button", new Godot.Color(1, 1, 1, 0.35f));
         theme.SetColor("font_pressed_color", "Button", textOnAccent);
         theme.SetColor("font_hover_pressed_color", "Button", textOnAccent);
+        // A primary button: the one main action of a page, filled with the accent (its text in the colour that reads on it).
+        theme.SetTypeVariation(AP_Atlas.UI.Kit.PrimaryButton, "Button");
+        StyleBoxFlat Primary(Godot.Color bg) => new StyleBoxFlat { BgColor = bg, CornerRadiusTopLeft = 4, CornerRadiusTopRight = 4, CornerRadiusBottomLeft = 4, CornerRadiusBottomRight = 4, ContentMarginLeft = 10, ContentMarginRight = 10, ContentMarginTop = 5, ContentMarginBottom = 5 };
+        theme.SetStylebox("normal", AP_Atlas.UI.Kit.PrimaryButton, Primary(accentColor));
+        theme.SetStylebox("hover", AP_Atlas.UI.Kit.PrimaryButton, Primary(accentColor.Lightened(0.12f)));
+        theme.SetStylebox("pressed", AP_Atlas.UI.Kit.PrimaryButton, Primary(accentColor.Darkened(0.15f)));
+        theme.SetStylebox("hover_pressed", AP_Atlas.UI.Kit.PrimaryButton, Primary(accentColor.Darkened(0.15f)));
+        foreach (string state in new[] { "font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color", "font_focus_color" })
+            theme.SetColor(state, AP_Atlas.UI.Kit.PrimaryButton, textOnAccent);
         // A quiet button (the kit's "flat"): no background until hovered, a tint of the accent while pressed, so a press
         // is seen. Godot's own "flat" drew nothing in any state.
         theme.SetTypeVariation("QuietButton", "Button");
