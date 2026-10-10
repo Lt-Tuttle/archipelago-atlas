@@ -55,9 +55,6 @@ namespace AP_Atlas.UI
             _text.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
             _text.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
             _text.SelectionEnabled = true;
-            // Prose in the font the labels use (the rich text's own default is the mono font); code keeps the mono font.
-            var labelFont = _topics.GetThemeFont("font");
-            if (labelFont != null) _text.AddThemeFontOverride("normal_font", labelFont);
             _text.MetaClicked += meta =>
             {
                 string url = meta.AsString();

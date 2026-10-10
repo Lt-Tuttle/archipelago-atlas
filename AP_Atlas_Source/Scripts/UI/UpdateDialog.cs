@@ -33,9 +33,6 @@ namespace AP_Atlas.UI
             _text.SelectionEnabled = true;
             _text.Markup = AP_Atlas.Core.Markdown.ToBbcode(head + notes, "#" + AP_Atlas.Core.ThemeColors.Link.ToHtml(false));
             AddChild(_text);
-            // Prose in the font the labels use; the rich text's own default is the mono font.
-            var labelFont = GetThemeFont("font", "Label");
-            if (labelFont != null) _text.AddThemeFontOverride("normal_font", labelFont);
             Confirmed += download;
             Confirmed += QueueFree;
             Canceled += QueueFree;

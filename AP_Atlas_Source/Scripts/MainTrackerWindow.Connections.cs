@@ -202,6 +202,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 popup.AddChild(popupCenter);
                 _connectingOverlay.AddChild(popup);
                 var canvas = new CanvasLayer { Layer = 50 };
+                _connectingOverlay.Theme = Theme; // a canvas layer stops the window's theme (font, colours) reaching it
                 canvas.AddChild(_connectingOverlay);
                 AddChild(canvas);
             }

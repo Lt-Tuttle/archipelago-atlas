@@ -1266,7 +1266,8 @@ namespace AP_Atlas.UI
 
         private void SaveCurrentView()
         {
-            if (_restoringView || string.IsNullOrEmpty(_currentMapId) || _appSettings == null || !_canvas.HasView) return;
+            // Only the user's own moves are remembered (an automatic fit while the view was still small stuck before).
+            if (_restoringView || _canvas.ChangingByCode || string.IsNullOrEmpty(_currentMapId) || _appSettings == null || !_canvas.HasView) return;
             // The user is looking around: Follow my checks waits a moment before it moves the map.
             _userMovedMap = AP_Atlas.Core.Deadline.In(UserMoveHold);
             if (_appSettings.MapCameras == null) _appSettings.MapCameras = new Dictionary<string, MapCameraSave>();
@@ -1301,7 +1302,7 @@ namespace AP_Atlas.UI
             {
                 _canvas.SetMap(background, background?.GetSize() ?? PinExtent(mapId), background == null ? (string.IsNullOrEmpty(map.Img) ? map.MapBg : map.Img) : null);
                 if (_appSettings?.MapCameras != null && _appSettings.MapCameras.TryGetValue(mapId, out var state) && state.Zoom > 0)
-                    _canvas.SetView(new Vector2(state.X, state.Y), state.Zoom);
+                    _canvas.SetView(new Vector2(state.X, state.Y), state.Zoom, fitIfSmaller: true);
                 else
                     _canvas.FitToView();
             }

@@ -69,9 +69,16 @@ namespace AP_Atlas.UI
         public override void _Ready()
         {
             SizeFlagsVertical = SizeFlags.ExpandFill;
+            // The deepest surface on a dark theme, the raised one on a light theme: the line colour it used before is white on
+            // High contrast, which hid the bar's white icons.
             AddThemeStyleboxOverride("panel", new StyleBoxFlat
             {
-                BgColor = AP_Atlas.Core.ThemeColors.Border,
+                BgColor = AP_Atlas.Core.ThemeColors.Current.IsDark ? AP_Atlas.Core.ThemeColors.SurfaceDeep : AP_Atlas.Core.ThemeColors.SurfaceRaised,
+                BorderColor = AP_Atlas.Core.ThemeColors.BorderSoft,
+                BorderWidthTop = 1,
+                BorderWidthBottom = 1,
+                BorderWidthLeft = 1,
+                BorderWidthRight = 1,
                 CornerRadiusTopLeft = 6,
                 CornerRadiusTopRight = 6,
                 CornerRadiusBottomLeft = 6,
@@ -135,7 +142,8 @@ namespace AP_Atlas.UI
             {
                 var band = new PanelContainer();
                 var label = new Label { Text = string.Join("\n", caption.Split('\n').Select(line => _tr(line))), HorizontalAlignment = HorizontalAlignment.Center };
-                label.AddThemeFontSizeOverride("font_size", 8); // two short lines fit the band
+                label.AddThemeFontSizeOverride("font_size", 9); // two short lines fit the band
+                label.AddThemeConstantOverride("line_spacing", -1);
                 band.AddChild(label);
                 _bands.Add((band, label));
                 _column.AddChild(band);
@@ -190,12 +198,12 @@ namespace AP_Atlas.UI
             }
             button.AddThemeConstantOverride("icon_max_width", 22);
             button.AddThemeFontSizeOverride("font_size", 10);
-            button.AddThemeColorOverride("icon_normal_color", AP_Atlas.Core.ThemeColors.TextSubtle);
+            button.AddThemeColorOverride("icon_normal_color", AP_Atlas.Core.ThemeColors.TextMuted);
             button.AddThemeColorOverride("icon_hover_color", AP_Atlas.Core.ThemeColors.Text);
             button.AddThemeColorOverride("icon_pressed_color", AP_Atlas.Core.ThemeColors.Text);
             button.AddThemeColorOverride("icon_hover_pressed_color", AP_Atlas.Core.ThemeColors.Text);
             button.AddThemeColorOverride("icon_focus_color", AP_Atlas.Core.ThemeColors.Text);
-            button.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextSubtle);
+            button.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextMuted); // small text: the stronger of the secondary colours
             button.AddThemeColorOverride("font_hover_color", AP_Atlas.Core.ThemeColors.Text);
             button.AddThemeColorOverride("font_pressed_color", AP_Atlas.Core.ThemeColors.Text);
             button.AddThemeColorOverride("font_hover_pressed_color", AP_Atlas.Core.ThemeColors.Text);
@@ -230,7 +238,7 @@ namespace AP_Atlas.UI
                     ContentMarginLeft = 2,
                     ContentMarginRight = 2
                 });
-                label.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Heading);
+                label.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextMuted);
             }
         }
 

@@ -17,6 +17,8 @@ public partial class MainTrackerWindow
     internal const int SlotsMinWidth = 320, ExplorerMinWidth = 220, ContentMinWidth = 480, PropertiesMinWidth = 250;
     /// <summary>How wide Properties starts on a fresh settings file (its minimum is narrower; the user's own drag is kept after that).</summary>
     internal const int PropertiesStartWidth = 360;
+    /// <summary>The tool header's margins: its text on the side panels' header line (their 2 px border and 12 px margin), indented like the content's text, its menu over the content's edge.</summary>
+    internal const int ToolHeaderTop = 12, ToolHeaderLeft = 14, ToolHeaderRight = 8;
     private const int PaneSeparation = 8, OuterMargins = 16;
     /// <summary>The bottom pane's smallest height, and the share of the content's height it starts with on a fresh settings file (a third).</summary>
     internal const int BottomPaneMinHeight = 150, BottomPaneStartFraction = 3;

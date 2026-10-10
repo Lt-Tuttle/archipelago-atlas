@@ -82,7 +82,7 @@ namespace AP_Atlas.UI
         public static readonly Tool CheeseTracker = new("cheese-tracker", "Cheese Tracker", "Cheese", ToolScope.Multiworld, ToolGroup.External, "users");
         public static readonly Tool SphereTracker = new("sphere-tracker", "Sphere Tracker", "Spheres", ToolScope.Multiworld, ToolGroup.External, "orbit");
         public static readonly Tool Home = new("home", "Home", "Home", ToolScope.App, ToolGroup.Home, "house");
-        public static readonly Tool Connections = new("connections", "Multiworlds", "Worlds", ToolScope.App, ToolGroup.Tools, "globe");
+        public static readonly Tool Connections = new("connections", "Multiworlds", "Worlds", ToolScope.App, ToolGroup.Tools, "globe") { ExplorerStartWidth = 300 };
         public static readonly Tool Games = new("games", "Games", "Games", ToolScope.App, ToolGroup.Config, "gamepad-2") { ExplorerStartWidth = 360 }; // the tenth tool: no number key
         public static readonly Tool MapPacks = new("map-packs", "Map Packs", "Packs", ToolScope.App, ToolGroup.Config, "package") { ExplorerStartWidth = 480 }; // the eleventh: no number key (Ctrl+0 resets the zoom)
         public static readonly Tool Settings = new("settings", "Settings", "Settings", ToolScope.App, ToolGroup.Config, "settings") { DefaultKey = "Ctrl+," };

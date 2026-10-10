@@ -865,7 +865,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                     MarkDirty();
                     PopulateSlotsList();
                     RefreshProfileListStyles();
-                    ShowToast(Tr("Added {0} from {1}; Save Settings keeps the slots.").Replace("{0}", string.Join(", ", added)).Replace("{1}", file), AP_Atlas.Core.ThemeColors.TextSubtle);
+                    ShowToast(Tr("Added {0} from {1}; Save keeps the slots.").Replace("{0}", string.Join(", ", added)).Replace("{1}", file), AP_Atlas.Core.ThemeColors.TextSubtle);
                 }
                 return;
             }

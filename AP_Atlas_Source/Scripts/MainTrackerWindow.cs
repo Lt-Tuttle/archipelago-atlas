@@ -255,7 +255,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _mainSplit.AddChild(_sidebar);
         var sidebarMargin = new MarginContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
         sidebarMargin.AddThemeConstantOverride("margin_left", 8);
-        sidebarMargin.AddThemeConstantOverride("margin_top", 8);
+        sidebarMargin.AddThemeConstantOverride("margin_top", 0); // the header on the tool header's line
         sidebarMargin.AddThemeConstantOverride("margin_right", 8);
         sidebarMargin.AddThemeConstantOverride("margin_bottom", 8);
         _sidebar.AddChild(sidebarMargin);
@@ -318,7 +318,6 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         var globalTabHBox = _toolHeader = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         _toolTitle = new Label { SizeFlagsHorizontal = SizeFlags.ExpandFill, VerticalAlignment = VerticalAlignment.Center };
         _toolTitle.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextMuted);
-        _toolTitle.AddThemeConstantOverride("margin_left", 8);
         globalTabHBox.AddChild(_toolTitle);
         globalTabHBox.AddChild(BuildSlotPicker());
         var contentMenuBtn = new Button { Text = "...", ThemeTypeVariation = "QuietButton", AccessibilityName = Tr("More options") };
@@ -328,7 +327,13 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             (newSize) => { _appSettings.ContentFontSize = newSize; ApplyUIScale(); DataManager.SaveSettings(_appSettings); }
         );
         globalTabHBox.AddChild(contentMenuBtn);
-        rightColumn.AddChild(globalTabHBox);
+        // Its text on the same line as the SLOTS and PROPERTIES headers, and indented as the content's text is.
+        var toolHeaderMargin = new MarginContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        toolHeaderMargin.AddThemeConstantOverride("margin_top", ToolHeaderTop);
+        toolHeaderMargin.AddThemeConstantOverride("margin_left", ToolHeaderLeft);
+        toolHeaderMargin.AddThemeConstantOverride("margin_right", ToolHeaderRight);
+        toolHeaderMargin.AddChild(globalTabHBox);
+        rightColumn.AddChild(toolHeaderMargin);
         _contentSplit = new VSplitContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, SplitOffsets = new[] { _appSettings.SplitContentOffset } };
         _contentSplit.Dragged += (offset) => { _appSettings.SplitContentOffset = (int)offset; DataManager.SaveSettingsSoon(_appSettings); };
         _contentSplit.Resized += () => AP_Atlas.UI.Ui.Defer(this, PlaceBottomPaneOnFresh); // once, on a fresh settings file: a third for the bottom pane
@@ -351,7 +356,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         centerRightSplit.AddChild(_propertiesSidebar);
         var propsMargin = new MarginContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
         propsMargin.AddThemeConstantOverride("margin_left", 8);
-        propsMargin.AddThemeConstantOverride("margin_top", 8);
+        propsMargin.AddThemeConstantOverride("margin_top", 0); // the header on the tool header's line
         propsMargin.AddThemeConstantOverride("margin_right", 8);
         propsMargin.AddThemeConstantOverride("margin_bottom", 8);
         _propertiesSidebar.AddChild(propsMargin);

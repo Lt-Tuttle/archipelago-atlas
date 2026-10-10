@@ -73,8 +73,8 @@ namespace AP_Atlas.UI
             _scroll.Resized += () =>
             {
                 if (!HasView) return;
-                if (_viewWhenSized is { } pending) SetView(pending.Center, pending.Zoom);
-                else if (_fitWhenSized) FitToView();
+                if (_viewWhenSized is { } pending) SetView(pending.Center, pending.Zoom, pending.FitIfSmaller);
+                else if (_fitWhenSized) FitToView(remember: false);
             };
             _scroll.GetHScrollBar().ValueChanged += _ => ViewChanged?.Invoke();
             _scroll.GetVScrollBar().ValueChanged += _ => ViewChanged?.Invoke();
@@ -90,7 +90,7 @@ namespace AP_Atlas.UI
         /// <summary>The scrolling area has a size (before the window laid it out, a fit would be meaningless).</summary>
         public bool HasView => _scroll.Size.X > 0 && _scroll.Size.Y > 0;
 
-        private (Vector2 Center, float Zoom)? _viewWhenSized;
+        private (Vector2 Center, float Zoom, bool FitIfSmaller)? _viewWhenSized;
 
         /// <summary>A saved view waiting for the map to have a size (for tests).</summary>
         public bool ViewPending => _viewWhenSized != null;
@@ -208,7 +208,8 @@ namespace AP_Atlas.UI
         public void SetZoom(float zoom) => ZoomAt(_scroll.Size / 2, Math.Clamp(zoom, MinZoom, MaxZoom) / _zoom);
 
         /// <summary>Shows the whole map, with a little room around it; before the view has a size, it fits once it has.</summary>
-        public void FitToView(float padding = 0.95f)
+        /// <param name="remember">False for Atlas's own fits (the first fit once the view has a size, a remembered view replaced): those aren't remembered as the user's view.</param>
+        public void FitToView(float padding = 0.95f, bool remember = true)
         {
             if (!HasView)
             {
@@ -216,31 +217,59 @@ namespace AP_Atlas.UI
                 return;
             }
             _fitWhenSized = false;
-            var view = _scroll.Size;
-            float fit = Math.Min(view.X / _mapSize.X, view.Y / _mapSize.Y) * padding;
-            _zoom = Math.Clamp(Math.Min(fit, 1f), MinZoom, MaxZoom);
-            Layout();
-            ScrollPosition = Vector2.Zero;
-            ViewChanged?.Invoke();
+            if (!remember) _byCode++;
+            try
+            {
+                _zoom = Math.Clamp(FitZoom(padding), MinZoom, MaxZoom);
+                Layout();
+                ScrollPosition = Vector2.Zero;
+                ViewChanged?.Invoke();
+            }
+            finally { if (!remember) _byCode--; }
         }
 
+        /// <summary>The zoom at which the whole map fits the view (at most 1), or 0 while the view has no size.</summary>
+        public float FitZoom(float padding = 0.95f) =>
+            !HasView || _mapSize.X <= 0 || _mapSize.Y <= 0 ? 0 : Math.Min(Math.Min(_scroll.Size.X / _mapSize.X, _scroll.Size.Y / _mapSize.Y) * padding, 1f);
+
+        private int _byCode;
+
+        /// <summary>Whether the view is being moved by Atlas (a fit, a restored view), not the user: such a view isn't remembered.</summary>
+        public bool ChangingByCode => _byCode > 0;
+
         /// <summary>A saved view: the map point at the middle, and the zoom.</summary>
-        public void SetView(Vector2 center, float zoom)
+        /// <param name="fitIfSmaller">A remembered view smaller than the whole map's fit (one saved while the view was tiny) shows the fit instead.</param>
+        public void SetView(Vector2 center, float zoom, bool fitIfSmaller = false)
         {
             _fitWhenSized = false;
             if (!HasView)
             {
                 // No size yet (the map loaded while its tab was hidden): applied once the view has one.
-                _viewWhenSized = (center, zoom);
+                _viewWhenSized = (center, zoom, fitIfSmaller);
                 return;
             }
             _viewWhenSized = null;
-            _zoom = Math.Clamp(zoom, MinZoom, MaxZoom);
-            Layout();
-            var target = center * _zoom - _scroll.Size / 2;
-            ScrollPosition = target;
-            Ui.NextFrame(this, () => ScrollPosition = target);
-            ViewChanged?.Invoke();
+            if (fitIfSmaller && zoom < FitZoom() * 0.9f)
+            {
+                FitToView(remember: false);
+                return;
+            }
+            _byCode++;
+            try
+            {
+                _zoom = Math.Clamp(zoom, MinZoom, MaxZoom);
+                Layout();
+                var target = center * _zoom - _scroll.Size / 2;
+                ScrollPosition = target;
+                Ui.NextFrame(this, () =>
+                {
+                    _byCode++;
+                    try { ScrollPosition = target; }
+                    finally { _byCode--; }
+                });
+                ViewChanged?.Invoke();
+            }
+            finally { _byCode--; }
         }
 
         /// <summary>Centres the view on a map point, zooming in to at least <paramref name="minZoom"/> if given.</summary>

@@ -38,7 +38,7 @@ namespace AP_Atlas.UI
             _fontSize = fontSize;
             _stay = stay;
             Layer = 100;
-            var root = new Control { MouseFilter = Control.MouseFilterEnum.Ignore };
+            var root = _root = new Control { MouseFilter = Control.MouseFilterEnum.Ignore };
             root.SetAnchorsPreset(Control.LayoutPreset.FullRect);
             AddChild(root);
             _stack.AddThemeConstantOverride("separation", 8);
@@ -54,6 +54,14 @@ namespace AP_Atlas.UI
             _stack.OffsetRight = -20;
             _stack.OffsetBottom = -20;
         }
+
+        private readonly Control _root;
+
+        /// <summary>
+        /// The window's theme for the cards: a canvas layer stops a theme reaching the controls under it, so the cards drew
+        /// Godot's own font and colours until they were given it.
+        /// </summary>
+        public void UseTheme(Theme theme) => _root.Theme = theme;
 
         /// <summary>The cards showing, top to bottom (the oldest first).</summary>
         public IReadOnlyList<Control> Cards => _stack.GetChildren().OfType<Control>().Where(c => !_going.Contains(c)).ToList();

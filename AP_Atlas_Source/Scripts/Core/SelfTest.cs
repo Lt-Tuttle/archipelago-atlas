@@ -129,7 +129,7 @@ namespace AP_Atlas.Core
             await TestAsync("Pack scripts: code nested deeper than Atlas compiles is refused, never compiled; every loader compiles that way, with room to spare", PackScriptsCompileSafely);
             await TestAsync("Map packs: a file or image too big to read safely is refused before it fills memory; the rest of the pack works, and the user is told why", PackFilesCantFillMemory);
             await TestAsync("Pack Doctor: an analysis reads its own snapshot, never the fixes as they change", PackDoctorReadsASnapshot);
-            await TestAsync("Key Items: Atlas's layout pick is the first pack root that fits the view, else the least overflowing", KeyItemsAutoLayoutPicks);
+            await TestAsync("Key Items: Atlas's layout pick is the first layout that fits the view (the pack's own first, then Atlas's built ones), else the least overflowing", KeyItemsAutoLayoutPicks);
             await TestAsync("Pack Doctor: a tile fix defines the item for a code no pack item has; exact name matches are linked by itself (a clash left alone) and Undo reverses them; a fix to a vanished item is reported", PackDoctorAppliesTileFixes);
             await TestAsync("Settings saved from a background thread are written on the main thread, and the log says so", OffThreadSavesMoveToTheMainThread);
             Test("Palette: every text and state colour reads on every surface (contrast 4.5 for text, 3 for quiet text and marks), text on every accent preset, and the accent as text on every surface for any accent", PaletteReadsOnEverySurface);

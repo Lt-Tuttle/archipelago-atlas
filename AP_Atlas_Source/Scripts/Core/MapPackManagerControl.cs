@@ -71,12 +71,10 @@ namespace AP_Atlas.Core
             btnVBox.AddThemeConstantOverride("separation", 10);
 
             var searchBtn = new Button { Text = "Search GitHub for Packs…", TooltipText = "Look on GitHub for map packs for your connected games. You choose what to install." };
-            AddAccentText(searchBtn);
             searchBtn.Pressed += OnSearchPressed;
             btnVBox.AddChild(searchBtn);
 
             var updatesBtn = new Button { Text = "Check for Updates" };
-            AddAccentText(updatesBtn);
             updatesBtn.Pressed += OnCheckUpdatesPressed;
             btnVBox.AddChild(updatesBtn);
 
@@ -89,7 +87,6 @@ namespace AP_Atlas.Core
             btnVBox.AddChild(folderBtn);
 
             var rescanBtn = new Button { Text = "Rescan Packs" };
-            AddAccentText(rescanBtn);
             rescanBtn.Pressed += RefreshPackList;
             btnVBox.AddChild(rescanBtn);
 
@@ -123,15 +120,6 @@ namespace AP_Atlas.Core
 
 
 
-        // Buttons whose label is drawn in the theme accent; re-colored when the accent changes.
-        private readonly List<Button> _accentTextButtons = new List<Button>();
-
-        private void AddAccentText(Button button)
-        {
-            button.AddThemeColorOverride("font_color", ThemeColors.AccentOnControl);
-            _accentTextButtons.Add(button);
-        }
-
         private static StyleBoxFlat PackRowStyle(bool selected) => new StyleBoxFlat
         {
             BgColor = new Color(selected ? "#2A2D2E" : "#252526"),
@@ -164,8 +152,6 @@ namespace AP_Atlas.Core
 
         private void OnAccentChanged()
         {
-            _accentTextButtons.RemoveAll(b => !GodotObject.IsInstanceValid(b));
-            foreach (var b in _accentTextButtons) b.AddThemeColorOverride("font_color", ThemeColors.AccentOnControl);
             if (_selectedPackRow != null && GodotObject.IsInstanceValid(_selectedPackRow))
                 _selectedPackRow.AddThemeStyleboxOverride("panel", PackRowStyle(true));
         }
@@ -246,12 +232,10 @@ namespace AP_Atlas.Core
             btnHBox.AddThemeConstantOverride("separation", 20);
 
             var doctorBtn = new Button { Text = "Pack Doctor…", CustomMinimumSize = new Vector2(200, 40), TooltipText = "Check this pack against the game and fix problems locally" };
-            AddAccentText(doctorBtn);
             doctorBtn.Pressed += () => OpenDoctor?.Invoke(zipPath, null);
             btnHBox.AddChild(doctorBtn);
 
             var updateBtn = new Button { Text = "Update Map Pack", CustomMinimumSize = new Vector2(200, 40) };
-            AddAccentText(updateBtn);
             updateBtn.Pressed += () => CheckSinglePackUpdate(zipPath);
             btnHBox.AddChild(updateBtn);
 

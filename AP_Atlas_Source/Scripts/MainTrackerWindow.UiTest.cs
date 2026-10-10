@@ -118,7 +118,7 @@ public partial class MainTrackerWindow
             DialogsStandAsTallAsTheirContentAsync);
         await ScenarioAsync("Slot picker: the tool header lists the connected slots with the selected one chosen; picking one shows its view, Ctrl+Tab and Ctrl+Shift+Tab go through them around the end, a slot selected elsewhere shows as picked, a tool that isn't per slot hides it, and a slot that ends leaves it",
             SlotPickerAsync);
-        await ScenarioAsync("Window parts: the View menu hides and shows the slots panel, the explorer (whatever tool shows), Properties, the bottom pane and the status bar, remembering each; each tool's explorer has its own width (Map Packs starts at 480, Games at 360, the Map Tracker at 340); focus mode leaves the content alone and, off again, brings each part back as the user had it",
+        await ScenarioAsync("Window parts: the View menu hides and shows the slots panel, the explorer (whatever tool shows), Properties, the bottom pane and the status bar, remembering each; each tool's explorer has its own width (Map Packs starts at 480, Games at 360, the Map Tracker at 340, Multiworlds at 300); focus mode leaves the content alone and, off again, brings each part back as the user had it",
             WindowPartsAsync);
         await ScenarioAsync("Settings page: Ctrl+, shows it with the search box ready and the sections in the explorer; each kind of row changes its setting at once and saves it (a toggle, a choice, a number, a window part, a bottom pane tab); a setting changed elsewhere shows as it is; typed words narrow the rows; a section jump scrolls",
             SettingsPageAsync);
@@ -2491,7 +2491,7 @@ public partial class MainTrackerWindow
         _explorerSplit.EmitSignal(SplitContainer.SignalName.Dragged, 520);
         host.ShowTool(AP_Atlas.UI.Tool.Connections);
         await UiTestWaitAsync(0.05);
-        UiTestExpect(_explorerSplit.SplitOffsets[0] == 0 && _midLeftSidebar.Size.X < 318 && !_appSettings.ExplorerSplitOffsets.ContainsKey("connections"),
+        UiTestExpect(_explorerSplit.SplitOffsets[0] == 300 && _midLeftSidebar.Size.X < 318 && !_appSettings.ExplorerSplitOffsets.ContainsKey("connections"),
             $"the Multiworlds explorer is {_midLeftSidebar.Size.X} wide (offset {_explorerSplit.SplitOffsets[0]}) after a drag on Map Packs'");
         host.ShowTool(AP_Atlas.UI.Tool.MapPacks);
         await UiTestWaitAsync(0.05);

@@ -59,7 +59,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             {
                 if (_currentTerminalTab == 0) // Chat
                 {
-                    c.Visible = (c == _currentSelectedSlot);
+                    bool hasSlot = _currentSelectedSlot != null && GodotObject.IsInstanceValid(_currentSelectedSlot);
+                    c.Visible = c == _chatEmptyHint ? !hasSlot : c == _currentSelectedSlot;
                 }
                 else if (_currentTerminalTab == 1) // System Log
                 {
@@ -173,22 +174,41 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             _midLeftVBox.AddChild(sidebar);
         }
     }
-    private Label _noSlotPlaceholder;
+    private Control _noSlotPlaceholder;
+    private CenterContainer _chatEmptyHint;
+    private TextureRect _noSlotIcon;
+    private Label _noSlotTitle;
+    private Label _noSlotBody;
+    /// <summary>A slot tool with no slot to show: the tool's icon, what it needs, and the way to a slot.</summary>
     private void ShowNoSlotPlaceholder()
     {
         if (_noSlotPlaceholder == null || !GodotObject.IsInstanceValid(_noSlotPlaceholder))
         {
-            _noSlotPlaceholder = new Label
-            {
-                Text = "Select a connected slot in the SLOTS panel to view this tool.",
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-                SizeFlagsHorizontal = SizeFlags.ExpandFill,
-                SizeFlagsVertical = SizeFlags.ExpandFill
-            };
-            _noSlotPlaceholder.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextSubtle);
+            var center = new CenterContainer { Name = "NoSlotPlaceholder", SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
+            var box = new VBoxContainer { CustomMinimumSize = new Godot.Vector2(380, 0) };
+            box.AddThemeConstantOverride("separation", 10);
+            center.AddChild(box);
+            _noSlotIcon = new TextureRect { StretchMode = TextureRect.StretchModeEnum.KeepCentered, SizeFlagsHorizontal = SizeFlags.ShrinkCenter };
+            box.AddChild(_noSlotIcon);
+            _noSlotTitle = new Label { HorizontalAlignment = HorizontalAlignment.Center };
+            _noSlotTitle.SetMeta("font_size_ratio", 1.3f);
+            box.AddChild(_noSlotTitle);
+            _noSlotBody = AP_Atlas.UI.Kit.Subtle(string.Empty);
+            _noSlotBody.HorizontalAlignment = HorizontalAlignment.Center;
+            box.AddChild(_noSlotBody);
+            var open = AP_Atlas.UI.Kit.Button(Tr("Open Multiworlds"), Tr("Connect a slot from its multiworld's page."), () => ShowTool(AP_Atlas.UI.Tool.Connections));
+            open.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
+            box.AddChild(open);
+            _noSlotPlaceholder = center;
             _contentStage.AddChild(_noSlotPlaceholder);
         }
+        var tool = _currentTool ?? AP_Atlas.UI.Tool.MapTracker;
+        _noSlotIcon.Texture = AP_Atlas.UI.LucideTextures.Get(tool.Icon, AP_Atlas.Core.ThemeColors.TextSubtle, 2.5f);
+        bool anyConnected = ActiveSlotNodes().OfType<SlotTrackerControl>().Any(slot => slot.Session != null && slot.Session.Socket.Connected && slot.IsFullyLoaded);
+        _noSlotTitle.Text = anyConnected ? Tr("No slot selected") : Tr("No slot connected");
+        _noSlotBody.Text = anyConnected
+            ? string.Format(Tr("The {0} shows one slot at a time: pick a connected slot in the SLOTS panel or the picker above."), Tr(tool.Title))
+            : string.Format(Tr("The {0} follows a connected slot. Connect one from its multiworld's page, and it shows here."), Tr(tool.Title));
         SwapContentView(_noSlotPlaceholder);
     }
     /// <summary>Shows a tool: its own view, or for a slot tool the selected slot's view of it.</summary>

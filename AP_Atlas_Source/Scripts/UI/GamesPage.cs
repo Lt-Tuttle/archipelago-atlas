@@ -275,7 +275,10 @@ namespace AP_Atlas.UI
                 foreach (var game in inSection)
                 {
                     var row = _list.CreateItem(header);
-                    row.SetText(0, (IsReady(game) ? "✔ " : game.InEngine ? "● " : "○ ") + game.Game);
+                    // A mark per state, told apart by shape as well as colour: ready (a check), in the engine (a dot), not yet (a ring).
+                    row.SetText(0, game.Game);
+                    row.SetIcon(0, AP_Atlas.UI.LucideTextures.Get(IsReady(game) ? "circle-check" : game.InEngine ? "circle-dot" : "circle",
+                        IsReady(game) ? ThemeColors.Success : game.InEngine ? ThemeColors.TextMuted : ThemeColors.TextSubtle, 0.7f));
                     row.SetTooltipText(0, IsReady(game) ? _tr("In the engine, with a map pack") : game.InEngine ? _tr("In the engine") : _tr("Not in the engine yet"));
                     row.SetMetadata(0, game.Game);
                     if (game.Game == _selected) row.Select(0);

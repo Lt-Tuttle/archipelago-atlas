@@ -43,8 +43,8 @@ public class AppSettings
     public int UiZoom { get; set; } = 100;
     /// <summary>The settings' shape; a file from an older Atlas (a lower number) is migrated once when it's loaded.</summary>
     public int SettingsVersion { get; set; } = 0;
-    /// <summary>The newest shape: 1 = the zoom is relative to Windows' display scale (2026-10).</summary>
-    public const int CurrentSettingsVersion = 1;
+    /// <summary>The newest shape: 1 = the zoom is relative to Windows' display scale (2026-10); 2 = the map list sorts by most checks by default.</summary>
+    public const int CurrentSettingsVersion = 2;
     /// <summary>Whether this is a new file (nothing was remembered): the window takes its first size and place.</summary>
     [Newtonsoft.Json.JsonIgnore]
     public bool Fresh { get; set; }
@@ -83,7 +83,8 @@ public class AppSettings
     /// <summary>How the map shows pins whose checks aren't in your seed: 0 show, 1 dim, 2 hide.</summary>
     public int MapNotInSeedMode { get; set; } = 1;
     public bool MapHideChecked { get; set; } = false;
-    public int MapSortIndex { get; set; } = 0;
+    /// <summary>The Map Tracker's map list order: 0 A–Z, 1 most checks first (the default since settings version 2).</summary>
+    public int MapSortIndex { get; set; } = 1;
     public float KeyItemZoom { get; set; } = 1.0f;
     public Dictionary<string, MapCameraSave> MapCameras { get; set; } = new Dictionary<string, MapCameraSave>();
     /// <summary>The Map Tracker's pin colours the user changed: a state ("in-logic", "out-of-logic", "mixed", "sequence-break", "checked", "logic-unknown") → "#RRGGBB". Empty: PopTracker's.</summary>

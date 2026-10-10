@@ -310,9 +310,6 @@ namespace AP_Atlas.UI
                 MetaUnderlined = false,
                 Markup = bbcode
             };
-            // Use the font Labels resolve to, so values match their labels ([code] blocks keep the mono font).
-            var labelFont = _kindLabel?.GetThemeFont("font");
-            if (labelFont != null) rtl.AddThemeFontOverride("normal_font", labelFont);
             rtl.MetaClicked += meta =>
             {
                 if (int.TryParse(meta.AsString(), out int i) && i >= 0 && i < _linkActions.Count) _linkActions[i]();

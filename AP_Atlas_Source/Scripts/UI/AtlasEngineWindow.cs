@@ -193,7 +193,7 @@ namespace AP_Atlas.UI
             };
             logHeader.AddChild(copyLog);
             _logBox.AddChild(logHeader);
-            _log = new RichTextLabel { SizeFlagsVertical = Control.SizeFlags.ExpandFill, ScrollFollowing = true, SelectionEnabled = true, BbcodeEnabled = false };
+            _log = new RichTextLabel { SizeFlagsVertical = Control.SizeFlags.ExpandFill, ScrollFollowing = true, SelectionEnabled = true, BbcodeEnabled = false, ThemeTypeVariation = "LogText" };
             _log.AddThemeStyleboxOverride("normal", new StyleBoxFlat { BgColor = ThemeColors.SurfaceDeep, ContentMarginLeft = 8, ContentMarginTop = 6, ContentMarginRight = 8, ContentMarginBottom = 6 });
             _logBox.AddChild(_log);
 
@@ -449,7 +449,8 @@ namespace AP_Atlas.UI
             Clear(_stepsBox);
             foreach (var step in AtlasEngine.Steps(install))
             {
-                var row = new HBoxContainer();
+                // Every row as tall as one with a button, its text centred on it, so the list keeps an even rhythm.
+                var row = new HBoxContainer { CustomMinimumSize = new Vector2(0, 34) };
                 row.AddThemeConstantOverride("separation", 10);
                 var (glyph, color) = step.State switch
                 {
@@ -458,16 +459,16 @@ namespace AP_Atlas.UI
                     EngineStepState.Error => ("✖", Bad),
                     _ => ("○", Muted)
                 };
-                var icon = new Label { Text = glyph, CustomMinimumSize = new Vector2(22, 0), HorizontalAlignment = HorizontalAlignment.Center };
+                var icon = new Label { Text = glyph, CustomMinimumSize = new Vector2(22, 0), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
                 icon.AddThemeColorOverride("font_color", color);
                 row.AddChild(icon);
-                row.AddChild(new Label { Text = step.Title, CustomMinimumSize = new Vector2(170, 0) });
-                var detail = new Label { Text = step.Detail, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart };
+                row.AddChild(new Label { Text = step.Title, CustomMinimumSize = new Vector2(170, 0), VerticalAlignment = VerticalAlignment.Center });
+                var detail = new Label { Text = step.Detail, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart, VerticalAlignment = VerticalAlignment.Center };
                 detail.AddThemeColorOverride("font_color", step.State == EngineStepState.Ok ? Muted : ThemeColors.TextMuted);
                 row.AddChild(detail);
                 if (step.Action != null)
                 {
-                    var button = new Button { Text = step.Action, Disabled = _busy };
+                    var button = new Button { Text = step.Action, Disabled = _busy, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter };
                     var id = step.Id;
                     button.Pressed += () => RunStep(id);
                     row.AddChild(button);
@@ -503,7 +504,7 @@ namespace AP_Atlas.UI
                 var row = new HBoxContainer();
                 row.AddThemeConstantOverride("separation", 10);
                 var (glyph, color, text) = SlotState(slot);
-                var icon = new Label { Text = glyph, CustomMinimumSize = new Vector2(22, 0), HorizontalAlignment = HorizontalAlignment.Center };
+                var icon = new Label { Text = glyph, CustomMinimumSize = new Vector2(22, 0), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
                 icon.AddThemeColorOverride("font_color", color);
                 row.AddChild(icon);
                 row.AddChild(new Label { Text = $"{slot.SlotName} ({slot.Game})", CustomMinimumSize = new Vector2(240, 0), ClipText = true });

@@ -164,8 +164,7 @@ public partial class SlotTrackerControl : MarginContainer
         };
 
         int fontSize = _appSettings.ConsoleFontSize;
-        lbl.AddThemeFontSizeOverride("normal_font_size", fontSize);
-        lbl.AddThemeFontSizeOverride("mono_font_size", fontSize);
+        foreach (string slot in AP_Atlas.UI.Kit.RichTextSizeSlots) lbl.AddThemeFontSizeOverride(slot, fontSize);
 
         panel.AddChild(lbl);
         _chatVBox.AddChild(panel);
@@ -353,8 +352,7 @@ public partial class SlotTrackerControl : MarginContainer
         lbl.MetaHoverEnded += _ => { lbl.MetaUnderlined = false; lbl.MouseDefaultCursorShape = CursorShape.Arrow; };
 
         int fontSize = _appSettings.ConsoleFontSize;
-        lbl.AddThemeFontSizeOverride("normal_font_size", fontSize);
-        lbl.AddThemeFontSizeOverride("mono_font_size", fontSize);
+        foreach (string slot in AP_Atlas.UI.Kit.RichTextSizeSlots) lbl.AddThemeFontSizeOverride(slot, fontSize);
 
         panel.AddChild(lbl);
         _chatVBox.AddChild(panel);

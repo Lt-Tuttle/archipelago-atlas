@@ -339,11 +339,11 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                     if (name != null) col.Name = name;
                     col.AddThemeConstantOverride("separation", 0);
                     var lblTitle = new Label { Text = title, HorizontalAlignment = HorizontalAlignment.Center };
-                    lblTitle.SetMeta("font_size_ratio", 0.6);
+                    lblTitle.SetMeta("font_size_ratio", 0.72);
                     lblTitle.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextSubtle);
                     col.AddChild(lblTitle);
                     var lblVal = new Label { Text = val, HorizontalAlignment = HorizontalAlignment.Center };
-                    lblVal.SetMeta("font_size_ratio", 0.72);
+                    lblVal.SetMeta("font_size_ratio", 0.95);
                     lblVal.AddThemeColorOverride("font_color", valColor);
                     col.AddChild(lblVal);
                     statsHBox.AddChild(col);
@@ -372,7 +372,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                     HorizontalAlignment = HorizontalAlignment.Left,
                     SizeFlagsHorizontal = SizeFlags.ExpandFill
                 };
-                statusFooter.SetMeta("font_size_ratio", 0.6);
+                statusFooter.SetMeta("font_size_ratio", 0.75);
                 var gameNameFooter = new Label
                 {
                     Name = "GameName",
@@ -381,9 +381,9 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                     SizeFlagsHorizontal = SizeFlags.ExpandFill
                 };
                 gameNameFooter.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextSubtle);
-                gameNameFooter.SetMeta("font_size_ratio", 0.6);
+                gameNameFooter.SetMeta("font_size_ratio", 0.75);
                 var cheeseBadge = new Label { Name = "CheeseBadge", HorizontalAlignment = HorizontalAlignment.Center, MouseFilter = MouseFilterEnum.Pass, Visible = false };
-                cheeseBadge.SetMeta("font_size_ratio", 0.6);
+                cheeseBadge.SetMeta("font_size_ratio", 0.75);
                 footerHBox.AddChild(statusFooter);
                 footerHBox.AddChild(cheeseBadge);
                 footerHBox.AddChild(gameNameFooter);
@@ -415,7 +415,22 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             }
             _activeSessionsList.AddChild(new HSeparator { CustomMinimumSize = new Godot.Vector2(0, 5) });
         }
+        if (_profiles.Count == 0) _activeSessionsList.AddChild(EmptySlotsHint());
         SetFontSizeRecursive(_activeSessionsList, _appSettings.SlotsFontSize);
+    }
+
+    /// <summary>What the SLOTS panel says before there's a multiworld: where slots come from, and the way there.</summary>
+    private Control EmptySlotsHint()
+    {
+        var box = new VBoxContainer { Name = "EmptySlotsHint", SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        box.AddThemeConstantOverride("separation", 8);
+        var text = AP_Atlas.UI.Kit.Subtle(Tr("Your multiworlds' slots show here, with their checks and whether they're connected."));
+        text.CustomMinimumSize = new Godot.Vector2(200, 0);
+        box.AddChild(text);
+        var open = AP_Atlas.UI.Kit.Button(Tr("Add a multiworld…"), Tr("Opens the Multiworlds page with a new multiworld."), OnAddProfilePressed, small: true);
+        open.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
+        box.AddChild(open);
+        return box;
     }
 
     /// <summary>A live slot's footer: race mode when it applies, else go mode when the goal is in logic, else BK when nothing is.</summary>

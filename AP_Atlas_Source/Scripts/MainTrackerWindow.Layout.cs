@@ -54,16 +54,23 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _terminalStage.AddThemeStyleboxOverride("panel", contentStyle);
         _bottomPane.AddChild(_terminalStage);
         _sysLogVBox = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        _consoleOutput = new AP_Atlas.UI.SafeRichText { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, ScrollFollowing = true, SelectionEnabled = true };
+        _consoleOutput = new AP_Atlas.UI.SafeRichText { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, ScrollFollowing = true, SelectionEnabled = true, ThemeTypeVariation = LogTextVariation };
         _sysLogVBox.AddChild(_consoleOutput);
         _systemLog = new AP_Atlas.UI.LogPane(_consoleOutput);
         _systemLog.Appended += () => MarkTerminalTabNew(1);
         _terminalStage.AddChild(_sysLogVBox);
         _debugLogVBox = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        _debugLogConsole = new AP_Atlas.UI.SafeRichText { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, ScrollFollowing = true, SelectionEnabled = true };
+        _debugLogConsole = new AP_Atlas.UI.SafeRichText { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, ScrollFollowing = true, SelectionEnabled = true, ThemeTypeVariation = LogTextVariation };
         _debugLogVBox.AddChild(_debugLogConsole);
         _debugLog = new AP_Atlas.UI.LogPane(_debugLogConsole);
         _terminalStage.AddChild(_debugLogVBox);
+        // The Chat tab without a slot says what it will show, rather than an empty box.
+        _chatEmptyHint = new CenterContainer { Name = "ChatEmptyHint", SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, Visible = false };
+        var chatHint = AP_Atlas.UI.Kit.Subtle(Tr("The selected slot's room shows here: chat, hints, items found and sent, and its commands."));
+        chatHint.HorizontalAlignment = HorizontalAlignment.Center;
+        chatHint.CustomMinimumSize = new Godot.Vector2(360, 0);
+        _chatEmptyHint.AddChild(chatHint);
+        _terminalStage.AddChild(_chatEmptyHint);
         _bottomTabs.TabSelected += (long tab) =>
         {
             _currentTerminalTab = (int)tab;
@@ -330,8 +337,12 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         theme.SetStylebox("pressed", "CheckBox", cbNormal);
         theme.SetStylebox("hover_pressed", "CheckBox", cbNormal);
         theme.SetStylebox("disabled", "CheckBox", cbNormal);
+        // A switch is its own picture (ApplyCheckIcons): no button box around it, on or off.
+        foreach (string state in new[] { "normal", "hover", "pressed", "hover_pressed", "disabled" }) theme.SetStylebox(state, "CheckButton", cbNormal);
         var lineEdit = new StyleBoxFlat { BgColor = AP_Atlas.Core.ThemeColors.Input, CornerRadiusTopLeft = 2, CornerRadiusTopRight = 2, CornerRadiusBottomLeft = 2, CornerRadiusBottomRight = 2, ContentMarginLeft = 8, ContentMarginRight = 8, ContentMarginTop = 6, ContentMarginBottom = 6, BorderWidthBottom = 1, BorderColor = accentColor };
         theme.SetStylebox("normal", "LineEdit", lineEdit);
+        // A box that can't be typed in now (nothing selected): the panel's surface with a soft edge, not Godot's grey slab.
+        theme.SetStylebox("read_only", "LineEdit", new StyleBoxFlat { BgColor = AP_Atlas.Core.ThemeColors.SurfacePanel, CornerRadiusTopLeft = 2, CornerRadiusTopRight = 2, CornerRadiusBottomLeft = 2, CornerRadiusBottomRight = 2, ContentMarginLeft = 8, ContentMarginRight = 8, ContentMarginTop = 6, ContentMarginBottom = 6, BorderWidthBottom = 1, BorderColor = AP_Atlas.Core.ThemeColors.BorderSoft });
         var sysFont = GD.Load<FontFile>("res://Assets/Fonts/GoogleSans-Regular.ttf");
         if (sysFont != null)
         {
@@ -344,20 +355,38 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             fallback.FontNames = new[] { "Google Sans", "Segoe UI", "sans-serif" };
             theme.DefaultFont = fallback;
         }
-        var monoFont = GD.Load<FontFile>("res://Assets/Fonts/GoogleSansCode-Regular.ttf");
-        if (monoFont != null)
+        Font monoFont;
+        if (GD.Load<FontFile>("res://Assets/Fonts/GoogleSansCode-Regular.ttf") is { } codeFile)
         {
-            monoFont.MultichannelSignedDistanceField = true;
-            theme.SetFont("normal_font", "RichTextLabel", monoFont);
-            theme.SetFont("mono_font", "RichTextLabel", monoFont);
+            codeFile.MultichannelSignedDistanceField = true;
+            monoFont = codeFile;
         }
         else
         {
-            var monoFallback = new SystemFont { MultichannelSignedDistanceField = true };
-            monoFallback.FontNames = new[] { "Google Sans Code", "Consolas", "monospace" };
-            theme.SetFont("normal_font", "RichTextLabel", monoFallback);
-            theme.SetFont("mono_font", "RichTextLabel", monoFallback);
+            monoFont = new SystemFont { MultichannelSignedDistanceField = true, FontNames = new[] { "Google Sans Code", "Consolas", "monospace" } };
         }
+        // Rich text reads like the labels around it: the same face, with a bold and an italic drawn from it (Godot's own
+        // bold comes from its built-in font, a second typeface wherever text was emphasised). Code and logs keep the code
+        // font: [code] through mono_font, the logs through the LogText variation.
+        var prose = theme.DefaultFont;
+        var slant = new Transform2D(1f, 0.2f, 0f, 1f, 0f, 0f);
+        // The emboldened and slanted faces are drawn from a copy without the distance field: emboldening a distance-field
+        // font smears its edges, while a plain one is rasterised for each size and stays clean.
+        Font drawn = prose;
+        if (prose is FontFile proseFile && proseFile.Duplicate() is FontFile plain)
+        {
+            plain.MultichannelSignedDistanceField = false;
+            drawn = plain;
+        }
+        theme.SetFont("normal_font", "RichTextLabel", prose);
+        theme.SetFont("bold_font", "RichTextLabel", new FontVariation { BaseFont = drawn, VariationEmbolden = 0.6f });
+        theme.SetFont("italics_font", "RichTextLabel", new FontVariation { BaseFont = drawn, VariationTransform = slant });
+        theme.SetFont("bold_italics_font", "RichTextLabel", new FontVariation { BaseFont = drawn, VariationEmbolden = 0.6f, VariationTransform = slant });
+        theme.SetFont("mono_font", "RichTextLabel", monoFont);
+        theme.SetTypeVariation(LogTextVariation, "RichTextLabel");
+        theme.SetFont("normal_font", LogTextVariation, monoFont);
+        theme.SetFont("bold_font", LogTextVariation, new FontVariation { BaseFont = monoFont, VariationEmbolden = 0.45f });
+        ApplyCheckIcons(theme);
         theme.SetStylebox("panel", "PopupMenu", new StyleBoxFlat
         {
             BgColor = AP_Atlas.Core.ThemeColors.SurfacePanel,
@@ -394,8 +423,10 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             theme.SetColor("font_pressed_color", type, fill ? textOnAccent : text);
         }
         theme.SetColor("font_disabled_color", "Button", new Godot.Color(text, 0.35f));
-        theme.SetColor("placeholder_color", "LineEdit", muted);
-        theme.SetColor("placeholder_color", "TextEdit", muted);
+        // Godot 4 names it font_placeholder_color; its default (a pale grey at 60%) all but vanished on the Light theme.
+        theme.SetColor("font_placeholder_color", "LineEdit", muted);
+        theme.SetColor("font_uneditable_color", "LineEdit", AP_Atlas.Core.ThemeColors.TextMuted);
+        theme.SetColor("font_placeholder_color", "TextEdit", muted);
         theme.SetColor("font_selected_color", "LineEdit", text);
         theme.SetColor("default_color", "RichTextLabel", text);
         theme.SetColor("font_selected_color", "Tree", text);
@@ -411,7 +442,11 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         theme.SetColor("title_color", "Window", text);
         theme.SetColor("title_color", "AcceptDialog", text);
         theme.SetColor("guide_color", "Tree", AP_Atlas.Core.ThemeColors.BorderSoft);
-        theme.SetColor("title_button_color", "Tree", text);
+        theme.SetColor("title_button_color", "Tree", AP_Atlas.Core.ThemeColors.TextMuted);
+        StyleBoxFlat ColumnTitle(Godot.Color bg) => new StyleBoxFlat { BgColor = bg, BorderColor = AP_Atlas.Core.ThemeColors.Border, BorderWidthBottom = 1, ContentMarginLeft = 6, ContentMarginRight = 6, ContentMarginTop = 4, ContentMarginBottom = 4 };
+        theme.SetStylebox("title_button_normal", "Tree", ColumnTitle(AP_Atlas.Core.ThemeColors.SurfaceRaised));
+        theme.SetStylebox("title_button_hover", "Tree", ColumnTitle(AP_Atlas.Core.ThemeColors.ControlHover));
+        theme.SetStylebox("title_button_pressed", "Tree", ColumnTitle(AP_Atlas.Core.ThemeColors.ControlHover));
         theme.SetStylebox("panel", "Tree", new StyleBoxFlat { BgColor = AP_Atlas.Core.ThemeColors.SurfaceSunken, BorderColor = AP_Atlas.Core.ThemeColors.Border, BorderWidthTop = 1, BorderWidthBottom = 1, BorderWidthLeft = 1, BorderWidthRight = 1, ContentMarginLeft = 4, ContentMarginRight = 4, ContentMarginTop = 4, ContentMarginBottom = 4 });
         theme.SetStylebox("panel", "ItemList", new StyleBoxFlat { BgColor = AP_Atlas.Core.ThemeColors.SurfaceSunken, BorderColor = AP_Atlas.Core.ThemeColors.Border, BorderWidthTop = 1, BorderWidthBottom = 1, BorderWidthLeft = 1, BorderWidthRight = 1, ContentMarginLeft = 4, ContentMarginRight = 4, ContentMarginTop = 4, ContentMarginBottom = 4 });
         theme.SetStylebox("normal", "TextEdit", new StyleBoxFlat { BgColor = AP_Atlas.Core.ThemeColors.Input, BorderColor = AP_Atlas.Core.ThemeColors.BorderSoft, BorderWidthTop = 1, BorderWidthBottom = 1, BorderWidthLeft = 1, BorderWidthRight = 1, ContentMarginLeft = 6, ContentMarginRight = 6, ContentMarginTop = 4, ContentMarginBottom = 4 });
@@ -420,6 +455,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         // An embedded window's title strip is drawn by its border's top edge, so that edge takes a surface colour, not the line's.
         theme.SetStylebox("embedded_border", "Window", new StyleBoxFlat { BgColor = AP_Atlas.Core.ThemeColors.SurfacePanel, BorderColor = AP_Atlas.Core.ThemeColors.SurfaceRaised, BorderWidthTop = 28, BorderWidthBottom = 1, BorderWidthLeft = 1, BorderWidthRight = 1, ExpandMarginTop = 28, ExpandMarginLeft = 1, ExpandMarginRight = 1, ExpandMarginBottom = 1 });
         this.Theme = theme;
+        _alerts?.UseTheme(theme);
         // Popups and windows (dialogs, the Pack Doctor) live under the root, not this control, so share the theme there too.
         if (IsInsideTree()) GetTree().Root.Theme = theme;
         RenderingServer.SetDefaultClearColor(AP_Atlas.Core.ThemeColors.Surface);
@@ -461,14 +497,19 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     /// </summary>
     private void MigrateZoom()
     {
-        if (_appSettings.SettingsVersion >= 1) return;
-        float windows = AP_Atlas.UI.WindowFit.WindowsScale(GetWindow().CurrentScreen);
-        if (_appSettings.UiZoom != 100 && windows > 1.01f)
+        if (_appSettings.SettingsVersion >= AppSettings.CurrentSettingsVersion) return;
+        if (_appSettings.SettingsVersion < 1)
         {
-            int relative = (int)Math.Round(_appSettings.UiZoom / windows);
-            _appSettings.UiZoom = ZoomSteps.OrderBy(step => Math.Abs(step - relative)).First();
+            float windows = AP_Atlas.UI.WindowFit.WindowsScale(GetWindow().CurrentScreen);
+            if (_appSettings.UiZoom != 100 && windows > 1.01f)
+            {
+                int relative = (int)Math.Round(_appSettings.UiZoom / windows);
+                _appSettings.UiZoom = ZoomSteps.OrderBy(step => Math.Abs(step - relative)).First();
+            }
         }
-        _appSettings.SettingsVersion = 1;
+        // 2: the map list's order became most checks first by default (the A–Z of older files was the old default, not a choice).
+        if (_appSettings.SettingsVersion < 2) _appSettings.MapSortIndex = 1;
+        _appSettings.SettingsVersion = AppSettings.CurrentSettingsVersion;
         DataManager.SaveSettings(_appSettings);
     }
 
@@ -567,8 +608,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             }
             else if (c is RichTextLabel rtl)
             {
-                SetFontSizeOverride(rtl, "normal_font_size", finalSize);
-                SetFontSizeOverride(rtl, "mono_font_size", finalSize);
+                foreach (string slot in AP_Atlas.UI.Kit.RichTextSizeSlots) SetFontSizeOverride(rtl, slot, finalSize);
             }
             if (c is MenuButton mb)
             {
@@ -610,8 +650,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _connectionPanel.AddChild(editorScroll);
         var rightVbox = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill };
         editorScroll.AddChild(rightVbox);
-        var title = new Label { Text = Tr("Multiworld Details"), HorizontalAlignment = HorizontalAlignment.Center };
-        title.SetMeta("font_size_ratio", 1.7f);
+        var title = new Label { Text = Tr("Multiworld Details"), HorizontalAlignment = HorizontalAlignment.Left };
+        title.SetMeta("font_size_ratio", 1.5f);
         rightVbox.AddChild(title);
         rightVbox.AddChild(new HSeparator());
         // What's typed goes into the multiworld at once (so nothing is lost when another is selected); Save writes it to disk.
@@ -662,29 +702,32 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         Field("Password:", Info("Password", "The room's password, if the host set one.", "From the host. Atlas keeps it encrypted for your Windows account and sends it only to this room's server.", "Optional: most rooms have none."), passwordRow);
         _cheeseInput = new LineEdit { PlaceholderText = Tr("Cheese Tracker link, or the archipelago.gg room link (optional)"), SizeFlagsHorizontal = SizeFlags.ExpandFill, AccessibilityName = Tr("Cheese Tracker link") };
         _cheeseInput.TextChanged += (_) => MarkDirty();
-        Field("Cheese Tracker:", Info("Cheese Tracker", "The multiworld's page on Cheese Tracker, the shared tracker many asyncs use, or the archipelago.gg room link, which Atlas looks up there.", "From the host or the Discord thread, if the async uses Cheese Tracker. Save Settings checks it online and links it; the Cheese Tracker tab then shows it.", "Optional."), _cheeseInput);
+        Field("Cheese Tracker:", Info("Cheese Tracker", "The multiworld's page on Cheese Tracker, the shared tracker many asyncs use, or the archipelago.gg room link, which Atlas looks up there.", "From the host or the Discord thread, if the async uses Cheese Tracker. Save checks it online and links it; the Cheese Tracker tab then shows it.", "Optional."), _cheeseInput);
         _sphereInput = new LineEdit { PlaceholderText = Tr("https://spheretracker.de/room/… (optional)"), SizeFlagsHorizontal = SizeFlags.ExpandFill, AccessibilityName = Tr("Sphere Tracker link") };
         _sphereInput.TextChanged += (_) => MarkDirty();
-        Field("Sphere Tracker:", Info("Sphere Tracker", "The host's room on spheretracker.de (spheretracker.de/room/…), which shows the multiworld sphere by sphere.", "Only from the host: Atlas uses the host's room and no other (anything else would be cheating), and asks you to confirm when it can't tell the host made it. Save Settings checks it online.", "Optional. Hidden in race mode."), _sphereInput);
+        Field("Sphere Tracker:", Info("Sphere Tracker", "The host's room on spheretracker.de (spheretracker.de/room/…), which shows the multiworld sphere by sphere.", "Only from the host: Atlas uses the host's room and no other (anything else would be cheating), and asks you to confirm when it can't tell the host made it. Save checks it online.", "Optional. Hidden in race mode."), _sphereInput);
         rightVbox.AddChild(new HSeparator());
         rightVbox.AddChild(Labelled("Slots:", Info("Slots", "The names of the slots you play in this multiworld, exactly as in your YAMLs (a slot is one player's game).", "From your YAMLs, or Fill from link (the room's players). Connect a slot from its row; its stats and links are kept under its name.", "At least one, to connect.")));
         // The slot rows take the spare height; the editor's scroll takes over when they need more.
         _slotsListVBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
         rightVbox.AddChild(_slotsListVBox);
-        var buttonRow = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
+        var buttonRow = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Begin };
+        buttonRow.AddThemeConstantOverride("separation", 8);
         rightVbox.AddChild(buttonRow);
         _addSlotButton = AP_Atlas.UI.Kit.Button(Tr("+ Add Slot"), Tr("Adds a slot: its name, its game, its YAML, whether its logic is ready in the Atlas Engine, and Connect now."), OnAddSlotPressed);
         buttonRow.AddChild(_addSlotButton);
         _addYamlButton = AP_Atlas.UI.Kit.Button(Tr("Add YAML…"), Tr("Keeps a player YAML in Atlas's YAML folder and adds a slot for each player it names, with the YAML tied to that slot."), OnAddYamlPressed);
         buttonRow.AddChild(_addYamlButton);
-        _saveButton = new Button { Text = Tr("Save Settings") };
+        buttonRow.AddChild(new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill }); // Save and Delete stand apart from the adding
+        _saveButton = new Button { Text = Tr("Save"), TooltipText = Tr("Writes this multiworld to disk and checks its Cheese Tracker and Sphere Tracker links.") };
         _saveButton.Pressed += OnSaveProfilePressed;
         buttonRow.AddChild(_saveButton);
-        _deleteButton = new Button { Text = Tr("Delete Profile") };
+        _deleteButton = new Button { Text = Tr("Delete Multiworld"), TooltipText = Tr("Deletes this multiworld and its slots from Atlas (it asks first).") };
         _deleteButton.Pressed += OnDeleteProfilePressed;
         buttonRow.AddChild(_deleteButton);
         rightVbox.AddChild(new HSeparator());
-        _statusLabel = new Label { Text = Tr("Status: Disconnected"), HorizontalAlignment = HorizontalAlignment.Center };
+        _statusLabel = new Label { Text = Tr("Status: Disconnected"), HorizontalAlignment = HorizontalAlignment.Left };
+        _statusLabel.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextMuted);
         rightVbox.AddChild(_statusLabel);
     }
     /// <summary>Styles a VS Code-like tab strip whose selected tab is underlined (top border) in the accent color.</summary>
@@ -707,6 +750,63 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         bar.AddThemeStyleboxOverride("tab_hovered", Tab(AP_Atlas.Core.ThemeColors.SurfaceRaised, clear));
         bar.AddThemeStyleboxOverride("tab_selected", Tab(AP_Atlas.Core.ThemeColors.Surface, AP_Atlas.Core.ThemeColors.Accent));
     }
+    /// <summary>The rich text variation for logs: the code font, so columns of output line up.</summary>
+    internal const string LogTextVariation = "LogText";
+
+    /// <summary>
+    /// Check boxes, radio buttons, switches, and the check marks in menus and tables, drawn from the palette: an outline in
+    /// the subtle text colour when off, the accent with a mark in the colour that reads on it when on. Godot's own are light
+    /// grey, which all but vanish on the Light theme. SVG textures re-rasterise for the zoom, so they stay sharp.
+    /// </summary>
+    private static void ApplyCheckIcons(Theme theme)
+    {
+        string Hex(Godot.Color c) => "#" + c.ToHtml(false);
+        string edge = Hex(AP_Atlas.Core.ThemeColors.TextSubtle), off = Hex(AP_Atlas.Core.ThemeColors.Disabled);
+        string accent = Hex(AP_Atlas.Core.ThemeColors.Accent), mark = Hex(AP_Atlas.Core.ThemeColors.TextOnAccent);
+        Texture2D Svg(int w, int h, string body) => DpiTexture.CreateFromString($"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\">{body}</svg>");
+        string Box(string stroke, string fill) => $"<rect x=\"1.5\" y=\"1.5\" width=\"15\" height=\"15\" rx=\"3.5\" fill=\"{fill}\" stroke=\"{stroke}\" stroke-width=\"1.5\"/>";
+        string Tick(string colour) => $"<path d=\"M5 9.2 7.8 12 13 6.2\" fill=\"none\" stroke=\"{colour}\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>";
+        string Ring(string stroke) => $"<circle cx=\"9\" cy=\"9\" r=\"7.25\" fill=\"none\" stroke=\"{stroke}\" stroke-width=\"1.5\"/>";
+        string Dot(string fill) => $"<circle cx=\"9\" cy=\"9\" r=\"3.75\" fill=\"{fill}\"/>";
+        var uncheckedIcon = Svg(18, 18, Box(edge, "none"));
+        var checkedIcon = Svg(18, 18, Box(accent, accent) + Tick(mark));
+        var uncheckedDisabled = Svg(18, 18, Box(off, "none"));
+        var checkedDisabled = Svg(18, 18, Box(off, off) + Tick(mark));
+        var radio = Svg(18, 18, Ring(edge));
+        var radioOn = Svg(18, 18, Ring(accent) + Dot(accent));
+        var radioDisabled = Svg(18, 18, Ring(off));
+        var radioOnDisabled = Svg(18, 18, Ring(off) + Dot(off));
+        foreach (string type in new[] { "CheckBox", "PopupMenu", "Tree" })
+        {
+            theme.SetIcon("checked", type, checkedIcon);
+            theme.SetIcon("unchecked", type, uncheckedIcon);
+            theme.SetIcon("radio_checked", type, radioOn);
+            theme.SetIcon("radio_unchecked", type, radio);
+        }
+        theme.SetIcon("checked_disabled", "CheckBox", checkedDisabled);
+        theme.SetIcon("unchecked_disabled", "CheckBox", uncheckedDisabled);
+        theme.SetIcon("radio_checked_disabled", "CheckBox", radioOnDisabled);
+        theme.SetIcon("radio_unchecked_disabled", "CheckBox", radioDisabled);
+        theme.SetIcon("checked_disabled", "Tree", checkedDisabled);
+        theme.SetIcon("unchecked_disabled", "Tree", uncheckedDisabled);
+        // Switches: a pill with its knob; the accent with a knob that reads on it when on.
+        string Pill(string stroke, string fill) => $"<rect x=\"1\" y=\"1\" width=\"34\" height=\"18\" rx=\"9\" fill=\"{fill}\" stroke=\"{stroke}\" stroke-width=\"1.5\"/>";
+        string Knob(int x, string fill) => $"<circle cx=\"{x}\" cy=\"10\" r=\"5.5\" fill=\"{fill}\"/>";
+        var switchOff = Svg(36, 20, Pill(edge, "none") + Knob(10, edge));
+        var switchOn = Svg(36, 20, Pill(accent, accent) + Knob(26, mark));
+        var switchOffDisabled = Svg(36, 20, Pill(off, "none") + Knob(10, off));
+        var switchOnDisabled = Svg(36, 20, Pill(off, off) + Knob(26, mark));
+        foreach (string suffix in new[] { "", "_mirrored" })
+        {
+            theme.SetIcon("unchecked" + suffix, "CheckButton", switchOff);
+            theme.SetIcon("checked" + suffix, "CheckButton", switchOn);
+            theme.SetIcon("unchecked_disabled" + suffix, "CheckButton", switchOffDisabled);
+            theme.SetIcon("checked_disabled" + suffix, "CheckButton", switchOnDisabled);
+        }
+        theme.SetConstant("h_separation", "CheckBox", 8);
+        theme.SetConstant("h_separation", "CheckButton", 8);
+    }
+
     private StyleBoxFlat GetVSCodePanelStyle()
     {
         return new StyleBoxFlat

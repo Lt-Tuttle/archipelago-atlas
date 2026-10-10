@@ -201,7 +201,7 @@ namespace AP_Atlas.Core.PopTracker
             get
             {
                 if (ChosenLayout is { } chosen) return chosen;
-                if (_pack != null && _pack.LayoutGrids.Count > 0) return _autoLayout != null && _pack.LayoutGrids.ContainsKey(_autoLayout) ? _autoLayout : LayoutChoices()[0];
+                if (_pack != null && _pack.LayoutGrids.Count > 0) return _autoLayout != null && LayoutChoices().Contains(_autoLayout) ? _autoLayout : LayoutChoices()[0];
                 return KeyItemsLayouts.Vertical;
             }
         }
@@ -244,8 +244,11 @@ namespace AP_Atlas.Core.PopTracker
         private void MeasureForAutoLayout()
         {
             if (!IsInstanceValid(this) || _pack == null || _visualScroll == null || _visualGrid == null || ChosenLayout != null || !_isVisualMode) return;
+            // The pack's own layouts first, then Atlas's two built from the item groups (a pack with one root, DSR's, still gets a choice).
             var roots = _pack.LayoutGrids.Keys.OrderBy(k => Array.IndexOf(RootOrder, k) is var i && i >= 0 ? i : 99).ThenBy(k => k).ToList();
-            if (roots.Count < 2) return;
+            if (roots.Count == 0) return;
+            roots.Add(KeyItemsLayouts.Horizontal);
+            roots.Add(KeyItemsLayouts.Vertical);
             var view = _visualScroll.Size;
             if (view.X <= 0 || view.Y <= 0) return;
             string packId = _pack.SourcePath + "|" + _pack.Variant;
@@ -256,7 +259,7 @@ namespace AP_Atlas.Core.PopTracker
                 _autoView = view;
             }
             string drawn = CurrentLayout;
-            if (!KeyItemsLayouts.IsBuilt(drawn) && roots.Contains(drawn))
+            if (roots.Contains(drawn))
             {
                 var size = _visualGrid.GetCombinedMinimumSize();
                 _autoMeasured[drawn] = (size.X, size.Y);
@@ -562,7 +565,7 @@ namespace AP_Atlas.Core.PopTracker
             if (_isVisualMode && _pack != null)
             {
                 RenderVisualMode(filter);
-                if (ChosenLayout == null && _pack.LayoutGrids.Count > 1) AP_Atlas.UI.Ui.NextFrame(this, MeasureForAutoLayout);
+                if (ChosenLayout == null && _pack.LayoutGrids.Count > 0) AP_Atlas.UI.Ui.NextFrame(this, MeasureForAutoLayout);
             }
             else
             {

@@ -85,6 +85,9 @@ namespace AP_Atlas.UI
         /// <summary>Text with no letter or digit (a glyph such as "◀" or "…"): no name for a screen reader to read.</summary>
         public static bool IsSymbolOnly(string? text) => string.IsNullOrEmpty(text) || !System.Linq.Enumerable.Any(text, char.IsLetterOrDigit);
 
+        /// <summary>A rich text label's font size slots: a pane's size reaches its bold, italics and code too.</summary>
+        public static readonly string[] RichTextSizeSlots = { "normal_font_size", "bold_font_size", "italics_font_size", "bold_italics_font_size", "mono_font_size" };
+
         /// <summary>A heading in the accent's heading colour, <paramref name="ratio"/> times the pane's text size. It follows the accent when that changes.</summary>
         public static Label Heading(string text, float ratio = 1.15f)
         {

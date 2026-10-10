@@ -980,12 +980,10 @@ namespace AP_Atlas.UI
             _ => ThemeColors.TextMuted
         };
 
-        /// <summary>Rich text in the same font as the labels around it.</summary>
+        /// <summary>Rich text (the theme gives it the labels' font).</summary>
         private SafeRichText Rich()
         {
             var rtl = new SafeRichText { FitContent = true, ScrollActive = false, SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            var font = GetThemeFont("font", "Label");
-            if (font != null) rtl.AddThemeFontOverride("normal_font", font);
             return rtl;
         }
     }
