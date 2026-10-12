@@ -8,11 +8,23 @@ Atlas is an unofficial community tool: it isn't affiliated with or endorsed by t
 
 Atlas opens on Home (Ctrl+1) unless Settings → Behaviour → Open on says otherwise. Its header carries Atlas's icon and wordmark, which take the theme's colours and your accent. It has:
 
-- **Getting started:** the steps to a working Atlas, each with a button that sets it up in a small window right here, a quieter button to the page where it's done by hand (the step ticks either way, since it reads what Atlas has), and **Skip** for a step that doesn't apply (Show steps lists it again, with Unskip): set up the Atlas Engine (the tick appears the moment the setup finishes); **New…** makes a multiworld (its name, server and password, and its slots, typed or from a YAML, which names a slot and its game); **Connect…** lists every multiworld's slots with a Connect button each; **Find a pack…** searches GitHub once for a map pack of a game your slots play (or another you type) and shows what it found on the Map Packs page; **Link…** links a multiworld to its Cheese Tracker page, or to the host's spheretracker.de room. A step disappears once it's done or skipped, and when every step is done the section says "You're set up." with Show steps to see them again, ticked. The buttons sit beside their text at any window width, and so does the multiworld list's Connect.
-- **Your multiworlds:** the ones you've played most recently, each with a Connect button that connects every slot of it in turn.
-- **Tools:** a card per tool.
+- **Your multiworlds:** the ones you play, most recently played first, each with its server, slots and games, a "connected" chip while any of its slots is, **Open** (the Multiworlds page with it selected) and **Connect**, which connects every slot of it in turn. **New…** makes a multiworld in a small window right here (its name, server and password, and its slots, typed or from a YAML, which names a slot and its game); **Paste a room link…** starts one on the Multiworlds page with the room link box ready. On a first start, with no multiworld yet, this card offers **Set up Atlas…** (see Setting up Atlas below) and **Add a multiworld…**.
+- **Tools:** a button per tool.
+- **Setup:** one line about the setup ("Setup 4 of 7 done. Next: Games and map packs.") with **Resume**, which opens the setup window at that step; once every step is done or skipped it says "You're set up." with Open setup for changing anything later.
 - A tip, which changes each time Home shows.
+- **What's new:** the newest version's headline changes, from the changelog built into Atlas.
 - **Links** to Archipelago's own pages and to the community's tools. Links open in your browser when you click them; Atlas never fetches them by itself.
+
+### Setting up Atlas
+
+The setup window walks Atlas's setup through page by page: Welcome, Look, The Atlas Engine, Your multiworld, Your slots, Games and map packs, Trackers (optional), Reports and updates, Ready. It opens by itself on a start without the engine (the Welcome page's "Don't open this by itself again" stops that), and from Home's setup line and Help → Set up Atlas… any time, at the first step left. Its rules:
+
+- **Nothing opens on top of it.** A permission Atlas needs (downloading the engine, reading a room's status page, looking up apworld releases on GitHub) is a row on the page with Allow once, Always allow and a way to say not now; trusting a project is the tick beside its install; the one question it can't fold in, whether a Sphere Tracker room is the host's, opens on the window itself.
+- **Back keeps what you typed; Skip this step counts a step as done without doing it** (Home's line counts skipped steps as done; the Multiworlds, Games and Settings pages do each step by hand later).
+- **The engine installs in the background** once you allow it: its progress shows in the list on the left while you fill in the next pages, Home's setup card shows it if you close the window, and the Ready page's Finish waits for it.
+- **Your multiworld:** a new one or an existing one; paste the room link the host shared and Next reads the room's status page once (the server address and the players, who appear on the slots page to tick), or type the server. **Your slots:** tick the room's players you play, type a slot and its game, or Add YAML… (a slot per player it names, with its game). Next saves the multiworld and selects it on the Multiworlds page.
+- **Games and map packs:** for each game of your slots, its apworld (Trust github.com/… and install its newest apworld, when a project is known and the engine is ready) and a map pack (the one the game's setup guide recommends, or Search GitHub for a pack… with Install on each result, installed on the page: the release that fits the game's names). **Install and continue** runs what's ticked, then moves on.
+- **Trackers:** the multiworld's Cheese Tracker link and the host's spheretracker.de room, linked on Next. **Reports and updates:** the daily update check and crash reports as two switches, kept as the permissions. **Ready:** what's set up, Connect now per slot, Finish.
 
 ## The window
 

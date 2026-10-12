@@ -72,7 +72,10 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     private void LinkSphereFromEditor(MultiworldProfile profile, string text) => AP_Atlas.Core.Async.Fire(LinkSphereFromEditorAsync(profile, text), "linking the sphere tracker");
 
     /// <summary>The Sphere Tracker box, on Save: emptied, the room is unlinked; changed, the room is checked and linked (the host's room only); a refused link stays in the box with the reason below.</summary>
-    private async Task LinkSphereFromEditorAsync(MultiworldProfile profile, string text)
+    private Task LinkSphereFromEditorAsync(MultiworldProfile profile, string text) => LinkSphereFromEditorAsync(this, profile, text);
+
+    /// <param name="parent">Where the host question opens (the setup window asks on itself, so nothing opens on top of it).</param>
+    private async Task LinkSphereFromEditorAsync(Node parent, MultiworldProfile profile, string text)
     {
         if (_spheres == null) return;
         if (string.IsNullOrWhiteSpace(text))
@@ -81,11 +84,11 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             ShowToast(Tr("{0} is no longer linked to a sphere tracker").Replace("{0}", profile.Name), AP_Atlas.Core.ThemeColors.TextSubtle);
             return;
         }
-        string error = await AP_Atlas.UI.SphereLinkFlow.CheckAndLinkAsync(this, _spheres, profile, text, ShowToast, () =>
+        string error = await AP_Atlas.UI.SphereLinkFlow.CheckAndLinkAsync(parent, _spheres, profile, text, ShowToast, () =>
         {
             if (_selectedProfile == profile && _sphereInput != null) _sphereInput.Text = profile.SphereTrackerUrl ?? "";
             UpdateSidebar();
-            if (_currentTool == AP_Atlas.UI.Tool.Home) _homePage?.Refresh(); // the Sphere step's tick
+            if (_currentTool == AP_Atlas.UI.Tool.Home) _homePage?.Refresh(); // the setup line
         });
         if (!IsInstanceValid(this) || error == null || _selectedProfile != profile) return;
         _statusLabel.Text = Tr("Sphere Tracker: {0}").Replace("{0}", error);
@@ -157,7 +160,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         RefreshProfileListStyles();
     }
 
-    private static bool IsDefaultSlotName(string name) => name is "Player1" or "New Slot";
+    private static bool IsDefaultSlotName(string name) => AP_Atlas.UI.SetupSteps.IsPlaceholderSlot(name);
 
     private void FillFromRoomLink()
     {
@@ -946,7 +949,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         }
         else ShowToast(string.IsNullOrWhiteSpace(text) ? $"{profile.Name} is no longer linked to Cheese Tracker" : $"{profile.Name} is linked to Cheese Tracker", AP_Atlas.Core.ThemeColors.TextSubtle);
         if (_selectedProfile == profile && _cheeseInput != null) _cheeseInput.Text = profile.CheeseTrackerUrl ?? "";
-        if (_currentTool == AP_Atlas.UI.Tool.Home) _homePage?.Refresh(); // the Cheese step's tick
+        if (_currentTool == AP_Atlas.UI.Tool.Home) _homePage?.Refresh(); // the setup line
     }
     private void OnDeleteProfilePressed()
     {

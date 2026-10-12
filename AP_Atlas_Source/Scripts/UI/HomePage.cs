@@ -1,3 +1,4 @@
+#nullable enable
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -6,39 +7,16 @@ using Godot;
 namespace AP_Atlas.UI
 {
     /// <summary>
-    /// Home: where Atlas opens. A getting-started checklist with ticks and buttons, the user's multiworlds with a one-click
-    /// connect, a card per tool and for what sets Atlas apart, a tip, links to Archipelago and the community's tools, and
-    /// the footer. Everything here ships with Atlas; nothing loads online. It reads Atlas's state again whenever it shows
+    /// Home: where Atlas opens, as a dashboard. The multiworlds you play fill the width with their live state and a
+    /// one-click connect (a first start shows one "Set up Atlas" block there instead), the tools as a row of buttons
+    /// under them, and a narrow column beside: the setup's one line with Resume, a tip, what's new, and the links.
+    /// Everything here ships with Atlas; nothing loads online. It reads Atlas's state again whenever it shows
     /// (<see cref="OnShown"/>) and after a connect (<see cref="Refresh"/>).
     /// </summary>
     public sealed partial class HomePage : VBoxContainer
     {
-        /// <summary>A tool card's smallest width, and a feature card's, in logical units: the grids' columns come from them.</summary>
-        public const int ToolCardWidth = 270, FeatureCardWidth = 340;
-        /// <summary>The checklist's widest, so a step's button stays beside its text at any window width (the mark, the text, the button).</summary>
-        public const int StepsWidth = 720;
-        private GridContainer? _tools, _features;
-        private VBoxContainer? _stepsBox;
-        private HBoxContainer? _allDoneRow;
-        private Button? _showStepsButton;
-        private Button? _addMultiworldButton;
-        private bool _showSteps;
-
-        /// <summary>The tool cards' columns and the feature cards' (for tests).</summary>
-        public int ToolColumns => _tools?.Columns ?? 0;
-        public int FeatureColumns => _features?.Columns ?? 0;
-
-        private void Reflow(float width)
-        {
-            if (width <= 0) return;
-            float stepsWidth = Math.Min(StepsWidth, width);
-            if (_stepsBox != null && Math.Abs(_stepsBox.CustomMinimumSize.X - stepsWidth) > 0.5f) _stepsBox.CustomMinimumSize = new Vector2(stepsWidth, 0);
-            if (Math.Abs(_recents.CustomMinimumSize.X - stepsWidth) > 0.5f) _recents.CustomMinimumSize = new Vector2(stepsWidth, 0);
-            if (_tools == null || _features == null) return;
-            int toolColumns = Math.Clamp((int)(width / ToolCardWidth), 1, 3), featureColumns = Math.Clamp((int)(width / FeatureCardWidth), 1, 2);
-            if (_tools.Columns != toolColumns) _tools.Columns = toolColumns;
-            if (_features.Columns != featureColumns) _features.Columns = featureColumns;
-        }
+        /// <summary>The right column's width, and the page width below which it goes under the multiworlds instead of beside them.</summary>
+        public const int ColumnWidth = 260, TwoColumnsFrom = 780;
 
         /// <summary>What Home reads, and what its buttons do, from the window.</summary>
         public sealed class Hooks
@@ -49,25 +27,21 @@ namespace AP_Atlas.UI
             /// <summary>Whether a multiworld's slot is connected (or connecting) right now.</summary>
             public Func<string, string, bool> IsSlotLive { get; init; } = (_, _) => false;
             public Func<int> ContentFontSize { get; init; } = () => 14;
-            public Action SetUpEngine { get; init; } = () => { };
-            /// <summary>Takes the user to the Multiworlds page with a new multiworld selected (the empty list's button).</summary>
+            /// <summary>The setup steps Home's line counts (shared with the setup window).</summary>
+            public SetupSteps Steps { get; init; } = new SetupSteps(new SetupSteps.Hooks());
+            /// <summary>Opens the setup window: at the first step left (true), or from its Welcome page.</summary>
+            public Action<bool> OpenSetup { get; init; } = _ => { };
+            /// <summary>Takes the user to the Multiworlds page with a new multiworld selected (the first start's second button).</summary>
             public Action AddMultiworld { get; init; } = () => { };
-            /// <summary>The steps' quick setup, each a small dialog on Home: a new multiworld, connecting a slot, finding a map pack, linking Cheese Tracker.</summary>
+            /// <summary>New…: a new multiworld in a small dialog here.</summary>
             public Action QuickAddMultiworld { get; init; } = () => { };
-            public Action QuickConnect { get; init; } = () => { };
-            public Action QuickFindPack { get; init; } = () => { };
-            public Action QuickLinkCheese { get; init; } = () => { };
-            public Action QuickLinkSphere { get; init; } = () => { };
-            /// <summary>The steps' "go to the page" buttons.</summary>
-            public Action OpenSphereSettings { get; init; } = () => { };
-            public Action OpenEngineWindow { get; init; } = () => { };
-            /// <summary>Which steps the user skipped (kept in the settings).</summary>
-            public Func<string, bool> IsStepSkipped { get; init; } = _ => false;
-            public Action<string, bool> SetStepSkipped { get; init; } = (_, _) => { };
+            /// <summary>Paste a room link…: the Multiworlds page with a new multiworld and its room link box ready.</summary>
+            public Action AddFromRoomLink { get; init; } = () => { };
+            /// <summary>Open: the Multiworlds page with that multiworld selected.</summary>
+            public Action<MultiworldProfile> OpenProfile { get; init; } = _ => { };
             public Action<Tool> ShowTool { get; init; } = _ => { };
             /// <summary>Connects every slot of a multiworld that isn't connected yet.</summary>
             public Action<MultiworldProfile> Connect { get; init; } = _ => { };
-            public Action OpenCheeseSettings { get; init; } = () => { };
             public Action ShowAbout { get; init; } = () => { };
             /// <summary>The newest version's headline changes, one line each (from the changelog built into Atlas).</summary>
             public Func<IReadOnlyList<string>> WhatsNew { get; init; } = () => Array.Empty<string>();
@@ -109,42 +83,27 @@ namespace AP_Atlas.UI
             ("Community tools", "Universal Tracker", "https://github.com/FarisTheAncient/Archipelago/releases"),
         };
 
-        private sealed class Step
-        {
-            public Step(string id, Func<bool> done, TextureRect mark, Button button, Button open, Button skip, Control row)
-            {
-                Id = id;
-                Done = done;
-                Mark = mark;
-                Button = button;
-                Open = open;
-                Skip = skip;
-                Row = row;
-            }
-
-            public string Id { get; }
-            public Func<bool> Done { get; }
-            public TextureRect Mark { get; }
-            /// <summary>The quick-setup button, the "go to the page" button and Skip (Unskip once skipped).</summary>
-            public Button Button { get; }
-            public Button Open { get; }
-            public Button Skip { get; }
-            /// <summary>The step's row: hidden once the step is done or skipped, unless the user shows the steps again.</summary>
-            public Control Row { get; }
-            public bool LastDone { get; set; }
-            public bool Skipped { get; set; }
-        }
-
         private readonly Func<string, string> _tr;
         private readonly Hooks _hooks;
-        private readonly List<Step> _steps = new();
+        private readonly BoxContainer _columns = new();
+        private readonly Control _rightColumn;
         private readonly VBoxContainer _recents = new();
         private readonly Dictionary<string, Button> _connectButtons = new();
+        private readonly Dictionary<string, Button> _openButtons = new();
+        private readonly Dictionary<string, string> _rowLines = new();
         private readonly Dictionary<Tool, Button> _toolCards = new();
         private readonly Label _tip;
+        private readonly Label _setupLine;
+        private readonly Label _setupProgress;
+        private readonly Button _resume;
+        private readonly Button _reopenSetup;
         private readonly VBoxContainer _whatsNew = new();
         private readonly Button _whatsNewButton;
+        private Button? _addMultiworldButton;
+        private Button? _setUpButton;
+        private readonly TextureRect _wordmark;
         private int _tipIndex = -1;
+        private bool _twoColumns = true;
 
         public HomePage(Func<string, string> tr, Hooks hooks)
         {
@@ -153,171 +112,193 @@ namespace AP_Atlas.UI
             Name = "Home";
             SizeFlagsHorizontal = SizeFlags.ExpandFill;
             SizeFlagsVertical = SizeFlags.ExpandFill;
-            // The page never asks the window for width (ShowNever: no sideways scrolling, and the grids below fold to fit instead).
+            // The page never asks the window for width (ShowNever: no sideways scrolling; the columns fold instead).
             var scroll = new ScrollContainer { HorizontalScrollMode = ScrollContainer.ScrollMode.ShowNever, SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
             AddChild(scroll);
             var margin = new MarginContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            foreach (string side in new[] { "margin_left", "margin_right", "margin_top", "margin_bottom" }) margin.AddThemeConstantOverride(side, 24);
+            foreach (string side in new[] { "margin_left", "margin_right", "margin_top", "margin_bottom" }) margin.AddThemeConstantOverride(side, 20);
             scroll.AddChild(margin);
             var body = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            body.AddThemeConstantOverride("separation", 22);
+            body.AddThemeConstantOverride("separation", 16);
             margin.AddChild(body);
 
-            // The header: the icon, the wordmark and what Atlas is.
+            // The header: the icon and the wordmark, the tagline beside them.
             var header = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            header.AddThemeConstantOverride("separation", 18);
+            header.AddThemeConstantOverride("separation", 14);
             header.AddChild(new TextureRect
             {
                 Texture = GD.Load<Texture2D>("res://Assets/Graphics/icon.png"),
                 StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
                 ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
-                CustomMinimumSize = new Vector2(96, 96)
-            });
-            var titles = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ShrinkCenter };
-            titles.AddThemeConstantOverride("separation", 4);
-            _wordmark = Wordmark.Make(80, _tr("The Archipelago Atlas"));
-            titles.AddChild(_wordmark);
-            var tagline = Kit.Text(_tr("Maps, logic, hints and the trackers your group uses, in one window."), AP_Atlas.Core.ThemeColors.TextMuted);
-            tagline.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-            tagline.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-            titles.AddChild(tagline);
-            header.AddChild(titles);
-            body.AddChild(header);
-
-            // Getting started: each step reads Atlas's state and has the button that sets it up in a small dialog here. The
-            // steps sit in a box no wider than StepsWidth, so each button stays beside its text at any window width; a done
-            // step disappears, and once every step is done one line says so (Show steps brings them back, ticked).
-            body.AddChild(Kit.Heading(_tr("Getting started"), 1.25f));
-            var steps = _stepsBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ShrinkBegin, CustomMinimumSize = new Vector2(StepsWidth, 0) };
-            steps.AddThemeConstantOverride("separation", 8);
-            body.AddChild(steps);
-            // Each step: the quick setup here, a quieter button to the page where it's done by hand (the step ticks either way,
-            // since it reads Atlas's state), and Skip for a step that doesn't apply.
-            AddStep(steps, "engine", "Set up the Atlas Engine", "Downloads Archipelago into Atlas's own folder, about 55 MB. Nothing else on your PC changes.",
-                "Set up…", hooks.EngineReady, hooks.SetUpEngine, "Engine window", hooks.OpenEngineWindow);
-            AddStep(steps, "multiworld", "Add a multiworld", "Its name, its server and the slots you play.",
-                "New…", () => hooks.Profiles().Count > 0, hooks.QuickAddMultiworld, "Open Multiworlds", () => hooks.ShowTool(Tool.Connections));
-            AddStep(steps, "connect", "Connect a slot", "From then on Atlas follows the room: items, checks, hints and chat.",
-                "Connect…", () => hooks.Profiles().Any(p => p.SavedStats.Values.Any(s => s.TotalCount > 0 || s.SlotNumber > 0) || p.Slots.Any(slot => hooks.IsSlotLive(p.Id, slot))), hooks.QuickConnect,
-                "Open Multiworlds", () => hooks.ShowTool(Tool.Connections));
-            AddStep(steps, "pack", "Install a map pack", "A PopTracker pack puts your checks on the game's map. The Pack Doctor looks it over first.",
-                "Find a pack…", hooks.AnyPackInstalled, hooks.QuickFindPack, "Open Map Packs", () => hooks.ShowTool(Tool.MapPacks));
-            AddStep(steps, "cheese", "Link Cheese Tracker, if your multiworld uses it", "Your async multiworld's shared tracker, kept up to date from Atlas's logic.",
-                "Link…", () => hooks.Profiles().Any(p => !string.IsNullOrWhiteSpace(p.CheeseTrackerUrl)), hooks.QuickLinkCheese, "Open Cheese Tracker", hooks.OpenCheeseSettings);
-            AddStep(steps, "sphere", "Link Sphere Tracker, if the host shared a room", "The host's spheretracker.de room shows the multiworld sphere by sphere.",
-                "Link…", () => hooks.Profiles().Any(p => !string.IsNullOrWhiteSpace(p.SphereTrackerUrl)), hooks.QuickLinkSphere, "Open Sphere Tracker", hooks.OpenSphereSettings);
-            var allDone = _allDoneRow = new HBoxContainer { Visible = false };
-            allDone.AddThemeConstantOverride("separation", 12);
-            allDone.AddChild(new TextureRect
-            {
-                Texture = LucideTextures.Get("circle-check", AP_Atlas.Core.ThemeColors.Heading, 1.0f),
-                CustomMinimumSize = new Vector2(22, 22),
-                StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
-                ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+                CustomMinimumSize = new Vector2(52, 52),
                 SizeFlagsVertical = SizeFlags.ShrinkCenter
             });
-            allDone.AddChild(new Label { Text = _tr("You're set up."), SizeFlagsVertical = SizeFlags.ShrinkCenter });
-            _showStepsButton = Kit.Button(_tr("Show steps"), _tr("Shows the steps again, each with its tick."), () =>
-            {
-                _showSteps = !_showSteps;
-                Refresh();
-            }, flat: true, small: true);
-            allDone.AddChild(_showStepsButton);
-            steps.AddChild(allDone);
+            _wordmark = Wordmark.Make(48, _tr("The Archipelago Atlas"));
+            _wordmark.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+            header.AddChild(_wordmark);
+            header.AddChild(new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill });
+            var tagline = Kit.Text(_tr("Your multiworld, charted."), AP_Atlas.Core.ThemeColors.TextMuted);
+            tagline.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+            tagline.HorizontalAlignment = HorizontalAlignment.Right;
+            header.AddChild(tagline);
+            body.AddChild(header);
 
-            // The user's multiworlds, the most recently played first.
-            body.AddChild(Kit.Heading(_tr("Your multiworlds"), 1.25f));
-            _recents.AddThemeConstantOverride("separation", 6);
-            _recents.SizeFlagsHorizontal = SizeFlags.ShrinkBegin; // capped like the checklist, so Connect sits beside the text
-            _recents.CustomMinimumSize = new Vector2(StepsWidth, 0);
-            body.AddChild(_recents);
+            // Two columns: the multiworlds and the tools; the setup, a tip, what's new and the links beside them.
+            _columns.Vertical = false;
+            _columns.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+            _columns.AddThemeConstantOverride("separation", 14);
+            body.AddChild(_columns);
+            var left = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            left.AddThemeConstantOverride("separation", 14);
+            _columns.AddChild(left);
+            var right = new VBoxContainer { CustomMinimumSize = new Vector2(ColumnWidth, 0), SizeFlagsHorizontal = SizeFlags.ShrinkBegin };
+            right.AddThemeConstantOverride("separation", 10);
+            _columns.AddChild(right);
+            _rightColumn = right;
+            scroll.Resized += () => Ui.DeferQuiet(this, () => Reflow(scroll.Size.X - 40));
 
-            // The tools.
-            body.AddChild(Kit.Heading(_tr("Tools"), 1.25f));
-            var tools = _tools = new GridContainer { Columns = 3, SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            tools.AddThemeConstantOverride("h_separation", 10);
-            tools.AddThemeConstantOverride("v_separation", 10);
+            // The multiworlds card: most recently played first, each with its live state, Open and Connect.
+            var multiworlds = Card(out var multiworldsBox);
+            var multiworldsHeader = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            multiworldsHeader.AddThemeConstantOverride("separation", 8);
+            var multiworldsTitle = Kit.Heading(_tr("Your multiworlds"), 1.15f);
+            multiworldsTitle.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+            multiworldsTitle.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+            multiworldsHeader.AddChild(multiworldsTitle);
+            var newButton = Kit.Button(_tr("New…"), _tr("A new multiworld: its name, server and slots, in a small window here."), () => _hooks.QuickAddMultiworld(), small: true);
+            newButton.Name = "NewMultiworld";
+            multiworldsHeader.AddChild(newButton);
+            var roomButton = Kit.Button(_tr("Paste a room link…"), _tr("A new multiworld from the room link the host shared: Atlas fills in the server and the players from the room's status page, with your permission."), () => _hooks.AddFromRoomLink(), small: true);
+            roomButton.Name = "RoomLinkMultiworld";
+            multiworldsHeader.AddChild(roomButton);
+            multiworldsBox.AddChild(multiworldsHeader);
+            _recents.AddThemeConstantOverride("separation", 4);
+            _recents.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+            multiworldsBox.AddChild(_recents);
+            left.AddChild(multiworlds);
+
+            // The tools, as a row of buttons.
+            var toolsCard = Card(out var toolsBox);
+            toolsBox.AddChild(Kit.Heading(_tr("Tools"), 1.15f));
+            var tools = new HFlowContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            tools.AddThemeConstantOverride("h_separation", 6);
+            tools.AddThemeConstantOverride("v_separation", 6);
             foreach (var tool in Tool.All)
             {
                 if (tool == Tool.Home) continue;
-                tools.AddChild(ToolCard(tool));
+                var button = new Button { Text = _tr(tool.Title), Icon = LucideTextures.Get(tool.Icon, AP_Atlas.Core.ThemeColors.Text, 1.1f), ThemeTypeVariation = Kit.QuietButton, TooltipText = _tr(Blurb(tool)) };
+                button.AddThemeConstantOverride("h_separation", 6);
+                var target = tool;
+                button.Pressed += () => _hooks.ShowTool(target);
+                tools.AddChild(button);
+                _toolCards[tool] = button;
             }
-            body.AddChild(tools);
+            toolsBox.AddChild(tools);
+            left.AddChild(toolsCard);
 
-            // What sets Atlas apart.
-            body.AddChild(Kit.Heading(_tr("What sets Atlas apart"), 1.25f));
-            var features = _features = new GridContainer { Columns = 2, SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            features.AddThemeConstantOverride("h_separation", 10);
-            // The grids take as many columns as the width allows (a narrow window, or a large zoom), set only when that changes.
-            scroll.Resized += () => Ui.DeferQuiet(this, () => Reflow(scroll.Size.X - 48));
-            features.AddThemeConstantOverride("v_separation", 10);
-            features.AddChild(FeatureCard("Asks first", "Nothing outside Atlas's own folder, and nothing new online, without your yes. Settings → Privacy & permissions lists every answer, and takes any back."));
-            features.AddChild(FeatureCard("Easy on the servers", "Polite, capped and backed-off traffic to archipelago.gg and every other site, and a closed room is never kept busy."));
-            features.AddChild(FeatureCard("Logic on your PC", "The Atlas Engine runs Archipelago's own logic here, so the map and the Logic Tracker know what you can reach, with no extra load on the server."));
-            features.AddChild(FeatureCard("Yours to shape", "Every action is a command: the menus, Ctrl+Shift+P, and keys you can change. Hide any part of the window, or press F9 for the content alone."));
-            body.AddChild(features);
+            // The setup card: one line about the steps, and Resume; the engine's progress while it installs.
+            var setup = Card(out var setupBox);
+            setupBox.AddChild(CardTitle(_tr("Setup")));
+            _setupLine = Small("");
+            _setupLine.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+            _setupLine.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+            setupBox.AddChild(_setupLine);
+            _setupProgress = Small("");
+            _setupProgress.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+            _setupProgress.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+            _setupProgress.Visible = false;
+            setupBox.AddChild(_setupProgress);
+            var setupButtons = new HBoxContainer();
+            setupButtons.AddThemeConstantOverride("separation", 6);
+            _resume = Kit.Button(_tr("Resume"), _tr("Opens the setup window at the first step left."), () => _hooks.OpenSetup(true), small: true);
+            _resume.Name = "ResumeSetup";
+            setupButtons.AddChild(_resume);
+            _reopenSetup = Kit.Button(_tr("Open setup"), _tr("The setup window from its first page, to change anything."), () => _hooks.OpenSetup(false), flat: true, small: true);
+            setupButtons.AddChild(_reopenSetup);
+            setupBox.AddChild(setupButtons);
+            right.AddChild(setup);
 
             // A tip.
-            var tipRow = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            tipRow.AddThemeConstantOverride("separation", 12);
-            _tip = Kit.Text("", AP_Atlas.Core.ThemeColors.TextMuted);
-            tipRow.AddChild(_tip);
-            var next = new Button { Text = _tr("Next tip"), SizeFlagsVertical = SizeFlags.ShrinkCenter };
-            next.Pressed += NextTip;
-            tipRow.AddChild(next);
             var tipCard = Card(out var tipBox);
-            tipBox.AddChild(tipRow);
-            body.AddChild(tipCard);
+            tipBox.AddChild(CardTitle(_tr("Tip")));
+            _tip = Small("");
+            _tip.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+            _tip.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+            tipBox.AddChild(_tip);
+            var next = Kit.Button(_tr("Next tip"), null, NextTip, flat: true, small: true);
+            next.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
+            tipBox.AddChild(next);
+            right.AddChild(tipCard);
 
             // What's new: the newest version's headline changes, from the changelog built into Atlas.
             var newsCard = Card(out var newsBox);
-            var newsHeader = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            var newsTitle = new Label { Text = _tr("What's new"), SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ShrinkCenter };
-            newsTitle.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.AccentText(AP_Atlas.Core.ThemeColors.RowOdd));
-            newsHeader.AddChild(newsTitle);
-            _whatsNewButton = new Button { Text = _tr("All changes…") };
-            _whatsNewButton.Pressed += () => _hooks.ShowWhatsNew();
-            newsHeader.AddChild(_whatsNewButton);
-            newsBox.AddChild(newsHeader);
+            newsBox.AddChild(CardTitle(_tr("What's new")));
             _whatsNew.AddThemeConstantOverride("separation", 2);
             newsBox.AddChild(_whatsNew);
-            body.AddChild(newsCard);
+            _whatsNewButton = Kit.Button(_tr("All changes…"), null, () => _hooks.ShowWhatsNew(), flat: true, small: true);
+            _whatsNewButton.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
+            newsBox.AddChild(_whatsNewButton);
+            right.AddChild(newsCard);
 
             // Links: each opens in the browser when clicked; Atlas fetches none of them.
-            body.AddChild(Kit.Heading(_tr("Links"), 1.25f));
+            var linksCard = Card(out var linksBox);
+            linksBox.AddChild(CardTitle(_tr("Links")));
             foreach (var group in LinkList.Select(l => l.Group).Distinct())
             {
-                var row = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-                row.AddThemeConstantOverride("separation", 12);
-                var name = new Label { Text = _tr(group), CustomMinimumSize = new Vector2(150, 0), SizeFlagsVertical = SizeFlags.ShrinkBegin };
-                name.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextMuted);
-                row.AddChild(name);
+                linksBox.AddChild(Small(_tr(group)));
                 var flow = new HFlowContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-                flow.AddThemeConstantOverride("h_separation", 8);
-                flow.AddThemeConstantOverride("v_separation", 6);
+                flow.AddThemeConstantOverride("h_separation", 4);
+                flow.AddThemeConstantOverride("v_separation", 2);
                 foreach (var (_, linkTitle, url) in LinkList.Where(l => l.Group == group))
                 {
-                    var link = new Button { Text = _tr(linkTitle), Icon = LucideTextures.Get("external-link", AP_Atlas.Core.ThemeColors.TextMuted, 1.1f), IconAlignment = HorizontalAlignment.Right, TooltipText = url };
-                    link.AddThemeConstantOverride("h_separation", 6);
+                    var link = new Button { Text = _tr(linkTitle), Icon = LucideTextures.Get("external-link", AP_Atlas.Core.ThemeColors.TextMuted, 1.0f), IconAlignment = HorizontalAlignment.Right, TooltipText = url, ThemeTypeVariation = Kit.QuietButton };
+                    link.AddThemeConstantOverride("h_separation", 4);
+                    link.SetMeta("font_size_ratio", 0.9f);
                     string target = url;
                     link.Pressed += () => _hooks.OpenWeb(target);
                     flow.AddChild(link);
                 }
-                row.AddChild(flow);
-                body.AddChild(row);
+                linksBox.AddChild(flow);
             }
+            right.AddChild(linksCard);
 
             // The footer.
             var footer = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
             footer.AddThemeConstantOverride("separation", 12);
-            footer.AddChild(Kit.Text(_tr("The Archipelago Atlas {0} · MIT licence · Unofficial: not affiliated with or endorsed by Archipelago.").Replace("{0}", AP_Atlas.Core.AtlasVersion.Display), AP_Atlas.Core.ThemeColors.TextSubtle));
-            var about = new Button { Text = _tr("About"), SizeFlagsVertical = SizeFlags.ShrinkCenter };
-            about.Pressed += () => _hooks.ShowAbout();
+            var about = Kit.Text(_tr("The Archipelago Atlas {0} · MIT licence · Unofficial: not affiliated with or endorsed by Archipelago.").Replace("{0}", AP_Atlas.Core.AtlasVersion.Display), AP_Atlas.Core.ThemeColors.TextSubtle);
+            about.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+            about.SizeFlagsHorizontal = SizeFlags.ExpandFill;
             footer.AddChild(about);
-            var repo = new Button { Text = _tr("Atlas on GitHub"), SizeFlagsVertical = SizeFlags.ShrinkCenter };
-            repo.Pressed += () => _hooks.OpenWeb(AP_Atlas.Core.AtlasVersion.RepoUrl);
+            var aboutButton = Kit.Button(_tr("About"), null, () => _hooks.ShowAbout(), flat: true, small: true);
+            aboutButton.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+            footer.AddChild(aboutButton);
+            var repo = Kit.Button(_tr("Atlas on GitHub"), null, () => _hooks.OpenWeb(AP_Atlas.Core.AtlasVersion.RepoUrl), flat: true, small: true);
+            repo.SizeFlagsVertical = SizeFlags.ShrinkCenter;
             footer.AddChild(repo);
             body.AddChild(footer);
+        }
+
+        public override void _EnterTree() => AP_Atlas.Core.EngineSetup.AtlasEngine.SetupProgressed += OnSetupProgress;
+
+        public override void _ExitTree() => AP_Atlas.Core.EngineSetup.AtlasEngine.SetupProgressed -= OnSetupProgress;
+
+        /// <summary>The engine's setup, running anywhere (the setup window, the panel): its step on the setup card. Any thread.</summary>
+        private void OnSetupProgress(AP_Atlas.Core.EngineSetup.AtlasEngine.SetupProgress p) => Ui.Defer(this, () =>
+        {
+            if (p.Text != null) _setupProgress.Text = _tr("Setting up the Atlas Engine: {0}").Replace("{0}", p.Text);
+            else if (p.Fraction >= 0) _setupProgress.Text = _tr("Setting up the Atlas Engine… {0}%").Replace("{0}", ((int)Math.Round(p.Fraction * 100)).ToString());
+            _setupProgress.Visible = true;
+        });
+
+        /// <summary>The columns side by side when the page is wide enough, else one under the other; set only when that changes.</summary>
+        private void Reflow(float width)
+        {
+            if (width <= 0) return;
+            bool two = width >= TwoColumnsFrom;
+            if (two == _twoColumns) return;
+            _twoColumns = two;
+            _columns.Vertical = !two;
+            _rightColumn.SizeFlagsHorizontal = two ? SizeFlags.ShrinkBegin : SizeFlags.ExpandFill;
         }
 
         /// <summary>A tool's card line, from its id; "" for a tool nobody has written one for (the UI test fails on it).</summary>
@@ -339,53 +320,38 @@ namespace AP_Atlas.UI
 
         // --- what tests read and press -----------------------------------------------------------------------------------
 
-        public IEnumerable<string> StepIds => _steps.Select(s => s.Id);
-
-        /// <summary>Whether a step showed as done the last time Home read Atlas's state.</summary>
-        public bool StepDone(string id) => StepOf(id).LastDone;
-
-        private TextureRect? _wordmark;
-
         /// <summary>The header's wordmark.</summary>
-        public TextureRect? WordmarkRect => _wordmark;
+        public TextureRect WordmarkRect => _wordmark;
 
         /// <summary>Redraws the wordmark for a new accent or theme.</summary>
-        public void RefreshWordmark()
-        {
-            if (_wordmark != null) Wordmark.Refresh(_wordmark);
-        }
+        public void RefreshWordmark() => Wordmark.Refresh(_wordmark);
 
-        public Button StepButtonOf(string id) => StepOf(id).Button;
+        /// <summary>The setup card's line ("Setup 4 of 7 done. Next: …", or "You're set up.").</summary>
+        public string SetupLine => _setupLine.Text;
 
-        /// <summary>Whether a step's row shows (a done step is hidden until Show steps).</summary>
-        public bool StepShown(string id) => StepOf(id).Row.Visible;
+        public Button ResumeButton => _resume;
 
-        public bool StepSkipped(string id) => StepOf(id).Skipped;
+        /// <summary>Whether the columns sit side by side (false: the right column is under the multiworlds).</summary>
+        public bool TwoColumns => _twoColumns;
 
-        public Button OpenButtonOf(string id) => StepOf(id).Open;
+        /// <summary>The right column's right edge, in the window (for the fit check).</summary>
+        public float RightColumnRight => _rightColumn.GlobalPosition.X + _rightColumn.Size.X;
 
-        public Button SkipButtonOf(string id) => StepOf(id).Skip;
+        /// <summary>The first start's "Set up Atlas…" button (null while multiworlds exist).</summary>
+        public Button? SetUpButton => _setUpButton;
 
-        /// <summary>The multiworld list's width and right edge (for tests).</summary>
-        public float RecentsWidth => _recents.Size.X;
-        public float RecentsRight => _recents.GlobalPosition.X + _recents.Size.X;
-
-        /// <summary>Whether the "You're set up." line shows (every step done).</summary>
-        public bool AllDoneShown => _allDoneRow?.Visible == true;
-
-        public Button? ShowStepsButton => _showStepsButton;
-
-        /// <summary>The empty multiworld list's "Add a multiworld…" button (null while multiworlds exist).</summary>
+        /// <summary>The first start's "Add a multiworld…" button (null while multiworlds exist).</summary>
         public Button? AddMultiworldButton => _addMultiworldButton;
-
-        /// <summary>The checklist box's width and right edge, in the window (for tests).</summary>
-        public float StepsBoxWidth => _stepsBox?.Size.X ?? 0;
-        public float StepsBoxRight => _stepsBox == null ? 0 : _stepsBox.GlobalPosition.X + _stepsBox.Size.X;
 
         /// <summary>The multiworlds shown, most recently played first.</summary>
         public IReadOnlyList<string> RecentProfileIds { get; private set; } = Array.Empty<string>();
 
         public Button ConnectButtonOf(string profileId) => _connectButtons[profileId];
+
+        public Button OpenButtonOf(string profileId) => _openButtons[profileId];
+
+        /// <summary>A multiworld's detail line (its server, slots and games).</summary>
+        public string RowLineOf(string profileId) => _rowLines[profileId];
 
         public Button ToolCardOf(Tool tool) => _toolCards[tool];
 
@@ -400,11 +366,9 @@ namespace AP_Atlas.UI
 
         public Button WhatsNewButton => _whatsNewButton;
 
-        private Step StepOf(string id) => _steps.FirstOrDefault(s => s.Id == id) ?? throw new InvalidOperationException($"No getting-started step is {id}.");
-
         // --- drawing -------------------------------------------------------------------------------------------------------
 
-        /// <summary>Reads Atlas's state again (the steps, the multiworlds) and shows the next tip.</summary>
+        /// <summary>Reads Atlas's state again (the setup, the multiworlds) and shows the next tip.</summary>
         public void OnShown()
         {
             Refresh();
@@ -414,24 +378,16 @@ namespace AP_Atlas.UI
         /// <summary>How many times the page re-read Atlas's state (for tests).</summary>
         public int RefreshCount { get; private set; }
 
-        /// <summary>Reads Atlas's state again: the steps' ticks and the multiworlds.</summary>
+        /// <summary>Reads Atlas's state again: the setup's line and the multiworlds.</summary>
         public void Refresh()
         {
             RefreshCount++;
-            foreach (var step in _steps)
-            {
-                step.LastDone = step.Done();
-                step.Skipped = _hooks.IsStepSkipped(step.Id);
-                step.Mark.Texture = LucideTextures.Get(step.LastDone ? "circle-check" : "circle", step.LastDone ? AP_Atlas.Core.ThemeColors.Heading : AP_Atlas.Core.ThemeColors.TextSubtle);
-                step.Mark.TooltipText = step.LastDone ? _tr("Done") : step.Skipped ? _tr("Skipped") : _tr("Not yet");
-                step.Row.Visible = _showSteps || (!step.LastDone && !step.Skipped);
-                step.Skip.Text = step.Skipped ? _tr("Unskip") : _tr("Skip");
-                step.Skip.TooltipText = step.Skipped ? _tr("Shows this step again.") : _tr("Hides this step; Show steps lists it again, with Unskip.");
-                step.Skip.Visible = !step.LastDone;
-            }
-            bool allDone = _steps.All(s => s.LastDone || s.Skipped);
-            if (_allDoneRow != null) _allDoneRow.Visible = allDone;
-            if (_showStepsButton != null) _showStepsButton.Text = _showSteps ? _tr("Hide steps") : _tr("Show steps");
+            var steps = _hooks.Steps;
+            _setupLine.Text = steps.Line(_tr);
+            _setupLine.AddThemeColorOverride("font_color", steps.AllSettled ? AP_Atlas.Core.ThemeColors.Success : AP_Atlas.Core.ThemeColors.TextMuted);
+            _resume.Visible = !steps.AllSettled;
+            _reopenSetup.Visible = steps.AllSettled;
+            if (!AP_Atlas.Core.EngineSetup.AtlasEngine.SetupRunning) _setupProgress.Visible = false;
             RefreshRecents();
             RefreshWhatsNew();
             MainTrackerWindow.SetFontSizeRecursive(this, _hooks.ContentFontSize());
@@ -443,127 +399,120 @@ namespace AP_Atlas.UI
             if (lines.SequenceEqual(WhatsNewLines)) return;
             WhatsNewLines = lines.ToList();
             Clear(_whatsNew);
-            foreach (string line in lines) _whatsNew.AddChild(Small("•  " + line));
+            foreach (string line in lines)
+            {
+                var item = Small("•  " + line);
+                item.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+                item.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+                _whatsNew.AddChild(item);
+            }
         }
 
         public void NextTip()
         {
             _tipIndex = (_tipIndex + 1) % Tips.Length;
-            _tip.Text = _tr("Tip: {0}").Replace("{0}", _tr(Tips[_tipIndex]));
-        }
-
-        private void AddStep(VBoxContainer into, string id, string title, string description, string buttonText, Func<bool> done, Action act, string openText, Action open)
-        {
-            var row = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            row.AddThemeConstantOverride("separation", 12);
-            var mark = new TextureRect
-            {
-                CustomMinimumSize = new Vector2(22, 22),
-                StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
-                ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
-                SizeFlagsVertical = SizeFlags.ShrinkCenter
-            };
-            row.AddChild(mark);
-            var text = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ShrinkCenter };
-            text.AddThemeConstantOverride("separation", 2);
-            text.AddChild(new Label { Text = _tr(title), AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill });
-            var about = Small(_tr(description));
-            about.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-            about.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-            text.AddChild(about);
-            row.AddChild(text);
-            var button = new Button { Text = _tr(buttonText), SizeFlagsVertical = SizeFlags.ShrinkCenter };
-            button.Pressed += act;
-            row.AddChild(button);
-            var openButton = Kit.Button(_tr(openText), _tr("Goes to the page where this is set up by hand; the step ticks either way."), open, flat: true, small: true);
-            openButton.SizeFlagsVertical = SizeFlags.ShrinkCenter;
-            row.AddChild(openButton);
-            var skip = Kit.Button(_tr("Skip"), null, () =>
-            {
-                _hooks.SetStepSkipped(id, !_hooks.IsStepSkipped(id));
-                Refresh();
-            }, flat: true, small: true);
-            skip.SizeFlagsVertical = SizeFlags.ShrinkCenter;
-            row.AddChild(skip);
-            into.AddChild(row);
-            _steps.Add(new Step(id, done, mark, button, openButton, skip, row));
+            _tip.Text = _tr(Tips[_tipIndex]);
         }
 
         private void RefreshRecents()
         {
             Clear(_recents);
             _connectButtons.Clear();
+            _openButtons.Clear();
+            _rowLines.Clear();
+            _addMultiworldButton = null;
+            _setUpButton = null;
             var profiles = _hooks.Profiles();
             var ordered = profiles.Select((profile, index) => (profile, index))
                 .OrderByDescending(p => p.profile.SavedStats.Count == 0 ? DateTime.MinValue : p.profile.SavedStats.Values.Max(s => s.LastUpdated))
                 .ThenBy(p => p.index)
                 .Select(p => p.profile)
-                .Take(5)
                 .ToList();
-            RecentProfileIds = ordered.Select(p => p.Id).ToList();
+            RecentProfileIds = ordered.Take(8).Select(p => p.Id).ToList();
             if (ordered.Count == 0)
             {
-                var row = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-                row.AddThemeConstantOverride("separation", 12);
-                row.AddChild(Small(_tr("No multiworlds yet.")));
-                var add = _addMultiworldButton = new Button { Text = _tr("Add a multiworld…") };
-                add.Pressed += () => _hooks.AddMultiworld();
-                row.AddChild(add);
-                _recents.AddChild(row);
+                // A first start: nothing to play with yet, and the two ways to begin.
+                var block = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+                block.AddThemeConstantOverride("separation", 8);
+                block.AddChild(new Control { CustomMinimumSize = new Vector2(0, 8) });
+                var welcome = Kit.Text(_tr("Nothing to play with yet. Setting Atlas up takes a few pages: its logic engine, your multiworld and slots, the games' map packs."));
+                welcome.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+                welcome.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+                block.AddChild(welcome);
+                var buttons = new HBoxContainer();
+                buttons.AddThemeConstantOverride("separation", 8);
+                _setUpButton = Kit.Button(_tr("Set up Atlas…"), _tr("The setup window, page by page."), () => _hooks.OpenSetup(false));
+                _setUpButton.ThemeTypeVariation = Kit.PrimaryButton;
+                buttons.AddChild(_setUpButton);
+                _addMultiworldButton = Kit.Button(_tr("Add a multiworld…"), _tr("Straight to the Multiworlds page, for a multiworld typed by hand."), () => _hooks.AddMultiworld());
+                buttons.AddChild(_addMultiworldButton);
+                block.AddChild(buttons);
+                block.AddChild(new Control { CustomMinimumSize = new Vector2(0, 8) });
+                _recents.AddChild(block);
                 return;
             }
-            foreach (var profile in ordered)
+            foreach (var profile in ordered.Take(8))
             {
                 var row = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-                row.AddThemeConstantOverride("separation", 12);
-                row.AddChild(new TextureRect
-                {
-                    Texture = GD.Load<Texture2D>("res://Assets/Graphics/UI/UnknownGame.png"), // per-game art comes later (R6)
-                    StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
-                    ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
-                    CustomMinimumSize = new Vector2(40, 40),
-                    SizeFlagsVertical = SizeFlags.ShrinkCenter
-                });
+                row.AddThemeConstantOverride("separation", 10);
+                row.SetMeta("profile_row", profile.Id);
+                int live = profile.Slots.Count(slot => _hooks.IsSlotLive(profile.Id, slot));
+                var dot = Kit.Text("●", live > 0 ? AP_Atlas.Core.ThemeColors.Success : AP_Atlas.Core.ThemeColors.TextSubtle);
+                dot.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+                dot.SetMeta("font_size_ratio", 0.8f);
+                row.AddChild(dot);
                 var text = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ShrinkCenter };
-                text.AddThemeConstantOverride("separation", 2);
-                text.AddChild(new Label { Text = profile.Name, ClipText = true });
+                text.AddThemeConstantOverride("separation", 1);
+                text.AddChild(new Label { Text = profile.Name, ClipText = true, TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis });
                 var games = profile.SavedStats.Values.Select(s => s.GameName).Where(g => !string.IsNullOrWhiteSpace(g)).Distinct().Take(3).ToList();
-                string line = _tr("Slots: {0}").Replace("{0}", profile.Slots.Count.ToString()) + (string.IsNullOrWhiteSpace(profile.ServerUrl) ? "" : "  ·  " + profile.ServerUrl) + (games.Count > 0 ? "  ·  " + string.Join(", ", games) : "");
+                int checksDone = profile.SavedStats.Values.Sum(s => s.CompleteCount), checksAll = profile.SavedStats.Values.Sum(s => s.TotalCount);
+                var parts = new List<string>();
+                if (!string.IsNullOrWhiteSpace(profile.ServerUrl)) parts.Add(profile.ServerUrl);
+                parts.Add(_tr("Slots: {0}").Replace("{0}", profile.Slots.Count.ToString()));
+                if (games.Count > 0) parts.Add(string.Join(", ", games));
+                if (checksAll > 0) parts.Add(_tr("{0} of {1} checks").Replace("{0}", checksDone.ToString()).Replace("{1}", checksAll.ToString()));
+                string line = string.Join("  ·  ", parts);
+                _rowLines[profile.Id] = line;
                 var detail = Small(line);
                 detail.ClipText = true;
+                detail.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
                 detail.AutowrapMode = TextServer.AutowrapMode.Off;
                 text.AddChild(detail);
                 row.AddChild(text);
-                bool allLive = profile.Slots.Count > 0 && profile.Slots.All(slot => _hooks.IsSlotLive(profile.Id, slot));
-                var connect = new Button { Text = allLive ? _tr("Connected") : _tr("Connect"), Disabled = allLive || profile.Slots.Count == 0, SizeFlagsVertical = SizeFlags.ShrinkCenter, TooltipText = _tr("Connects every slot of this multiworld.") };
+                if (live > 0)
+                {
+                    var chip = new PanelContainer { SizeFlagsVertical = SizeFlags.ShrinkCenter };
+                    chip.AddThemeStyleboxOverride("panel", new StyleBoxFlat { BgColor = AP_Atlas.Core.ThemeColors.AccentTint, CornerRadiusTopLeft = 9, CornerRadiusTopRight = 9, CornerRadiusBottomLeft = 9, CornerRadiusBottomRight = 9, ContentMarginLeft = 8, ContentMarginRight = 8, ContentMarginTop = 1, ContentMarginBottom = 1 });
+                    var chipText = Kit.Text(live == 1 ? _tr("1 connected") : _tr("{0} connected").Replace("{0}", live.ToString()), AP_Atlas.Core.ThemeColors.AccentText(AP_Atlas.Core.ThemeColors.AccentTint));
+                    chipText.SetMeta("font_size_ratio", 0.85f);
+                    chip.AddChild(chipText);
+                    row.AddChild(chip);
+                }
                 var target = profile;
-                connect.Pressed += () => _hooks.Connect(target);
+                var open = Kit.Button(_tr("Open"), _tr("The Multiworlds page, with this one selected."), () => _hooks.OpenProfile(target), flat: true, small: true);
+                open.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+                row.AddChild(open);
+                _openButtons[profile.Id] = open;
+                bool allLive = profile.Slots.Count > 0 && profile.Slots.All(slot => _hooks.IsSlotLive(profile.Id, slot));
+                var connect = Kit.Button(allLive ? _tr("Connected") : _tr("Connect"), _tr("Connects every slot of this multiworld."), () => _hooks.Connect(target), enabled: !allLive && profile.Slots.Count > 0, small: true);
+                connect.SizeFlagsVertical = SizeFlags.ShrinkCenter;
                 row.AddChild(connect);
                 _connectButtons[profile.Id] = connect;
                 _recents.AddChild(row);
             }
+            if (ordered.Count > 8)
+            {
+                var all = Kit.Button(_tr("All {0} multiworlds…").Replace("{0}", ordered.Count.ToString()), null, () => _hooks.ShowTool(Tool.Connections), flat: true, small: true);
+                all.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
+                _recents.AddChild(all);
+            }
         }
 
-        private Control ToolCard(Tool tool)
+        private Label CardTitle(string text)
         {
-            var card = Card(out var box);
-            var button = new Button { Text = _tr(tool.Title), Icon = LucideTextures.Get(tool.Icon, AP_Atlas.Core.ThemeColors.Text, 1.2f), Alignment = HorizontalAlignment.Left, ThemeTypeVariation = "QuietButton" };
-            button.AddThemeConstantOverride("h_separation", 8);
-            button.Pressed += () => _hooks.ShowTool(tool);
-            box.AddChild(button);
-            box.AddChild(Small(_tr(Blurb(tool))));
-            _toolCards[tool] = button;
-            return card;
-        }
-
-        private Control FeatureCard(string title, string text)
-        {
-            var card = Card(out var box);
-            var name = new Label { Text = _tr(title) };
+            var name = new Label { Text = text };
             name.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.AccentText(AP_Atlas.Core.ThemeColors.RowOdd));
-            box.AddChild(name);
-            box.AddChild(Small(_tr(text)));
-            return card;
+            return name;
         }
 
         private static PanelContainer Card(out VBoxContainer box)

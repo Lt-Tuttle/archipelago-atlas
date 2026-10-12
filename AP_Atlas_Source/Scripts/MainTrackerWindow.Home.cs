@@ -18,25 +18,18 @@ public partial class MainTrackerWindow
             AnyPackInstalled = AnyMapPackInstalled,
             IsSlotLive = IsSlotLive,
             ContentFontSize = () => _appSettings.ContentFontSize,
-            SetUpEngine = OpenEngineSetup,
+            Steps = SetupSteps,
+            OpenSetup = resume => OpenSetupWizard(resume),
             AddMultiworld = OnAddProfilePressed,
             QuickAddMultiworld = () => AP_Atlas.UI.QuickSetup.NewMultiworld(this, QuickHooks()),
-            QuickConnect = () => AP_Atlas.UI.QuickSetup.ConnectSlots(this, QuickHooks()),
-            QuickFindPack = () => AP_Atlas.UI.QuickSetup.FindPack(this, QuickHooks()),
-            QuickLinkCheese = () => AP_Atlas.UI.QuickSetup.LinkCheese(this, QuickHooks()),
-            QuickLinkSphere = () => AP_Atlas.UI.QuickSetup.LinkSphere(this, QuickHooks()),
-            OpenSphereSettings = () => ShowSphereTab(AP_Atlas.UI.SphereTrackerTab.SettingsView),
-            OpenEngineWindow = () => OpenEngineWindow(),
-            IsStepSkipped = id => _appSettings.SkippedHomeSteps.Contains(id),
-            SetStepSkipped = (id, skipped) =>
+            AddFromRoomLink = AddProfileFromRoomLink,
+            OpenProfile = profile =>
             {
-                if (skipped) { if (!_appSettings.SkippedHomeSteps.Contains(id)) _appSettings.SkippedHomeSteps.Add(id); }
-                else _appSettings.SkippedHomeSteps.Remove(id);
-                DataManager.SaveSettingsSoon(_appSettings);
+                host.ShowTool(AP_Atlas.UI.Tool.Connections);
+                SelectProfileGuarded(profile);
             },
             ShowTool = host.ShowTool,
             Connect = ConnectEverySlot,
-            OpenCheeseSettings = OpenCheeseSettings,
             ShowAbout = ShowAbout,
             WhatsNew = () => _whatsNewLines ??= AP_Atlas.UI.HelpWindow.WhatsNewLines(),
             ShowWhatsNew = () => OpenHelp(AP_Atlas.UI.HelpWindow.WhatsNew),
@@ -50,24 +43,24 @@ public partial class MainTrackerWindow
         return page;
     }
 
-    /// <summary>What Home's quick-setup dialogs need from the window.</summary>
+    /// <summary>What Home's New multiworld dialog needs from the window.</summary>
     private AP_Atlas.UI.QuickSetup.Hooks QuickHooks() => new AP_Atlas.UI.QuickSetup.Hooks
     {
         Tr = text => Tr(text),
-        Profiles = () => _profiles,
-        IsSlotLive = IsSlotLive,
-        ConnectSlot = (profile, slot) => OnConnectSlotPressed(slot, profile),
-        ConnectAll = ConnectEverySlot,
-        PlayedGames = () => _profiles.SelectMany(p => p.SavedStats.Values.Select(s => s.GameName))
-            .Concat(ActiveSlotNodes().OfType<SlotTrackerControl>().Select(slot => slot.Game))
-            .Where(game => !string.IsNullOrWhiteSpace(game)).Distinct(System.StringComparer.OrdinalIgnoreCase).ToList(),
-        FindPack = FindMapPack,
         PickYaml = PickYamlFor,
         KeepYaml = KeepYamlForSlots,
         Create = draft => CreateProfileFromDraft(draft),
-        LinkCheese = LinkCheeseFromEditor,
-        LinkSphere = LinkSphereFromEditor,
     };
+
+    /// <summary>Paste a room link…: a new multiworld on the Multiworlds page, its room link box ready to paste into.</summary>
+    private void AddProfileFromRoomLink()
+    {
+        OnAddProfilePressed();
+        AP_Atlas.UI.Ui.Defer(this, () =>
+        {
+            if (_selectedProfile != null && _roomLinkInput != null) _roomLinkInput.GrabFocus();
+        });
+    }
 
     /// <summary>
     /// A multiworld from Home's New multiworld dialog: saved, selected on the Multiworlds page (Home stays where it is),
@@ -92,7 +85,7 @@ public partial class MainTrackerWindow
         return profile;
     }
 
-    /// <summary>The engine changed (any thread): Home's checklist ticks the engine step as soon as the setup is done.</summary>
+    /// <summary>The engine changed (any thread): Home's setup line follows it as soon as the setup is done.</summary>
     private void OnEngineChangedForHome() => AP_Atlas.UI.Ui.Defer(this, () =>
     {
         if (_currentTool == AP_Atlas.UI.Tool.Home) _homePage?.Refresh();

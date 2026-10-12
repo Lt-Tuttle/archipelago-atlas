@@ -10,9 +10,9 @@ namespace AP_Atlas.UI
     public sealed record NewMultiworldDraft(string Name, string Server, string Password, List<string> Slots, Dictionary<string, string> YamlBySlot, Dictionary<string, string> GameBySlot);
 
     /// <summary>
-    /// Home's quick setup: each Getting started step opens a small dialog in place (no page jump): a new multiworld with
-    /// its slots and YAMLs, connecting a slot, finding a map pack for a game of the user's slots, linking Cheese Tracker.
-    /// Every dialog frees itself when closed and carries the meta "quick_setup" (its id) for tests.
+    /// Home's New… : a new multiworld in a small dialog in place (no page jump), with its slots and YAMLs. The dialog
+    /// frees itself when closed and carries the meta "quick_setup" (its id) for tests. The rest of the setup is the setup
+    /// window (<see cref="SetupWizard"/>).
     /// </summary>
     public static class QuickSetup
     {
@@ -20,20 +20,10 @@ namespace AP_Atlas.UI
         public sealed class Hooks
         {
             public required Func<string, string> Tr { get; init; }
-            public required Func<IReadOnlyList<MultiworldProfile>> Profiles { get; init; }
-            public required Func<string, string, bool> IsSlotLive { get; init; }
-            public required Action<MultiworldProfile, string> ConnectSlot { get; init; }
-            public required Action<MultiworldProfile> ConnectAll { get; init; }
-            /// <summary>The games of the user's slots, first in the pack dialog's choice.</summary>
-            public required Func<IReadOnlyList<string>> PlayedGames { get; init; }
-            /// <summary>Shows the Map Packs page and searches GitHub for a game's packs, once.</summary>
-            public required Action<string> FindPack { get; init; }
             public required Action<Action<string>> PickYaml { get; init; }
             /// <summary>Keeps a YAML in Atlas's YAML folder: the kept copy's path and the players it names; null when it can't be kept (the hook says why).</summary>
             public required Func<string, (string Kept, List<(string Name, List<string> Games)> Players)?> KeepYaml { get; init; }
             public required Action<NewMultiworldDraft> Create { get; init; }
-            public required Action<MultiworldProfile, string> LinkCheese { get; init; }
-            public required Action<MultiworldProfile, string> LinkSphere { get; init; }
         }
 
         // ---- The pieces the dialogs share ----
@@ -225,186 +215,6 @@ namespace AP_Atlas.UI
             };
             Show(parent, dialog, "new-multiworld");
             Ui.Defer(dialog, () => name.GrabFocus());
-            return dialog;
-        }
-
-        // ---- Connect a slot ----
-
-        /// <summary>Every multiworld's slots with a Connect button each (and Connect all per multiworld); a connected slot says so.</summary>
-        public static AcceptDialog ConnectSlots(Node parent, Hooks hooks)
-        {
-            var tr = hooks.Tr;
-            var dialog = new AcceptDialog { Title = tr("Connect a slot"), OkButtonText = tr("Close") };
-            var box = Body(dialog, tr("Connect a slot and its tools follow the room from then on: items, checks, hints and chat. Each multiworld needs its server address first."));
-            var profiles = hooks.Profiles().Where(p => p.Slots.Count > 0).ToList();
-            if (profiles.Count == 0) box.AddChild(Kit.Muted(tr("No multiworld has a slot yet: New… on the step above makes one.")));
-            var scroll = new ScrollContainer { HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled, CustomMinimumSize = new Vector2(0, Math.Min(360, 20 + profiles.Sum(p => 36 + p.Slots.Count * 34))) };
-            var list = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
-            list.AddThemeConstantOverride("separation", 4);
-            scroll.AddChild(list);
-            box.AddChild(scroll);
-            foreach (var profile in profiles)
-            {
-                var header = new HBoxContainer();
-                header.AddThemeConstantOverride("separation", 8);
-                var title = Kit.Heading(profile.Name, 1.05f);
-                title.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-                header.AddChild(title);
-                bool hasServer = !string.IsNullOrWhiteSpace(profile.ServerUrl);
-                var server = Kit.Muted(hasServer ? profile.ServerUrl : tr("No server address yet"));
-                server.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
-                header.AddChild(server);
-                if (hasServer)
-                {
-                    var target = profile;
-                    var all = Kit.Button(tr("Connect all"), tr("Connects every slot of this multiworld that isn't connected."), () => hooks.ConnectAll(target), small: true);
-                    all.SetMeta("connect_all", profile.Id);
-                    header.AddChild(all);
-                }
-                list.AddChild(header);
-                foreach (string slot in profile.Slots)
-                {
-                    var indent = new MarginContainer();
-                    indent.AddThemeConstantOverride("margin_left", 16);
-                    var row = new HBoxContainer();
-                    row.AddThemeConstantOverride("separation", 8);
-                    var label = Kit.Text(slot);
-                    label.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-                    label.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
-                    row.AddChild(label);
-                    bool live = hooks.IsSlotLive(profile.Id, slot);
-                    string slotName = slot;
-                    var target = profile;
-                    Button connect = null!;
-                    connect = Kit.Button(live ? tr("Connected") : tr("Connect"), tr("Connects this slot; its tools follow the room from then on."), () =>
-                    {
-                        connect.Disabled = true;
-                        connect.Text = tr("Connecting…");
-                        hooks.ConnectSlot(target, slotName);
-                    }, enabled: !live && hasServer, small: true);
-                    connect.SetMeta("connect_slot", profile.Id + "|" + slot);
-                    row.AddChild(connect);
-                    indent.AddChild(row);
-                    list.AddChild(indent);
-                }
-            }
-            dialog.Confirmed += dialog.QueueFree;
-            return Show(parent, dialog, "connect-slots");
-        }
-
-        // ---- Find a map pack ----
-
-        /// <summary>A game of the user's slots (or another, typed), then one GitHub search shown on the Map Packs page.</summary>
-        public static ConfirmationDialog FindPack(Node parent, Hooks hooks)
-        {
-            var tr = hooks.Tr;
-            var dialog = new ConfirmationDialog { Title = tr("Find a map pack"), OkButtonText = tr("Search GitHub"), DialogHideOnOk = false };
-            var box = Body(dialog, tr("Atlas searches GitHub once for the game's PopTracker packs and shows what it found on the Map Packs page, where a pack you choose is installed; nothing is installed by itself. The Map Packs page also installs a zip you have."));
-            var grid = Grid(box);
-            var played = hooks.PlayedGames();
-            var choice = new OptionButton { Name = "GameChoice", AccessibilityName = tr("A game of your slots") };
-            foreach (string game in played) choice.AddItem(game);
-            if (played.Count > 0) choice.Selected = 0;
-            else
-            {
-                choice.AddItem(tr("(no slot has a game yet)"));
-                choice.Selected = 0;
-                choice.Disabled = true;
-            }
-            Row(grid, tr("A game of your slots"), choice);
-            var other = new LineEdit { Name = "OtherGame", PlaceholderText = tr("Or type another game's name"), AccessibilityName = tr("Another game") };
-            Row(grid, tr("Another game"), other);
-            var problem = Problem(box);
-            dialog.Confirmed += () =>
-            {
-                string typed = other.Text.Trim();
-                string game = typed.Length > 0 ? typed : played.Count > 0 && choice.Selected >= 0 && choice.Selected < played.Count ? played[choice.Selected] : "";
-                if (game.Length == 0)
-                {
-                    Say(problem, tr("Pick a game, or type its name."));
-                    return;
-                }
-                Close(dialog);
-                hooks.FindPack(game);
-            };
-            return Show(parent, dialog, "find-pack");
-        }
-
-        // ---- Link Sphere Tracker ----
-
-        /// <summary>A multiworld and the host's spheretracker.de room, checked online and linked (the host's room only).</summary>
-        public static ConfirmationDialog LinkSphere(Node parent, Hooks hooks)
-        {
-            var tr = hooks.Tr;
-            var dialog = new ConfirmationDialog { Title = tr("Link Sphere Tracker"), OkButtonText = tr("Link"), DialogHideOnOk = false };
-            var box = Body(dialog, tr("spheretracker.de shows a multiworld sphere by sphere. Paste the room the host created and shared (spheretracker.de/room/…): Atlas uses the host's room and no other, and asks you to confirm when it can't tell the host made it. Spheres are hidden in race mode."));
-            var grid = Grid(box);
-            var profiles = hooks.Profiles().ToList();
-            var choice = new OptionButton { Name = "MultiworldChoice", AccessibilityName = tr("Multiworld") };
-            foreach (var profile in profiles) choice.AddItem(profile.Name);
-            if (profiles.Count > 0) choice.Selected = 0;
-            Row(grid, tr("Multiworld"), choice);
-            var link = new LineEdit { Name = "LinkBox", PlaceholderText = tr("https://spheretracker.de/room/…"), AccessibilityName = tr("Sphere Tracker room link") };
-            Row(grid, tr("Room link"), link);
-            var problem = Problem(box);
-            dialog.Confirmed += () =>
-            {
-                if (profiles.Count == 0 || choice.Selected < 0 || choice.Selected >= profiles.Count)
-                {
-                    Say(problem, tr("Make a multiworld first (New… on the step above)."));
-                    return;
-                }
-                if (link.Text.Trim().Length == 0)
-                {
-                    Say(problem, tr("Paste the room link first."));
-                    return;
-                }
-                var profile = profiles[choice.Selected];
-                string text = link.Text.Trim();
-                Close(dialog);
-                hooks.LinkSphere(profile, text);
-            };
-            Show(parent, dialog, "link-sphere");
-            Ui.Defer(dialog, () => link.GrabFocus());
-            return dialog;
-        }
-
-        // ---- Link Cheese Tracker ----
-
-        /// <summary>A multiworld and its Cheese Tracker link (or the archipelago.gg room link), checked online and linked.</summary>
-        public static ConfirmationDialog LinkCheese(Node parent, Hooks hooks)
-        {
-            var tr = hooks.Tr;
-            var dialog = new ConfirmationDialog { Title = tr("Link Cheese Tracker"), OkButtonText = tr("Link"), DialogHideOnOk = false };
-            var box = Body(dialog, tr("Cheese Tracker is the shared tracker many async multiworlds use. Paste the multiworld's page there, or the archipelago.gg room link (Atlas looks it up); Atlas checks the link online and links the multiworld, and the Cheese Tracker tool then shows it."));
-            var grid = Grid(box);
-            var profiles = hooks.Profiles().ToList();
-            var choice = new OptionButton { Name = "MultiworldChoice", AccessibilityName = tr("Multiworld") };
-            foreach (var profile in profiles) choice.AddItem(profile.Name);
-            if (profiles.Count > 0) choice.Selected = 0;
-            Row(grid, tr("Multiworld"), choice);
-            var link = new LineEdit { Name = "LinkBox", PlaceholderText = tr("Cheese Tracker link, or the archipelago.gg room link"), AccessibilityName = tr("Cheese Tracker link") };
-            Row(grid, tr("Link"), link);
-            var problem = Problem(box);
-            dialog.Confirmed += () =>
-            {
-                if (profiles.Count == 0 || choice.Selected < 0 || choice.Selected >= profiles.Count)
-                {
-                    Say(problem, tr("Make a multiworld first (New… on the step above)."));
-                    return;
-                }
-                if (link.Text.Trim().Length == 0)
-                {
-                    Say(problem, tr("Paste the link first."));
-                    return;
-                }
-                var profile = profiles[choice.Selected];
-                string text = link.Text.Trim();
-                Close(dialog);
-                hooks.LinkCheese(profile, text);
-            };
-            Show(parent, dialog, "link-cheese");
-            Ui.Defer(dialog, () => link.GrabFocus());
             return dialog;
         }
     }

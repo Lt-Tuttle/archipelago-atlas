@@ -1,8 +1,6 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;
 using Godot;
 using AP_Atlas.Core;
 using AP_Atlas.Core.EngineSetup;
@@ -10,9 +8,9 @@ using AP_Atlas.Core.EngineSetup;
 namespace AP_Atlas.UI
 {
     /// <summary>
-    /// The short way to set up the Atlas Engine: one sentence, the step it's on in plain words, a progress bar and Cancel;
-    /// then Ready, or what went wrong with Try again and Show details (the full engine window with its log). pip's and
-    /// Python's own lines never show here; they go to the log the details window keeps. One panel at a time.
+    /// The short way to set up the Atlas Engine: one sentence, the run itself (<see cref="EngineSetupProgress"/>: the
+    /// step it's on in plain words, a progress bar) and Cancel; then Ready, or what went wrong with Try again and Show
+    /// details (the full engine window with its log). One panel at a time.
     /// </summary>
     public sealed partial class EngineSetupPanel : AcceptDialog
     {
@@ -20,21 +18,16 @@ namespace AP_Atlas.UI
 
         private readonly Func<string, string> _tr;
         private readonly Action<IReadOnlyList<string>> _showDetails;
-        private readonly Label _step = new();
-        private readonly ProgressBar _progress = new() { MaxValue = 1, Step = 0.001, ShowPercentage = true, CustomMinimumSize = new Vector2(0, 18) };
-        private readonly Label _outcome = new();
+        private readonly EngineSetupProgress _run;
         private readonly Button _tryAgain;
         private readonly Button _details;
-        private readonly List<string> _log = new();
-        private CancellationTokenSource? _cts;
-        private bool _running;
 
         /// <summary>What the panel says the setup is doing (for tests).</summary>
-        public string StepText => _step.Text;
+        public string StepText => _run.StepText;
         /// <summary>How far the bar is (0 to 1; for tests).</summary>
-        public double ProgressValue => _progress.Value;
+        public double ProgressValue => _run.ProgressValue;
         /// <summary>The outcome line (Ready, or why it stopped), empty while running (for tests).</summary>
-        public string OutcomeText => _outcome.Text;
+        public string OutcomeText => _run.OutcomeText;
         public bool TryAgainShown => _tryAgain.Visible;
         public bool DetailsShown => _details.Visible;
 
@@ -73,100 +66,53 @@ namespace AP_Atlas.UI
             };
             intro.AddThemeColorOverride("font_color", ThemeColors.TextMuted);
             box.AddChild(intro);
-            _step.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-            _step.CustomMinimumSize = new Vector2(520, 0);
-            box.AddChild(_step);
-            box.AddChild(_progress);
-            _outcome.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-            _outcome.CustomMinimumSize = new Vector2(520, 0);
-            _outcome.Visible = false;
-            box.AddChild(_outcome);
+            _run = new EngineSetupProgress(tr) { CancelOnExit = true };
+            box.AddChild(_run);
             AddChild(box);
             _tryAgain = AddButton(tr("Try again"), true, "try-again");
             _details = AddButton(tr("Show details"), false, "details");
             _tryAgain.Visible = false;
             _details.Visible = false;
+            _run.RunChanged += running =>
+            {
+                if (running) return;
+                _tryAgain.Visible = !_run.Succeeded;
+                _details.Visible = true;
+                OkButtonText = _tr("Close");
+            };
             CustomAction += action =>
             {
                 if (action == "try-again") Start();
-                else if (action == "details") _showDetails(_log.ToArray());
+                else if (action == "details") _showDetails(_run.Log);
             };
             Confirmed += () =>
             {
-                if (_running) _cts?.Cancel();
+                if (_run.Running) _run.Cancel();
                 else QueueFree();
             };
-            Canceled += () => { if (!_running) QueueFree(); };
-            CloseRequested += () => { if (_running) _cts?.Cancel(); };
+            Canceled += () => { if (!_run.Running) QueueFree(); };
+            CloseRequested += () => { if (_run.Running) _run.Cancel(); };
         }
 
         public override void _ExitTree()
         {
-            _cts?.Cancel();
             if (_open == this) _open = null;
         }
 
         private void Start()
         {
-            if (_running) return;
-            if (AtlasEngine.SetupRunning)
-            {
-                ShowOutcome(_tr("Another engine change is still running; wait for it to finish."), ThemeColors.Warning, retry: true);
-                return;
-            }
-            _running = true;
-            _cts = new CancellationTokenSource();
-            var ct = _cts.Token;
-            _outcome.Visible = false;
+            if (_run.Running) return;
             _tryAgain.Visible = false;
             _details.Visible = false;
-            _progress.Value = 0;
-            _progress.Visible = true;
             OkButtonText = _tr("Cancel");
-            _step.Text = _tr("Starting…");
-            _step.AddThemeColorOverride("font_color", ThemeColors.Text);
-            // One number for the whole setup: the bar never goes down, and the step says where it is ("Step 3 of 9: …").
-            void OnProgress(AtlasEngine.SetupProgress p) => Ui.Defer(this, () =>
+            _run.Start();
+            if (!_run.Running)
             {
-                if (p.Text != null) _step.Text = p.Steps > 0 ? _tr("Step {0} of {1}: {2}").Replace("{0}", p.Step.ToString()).Replace("{1}", p.Steps.ToString()).Replace("{2}", p.Text) : p.Text;
-                if (p.Fraction >= 0) _progress.Value = Math.Max(_progress.Value, p.Fraction);
-            });
-            AtlasEngine.SetupProgressed += OnProgress;
-            void log(string line) { lock (_log) _log.Add(line); }
-            void progress(float f) => Ui.Defer(this, () => { if (f >= 0) _progress.Value = Math.Max(_progress.Value, f); });
-            Async.Fire(Task.Run(async () =>
-            {
-                bool ok;
-                try { ok = await AtlasEngine.SetUpAsync(AtlasEngine.Current, log, progress, ct); }
-                catch (OperationCanceledException) { ok = false; }
-                catch (Exception ex) { ok = false; log(ex.Message); AP_Atlas.Core.Logger.LogWarning("[Atlas Engine] " + ex); }
-                AtlasEngine.SetupProgressed -= OnProgress;
-                Ui.Defer(this, () =>
-                {
-                    _running = false;
-                    _progress.Visible = false;
-                    if (ok)
-                    {
-                        _step.Text = _tr("Ready.");
-                        ShowOutcome(_tr("The Atlas Engine is set up. Connect a slot and its logic runs on it."), ThemeColors.Success, retry: false);
-                    }
-                    else
-                    {
-                        _step.Text = _tr("Stopped.");
-                        ShowOutcome(AtlasEngine.LastSetupProblem ?? _tr("Setup didn't finish."), ThemeColors.Warning, retry: true);
-                    }
-                });
-            }), "setting up the Atlas Engine", tellUser: false);
-        }
-
-        private void ShowOutcome(string text, Color color, bool retry)
-        {
-            _outcome.Text = text;
-            _outcome.AddThemeColorOverride("font_color", color);
-            _outcome.Visible = true;
-            _tryAgain.Visible = retry;
-            _details.Visible = true;
-            OkButtonText = _tr("Close");
+                // Didn't start (another engine change is running): the outcome says so, and Try again is the way on.
+                _tryAgain.Visible = true;
+                _details.Visible = true;
+                OkButtonText = _tr("Close");
+            }
         }
     }
 }

@@ -9,7 +9,7 @@ A desktop companion for [Archipelago](https://archipelago.gg) multiworld randomi
 
 > **Status: beta.** Atlas is in a closed beta before its first public release, 0.1.0. Expect rough edges, and please [report what you find](https://github.com/Lt-Tuttle/archipelago-atlas/issues).
 
-![Atlas's Home page: the getting-started checklist, your multiworlds and the tools](docs/screenshots/home.png)
+![Atlas's Home page: your multiworlds, the tools, and the setup's one line](docs/screenshots/home.png)
 
 ## What Atlas does
 
@@ -26,7 +26,7 @@ A desktop companion for [Archipelago](https://archipelago.gg) multiworld randomi
 
 1. Download `TheArchipelagoAtlas-<version>-win-x64.zip` from the [latest release](https://github.com/Lt-Tuttle/archipelago-atlas/releases). `SHA256SUMS.txt` next to it lets you check the file.
 2. Unzip it into a folder of your own with a short path, such as `C:\Games\Atlas` (Windows limits a file's path to 259 characters, and the engine Atlas sets up goes a few folders deep). Atlas is portable: it keeps everything in its own `PortableData` folder, and nothing is installed.
-3. Run `The Archipelago Atlas.exe`. Home walks you through the first steps.
+3. Run `The Archipelago Atlas.exe`. A setup window walks you through the first steps, page by page; Help → Set up Atlas… brings it back any time.
 
 Atlas needs Windows 10 or 11 (64-bit). Updates are offered inside Atlas, with your permission, and never installed without a click.
 

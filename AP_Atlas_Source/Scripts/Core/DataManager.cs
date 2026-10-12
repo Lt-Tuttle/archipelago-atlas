@@ -106,8 +106,12 @@ public class AppSettings
     public List<string> CollapsedPropertySections { get; set; } = new List<string> { "Advanced" };
     /// <summary>Sections the user opened that start collapsed (PropertiesPanel.CollapsedByDefault).</summary>
     public List<string> ExpandedPropertySections { get; set; } = new List<string>();
-    /// <summary>Home's Getting started steps the user skipped (step ids).</summary>
+    /// <summary>The setup steps the user skipped (step ids: see SetupSteps); Home's line and the setup window count them as done.</summary>
     public List<string> SkippedHomeSteps { get; set; } = new List<string>();
+    /// <summary>The setup window's pages the user passed with Next (page ids), for the steps Atlas's state alone can't tell (the look, the reports page).</summary>
+    public List<string> SetupPagesDone { get; set; } = new List<string>();
+    /// <summary>Whether the setup window opens by itself on a start without the engine (off: the Welcome page's "Don't open this by itself again").</summary>
+    public bool SetupWizardAuto { get; set; } = true;
     public int LastFlagColor { get; set; } = 3;
 
     // Race mode: when restrictions apply, and whether they hide all logic or only the "why" explanations.
@@ -382,6 +386,7 @@ public static class DataManager
         settings.CollapsedPropertySections ??= new List<string>();
         settings.ExpandedPropertySections ??= new List<string>();
         settings.SkippedHomeSteps ??= new List<string>();
+        settings.SetupPagesDone ??= new List<string>();
         settings.SlotYamlPaths ??= new Dictionary<string, string>();
         settings.LastYamlFolder ??= "";
         settings.PermissionsAllowed ??= new List<string>();
