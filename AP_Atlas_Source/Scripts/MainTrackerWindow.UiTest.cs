@@ -970,6 +970,7 @@ public partial class MainTrackerWindow
                     () => answer.TrySetResult(true), null, () => answer.TrySetResult(false));
                 return (await answer.Task, null);
             },
+            EnsureWorldAsync = real.EnsureWorldAsync,
             ChoosePackAsync = real.ChoosePackAsync,
             InstallPackAsync = real.InstallPackAsync,
             RecommendedPack = real.RecommendedPack,
@@ -1412,6 +1413,35 @@ public partial class MainTrackerWindow
             var record = AP_Atlas.Core.SafeFile.ReadJson(System.IO.Path.Combine(worlds, ".atlas_worlds.json"), () => new UnpackedWorlds());
             UiTestExpect(record?.Archipelago == AtlasEngine.ArchipelagoVersion && record.Folders.OrderBy(f => f).SequenceEqual(new[] { "on_demand", "shared_lib" }), "the unpacked worlds weren't recorded with Archipelago's version");
             UiTestExpect(ApworldSources.BundledDocuments(install, game).Any(d => d.Setup), "the unpacked world's setup guide isn't found");
+            // The solo test of a game that ships with Archipelago, with the release not here: its own window asks the engine's
+            // permission (the beta's Dark Souls III test failed at once without asking), then the game's world is unpacked.
+            AP_Atlas.Core.SafeFile.Delete(AtlasEngine.WorldsZipPath);
+            AP_Atlas.Core.Permissions.ResetSessionForTests();
+            // GitHub is the fake site too: nothing a test does may reach the real one.
+            AP_Atlas.Core.GitHubApi.TestSite = site.Site;
+            AP_Atlas.Core.GitHubApi.ResetForTests();
+            var solo = AP_Atlas.UI.SoloTestDialog.Open(this, other, text => Tr(text), SoloHooks());
+            try
+            {
+                solo.StartForTests();
+                var soloQuestion = await UiTestWaitForAsync(() => solo.GetChildren().OfType<ConfirmationDialog>().FirstOrDefault(d => d.Title == AP_Atlas.Core.Permissions.EngineSetup.Title && !d.IsQueuedForDeletion()),
+                    "the solo test's window to ask for Archipelago's release");
+                soloQuestion.EmitSignal(AcceptDialog.SignalName.Confirmed);
+                await UiTestWaitForAsync(() => System.IO.File.Exists(System.IO.Path.Combine(worlds, "other_demand", "__init__.py")) ? solo : null, "the solo test to unpack the game's world", 30);
+                UiTestExpect(site.Requests.Count(r => r == "/dl/archipelago.zip") == 2, "the solo test didn't download the release once, after asking");
+            }
+            finally
+            {
+                solo.CancelForTests();
+                await UiTestWaitForAsync(() => !solo.Runner.Busy ? solo : null, "the solo test to stop", 30);
+                foreach (var asked in solo.GetChildren().OfType<ConfirmationDialog>().ToList()) asked.EmitSignal(AcceptDialog.SignalName.Canceled);
+                solo.EmitSignal(AcceptDialog.SignalName.Confirmed);
+                await UiTestWaitAsync(0.2);
+                foreach (var report in System.IO.Directory.GetFiles(AP_Atlas.Core.EngineSetup.SoloTestRunner.ReportsFolder, "Other_Demand_Game-*")) System.IO.File.Delete(report);
+                AP_Atlas.Core.GitHubApi.TestSite = null;
+                AP_Atlas.Core.GitHubApi.ResetForTests();
+            }
+            System.IO.Directory.Delete(System.IO.Path.Combine(worlds, "other_demand"), true);
             // An apworld installed for a game takes precedence: its world isn't unpacked. Its guide comes from the kept release meanwhile.
             UiTestExpect(AtlasEngine.WorldsToUnpack(install, other).SequenceEqual(new[] { "other_demand" }), "another game's world isn't wanted");
             await System.IO.File.WriteAllBytesAsync(otherApworld, Zip(("other_demand/archipelago.json", "{\"game\": \"" + other + "\"}")));

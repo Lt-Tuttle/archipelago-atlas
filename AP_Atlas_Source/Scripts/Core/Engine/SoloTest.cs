@@ -29,10 +29,10 @@ namespace AP_Atlas.Core.EngineSetup
         /// </summary>
         public required Func<string, Task<(bool Ok, string? Why)>> InstallApworldAsync { get; init; }
         /// <summary>
-        /// Unpacks a game's world that ships with Archipelago (asking the engine-setup permission where the window can when
-        /// the release must be downloaded): whether it's there. Null: unpacked when the zip is kept or the permission given.
+        /// Unpacks a game's world that ships with Archipelago (asking the engine-setup permission on the test's window when
+        /// the release must be downloaded): whether it's there. Required, so a copy of the hooks can't leave it out.
         /// </summary>
-        public Func<string, Task<bool>>? EnsureWorldAsync { get; init; }
+        public required Func<string, Task<bool>> EnsureWorldAsync { get; init; }
         /// <summary>Lets the user pick a pack from GitHub's results (or none).</summary>
         public required Func<string, Task<PackChoice?>> ChoosePackAsync { get; init; }
         /// <summary>Installs a project's pack without asking (Start covered it): the release that fits the game's names; what was tried, and the file.</summary>
@@ -142,8 +142,8 @@ namespace AP_Atlas.Core.EngineSetup
                         // The game ships with Archipelago: its world is unpacked from Archipelago's release (a batch run
                         // downloads nothing, but unpacks from the kept zip).
                         progress?.Report(new SoloTestProgress(SoloTestStep.Apworld, SoloStepOutcome.Running, "unpacking the game's world", null));
-                        bool unpacked = connect && hooks.EnsureWorldAsync != null ? await hooks.EnsureWorldAsync(Game).WaitAsync(ct)
-                            : await AtlasEngine.EnsureWorldsAsync(install, new[] { Game }, connect && Permissions.IsAllowed(hooks.Settings, Permissions.EngineSetup), null, ct);
+                        bool unpacked = connect ? await hooks.EnsureWorldAsync(Game).WaitAsync(ct)
+                            : await AtlasEngine.EnsureWorldsAsync(install, new[] { Game }, false, null, ct);
                         if (!unpacked) return Failed("the game's world isn't unpacked (Archipelago's release isn't downloaded, or the download wasn't allowed)");
                         check = await AtlasEngine.RunCheckAsync(install, line => progress?.Report(new SoloTestProgress(SoloTestStep.Apworld, SoloStepOutcome.Running, "checking the engine", line)), ct);
                         has = check?.Games.Contains(Game, StringComparer.OrdinalIgnoreCase) == true;

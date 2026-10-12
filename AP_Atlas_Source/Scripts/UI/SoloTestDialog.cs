@@ -163,7 +163,9 @@ namespace AP_Atlas.UI
             var hooks = new SoloTestHooks
             {
                 Settings = _hooks.Settings,
+                Notice = _hooks.Notice,
                 InstallApworldAsync = _hooks.InstallApworldAsync,
+                EnsureWorldAsync = _hooks.EnsureWorldAsync,
                 ChoosePackAsync = ChoosePackAsync,
                 InstallPackAsync = _hooks.InstallPackAsync,
                 RecommendedPack = _hooks.RecommendedPack,
