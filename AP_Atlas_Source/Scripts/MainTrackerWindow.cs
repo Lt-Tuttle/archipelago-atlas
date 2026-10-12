@@ -179,6 +179,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         AddChild(_alerts);
         AP_Atlas.Core.ThemeColors.SetAccent(_appSettings.ThemeAccentColor);
         AP_Atlas.Core.RaceRules.Initialize(_appSettings);
+        AP_Atlas.Core.PopTracker.PopTrackerPackLoader.PreferredFile = game => _appSettings.PreferredPacks.TryGetValue(game, out var preferred) ? preferred : null;
         SetUpUpdates();
         SetUpCrashReports();
         AP_Atlas.Core.EngineSetup.AtlasEngine.Initialize(_appSettings);

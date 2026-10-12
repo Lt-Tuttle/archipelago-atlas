@@ -52,7 +52,7 @@ namespace AP_Atlas.UI
             AddChild(scroll);
             scroll.AddChild(box);
             box.MinimumSizeChanged += () => scroll.CustomMinimumSize = new Vector2(0, Math.Min(box.GetCombinedMinimumSize().Y, ContentHeight));
-            var intro = Kit.Muted(tr("Atlas installs what's missing (asking as always before anything is downloaded), makes a YAML with the game's default options, generates a one-player seed in the engine (minutes for a big game), hosts it on this PC only (127.0.0.1, no password), connects a slot called AtlasTest with that YAML, scores its logic and the pack, and writes a report in Atlas's folder with a few questions for you at the end. Atlas stays usable meanwhile; Close keeps the test and its server going, and Test this game… on the Games page brings this window back."));
+            var intro = Kit.Muted(tr("Start is the one confirmation: Atlas installs what's missing (the apworld, asking for its trust as always; the pack the game's setup guide recommends, or the one you pick, with the release that fits the game's names), makes a YAML with the game's default options, generates a one-player seed in the engine (minutes for a big game), hosts it on this PC only (127.0.0.1, no password), connects a slot called AtlasTest with that YAML, scores its logic and the pack, and writes a report in Atlas's folder with a few questions for you at the end. Atlas stays usable meanwhile; Close keeps the test and its server going, and Test this game… on the Games page brings this window back."));
             intro.AutowrapMode = TextServer.AutowrapMode.WordSmart;
             intro.CustomMinimumSize = new Vector2(ContentWidth, 0);
             box.AddChild(intro);
@@ -166,6 +166,8 @@ namespace AP_Atlas.UI
                 InstallApworldAsync = _hooks.InstallApworldAsync,
                 ChoosePackAsync = ChoosePackAsync,
                 InstallPackAsync = _hooks.InstallPackAsync,
+                RecommendedPack = _hooks.RecommendedPack,
+                PreferPack = _hooks.PreferPack,
                 AddProfile = _hooks.AddProfile,
                 RemoveProfile = _hooks.RemoveProfile,
                 ConnectSlotAsync = _hooks.ConnectSlotAsync,
@@ -249,7 +251,7 @@ namespace AP_Atlas.UI
                 row.AddThemeConstantOverride("separation", 8);
                 row.SetMeta("pack_row", c.Repo);
                 string repo = c.Repo;
-                var install = Kit.Button(_tr("Install"), _tr("Asks which release when the project has several, then downloads and installs it."), () => PickPack(new PackChoice(repo)), small: true);
+                var install = Kit.Button(_tr("Install"), _tr("Downloads and installs it without further questions: the project's newest release that fits the game's names."), () => PickPack(new PackChoice(repo)), small: true);
                 install.CustomMinimumSize = new Vector2(170, 0);
                 row.AddChild(install);
                 // One line that clips with "…" (an autowrapped label beside the button drew nothing at all); the game's own

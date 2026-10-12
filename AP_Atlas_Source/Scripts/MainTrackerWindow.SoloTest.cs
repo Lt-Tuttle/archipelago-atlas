@@ -24,8 +24,10 @@ public partial class MainTrackerWindow
         Settings = _appSettings,
         InstallApworldAsync = game => _gamesPage != null ? _gamesPage.InstallNewestAsync(game, this) : Task.FromResult(false),
         ChoosePackAsync = _ => Task.FromResult<PackChoice?>(null), // the dialog takes this over
-        // Asked like the Map Packs page asks: a project with several releases offers them (a fork's newest can be for a newer apworld).
-        InstallPackAsync = (game, repo) => _packManagerPanel.InstallPackFromRepoAsync(game, repo, confirm: true),
+        // Without asking (Start covered the downloads): the newest release that fits the game's names.
+        InstallPackAsync = (game, repo, say) => _packManagerPanel.InstallFittingReleaseAsync(game, repo, say),
+        RecommendedPack = game => AP_Atlas.Core.MapPackManagerControl.GuideRecommendations(game).Select(r => r.Repo).FirstOrDefault(),
+        PreferPack = (game, file) => { _appSettings.PreferredPacks[game] = file; DataManager.SaveSettingsSoon(_appSettings); },
         AddProfile = profile =>
         {
             _profiles.Add(profile);

@@ -228,12 +228,23 @@ namespace AP_Atlas.Core.PopTracker
         /// The installed pack for a game, read as one of its variants (<paramref name="variant"/>; null, or a variant the
         /// manifest doesn't list, means the pack's default): the variant's own files take the place of the base ones.
         /// </summary>
-        public static LoadedPack LoadPackForGame(string targetGameName, string variant, Action<string> logDebug)
+        /// <summary>The zip file name a game's slots should use when the folder holds several packs for it (null: none chosen); the window sets it from the settings.</summary>
+        public static Func<string, string> PreferredFile { get; set; } = _ => null;
+
+        /// <summary>The packs folder's zips, the game's preferred one first, then by name (one order for every reader).</summary>
+        public static List<string> PackFiles(string game)
         {
             string packsDir = GetPacksDirectory();
-            if (!Directory.Exists(packsDir)) return null;
+            if (!Directory.Exists(packsDir)) return new List<string>();
+            string preferred = game != null ? PreferredFile(game) : null;
+            return Directory.GetFiles(packsDir, "*.zip")
+                .OrderBy(f => preferred != null && string.Equals(Path.GetFileName(f), preferred, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+                .ThenBy(f => f, StringComparer.OrdinalIgnoreCase).ToList();
+        }
 
-            foreach (var file in Directory.GetFiles(packsDir, "*.zip"))
+        public static LoadedPack LoadPackForGame(string targetGameName, string variant, Action<string> logDebug)
+        {
+            foreach (var file in PackFiles(targetGameName))
             {
                 var info = new System.IO.FileInfo(file);
                 // The default read (cached per zip) says which game the pack is for; a variant is read only for the game's pack, and cached beside it.

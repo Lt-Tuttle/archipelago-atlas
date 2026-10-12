@@ -3570,6 +3570,14 @@ public partial class MainTrackerWindow
             AP_Atlas.Core.SafeFile.Delete(fromGitHub);
             AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
             await UiTestWaitForAsync(() => slot.Pack == null && slot.MapTracker.ShowingEmptyState ? slot : null, "the map to say the pack from GitHub is gone");
+            // The solo test's way: no question, the newest release that fits (v2's file can't be downloaded, so v1 is tried and kept).
+            var said = new List<string>();
+            var fitting = await _packManagerPanel.InstallFittingReleaseAsync("Test Game", "packs/test-game-poptracker", said.Add);
+            UiTestExpect(fitting.Ok && System.IO.File.Exists(fromGitHub) && fitting.File == fromGitHub && fitting.Detail.StartsWith("took v1:") && said.Any(s => s.StartsWith("trying github.com/packs/test-game-poptracker v2")),
+                $"the fitting release wasn't installed without a question: {fitting.Ok}, \"{fitting.Detail}\", said {string.Join(" | ", said)}");
+            AP_Atlas.Core.SafeFile.Delete(fromGitHub);
+            AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
+            await UiTestWaitForAsync(() => slot.Pack == null && slot.MapTracker.ShowingEmptyState ? slot : null, "the map to say the fitting pack is gone");
             host.ShowTool(AP_Atlas.UI.Tool.MapTracker);
             await UiTestWaitAsync(0.2);
 

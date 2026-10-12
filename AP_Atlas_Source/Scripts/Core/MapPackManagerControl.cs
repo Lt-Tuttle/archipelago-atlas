@@ -1011,7 +1011,89 @@ namespace AP_Atlas.Core
             return answered.Task;
         }
 
-        private async Task<bool> DownloadPackAsync(string url, string fileName, string where)
+        /// <summary>
+        /// Installs a project's pack without asking (the solo test, whose Start covered the downloads): the newest release
+        /// that fits the game's names, by the Pack Doctor's check on each tried (newest first, at most three); with none
+        /// fitting, the best tried. Says what was tried, and gives the installed file.
+        /// </summary>
+        internal async Task<(bool Ok, string Detail, string File)> InstallFittingReleaseAsync(string game, string repo, Action<string> say)
+        {
+            List<PackRelease> releases;
+            _showOverlayAction();
+            try
+            {
+                var list = await GitHubApi.GetAsync($"/repos/{repo}/releases?per_page=12");
+                releases = list.Ok ? ReleasesWithPacks(list.Json) : new List<PackRelease>();
+                if (releases.Count == 0)
+                {
+                    var latest = await GitHubApi.GetAsync($"/repos/{repo}/releases/latest");
+                    if (latest.Ok && latest.Json is JObject one) releases = ReleasesWithPacks(new JArray(one));
+                }
+            }
+            finally { _hideOverlayAction(); }
+            if (!GodotObject.IsInstanceValid(this)) return (false, "the window closed", null);
+            string where = "github.com/" + repo;
+            if (releases.Count == 0)
+            {
+                // No released pack: the project's current files, as the Map Packs page offers them.
+                say?.Invoke($"downloading {where}'s current files");
+                string zipball = $"{GitHubApi.Site}/repos/{repo}/zipball", name = repo.Replace('/', '_') + ".zip";
+                bool got = await DownloadPackAsync(zipball, name, where, quiet: true);
+                return (got, got ? "the project's current files (it has no release)" : "the project's files couldn't be downloaded", got ? InstalledPackPath(name) : null);
+            }
+            var tried = new List<AP_Atlas.Core.Games.PackReleaseFit>();
+            var files = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var release in releases.Take(AP_Atlas.Core.Games.PackReleasePick.MostTried))
+            {
+                say?.Invoke($"trying {where} {release.Tag}");
+                if (!await DownloadPackAsync(release.Url, release.FileName, where, quiet: true)) continue;
+                if (!GodotObject.IsInstanceValid(this)) return (false, "the window closed", null);
+                string file = InstalledPackPath(release.FileName);
+                files[release.Tag] = file;
+                var fit = await FitOfAsync(release.Tag, file);
+                if (fit == null) continue;
+                tried.Add(fit);
+                say?.Invoke(fit.Describe());
+                if (fit.Fits) break;
+            }
+            var chosen = AP_Atlas.Core.Games.PackReleasePick.Best(tried);
+            if (chosen == null) return (false, "no release of " + where + " could be downloaded and read", null);
+            // The last one downloaded sits in the folder; the best tried takes its place when that's another.
+            if (!ReferenceEquals(chosen, tried[^1]))
+            {
+                var best = releases.First(r => r.Tag == chosen.Tag);
+                say?.Invoke($"installing {best.Tag} again, the best fit");
+                if (!await DownloadPackAsync(best.Url, best.FileName, where, quiet: true)) return (false, "the best fit, " + best.Tag + ", couldn't be downloaded again", null);
+            }
+            string installed = files[chosen.Tag];
+            if (GodotObject.IsInstanceValid(this)) SayInstalled(installed);
+            return (true, AP_Atlas.Core.Games.PackReleasePick.Describe(tried, chosen), installed);
+        }
+
+        private static string InstalledPackPath(string fileName)
+        {
+            string safeName = string.Concat((fileName ?? "pack.zip").Select(ch => System.IO.Path.GetInvalidFileNameChars().Contains(ch) ? '_' : ch));
+            if (!safeName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) safeName += ".zip";
+            return System.IO.Path.Combine(DataManager.GetDataDirectory(), "packs", safeName);
+        }
+
+        /// <summary>How a just-installed release fits the game's names, by the Pack Doctor's check (null when the zip isn't a pack).</summary>
+        private static async Task<AP_Atlas.Core.Games.PackReleaseFit> FitOfAsync(string tag, string file)
+        {
+            LoadedPack pack;
+            try { pack = PopTrackerPackLoader.InspectZipPack(file); }
+            catch (Exception ex) when (ex is IOException or InvalidDataException or JsonException)
+            {
+                Logger.LogWarning($"Couldn't read the downloaded pack {System.IO.Path.GetFileName(file)}: {ex.Message}");
+                return null;
+            }
+            if (pack == null) return null;
+            var report = await PackDoctorService.CheckAsync(pack, prompt: false);
+            if (report == null) return null;
+            return new AP_Atlas.Core.Games.PackReleaseFit(tag, report.SectionsTotal, report.SectionsLinked, pack.LocationMappingById?.Count ?? 0, report.Index?.UnknownMappedLocationIds.Count ?? 0);
+        }
+
+        private async Task<bool> DownloadPackAsync(string url, string fileName, string where, bool quiet = false)
         {
             string packsDir = System.IO.Path.Combine(DataManager.GetDataDirectory(), "packs");
             Directory.CreateDirectory(packsDir);
@@ -1053,7 +1135,7 @@ namespace AP_Atlas.Core
             }
             if (!GodotObject.IsInstanceValid(this)) return true;
             _logAction($"Installed {safeName} from {where}.", "lime");
-            SayInstalled(dest);
+            if (!quiet) SayInstalled(dest); // a release being tried isn't announced; the one kept is
             if (_candidatesDialog != null && GodotObject.IsInstanceValid(_candidatesDialog))
             {
                 _candidatesDialog.Hide();

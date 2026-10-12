@@ -26,7 +26,12 @@ namespace AP_Atlas.Core.EngineSetup
         public required Func<string, Task<bool>> InstallApworldAsync { get; init; }
         /// <summary>Lets the user pick a pack from GitHub's results (or none).</summary>
         public required Func<string, Task<PackChoice?>> ChoosePackAsync { get; init; }
-        public required Func<string, string, Task<bool>> InstallPackAsync { get; init; }
+        /// <summary>Installs a project's pack without asking (Start covered it): the release that fits the game's names; what was tried, and the file.</summary>
+        public required Func<string, string, Action<string>?, Task<(bool Ok, string Detail, string? File)>> InstallPackAsync { get; init; }
+        /// <summary>The project the game's own setup guide links as its tracker ("owner/name"), or null.</summary>
+        public required Func<string, string?> RecommendedPack { get; init; }
+        /// <summary>Makes a pack (its zip's file name) the one the game's slots use.</summary>
+        public required Action<string, string> PreferPack { get; init; }
         public required Action<MultiworldProfile> AddProfile { get; init; }
         public required Action<MultiworldProfile> RemoveProfile { get; init; }
         /// <summary>Connects a slot of a multiworld through the window and waits for its view (null when it didn't connect).</summary>
@@ -141,15 +146,30 @@ namespace AP_Atlas.Core.EngineSetup
                 });
                 if (!failed) failed = !await StepAsync(SoloTestStep.MapPack, progress, ct, async () =>
                 {
+                    // The game's own setup guide names its tracker: that pack is used, installed without asking when it
+                    // isn't (Start covered the downloads). An installed pack from any other project is used only when
+                    // the guide names none.
+                    string? recommended = hooks.RecommendedPack(Game);
                     pack = InstalledPackFor(Game);
-                    if (pack != null) return Skipped("using " + pack.Manifest.Name + " " + pack.Manifest.GetActualVersion());
+                    if (pack != null && (recommended == null || FromProject(pack, recommended)))
+                        return Skipped("using " + pack.Manifest.Name + " " + pack.Manifest.GetActualVersion() + (recommended != null ? " (the game's setup guide recommends it)" : ""));
                     if (!connect) return Done("no pack installed (a batch run looks for none): Pins, Key Items and Scripts aren't scored");
-                    progress?.Report(new SoloTestProgress(SoloTestStep.MapPack, SoloStepOutcome.Running, "looking for a pack on GitHub", null));
-                    var choice = await hooks.ChoosePackAsync(Game);
-                    if (choice?.Repo == null) return Done("no pack: Pins, Key Items and Scripts aren't scored");
-                    if (!await hooks.InstallPackAsync(Game, choice.Repo)) return Failed("the pack from github.com/" + choice.Repo + " wasn't installed");
+                    string? repo = recommended;
+                    if (repo == null)
+                    {
+                        progress?.Report(new SoloTestProgress(SoloTestStep.MapPack, SoloStepOutcome.Running, "looking for a pack on GitHub", null));
+                        var choice = await hooks.ChoosePackAsync(Game);
+                        if (choice?.Repo == null) return Done("no pack: Pins, Key Items and Scripts aren't scored");
+                        repo = choice.Repo;
+                    }
+                    progress?.Report(new SoloTestProgress(SoloTestStep.MapPack, SoloStepOutcome.Running, "installing the pack from github.com/" + repo + (recommended != null ? " (the game's setup guide recommends it)" : ""), null));
+                    var (ok, detail, file) = await hooks.InstallPackAsync(Game, repo, line => progress?.Report(new SoloTestProgress(SoloTestStep.MapPack, SoloStepOutcome.Running, line, null)));
+                    if (!ok) return Failed("the pack from github.com/" + repo + " wasn't installed: " + detail);
+                    if (file != null) hooks.PreferPack(Game, Path.GetFileName(file));
                     pack = InstalledPackFor(Game);
-                    return pack != null ? Done("installed " + pack.Manifest.Name) : Failed("the installed pack isn't for " + Game);
+                    return pack != null
+                        ? Done("installed " + pack.Manifest.Name + " " + pack.Manifest.GetActualVersion() + " from github.com/" + repo + (recommended != null ? ", recommended by the game's setup guide" : "") + "; " + detail)
+                        : Failed("the installed pack isn't for " + Game);
                 });
                 if (!failed) failed = !await StepAsync(SoloTestStep.Yaml, progress, ct, async () =>
                 {
@@ -380,11 +400,13 @@ namespace AP_Atlas.Core.EngineSetup
                 || error.Contains("rom", StringComparison.OrdinalIgnoreCase);
         }
 
+        /// <summary>Whether a pack was published by a project ("owner/name"), by the versions address its manifest names.</summary>
+        internal static bool FromProject(LoadedPack pack, string repo) =>
+            string.Equals(SoloTestReport.PublicSource(pack.Manifest?.VersionsUrl), "github.com/" + repo, StringComparison.OrdinalIgnoreCase);
+
         internal static LoadedPack? InstalledPackFor(string game)
         {
-            string packs = PopTrackerPackLoader.GetPacksDirectory();
-            if (!Directory.Exists(packs)) return null;
-            foreach (string file in Directory.GetFiles(packs, "*.zip").OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
+            foreach (string file in PopTrackerPackLoader.PackFiles(game))
             {
                 LoadedPack? pack;
                 try { pack = PopTrackerPackLoader.InspectZipPack(file); }
