@@ -111,6 +111,7 @@ public partial class MainTrackerWindow
         "packages" => Tr("the new packages"),
         "world-packages" => change.Game != null ? Tr("{0}'s packages").Replace("{0}", change.Game) : Tr("the games' packages"),
         "tracker" => Tr("the new Universal Tracker"),
+        "world" => change.Game != null ? Tr("{0}'s world").Replace("{0}", change.Game) : Tr("a game's world"),
         _ => change.Kind
     };
 

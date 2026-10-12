@@ -1,0 +1,659 @@
+{
+  "archipelago": "0.6.7",
+  "core_worlds": [
+    "checksfinder",
+    "generic",
+    "_bizhawk",
+    "_sc2common"
+  ],
+  "worlds": {
+    "adventure": {
+      "bytes": 85268,
+      "games": [
+        "Adventure"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "ahit": {
+      "bytes": 286244,
+      "games": [
+        "A Hat in Time"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "alttp": {
+      "bytes": 1601925,
+      "games": [
+        "A Link to the Past"
+      ],
+      "needs": [],
+      "requirements": true
+    },
+    "apquest": {
+      "bytes": 5462989,
+      "games": [
+        "APQuest"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "aquaria": {
+      "bytes": 322818,
+      "games": [
+        "Aquaria"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "blasphemous": {
+      "bytes": 1604446,
+      "games": [
+        "Blasphemous"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "bomb_rush_cyberfunk": {
+      "bytes": 127379,
+      "games": [
+        "Bomb Rush Cyberfunk"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "bumpstik": {
+      "bytes": 27032,
+      "games": [
+        "Bumper Stickers"
+      ],
+      "needs": [
+        "alttp"
+      ],
+      "requirements": false
+    },
+    "cccharles": {
+      "bytes": 137780,
+      "games": [
+        "Choo-Choo Charles"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "celeste64": {
+      "bytes": 58370,
+      "games": [
+        "Celeste 64"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "celeste_open_world": {
+      "bytes": 2524413,
+      "games": [
+        "Celeste (Open World)"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "civ_6": {
+      "bytes": 204255,
+      "games": [
+        "Civilization VI"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "cv64": {
+      "bytes": 496715,
+      "games": [
+        "Castlevania 64"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "cvcotm": {
+      "bytes": 291725,
+      "games": [
+        "Castlevania - Circle of the Moon"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "dark_souls_3": {
+      "bytes": 742742,
+      "games": [
+        "Dark Souls III"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "dkc3": {
+      "bytes": 144023,
+      "games": [
+        "Donkey Kong Country 3"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "dlcquest": {
+      "bytes": 95932,
+      "games": [
+        "DLCQuest"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "doom_1993": {
+      "bytes": 267612,
+      "games": [
+        "DOOM 1993"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "doom_ii": {
+      "bytes": 252050,
+      "games": [
+        "DOOM II"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "earthbound": {
+      "bytes": 1541012,
+      "games": [
+        "EarthBound"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "factorio": {
+      "bytes": 1278801,
+      "games": [
+        "Factorio"
+      ],
+      "needs": [],
+      "requirements": true
+    },
+    "faxanadu": {
+      "bytes": 40042,
+      "games": [
+        "Faxanadu"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "ff1": {
+      "bytes": 50386,
+      "games": [
+        "Final Fantasy"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "ffmq": {
+      "bytes": 240793,
+      "games": [
+        "Final Fantasy Mystic Quest"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "heretic": {
+      "bytes": 488278,
+      "games": [
+        "Heretic"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "hk": {
+      "bytes": 790869,
+      "games": [
+        "Hollow Knight"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "hylics2": {
+      "bytes": 66455,
+      "games": [
+        "Hylics 2"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "inscryption": {
+      "bytes": 62795,
+      "games": [
+        "Inscryption"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "jakanddaxter": {
+      "bytes": 324448,
+      "games": [
+        "Jak and Daxter: The Precursor Legacy"
+      ],
+      "needs": [],
+      "requirements": true
+    },
+    "kdl3": {
+      "bytes": 563240,
+      "games": [
+        "Kirby's Dream Land 3"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "kh1": {
+      "bytes": 465427,
+      "games": [
+        "Kingdom Hearts"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "kh2": {
+      "bytes": 720724,
+      "games": [
+        "Kingdom Hearts 2"
+      ],
+      "needs": [],
+      "requirements": true
+    },
+    "ladx": {
+      "bytes": 1135274,
+      "games": [
+        "Links Awakening DX"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "landstalker": {
+      "bytes": 265661,
+      "games": [
+        "Landstalker - The Treasures of King Nole"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "lingo": {
+      "bytes": 607381,
+      "games": [
+        "Lingo"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "lufia2ac": {
+      "bytes": 186688,
+      "games": [
+        "Lufia II Ancient Cave"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "marioland2": {
+      "bytes": 225320,
+      "games": [
+        "Super Mario Land 2"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "meritous": {
+      "bytes": 32553,
+      "games": [
+        "Meritous"
+      ],
+      "needs": [
+        "alttp"
+      ],
+      "requirements": false
+    },
+    "messenger": {
+      "bytes": 202084,
+      "games": [
+        "The Messenger"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "mlss": {
+      "bytes": 376881,
+      "games": [
+        "Mario & Luigi Superstar Saga"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "mm2": {
+      "bytes": 135737,
+      "games": [
+        "Mega Man 2"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "mm3": {
+      "bytes": 148191,
+      "games": [
+        "Mega Man 3"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "mmbn3": {
+      "bytes": 257486,
+      "games": [
+        "MegaMan Battle Network 3"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "musedash": {
+      "bytes": 113338,
+      "games": [
+        "Muse Dash"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "noita": {
+      "bytes": 45610,
+      "games": [
+        "Noita"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "oot": {
+      "bytes": 3643772,
+      "games": [
+        "Ocarina of Time"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "osrs": {
+      "bytes": 124903,
+      "games": [
+        "Old School Runescape"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "overcooked2": {
+      "bytes": 146435,
+      "games": [
+        "Overcooked! 2"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "paint": {
+      "bytes": 18418,
+      "games": [
+        "Paint"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "pokemon_emerald": {
+      "bytes": 2037929,
+      "games": [
+        "Pokemon Emerald"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "pokemon_rb": {
+      "bytes": 990366,
+      "games": [
+        "Pokemon Red and Blue"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "raft": {
+      "bytes": 75873,
+      "games": [
+        "Raft"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "ror2": {
+      "bytes": 89311,
+      "games": [
+        "Risk of Rain 2"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "sa2b": {
+      "bytes": 818358,
+      "games": [
+        "Sonic Adventure 2 Battle"
+      ],
+      "needs": [
+        "alttp"
+      ],
+      "requirements": false
+    },
+    "satisfactory": {
+      "bytes": 265900,
+      "games": [
+        "Satisfactory"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "saving_princess": {
+      "bytes": 55261,
+      "games": [
+        "Saving Princess"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "sc2": {
+      "bytes": 1999355,
+      "games": [
+        "Starcraft 2"
+      ],
+      "needs": [],
+      "requirements": true
+    },
+    "shapez": {
+      "bytes": 4789729,
+      "games": [
+        "shapez"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "shivers": {
+      "bytes": 83106,
+      "games": [
+        "Shivers"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "shorthike": {
+      "bytes": 57385,
+      "games": [
+        "A Short Hike"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "sm": {
+      "bytes": 1062461,
+      "games": [
+        "Super Metroid"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "sm64ex": {
+      "bytes": 86533,
+      "games": [
+        "Super Mario 64"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "smw": {
+      "bytes": 1232950,
+      "games": [
+        "Super Mario World"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "smz3": {
+      "bytes": 1750768,
+      "games": [
+        "SMZ3"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "soe": {
+      "bytes": 69312,
+      "games": [
+        "Secret of Evermore"
+      ],
+      "needs": [],
+      "requirements": true
+    },
+    "stardew_valley": {
+      "bytes": 2221839,
+      "games": [
+        "Stardew Valley"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "subnautica": {
+      "bytes": 74820,
+      "games": [
+        "Subnautica"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "terraria": {
+      "bytes": 115578,
+      "games": [
+        "Terraria"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "timespinner": {
+      "bytes": 217593,
+      "games": [
+        "Timespinner"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "tloz": {
+      "bytes": 64315,
+      "games": [
+        "The Legend of Zelda"
+      ],
+      "needs": [],
+      "requirements": true
+    },
+    "tunic": {
+      "bytes": 1392227,
+      "games": [
+        "TUNIC"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "tww": {
+      "bytes": 609392,
+      "games": [
+        "The Wind Waker"
+      ],
+      "needs": [],
+      "requirements": true
+    },
+    "undertale": {
+      "bytes": 601973,
+      "games": [
+        "Undertale"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "v6": {
+      "bytes": 14139,
+      "games": [
+        "VVVVVV"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "wargroove": {
+      "bytes": 756947,
+      "games": [
+        "Wargroove"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "witness": {
+      "bytes": 597357,
+      "games": [
+        "The Witness"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "yachtdice": {
+      "bytes": 192400,
+      "games": [
+        "Yacht Dice"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "yoshisisland": {
+      "bytes": 294823,
+      "games": [
+        "Yoshi's Island"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "yugioh06": {
+      "bytes": 165680,
+      "games": [
+        "Yu-Gi-Oh! 2006"
+      ],
+      "needs": [],
+      "requirements": false
+    },
+    "zillion": {
+      "bytes": 117190,
+      "games": [
+        "Zillion"
+      ],
+      "needs": [],
+      "requirements": true
+    }
+  },
+  "zip_root": "Archipelago-0.6.7/",
+  "zip_sha256": "440dfc50afd35663ccac1052a14bd7dc733b130894282870becb6903174d674a"
+}

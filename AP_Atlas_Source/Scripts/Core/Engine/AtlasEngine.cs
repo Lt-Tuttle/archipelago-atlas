@@ -82,6 +82,22 @@ namespace AP_Atlas.Core.EngineSetup
         public Dictionary<string, string> WorldPackagesTried { get; set; } = new();
         public string Tracker { get; set; }
         public EngineCheckResult LastCheck { get; set; }
+        /// <summary>The shipped core the last passed health check ran on (<see cref="EngineCoreStamp.Key"/>): an update that replaces the core checks again.</summary>
+        public string CheckedCore { get; set; }
+    }
+
+    /// <summary>
+    /// What a shipped core holds (<c>&lt;program&gt;/engine/core.json</c>, written when the release is built): the versions
+    /// of Python, Archipelago and the Universal Tracker, the signature of the packages installed, and the Atlas that built it.
+    /// </summary>
+    public class EngineCoreStamp
+    {
+        public string Python { get; set; }
+        public string Archipelago { get; set; }
+        public string PackagesSignature { get; set; }
+        public string Tracker { get; set; }
+        public string Atlas { get; set; }
+        [JsonIgnore] public string Key => $"{Atlas}|{Python}|{Archipelago}|{PackagesSignature}|{Tracker}";
     }
 
     public enum EngineStepId { Runtime, Archipelago, Packages, Tracker, Bridge, Check }
@@ -143,11 +159,26 @@ namespace AP_Atlas.Core.EngineSetup
         private static readonly string[] UnpackedPackageSkips = { "pkg_resources/tests/", "setuptools/tests/" };
 
         // --- Paths ---
+        /// <summary>
+        /// The engine's data folder (PortableData/engine): what Atlas and the user add to the engine (the game worlds
+        /// unpacked on demand, apworlds, the packages worlds declare, caches) and, without a shipped core, the core itself.
+        /// </summary>
         public static string EngineDir => Path.Combine(DataManager.GetDataDirectory(), "engine");
-        public static string PythonDir => Path.Combine(EngineDir, "python");
+        /// <summary>The engine's core (Python, Archipelago without its game worlds, the tracker): shipped with Atlas, else downloaded into <see cref="EngineDir"/>.</summary>
+        public static string CoreDir => ShippedCoreDir ?? EngineDir;
+        public static string PythonDir => Path.Combine(CoreDir, "python");
         public static string PythonExe => Path.Combine(PythonDir, "python.exe");
-        public static string ArchipelagoDir => Path.Combine(EngineDir, "archipelago");
+        public static string ArchipelagoDir => Path.Combine(CoreDir, "archipelago");
         public static string RunnerPath => Path.Combine(EngineDir, "atlas_run.py");
+        /// <summary>Archipelago's user folder (atlas_run.py sets it): <c>worlds</c> (apworlds and the game worlds unpacked on demand), Players, host.yaml.</summary>
+        public static string UserArchipelagoDir => Path.Combine(EngineDir, "ap");
+        public static string UserWorldsDir => Path.Combine(UserArchipelagoDir, "worlds");
+        /// <summary>The packages worlds declare (pip --target), added to the engine's path by atlas_run.py.</summary>
+        public static string WorldPackagesDir => Path.Combine(EngineDir, "site-packages");
+        /// <summary>Compiled Python (PYTHONPYCACHEPREFIX): never beside the core's own files.</summary>
+        public static string PycacheDir => Path.Combine(EngineDir, "pycache");
+        /// <summary>Archipelago's release zip, kept to unpack game worlds from (downloaded once).</summary>
+        public static string WorldsZipPath => Path.Combine(DownloadsDir, $"Archipelago-{ArchipelagoVersion}.zip");
         private static string StatePath => Path.Combine(EngineDir, "engine.json");
         private static string DownloadsDir => Path.Combine(EngineDir, "downloads");
         private static string BackupsDir => Path.Combine(EngineDir, "backups");
@@ -169,11 +200,323 @@ namespace AP_Atlas.Core.EngineSetup
         /// <summary>Raised (on any thread) when the engine's setup or mode changed.</summary>
         public static event Action Changed;
 
-        public static void Initialize(AppSettings settings)
+        public static void Initialize(AppSettings settings, string programDir = null)
         {
             _settings = settings;
+            FindShippedCore(programDir);
+            if (IsShipped)
+            {
+                // The runner is Atlas's own and lives in the data folder: written now, so the core can start at once.
+                try { WriteRunner(); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Logger.LogWarning("[Atlas Engine] Couldn't write the engine's runner: " + ex.Message); }
+            }
             ApworldSources.Initialize(settings);
             RecoverInterruptedUpdate();
+            MoveOlderUserFiles();
+            ForgetWorldsOfAnotherArchipelago();
+        }
+
+        // =====================================================================
+        // The shipped core
+        // =====================================================================
+
+        /// <summary>The core shipped beside Atlas's program (<c>engine/</c> with its <c>core.json</c>), or null (run from source, or a build without it).</summary>
+        public static string ShippedCoreDir { get; private set; }
+
+        /// <summary>What the shipped core holds, or null.</summary>
+        public static EngineCoreStamp ShippedStamp { get; private set; }
+
+        public static bool IsShipped => ShippedCoreDir != null;
+
+        public const string CoreStampFile = "core.json";
+
+        /// <summary>
+        /// Looks for the core beside the program once, at startup: ATLAS_ENGINE_CORE names another (a developer trying a
+        /// built core from source). A core is taken only whole: its stamp, Python and Archipelago.
+        /// </summary>
+        private static void FindShippedCore(string programDir)
+        {
+            string dir = System.Environment.GetEnvironmentVariable("ATLAS_ENGINE_CORE");
+            if (string.IsNullOrWhiteSpace(dir)) dir = string.IsNullOrEmpty(programDir) ? null : Path.Combine(programDir, "engine");
+            ShippedCoreDir = null;
+            ShippedStamp = null;
+            if (dir == null || !File.Exists(Path.Combine(dir, CoreStampFile))) return;
+            var stamp = SafeFile.ReadJson<EngineCoreStamp>(Path.Combine(dir, CoreStampFile), () => null);
+            if (stamp == null || !File.Exists(Path.Combine(dir, "python", "python.exe")) || !File.Exists(Path.Combine(dir, "archipelago", "Utils.py")))
+            {
+                Logger.LogWarning($"[Atlas Engine] The engine beside Atlas ({dir}) is incomplete, so it isn't used.");
+                return;
+            }
+            ShippedCoreDir = Path.GetFullPath(dir);
+            ShippedStamp = stamp;
+            Logger.LogInfo($"[Atlas Engine] Using the engine that ships with Atlas: Python {stamp.Python}, Archipelago {stamp.Archipelago}, Universal Tracker {stamp.Tracker}.");
+        }
+
+        /// <summary>Writes the stamp of the core Atlas set up in its data folder (the release build's engine step).</summary>
+        internal static void WriteCoreStamp()
+        {
+            var stamp = new EngineCoreStamp { Python = State.Python, Archipelago = State.Archipelago, PackagesSignature = State.PackagesSignature, Tracker = State.Tracker, Atlas = AtlasVersion.Display };
+            SafeFile.WriteJson(Path.Combine(EngineDir, CoreStampFile), stamp);
+        }
+
+        /// <summary>
+        /// A shipped core still to get ready on this PC: the runner and the bridge to write, and a health check (nothing
+        /// downloaded, nothing asked). Again after an update brought another core.
+        /// </summary>
+        public static bool ShippedNeedsPreparing(EngineInstall install) =>
+            IsShipped && install.Mode == EngineMode.Portable
+            && (!BridgeIsCurrent(install) || State.LastCheck == null || !State.LastCheck.Passed || State.CheckedCore != ShippedStamp.Key);
+
+        /// <summary>
+        /// Gets a shipped core ready on this PC: the runner and the bridge written, a health check run. Nothing is downloaded
+        /// or asked (a world's packages wait for a slot that needs them).
+        /// </summary>
+        public static Task<bool> PrepareShippedAsync(EngineInstall install, Action<string> log, CancellationToken ct) =>
+            ExclusiveAsync(async () =>
+            {
+                if (!ShippedNeedsPreparing(install)) return true;
+                try
+                {
+                    LastSetupProblem = null;
+                    Stage(log, "Getting the Atlas Engine that ships with Atlas ready…");
+                    WriteRunner();
+                    InstallBridge(install, log);
+                    bool ok = await CheckCommitOrRollBackAsync(install, log, ct);
+                    if (!ok) LastSetupProblem = ProblemWith(install) ?? "The health check didn't pass (the log says what it found).";
+                    return ok;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    LastSetupProblem = ex.Message;
+                    log?.Invoke("The engine that ships with Atlas couldn't be got ready: " + ex.Message);
+                    Logger.LogWarning("[Atlas Engine] Preparing the shipped core: " + ex);
+                    return false;
+                }
+            }, ct);
+
+        /// <summary>Whether setting the engine up downloads anything (a shipped core needs nothing for logic to run).</summary>
+        public static bool SetupDownloads(EngineInstall install)
+        {
+            if (install.Mode != EngineMode.Portable) return !install.HasTracker;
+            return Steps(install).Any(s => s.State != EngineStepState.Ok && s.Id is EngineStepId.Runtime or EngineStepId.Archipelago or EngineStepId.Packages or EngineStepId.Tracker);
+        }
+
+        /// <summary>
+        /// Moves what an older engine kept in Archipelago's own folder (installed apworlds, Players, host.yaml) to
+        /// Archipelago's user folder, where the engine now reads them. Only Atlas's own downloaded engine is touched.
+        /// </summary>
+        private static void MoveOlderUserFiles()
+        {
+            try
+            {
+                string older = Path.Combine(EngineDir, "archipelago");
+                string custom = Path.Combine(older, "custom_worlds");
+                if (Directory.Exists(custom))
+                {
+                    foreach (var file in Directory.GetFiles(custom, "*.apworld"))
+                    {
+                        string target = Path.Combine(UserWorldsDir, Path.GetFileName(file));
+                        Directory.CreateDirectory(UserWorldsDir);
+                        if (Path.GetFileName(file).Equals("UltimateBridge.apworld", StringComparison.OrdinalIgnoreCase) || File.Exists(target)) File.Delete(file);
+                        else
+                        {
+                            File.Move(file, target);
+                            Logger.LogInfo($"[Atlas Engine] Moved {Path.GetFileName(file)} to the engine's user worlds folder.");
+                        }
+                    }
+                }
+                string players = Path.Combine(older, "Players");
+                if (Directory.Exists(players))
+                    foreach (var file in Directory.GetFiles(players))
+                    {
+                        string target = Path.Combine(UserArchipelagoDir, "Players", Path.GetFileName(file));
+                        if (File.Exists(target)) continue;
+                        Directory.CreateDirectory(Path.GetDirectoryName(target));
+                        File.Copy(file, target);
+                    }
+                string hostYaml = Path.Combine(older, "host.yaml"), userHostYaml = Path.Combine(UserArchipelagoDir, "host.yaml");
+                if (File.Exists(hostYaml) && !File.Exists(userHostYaml))
+                {
+                    Directory.CreateDirectory(UserArchipelagoDir);
+                    File.Copy(hostYaml, userHostYaml);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Logger.LogWarning("[Atlas Engine] Couldn't move an older engine's files to the user folder: " + ex.Message);
+            }
+        }
+
+        // =====================================================================
+        // Game worlds on demand
+        // =====================================================================
+
+        private static WorldsIndex _index;
+
+        /// <summary>For the UI test only: a worlds index and the zip it unpacks from (its address and SHA-256) in place of Archipelago's.</summary>
+        internal static (WorldsIndex Index, string ZipUrl, string ZipSha256)? TestWorlds { get; set; }
+
+        /// <summary>Archipelago's game worlds the engine unpacks on demand (the pinned Archipelago's, built into Atlas).</summary>
+        public static WorldsIndex Worlds => TestWorlds?.Index ?? (_index ??= WorldsIndex.Parse(ReadResource("AtlasEngine.archipelago_worlds.json")));
+
+        private static string WorldsZipUrl => TestWorlds?.ZipUrl ?? ArchipelagoUrl;
+        private static string WorldsZipSha256 => TestWorlds?.ZipSha256 ?? ArchipelagoSha256;
+        private static string UnpackedRecordPath => Path.Combine(UserWorldsDir, ".atlas_worlds.json");
+
+        /// <summary>Whether a world folder is there to load: in the core (an older, full engine has them all), or unpacked.</summary>
+        public static bool WorldPresent(string folder) =>
+            Directory.Exists(Path.Combine(ArchipelagoDir, "worlds", folder)) || Directory.Exists(Path.Combine(UserWorldsDir, folder));
+
+        /// <summary>
+        /// The world folders a game needs unpacked before its logic can run: none when its world is there already, when an
+        /// installed apworld provides the game (it takes precedence), when it isn't one of this Archipelago's games, or
+        /// for another engine than Atlas's own.
+        /// </summary>
+        public static List<string> WorldsToUnpack(EngineInstall install, string game)
+        {
+            var none = new List<string>();
+            if (install == null || install.Mode != EngineMode.Portable || string.IsNullOrEmpty(game)) return none;
+            string folder = Worlds.FolderFor(game);
+            if (folder == null || ApworldSources.InstalledCopies(install, game).Count > 0) return none;
+            return Worlds.Closure(folder).Where(f => !WorldPresent(f)).ToList();
+        }
+
+        /// <summary>Whether Archipelago's release zip is here to unpack worlds from (nothing to download).</summary>
+        public static bool WorldsZipPresent => File.Exists(WorldsZipPath);
+
+        /// <summary>About how much the worlds' zip downloads, for the question.</summary>
+        public const string WorldsZipSize = "about 22 MB";
+
+        /// <summary>
+        /// Unpacks the world folders these games need from Archipelago's release zip into the engine's user worlds folder,
+        /// downloading the zip first (pinned address and SHA-256, once) when <paramref name="mayDownload"/>. A world that
+        /// declares packages has them installed too (the same rules as setup), when it may download. The engines that
+        /// started without them retire (a change of kind "world": only that game's slots restart). False when a download
+        /// was needed and not allowed, or something failed (logged).
+        /// </summary>
+        public static Task<bool> EnsureWorldsAsync(EngineInstall install, IEnumerable<string> games, bool mayDownload, Action<string> log, CancellationToken ct) =>
+            ExclusiveAsync(() => EnsureWorldsCoreAsync(install, games, mayDownload, log, ct), ct);
+
+        /// <summary>Whether the user allowed the engine's downloads (this session or always): a game's world may be fetched.</summary>
+        public static bool MayDownloadWorlds => Permissions.IsAllowed(_settings, Permissions.EngineSetup);
+
+        /// <summary><see cref="EnsureWorldsAsync"/> for work that already holds the engine (a game check).</summary>
+        internal static async Task<bool> EnsureWorldsCoreAsync(EngineInstall install, IEnumerable<string> games, bool mayDownload, Action<string> log, CancellationToken ct)
+        {
+            var wanted = games.Where(g => !string.IsNullOrEmpty(g)).Distinct(StringComparer.OrdinalIgnoreCase).Select(g => (Game: g, Folders: WorldsToUnpack(install, g))).Where(w => w.Folders.Count > 0).ToList();
+            if (wanted.Count == 0) return true;
+            var folders = wanted.SelectMany(w => w.Folders).Distinct().ToList();
+            try
+            {
+                if (!File.Exists(WorldsZipPath))
+                {
+                    if (!mayDownload)
+                    {
+                        log?.Invoke($"{string.Join(", ", wanted.Select(w => w.Game))} need their world from Archipelago {ArchipelagoVersion}'s release, which isn't downloaded yet.");
+                        return false;
+                    }
+                    EnsureFreeSpace(EngineDir);
+                    Stage(log, $"Downloading Archipelago {ArchipelagoVersion}'s game worlds from GitHub ({WorldsZipSize}, once)…");
+                    await EngineDownloader.DownloadAsync(WorldsZipUrl, WorldsZipPath, WorldsZipSha256, null, ct);
+                }
+                else if (!EngineDownloader.Sha256Of(WorldsZipPath).Equals(WorldsZipSha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    EngineDownloader.TryDelete(WorldsZipPath);
+                    throw new InvalidDataException("The kept Archipelago zip isn't the one Atlas pins (it was removed; it's downloaded again next time).");
+                }
+                foreach (string folder in folders) UnpackWorld(folder, log);
+                bool packages = folders.Any(f => Worlds.Worlds.TryGetValue(f, out var entry) && entry.Requirements);
+                if (packages && mayDownload && install.CanLaunch && install.HasTracker)
+                {
+                    // A world that imports its packages as it loads fails the check without them; setup's rules install them.
+                    await RunCheckAsync(install, log, ct);
+                    if (await InstallWorldPackagesCoreAsync(install, log, ct, force: false)) await CheckCommitOrRollBackAsync(install, log, ct);
+                }
+                foreach (var (game, _) in wanted) NoteChange("world", ArchipelagoDir, game);
+                return true;
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                log?.Invoke($"The game worlds couldn't be unpacked: {ex.Message}");
+                Logger.LogWarning("[Atlas Engine] Unpacking game worlds: " + ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// A game's documents from Archipelago's kept zip, for a game whose world isn't unpacked yet (its setup guide and
+        /// its game page, as (the zip, the entry, whether it's the setup guide)); none without the zip. One look at the listing.
+        /// </summary>
+        public static List<(string File, string Entry, bool Setup)> DocumentsInZip(string game)
+        {
+            var docs = new List<(string, string, bool)>();
+            string folder = Worlds.FolderFor(game);
+            if (folder == null || !File.Exists(WorldsZipPath)) return docs;
+            try
+            {
+                using var zip = SafeZip.Open(WorldsZipPath);
+                string prefix = Worlds.EntryPrefix(folder) + "docs/";
+                foreach (var entry in zip.Entries.Where(e => e.FullName.StartsWith(prefix, StringComparison.Ordinal) && e.FullName.EndsWith(".md", StringComparison.OrdinalIgnoreCase)))
+                {
+                    bool setup = entry.Name.Equals("setup_en.md", StringComparison.OrdinalIgnoreCase);
+                    if (setup || entry.Name.Equals("en_" + game + ".md", StringComparison.OrdinalIgnoreCase)) docs.Add((WorldsZipPath, entry.FullName, setup));
+                }
+            }
+            catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+            {
+                Logger.LogWarning($"Couldn't list {game}'s documents in Archipelago's zip: {ex.Message}");
+            }
+            return docs.OrderBy(d => d.Item3 ? 0 : 1).ToList();
+        }
+
+        /// <summary>One world folder from the zip into the user worlds folder: unpacked beside it first, then moved in whole, and recorded.</summary>
+        private static void UnpackWorld(string folder, Action<string> log)
+        {
+            string target = Path.Combine(UserWorldsDir, folder);
+            if (Directory.Exists(target)) return;
+            Directory.CreateDirectory(UserWorldsDir);
+            string staging = Path.Combine(EngineDir, ".unpack-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                string prefix = Worlds.EntryPrefix(folder);
+                SafeZip.UnpackTo(WorldsZipPath, staging, SafeZip.TextLimit, SafeZip.ProgramTotal, name => name.Replace('\\', '/').StartsWith(prefix, StringComparison.Ordinal));
+                string unpacked = Path.Combine(staging, prefix.TrimEnd('/').Replace('/', Path.DirectorySeparatorChar));
+                if (!File.Exists(Path.Combine(unpacked, "__init__.py"))) throw new InvalidDataException($"Archipelago's zip has no {folder} world.");
+                MoveDir(unpacked, target);
+            }
+            finally { DeleteDir(staging); }
+            var record = SafeFile.ReadJson(UnpackedRecordPath, () => new UnpackedWorlds()) ?? new UnpackedWorlds();
+            record.Archipelago = ArchipelagoVersion;
+            if (!record.Folders.Contains(folder)) record.Folders.Add(folder);
+            SafeFile.WriteJson(UnpackedRecordPath, record);
+            log?.Invoke($"Unpacked the {folder} world from Archipelago {ArchipelagoVersion}.");
+        }
+
+        /// <summary>
+        /// World folders unpacked from another Archipelago (Atlas was updated to a newer one) are removed, with the older
+        /// zip: the next slot that needs one unpacks it from the new release.
+        /// </summary>
+        private static void ForgetWorldsOfAnotherArchipelago()
+        {
+            try
+            {
+                var record = File.Exists(UnpackedRecordPath) ? SafeFile.ReadJson(UnpackedRecordPath, () => new UnpackedWorlds()) : null;
+                if (record != null && record.Archipelago != ArchipelagoVersion)
+                {
+                    foreach (string folder in record.Folders.Where(f => f.Length > 0 && !f.Contains('.') && !f.Contains('/') && !f.Contains('\\')))
+                        DeleteDir(Path.Combine(UserWorldsDir, folder));
+                    SafeFile.Delete(UnpackedRecordPath);
+                    Logger.LogInfo($"[Atlas Engine] Removed the game worlds unpacked from Archipelago {record.Archipelago}; they're unpacked from {ArchipelagoVersion} when needed.");
+                }
+                if (Directory.Exists(DownloadsDir))
+                    foreach (var zip in Directory.GetFiles(DownloadsDir, "Archipelago-*.zip").Where(z => !Path.GetFileName(z).Equals(Path.GetFileName(WorldsZipPath), StringComparison.OrdinalIgnoreCase)))
+                        EngineDownloader.TryDelete(zip);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Logger.LogWarning("[Atlas Engine] Couldn't tidy the game worlds of another Archipelago: " + ex.Message);
+            }
         }
 
         public static void NotifyChanged() => Changed?.Invoke();
@@ -435,7 +778,22 @@ namespace AP_Atlas.Core.EngineSetup
         {
             var steps = new List<EngineStepStatus>();
             var check = LastCheck(install);
-            if (install.Mode == EngineMode.Portable)
+            if (install.Mode == EngineMode.Portable && IsShipped)
+            {
+                var stamp = ShippedStamp;
+                steps.Add(new EngineStepStatus { Id = EngineStepId.Runtime, Title = "Python runtime", State = EngineStepState.Ok, Detail = $"Python {stamp.Python} (ships with Atlas)" });
+                steps.Add(new EngineStepStatus { Id = EngineStepId.Archipelago, Title = "Archipelago", State = EngineStepState.Ok, Detail = $"Archipelago {stamp.Archipelago} (ships with Atlas; a game's world is unpacked from Archipelago's release when a slot first needs it)" });
+                var shippedWorldPackages = InstallableWorldPackages(install);
+                steps.Add(new EngineStepStatus
+                {
+                    Id = EngineStepId.Packages,
+                    Title = "Python packages",
+                    State = shippedWorldPackages.Count == 0 ? EngineStepState.Ok : EngineStepState.Warning,
+                    Detail = shippedWorldPackages.Count > 0 ? $"{shippedWorldPackages.Count} world(s) need their own packages: {string.Join(", ", shippedWorldPackages.Select(w => w.World))}" : "Archipelago's packages (ship with Atlas)",
+                    Action = shippedWorldPackages.Count == 0 ? null : "Install"
+                });
+            }
+            else if (install.Mode == EngineMode.Portable)
             {
                 bool python = File.Exists(PythonExe) && File.Exists(Path.Combine(PythonDir, "Lib", "site-packages", "pip", "__init__.py"));
                 steps.Add(new EngineStepStatus
@@ -608,7 +966,7 @@ namespace AP_Atlas.Core.EngineSetup
                 throw new IOException($"Only {free / (1 << 20)} MB is free on {drive.Name}; the engine needs about {RequiredFreeBytes / (1 << 20)} MB. Free some space and try again.");
         }
 
-        private static readonly string[] SwappedDirs = { "python", "archipelago" };
+        private static readonly string[] SwappedDirs = { "python", "archipelago", "site-packages" };
 
         /// <summary>
         /// Puts a fully prepared folder in place. The version it replaces is kept as "*.previous" until a health check
@@ -919,7 +1277,7 @@ namespace AP_Atlas.Core.EngineSetup
                         case EngineStepId.Runtime: await InstallRuntimeCoreAsync(log, progress, ct); break;
                         case EngineStepId.Archipelago: await InstallArchipelagoCoreAsync(log, progress, ct); break;
                         case EngineStepId.Packages:
-                            if (State.PackagesSignature != PackagesSignature()) await InstallPackagesCoreAsync(log, ct);
+                            if (!IsShipped && State.PackagesSignature != PackagesSignature()) await InstallPackagesCoreAsync(log, ct);
                             if (install.Mode == EngineMode.Portable && LastCheck(install) == null) await RunCheckAsync(install, log, ct);
                             await InstallWorldPackagesCoreAsync(install, log, ct, force: true);
                             break;
@@ -957,6 +1315,11 @@ namespace AP_Atlas.Core.EngineSetup
             if (check.Passed)
             {
                 if (install.Mode == EngineMode.Portable) CommitUpdates();
+                if (install.Mode == EngineMode.Portable && IsShipped)
+                {
+                    State.CheckedCore = ShippedStamp.Key;
+                    SaveState();
+                }
                 return true;
             }
             if (install.Mode == EngineMode.Portable && RollBack(log))
@@ -1028,22 +1391,10 @@ namespace AP_Atlas.Core.EngineSetup
             if (tops.Length != 1 || !File.Exists(Path.Combine(tops[0], "Utils.py")))
                 throw new InvalidDataException("The Archipelago download doesn't look like Archipelago's source.");
             string inner = tops[0];
-            // Keep what the user added to an older engine: apworlds, YAMLs, settings.
-            if (Directory.Exists(ArchipelagoDir))
-            {
-                foreach (var keep in new[] { "custom_worlds", "Players" })
-                {
-                    string from = Path.Combine(ArchipelagoDir, keep), to = Path.Combine(inner, keep);
-                    if (!Directory.Exists(from)) continue;
-                    Directory.CreateDirectory(to);
-                    foreach (var f in Directory.GetFiles(from)) File.Copy(f, Path.Combine(to, Path.GetFileName(f)), true);
-                }
-                string hostYaml = Path.Combine(ArchipelagoDir, "host.yaml");
-                if (File.Exists(hostYaml)) File.Copy(hostYaml, Path.Combine(inner, "host.yaml"), true);
-            }
-            Directory.CreateDirectory(Path.Combine(inner, "custom_worlds"));
-            Directory.CreateDirectory(Path.Combine(inner, "Players"));
-            EngineDownloader.TryDelete(zip);
+            // The core keeps no game worlds: each is unpacked from the kept zip when a slot first needs it.
+            foreach (string folder in Worlds.Worlds.Keys) DeleteDir(Path.Combine(inner, "worlds", folder));
+            // What an older engine kept in Archipelago's folder (apworlds, Players, host.yaml) lives in the user folder now.
+            MoveOlderUserFiles();
 
             await StopEnginesUsingAsync(ArchipelagoDir, log, ct);
             RememberStateBeforeUpdate();
@@ -1054,7 +1405,7 @@ namespace AP_Atlas.Core.EngineSetup
             State.LastCheck = null;
             SaveState();
             WriteRunner();
-            log($"Archipelago {ArchipelagoVersion} ready.");
+            log($"Archipelago {ArchipelagoVersion} ready (its game worlds are unpacked when a slot needs one).");
             NoteChange("archipelago", ArchipelagoDir);
         }
 
@@ -1174,10 +1525,10 @@ namespace AP_Atlas.Core.EngineSetup
 
         private static string WorldRequirements(string world, EngineCheckResult check)
         {
-            string bundled = Path.Combine(ArchipelagoDir, "worlds", world, "requirements.txt");
-            if (File.Exists(bundled)) return File.ReadAllText(bundled);
+            foreach (string bundled in new[] { Path.Combine(UserWorldsDir, world, "requirements.txt"), Path.Combine(ArchipelagoDir, "worlds", world, "requirements.txt") })
+                if (File.Exists(bundled)) return File.ReadAllText(bundled);
             string apworld = check.FailedDetails != null && check.FailedDetails.TryGetValue(world, out var info) && info.IsZip ? info.Path : null;
-            apworld ??= Path.Combine(ArchipelagoDir, "custom_worlds", world + ".apworld");
+            apworld ??= Path.Combine(UserWorldsDir, world + ".apworld");
             if (!File.Exists(apworld)) return null;
             try
             {
@@ -1250,12 +1601,14 @@ namespace AP_Atlas.Core.EngineSetup
             if (targets.Count == 0) return false;
             EnsureFreeSpace(EngineDir);
             await StopEnginesUsingAsync(ArchipelagoDir, log, ct);
-            string previous = PythonDir + ".previous";
+            // Into the data folder's own site-packages (a shipped core is never written), kept first to roll back to.
+            Directory.CreateDirectory(WorldPackagesDir);
+            string previous = WorldPackagesDir + ".previous";
             if (!Directory.Exists(previous))
             {
-                log("Keeping a copy of the current runtime in case the update has to be undone…");
+                log("Keeping a copy of the games' packages in case the update has to be undone…");
                 RememberStateBeforeUpdate();
-                CopyDir(PythonDir, previous);
+                CopyDir(WorldPackagesDir, previous);
             }
             bool any = false;
             State.WorldPackagesTried ??= new Dictionary<string, string>();
@@ -1265,8 +1618,8 @@ namespace AP_Atlas.Core.EngineSetup
                 log($"Installing the packages {world} declares…");
                 string file = Path.Combine(EngineDir, $"requirements-{world}.txt");
                 await File.WriteAllTextAsync(file, SafeWorldRequirements(requirements, log), ct);
-                int code = await RunAsync(PythonExe, new[] { "-m", "pip", "install", "-r", file, "--prefer-binary", "--disable-pip-version-check", "--no-warn-script-location", "--retries", "5", "--timeout", "60" },
-                    PythonDir, log, ct, TimeSpan.FromMinutes(10));
+                int code = await RunAsync(PythonExe, new[] { "-m", "pip", "install", "--target", WorldPackagesDir, "--upgrade", "-r", file, "--prefer-binary", "--disable-pip-version-check", "--no-warn-script-location", "--retries", "5", "--timeout", "60" },
+                    EngineDir, log, ct, TimeSpan.FromMinutes(10));
                 State.WorldPackagesTried[world] = Signature(requirements);
                 if (code == 0) { any = true; log($"Packages for {world} installed."); NoteChange("world-packages", ArchipelagoDir, world); }
                 else log($"The packages for {world} couldn't be installed; {world} won't be available (everything else is unaffected).");
@@ -1594,6 +1947,10 @@ namespace AP_Atlas.Core.EngineSetup
             env["PIP_CACHE_DIR"] = Path.Combine(EngineDir, "pip_cache");
             env["PIP_CONFIG_FILE"] = "nul"; // Python's os.devnull: pip reads no pip.ini at all
             env["PYTHONNOUSERSITE"] = "1"; // nothing from the user's own Python packages folder
+            // The engine's data folder (atlas_run.py's user folder, worlds and packages), and compiled Python kept there
+            // too: a shipped core is never written.
+            env["ATLAS_ENGINE_DATA"] = EngineDir;
+            env["PYTHONPYCACHEPREFIX"] = PycacheDir;
         }
 
         /// <summary>Removes what engine runs that crashed left in the temp folder (anything over a day old).</summary>

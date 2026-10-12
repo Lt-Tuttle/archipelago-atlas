@@ -59,10 +59,12 @@ namespace AP_Atlas.Core
             "service: what the code was doing, Atlas's version and the kind of PC, and nothing more. You see the whole report first, as it would be " +
             "sent. Names, paths, servers, slots, chat and log lines are never included. Reports stay in Atlas's logs folder either way.");
 
-        public static readonly Kind EngineSetup = new Kind("online.engine-setup", "Download the Atlas Engine into Atlas's folder",
-            "Logic, maps and hints run on Archipelago's own code. Atlas downloads Python (from python.org), Archipelago and Universal Tracker " +
-            "(from GitHub) and Archipelago's packages (from PyPI) into its own folder, about 55 MB, each file checked against a fixed hash. " +
-            "Nothing is installed, no setting on your PC changes, and nothing else on it is touched. The same permission covers updating those parts later.");
+        public static readonly Kind EngineSetup = new Kind("online.engine-setup", "Download the Atlas Engine's parts into Atlas's folder",
+            "Logic, maps and hints run on Archipelago's own code. A game's world comes from Archipelago's release, downloaded once from GitHub " +
+            "(about 22 MB) when a slot first needs one; a few games declare packages of their own, from PyPI. Without the engine that ships with " +
+            "Atlas (run from source), Atlas downloads Python (from python.org), Archipelago and Universal Tracker (from GitHub) and Archipelago's " +
+            "packages (from PyPI) too, about 55 MB. Everything goes into Atlas's own folder, each file checked against a fixed hash where one is " +
+            "published. Nothing is installed, no setting on your PC changes, and nothing else on it is touched. The same permission covers updating those parts later.");
 
         public static IReadOnlyList<Kind> All { get; } = new[] { FindArchipelago, WriteArchipelago, EngineSetup, GitHubLookups, RoomStatusReads, UpdateChecks, CrashReports };
 

@@ -115,6 +115,12 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             OpenEngineWindow(); // an install of the user's own is chosen and checked there
             return;
         }
+        // The engine that ships with Atlas downloads nothing to get ready: no question then.
+        if (!AP_Atlas.Core.EngineSetup.AtlasEngine.SetupDownloads(engine))
+        {
+            AP_Atlas.UI.EngineSetupPanel.Open(this, text => Tr(text), lines => OpenEngineWindow(lines));
+            return;
+        }
         AP_Atlas.UI.PermissionDialog.Ask(this, _appSettings, AP_Atlas.Core.Permissions.EngineSetup, null, null, allowed =>
         {
             if (!allowed) return;

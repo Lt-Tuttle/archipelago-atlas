@@ -201,6 +201,11 @@ namespace AP_Atlas.UI
             foreach (var (game, repos) in _hooks.Settings.ExtraApworldRepos ?? new Dictionary<string, List<string>>())
                 if (!games.ContainsKey(game)) games[game] = new GameEntry(game, Section.Yours, inEngine.Contains(game), repos.FirstOrDefault(), null);
             var fromFiles = install != null ? ApworldSources.GamesWithApworldFiles(install) : new HashSet<string>();
+            // Archipelago's own games: every one is there for the engine that ships with Atlas (or Atlas's downloaded one),
+            // its world unpacked when a slot first needs it.
+            if (install != null && install.Mode == EngineMode.Portable && install.CanLaunch)
+                foreach (string game in AtlasEngine.Worlds.Games)
+                    if (!games.ContainsKey(game) && !fromFiles.Contains(game)) games[game] = new GameEntry(game, Section.Official, true, null, OfficialGuide(game));
             foreach (string game in inEngine)
             {
                 if (games.ContainsKey(game)) continue;
@@ -393,10 +398,17 @@ namespace AP_Atlas.UI
                 if (entry.Section != Section.Official && install!.Mode == EngineMode.Portable && InstallFolderKnown)
                     apworldButtons.Add(Kit.Button(_tr("Copy from my install…"), _tr("Looks in the Archipelago install you chose (its custom_worlds and lib/worlds folders, nothing else) for this game's apworld and copies it into the Atlas Engine."), () => CopyFromInstall(game)));
                 apworldButtons.Add(Kit.Button(_tr("Check this game"), _tr("Rebuilds the game with default options and computes its starting logic."), () =>
-                    Run(_tr("Checking {0}…").Replace("{0}", game), (log, ct) => GameSweep.RunAsync(install!, log, ct, new[] { game }), _ => CheckSummary(install!, game))));
+                {
+                    void Check() => Run(_tr("Checking {0}…").Replace("{0}", game), (log, ct) => GameSweep.RunAsync(install!, log, ct, new[] { game }), _ => CheckSummary(install!, game));
+                    // A game that ships with Archipelago needs its world: from the kept zip, else downloaded once (asked here).
+                    if (AtlasEngine.WorldsToUnpack(install!, game).Count == 0 || AtlasEngine.WorldsZipPresent || AtlasEngine.MayDownloadWorlds) Check();
+                    else PermissionDialog.Ask(DialogParent, _hooks.Settings, Permissions.EngineSetup, null, null, allowed => { if (allowed) Check(); });
+                }));
             }
             Step(steps, entry.InEngine, _tr("The apworld in the Atlas Engine"),
                 !engineReady ? _tr("The Atlas Engine isn't set up yet.")
+                : entry.Section == Section.Official && AtlasEngine.WorldsToUnpack(install!, game).Count > 0
+                    ? _tr("Ships with Archipelago {0}: its world is unpacked from Archipelago's release when a slot first needs it ({1}, downloaded once, asked first).").Replace("{0}", AtlasEngine.ArchipelagoVersion).Replace("{1}", AtlasEngine.WorldsZipSize)
                 : entry.InEngine ? _tr("In the engine") + (version != null ? " (" + version + ")" : "") + "." + (CheckSummary(install!, game) is { Length: > 0 } s ? " " + s : "")
                 : check == null ? _tr("Atlas hasn't checked the engine yet: the engine window's health check says which games it has.")
                 : _tr("Not in the engine yet."), apworldButtons);

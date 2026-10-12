@@ -141,6 +141,9 @@ public partial class SlotTrackerControl : MarginContainer
                 AddButton("Set up Atlas Engine…", "Download and check what logic needs", () => OpenEngineSetup?.Invoke());
                 AddButton("Try again", "Start the logic engine again", RetryLogicEngine);
                 break;
+            case "world_download":
+                AddButton("Get the game's world…", "Downloads Archipelago's release once (" + AP_Atlas.Core.EngineSetup.AtlasEngine.WorldsZipSize + " from GitHub) and unpacks this game's world from it; asks first", GetGameWorld);
+                break;
             case "world_missing":
                 // The engine runs; this game's apworld is what's missing, and the game's page installs it.
                 AddButton("Open the Games page", "Install the game's apworld in the Atlas Engine from its page", () => OpenGamesPageFor?.Invoke(Game));
@@ -174,6 +177,8 @@ public partial class SlotTrackerControl : MarginContainer
                 return "Logic needs the Atlas Engine.\n" + e.Message + "\nAtlas can download everything it needs (about 50 MB, no installer).";
             case "world_missing":
                 return $"{Game} isn't installed in the logic engine.\nInstall its apworld on the Games page.";
+            case "world_download":
+                return $"{Game}'s logic needs its world.\n{e.Message}";
             case "yaml_needed":
                 return $"{Game} can't rebuild your world from the server's data alone.\nLink this player's YAML (the file used to generate the seed).";
             case "generation_failed":
@@ -186,6 +191,13 @@ public partial class SlotTrackerControl : MarginContainer
                 return "The logic engine couldn't start.\n" + e.Message;
         }
     }
+
+    /// <summary>"Get the game's world…": the engine-setup permission (asked here), then logic starts again, which unpacks it.</summary>
+    private void GetGameWorld() =>
+        AP_Atlas.UI.PermissionDialog.Ask(this, _appSettings, AP_Atlas.Core.Permissions.EngineSetup, null, null, allowed =>
+        {
+            if (allowed && GodotObject.IsInstanceValid(this)) RetryLogicEngine();
+        });
 
     // --- Engine state for the setup window and Properties ---
 

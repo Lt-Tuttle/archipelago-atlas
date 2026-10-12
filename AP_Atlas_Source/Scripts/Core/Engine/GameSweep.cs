@@ -66,6 +66,10 @@ namespace AP_Atlas.Core.EngineSetup
             AtlasEngine.ExclusiveAsync(async () =>
             {
                 var check = AtlasEngine.LastCheck(install) ?? await AtlasEngine.RunCheckAsync(install, log, ct);
+                // A game that ships with Archipelago is unpacked first (from the kept zip, or downloaded when allowed).
+                if (only != null && only.Any(g => AtlasEngine.WorldsToUnpack(install, g).Count > 0)
+                    && await AtlasEngine.EnsureWorldsCoreAsync(install, only, AtlasEngine.MayDownloadWorlds, log, ct))
+                    check = await AtlasEngine.RunCheckAsync(install, log, ct);
                 var games = (check.Games ?? new List<string>()).Where(g => g != "Archipelago" && g != "Universal Tracker")
                     .Where(g => only == null || only.Contains(g, StringComparer.OrdinalIgnoreCase)).ToList();
                 if (games.Count == 1) log?.Invoke($"Checking {games[0]}: it's rebuilt with default options and its starting logic computed…");

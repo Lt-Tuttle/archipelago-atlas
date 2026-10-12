@@ -492,7 +492,9 @@ namespace AP_Atlas.UI
 
         private Control BuildEngine()
         {
-            var box = PageBox("The Atlas Engine", "Logic, maps and hints run on Archipelago's own code, which Atlas downloads into its own folder: Python, Archipelago and the Universal Tracker, about 55 MB. It installs in the background while you go on; its progress shows on the left.");
+            var box = PageBox("The Atlas Engine", AP_Atlas.Core.EngineSetup.AtlasEngine.IsShipped
+                ? "Logic, maps and hints run on Archipelago's own code, which ships with Atlas: Python, Archipelago and the Universal Tracker. A game's world is unpacked from Archipelago's release (about 22 MB, downloaded once, asked first) when a slot first needs it."
+                : "Logic, maps and hints run on Archipelago's own code, which Atlas downloads into its own folder: Python, Archipelago and the Universal Tracker, about 55 MB. It installs in the background while you go on; its progress shows on the left.");
             _engineState = Wrapped("");
             box.AddChild(_engineState);
             _engineConsentHost = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
@@ -512,7 +514,7 @@ namespace AP_Atlas.UI
             bool ready = _hooks.EngineReady();
             if (ready)
             {
-                _engineState.Text = _tr("The Atlas Engine is set up. Nothing to do here.");
+                _engineState.Text = AP_Atlas.Core.EngineSetup.AtlasEngine.IsShipped ? _tr("The Atlas Engine ships with Atlas and is ready. Nothing to do here.") : _tr("The Atlas Engine is set up. Nothing to do here.");
                 _engineState.AddThemeColorOverride("font_color", ThemeColors.Success);
                 _engineConsentHost.Visible = false;
                 _engineButtons.Visible = false;

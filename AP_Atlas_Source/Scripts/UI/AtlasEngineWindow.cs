@@ -290,7 +290,7 @@ namespace AP_Atlas.UI
         /// </summary>
         private void WithDownloadPermission(Action run)
         {
-            if (AtlasEngine.Current.Mode != EngineMode.Portable) { run(); return; }
+            if (AtlasEngine.Current.Mode != EngineMode.Portable || !AtlasEngine.SetupDownloads(AtlasEngine.Current)) { run(); return; }
             PermissionDialog.Ask(this, _settings, AP_Atlas.Core.Permissions.EngineSetup, null, null, allowed => { if (allowed) run(); });
         }
 
@@ -325,7 +325,8 @@ namespace AP_Atlas.UI
             Readable(portable);
             portable.Toggled += on => { if (on && AtlasEngine.Current.Mode != EngineMode.Portable) AtlasEngine.SetMode(EngineMode.Portable); };
             _modeBox.AddChild(portable);
-            _modeBox.AddChild(Note(AtlasEngine.PortableInstalled ? "Installed in " + AtlasEngine.EngineDir : "Not downloaded yet.", 28));
+            _modeBox.AddChild(Note(AtlasEngine.IsShipped ? "Ships with Atlas (" + AtlasEngine.CoreDir + "); what it adds is kept in " + AtlasEngine.EngineDir
+                : AtlasEngine.PortableInstalled ? "Installed in " + AtlasEngine.EngineDir : "Not downloaded yet.", 28));
 
             var existingRow = new HBoxContainer();
             existingRow.AddThemeConstantOverride("separation", 8);

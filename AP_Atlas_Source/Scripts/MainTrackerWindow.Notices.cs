@@ -108,6 +108,14 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     private void ReportEngineAtStartup()
     {
         var engine = AP_Atlas.Core.EngineSetup.AtlasEngine.Current;
+        if (AP_Atlas.Core.EngineSetup.AtlasEngine.ShippedNeedsPreparing(engine))
+        {
+            // The engine ships with Atlas: it's got ready here (a health check; nothing downloaded or asked).
+            LogToSystem("Logic engine: getting the Atlas Engine that ships with Atlas ready…", "gray");
+            AP_Atlas.Core.Async.Fire(AP_Atlas.Core.EngineSetup.AtlasEngine.PrepareShippedAsync(engine, line => AP_Atlas.Core.Logger.LogInfo("[Atlas Engine] " + line), System.Threading.CancellationToken.None),
+                "getting the shipped engine ready");
+            return;
+        }
         string problem = AP_Atlas.Core.EngineSetup.AtlasEngine.ProblemWith(engine);
         if (problem == null)
         {

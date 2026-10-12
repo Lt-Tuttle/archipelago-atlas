@@ -24,6 +24,7 @@ public partial class MainTrackerWindow
         Settings = _appSettings,
         // The release Atlas picks, after looking inside the newest few (asked once per game, on the test's window).
         InstallApworldAsync = game => _gamesPage != null ? _gamesPage.InstallBestAsync(game, SoloQuestionParent(), look: true) : Task.FromResult<(bool, string?)>((false, null)),
+        EnsureWorldAsync = EnsureGameWorldAsync,
         ChoosePackAsync = _ => Task.FromResult<PackChoice?>(null), // the dialog takes this over
         // Without asking (Start covered the downloads): the newest release that fits the game's names.
         InstallPackAsync = (game, repo, say) => _packManagerPanel.InstallFittingReleaseAsync(game, repo, say),
@@ -51,6 +52,23 @@ public partial class MainTrackerWindow
     /// shows, so they stay above it and a click on it brings them forward instead of burying them (a question on the main
     /// window sat behind the test's window and held the rest of Atlas); else on the main window.
     /// </summary>
+    /// <summary>
+    /// A game's world that ships with Archipelago, unpacked: from the kept zip, else downloaded once after the engine-setup
+    /// permission (asked on the test's own window when it shows). Whether it's there.
+    /// </summary>
+    private async Task<bool> EnsureGameWorldAsync(string game)
+    {
+        var install = AP_Atlas.Core.EngineSetup.AtlasEngine.Current;
+        if (!AP_Atlas.Core.EngineSetup.AtlasEngine.WorldsZipPresent && !AP_Atlas.Core.EngineSetup.AtlasEngine.MayDownloadWorlds)
+        {
+            var answer = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            AP_Atlas.UI.PermissionDialog.Ask(SoloQuestionParent(), _appSettings, AP_Atlas.Core.Permissions.EngineSetup, null, null, allowed => answer.TrySetResult(allowed));
+            if (!await answer.Task) return false;
+        }
+        return await AP_Atlas.Core.EngineSetup.AtlasEngine.EnsureWorldsAsync(install, new[] { game }, AP_Atlas.Core.EngineSetup.AtlasEngine.MayDownloadWorlds,
+            line => AP_Atlas.Core.Logger.LogInfo("[Atlas Engine] " + line), System.Threading.CancellationToken.None);
+    }
+
     private Node SoloQuestionParent() =>
         GetChildren().OfType<AP_Atlas.UI.SoloTestDialog>().FirstOrDefault(d => d.Visible && !d.IsQueuedForDeletion()) ?? (Node)this;
 

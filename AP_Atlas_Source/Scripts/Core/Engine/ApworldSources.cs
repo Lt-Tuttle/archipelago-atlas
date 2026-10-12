@@ -394,7 +394,8 @@ namespace AP_Atlas.Core.EngineSetup
                         return docs;
                     }
                 }
-                return docs;
+                // A game that ships with Archipelago whose world isn't unpacked yet: its documents from the kept zip.
+                return install.Mode == EngineMode.Portable ? AtlasEngine.DocumentsInZip(game) : docs;
             }
             try
             {

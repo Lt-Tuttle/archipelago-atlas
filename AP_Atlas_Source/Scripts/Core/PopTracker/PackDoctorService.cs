@@ -292,12 +292,18 @@ namespace AP_Atlas.Core.PopTracker
             bool have = GameNames.Local(game) != null;
             if (have && !force) return;
             if (!force && !_localFetchAttempted.Add(game)) return;
-            var engine = new LogicEngineManager(AP_Atlas.Core.EngineSetup.AtlasEngine.Resolve(_settings), msg => Logger.LogInfo("[Pack Doctor] " + msg));
+            var install = AP_Atlas.Core.EngineSetup.AtlasEngine.Resolve(_settings);
+            // A game that ships with Archipelago has its world unpacked from the kept zip first (nothing downloaded here).
+            string official = AP_Atlas.Core.EngineSetup.AtlasEngine.Worlds.Games.FirstOrDefault(g => PopTrackerPackLoader.IsGameNameMatch(game, g));
+            if (official != null && AP_Atlas.Core.EngineSetup.AtlasEngine.WorldsZipPresent && AP_Atlas.Core.EngineSetup.AtlasEngine.WorldsToUnpack(install, official).Count > 0)
+                await AP_Atlas.Core.EngineSetup.AtlasEngine.EnsureWorldsAsync(install, new[] { official }, false, msg => Logger.LogInfo("[Pack Doctor] " + msg), System.Threading.CancellationToken.None);
+            var engine = new LogicEngineManager(install, msg => Logger.LogInfo("[Pack Doctor] " + msg));
             // Ask for the pack's name as given; the reply also lists every installed game, so a near-miss
             // ("Dark Souls 2" vs "Dark Souls II") can be resolved and fetched in a second pass.
             var result = await engine.FetchLocalNamesAsync(new[] { game });
             if (result == null) return;
-            GameNames.SetKnownGames(result.Value.KnownGames);
+            // Archipelago's own games count as known though their worlds aren't unpacked (a pack's game name resolves to them).
+            GameNames.SetKnownGames(result.Value.KnownGames.Concat(AP_Atlas.Core.EngineSetup.AtlasEngine.Worlds.Games).Distinct(StringComparer.OrdinalIgnoreCase).ToList());
             foreach (var table in result.Value.Tables.Values) GameNames.Store(table);
             if (result.Value.Tables.Count == 0)
             {

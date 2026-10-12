@@ -18,9 +18,9 @@ The Archipelago Atlas exists thanks to the projects and people below. Each entry
 
 Atlas's icon is AI-generated, drawn in the style of [Archipelago](https://archipelago.gg)'s logo (Archipelago is MIT-licensed).
 
-## Downloaded by the Atlas Engine
+## The Atlas Engine
 
-When you set up the Atlas Engine, Atlas downloads these from their official sources, each checked against a fixed SHA-256. They aren't included in Atlas itself.
+The Atlas Engine ships with Atlas, in its `engine` folder: these come from their official sources, each checked against a fixed SHA-256 when Atlas is built (and their licenses ship beside them; see THIRD_PARTY_NOTICES.md). A game's world comes from Archipelago's release, downloaded once when a slot first needs one; run from source, Atlas downloads the whole engine instead.
 
 | Component | Made by | Official releases | License |
 |---|---|---|---|

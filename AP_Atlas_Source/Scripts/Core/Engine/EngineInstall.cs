@@ -50,6 +50,8 @@ namespace AP_Atlas.Core.EngineSetup
         {
             get
             {
+                // Atlas's own engine: Archipelago's user folder, in Atlas's data folder (the core is only read).
+                if (Mode == EngineMode.Portable) return AtlasEngine.UserWorldsDir;
                 if (string.IsNullOrEmpty(Root) || !Directory.Exists(Root)) return null;
                 string custom = Path.Combine(Root, "custom_worlds");
                 if (Mode == EngineMode.Portable || Directory.Exists(custom)) return custom;
@@ -63,12 +65,19 @@ namespace AP_Atlas.Core.EngineSetup
         /// <summary>Every folder Archipelago loads worlds from.</summary>
         public IEnumerable<string> WorldFolders()
         {
+            if (Mode == EngineMode.Portable)
+            {
+                // The user worlds folder (apworlds, worlds unpacked on demand), then the core's own.
+                foreach (var dir in new[] { AtlasEngine.UserWorldsDir, Path.Combine(Root, "worlds") })
+                    if (Directory.Exists(dir)) yield return dir;
+                yield break;
+            }
             if (string.IsNullOrEmpty(Root)) yield break;
             foreach (var dir in new[] { Path.Combine(Root, "custom_worlds"), Path.Combine(Root, "lib", "worlds"), Path.Combine(Root, "worlds") })
                 if (Directory.Exists(dir)) yield return dir;
         }
 
-        public string PlayersDir => string.IsNullOrEmpty(Root) ? null : Path.Combine(Root, "Players");
+        public string PlayersDir => Mode == EngineMode.Portable ? Path.Combine(AtlasEngine.UserArchipelagoDir, "Players") : string.IsNullOrEmpty(Root) ? null : Path.Combine(Root, "Players");
 
         /// <summary>The Universal Tracker apworld, found by its contents (any file name, any worlds folder). Null if none.</summary>
         public string FindTracker()

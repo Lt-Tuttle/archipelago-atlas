@@ -171,6 +171,30 @@ namespace AP_Atlas.Core
             Notify();
             try
             {
+                // A game that ships with Archipelago has its world unpacked from Archipelago's release the first time a
+                // slot needs it (the release downloaded once, with the engine-setup permission).
+                if (SeedApworldFile() == null && AtlasEngine.WorldsToUnpack(Engine.Install, _model.Game).Count > 0)
+                {
+                    bool mayDownload = Permissions.IsAllowed(_settings, Permissions.EngineSetup);
+                    if (!AtlasEngine.WorldsZipPresent && !mayDownload)
+                    {
+                        Problem = new EngineStartError { Code = "world_download", Message = $"{_model.Game}'s world comes with Archipelago {AtlasEngine.ArchipelagoVersion}: Atlas unpacks it from Archipelago's release, downloaded once ({AtlasEngine.WorldsZipSize} from GitHub)." };
+                        Status = ProblemStatus(Problem);
+                        Loaded = true;
+                        return;
+                    }
+                    Status = $"Unpacking {_model.Game}'s world…";
+                    Notify();
+                    bool unpacked = await AtlasEngine.EnsureWorldsAsync(Engine.Install, new[] { _model.Game }, mayDownload, line => _log(line), CancellationToken.None);
+                    if (_disposed || run != _run) return;
+                    if (!unpacked)
+                    {
+                        Problem = new EngineStartError { Code = "world_missing", Message = $"{_model.Game}'s world couldn't be unpacked (the log says why)." };
+                        Status = ProblemStatus(Problem);
+                        Loaded = true;
+                        return;
+                    }
+                }
                 _log($"InitializeLogicEngine: StartEngineAsync Game='{_model.Game}', Slot='{_model.SlotName}', engine={Engine.Install.Describe()}");
                 // No ConfigureAwait(false): the continuation must resume on Godot's main thread.
                 bool started = await Engine.StartEngineAsync(_model.Game, _model.SlotName, _model.PlayerSlot, _model.SlotData, Session.Locations.AllLocations,
@@ -310,6 +334,7 @@ namespace AP_Atlas.Core
         {
             "no_engine" => "Logic needs the Atlas Engine",
             "world_missing" => "The game isn't installed in the engine",
+            "world_download" => "The game's world isn't downloaded yet",
             "yaml_needed" => "Logic needs the player's YAML",
             "generation_failed" => "The world couldn't be rebuilt",
             "ut_disabled" => "Logic is disabled by the game",
@@ -570,6 +595,10 @@ namespace AP_Atlas.Core
         private bool Concerns(AtlasEngine.EngineChange change)
         {
             if (!string.Equals(FullRoot(change.Root), FullRoot(Engine.Install.Root), StringComparison.OrdinalIgnoreCase)) return false;
+            // A game world unpacked restarts nothing: a slot of that game couldn't run without it, and the one that asked
+            // for it starts after it's there (on a new engine process: the pools retire theirs).
+            if (change.Kind == "world") return false;
+            // An apworld: only that game's slots load something new.
             return change.Kind != "apworld" || change.Game == null || string.Equals(change.Game, _model.Game, StringComparison.OrdinalIgnoreCase);
         }
 
@@ -583,7 +612,7 @@ namespace AP_Atlas.Core
         private void OnEngineSetupChanged() => AP_Atlas.UI.Ui.Defer(null, () =>
         {
             if (_disposed || Running || Booting || Problem == null) return;
-            if (Problem.Code is "no_engine" or "world_missing" or "no_response" or "crashed" or "error" or "paused") Start();
+            if (Problem.Code is "no_engine" or "world_missing" or "world_download" or "no_response" or "crashed" or "error" or "paused") Start();
         }, $"restarting {_model.SlotName}'s logic after an engine change");
 
         private void Notify(SlotChange change = SlotChange.Logic) => _model.Report(change);

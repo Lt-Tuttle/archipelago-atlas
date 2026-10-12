@@ -106,6 +106,17 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             RunSelfTest();
             return;
         }
+        // The release build's engine steps (headless): build the core that ships, or check a shipped one.
+        if (EngineBuildRequested)
+        {
+            RunEngineBuild();
+            return;
+        }
+        if (ShippedEngineCheckRequested)
+        {
+            RunShippedEngineCheck();
+            return;
+        }
         // The update supervisor (the Atlas an update replaced, started headless): no window, no claim on the data folder.
         if (SupervisorRequested)
         {
@@ -182,7 +193,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         AP_Atlas.Core.PopTracker.PopTrackerPackLoader.PreferredFile = game => _appSettings.PreferredPacks.TryGetValue(game, out var preferred) ? preferred : null;
         SetUpUpdates();
         SetUpCrashReports();
-        AP_Atlas.Core.EngineSetup.AtlasEngine.Initialize(_appSettings);
+        // The engine that ships with a release sits beside its program (none when run from source).
+        AP_Atlas.Core.EngineSetup.AtlasEngine.Initialize(_appSettings, System.IO.Path.GetDirectoryName(OS.GetExecutablePath()));
         // Before any slot exists: a changed engine part retires the pools' processes first, then the slots restart.
         EnginePools.Initialize();
         AP_Atlas.Core.EngineSetup.AtlasEngine.PartsChanged += OnEnginePartsChanged;

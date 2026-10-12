@@ -204,6 +204,8 @@ public partial class MainTrackerWindow
             SoloBatchAsync);
         await ScenarioAsync("Release facts: \"Which version works with my map pack?\" asks once for the game (the downloads' size and the project it trusts), downloads its newest releases into the game's folder (nothing is installed), reads what each one's guide and manifest say and loads each in a throwaway engine process to measure the installed map pack against its checks; the versions table says what works here and greys what doesn't with the reason (another Archipelago; the pack not fitting while another release fits); Atlas's pick is the newest release the pack fits, a pre-release too; the installed version's card shows its facts with ✓, ✗ and – and offers Switch to the pick; asked again, nothing is asked or downloaded twice",
             ReleaseFactsAsync);
+        await ScenarioAsync("Game worlds on demand: a game that ships with Archipelago is listed on the Games page; its slot's logic waits for its world and says so, nothing downloaded; \"Get the game's world…\" asks the engine's permission, then Archipelago's release is downloaded once (checked against its hash) and only that game's world and the world it imports are unpacked into the engine's user folder, recorded with Archipelago's version, and the slot's logic starts; an installed apworld for a game takes precedence; after an update to another Archipelago the unpacked worlds are removed",
+            GameWorldsOnDemandAsync);
         await ScenarioAsync("BK: with logic running, checks left and none of them in logic, the Logic Tracker and Key Items say so with the count done, and the slot card says BK; an item that opens a check ends it",
             BkAsync);
         await ScenarioAsync("Shared engines: a multiworld's slots share its engines; when one slot's request brings an engine down, a slot sharing it (even one still starting) starts again in 2 s, and only the slot whose request it was counts the failure",
@@ -1034,7 +1036,7 @@ public partial class MainTrackerWindow
         string reports = AP_Atlas.Core.EngineSetup.SoloTestRunner.ReportsFolder;
         AP_Atlas.UI.SoloTestDialog? Dialog() => GetChildren().OfType<AP_Atlas.UI.SoloTestDialog>().FirstOrDefault(d => !d.IsQueuedForDeletion());
         // An apworld file with a bundled setup guide, as a real one ships it (the fake engine doesn't read the folder).
-        string worlds = System.IO.Path.Combine(AtlasEngine.ArchipelagoDir, "custom_worlds");
+        string worlds = AtlasEngine.UserWorldsDir;
         System.IO.Directory.CreateDirectory(worlds);
         string apworld = System.IO.Path.Combine(worlds, "test_game.apworld");
         static void WriteApworld(string path)
@@ -1194,7 +1196,7 @@ public partial class MainTrackerWindow
         AtlasEngine.State.LastCheck = new EngineCheckResult { Games = new List<string> { "Test Game" }, TrackerLoads = true };
         var host = (AP_Atlas.UI.IPropertiesHost)this;
         var page = _gamesPage ?? throw new InvalidOperationException("The Games page wasn't built.");
-        string worlds = System.IO.Path.Combine(AtlasEngine.ArchipelagoDir, "custom_worlds");
+        string worlds = AtlasEngine.UserWorldsDir;
         System.IO.Directory.CreateDirectory(worlds);
         string installedFile = System.IO.Path.Combine(worlds, "test_game.apworld");
         string packZip = System.IO.Path.Combine(AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory(), "uitest_release_pack.zip");
@@ -1323,6 +1325,115 @@ public partial class MainTrackerWindow
             string kept = System.IO.Path.Combine(AP_Atlas.Core.Games.GameFiles.ApworldsFolder(data, "Test Game"), "127.0.0.1");
             if (System.IO.Directory.Exists(kept)) System.IO.Directory.Delete(kept, true);
             AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
+        }
+    }
+
+    private async Task GameWorldsOnDemandAsync()
+    {
+        var engine = StartFakeEngine(UiTestPython());
+        engine.Apply();
+        const string game = "On Demand Game", other = "Other Demand Game";
+        // A pretend Archipelago release: the game's world, a world it imports, another game's world and a core file, served
+        // by a fake site at the address the index names.
+        static byte[] Zip(params (string Name, string Text)[] files)
+        {
+            using var memory = new System.IO.MemoryStream();
+            using (var archive = new System.IO.Compression.ZipArchive(memory, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+                foreach (var (name, text) in files)
+                {
+                    using var writer = new System.IO.StreamWriter(archive.CreateEntry(name).Open());
+                    writer.Write(text);
+                }
+            return memory.ToArray();
+        }
+        byte[] release = Zip(("FakeArchipelago/Utils.py", "# core\n"), ("FakeArchipelago/worlds/on_demand/__init__.py", "# On Demand Game\n"),
+            ("FakeArchipelago/worlds/on_demand/docs/setup_en.md", "# Setup\n\nPlay it.\n"), ("FakeArchipelago/worlds/on_demand/docs/en_On Demand Game.md", "# On Demand Game\n"),
+            ("FakeArchipelago/worlds/shared_lib/__init__.py", "# shared\n"), ("FakeArchipelago/worlds/other_demand/__init__.py", "# other\n"));
+        string sha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(release)).ToLowerInvariant();
+        var index = WorldsIndex.Parse(new JObject
+        {
+            ["archipelago"] = AtlasEngine.ArchipelagoVersion,
+            ["zip_sha256"] = sha,
+            ["zip_root"] = "FakeArchipelago/",
+            ["core_worlds"] = new JArray("generic"),
+            ["worlds"] = new JObject
+            {
+                ["on_demand"] = new JObject { ["games"] = new JArray(game), ["needs"] = new JArray("shared_lib"), ["requirements"] = false, ["bytes"] = 10 },
+                ["shared_lib"] = new JObject { ["games"] = new JArray("Shared Lib Game"), ["needs"] = new JArray(), ["requirements"] = false, ["bytes"] = 5 },
+                ["other_demand"] = new JObject { ["games"] = new JArray(other), ["needs"] = new JArray(), ["requirements"] = false, ["bytes"] = 5 }
+            }
+        }.ToString());
+        await using var site = new AP_Atlas.Core.Testing.FakeWebSite();
+        site.Answer = (path, _) => path == "/dl/archipelago.zip" ? new AP_Atlas.Core.Testing.FakeWebSite.FullAnswer(200, release, "application/zip") : new AP_Atlas.Core.Testing.FakeWebSite.FullAnswer(404, Array.Empty<byte>());
+        AtlasEngine.TestWorlds = (index, site.Site + "/dl/archipelago.zip", sha);
+        await using var server = LogicWorldServer();
+        server.Games[game] = server.Games["Test Game"];
+        server.SlotGame = game;
+        server.Slots.Add("Unpacker");
+        var parts = new List<AtlasEngine.EngineChange>();
+        void OnParts(IReadOnlyList<AtlasEngine.EngineChange> changes) { lock (parts) parts.AddRange(changes); }
+        AtlasEngine.PartsChanged += OnParts;
+        var profile = new MultiworldProfile { Name = "UI test worlds", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Unpacker");
+        _profiles.Add(profile);
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        var install = AtlasEngine.Current;
+        string worlds = AtlasEngine.UserWorldsDir;
+        string otherApworld = System.IO.Path.Combine(worlds, "other_demand.apworld");
+        AP_Atlas.Core.Permissions.ResetSessionForTests();
+        AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.EngineSetup, null, false);
+        try
+        {
+            // The game's world and the one it imports are to be unpacked; nothing is downloaded before a slot needs it.
+            UiTestExpect(AtlasEngine.WorldsToUnpack(install, game).SequenceEqual(new[] { "on_demand", "shared_lib" }) && !AtlasEngine.WorldsZipPresent,
+                $"the game would unpack {string.Join(", ", AtlasEngine.WorldsToUnpack(install, game))}");
+            // The Games page lists Archipelago's own games, each saying its world is unpacked when a slot needs it.
+            host.ShowTool(AP_Atlas.UI.Tool.Games);
+            _gamesPage!.Refresh();
+            UiTestExpect(_gamesPage.Games.Any(g => g.Game == game && g.Section == AP_Atlas.UI.GamesPage.Section.Official && g.InEngine), "the Games page doesn't list a game that ships with Archipelago");
+            // The slot's logic can't start without the release: its banner says so and offers to get it; nothing went online.
+            await OnConnectSlotPressedAsync("Unpacker", profile);
+            var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Unpacker"), "the slot's view");
+            host.ShowTool(AP_Atlas.UI.Tool.LogicTracker);
+            await UiTestWaitForAsync(() => slot.EngineProblem?.Code == "world_download" && slot.LogicNoticeButtons().Contains("Get the game's world…") ? slot : null, "the banner offering the game's world");
+            UiTestExpect(site.Requests.Count == 0, "Archipelago's release was downloaded before anyone allowed it");
+            // The button asks the engine's permission; Allow once downloads the release once, unpacks the two worlds, and logic starts.
+            slot.PressLogicNotice("Get the game's world…");
+            var question = await UiTestWaitForAsync(() => slot.GetChildren().OfType<ConfirmationDialog>().FirstOrDefault(d => d.Title == AP_Atlas.Core.Permissions.EngineSetup.Title && !d.IsQueuedForDeletion()), "the engine's permission question");
+            question.EmitSignal(AcceptDialog.SignalName.Confirmed);
+            await UiTestWaitForAsync(() => slot.Model.Logic.Running || slot.EngineProblem is { Code: not "world_download" } ? slot : null, "the slot's logic to start once its world was unpacked", 30);
+            UiTestExpect(slot.Model.Logic.Running, $"the slot's logic didn't start: {slot.EngineProblem?.Code} {slot.EngineProblem?.Message}");
+            UiTestExpect(site.Requests.Count(r => r == "/dl/archipelago.zip") == 1 && System.IO.File.Exists(System.IO.Path.Combine(worlds, "on_demand", "__init__.py"))
+                && System.IO.Directory.Exists(System.IO.Path.Combine(worlds, "shared_lib")) && !System.IO.Directory.Exists(System.IO.Path.Combine(worlds, "other_demand")) && !System.IO.File.Exists(System.IO.Path.Combine(worlds, "Utils.py")),
+                "the release wasn't downloaded once with only the game's worlds unpacked");
+            UiTestExpect(AtlasEngine.WorldsZipPresent && AtlasEngine.WorldsToUnpack(install, game).Count == 0, "the release isn't kept, or the game still wants unpacking");
+            lock (parts) UiTestExpect(parts.Any(p => p.Kind == "world" && p.Game == game), "the engines weren't told a game's world arrived");
+            var record = AP_Atlas.Core.SafeFile.ReadJson(System.IO.Path.Combine(worlds, ".atlas_worlds.json"), () => new UnpackedWorlds());
+            UiTestExpect(record?.Archipelago == AtlasEngine.ArchipelagoVersion && record.Folders.OrderBy(f => f).SequenceEqual(new[] { "on_demand", "shared_lib" }), "the unpacked worlds weren't recorded with Archipelago's version");
+            UiTestExpect(ApworldSources.BundledDocuments(install, game).Any(d => d.Setup), "the unpacked world's setup guide isn't found");
+            // An apworld installed for a game takes precedence: its world isn't unpacked. Its guide comes from the kept release meanwhile.
+            UiTestExpect(AtlasEngine.WorldsToUnpack(install, other).SequenceEqual(new[] { "other_demand" }), "another game's world isn't wanted");
+            await System.IO.File.WriteAllBytesAsync(otherApworld, Zip(("other_demand/archipelago.json", "{\"game\": \"" + other + "\"}")));
+            UiTestExpect(AtlasEngine.WorldsToUnpack(install, other).Count == 0, "an installed apworld didn't take precedence over the game's world");
+            // After an update to another Archipelago, what was unpacked from the older one is removed on the next start.
+            AP_Atlas.Core.SafeFile.WriteJson(System.IO.Path.Combine(worlds, ".atlas_worlds.json"), new UnpackedWorlds { Archipelago = "0.0.1", Folders = { "on_demand", "shared_lib" } });
+            AtlasEngine.Initialize(_appSettings, System.IO.Path.GetDirectoryName(OS.GetExecutablePath()));
+            UiTestExpect(!System.IO.Directory.Exists(System.IO.Path.Combine(worlds, "on_demand")) && !System.IO.Directory.Exists(System.IO.Path.Combine(worlds, "shared_lib")) && System.IO.File.Exists(otherApworld),
+                "the worlds of another Archipelago weren't removed (or an installed apworld was)");
+        }
+        finally
+        {
+            AtlasEngine.PartsChanged -= OnParts;
+            AtlasEngine.TestWorlds = null;
+            AP_Atlas.Core.Permissions.ResetSessionForTests();
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+            if (_profiles.Contains(profile)) DeleteProfile(profile);
+            foreach (string folder in new[] { "on_demand", "shared_lib", "other_demand" })
+                if (System.IO.Directory.Exists(System.IO.Path.Combine(worlds, folder))) System.IO.Directory.Delete(System.IO.Path.Combine(worlds, folder), true);
+            AP_Atlas.Core.SafeFile.Delete(otherApworld);
+            AP_Atlas.Core.SafeFile.Delete(System.IO.Path.Combine(worlds, ".atlas_worlds.json"));
+            AP_Atlas.Core.SafeFile.Delete(AtlasEngine.WorldsZipPath);
         }
     }
 
@@ -3814,7 +3925,7 @@ public partial class MainTrackerWindow
         string packs = AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory();
         string zip = System.IO.Path.Combine(packs, "uitest_late_pack.zip"), second = System.IO.Path.Combine(packs, "uitest_late_pack_2.zip");
         string fromGitHub = System.IO.Path.Combine(packs, "uitest_github_pack.zip"), packSource = System.IO.Path.Combine(DataManager.GetDataDirectory(), "uitest_github_pack_source.zip");
-        string guideApworld = System.IO.Path.Combine(AtlasEngine.ArchipelagoDir, "custom_worlds", "test_game_guide.apworld"); // its setup guide names a tracker
+        string guideApworld = System.IO.Path.Combine(AtlasEngine.UserWorldsDir, "test_game_guide.apworld"); // its setup guide names a tracker
         string folderDocs = System.IO.Path.Combine(AtlasEngine.ArchipelagoDir, "worlds", "uitest_folder_world", "docs"); // a world shipped as a folder
         await using var github = new AP_Atlas.Core.Testing.FakeWebSite();
         await using var server = new FakeArchipelagoServer();
@@ -3894,7 +4005,7 @@ public partial class MainTrackerWindow
             UiTestExpect(AP_Atlas.Core.MapPackManagerControl.GuideRecommendations("Test Game").Select(r => r.Repo).SequenceEqual(new[] { "folder/test-game-tracker" }),
                 $"a shipped world's guide isn't read from its folder: {string.Join(", ", AP_Atlas.Core.MapPackManagerControl.GuideRecommendations("Test Game").Select(r => r.Repo))}");
             System.IO.Directory.Delete(System.IO.Path.GetDirectoryName(folderDocs)!, true);
-            System.IO.Directory.CreateDirectory(System.IO.Path.Combine(AtlasEngine.ArchipelagoDir, "custom_worlds"));
+            System.IO.Directory.CreateDirectory(AtlasEngine.UserWorldsDir);
             static void WriteGuideApworld(string path)
             {
                 using var stream = System.IO.File.Create(path);

@@ -1,6 +1,6 @@
 # Third-party notices
 
-The Archipelago Atlas's own code is MIT-licensed (see LICENSE). It includes the components below, each under its own license, reproduced in full. CREDITS.md credits everything else Atlas uses or was inspired by.
+The Archipelago Atlas's own code is MIT-licensed (see LICENSE). It includes the components below, each under its own license, reproduced in full; the Atlas Engine's Python and packages carry their license texts beside them in the `engine` folder, as listed under "The Atlas Engine". CREDITS.md credits everything else Atlas uses or was inspired by.
 
 ## Godot Engine
 
@@ -219,7 +219,7 @@ SOFTWARE.
 ## Archipelago
 
 https://github.com/ArchipelagoMW/Archipelago  
-License: MIT. Atlas's icon is drawn in the style of Archipelago's logo. Atlas's engine also downloads Archipelago itself at setup (not included in Atlas). The Archipelago Atlas is a community tool, not affiliated with or endorsed by the Archipelago project.
+License: MIT. Atlas's icon is drawn in the style of Archipelago's logo. The Atlas Engine that ships with Atlas includes Archipelago 0.6.7's core (`engine/archipelago`, this license in its `LICENSE` file) and Universal Tracker v0.3.4 (`engine/archipelago/worlds/tracker.apworld`, from FarisTheAncient's fork of Archipelago, https://github.com/FarisTheAncient/Archipelago, under this same license); a game's world comes from Archipelago's release when a slot first needs it. The Archipelago Atlas is a community tool, not affiliated with or endorsed by the Archipelago project.
 
 ```
 MIT License
@@ -252,6 +252,42 @@ subdirectories containing their own LICENSE file are exempt from the above licen
 and are subject to the license contained within the LICENSE file in their containing
 directory.
 ```
+
+## The Atlas Engine: Python and its packages
+
+The engine that ships with Atlas (`engine/python`) includes these, unmodified, from their official sources, each file checked against a fixed SHA-256 when Atlas is built. Each one's full license text (and any NOTICE) ships with it.
+
+**Python 3.12.10** (Windows embeddable package), https://www.python.org, under the Python Software Foundation License Agreement. Its full text, with the licenses and notices of the components Python bundles (OpenSSL, libffi, SQLite, zlib, Expat, mpdecimal, bzip2, XZ and others), is `engine/python/LICENSE.txt`.
+
+Archipelago's Python packages and pip, from PyPI (https://pypi.org). Each one's license text is in `engine/python/Lib/site-packages/<package>-<version>.dist-info/` (its `LICENSE`, `licenses/` or `COPYING` files):
+
+| Package | License | Project |
+|---|---|---|
+| bsdiff4 1.2.6 | BSD | https://github.com/ilanschnell/bsdiff4 |
+| certifi 2026.2.25 | MPL 2.0 | https://github.com/certifi/python-certifi |
+| charset-normalizer 3.5.2 | MIT | https://github.com/jawah/charset_normalizer |
+| colorama 0.4.6 | BSD | https://github.com/tartley/colorama |
+| cymem 2.0.13 | MIT | https://github.com/explosion/cymem |
+| idna 3.20 | BSD 3-Clause | https://github.com/kjd/idna |
+| jellyfish 1.2.1 | MIT | https://github.com/jamesturk/jellyfish |
+| Jinja2 3.1.6 | BSD 3-Clause | https://github.com/pallets/jinja |
+| MarkupSafe 3.0.4 | BSD 3-Clause | https://github.com/pallets/markupsafe |
+| orjson 3.11.7 | MPL 2.0 and (Apache 2.0 or MIT) | https://github.com/ijl/orjson |
+| pathspec 1.0.4 | MPL 2.0 | https://github.com/cpburnz/python-pathspec |
+| pip 26.2.1 | MIT | https://github.com/pypa/pip |
+| platformdirs 4.9.4 | MIT | https://github.com/tox-dev/platformdirs |
+| Pymem 1.14.0 | MIT | https://github.com/srounet/Pymem |
+| PyYAML 6.0.3 | MIT | https://github.com/yaml/pyyaml |
+| requests 2.34.2 | Apache 2.0 (its NOTICE ships too) | https://github.com/psf/requests |
+| schema 0.7.8 | MIT | https://github.com/keleshev/schema |
+| setuptools 80.10.2 | MIT (with the licences of the packages it vendors) | https://github.com/pypa/setuptools |
+| typing_extensions 4.15.0 | PSF 2.0 | https://github.com/python/typing_extensions |
+| urllib3 2.8.0 | MIT | https://github.com/urllib3/urllib3 |
+| websockets 13.1 | BSD 3-Clause | https://github.com/python-websockets/websockets |
+
+certifi, pathspec and part of orjson are under the Mozilla Public License 2.0 (https://mozilla.org/MPL/2.0/). Atlas ships them unmodified; their source code is available from their projects above and from PyPI.
+
+The packages a game's world declares for itself (Secret of Evermore's pyevermizer, for one) aren't part of Atlas: the engine downloads them from PyPI, under each package's own license, when a slot first needs that world.
 
 ## Cormorant SC font (the wordmark)
 

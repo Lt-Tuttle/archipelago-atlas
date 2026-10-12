@@ -15,8 +15,13 @@
     and the guard rails check. This script only refuses to build when they disagree, or when -Version (the tag, in CI)
     isn't that version. Godot is run from a clean staging folder (Builds/staging), never over an earlier build.
 
+    After the tests, the Atlas Engine's core is built by the exported Atlas itself into the program folder's engine\
+    (Tools/build_engine.ps1: Atlas's own setup, every file checked against its pinned hashes, cached in Builds\engine-data)
+    and checked on a fresh data folder.
+
     Exit code: 0 built and verified; 2 a precondition failed (versions, Godot, templates); 3 the export failed or warned;
-    4 the exported build isn't what a release needs; 5 the exported build failed its tests.
+    4 the exported build isn't what a release needs; 5 the exported build failed its tests; 6 the engine couldn't be built
+    or failed its check.
 
 .PARAMETER Version
     The version expected (CI passes the tag's). Must equal <Version> in Directory.Build.props.
@@ -284,6 +289,12 @@ else {
         & icacls $roInstall /remove:d $roUser | Out-Null
     }
 }
+
+# 5d. The Atlas Engine that ships with Atlas, built by the exported Atlas itself and checked on a fresh data folder. After
+# the tests: they run without an engine beside the program.
+Write-Host 'Building the Atlas Engine that ships with Atlas...'
+& (Join-Path $PSScriptRoot 'build_engine.ps1') -Atlas $exe -Out (Join-Path $staging 'engine') -ScratchRoot $ScratchRoot
+if ($LASTEXITCODE -ne 0) { Stop-Build 6 "The engine couldn't be built, or failed its check (build_engine.ps1 exit code $LASTEXITCODE)." }
 
 # 6. The documents, then the zip and its checksum.
 foreach ($doc in 'README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'GODOT_COPYRIGHT.txt', 'CREDITS.md', 'CHANGELOG.md') {

@@ -35,8 +35,8 @@ public partial class MainTrackerWindow
         },
     });
 
-    /// <summary>Whether the setup window opens by itself on this start: a start without the engine, unless the user turned that off.</summary>
-    private bool ShouldOpenSetupAtStartup => _appSettings.SetupWizardAuto && !AP_Atlas.Core.EngineSetup.AtlasEngine.Current.CanLaunch;
+    /// <summary>Whether the setup window opens by itself on this start: the first start, or a start without the engine, unless the user turned that off.</summary>
+    private bool ShouldOpenSetupAtStartup => _appSettings.SetupWizardAuto && (_appSettings.Fresh || !AP_Atlas.Core.EngineSetup.AtlasEngine.Current.CanLaunch);
 
     /// <summary>Help → Set up Atlas…, Home's Resume and the first start: the setup window, at the first step left (resume) or from its Welcome page.</summary>
     internal AP_Atlas.UI.SetupWizard OpenSetupWizard(bool resume) => AP_Atlas.UI.SetupWizard.Open(this, SetupHooks(), resume);

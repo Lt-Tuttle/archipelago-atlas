@@ -28,6 +28,8 @@
     <EmbeddedResource Include="Scripts/Core/Engine/Data/apworld_sources.json" LogicalName="AtlasEngine.apworld_sources.json" />
     <!-- Archipelago's Python packages, exact versions and file hashes (Tools/build_engine_lock.py). -->
     <EmbeddedResource Include="Scripts/Core/Engine/Data/engine_packages.lock.txt" LogicalName="AtlasEngine.engine_packages.lock" />
+    <!-- Archipelago's game worlds the engine unpacks on demand, by game (Tools/make_worlds_index.py). -->
+    <EmbeddedResource Include="Scripts/Core/Engine/Data/archipelago_worlds.json" LogicalName="AtlasEngine.archipelago_worlds.json" />
   </ItemGroup>
 </Project>
 

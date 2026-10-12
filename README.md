@@ -15,7 +15,7 @@ A desktop companion for [Archipelago](https://archipelago.gg) multiworld randomi
 
 - **Several slots and multiworlds at once.** Each slot gets its own text client, and every tool follows the slot you pick. Reconnects are careful: capped, backed off, and they stop when the server says no.
 - **Map Tracker.** Your checks on the game's map, from PopTracker packs, coloured by what's in logic right now. The Pack Doctor checks packs, fixes what it can (with undo) and writes a report for the pack's author.
-- **Logic Tracker and Key Items.** Archipelago's own logic, run by the Atlas Engine: a portable copy of Archipelago and Universal Tracker that Atlas sets up in its own folder from hash-checked downloads, matching each seed's apworld version. No Python install, no PATH changes.
+- **Logic Tracker and Key Items.** Archipelago's own logic, run by the Atlas Engine: a portable copy of Python, Archipelago and Universal Tracker that ships with Atlas (each game's world unpacked from Archipelago's release when a slot first needs it), matching each seed's apworld version. No Python install, no PATH changes.
 - **Item History and Hints.** Everything you've received and found, and every hint for you or in your world, in tables that sort, hide columns, search and export (TSV, CSV, Markdown or Discord-sized messages).
 - **Properties.** Click any location, item, player, hint, map or pack to see everything about it, with history, notes and "why is this in logic".
 - **Cheese Tracker.** Your async's shared tracker, read and (with your say) updated from Atlas's logic: slot statuses, hints and the room overview.
