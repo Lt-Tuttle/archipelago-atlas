@@ -76,7 +76,11 @@ namespace AP_Atlas.Core
             "packages (from PyPI) too, about 55 MB. Everything goes into Atlas's own folder, each file checked against a fixed hash where one is " +
             "published. Nothing is installed, no setting on your PC changes, and nothing else on it is touched. The same permission covers updating those parts later.");
 
-        public static IReadOnlyList<Kind> All { get; } = new[] { FindArchipelago, WriteArchipelago, EngineSetup, GitHubLookups, RoomStatusReads, UpdateChecks, CrashReports };
+        public static readonly Kind ReleaseLook = new Kind("online.release-look", "Look inside games' releases",
+            "To find the release that works with your map pack, Atlas downloads a game's newest few releases into its folder and tries each. Nothing is installed.",
+            "Atlas downloads the newest four releases of a game's apworld from the game's projects on GitHub into the game's own folder (kept there, like every release Atlas downloads), reads what each one's setup guide and manifest say and, with the Atlas Engine set up, loads each in a throwaway engine process to measure your map pack against its checks. Loading a release runs its code, as installing it would, so the projects it comes from become ones you trust (listed under Settings \u2192 Privacy & permissions, where you can stop trusting them). Nothing is installed in the engine.");
+
+        public static IReadOnlyList<Kind> All { get; } = new[] { FindArchipelago, WriteArchipelago, EngineSetup, GitHubLookups, ReleaseLook, RoomStatusReads, UpdateChecks, CrashReports };
 
         /// <summary>Every place Atlas reaches online, in plain words: the privacy statement (Settings → Privacy &amp; permissions, About). A new site joins it.</summary>
         public const string WhereAtlasGoesOnline =

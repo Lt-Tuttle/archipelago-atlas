@@ -1248,7 +1248,7 @@ public partial class MainTrackerWindow
         AP_Atlas.Core.PopTracker.PopTrackerPackLoader.InspectZipPack(packZip);
         AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
         int Downloads() => github.Requests.Count(r => r.StartsWith("/dl/", StringComparison.Ordinal));
-        ConfirmationDialog? Question() => page.GetChildren().OfType<ConfirmationDialog>().FirstOrDefault(d => d.Title == "Look inside Test Game's releases?" && !d.IsQueuedForDeletion());
+        ConfirmationDialog? Question() => page.GetChildren().OfType<ConfirmationDialog>().FirstOrDefault(d => d.Title == AP_Atlas.Core.Permissions.ReleaseLook.Title && !d.IsQueuedForDeletion());
         try
         {
             AP_Atlas.Core.GitHubApi.TestSite = github.Site;
@@ -1264,22 +1264,19 @@ public partial class MainTrackerWindow
             // The installed version's card before the look: the pack isn't measured against it yet.
             UiTestExpect(page.CardFactsShown.Count == 4 && page.CardFactsShown[0].Good == null && page.CardFactsShown[0].Text.Contains("isn't measured against it yet"),
                 $"the card before the look says: {string.Join(" | ", page.CardFactsShown.Select(f => f.Text))}");
-            // The press asks once, naming how many releases, their size and the project the answer trusts.
+            // The press asks the look-inside permission once (for every game), naming this time's releases, their size and project.
             var worldsBefore = System.IO.Directory.GetFiles(worlds, "*.apworld").Select(System.IO.Path.GetFileName).OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList();
             page.LookInsideForTests("Test Game");
             var question = await UiTestWaitForAsync(Question, "the look-inside question");
             string asked = string.Join(" ", question.FindChildren("*", nameof(Label), true, false).OfType<Label>().Select(l => l.Text));
-            UiTestExpect(asked.Contains("the newest 4 release(s)") && asked.Contains("about 0.") && asked.Contains("github.com/owner/test-game") && asked.Contains("Nothing is installed"),
+            UiTestExpect(asked.Contains("4 release(s) of Test Game") && asked.Contains("about 0.") && asked.Contains("github.com/owner/test-game") && asked.Contains("Nothing is installed"),
                 $"the question doesn't say what it downloads and from where: {asked}");
-            var trust = question.FindChildren("*", nameof(Button), true, false).OfType<Button>().First(b => b.ToggleMode && b.Text.Contains("I trust github.com/owner/test-game"));
-            UiTestExpect(question.GetOkButton().Disabled, "the question can be answered without trusting the project");
-            trust.ButtonPressed = true;
             question.EmitSignal(AcceptDialog.SignalName.Confirmed);
             await UiTestWaitForAsync(() => page.StatusText.StartsWith("Looked inside 4 release(s)", StringComparison.Ordinal) ? page : null, "the look to end", 60);
             var loads = engine.ComponentRequests("AtlasChecksum");
             UiTestExpect(Downloads() == 4 && loads.Count == 4 && loads.All(l => l["names"]?.Value<bool>() == true),
                 $"the look didn't download and load each release once: {Downloads()} downloads, {loads.Count} loads");
-            UiTestExpect(_appSettings.ReleaseLookGames.Contains("Test Game") && AP_Atlas.Core.EngineSetup.ApworldSources.IsRepoApproved(_appSettings, "owner/test-game"), "the answer wasn't kept for the game, or the project not trusted");
+            UiTestExpect(AP_Atlas.Core.Permissions.IsAllowed(_appSettings, AP_Atlas.Core.Permissions.ReleaseLook) && AP_Atlas.Core.EngineSetup.ApworldSources.IsRepoApproved(_appSettings, "owner/test-game"), "the permission wasn't kept, or the project not trusted");
             var inEngine = System.IO.Directory.GetFiles(worlds, "*.apworld").Select(System.IO.Path.GetFileName).ToList();
             UiTestExpect(inEngine.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).SequenceEqual(worldsBefore) && Sha(await System.IO.File.ReadAllBytesAsync(installedFile)) == Sha(releases[3].Bytes),
                 $"something was installed: the engine's worlds hold {string.Join(", ", inEngine)}");
@@ -1318,7 +1315,7 @@ public partial class MainTrackerWindow
             AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.GitHubLookups, null, false);
             _appSettings.ExtraApworldRepos.Remove("Test Game");
             _appSettings.ApprovedApworldSources.Remove("github.com/owner/test-game");
-            _appSettings.ReleaseLookGames.Remove("Test Game");
+            AP_Atlas.Core.Permissions.ResetSessionForTests();
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
             AP_Atlas.Core.SafeFile.Delete(installedFile);
             AP_Atlas.Core.SafeFile.Delete(packZip);
