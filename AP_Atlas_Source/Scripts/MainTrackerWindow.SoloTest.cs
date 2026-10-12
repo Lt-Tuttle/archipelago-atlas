@@ -22,7 +22,8 @@ public partial class MainTrackerWindow
     private SoloTestHooks SoloHooks() => new SoloTestHooks
     {
         Settings = _appSettings,
-        InstallApworldAsync = game => _gamesPage != null ? _gamesPage.InstallNewestAsync(game, SoloQuestionParent()) : Task.FromResult(false),
+        // The release Atlas picks, after looking inside the newest few (asked once per game, on the test's window).
+        InstallApworldAsync = game => _gamesPage != null ? _gamesPage.InstallBestAsync(game, SoloQuestionParent(), look: true) : Task.FromResult<(bool, string?)>((false, null)),
         ChoosePackAsync = _ => Task.FromResult<PackChoice?>(null), // the dialog takes this over
         // Without asking (Start covered the downloads): the newest release that fits the game's names.
         InstallPackAsync = (game, repo, say) => _packManagerPanel.InstallFittingReleaseAsync(game, repo, say),

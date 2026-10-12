@@ -97,6 +97,8 @@ public class AppSettings
     public Dictionary<string, string> PackVariants { get; set; } = new Dictionary<string, string>();
     /// <summary>The pack a game's slots use when the packs folder holds more than one for it: game → the zip's file name (the solo test sets it for the pack it installed).</summary>
     public Dictionary<string, string> PreferredPacks { get; set; } = new Dictionary<string, string>();
+    /// <summary>The games whose newest releases Atlas may look inside (download into the game's folder, read and load in a throwaway engine process; nothing installed), asked once per game.</summary>
+    public List<string> ReleaseLookGames { get; set; } = new List<string>();
     /// <summary>Key Items' layout per slot (slot key → a pack root such as tracker_default, or atlas:vertical / atlas:horizontal); absent: the pack's default.</summary>
     public Dictionary<string, string> KeyItemsLayout { get; set; } = new Dictionary<string, string>();
     /// <summary>Slot key ("profileId|slotName") → the apworld version the user chose for that slot's seed (the version picker).</summary>
@@ -418,6 +420,7 @@ public static class DataManager
         settings.MapFollowChecks ??= new Dictionary<string, bool>();
         settings.PackVariants ??= new Dictionary<string, string>();
         settings.PreferredPacks ??= new Dictionary<string, string>();
+        settings.ReleaseLookGames ??= new List<string>();
         settings.KeyItemsLayout ??= new Dictionary<string, string>();
         settings.SlotApworlds ??= new Dictionary<string, SlotApworldChoice>();
         settings.UiZoom = System.Math.Clamp(settings.UiZoom, 50, 200);

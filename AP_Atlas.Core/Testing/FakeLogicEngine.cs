@@ -183,7 +183,7 @@ internal sealed class FakeLogicEngine
     public IReadOnlyList<JObject> Requests(string action) =>
         Journal().Select(entry => entry["request"] as JObject).OfType<JObject>().Where(request => (string?)request["action"] == action).ToList();
 
-    /// <summary>The requests one of the solo test's components received (AtlasYamlTemplate, AtlasGenerate, AtlasHost, AtlasSeedTest), oldest first.</summary>
+    /// <summary>The requests one of the one-shot components received (the solo test's AtlasYamlTemplate, AtlasGenerate, AtlasHost and AtlasSeedTest; AtlasChecksum), oldest first.</summary>
     public IReadOnlyList<JObject> ComponentRequests(string component) =>
         Journal().Where(entry => (string?)entry["component"] == component).Select(entry => entry["request"] as JObject).OfType<JObject>().ToList();
 

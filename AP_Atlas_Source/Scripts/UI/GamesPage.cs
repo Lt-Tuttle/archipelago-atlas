@@ -386,7 +386,7 @@ namespace AP_Atlas.UI
             {
                 if (entry.Section != Section.Official && (newest != null || anyProject))
                     apworldButtons.Add(Kit.Button(entry.InEngine ? _tr("Update…") : _tr("Install…"),
-                        _tr("Installs the newest full release from the game's projects in the Atlas Engine (you're asked to trust a project once; the file is checked against its published SHA-256)."),
+                        _tr("Installs the release Atlas picks in the Atlas Engine: the one your map pack fits, else the one whose own setup guide names a map tracker, else the newest full release (you're asked to trust a project once; the file is checked against its published SHA-256)."),
                         () => InstallNewest(game)));
                 if (entry.Section != Section.Official)
                     apworldButtons.Add(Kit.Button(_tr("Choose a file…"), _tr("Install an .apworld file you have."), () => InstallFile(game)));
@@ -400,7 +400,7 @@ namespace AP_Atlas.UI
                 : entry.InEngine ? _tr("In the engine") + (version != null ? " (" + version + ")" : "") + "." + (CheckSummary(install!, game) is { Length: > 0 } s ? " " + s : "")
                 : check == null ? _tr("Atlas hasn't checked the engine yet: the engine window's health check says which games it has.")
                 : _tr("Not in the engine yet."), apworldButtons);
-            if (entry.Section != Section.Official) steps.AddChild(VersionsSection(game, choices));
+            if (entry.Section != Section.Official) steps.AddChild(VersionsSection(game, choices, installed));
 
             // 2. A map pack. The game's own setup guide may name the tracker its author recommends: offered first.
             var packs = PacksFor(game);
@@ -637,7 +637,7 @@ namespace AP_Atlas.UI
         private static string? RepoOf(ApworldChoice choice) =>
             ApworldSources.ParseRepo(choice.Url ?? "") ?? (choice.Source.StartsWith("github.com/", StringComparison.OrdinalIgnoreCase) ? choice.Source.Substring("github.com/".Length) : null);
 
-        private Control VersionsSection(string game, List<ApworldChoice> choices)
+        private Control VersionsSection(string game, List<ApworldChoice> choices, List<(string File, string Sha256)> installed)
         {
             var box = new VBoxContainer();
             box.AddThemeConstantOverride("separation", 6);
@@ -660,6 +660,13 @@ namespace AP_Atlas.UI
             lineLabel.SetMeta("versions_line", true);
             box.AddChild(lineLabel);
 
+            // The installed version as a card of its facts; with none installed, the release Atlas would install and why.
+            var view = ViewOf(game, choices);
+            _cardFacts = new List<(bool? Good, string Text)>();
+            if (installed.Count > 0) box.AddChild(VersionCard(game, choices.FirstOrDefault(c => c.Installed), installed[0], view, choices));
+            else if (view.Pick is { } pick && choices.FirstOrDefault(c => c.Url != null && SameRelease(pick.Release, c)) is { } pickChoice) box.AddChild(PickLine(game, pickChoice, pick));
+            _versionFacts = new List<(string Version, string Works, bool Greyed)>();
+
             Button? installSelected = null;
             if (choices.Count > 0)
             {
@@ -673,6 +680,7 @@ namespace AP_Atlas.UI
                     new AtlasTable.Column { Id = "version", Title = "Version", MinWidth = 130, Ratio = 0 },
                     new AtlasTable.Column { Id = "project", Title = "Project", MinWidth = 160, Ratio = 3 },
                     new AtlasTable.Column { Id = "have", Title = "Atlas has it", MinWidth = 120, Ratio = 2 },
+                    new AtlasTable.Column { Id = "works", Title = "Works here", MinWidth = 170, Ratio = 3 },
                     new AtlasTable.Column { Id = "released", Title = "Released", MinWidth = 96, Ratio = 0 }
                 });
                 var rows = new List<AtlasTable.Row>();
@@ -681,6 +689,11 @@ namespace AP_Atlas.UI
                     var c = choices[i];
                     Color? background = c.Installed ? ThemeColors.AccentTint : null;
                     string have = c.Installed ? _tr("In the engine") : c.Downloaded ? _tr("Downloaded") : "";
+                    // A release that can't work here is greyed, with the reason (it couldn't be loaded, it needs another
+                    // Archipelago, the map pack doesn't fit it while another release fits).
+                    var (works, whyNot, picked) = WorksText(c, view);
+                    Color? grey = whyNot != null ? ThemeColors.TextSubtle : null;
+                    _versionFacts.Add((c.Version, works, whyNot != null));
                     rows.Add(new AtlasTable.Row
                     {
                         Key = c.Url ?? c.LocalFile ?? c.Version + "|" + c.Source,
@@ -689,11 +702,12 @@ namespace AP_Atlas.UI
                         Cells = new[]
                         {
                             new AtlasTable.Cell("") { Background = background },
-                            new AtlasTable.Cell(c.Version + (c.Prerelease ? " " + _tr("(pre-release)") : ""), c.Prerelease ? ThemeColors.TextMuted : null,
+                            new AtlasTable.Cell(c.Version + (c.Prerelease ? " " + _tr("(pre-release)") : ""), grey ?? (c.Prerelease ? ThemeColors.TextMuted : null),
                                 c.Prerelease ? _tr("The project marked this release a pre-release.") : null, choices.Count - i) { Background = background },
-                            new AtlasTable.Cell(c.Source) { Background = background },
-                            new AtlasTable.Cell(have, c.Installed ? ThemeColors.Success : null) { Background = background },
-                            new AtlasTable.Cell(c.Published is { } when ? when.ToString("yyyy-MM-dd") : "", null, null, c.Published ?? DateTime.MinValue) { Background = background }
+                            new AtlasTable.Cell(c.Source, grey) { Background = background },
+                            new AtlasTable.Cell(have, grey ?? (c.Installed ? ThemeColors.Success : null)) { Background = background },
+                            new AtlasTable.Cell(works, grey ?? (picked ? ThemeColors.Success : null), whyNot != null ? _tr("It doesn't work here: {0}.").Replace("{0}", whyNot) : picked ? view.Pick!.Why : null) { Background = background },
+                            new AtlasTable.Cell(c.Published is { } when ? when.ToString("yyyy-MM-dd") : "", grey, null, c.Published ?? DateTime.MinValue) { Background = background }
                         }
                     });
                 }
@@ -740,6 +754,14 @@ namespace AP_Atlas.UI
                 installSelected.Disabled = true;
                 buttons.AddChild(installSelected);
             }
+            if (loaded && choices.Any(c => c.Url != null))
+            {
+                var look = Kit.Button(view.Pack != null ? _tr("Which version works with my map pack?") : _tr("Look inside the newest releases"),
+                    _tr("Downloads the newest {0} releases into the game's folder (nothing is installed), reads what their setup guides and manifests say and, with the Atlas Engine set up, measures your map pack against each one's checks. Asked once for this game.")
+                        .Replace("{0}", ReleaseChoice.MostLooked.ToString()), () => LookInside(game));
+                look.SetMeta("look_button", true);
+                buttons.AddChild(look);
+            }
             if (!loaded && !allowed && projects.Count > 0)
                 buttons.AddChild(Kit.Button(_tr("Look up releases on GitHub"), _tr("Reads the projects' release lists and looks for projects of the same name (nothing is downloaded)."), () => AskThenLoad(game, again: false)));
             else if (projects.Count > 0)
@@ -748,6 +770,11 @@ namespace AP_Atlas.UI
             box.AddChild(buttons);
             return indent;
         }
+
+        private List<(string Version, string Works, bool Greyed)> _versionFacts = new();
+
+        /// <summary>Each row's version, its "Works here" text and whether it's greyed (for tests).</summary>
+        public IReadOnlyList<(string Version, string Works, bool Greyed)> VersionFacts => _versionFacts;
 
         /// <summary>The version ticked in the versions table, or null.</summary>
         private ApworldChoice? PickedChoice(IReadOnlyList<AtlasTable.Row>? rows) =>
@@ -946,28 +973,11 @@ namespace AP_Atlas.UI
         /// <summary>The newest full release of the game's apworld across its projects, after the user trusts the project (asked once); also from the Add a slot dialog.</summary>
         internal void InstallNewest(string game, Node? dialogParent = null) => Async.Fire(InstallNewestAsync(game, dialogParent), "installing " + game);
 
-        /// <summary>Installs the newest full release and says whether it happened (the permission and trust questions asked as always; a refusal is false).</summary>
-        internal Task<bool> InstallNewestAsync(string game, Node? dialogParent = null)
-        {
-            _dialogParent = dialogParent;
-            var done = new TaskCompletionSource<bool>();
-            void Offer()
-            {
-                var install = AtlasEngine.Current;
-                var installed = install != null ? ApworldSources.InstalledCopies(install, game) : new List<(string File, string Sha256)>();
-                var newest = Choices(game, installed).FirstOrDefault(c => !c.Prerelease && c.Url != null);
-                if (newest == null || VersionOf(game, newest) is not { } version)
-                {
-                    _status.Text = _tr("No release of {0} is known. Add the game's project, or choose its file.").Replace("{0}", game);
-                    done.TrySetResult(false);
-                    return;
-                }
-                ConfirmInstall(game, RepoOf(newest), version, done);
-            }
-            if (_versions.ContainsKey(game)) Offer();
-            else AskThenLoad(game, again: false, Offer, () => done.TrySetResult(false));
-            return AnsweredAsync(done.Task, dialogParent);
-        }
+        /// <summary>
+        /// Installs the release Atlas picks from what it knows (<see cref="InstallBestAsync"/>, without looking inside more
+        /// releases) and says whether it happened (the permission and trust questions asked as always; a refusal is false).
+        /// </summary>
+        internal async Task<bool> InstallNewestAsync(string game, Node? dialogParent = null) => (await InstallBestAsync(game, dialogParent, look: false)).Ok;
 
         /// <summary>The install's answer; then the page's own buttons ask on the page again (unless another install asked meanwhile).</summary>
         private async Task<bool> AnsweredAsync(Task<bool> answer, Node? askedFrom)
@@ -1142,7 +1152,7 @@ namespace AP_Atlas.UI
         /// Lists a release's other files for the user to pick what to download into the game's folder: first the release
         /// (the version a connected slot's seed was made with, else the newest full release), then its files.
         /// </summary>
-        private void ListReleaseFiles(string game)
+        private void ListReleaseFiles(string game, string? version = null)
         {
             void Open()
             {
@@ -1153,16 +1163,16 @@ namespace AP_Atlas.UI
                     _status.Text = _tr("No release of {0} is known. Add the game's project first.").Replace("{0}", game);
                     return;
                 }
-                PickReleaseFiles(game, versions);
+                PickReleaseFiles(game, versions, version);
             }
             if (_versions.ContainsKey(game)) Open();
             else AskThenLoad(game, again: false, Open);
         }
 
-        private void PickReleaseFiles(string game, List<ApworldVersion> versions)
+        private void PickReleaseFiles(string game, List<ApworldVersion> versions, string? version = null)
         {
-            // The slot's version first: a connected slot's chosen version, or the one Atlas identified as its seed's.
-            string? preferred = _hooks.LiveSlots().Where(s => string.Equals(s.Game, game, StringComparison.OrdinalIgnoreCase))
+            // The release asked for, else the slot's version: a connected slot's chosen version, or the one Atlas identified as its seed's.
+            string? preferred = version ?? _hooks.LiveSlots().Where(s => string.Equals(s.Game, game, StringComparison.OrdinalIgnoreCase))
                 .Select(s => s.ChosenApworld?.Version ?? (s.ServerChecksumFor(game) is { } sum ? ApworldSources.CachedFor(game, sum)?.Version : null)).FirstOrDefault(v => v != null);
             int start = Math.Max(0, preferred != null ? versions.FindIndex(v => ApworldChoices.SameLabel(v.Version, preferred)) : versions.FindIndex(v => !v.Prerelease));
             var dialog = new ConfirmationDialog { Title = _tr("Release files for {0}").Replace("{0}", game), OkButtonText = _tr("Download"), DialogHideOnOk = false, Unresizable = false };

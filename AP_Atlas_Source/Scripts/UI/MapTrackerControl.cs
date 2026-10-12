@@ -652,6 +652,7 @@ namespace AP_Atlas.UI
         /// <summary>The slot's pack was removed or replaced: nothing of it is shown, and the empty state says why.</summary>
         public void ClearPack()
         {
+            SetPackFit(null, null);
             FollowAvailable = false;
             if (_followBox != null) _followBox.Visible = false;
             if (_variantRow != null) _variantRow.Visible = false;
@@ -958,6 +959,9 @@ namespace AP_Atlas.UI
         private VBoxContainer _checklistBox;
         private Label _unplacedNote;
         private PanelContainer _unplacedPill;
+        private PanelContainer _fitBar;
+        private Label _fitNote;
+        private Action _findFitting;
         private Button _unplacedHeader;
         private VBoxContainer _unplacedBox;
         private bool _unplacedOpen = true;
@@ -974,6 +978,25 @@ namespace AP_Atlas.UI
 
         /// <summary>The note on the map about checks without a pin, or null when none shows.</summary>
         public string UnplacedNote => _unplacedNote is { Visible: true } ? _unplacedNote.Text : null;
+
+        /// <summary>The note on the map that its pack doesn't fit the seed, or null when none shows.</summary>
+        public string PackFitNote => _fitBar is { Visible: true } ? _fitNote.Text : null;
+
+        /// <summary>
+        /// Says on the map that its pack doesn't fit the seed (most of its pins link to none of the seed's checks), with a
+        /// button that finds a release of the pack that fits; null takes the note away.
+        /// </summary>
+        public void SetPackFit(string note, Action findFitting)
+        {
+            _findFitting = findFitting;
+            if (_fitBar == null) return;
+            _fitBar.Visible = note != null;
+            _fitNote.Text = note ?? "";
+            if (_fitBar.FindChild("FindFitting", true, false) is Button find) find.Visible = findFitting != null;
+        }
+
+        /// <summary>Presses the note's "Find a pack release that fits this seed" (for tests).</summary>
+        public void PressFindFitting() => _findFitting?.Invoke();
 
         /// <summary>How many of the checks under Not on the map are in logic (for tests).</summary>
         public int UnplacedInLogic { get; private set; }
@@ -1021,7 +1044,42 @@ namespace AP_Atlas.UI
             _unplacedNote.SetMeta("font_size_ratio", 0.9f);
             _unplacedNote.AddThemeColorOverride("font_color", ThemeColors.Text);
             _unplacedPill.AddChild(_unplacedNote);
-            noteMargin.AddChild(_unplacedPill);
+            var notes = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ShrinkEnd, SizeFlagsVertical = SizeFlags.ShrinkBegin, MouseFilter = MouseFilterEnum.Ignore };
+            notes.AddThemeConstantOverride("separation", 6);
+            notes.AddChild(_unplacedPill);
+            // When the pack doesn't fit the seed: a note in the warning colour, its button the one thing that takes clicks here.
+            _fitBar = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ShrinkEnd, MouseFilter = MouseFilterEnum.Pass, Visible = false };
+            _fitBar.AddThemeStyleboxOverride("panel", new StyleBoxFlat
+            {
+                BgColor = ThemeColors.SurfaceSunken,
+                BorderColor = ThemeColors.Warning,
+                BorderWidthLeft = 1,
+                BorderWidthTop = 1,
+                BorderWidthRight = 1,
+                BorderWidthBottom = 1,
+                CornerRadiusTopLeft = 6,
+                CornerRadiusTopRight = 6,
+                CornerRadiusBottomLeft = 6,
+                CornerRadiusBottomRight = 6,
+                ContentMarginLeft = 10,
+                ContentMarginRight = 10,
+                ContentMarginTop = 6,
+                ContentMarginBottom = 6
+            });
+            var fitBox = new VBoxContainer { MouseFilter = MouseFilterEnum.Ignore };
+            fitBox.AddThemeConstantOverride("separation", 4);
+            _fitNote = new Label { MouseFilter = MouseFilterEnum.Ignore, AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(320, 0) };
+            _fitNote.SetMeta("font_size_ratio", 0.9f);
+            _fitNote.AddThemeColorOverride("font_color", ThemeColors.Text);
+            fitBox.AddChild(_fitNote);
+            var find = Kit.Button(Translate("Find a pack release that fits this seed"), Translate("Tries the newest releases of the pack's project against this seed's checks (each downloaded beside the packs and measured; only the one that fits is installed) and makes it the game's pack. A pack with no known project: a GitHub search for the game's packs."),
+                () => _findFitting?.Invoke(), small: true);
+            find.Name = "FindFitting";
+            find.SizeFlagsHorizontal = SizeFlags.ShrinkEnd;
+            fitBox.AddChild(find);
+            _fitBar.AddChild(fitBox);
+            notes.AddChild(_fitBar);
+            noteMargin.AddChild(notes);
             rightPanel.AddChild(noteMargin);
         }
 

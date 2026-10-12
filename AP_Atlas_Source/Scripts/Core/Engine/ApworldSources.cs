@@ -26,6 +26,8 @@ namespace AP_Atlas.Core.EngineSetup
         [JsonIgnore] public bool Prerelease { get; set; }
         /// <summary>When GitHub says the release was published (a time the site names; shown only).</summary>
         [JsonIgnore] public DateTime? Published { get; set; }
+        /// <summary>The file's size as GitHub lists it, or 0 when unknown (the community index doesn't say).</summary>
+        [JsonIgnore] public long Size { get; set; }
     }
 
     public class ApworldSource
@@ -229,6 +231,7 @@ namespace AP_Atlas.Core.EngineSetup
             public string Tag, Name, Url, Sha256;
             public bool Prerelease;
             public DateTime? Published;
+            public long Size;
         }
 
         /// <summary>A repository's published .apworld files; <see cref="Problem"/> is set when GitHub couldn't be asked (nothing is known then).</summary>
@@ -291,7 +294,7 @@ namespace AP_Atlas.Core.EngineSetup
                         string digest = asset["digest"]?.ToString();
                         string sha = digest != null && digest.StartsWith("sha256:") ? digest.Substring(7).ToLowerInvariant() : null;
                         if (name.EndsWith(".apworld", StringComparison.OrdinalIgnoreCase))
-                            assets.Add(new ReleaseAsset { Tag = tag, Name = name, Url = url, Sha256 = sha, Prerelease = prerelease, Published = published });
+                            assets.Add(new ReleaseAsset { Tag = tag, Name = name, Url = url, Sha256 = sha, Prerelease = prerelease, Published = published, Size = asset["size"]?.Value<long>() ?? 0 });
                         else listing.Others.Add(new ReleaseFile(tag, name, url, sha, asset["size"]?.Value<long>() ?? 0));
                     }
                 }
@@ -325,7 +328,8 @@ namespace AP_Atlas.Core.EngineSetup
                     Origin = "github",
                     Repo = repo,
                     Prerelease = asset.Prerelease,
-                    Published = asset.Published
+                    Published = asset.Published,
+                    Size = asset.Size
                 });
             }
             return versions;
@@ -812,9 +816,36 @@ namespace AP_Atlas.Core.EngineSetup
         /// <summary>The data checksum of a candidate apworld file (loaded in a throwaway engine process).</summary>
         public static async Task<(string Game, string Checksum, string WorldVersion, string Error)> IdentifyAsync(EngineInstall install, string file, string game, CancellationToken ct)
         {
+            var (result, error) = await LoadCandidateAsync(install, file, game, false, ct);
+            if (result == null) return (null, null, null, error);
+            return (result["game"]?.ToString(), result["data_checksum"]?.ToString(), result["world_version"]?.ToString(), result["error"]?.ToString());
+        }
+
+        /// <summary>
+        /// A candidate apworld file's game, data checksum and location and item names (loaded in a throwaway engine
+        /// process; the engine's own copy untouched): what a map pack is measured against for that release.
+        /// </summary>
+        public static async Task<(AP_Atlas.Core.PopTracker.GameNameTable Names, string Checksum, string Error)> NamesOfAsync(EngineInstall install, string file, string game, CancellationToken ct)
+        {
+            var (result, error) = await LoadCandidateAsync(install, file, game, true, ct);
+            if (result == null) return (null, null, error);
+            if (result["error"]?.ToString() is { Length: > 0 } failed) return (null, null, failed);
+            var table = new AP_Atlas.Core.PopTracker.GameNameTable
+            {
+                Game = result["game"]?.ToString() ?? game,
+                Source = "release " + Path.GetFileName(file),
+                Version = result["world_version"]?.ToString() ?? "",
+                Locations = (result["locations"] as JObject)?.Properties().Where(p => p.Value.Type == JTokenType.Integer).ToDictionary(p => p.Name, p => p.Value.Value<long>()) ?? new Dictionary<string, long>(),
+                Items = (result["items"] as JObject)?.Properties().Where(p => p.Value.Type == JTokenType.Integer).ToDictionary(p => p.Name, p => p.Value.Value<long>()) ?? new Dictionary<string, long>()
+            };
+            return (table, result["data_checksum"]?.ToString(), null);
+        }
+
+        private static async Task<(JObject Result, string Error)> LoadCandidateAsync(EngineInstall install, string file, string game, bool names, CancellationToken ct)
+        {
             JObject result = null;
             var errors = new StringBuilder();
-            string request = JsonConvert.SerializeObject(new { apworld = Path.GetFullPath(file), game });
+            string request = names ? JsonConvert.SerializeObject(new { apworld = Path.GetFullPath(file), game, names = true }) : JsonConvert.SerializeObject(new { apworld = Path.GetFullPath(file), game });
             await AtlasEngine.RunComponentAsync(install, "AtlasChecksum", request, line =>
             {
                 string t = line.Trim();
@@ -822,8 +853,10 @@ namespace AP_Atlas.Core.EngineSetup
                 try { result = JObject.Parse(t); }
                 catch { } // not every output line is a reply
             }, err => { if (errors.Length < 2000) errors.AppendLine(err); }, ct, TimeSpan.FromMinutes(3));
-            if (result == null) return (null, null, null, "The engine didn't report a checksum.");
-            return (result["game"]?.ToString(), result["data_checksum"]?.ToString(), result["world_version"]?.ToString(), result["error"]?.ToString());
+            if (result != null) return (result, null);
+            // What the process said last on its error output says why (an import error, a crash).
+            string said = errors.ToString().Trim();
+            return (null, said.Length > 0 ? "The engine didn't report a checksum: " + said.Split('\n').Last().Trim() : "The engine didn't report a checksum.");
         }
 
         /// <summary>

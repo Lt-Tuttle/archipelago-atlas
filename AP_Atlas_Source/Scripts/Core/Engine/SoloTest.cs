@@ -22,8 +22,12 @@ namespace AP_Atlas.Core.EngineSetup
         public required AppSettings Settings { get; init; }
         /// <summary>A line for the user (a card), when the window has one.</summary>
         public Action<string>? Notice { get; init; }
-        /// <summary>Installs the newest release of the game's apworld (the permission and trust questions asked as always); false when it didn't happen.</summary>
-        public required Func<string, Task<bool>> InstallApworldAsync { get; init; }
+        /// <summary>
+        /// Installs the release of the game's apworld Atlas picks (the newest whose own guide names a map tracker, else the
+        /// newest full release; the permission, look-inside and trust questions asked as always): whether it happened, and
+        /// which release and why.
+        /// </summary>
+        public required Func<string, Task<(bool Ok, string? Why)>> InstallApworldAsync { get; init; }
         /// <summary>Lets the user pick a pack from GitHub's results (or none).</summary>
         public required Func<string, Task<PackChoice?>> ChoosePackAsync { get; init; }
         /// <summary>Installs a project's pack without asking (Start covered it): the release that fits the game's names; what was tried, and the file.</summary>
@@ -99,7 +103,7 @@ namespace AP_Atlas.Core.EngineSetup
             _scrubber = hooks.Scrubber();
             _steps.Clear();
             var install = AtlasEngine.Current;
-            string? apworldVersion = null, apworldSource = null, apworldChecksum = null;
+            string? apworldVersion = null, apworldSource = null, apworldChecksum = null, installedWhy = null;
             LoadedPack? pack = null;
             SoloGeneration? generation = null;
             SoloLogic? logic = null;
@@ -132,7 +136,9 @@ namespace AP_Atlas.Core.EngineSetup
                     if (!has)
                     {
                         progress?.Report(new SoloTestProgress(SoloTestStep.Apworld, SoloStepOutcome.Running, "installing the apworld", null));
-                        if (!await hooks.InstallApworldAsync(Game).WaitAsync(ct)) return Failed("the apworld wasn't installed (the Games page's log says why, or the project wasn't trusted)");
+                        var (installed, why) = await hooks.InstallApworldAsync(Game).WaitAsync(ct);
+                        if (!installed) return Failed("the apworld wasn't installed (the Games page's log says why, or the project wasn't trusted)");
+                        installedWhy = why;
                     }
                     var copies = ApworldSources.InstalledCopies(install, Game);
                     foreach (var copy in copies)
@@ -142,7 +148,8 @@ namespace AP_Atlas.Core.EngineSetup
                         apworldSource ??= repo != null ? "github.com/" + repo : null;
                         apworldChecksum ??= copy.Sha256;
                     }
-                    return has ? Skipped("already in the engine" + (apworldVersion != null ? " (" + apworldVersion + ")" : "")) : Done("installed" + (apworldVersion != null ? " " + apworldVersion : ""));
+                    return has ? Skipped("already in the engine" + (apworldVersion != null ? " (" + apworldVersion + ")" : ""))
+                        : Done("installed " + (installedWhy ?? apworldVersion ?? "the newest release"));
                 });
                 if (!failed) failed = !await StepAsync(SoloTestStep.MapPack, progress, ct, async () =>
                 {

@@ -292,4 +292,31 @@ def seed_test(*args):
                        'steps': steps, 'exact': True, 'seconds': 0.1}]})
 
 
-components += [Component('AtlasYamlTemplate', yaml_template), Component('AtlasGenerate', generate), Component('AtlasHost', host), Component('AtlasSeedTest', seed_test)]
+def checksum(*args):
+    # As the bridge's AtlasChecksum: a candidate apworld's game, data checksum and (with "names") its tables, from the
+    # fake_world.json a test put in the zip: {"game", "data_checksum", "world_version", "locations": {name: id},
+    # "items": {name: id}, "error": a load failure}.
+    line = sys.stdin.readline()
+    req = json.loads(line) if line and line.strip() else {}
+    note({'component': 'AtlasChecksum', 'request': req})
+    import zipfile
+    try:
+        with zipfile.ZipFile(req['apworld']) as z:
+            name = next((n for n in z.namelist() if n.endswith('fake_world.json')), None)
+            world = json.loads(z.read(name).decode('utf-8')) if name else {}
+    except Exception as e:
+        send({'error': 'Traceback (most recent call last):\n' + type(e).__name__ + ': ' + str(e)})
+        return
+    if world.get('error'):
+        send({'error': 'Traceback (most recent call last):\n' + world['error']})
+        return
+    locations = world.get('locations') or {}
+    out = {'game': world.get('game') or req.get('game') or 'Test Game', 'data_checksum': world.get('data_checksum') or 'fake',
+           'world_version': world.get('world_version') or 'fake', 'location_count': len(locations)}
+    if req.get('names'):
+        out['locations'] = locations
+        out['items'] = world.get('items') or {}
+    send(out)
+
+
+components += [Component('AtlasYamlTemplate', yaml_template), Component('AtlasGenerate', generate), Component('AtlasHost', host), Component('AtlasSeedTest', seed_test), Component('AtlasChecksum', checksum)]

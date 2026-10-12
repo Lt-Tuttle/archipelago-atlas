@@ -930,8 +930,9 @@ def swap_in_apworld(path, game=None):
 
 
 def atlas_checksum(*args):
-    # The data checksum of a candidate apworld file, to find the version a seed was made with.
-    # stdin: {"apworld": path, "game": expected game (optional)}. Runs in a throwaway process.
+    # The data checksum of a candidate apworld file, to find the version a seed was made with, and with "names" its
+    # location and item tables (to measure a map pack against that release).
+    # stdin: {"apworld": path, "game": expected game (optional), "names": bool}. Runs in a throwaway process.
     protect_channel()
     line = sys.stdin.readline()
     req = json.loads(line) if line else {}
@@ -940,7 +941,12 @@ def atlas_checksum(*args):
         from worlds.AutoWorld import AutoWorldRegister
         game = swap_in_apworld(req['apworld'], req.get('game'))
         out['game'] = game
-        out.update(world_identity(AutoWorldRegister.world_types[game]))
+        cls = AutoWorldRegister.world_types[game]
+        out.update(world_identity(cls))
+        out['location_count'] = len(cls.location_name_to_id)
+        if req.get('names'):
+            out['locations'] = dict(cls.location_name_to_id)
+            out['items'] = dict(cls.item_name_to_id)
     except Exception:
         out['error'] = traceback.format_exc()[-800:]
     send(out)

@@ -136,6 +136,39 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.MapPacks);
         _packManagerPanel.SearchForGame(game);
     }
+
+    /// <summary>
+    /// The map's "Find a pack release that fits this seed": the pack's own project's newest releases, each measured against
+    /// the seed's names (the connection's), the newest that fits installed and made the game's pack, so the game's slots
+    /// switch to it. A pack whose project isn't known (no GitHub address in its manifest): a GitHub search for the game.
+    /// </summary>
+    private void FindFittingPackRelease(string game, string packZip)
+    {
+        var pack = AP_Atlas.Core.PopTracker.PopTrackerPackLoader.InspectZipPack(packZip);
+        string source = AP_Atlas.Core.Reports.SoloTestReport.PublicSource(pack?.Manifest?.VersionsUrl);
+        string repo = source != null && source.StartsWith("github.com/", StringComparison.Ordinal) ? source.Substring("github.com/".Length) : null;
+        if (repo == null)
+        {
+            FindMapPack(game);
+            return;
+        }
+        ShowToast(Tr("Trying github.com/{0}'s releases against this seed…").Replace("{0}", repo), AP_Atlas.Core.ThemeColors.Info);
+        AP_Atlas.Core.Async.Fire(async () =>
+        {
+            var (ok, detail, file) = await _packManagerPanel.InstallFittingReleaseAsync(game, repo, null);
+            AP_Atlas.UI.Ui.Defer(this, () =>
+            {
+                if (ok && file != null)
+                {
+                    _appSettings.PreferredPacks[game] = System.IO.Path.GetFileName(file);
+                    DataManager.SaveSettingsSoon(_appSettings);
+                    AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
+                }
+                ShowToast(ok ? Tr("{0}'s map pack: {1}.").Replace("{0}", game).Replace("{1}", detail) : Tr("No release of github.com/{0} could be tried: {1}.").Replace("{0}", repo).Replace("{1}", detail),
+                    ok ? AP_Atlas.Core.ThemeColors.Success : AP_Atlas.Core.ThemeColors.Warning);
+            });
+        }, "finding a pack release that fits the seed");
+    }
     private static string DescribeRaceMode()
     {
         string when = AP_Atlas.Core.RaceRules.Mode switch

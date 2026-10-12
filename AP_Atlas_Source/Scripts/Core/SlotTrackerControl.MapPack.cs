@@ -289,7 +289,11 @@ public partial class SlotTrackerControl : MarginContainer
     private void OnPacksChanged()
     {
         if (_ended || Session == null || !GodotObject.IsInstanceValid(this)) return;
-        if (Pack != null && AP_Atlas.Core.PopTracker.PopTrackerPackLoader.IsCurrent(Pack)) return;
+        // A pack made the game's own (a release found to fit the seed) takes over from the one the slot shows.
+        bool preferredElsewhere = Pack != null && Game != null && _appSettings.PreferredPacks.TryGetValue(Game, out var preferred)
+            && !string.Equals(System.IO.Path.GetFileName(Pack.SourcePath), preferred, StringComparison.OrdinalIgnoreCase)
+            && System.IO.File.Exists(System.IO.Path.Combine(AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory(), preferred));
+        if (Pack != null && AP_Atlas.Core.PopTracker.PopTrackerPackLoader.IsCurrent(Pack) && !preferredElsewhere) return;
         if (Pack != null) UnloadMapPack();
         LoadMapPack();
     }
@@ -406,6 +410,35 @@ public partial class SlotTrackerControl : MarginContainer
 
     private const int AttentionCap = 60;
 
+    /// <summary>The map's "Find a pack release that fits this seed": the window tries the pack's project's releases against the seed (game, the pack's zip).</summary>
+    public Action<string, string> FindFittingPackRelease;
+
+    /// <summary>
+    /// Whether the pack fits this seed: measured against the seed's own names (the connection's), most of its pins should
+    /// link to one of its checks. When they don't, the map says so (naming the release of the game the pack was found to
+    /// fit, when the Games page measured one) and offers the pack's release that fits this seed.
+    /// </summary>
+    private void RefreshPackFit(AP_Atlas.Core.PopTracker.DoctorReport report)
+    {
+        if (_mapTracker == null || Pack == null) return;
+        bool seedNames = report?.Names?.Source?.StartsWith(AP_Atlas.Core.PopTracker.GameNames.ServerSource, StringComparison.Ordinal) == true;
+        if (report == null || !seedNames || report.SectionsTotal < 2 || report.SectionsLinked >= AP_Atlas.Core.Games.PackReleaseFit.LinkedEnough * report.SectionsTotal)
+        {
+            _mapTracker.SetPackFit(null, null);
+            return;
+        }
+        string percent = Math.Round(100.0 * report.SectionsLinked / report.SectionsTotal).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        string game = Game ?? Pack.Manifest?.GameName ?? "";
+        var facts = AP_Atlas.Core.Games.ReleaseFactsStore.Load(DataManager.GetDataDirectory(), game);
+        string fitKey = AP_Atlas.Core.EngineSetup.ReleaseLook.FitKey(Pack);
+        var fitsRelease = facts.Records.FirstOrDefault(r => r.FitOf(fitKey) is { Fits: true });
+        string note = fitsRelease != null
+            ? Tr("Only {0}% of this map pack's pins link to this seed's checks. It fits {1} {2}; this seed was made with another version.").Replace("{0}", percent).Replace("{1}", game).Replace("{2}", fitsRelease.Version)
+            : Tr("Only {0}% of this map pack's pins link to this seed's checks: it may be made for another version of {1}.").Replace("{0}", percent).Replace("{1}", game);
+        string zip = Pack.SourcePath;
+        _mapTracker.SetPackFit(note, FindFittingPackRelease != null ? () => FindFittingPackRelease(game, zip) : null);
+    }
+
     /// <summary>
     /// What the pack gets wrong for this seed, from the Doctor's report: pin sections whose suggested checks include one of
     /// this seed's (every tile without an item or image, every missing map picture, a stopped or failing script), each
@@ -433,6 +466,7 @@ public partial class SlotTrackerControl : MarginContainer
             rows.Add(new AP_Atlas.UI.MapTrackerControl.AttentionRow(f.Key, f.Title, tip, () => OpenPackDoctor?.Invoke(zip, tabFor)));
             if (rows.Count >= AttentionCap) break;
         }
+        RefreshPackFit(report);
         int more = report.Findings.Count(f => !f.Ignored && f.Severity >= AP_Atlas.Core.PopTracker.FindingSeverity.Warning) - rows.Count;
         if (rows.Count >= AttentionCap && more > 0)
             rows.Add(new AP_Atlas.UI.MapTrackerControl.AttentionRow("more", Tr("… and {0} more in the Pack Doctor").Replace("{0}", more.ToString()), Tr("Opens the Pack Doctor's Overview."), () => OpenPackDoctor?.Invoke(zip, "Overview")));
