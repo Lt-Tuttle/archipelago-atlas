@@ -62,6 +62,8 @@ namespace AP_Atlas.UI
                 dialog.QueueFree();
                 Answer(false);
             };
+            // Gone without an answer (what asked closed): not allowed this time, and nothing remembered.
+            dialog.TreeExiting += () => Answer(false);
             parent.AddChild(dialog);
             WindowFit.Pop(dialog, 560);
         }

@@ -33,6 +33,8 @@ namespace AP_Atlas.Core.PopTracker
             /// <summary>Null when the pin itself is the check (no sections).</summary>
             public PopTrackerSection Section;
             public MatchSource Source;
+            /// <summary>The match this one copies: the section refers to that one's ("ref") and shows its check. Null for a match of its own.</summary>
+            public SectionMatch Via;
         }
 
         public LoadedPack Pack { get; }
@@ -51,6 +53,34 @@ namespace AP_Atlas.Core.PopTracker
 
         /// <summary>Mapping-script item ids that aren't items of this game.</summary>
         public List<long> UnknownMappedItemIds { get; } = new List<long>();
+
+        /// <summary>
+        /// Sections that refer to another ("ref") which isn't in the pack: they're paired by their own names instead, as
+        /// ordinary sections.
+        /// </summary>
+        public List<(PopTrackerLocation Pin, PopTrackerSection Section)> UnresolvedReferences { get; } = new List<(PopTrackerLocation, PopTrackerSection)>();
+
+        /// <summary>How many sections refer to another one that's in the pack (they show its check, linked or not).</summary>
+        public int ReferenceSections => _refTargets.Count;
+
+        // Sections that refer to another, each resolved (through any chain of refs) to the section it shows; and each such
+        // target's referring sections. A pin without sections can be a target (its section is null then).
+        private readonly Dictionary<PopTrackerSection, (PopTrackerLocation Pin, PopTrackerSection Section)> _refTargets =
+            new Dictionary<PopTrackerSection, (PopTrackerLocation, PopTrackerSection)>(ReferenceEqualityComparer.Instance);
+        private readonly Dictionary<(PopTrackerLocation, PopTrackerSection), List<(PopTrackerLocation Pin, PopTrackerSection Section)>> _referrers =
+            new Dictionary<(PopTrackerLocation, PopTrackerSection), List<(PopTrackerLocation, PopTrackerSection)>>();
+
+        /// <summary>Whether a section refers to another one in the pack (it shows that one's check, and isn't paired by itself).</summary>
+        public bool IsReference(PopTrackerSection section) => section != null && _refTargets.ContainsKey(section);
+
+        /// <summary>
+        /// The "ref" of a section that refers to one the pack doesn't have (pin path and section name, as a finding's
+        /// subject names them), else null. Such a section is meant to show a check another section shows.
+        /// </summary>
+        public string UnresolvedReferenceOf(string pinPath, string sectionName) =>
+            _unresolved.TryGetValue((pinPath ?? "") + "|" + (sectionName ?? ""), out var target) ? target : null;
+
+        private readonly Dictionary<string, string> _unresolved = new Dictionary<string, string>(StringComparer.Ordinal);
 
         private readonly Dictionary<long, string> _locationNames;
         private readonly Dictionary<string, long> _locationIdsByName;
@@ -89,6 +119,11 @@ namespace AP_Atlas.Core.PopTracker
                 list.Add(pin);
             }
 
+            // 0. Sections that refer to another ("ref"): PopTracker shows the target's check in their place and ignores
+            //    the rest of what they say, so each takes the target's links (below, as they're made) and isn't paired
+            //    on its own. One whose target isn't in the pack stays an ordinary section.
+            ResolveReferences(pinsByPath, pinsByName);
+
             // 1. Mapping script, keyed by id. An id the game doesn't have (an outdated script) is set aside, so the
             //    section can still be paired by name below.
             foreach (var kv in Pack.LocationMappingById)
@@ -100,16 +135,41 @@ namespace AP_Atlas.Core.PopTracker
                 }
                 foreach (var path in kv.Value)
                 {
-                    var match = ResolvePath(path, pinsByPath, pinsByName);
+                    var match = TargetOf(ResolvePath(path, pinsByPath, pinsByName));
                     if (match == null) { DanglingPaths.Add((kv.Key, path)); continue; }
                     Add(kv.Key, match.Value.Pin, match.Value.Section, MatchSource.MappingScript);
+                }
+            }
+
+            // 1b. Mapping script, keyed by id, naming an item code rather than a path: the section that hosts that item shows
+            //     the location (PopTracker sets the hosted item when the location is checked).
+            if (Pack.LocationCodesById.Count > 0)
+            {
+                var hosts = new Dictionary<string, List<(PopTrackerLocation Pin, PopTrackerSection Section)>>(StringComparer.OrdinalIgnoreCase);
+                foreach (var pin in Pack.Locations)
+                    foreach (var sec in pin.Sections ?? new List<PopTrackerSection>())
+                        foreach (string code in HostedCodes(sec))
+                        {
+                            if (!hosts.TryGetValue(code, out var list)) hosts[code] = list = new List<(PopTrackerLocation, PopTrackerSection)>();
+                            list.Add((pin, sec));
+                        }
+                foreach (var kv in Pack.LocationCodesById)
+                {
+                    if (_locationNames.Count > 0 && !_locationNames.ContainsKey(kv.Key))
+                    {
+                        if (!UnknownMappedLocationIds.Contains(kv.Key)) UnknownMappedLocationIds.Add(kv.Key);
+                        continue;
+                    }
+                    foreach (string code in kv.Value)
+                        if (hosts.TryGetValue(code, out var list))
+                            foreach (var (pin, sec) in list) Add(kv.Key, pin, sec, MatchSource.MappingScript);
                 }
             }
 
             // 2. Mapping script without ids: the path's last named segment is the AP location name.
             foreach (var path in Pack.UnkeyedLocationPaths)
             {
-                var match = ResolvePath(path, pinsByPath, pinsByName);
+                var match = TargetOf(ResolvePath(path, pinsByPath, pinsByName));
                 string name = LocationNameFromPath(path);
                 if (match == null || name == null || !_locationIdsByName.TryGetValue(name, out long id))
                 {
@@ -120,14 +180,17 @@ namespace AP_Atlas.Core.PopTracker
             }
 
             // 3. Names, for sections the scripts didn't cover. Hint markers (PopTracker's "… - hint" sections) aren't checks.
+            var holdingNoCheck = new List<(PopTrackerLocation Pin, PopTrackerSection Section)>();
             foreach (var pin in Pack.Locations)
             {
                 if (pin.Sections != null && pin.Sections.Count > 0)
                 {
                     foreach (var sec in pin.Sections)
                     {
+                        if (IsReference(sec)) continue;
                         if (IsHintMarker(pin, sec)) { HintMarkerSections++; continue; }
                         if (IsCovered(pin, sec)) continue;
+                        if (HoldsNoCheck(sec)) { holdingNoCheck.Add((pin, sec)); continue; }
                         string name = !string.IsNullOrEmpty(sec.Name) ? sec.Name : pin.Name;
                         if (TryNameMatch(name, out long id, out var source) || TryComposedMatch(pin, sec, out id, out source)) Add(id, pin, sec, source);
                     }
@@ -138,7 +201,64 @@ namespace AP_Atlas.Core.PopTracker
                     Add(id, pin, null, source);
                 }
             }
+
+            // 4. A section holding no check (a boss or entrance toggle) shows a location only when nothing else does and its
+            //    name is the location's: placed is better than nowhere (Super Metroid's "Ridley" pin, a boss toggle, is the
+            //    only place the game's "Ridley" can go).
+            foreach (var (pin, sec) in holdingNoCheck)
+            {
+                string name = !string.IsNullOrEmpty(sec.Name) ? sec.Name : pin.Name;
+                if ((TryNameMatch(name, out long id, out var source) || TryComposedMatch(pin, sec, out id, out source)) && !ByLocation.ContainsKey(id)) Add(id, pin, sec, source);
+                else NoCheckSections++;
+            }
         }
+
+        private void ResolveReferences(Dictionary<string, PopTrackerLocation> pinsByPath, Dictionary<string, List<PopTrackerLocation>> pinsByName)
+        {
+            foreach (var pin in Pack.Locations)
+            {
+                if (pin.Sections == null) continue;
+                foreach (var sec in pin.Sections)
+                {
+                    if (sec == null || string.IsNullOrWhiteSpace(sec.Ref)) continue;
+                    var target = FollowReference(sec, pinsByPath, pinsByName);
+                    if (target == null)
+                    {
+                        UnresolvedReferences.Add((pin, sec));
+                        _unresolved[(pin.FullPath ?? "") + "|" + (sec.Name ?? "")] = sec.Ref;
+                        continue;
+                    }
+                    _refTargets[sec] = target.Value;
+                    if (!_referrers.TryGetValue(target.Value, out var list)) _referrers[target.Value] = list = new List<(PopTrackerLocation, PopTrackerSection)>();
+                    list.Add((pin, sec));
+                }
+            }
+        }
+
+        /// <summary>
+        /// The section a reference shows, through a chain of references (a few at most): an ordinary section, or a pin
+        /// without sections. Null when it isn't in the pack, goes round in a circle, or names a pin with several sections
+        /// without saying which (PopTracker can't show one either).
+        /// </summary>
+        private static (PopTrackerLocation Pin, PopTrackerSection Section)? FollowReference(PopTrackerSection section,
+            Dictionary<string, PopTrackerLocation> pinsByPath, Dictionary<string, List<PopTrackerLocation>> pinsByName)
+        {
+            var seen = new HashSet<PopTrackerSection>(ReferenceEqualityComparer.Instance) { section };
+            var current = ResolvePath("@" + section.Ref.Trim().TrimStart('@'), pinsByPath, pinsByName);
+            for (int hop = 0; current != null && hop < 8; hop++)
+            {
+                var (pin, target) = current.Value;
+                if (target == null) return pin.Sections == null || pin.Sections.Count == 0 ? current : null;
+                if (string.IsNullOrWhiteSpace(target.Ref)) return current;
+                if (!seen.Add(target)) return null;
+                current = ResolvePath("@" + target.Ref.Trim().TrimStart('@'), pinsByPath, pinsByName);
+            }
+            return null;
+        }
+
+        /// <summary>A mapping path that lands on a reference stands for the section the reference shows.</summary>
+        private (PopTrackerLocation Pin, PopTrackerSection Section)? TargetOf((PopTrackerLocation Pin, PopTrackerSection Section)? match) =>
+            match?.Section != null && _refTargets.TryGetValue(match.Value.Section, out var target) ? target : match;
 
         private bool IsCovered(PopTrackerLocation pin, PopTrackerSection section) =>
             IdsByPin.TryGetValue(pin, out var ids) && ids.Any(id => ByLocation[id].Any(m => m.Pin == pin && m.Section == section));
@@ -159,6 +279,29 @@ namespace AP_Atlas.Core.PopTracker
 
         /// <summary>How many of the pack's sections are hint markers (left out of the pairing).</summary>
         public int HintMarkerSections { get; private set; }
+
+        /// <summary>How many sections hold no check by PopTracker's count and nothing linked (left out of the pairing).</summary>
+        public int NoCheckSections { get; private set; }
+
+        /// <summary>
+        /// A section PopTracker counts no check in: item_count 0, or a section that hosts an item (a toggle: an entrance, a
+        /// boss) without an item_count. A mapping can still link one (a location mapped to the item it hosts).
+        /// </summary>
+        public static bool HoldsNoCheck(PopTrackerSection section) => section != null && section.ItemCount == 0;
+
+        private static IEnumerable<string> HostedCodes(PopTrackerSection section) =>
+            string.IsNullOrWhiteSpace(section?.HostedItem) ? Enumerable.Empty<string>() : section.HostedItem.Split(',').Select(c => c.Trim()).Where(c => c.Length > 0);
+
+        /// <summary>
+        /// Whether a section (or a section-less pin) is one of the pack's checks: linked to a location, or neither a hint
+        /// marker nor a section without a check (a reference counts as its target does).
+        /// </summary>
+        public bool CountsAsCheck(PopTrackerLocation pin, PopTrackerSection section)
+        {
+            if (IsCovered(pin, section)) return true;
+            if (section != null && _refTargets.TryGetValue(section, out var target)) (pin, section) = target;
+            return !IsHintMarker(pin, section) && !HoldsNoCheck(section);
+        }
 
         /// <summary>
         /// Names many packs build from the pin and the section: "Wave 10 Completed (Brawler)" from pin "Brawler" and
@@ -235,22 +378,48 @@ namespace AP_Atlas.Core.PopTracker
             return parts.Count == 0 ? null : parts[parts.Count - 1];
         }
 
-        private void Add(long id, PopTrackerLocation pin, PopTrackerSection section, MatchSource source)
+        private void Add(long id, PopTrackerLocation pin, PopTrackerSection section, MatchSource source, SectionMatch via = null)
         {
             if (!ByLocation.TryGetValue(id, out var matches)) ByLocation[id] = matches = new List<SectionMatch>();
             if (matches.Any(m => m.Pin == pin && m.Section == section)) return;
-            matches.Add(new SectionMatch { Pin = pin, Section = section, Source = source });
+            var match = new SectionMatch { Pin = pin, Section = section, Source = source, Via = via };
+            matches.Add(match);
             if (!IdsByPin.TryGetValue(pin, out var ids)) IdsByPin[pin] = ids = new List<long>();
             if (!ids.Contains(id)) ids.Add(id);
+            // The sections that refer to this one show the same check (each refers to its final target, so this is one step).
+            if (via == null && _referrers.TryGetValue((pin, section), out var referrers))
+                foreach (var (referringPin, referring) in referrers) Add(id, referringPin, referring, source, match);
         }
 
-        /// <summary>Applies a user fix: shows a location at a pin/section (replacing other pairings for that section).</summary>
+        /// <summary>Applies a user fix: shows a location at a pin/section (and at the sections that refer to it).</summary>
         public void Link(long id, PopTrackerLocation pin, PopTrackerSection section) => Add(id, pin, section, MatchSource.UserFix);
 
         public void Unlink(long id, PopTrackerLocation pin)
         {
-            if (ByLocation.TryGetValue(id, out var matches)) matches.RemoveAll(m => m.Pin == pin);
+            if (ByLocation.TryGetValue(id, out var matches)) Remove(id, matches, matches.Where(m => m.Pin == pin).ToList());
             if (IdsByPin.TryGetValue(pin, out var ids)) ids.Remove(id);
+        }
+
+        /// <summary>Takes every location off one section (or a section-less pin), and off the sections that refer to it.</summary>
+        public void ClearSection(PopTrackerLocation pin, PopTrackerSection section)
+        {
+            foreach (long id in IdsFor(pin).ToList())
+            {
+                if (!ByLocation.TryGetValue(id, out var matches)) continue;
+                var removed = matches.Where(m => m.Pin == pin && m.Section == section).ToList();
+                if (removed.Count > 0) Remove(id, matches, removed);
+            }
+        }
+
+        // Removes matches of one location, with the copies the sections referring to them had.
+        private void Remove(long id, List<SectionMatch> matches, List<SectionMatch> removed)
+        {
+            var gone = new HashSet<SectionMatch>(removed);
+            gone.UnionWith(matches.Where(m => m.Via != null && gone.Contains(m.Via)).ToList());
+            matches.RemoveAll(gone.Contains);
+            foreach (var pin in gone.Select(m => m.Pin).Distinct())
+                if (!matches.Any(m => m.Pin == pin) && IdsByPin.TryGetValue(pin, out var ids)) ids.Remove(id);
+            if (matches.Count == 0) ByLocation.Remove(id);
         }
 
         public List<long> IdsFor(PopTrackerLocation pin) => IdsByPin.TryGetValue(pin, out var ids) ? ids : new List<long>();
@@ -266,7 +435,8 @@ namespace AP_Atlas.Core.PopTracker
             {
                 if (pin.Sections != null && pin.Sections.Count > 0)
                 {
-                    foreach (var sec in pin.Sections) if (!IsHintMarker(pin, sec) && !IsCovered(pin, sec)) yield return (pin, sec);
+                    // A reference shows its target's check: the target is the one reported. A section without a check isn't one.
+                    foreach (var sec in pin.Sections) if (!IsReference(sec) && !IsHintMarker(pin, sec) && !HoldsNoCheck(sec) && !IsCovered(pin, sec)) yield return (pin, sec);
                 }
                 else if (!IsHintMarker(pin, null) && !IsCovered(pin, null)) yield return (pin, null);
             }

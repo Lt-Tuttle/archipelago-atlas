@@ -772,14 +772,14 @@ namespace AP_Atlas.UI
 
         private void AskThenLoad(string game, bool again, Action? then = null, Action? notLoaded = null)
         {
-            PermissionDialog.Ask(_dialogParent ?? this, _hooks.Settings, Permissions.GitHubLookups, null, _tr("The releases of the {0} apworld, from every project that publishes it.").Replace("{0}", game), allowed =>
+            PermissionDialog.Ask(DialogParent, _hooks.Settings, Permissions.GitHubLookups, null, _tr("The releases of the {0} apworld, from every project that publishes it.").Replace("{0}", game), allowed =>
             {
                 if (!allowed || !IsInstanceValid(this))
                 {
                     notLoaded?.Invoke();
                     return;
                 }
-                if (LoadVersions(game, again, then)) return;
+                if (LoadVersions(game, again, then, notLoaded)) return;
                 _hooks.Toast(_tr("Wait for the current task to finish first."), ThemeColors.TextSubtle);
                 notLoaded?.Invoke();
             });
@@ -787,12 +787,24 @@ namespace AP_Atlas.UI
 
         /// <summary>
         /// Reads every known project's releases for a game (and, once per game per session, looks for projects of the same
-        /// name), then shows the page again with them. False when another task is running.
+        /// name), then shows the page again with them. False when another task is running. <paramref name="then"/> runs
+        /// once they're read; <paramref name="notLoaded"/> when they weren't (stopped, or GitHub couldn't be read), so
+        /// whoever waits for them always hears.
         /// </summary>
-        private bool LoadVersions(string game, bool again, Action? then = null)
+        private bool LoadVersions(string game, bool again, Action? then = null, Action? notLoaded = null)
         {
+            if (_progress.Visible) return false;
             var install = AtlasEngine.Current;
-            bool started = Run(_tr("Finding {0}'s releases…").Replace("{0}", game), async (log, ct) =>
+            bool loaded = false;
+            Async.Fire(async () =>
+            {
+                await RunLoadAsync();
+                if (!loaded) Ui.Defer(null, () => notLoaded?.Invoke());
+            }, "finding " + game + "'s releases");
+            _versionsAsked.Add(game);
+            return true;
+
+            Task RunLoadAsync() => RunAsync(_tr("Finding {0}'s releases…").Replace("{0}", game), async (log, ct) =>
             {
                 var projects = await ApworldSources.ProjectsForAsync(_hooks.Settings, install, game, log, ct, again);
                 string? apworldName = ApworldSources.Find(game)?.Apworld ?? ApworldSources.InstalledCopies(install, game).Select(c => Path.GetFileNameWithoutExtension(c.File)).FirstOrDefault();
@@ -801,6 +813,7 @@ namespace AP_Atlas.UI
                 return (Projects: projects, Versions: versions, Problems: problems);
             }, result =>
             {
+                loaded = true;
                 Ui.Defer(this, () =>
                 {
                     _projects[game] = result.Projects;
@@ -810,8 +823,6 @@ namespace AP_Atlas.UI
                 return result.Problems.Count > 0 && result.Versions.Count == 0 ? _tr("GitHub couldn't be read just now: {0}").Replace("{0}", result.Problems[0])
                     : _tr("{0}: {1} version(s) from {2} project(s).").Replace("{0}", game).Replace("{1}", result.Versions.Count.ToString()).Replace("{2}", result.Projects.Count.ToString());
             });
-            if (started) _versionsAsked.Add(game);
-            return started;
         }
 
         private Control SlotRow(SlotTrackerControl slot)
@@ -926,8 +937,11 @@ namespace AP_Atlas.UI
 
         public override void _ExitTree() => _running?.Cancel();
 
-        // Where the permission and trust questions open: the page, or the window when another page's dialog asked (the page is hidden then).
+        // Where the permission and trust questions open: the page, or what asked for the install (the window, the Add a slot
+        // dialog, a running test's window) while it's still there.
         private Node? _dialogParent;
+
+        private Node DialogParent => _dialogParent != null && IsInstanceValid(_dialogParent) && _dialogParent.IsInsideTree() ? _dialogParent : this;
 
         /// <summary>The newest full release of the game's apworld across its projects, after the user trusts the project (asked once); also from the Add a slot dialog.</summary>
         internal void InstallNewest(string game, Node? dialogParent = null) => Async.Fire(InstallNewestAsync(game, dialogParent), "installing " + game);
@@ -952,7 +966,15 @@ namespace AP_Atlas.UI
             }
             if (_versions.ContainsKey(game)) Offer();
             else AskThenLoad(game, again: false, Offer, () => done.TrySetResult(false));
-            return done.Task;
+            return AnsweredAsync(done.Task, dialogParent);
+        }
+
+        /// <summary>The install's answer; then the page's own buttons ask on the page again (unless another install asked meanwhile).</summary>
+        private async Task<bool> AnsweredAsync(Task<bool> answer, Node? askedFrom)
+        {
+            bool ok = await answer;
+            Ui.Defer(this, () => { if (ReferenceEquals(_dialogParent, askedFrom)) _dialogParent = null; });
+            return ok;
         }
 
         private void ConfirmInstall(string game, string? repo, ApworldVersion version, TaskCompletionSource<bool>? done = null)
@@ -973,7 +995,7 @@ namespace AP_Atlas.UI
                 Go();
                 return;
             }
-            Dialogs.Confirm(_dialogParent ?? this, _tr("Trust this project?"),
+            Dialogs.Confirm(DialogParent, _tr("Trust this project?"),
                 _tr("Install {0} {1} from github.com/{2}? Apworlds are programs that run inside the logic engine, so only continue if you trust this project. The file is checked against its published SHA-256 when there is one.")
                     .Replace("{0}", game).Replace("{1}", version.Version).Replace("{2}", repo),
                 _tr("Trust and install"), () =>

@@ -196,6 +196,8 @@ public partial class MainTrackerWindow
             LogicBannerAsync);
         await ScenarioAsync("Solo test: Test this game… on a game's page runs the whole chain against the fake engine (the apworld already there, a pack installed, a YAML from the engine, a seed generated again without the game's patch output when the first try wants a ROM, a server on this PC, the AtlasTest slot connected with the YAML, logic and the pack scored) and writes a scrubbed report with a JSON twin; the owner's notes land in it once; Stop ends the server and removes the test multiworld; a generation that fails outright ends the chain with the report saying so",
             SoloTestAsync);
+        await ScenarioAsync("Solo test questions: a question the test asks (trusting the apworld's project) opens on the test's own window, so a click on that window can't bury it; Cancel ends the test at once even while the question waits; closing the window then answers the question \"no\", and a permission question whose window goes is a \"no\" that isn't remembered",
+            SoloTestQuestionsAsync);
         await ScenarioAsync("Solo batch: Test every ready game… on the Games page runs the solo test over the games with a pack without a server or a slot (Host and Connect skipped, nothing installed, no multiworld made), writes a report per game saying so and a summary table naming each game's logic and pack scores",
             SoloBatchAsync);
         await ScenarioAsync("BK: with logic running, checks left and none of them in logic, the Logic Tracker and Key Items say so with the count done, and the slot card says BK; an item that opens a check ends it",
@@ -935,6 +937,74 @@ public partial class MainTrackerWindow
             _appSettings.ApprovedApworldSources.RemoveAll(s => s == Source);
             DataManager.SaveSettings(_appSettings);
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
+        }
+    }
+
+    private async Task SoloTestQuestionsAsync()
+    {
+        StartFakeEngine(UiTestPython()).Apply();
+        var checkBefore = AtlasEngine.State.LastCheck;
+        AtlasEngine.State.LastCheck = new EngineCheckResult { Games = new List<string> { "Test Game" }, TrackerLoads = true };
+        // The window's hooks, with the apworld install standing in for the Games page's: it asks the trust question where
+        // the window's hook would (the test's own window while it shows) and waits for the answer.
+        TaskCompletionSource<bool>? answer = null;
+        var real = SoloHooks();
+        var hooks = new AP_Atlas.Core.EngineSetup.SoloTestHooks
+        {
+            Settings = real.Settings,
+            InstallApworldAsync = game =>
+            {
+                answer = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                AP_Atlas.UI.Dialogs.Confirm(SoloQuestionParent(), "Trust this project?", "Install the Question Game apworld from github.com/uitest/question-game?", "Trust and install",
+                    () => answer.TrySetResult(true), null, () => answer.TrySetResult(false));
+                return answer.Task;
+            },
+            ChoosePackAsync = real.ChoosePackAsync,
+            InstallPackAsync = real.InstallPackAsync,
+            RecommendedPack = real.RecommendedPack,
+            PreferPack = real.PreferPack,
+            AddProfile = real.AddProfile,
+            RemoveProfile = real.RemoveProfile,
+            ConnectSlotAsync = real.ConnectSlotAsync,
+            Scrubber = real.Scrubber,
+            AtlasVersionLine = real.AtlasVersionLine,
+            Notice = real.Notice,
+        };
+        string reports = AP_Atlas.Core.EngineSetup.SoloTestRunner.ReportsFolder;
+        var dialog = AP_Atlas.UI.SoloTestDialog.Open(this, "Question Game", text => Tr(text), hooks);
+        var holder = new Control();
+        AddChild(holder);
+        try
+        {
+            dialog.StartForTests();
+            var question = await UiTestWaitForAsync(() => dialog.GetChildren().OfType<ConfirmationDialog>().FirstOrDefault(d => d.Title == "Trust this project?"), "the test's question");
+            UiTestExpect(question.GetParent() == dialog && question.Visible && question.Exclusive, "the test's question didn't open on the test's own window");
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            dialog.CancelForTests();
+            await UiTestWaitForAsync(() => dialog.StepStates()[AP_Atlas.Core.Reports.SoloTestStep.Report] == AP_Atlas.Core.Reports.SoloStepOutcome.Done ? dialog : null, "the cancelled test to end", 10);
+            UiTestExpect(dialog.StepStates()[AP_Atlas.Core.Reports.SoloTestStep.Apworld] == AP_Atlas.Core.Reports.SoloStepOutcome.Cancelled && !dialog.Runner.Busy && clock.Elapsed < TimeSpan.FromSeconds(5),
+                $"Cancel didn't end the test while its question waited: the apworld step is {dialog.StepStates()[AP_Atlas.Core.Reports.SoloTestStep.Apworld]}, busy {dialog.Runner.Busy}, {clock.Elapsed.TotalSeconds:0.0} s");
+            UiTestExpect(answer != null && !answer.Task.IsCompleted, "the question was answered before anyone answered it");
+            // Closing the test's window (nothing runs now) takes its question with it, answered "no".
+            dialog.EmitSignal(AcceptDialog.SignalName.Confirmed);
+            await UiTestWaitForAsync(() => answer!.Task.IsCompleted ? answer : null, "the question to be answered when its window closed");
+            UiTestExpect(!await answer!.Task, "a question whose window closed counted as a yes");
+            // A permission question whose window goes away is a "no", and nothing is remembered for it.
+            bool? decided = null;
+            AP_Atlas.UI.PermissionDialog.Ask(holder, _appSettings, AP_Atlas.Core.Permissions.WriteArchipelago, "uitest-question-scope", null, allowed => decided = allowed);
+            UiTestExpect(holder.GetChildren().OfType<ConfirmationDialog>().Any(), "the permission question wasn't asked");
+            holder.QueueFree();
+            await UiTestWaitForAsync(() => decided != null ? (object)decided : null, "the permission question to answer when its window went");
+            UiTestExpect(decided == false && !AP_Atlas.Core.Permissions.IsAllowed(_appSettings, AP_Atlas.Core.Permissions.WriteArchipelago, "uitest-question-scope"),
+                $"a permission question whose window went answered {decided}");
+        }
+        finally
+        {
+            AtlasEngine.State.LastCheck = checkBefore;
+            if (IsInstanceValid(dialog) && !dialog.IsQueuedForDeletion()) dialog.QueueFree();
+            if (IsInstanceValid(holder) && !holder.IsQueuedForDeletion()) holder.QueueFree();
+            AP_Atlas.Core.EngineSetup.SoloTestRunner.StopAll();
+            if (System.IO.Directory.Exists(reports)) foreach (string file in System.IO.Directory.GetFiles(reports, "Question_Game-*")) System.IO.File.Delete(file);
         }
     }
 
@@ -3583,6 +3653,9 @@ public partial class MainTrackerWindow
             var fitting = await _packManagerPanel.InstallFittingReleaseAsync("Test Game", "packs/test-game-poptracker", said.Add);
             UiTestExpect(fitting.Ok && System.IO.File.Exists(fromGitHub) && fitting.File == fromGitHub && fitting.Detail.StartsWith("took v1:") && said.Any(s => s.StartsWith("trying github.com/packs/test-game-poptracker v2")),
                 $"the fitting release wasn't installed without a question: {fitting.Ok}, \"{fitting.Detail}\", said {string.Join(" | ", said)}");
+            // The releases tried were downloaded beside the packs, never among them, and are gone once one is kept.
+            string trying = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(fromGitHub)!, AP_Atlas.Core.MapPackManagerControl.TryingFolder);
+            UiTestExpect(!System.IO.Directory.Exists(trying) || System.IO.Directory.GetFileSystemEntries(trying).Length == 0, "the releases tried for fit were left behind");
             AP_Atlas.Core.SafeFile.Delete(fromGitHub);
             AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
             await UiTestWaitForAsync(() => slot.Pack == null && slot.MapTracker.ShowingEmptyState ? slot : null, "the map to say the fitting pack is gone");

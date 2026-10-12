@@ -417,7 +417,9 @@ namespace AP_Atlas.Core.PopTracker
                 ImagesChecked = original.ImagesChecked,
                 ItemMapping = original.ItemMapping,
                 LocationMappingById = original.LocationMappingById,
+                LocationCodesById = original.LocationCodesById,
                 UnkeyedLocationPaths = original.UnkeyedLocationPaths,
+                MappingsBuiltByScripts = original.MappingsBuiltByScripts,
                 LoadIssues = original.LoadIssues,
                 BrokenImages = original.BrokenImages,
                 ItemGridGroups = original.ItemGridGroups.Select(g => new PackItemGrid
@@ -551,16 +553,8 @@ namespace AP_Atlas.Core.PopTracker
                 var pin = e.Locations.FirstOrDefault(l => l.FullPath == lf.PinPath);
                 if (pin == null) continue;
                 var section = ResolveSection(pin, lf.SectionName);
-                // Clear what that section showed, then link the chosen location (if any).
-                foreach (var id in index.IdsFor(pin).ToList())
-                {
-                    if (index.ByLocation.TryGetValue(id, out var matches) && matches.Any(m => m.Pin == pin && m.Section == section))
-                    {
-                        matches.RemoveAll(m => m.Pin == pin && m.Section == section);
-                        if (!matches.Any(m => m.Pin == pin)) index.IdsFor(pin).Remove(id);
-                        if (matches.Count == 0) index.ByLocation.Remove(id);
-                    }
-                }
+                // Clear what that section showed (and the sections referring to it), then link the chosen location (if any).
+                index.ClearSection(pin, section);
                 if (lf.ApLocationId != null) index.Link(lf.ApLocationId.Value, pin, section);
             }
             foreach (var ap in f.AddedPins)

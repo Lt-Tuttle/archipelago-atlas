@@ -22,7 +22,7 @@ public partial class MainTrackerWindow
     private SoloTestHooks SoloHooks() => new SoloTestHooks
     {
         Settings = _appSettings,
-        InstallApworldAsync = game => _gamesPage != null ? _gamesPage.InstallNewestAsync(game, this) : Task.FromResult(false),
+        InstallApworldAsync = game => _gamesPage != null ? _gamesPage.InstallNewestAsync(game, SoloQuestionParent()) : Task.FromResult(false),
         ChoosePackAsync = _ => Task.FromResult<PackChoice?>(null), // the dialog takes this over
         // Without asking (Start covered the downloads): the newest release that fits the game's names.
         InstallPackAsync = (game, repo, say) => _packManagerPanel.InstallFittingReleaseAsync(game, repo, say),
@@ -44,6 +44,14 @@ public partial class MainTrackerWindow
         AtlasVersionLine = () => AP_Atlas.Core.AtlasVersion.Display,
         Notice = text => ShowToast(text, AP_Atlas.Core.ThemeColors.Text),
     };
+
+    /// <summary>
+    /// Where the test's questions (the GitHub lookup, trusting the apworld's project) open: on the test's window while it
+    /// shows, so they stay above it and a click on it brings them forward instead of burying them (a question on the main
+    /// window sat behind the test's window and held the rest of Atlas); else on the main window.
+    /// </summary>
+    private Node SoloQuestionParent() =>
+        GetChildren().OfType<AP_Atlas.UI.SoloTestDialog>().FirstOrDefault(d => d.Visible && !d.IsQueuedForDeletion()) ?? (Node)this;
 
     /// <summary>Connects a slot the way its row's button does and waits for its view (null when it didn't connect in a minute).</summary>
     internal async Task<SlotTrackerControl?> ConnectForSoloTestAsync(MultiworldProfile profile, string slot)

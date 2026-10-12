@@ -134,6 +134,20 @@ namespace AP_Atlas.Core.PopTracker
         }
 
         /// <summary>
+        /// The Doctor's analysis of a pack and nothing else a check does: no fixes linked, no prompt, no report kept, its
+        /// images left alone. How a release that's only being tried fits the game's names.
+        /// </summary>
+        public static async Task<DoctorReport> MeasureAsync(LoadedPack original)
+        {
+            if (original == null) return null;
+            string game = GameNames.ResolveGame(original.Manifest) ?? original.Manifest?.GameName;
+            await EnsureLocalNamesAsync(game);
+            game = GameNames.ResolveGame(original.Manifest) ?? game;
+            var inputs = PackDoctor.Prepare(original, GameNames.Best(game));
+            return await Task.Run(() => PackDoctor.Analyze(inputs));
+        }
+
+        /// <summary>
         /// What the automatic pass is recorded against: the pack's version and Atlas's, so the pass runs again (for what's
         /// still unlinked) when Atlas's rules improve, not only when the pack changes.
         /// </summary>

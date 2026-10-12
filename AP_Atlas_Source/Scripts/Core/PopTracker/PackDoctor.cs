@@ -582,6 +582,8 @@ namespace AP_Atlas.Core.PopTracker
                 var sections = pin.Sections != null && pin.Sections.Count > 0 ? pin.Sections.Cast<PopTrackerSection>().ToList() : new List<PopTrackerSection> { null };
                 foreach (var sec in sections)
                 {
+                    // Hint markers and sections that hold no check (an entrance or boss toggle) aren't checks to link.
+                    if (!index.CountsAsCheck(pin, sec)) continue;
                     report.SectionsTotal++;
                     var match = index.IdsFor(pin)
                         .SelectMany(id => index.ByLocation.TryGetValue(id, out var m) ? m : new List<PackIndex.SectionMatch>())
@@ -612,13 +614,16 @@ namespace AP_Atlas.Core.PopTracker
                 if (name != null && name.StartsWith("atlas:")) continue;
                 if (string.IsNullOrWhiteSpace(name)) name = $"(unnamed pin in {pin.FullPath.TrimEnd('/')})";
                 string subject = $"link:{pin.FullPath}|{sec?.Name ?? ""}";
+                string reference = index.UnresolvedReferenceOf(pin.FullPath, sec?.Name ?? "");
                 add(new Finding
                 {
                     Key = "loc:unmatched:" + pin.FullPath + "|" + (sec?.Name ?? ""),
                     Category = "Locations",
                     Severity = FindingSeverity.Warning,
                     Title = $"Pin section \"{name}\" isn't linked to an Archipelago location",
-                    Detail = $"On pin '{pin.FullPath}'. It stays red and never clears. Pick the location it stands for, or ignore it if the game doesn't have it.",
+                    Detail = reference != null
+                        ? $"On pin '{pin.FullPath}'. It's meant to show the check of \"{reference}\", which isn't in the pack, so it stays red. Pick the location it stands for, or ignore it."
+                        : $"On pin '{pin.FullPath}'. It stays red and never clears. Pick the location it stands for, or ignore it if the game doesn't have it.",
                     Subject = subject,
                     Actions = FindingActions.LinkLocation,
                     Query = name,
@@ -627,7 +632,7 @@ namespace AP_Atlas.Core.PopTracker
                 });
             }
 
-            var loose = index.ByLocation.SelectMany(kv => kv.Value.Where(m => m.Source == MatchSource.LooseName).Select(m => (Id: kv.Key, Match: m))).ToList();
+            var loose = index.ByLocation.SelectMany(kv => kv.Value.Where(m => m.Source == MatchSource.LooseName && m.Via == null).Select(m => (Id: kv.Key, Match: m))).ToList();
             if (loose.Count > 0)
             {
                 add(new Finding
@@ -641,7 +646,7 @@ namespace AP_Atlas.Core.PopTracker
                 });
             }
 
-            var composed = index.ByLocation.SelectMany(kv => kv.Value.Where(m => m.Source == MatchSource.ComposedName).Select(m => (Id: kv.Key, Match: m))).ToList();
+            var composed = index.ByLocation.SelectMany(kv => kv.Value.Where(m => m.Source == MatchSource.ComposedName && m.Via == null).Select(m => (Id: kv.Key, Match: m))).ToList();
             if (composed.Count > 0)
             {
                 add(new Finding
@@ -663,6 +668,30 @@ namespace AP_Atlas.Core.PopTracker
                     Severity = FindingSeverity.Info,
                     Title = $"{index.HintMarkerSections} sections are hint markers, not checks",
                     Detail = "Sections and pins named \"… - hint\" (or \"… Hints\") are PopTracker's hint tracking. Atlas leaves them out of the pairing and the counts."
+                });
+            }
+            if (index.NoCheckSections > 0)
+            {
+                add(new Finding
+                {
+                    Key = "loc:no-check",
+                    Category = "Locations",
+                    Severity = FindingSeverity.Info,
+                    Title = $"{index.NoCheckSections} sections hold an item to click, not a check",
+                    Detail = "Sections that host an item without an item_count (an entrance, a boss) count no check in PopTracker. Atlas leaves them out of the pairing and the counts; a location the pack's mapping sends to their item still shows there."
+                });
+            }
+            if (index.UnresolvedReferences.Count > 0)
+            {
+                // Said for the pack's author (the report includes it); the user's map is fine where the names paired.
+                add(new Finding
+                {
+                    Key = "loc:refs",
+                    Category = "Locations",
+                    Severity = FindingSeverity.Info,
+                    Title = index.UnresolvedReferences.Count == 1 ? "A section refers to a section that isn't in the pack" : $"{index.UnresolvedReferences.Count} sections refer to sections that aren't in the pack",
+                    Detail = "A section with \"ref\" shows another section's check on its map. These name one the pack doesn't have, so Atlas paired them by their own names instead.",
+                    Details = index.UnresolvedReferences.Take(200).Select(r => $"{r.Pin.FullPath} / {r.Section.Name}  →  ref \"{r.Section.Ref}\"").ToList()
                 });
             }
 
@@ -815,8 +844,10 @@ namespace AP_Atlas.Core.PopTracker
                 var id = chosen(f).Id;
                 if (report?.Index == null || !report.Index.ByLocation.TryGetValue(id, out var shownBy) || shownBy.Count == 0) continue;
                 var parts = f.Subject.Substring(f.Subject.IndexOf(':') + 1).Split('|');
+                // A section referring to one the pack doesn't have is meant to show another section's check: no clash.
+                if (report.Index.UnresolvedReferenceOf(parts[0], parts.Length > 1 ? parts[1] : "") != null) continue;
                 string mine = SameCheckKey(parts[0], parts.Length > 1 ? parts[1] : "");
-                var other = shownBy.FirstOrDefault(m => SameCheckKey(m.Pin.FullPath, m.Section?.Name) != mine);
+                var other = shownBy.FirstOrDefault(m => m.Via == null && SameCheckKey(m.Pin.FullPath, m.Section?.Name) != mine);
                 if (other != null) conflicts[f.Key] = $"Already shown by a different check: \"{other.Section?.Name ?? other.Pin.Name}\" on pin {other.Pin.FullPath}.";
             }
             foreach (var key in conflicts.Keys.ToList())
@@ -853,11 +884,15 @@ namespace AP_Atlas.Core.PopTracker
             if (q.Core.Length == 0 || q.Area.Length == 0) return false;
             var best = Prepare(f.Suggestions[0].Label);
             if (best.Area != q.Area || best.Core != q.Core) return false;
+            // Numbered copies ("Fading Soul 2" and "Fading Soul - boss arena #2") are told apart by their number: the only
+            // one of its kind is the only one with that number (a "1" being the game's unnumbered first copy).
+            bool numbered = q.Numbers.Count > 0 || best.Numbers.Count > 0;
+            if (numbered && !SameCopy(q.Numbers, best.Numbers)) return false;
             int same = 0;
             foreach (var name in report.Names.Locations.Keys)
             {
                 var p = Prepare(name);
-                if (p.Area == q.Area && p.Core == q.Core && ++same > 1) return false;
+                if (p.Area == q.Area && p.Core == q.Core && (!numbered || SameCopy(p.Numbers, q.Numbers)) && ++same > 1) return false;
             }
             if (same != 1) return false;
             int colon = f.Query.IndexOf(':');
@@ -867,6 +902,10 @@ namespace AP_Atlas.Core.PopTracker
             f.Suggestions[0].Reason = $"the only '{(dash > 0 ? rest.Substring(0, dash) : rest).Trim()}' in {(colon > 0 ? f.Query.Substring(0, colon).Trim() : "its area")}";
             return true;
         }
+
+        /// <summary>Whether two names' copy numbers say the same copy: the same numbers, or a "1" against none.</summary>
+        private static bool SameCopy(HashSet<string> a, HashSet<string> b) =>
+            a.SetEquals(b) || (a.Count == 0 && b.Count == 1 && b.Contains("1")) || (b.Count == 0 && a.Count == 1 && a.Contains("1"));
 
         // =====================================================================
         // Similarity
@@ -888,6 +927,8 @@ namespace AP_Atlas.Core.PopTracker
         private sealed class Prepared
         {
             public string Text = "";
+            /// <summary>The text with a slash, "&amp;" and "w/" read as gaps (the way Atlas read them before), for exactness only.</summary>
+            public string Plain = "";
             public HashSet<string> Tokens = new HashSet<string>();
             public HashSet<string> Bigrams = new HashSet<string>();
             /// <summary>"Area: Thing - detail" → area "pw2" (letters/digits only), core "soul of sister friede".</summary>
@@ -905,7 +946,7 @@ namespace AP_Atlas.Core.PopTracker
             {
                 if (_prepCache.TryGetValue(s, out var cached)) return cached;
             }
-            var p = new Prepared { Text = Normalize(s) };
+            var p = new Prepared { Text = Normalize(s), Plain = Normalize(s, equivalences: false) };
             p.Tokens = new HashSet<string>(p.Text.Split(' ').Where(t => t.Length > 1));
             // Many games name checks "Area: Thing - where": the "Thing" is what identifies it.
             int colon = s.IndexOf(':');
@@ -932,12 +973,14 @@ namespace AP_Atlas.Core.PopTracker
 
         /// <summary>
         /// Lower case, letters and digits only, one space between words; a few ways of writing the same thing read the same
-        /// first: "w/Sirris" and "with Sirris", "Yoel/Yuria" and "Yoel or Yuria", "&amp;" and "and".
+        /// first: "w/Sirris" and "with Sirris", "Yoel/Yuria" and "Yoel or Yuria", "&amp;" and "and". Without
+        /// <paramref name="equivalences"/>, those marks are gaps like any other ("Pharros/elevator room" is
+        /// "pharros elevator room", as a pack writing "Pharros - elevator room" has it).
         /// </summary>
-        private static string Normalize(string s)
+        private static string Normalize(string s, bool equivalences = true)
         {
             string t = s.ToLowerInvariant();
-            if (t.Contains('/') || t.Contains('&'))
+            if (equivalences && (t.Contains('/') || t.Contains('&')))
             {
                 t = System.Text.RegularExpressions.Regex.Replace(t, @"\bw/(?=\w)", "with ");
                 t = System.Text.RegularExpressions.Regex.Replace(t, @"(?<=\w)/(?=\w)", " or ");
@@ -956,7 +999,7 @@ namespace AP_Atlas.Core.PopTracker
         private static double Score(Prepared a, Prepared b)
         {
             if (a.Text.Length == 0 || b.Text.Length == 0) return 0;
-            if (a.Text == b.Text) return 1;
+            if (a.Text == b.Text || a.Plain == b.Plain) return 1;
             return Math.Clamp(NameScore(a, b) * NumberFactor(a.Numbers, b.Numbers), 0, 0.99);
         }
 
@@ -1021,7 +1064,7 @@ namespace AP_Atlas.Core.PopTracker
             sb.AppendLine($"Checked against Archipelago's {report.Names?.Game} names ({report.Names?.Source}, {report.Names?.Version}).");
             sb.AppendLine();
             // Only problems in the pack (not the user's settings or local fixes).
-            var relevant = report.Findings.Where(f => f.Category != "Names" && f.Category != "Your fixes" && f.Severity != FindingSeverity.Info).ToList();
+            var relevant = report.Findings.Where(f => f.Category != "Names" && f.Category != "Your fixes" && (f.Severity != FindingSeverity.Info || f.Key == "loc:refs")).ToList();
             if (relevant.Count == 0)
             {
                 sb.AppendLine("No problems found.");

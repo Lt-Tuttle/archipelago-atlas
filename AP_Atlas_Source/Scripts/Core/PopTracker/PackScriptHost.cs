@@ -1422,6 +1422,63 @@ namespace AP_Atlas.Core.PopTracker
         }
 
         // =====================================================================
+        // The mapping tables the scripts built
+        // =====================================================================
+
+        /// <summary>
+        /// The mapping tables the scripts left once started (the globals named …LOCATION_MAPPING and …ITEM_MAPPING after
+        /// init.lua), as PopTracker looks ids up in them: id → the strings it holds ("@" paths, item codes and their types).
+        /// Only whole-number keys count: a table keyed by name isn't one ids are looked up in.
+        /// Empty when the scripts built none, haven't started, or were stopped.
+        /// </summary>
+        public (Dictionary<long, List<string>> Locations, Dictionary<long, List<string>> Items) BuiltMappings()
+        {
+            var locations = new Dictionary<long, List<string>>();
+            var items = new Dictionary<long, List<string>>();
+            if (_script == null || Stopped) return (locations, items);
+            foreach (var pair in _script.Globals.Pairs.ToList())
+            {
+                if (pair.Key.Type != DataType.String || pair.Value.Type != DataType.Table) continue;
+                string name = pair.Key.String;
+                if (name.EndsWith("LOCATION_MAPPING", StringComparison.Ordinal)) CollectMapping(pair.Value.Table, locations);
+                else if (name.EndsWith("ITEM_MAPPING", StringComparison.Ordinal)) CollectMapping(pair.Value.Table, items);
+            }
+            return (locations, items);
+        }
+
+        private static void CollectMapping(Table table, Dictionary<long, List<string>> into)
+        {
+            int seen = 0;
+            foreach (var pair in table.Pairs)
+            {
+                if (++seen > 200_000) return;
+                if (pair.Key.Type != DataType.Number) continue;
+                double key = pair.Key.Number;
+                if (key != Math.Floor(key) || Math.Abs(key) > 9e15) continue;
+                var strings = new List<string>();
+                CollectStrings(pair.Value, strings, 0);
+                var kept = strings.Where(s => s.Length > 0).ToList();
+                if (kept.Count == 0) continue;
+                long id = (long)key;
+                if (!into.TryGetValue(id, out var list)) into[id] = list = new List<string>();
+                foreach (string s in kept) if (!list.Contains(s)) list.Add(s);
+            }
+        }
+
+        // Every string in a mapping's value ({"@A/B"}, {{"code", "toggle"}}, "@A/B"), a few levels deep at most.
+        private static void CollectStrings(DynValue value, List<string> into, int depth)
+        {
+            if (into.Count >= 64 || depth > 4) return;
+            if (value.Type == DataType.String) into.Add(value.String);
+            else if (value.Type == DataType.Table)
+                foreach (var v in value.Table.Values)
+                {
+                    CollectStrings(v, into, depth + 1);
+                    if (into.Count >= 64) return;
+                }
+        }
+
+        // =====================================================================
         // Which slot_data option a code reflects (for labels and validation)
         // =====================================================================
 

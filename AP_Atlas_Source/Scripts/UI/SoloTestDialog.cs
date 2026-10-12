@@ -212,6 +212,11 @@ namespace AP_Atlas.UI
             _busy.Visible = false;
             _cancelRun.Disabled = true;
             _logLine.Text = string.Empty;
+            // A pack choice the test no longer waits for (it was cancelled while the rows showed) goes with it.
+            _packChoice?.TrySetResult(null);
+            _packChoice = null;
+            ClearPackRows();
+            _packBox.Visible = false;
             bool connected = result?.Steps.Any(s => s.Step == SoloTestStep.Connect && s.Outcome == SoloStepOutcome.Done) == true;
             _outcome.Text = result == null ? _tr("The test couldn't run: the log says why.")
                 : connected ? _tr("The slot is connected to the test server. Look at the Map Tracker, Key Items and the Logic Tracker, then answer below and save; Stop the test server when you're done.")
@@ -334,6 +339,8 @@ namespace AP_Atlas.UI
         internal IReadOnlyDictionary<SoloTestStep, SoloStepOutcome> StepStates() => _states;
         internal SoloTestRunner Runner => _runner;
         internal void StartForTests() => Start();
+        /// <summary>What "Cancel the test" does.</summary>
+        internal void CancelForTests() => _cts?.Cancel();
         internal void ChoosePackForTests(string? repo) => PickPack(new PackChoice(repo));
         internal void FillNotesForTests(SoloOwnerNotes notes)
         {

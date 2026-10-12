@@ -614,6 +614,147 @@ namespace AP_Atlas.Core
                 $"the only Firelink Armor in FS wasn't taken as sure (or Soul Arrow was): {string.Join(", ", sure.Select(f => f.Key))}; reason {armor.Suggestions[0].Reason}");
         }
 
+        /// <summary>
+        /// Packs show one check on several maps with a section that refers to another ("ref"), and some build their mapping
+        /// as their scripts run (Dark Souls II numbers a list of paths in a loop; Symphony of the Night adds its relics to
+        /// ITEM_MAPPING in one). Both read as PopTracker reads them; a reference the pack can't resolve is an ordinary
+        /// section, said for the author.
+        /// </summary>
+        private static async Task PackReferencesAndBuiltMappings()
+        {
+            string zip = Scratch("selftest_refs.zip");
+            AP_Atlas.Core.Testing.FakeMapPack.Write(zip, "Self-test refs pack", "Self Test Game F", initLua: """
+                ScriptHost:LoadScript("scripts/autotracking/item_mapping.lua")
+                ScriptHost:LoadScript("scripts/autotracking/location_mapping.lua")
+                """, files: new Dictionary<string, string>
+            {
+                ["scripts/autotracking/location_mapping.lua"] = """
+                    LOCATIONS = {
+                        {"@Region/Cave/Chest"},
+                        {"@Region/Cave/Shelf"},
+                        {"@Overworld/Hut view/"},
+                    }
+                    LOCATION_MAPPING = {}
+                    for n, item in ipairs(LOCATIONS) do
+                        LOCATION_MAPPING[n] = item
+                    end
+                    """,
+                ["scripts/autotracking/item_mapping.lua"] = """
+                    BASE = 0x100
+                    RELICS = { {"sword", "toggle"}, {"shield", "toggle"} }
+                    ITEM_MAPPING = {}
+                    for n, item in ipairs(RELICS) do
+                        ITEM_MAPPING[BASE + n - 1] = item
+                    end
+                    """,
+            }, locationsJson: """
+                [{"name":"Region","children":[
+                    {"name":"Cave","sections":[{"name":"Chest"},{"name":"Shelf"}],"map_locations":[{"map":"World","x":10,"y":10}]},
+                    {"name":"Hut","sections":[{"name":""}],"map_locations":[{"map":"World","x":20,"y":10}]}]},
+                 {"name":"Overworld","children":[
+                    {"name":"Cave view","sections":[{"name":"Item","ref":"Region/Cave/Chest"},{"ref":"Region/Cave/Shelf"},{"name":"Gone","ref":"Region/Nowhere/Thing"}],"map_locations":[{"map":"World","x":30,"y":10}]},
+                    {"name":"Hut view","sections":[{"ref":"Region/Hut/"}],"map_locations":[{"map":"World","x":40,"y":10}]}]}]
+                """);
+            var pack = await Task.Run(() => PopTracker.PopTrackerPackLoader.InspectZipPack(zip)) ?? throw new InvalidOperationException("the test pack wasn't read");
+            string Mapping(Dictionary<long, List<string>> m) => string.Join(" | ", m.OrderBy(kv => kv.Key).Select(kv => kv.Key + "=" + string.Join(",", kv.Value)));
+            Expect(Mapping(pack.LocationMappingById) == "1=@Region/Cave/Chest | 2=@Region/Cave/Shelf | 3=@Overworld/Hut view/" && pack.UnkeyedLocationPaths.Count == 0,
+                $"the location mapping the scripts build wasn't read: {Mapping(pack.LocationMappingById)}; unkeyed {pack.UnkeyedLocationPaths.Count}");
+            Expect(Mapping(pack.ItemMapping) == "256=sword | 257=shield", $"the item mapping the scripts build wasn't read: {Mapping(pack.ItemMapping)}");
+            Expect(pack.MappingsBuiltByScripts.SequenceEqual(new[] { "locations", "items" }) && !pack.LoadIssues.Any(i => i.Contains("mapping.lua")),
+                $"the built mappings weren't noted, or the files' issues stayed: {string.Join(", ", pack.MappingsBuiltByScripts)}; {string.Join(" | ", pack.LoadIssues)}");
+
+            var names = new PopTracker.GameNameTable
+            {
+                Game = "Self Test Game F",
+                Locations = new Dictionary<string, long> { ["Cave Chest"] = 1, ["Cave Shelf"] = 2, ["Hut"] = 3, ["Extra"] = 4 },
+                Items = new Dictionary<string, long> { ["Sword"] = 256, ["Shield"] = 257 }
+            };
+            var index = new PopTracker.PackIndex(pack, names.LocationsById(), names.Items.ToDictionary(kv => kv.Value, kv => kv.Key));
+            var cave = pack.Locations.Single(l => l.FullPath == "Region/Cave");
+            var hut = pack.Locations.Single(l => l.FullPath == "Region/Hut");
+            var caveView = pack.Locations.Single(l => l.FullPath == "Overworld/Cave view");
+            var hutView = pack.Locations.Single(l => l.FullPath == "Overworld/Hut view");
+            string Shown(long id) => index.ByLocation.TryGetValue(id, out var m) ? string.Join(", ", m.Select(x => x.Pin.Name + "/" + (x.Section?.Name ?? "-") + (x.Via != null ? "*" : ""))) : "";
+            Expect(Shown(1) == "Cave/Chest, Cave view/Item*" && Shown(2) == "Cave/Shelf, Cave view/*" && Shown(3) == "Hut/, Hut view/*",
+                $"a section referring to another doesn't show its check (a path landing on one stands for its target): 1 [{Shown(1)}] 2 [{Shown(2)}] 3 [{Shown(3)}]");
+            Expect(index.ReferenceSections == 3 && index.UnresolvedReferences.Count == 1 && index.UnresolvedReferences[0].Section.Name == "Gone"
+                && index.UnmatchedSections().Select(u => u.Pin.Name + "/" + u.Section?.Name).SequenceEqual(new[] { "Cave view/Gone" }),
+                $"references weren't told apart: {index.ReferenceSections} resolved, {index.UnresolvedReferences.Count} not; unmatched {string.Join(", ", index.UnmatchedSections().Select(u => u.Pin.Name + "/" + u.Section?.Name))}");
+            Expect(index.ItemIdsFor("sword").SequenceEqual(new long[] { 256 }), "the built item mapping didn't link the tile");
+            // A fix moves the check, and the referring section with it.
+            index.ClearSection(cave, cave.Sections[0]);
+            index.Link(4, cave, cave.Sections[0]);
+            Expect(Shown(1) == "" && Shown(4) == "Cave/Chest, Cave view/Item*", $"a fix didn't carry to the referring section: 1 [{Shown(1)}] 4 [{Shown(4)}]");
+            index.Unlink(4, cave);
+            Expect(Shown(4) == "", $"unlinking the section left its copy behind: [{Shown(4)}]");
+
+            var report = await Task.Run(() => PopTracker.PackDoctor.Analyze(PopTracker.PackDoctor.Prepare(pack, names)));
+            Expect(report.SectionsTotal == 7 && report.SectionsLinked == 6, $"the Doctor counts {report.SectionsLinked} of {report.SectionsTotal} sections linked (6 of 7 expected: references count with their target)");
+            Expect(report.Findings.Any(f => f.Key == "loc:refs" && f.Details.Count == 1) && !report.Findings.Any(f => f.Key == "locmap:dangling")
+                && report.Findings.Where(f => f.Key.StartsWith("loc:unmatched:", StringComparison.Ordinal)).Select(f => f.Key).SequenceEqual(new[] { "loc:unmatched:Overworld/Cave view|Gone" }),
+                "the Doctor didn't report the unresolved reference alone: " + string.Join(", ", report.Findings.Select(f => f.Key)));
+            Expect(PopTracker.PackDoctor.AuthorReport(report).Contains("ref \"Region/Nowhere/Thing\""), "the author's report leaves out the reference the pack can't resolve");
+            // That section is meant to show a check another section shows: choosing one isn't a clash, as it is for an ordinary section.
+            PopTracker.Finding Choosing(string pinPath, string section) => new PopTracker.Finding
+            {
+                Key = "loc:unmatched:" + pinPath + "|" + section,
+                Subject = "link:" + pinPath + "|" + section,
+                Actions = PopTracker.FindingActions.LinkLocation,
+                Query = section,
+                Suggestions = { new PopTracker.Suggestion { Id = 2, Label = "Cave Shelf", Score = 0.9 } }
+            };
+            var copy = Choosing("Overworld/Cave view", "Gone");
+            var ordinary = Choosing("Region/Hut", "");
+            var clashes = PopTracker.PackDoctor.Conflicts(report, new List<PopTracker.Finding> { copy }, f => f.Suggestions[0]);
+            var ordinaryClashes = PopTracker.PackDoctor.Conflicts(report, new List<PopTracker.Finding> { ordinary }, f => f.Suggestions[0]);
+            Expect(clashes.Count == 0 && ordinaryClashes.ContainsKey(ordinary.Key)
+                && report.Findings.First(f => f.Key == "loc:unmatched:Overworld/Cave view|Gone").Detail.Contains("Region/Nowhere/Thing"),
+                $"a section referring to a missing one was treated as an ordinary one: {string.Join("; ", clashes.Values)} | ordinary {ordinaryClashes.Count}");
+
+            // A slash between words reads as "or" and as a gap, so either way of writing it matches exactly.
+            var pharros = PopTracker.PackDoctor.Suggest("Bastille: Parrying Dagger - Pharros - elevator room, metal chest", new Dictionary<long, string> { [30] = "Bastille: Parrying Dagger - Pharros/elevator room, metal chest" }, 1);
+            Expect(pharros.Count == 1 && pharros[0].Score >= 0.999, $"\"Pharros - elevator room\" and \"Pharros/elevator room\" aren't the same name: {(pharros.Count > 0 ? pharros[0].Score : 0):0.000}");
+            // Numbered copies: the only one with that number links by itself ("1" being the unnumbered first); a number the game hasn't doesn't.
+            var game = new PopTracker.GameNameTable { Game = "Self Test Game F", Locations = new Dictionary<string, long> { ["Chariot: Fading Soul - boss arena"] = 20, ["Chariot: Fading Soul - boss arena #2"] = 21, ["Chariot: Fading Soul - boss arena #3"] = 22 } };
+            PopTracker.Finding Row(string key, string query) => new PopTracker.Finding { Key = "loc:unmatched:A|" + key, Subject = "link:A|" + key, Actions = PopTracker.FindingActions.LinkLocation, Query = query, Suggestions = PopTracker.PackDoctor.Suggest(query, game.LocationsById(), 3) };
+            var second = Row("2", "Chariot: Fading Soul 2 - boss arena");
+            var first = Row("1", "Chariot: Fading Soul 1 - boss arena");
+            var fourth = Row("4", "Chariot: Fading Soul 4 - boss arena");
+            var sure = PopTracker.PackDoctor.ExactMatches(new PopTracker.DoctorReport { Names = game, Findings = { second, first, fourth } });
+            Expect(sure.Contains(second) && second.Suggestions[0].Id == 21 && sure.Contains(first) && first.Suggestions[0].Id == 20 && !sure.Contains(fourth),
+                $"numbered copies weren't linked by their number: {string.Join(", ", sure.Select(f => f.Key + "→" + f.Suggestions[0].Id))}");
+
+            // Sections that host an item: PopTracker counts no check in one without an item_count (an entrance, a boss
+            // toggle), and a location mapped to an item code shows in the section hosting that item (Super Mario 64's pack).
+            string hosted = Scratch("selftest_hosted.zip");
+            AP_Atlas.Core.Testing.FakeMapPack.Write(hosted, "Self-test hosted pack", "Self Test Game H", files: new Dictionary<string, string>
+            {
+                ["scripts/autotracking/location_mapping.lua"] = """
+                    LOCATION_MAPPING = {
+                        [7] = {"__location_item_7"},
+                        [8] = {"@Castle/Throne/Chest"},
+                    }
+                    """
+            }, locationsJson: """
+                [{"name":"Castle","children":[
+                    {"name":"Star","sections":[{"name":"First Star","hosted_item":"__location_item_7"}],"map_locations":[{"map":"World","x":10,"y":10}]},
+                    {"name":"Gate","sections":[{"name":"To the Gate","hosted_item":"to_gate"},{"name":"Counted","hosted_item":"boss_key","item_count":1}],"map_locations":[{"map":"World","x":20,"y":10}]},
+                    {"name":"Throne","sections":[{"name":"Chest"}],"map_locations":[{"map":"World","x":30,"y":10}]},
+                    {"name":"Boss","sections":[{"name":"","hosted_item":"boss","item_count":0}],"map_locations":[{"map":"World","x":40,"y":10}]}]}]
+                """);
+            var hostedPack = await Task.Run(() => PopTracker.PopTrackerPackLoader.InspectZipPack(hosted)) ?? throw new InvalidOperationException("the hosted test pack wasn't read");
+            var hostedNames = new PopTracker.GameNameTable { Game = "Self Test Game H", Locations = new Dictionary<string, long> { ["Star 1"] = 7, ["Throne Chest"] = 8, ["Gate Key"] = 9, ["Boss"] = 10 } };
+            var hostedReport = await Task.Run(() => PopTracker.PackDoctor.Analyze(PopTracker.PackDoctor.Prepare(hostedPack, hostedNames)));
+            string HostedShown(long id) => hostedReport.Index.ByLocation.TryGetValue(id, out var m) ? string.Join(", ", m.Select(x => x.Pin.Name + "/" + x.Section?.Name)) : "";
+            Expect(HostedShown(7) == "Star/First Star" && HostedShown(8) == "Throne/Chest", $"a location mapped to an item code isn't shown by the section hosting it: 7 [{HostedShown(7)}] 8 [{HostedShown(8)}]");
+            // A toggle named like a location nothing else shows places it (placed is better than nowhere).
+            Expect(HostedShown(10) == "Boss/", $"the boss toggle didn't place the game's \"Boss\": [{HostedShown(10)}]");
+            Expect(hostedReport.SectionsTotal == 4 && hostedReport.SectionsLinked == 3 && hostedReport.Index.NoCheckSections == 1
+                && hostedReport.Findings.Where(f => f.Key.StartsWith("loc:unmatched:", StringComparison.Ordinal)).Select(f => f.Key).SequenceEqual(new[] { "loc:unmatched:Castle/Gate|Counted" })
+                && hostedReport.Findings.Any(f => f.Key == "loc:no-check"),
+                $"a section without a check was counted or reported ({hostedReport.SectionsLinked} of {hostedReport.SectionsTotal}, {hostedReport.Index.NoCheckSections} without a check): " + string.Join(", ", hostedReport.Findings.Select(f => f.Key)));
+        }
+
         private static async Task PackScriptsUseTheirOwnCompiledFiles()
         {
             string zip = Scratch("selftest_modules.zip");

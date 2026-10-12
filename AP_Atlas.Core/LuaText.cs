@@ -14,12 +14,6 @@ public static class LuaText
     public const int MaxCommentLevel = 32;
 
     /// <summary>
-    /// The text without its comments. A block comment (--[[ … ]], --[==[ … ]==]) leaves its line breaks, so lines keep
-    /// their numbers; a line comment goes to the end of its line. A block comment that's never closed, or whose level is
-    /// over <see cref="MaxCommentLevel"/>, is taken as a line comment. Strings aren't told apart: "--" in one starts a
-    /// comment here, which is close enough for looking through scripts.
-    /// </summary>
-    /// <summary>
     /// Lua 5.3's \u{XXXX} escapes written out as the characters they name (an invalid code point is left as written).
     /// MoonSharp compiles Lua 5.2, which has no such escape: a pack's "Siegbr\u{00e4}u" would otherwise end up as
     /// "Siegbru{00e4}u". The sequence can't occur in Lua 5.2 code outside a string, so the whole text is safe to expand.
@@ -35,6 +29,12 @@ public static class LuaText
         });
     }
 
+    /// <summary>
+    /// The text without its comments. A block comment (--[[ … ]], --[==[ … ]==]) leaves its line breaks, so lines keep
+    /// their numbers; a line comment goes to the end of its line. A block comment that's never closed, or whose level is
+    /// over <see cref="MaxCommentLevel"/>, is taken as a line comment. Strings aren't told apart: "--" in one starts a
+    /// comment here, which is close enough for looking through scripts.
+    /// </summary>
     public static string StripComments(string text)
     {
         var result = new StringBuilder(text.Length);

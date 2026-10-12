@@ -18,15 +18,26 @@ namespace AP_Atlas.UI
             var confirmation = Requirement(dialog, requirement);
             if (confirmation != null) box.AddChild(confirmation);
             dialog.AddChild(box);
+            bool answered = false;
             dialog.Confirmed += () =>
             {
-                if (confirmation != null && !confirmation.ButtonPressed) return;
+                if (answered || (confirmation != null && !confirmation.ButtonPressed)) return;
+                answered = true;
                 dialog.QueueFree();
                 onConfirm();
             };
             dialog.Canceled += () =>
             {
+                if (answered) return;
+                answered = true;
                 dialog.QueueFree();
+                onCancel?.Invoke();
+            };
+            // Closed with what holds it (a window that asked went away): whoever waits hears "no".
+            dialog.TreeExiting += () =>
+            {
+                if (answered) return;
+                answered = true;
                 onCancel?.Invoke();
             };
             parent.AddChild(dialog);

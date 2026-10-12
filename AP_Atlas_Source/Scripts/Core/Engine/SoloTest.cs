@@ -132,7 +132,7 @@ namespace AP_Atlas.Core.EngineSetup
                     if (!has)
                     {
                         progress?.Report(new SoloTestProgress(SoloTestStep.Apworld, SoloStepOutcome.Running, "installing the apworld", null));
-                        if (!await hooks.InstallApworldAsync(Game)) return Failed("the apworld wasn't installed (the Games page's log says why, or the project wasn't trusted)");
+                        if (!await hooks.InstallApworldAsync(Game).WaitAsync(ct)) return Failed("the apworld wasn't installed (the Games page's log says why, or the project wasn't trusted)");
                     }
                     var copies = ApworldSources.InstalledCopies(install, Game);
                     foreach (var copy in copies)
@@ -158,12 +158,12 @@ namespace AP_Atlas.Core.EngineSetup
                     if (repo == null)
                     {
                         progress?.Report(new SoloTestProgress(SoloTestStep.MapPack, SoloStepOutcome.Running, "looking for a pack on GitHub", null));
-                        var choice = await hooks.ChoosePackAsync(Game);
+                        var choice = await hooks.ChoosePackAsync(Game).WaitAsync(ct);
                         if (choice?.Repo == null) return Done("no pack: Pins, Key Items and Scripts aren't scored");
                         repo = choice.Repo;
                     }
                     progress?.Report(new SoloTestProgress(SoloTestStep.MapPack, SoloStepOutcome.Running, "installing the pack from github.com/" + repo + (recommended != null ? " (the game's setup guide recommends it)" : ""), null));
-                    var (ok, detail, file) = await hooks.InstallPackAsync(Game, repo, line => progress?.Report(new SoloTestProgress(SoloTestStep.MapPack, SoloStepOutcome.Running, line, null)));
+                    var (ok, detail, file) = await hooks.InstallPackAsync(Game, repo, line => progress?.Report(new SoloTestProgress(SoloTestStep.MapPack, SoloStepOutcome.Running, line, null))).WaitAsync(ct);
                     if (!ok) return Failed("the pack from github.com/" + repo + " wasn't installed: " + detail);
                     if (file != null) hooks.PreferPack(Game, Path.GetFileName(file));
                     pack = InstalledPackFor(Game);
@@ -244,7 +244,7 @@ namespace AP_Atlas.Core.EngineSetup
                     DataManager.SaveSettings(hooks.Settings);
                     hooks.AddProfile(profile);
                     Profile = profile;
-                    slot = await hooks.ConnectSlotAsync(profile, SlotName);
+                    slot = await hooks.ConnectSlotAsync(profile, SlotName).WaitAsync(ct);
                     if (slot == null) return Failed("the slot didn't connect to the test server");
                     var until = Deadline.In(LogicSettle);
                     while (!slot.LogicSettled && slot.EngineProblem == null && !until.Passed)

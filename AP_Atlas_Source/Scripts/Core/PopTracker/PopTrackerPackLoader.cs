@@ -82,6 +82,18 @@ namespace AP_Atlas.Core.PopTracker
         /// <summary>From location_mapping.lua files that list paths without ids (matched to AP locations by name).</summary>
         public List<string> UnkeyedLocationPaths { get; set; } = new List<string>();
 
+        /// <summary>
+        /// From location_mapping.lua: Archipelago location id → item codes, where the mapping names the item a section hosts
+        /// rather than the section's path (PopTracker sets that item when the location is checked).
+        /// </summary>
+        public Dictionary<long, List<string>> LocationCodesById { get; set; } = new Dictionary<long, List<string>>();
+
+        /// <summary>
+        /// Which mappings were read from the tables the pack's scripts build as they run ("locations", "items"), because
+        /// the files alone left ids unknown (a list numbered by a loop, ids added in code).
+        /// </summary>
+        public List<string> MappingsBuiltByScripts { get; set; } = new List<string>();
+
         /// <summary>Problems found while reading the pack, for the Pack Doctor.</summary>
         public List<string> LoadIssues { get; set; } = new List<string>();
 
@@ -221,6 +233,9 @@ namespace AP_Atlas.Core.PopTracker
             if (pack != null) CachePack(zipPath, info.LastWriteTimeUtc, pack);
             return pack;
         }
+
+        /// <summary>Reads a zip that isn't one of the installed packs (a release being tried), without keeping it in the cache.</summary>
+        public static LoadedPack ReadOnce(string zipPath) => File.Exists(zipPath) ? TryLoadZipPack(zipPath, null, null) : null;
 
         public static LoadedPack LoadPackForGame(string targetGameName, Action<string> logDebug = null) => LoadPackForGame(targetGameName, null, logDebug);
 
@@ -523,7 +538,10 @@ namespace AP_Atlas.Core.PopTracker
                     }
 
                     // 7. Read the autotracking mapping scripts: the pack's own AP id ↔ item code / location path tables.
-                    ReadMappingScripts(archive, rootPrefix, pack);
+                    var mappings = ReadMappingScripts(archive, rootPrefix, pack);
+                    // 8. A mapping the scripts build as they run (ids from a list's positions, entries added in code) is
+                    //    known only by running them, as PopTracker does: then the tables they leave are read.
+                    if (mappings.LocationsIncomplete || mappings.ItemsIncomplete) ReadBuiltMappings(pack, mappings, logDebug);
                     pack.LoadIssues = pack.LoadIssues.Distinct().ToList();
 
                     if (logDebug != null) logDebug($"[PopTracker] Extraction Complete! Items: {pack.ItemsByCode.Count}, Layout Grids: {pack.ItemGridGroups.Count}, Maps: {pack.Maps.Count}, Locations: {pack.Locations.Count}, Item mappings: {pack.ItemMapping.Count}, Location mappings: {pack.LocationMappingById.Count + pack.UnkeyedLocationPaths.Count}, Images: {pack.ImageEntries.Count / 2}");
@@ -824,9 +842,16 @@ namespace AP_Atlas.Core.PopTracker
             "toggle", "progressive", "consumable", "progressive_toggle", "static", "toggle_badged", "composite_toggle", "progressive_toggle_plus"
         };
 
+        /// <summary>
+        /// What reading the mapping files gave: the files (zip entry names, null when the pack has none), and whether
+        /// either left ids unknown (unreadable entries, paths without ids, a table filled in code), so the scripts are run.
+        /// </summary>
+        private readonly record struct MappingFiles(string LocationFile, bool LocationsIncomplete, string ItemFile, bool ItemsIncomplete);
+
         /// <summary>Reads item_mapping.lua and location_mapping.lua, wherever the pack keeps them.</summary>
-        private static void ReadMappingScripts(SafeZip archive, string rootPrefix, LoadedPack pack)
+        private static MappingFiles ReadMappingScripts(SafeZip archive, string rootPrefix, LoadedPack pack)
         {
+            bool itemsIncomplete = false, locationsIncomplete = false;
             var itemScript = archive.Entries.FirstOrDefault(e => e.FullName.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase) &&
                                                                  e.FullName.EndsWith("item_mapping.lua", StringComparison.OrdinalIgnoreCase));
             if (itemScript != null && ReadText(archive, itemScript, pack) is string itemCode)
@@ -842,6 +867,7 @@ namespace AP_Atlas.Core.PopTracker
                 }
                 if (result.Entries.Count > 0 && pack.ItemMapping.Count == 0)
                     pack.LoadIssues.Add($"{itemScript.FullName}: no entries keyed by item id were found.");
+                itemsIncomplete = result.Problems.Count > 0 || (result.Entries.Count > 0 && pack.ItemMapping.Count == 0) || FillsMappingInCode(itemCode, result);
             }
 
             var locationScript = archive.Entries.FirstOrDefault(e => e.FullName.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase) &&
@@ -853,6 +879,12 @@ namespace AP_Atlas.Core.PopTracker
                 foreach (var entry in result.Entries)
                 {
                     var paths = entry.Strings.Where(s => s.StartsWith("@")).ToList();
+                    var codes = entry.Strings.Where(s => !s.StartsWith("@") && s.Length > 0 && !MappingTypeWords.Contains(s)).ToList();
+                    if (entry.Id != null && paths.Count == 0 && codes.Count > 0)
+                    {
+                        if (!pack.LocationCodesById.TryGetValue(entry.Id.Value, out var codeList)) pack.LocationCodesById[entry.Id.Value] = codeList = new List<string>();
+                        codeList.AddRange(codes.Where(c => !codeList.Contains(c)));
+                    }
                     if (paths.Count == 0) continue;
                     if (entry.Id != null)
                     {
@@ -861,7 +893,94 @@ namespace AP_Atlas.Core.PopTracker
                     }
                     else pack.UnkeyedLocationPaths.AddRange(paths);
                 }
+                locationsIncomplete = result.Problems.Count > 0 || pack.UnkeyedLocationPaths.Count > 0 || FillsMappingInCode(locationCode, result)
+                    || (result.Entries.Count > 0 && pack.LocationMappingById.Count == 0 && pack.LocationCodesById.Count == 0);
             }
+            return new MappingFiles(locationScript?.FullName, locationsIncomplete, itemScript?.FullName, itemsIncomplete);
+        }
+
+        /// <summary>
+        /// Whether a mapping file fills its table in code ("LOCATION_MAPPING[n] = item" in a loop, "ITEM_MAPPING[241] =
+        /// {…}" after the table), or the table it was read from isn't the mapping (a list the mapping is built from).
+        /// </summary>
+        private static bool FillsMappingInCode(string code, LuaMappingReader.Result read) =>
+            (read.Entries.Count > 0 && !read.TableName.EndsWith("MAPPING", StringComparison.OrdinalIgnoreCase)) || LuaText.StripComments(code).Contains("MAPPING[", StringComparison.Ordinal);
+
+        /// <summary>
+        /// Runs the pack's scripts as a slot starts them and reads the mapping tables they leave, which are what PopTracker
+        /// looks ids up in. A table that came out whole replaces what the file alone gave (its unreadable entries no
+        /// longer matter); after a script error, it adds to it. Nothing changes when the scripts build no table.
+        /// </summary>
+        private static void ReadBuiltMappings(LoadedPack pack, MappingFiles files, Action<string> logDebug)
+        {
+            Dictionary<long, List<string>> locations, items;
+            bool clean;
+            try
+            {
+                var host = PackScriptHost.Load(pack);
+                if (host == null) return;
+                host.Initialize();
+                (locations, items) = host.BuiltMappings();
+                clean = host.Errors.Count == 0 && !host.Stopped;
+            }
+            catch (Exception ex)
+            {
+                // The pack still loads with what its files say: this only adds to it. (The scripts' own failures are caught
+                // inside the host; this is the zip going away or a fault in the host itself.)
+                Logger.LogWarning($"Map pack '{Path.GetFileName(pack.SourcePath)}': its scripts couldn't be run to read their mapping tables ({ex.GetType().Name}: {ex.Message}). Atlas uses what the mapping files say.");
+                logDebug?.Invoke($"[PopTracker] The pack's scripts couldn't be run to read its mappings: {ex.Message}");
+                return;
+            }
+            // A location's entry names section paths ("@…"), or item codes a section hosts.
+            var locationPaths = new Dictionary<long, List<string>>();
+            var locationCodes = new Dictionary<long, List<string>>();
+            foreach (var kv in locations)
+            {
+                var withPaths = kv.Value.Where(s => s.StartsWith("@", StringComparison.Ordinal)).ToList();
+                var withCodes = kv.Value.Where(s => !s.StartsWith("@", StringComparison.Ordinal) && !MappingTypeWords.Contains(s)).ToList();
+                if (withPaths.Count > 0) locationPaths[kv.Key] = withPaths;
+                else if (withCodes.Count > 0) locationCodes[kv.Key] = withCodes;
+            }
+            if (files.LocationsIncomplete && locationPaths.Count + locationCodes.Count > 0)
+            {
+                if (clean)
+                {
+                    pack.LocationMappingById = locationPaths;
+                    pack.LocationCodesById = locationCodes;
+                    pack.LoadIssues.RemoveAll(i => files.LocationFile != null && i.StartsWith(files.LocationFile + ": ", StringComparison.Ordinal));
+                }
+                else
+                {
+                    foreach (var kv in locationPaths) pack.LocationMappingById[kv.Key] = kv.Value;
+                    foreach (var kv in locationCodes) pack.LocationCodesById[kv.Key] = kv.Value;
+                }
+                // Paths the table now gives ids are no longer matched by name.
+                var keyed = new HashSet<string>(pack.LocationMappingById.Values.SelectMany(v => v), StringComparer.OrdinalIgnoreCase);
+                pack.UnkeyedLocationPaths = pack.UnkeyedLocationPaths.Where(p => !keyed.Contains(p)).ToList();
+                pack.MappingsBuiltByScripts.Add("locations");
+            }
+            if (files.ItemsIncomplete && items.Count > 0)
+            {
+                var codes = new Dictionary<long, List<string>>();
+                foreach (var kv in items)
+                {
+                    var kept = kv.Value.Where(s => !MappingTypeWords.Contains(s)).ToList();
+                    if (kept.Count > 0) codes[kv.Key] = kept;
+                }
+                if (codes.Count > 0)
+                {
+                    if (clean)
+                    {
+                        pack.ItemMapping = codes;
+                        pack.LoadIssues.RemoveAll(i => files.ItemFile != null && i.StartsWith(files.ItemFile + ": ", StringComparison.Ordinal));
+                    }
+                    else
+                        foreach (var kv in codes) pack.ItemMapping[kv.Key] = kv.Value;
+                    pack.MappingsBuiltByScripts.Add("items");
+                }
+            }
+            if (pack.MappingsBuiltByScripts.Count > 0)
+                logDebug?.Invoke($"[PopTracker] Read the {string.Join(" and ", pack.MappingsBuiltByScripts)} mapping as the pack's scripts build it ({pack.LocationMappingById.Count + pack.LocationCodesById.Count} location ids, {pack.ItemMapping.Count} item ids).");
         }
 
         public static bool IsGameNameMatch(string manifestName, string targetName)

@@ -11,9 +11,19 @@ namespace AP_Atlas.Core.PopTracker
     {
         [JsonProperty("name")] public string Name { get; set; } = "";
         [JsonProperty("access_rules")] public JToken AccessRulesRaw { get; set; }
-        [JsonProperty("item_count")] public int ItemCount { get; set; } = 1;
+        /// <summary>The section's item_count as the pack gives it (null: not given).</summary>
+        [JsonProperty("item_count")] public int? ItemCountGiven { get; set; }
+        /// <summary>Item codes the section holds, comma-separated (PopTracker's "hosted_item"): a toggle shown in the section.</summary>
+        [JsonProperty("hosted_item")] public string HostedItem { get; set; }
+        /// <summary>How many checks the section holds, as PopTracker counts them: item_count, else 0 for a section that hosts an item, else 1.</summary>
+        [JsonIgnore] public int ItemCount => ItemCountGiven ?? (string.IsNullOrWhiteSpace(HostedItem) ? 1 : 0);
         [JsonProperty("visibility_rules")] public JToken VisibilityRulesRaw { get; set; }
         [JsonProperty("clear_rules")] public JToken ClearRulesRaw { get; set; }
+        /// <summary>
+        /// "Location/Section" of another section this one stands for (PopTracker's "ref"): the same check shown on
+        /// another map, everything else this section says ignored. Null for an ordinary section.
+        /// </summary>
+        [JsonProperty("ref")] public string Ref { get; set; }
     }
 
     public class PopTrackerMapLocation

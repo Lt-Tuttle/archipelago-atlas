@@ -1018,19 +1018,14 @@ namespace AP_Atlas.Core
         /// </summary>
         internal async Task<(bool Ok, string Detail, string File)> InstallFittingReleaseAsync(string game, string repo, Action<string> say)
         {
-            List<PackRelease> releases;
-            _showOverlayAction();
-            try
+            // No overlay: whoever asked shows the progress (the solo test's window), and Atlas stays usable meanwhile.
+            var list = await GitHubApi.GetAsync($"/repos/{repo}/releases?per_page=12");
+            var releases = list.Ok ? ReleasesWithPacks(list.Json) : new List<PackRelease>();
+            if (releases.Count == 0)
             {
-                var list = await GitHubApi.GetAsync($"/repos/{repo}/releases?per_page=12");
-                releases = list.Ok ? ReleasesWithPacks(list.Json) : new List<PackRelease>();
-                if (releases.Count == 0)
-                {
-                    var latest = await GitHubApi.GetAsync($"/repos/{repo}/releases/latest");
-                    if (latest.Ok && latest.Json is JObject one) releases = ReleasesWithPacks(new JArray(one));
-                }
+                var latest = await GitHubApi.GetAsync($"/repos/{repo}/releases/latest");
+                if (latest.Ok && latest.Json is JObject one) releases = ReleasesWithPacks(new JArray(one));
             }
-            finally { _hideOverlayAction(); }
             if (!GodotObject.IsInstanceValid(this)) return (false, "the window closed", null);
             string where = "github.com/" + repo;
             if (releases.Count == 0)
@@ -1041,33 +1036,50 @@ namespace AP_Atlas.Core
                 bool got = await DownloadPackAsync(zipball, name, where, quiet: true);
                 return (got, got ? "the project's current files (it has no release)" : "the project's files couldn't be downloaded", got ? InstalledPackPath(name) : null);
             }
-            var tried = new List<AP_Atlas.Core.Games.PackReleaseFit>();
-            var files = new Dictionary<string, string>(StringComparer.Ordinal);
-            foreach (var release in releases.Take(AP_Atlas.Core.Games.PackReleasePick.MostTried))
+            // Each release tried is downloaded to a folder of its own beside the packs (never among them), measured there,
+            // and only the one kept is installed: no pack comes and goes, connected slots don't reload for a try, and no
+            // installed pack's file is written while something reads it (a release named like an installed one in another
+            // case is the same file on Windows).
+            string trying = System.IO.Path.Combine(DataManager.GetDataDirectory(), "packs", TryingFolder, Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(trying);
+            try
             {
-                say?.Invoke($"trying {where} {release.Tag}");
-                if (!await DownloadPackAsync(release.Url, release.FileName, where, quiet: true)) continue;
-                if (!GodotObject.IsInstanceValid(this)) return (false, "the window closed", null);
-                string file = InstalledPackPath(release.FileName);
-                files[release.Tag] = file;
-                var fit = await FitOfAsync(release.Tag, file);
-                if (fit == null) continue;
-                tried.Add(fit);
-                say?.Invoke(fit.Describe());
-                if (fit.Fits) break;
-            }
-            var chosen = AP_Atlas.Core.Games.PackReleasePick.Best(tried);
-            if (chosen == null) return (false, "no release of " + where + " could be downloaded and read", null);
-            // The last one downloaded sits in the folder; the best tried takes its place when that's another.
-            if (!ReferenceEquals(chosen, tried[^1]))
-            {
+                var tried = new List<AP_Atlas.Core.Games.PackReleaseFit>();
+                var files = new Dictionary<string, string>(StringComparer.Ordinal);
+                foreach (var release in releases.Take(AP_Atlas.Core.Games.PackReleasePick.MostTried))
+                {
+                    say?.Invoke($"trying {where} {release.Tag}");
+                    string file = System.IO.Path.Combine(trying, files.Count + ".zip");
+                    if (!await DownloadToAsync(release.Url, where, file, SafeZipName(release.FileName))) continue;
+                    if (!GodotObject.IsInstanceValid(this)) return (false, "the window closed", null);
+                    var fit = await FitOfAsync(release.Tag, file);
+                    if (fit == null) continue;
+                    files[release.Tag] = file;
+                    tried.Add(fit);
+                    say?.Invoke(fit.Describe());
+                    if (fit.Fits) break;
+                }
+                var chosen = AP_Atlas.Core.Games.PackReleasePick.Best(tried);
+                if (chosen == null) return (false, "no release of " + where + " could be downloaded and read", null);
                 var best = releases.First(r => r.Tag == chosen.Tag);
-                say?.Invoke($"installing {best.Tag} again, the best fit");
-                if (!await DownloadPackAsync(best.Url, best.FileName, where, quiet: true)) return (false, "the best fit, " + best.Tag + ", couldn't be downloaded again", null);
+                string installed = await InstallDownloadedAsync(files[chosen.Tag], SafeZipName(best.FileName), where, quiet: false);
+                if (installed == null) return (false, chosen.Tag + " fits best, but it couldn't be put among the packs (the log says why)", null);
+                return (true, AP_Atlas.Core.Games.PackReleasePick.Describe(tried, chosen), installed);
             }
-            string installed = files[chosen.Tag];
-            if (GodotObject.IsInstanceValid(this)) SayInstalled(installed);
-            return (true, AP_Atlas.Core.Games.PackReleasePick.Describe(tried, chosen), installed);
+            finally
+            {
+                try { Directory.Delete(trying, true); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Logger.LogDebug($"The releases tried for {repo} weren't all removed: {ex.Message}"); }
+            }
+        }
+
+        /// <summary>The folder beside the installed packs where releases being tried are downloaded (the pack lists read only the packs folder's own files).</summary>
+        internal const string TryingFolder = ".trying";
+
+        private static string SafeZipName(string fileName)
+        {
+            string safeName = string.Concat((fileName ?? "pack.zip").Select(ch => System.IO.Path.GetInvalidFileNameChars().Contains(ch) ? '_' : ch));
+            return safeName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ? safeName : safeName + ".zip";
         }
 
         private static string InstalledPackPath(string fileName)
@@ -1077,18 +1089,19 @@ namespace AP_Atlas.Core
             return System.IO.Path.Combine(DataManager.GetDataDirectory(), "packs", safeName);
         }
 
-        /// <summary>How a just-installed release fits the game's names, by the Pack Doctor's check (null when the zip isn't a pack).</summary>
+        /// <summary>How a downloaded release fits the game's names, by the Pack Doctor's analysis (null when the zip isn't a pack).</summary>
         private static async Task<AP_Atlas.Core.Games.PackReleaseFit> FitOfAsync(string tag, string file)
         {
             LoadedPack pack;
-            try { pack = PopTrackerPackLoader.InspectZipPack(file); }
+            try { pack = await Task.Run(() => PopTrackerPackLoader.ReadOnce(file)); }
             catch (Exception ex) when (ex is IOException or InvalidDataException or JsonException)
             {
                 Logger.LogWarning($"Couldn't read the downloaded pack {System.IO.Path.GetFileName(file)}: {ex.Message}");
                 return null;
             }
             if (pack == null) return null;
-            var report = await PackDoctorService.CheckAsync(pack, prompt: false);
+            // Measured, not checked: a check of the installed pack running meanwhile can't hide this one's numbers.
+            var report = await PackDoctorService.MeasureAsync(pack);
             if (report == null) return null;
             return new AP_Atlas.Core.Games.PackReleaseFit(tag, report.SectionsTotal, report.SectionsLinked, pack.LocationMappingById?.Count ?? 0, report.Index?.UnknownMappedLocationIds.Count ?? 0);
         }
@@ -1097,10 +1110,15 @@ namespace AP_Atlas.Core
         {
             string packsDir = System.IO.Path.Combine(DataManager.GetDataDirectory(), "packs");
             Directory.CreateDirectory(packsDir);
-            string safeName = string.Concat((fileName ?? "pack.zip").Select(ch => System.IO.Path.GetInvalidFileNameChars().Contains(ch) ? '_' : ch));
-            if (!safeName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) safeName += ".zip";
-            string dest = System.IO.Path.Combine(packsDir, safeName);
+            string safeName = SafeZipName(fileName);
             string temp = System.IO.Path.Combine(packsDir, $".download-{Guid.NewGuid():N}.tmp");
+            if (!await DownloadToAsync(url, where, temp, safeName)) return false;
+            return await InstallDownloadedAsync(temp, safeName, where, quiet) != null;
+        }
+
+        /// <summary>Downloads a pack to a file, checked as a pack's zip; false (and said) when it can't be.</summary>
+        private async Task<bool> DownloadToAsync(string url, string where, string temp, string safeName)
+        {
             // The progress shows in the page (the window stays usable); the progress callback runs off the main thread.
             ShowDownload(safeName, 0, -1);
             long shown = 0;
@@ -1126,16 +1144,45 @@ namespace AP_Atlas.Core
                 Failed($"The download from {where} wasn't installed: {problem}.");
                 return false;
             }
-            try { File.Move(temp, dest, true); }
-            catch (Exception ex)
+            return true;
+        }
+
+        /// <summary>
+        /// Puts a downloaded pack among the installed ones and tells the slots; the installed file's path, or null (said).
+        /// The same name as another pack's file (in any case: Windows takes them for one file) gets a name of its own
+        /// rather than writing over that pack; a file held a moment (a check reading it) is tried again.
+        /// </summary>
+        private async Task<string> InstallDownloadedAsync(string temp, string safeName, string where, bool quiet)
+        {
+            string packsDir = System.IO.Path.Combine(DataManager.GetDataDirectory(), "packs");
+            string dest = System.IO.Path.Combine(packsDir, safeName);
+            if (File.Exists(dest) && !SamePack(dest, temp))
             {
-                PoliteHttp.TryDelete(temp);
-                Failed($"Couldn't install the pack: {ex.Message}");
-                return false;
+                string stem = System.IO.Path.GetFileNameWithoutExtension(safeName);
+                for (int n = 2; File.Exists(dest); n++) dest = System.IO.Path.Combine(packsDir, $"{stem} ({n}).zip");
             }
-            if (!GodotObject.IsInstanceValid(this)) return true;
-            _logAction($"Installed {safeName} from {where}.", "lime");
-            if (!quiet) SayInstalled(dest); // a release being tried isn't announced; the one kept is
+            for (int attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    File.Move(temp, dest, true);
+                    break;
+                }
+                catch (Exception ex) when ((ex is IOException or UnauthorizedAccessException) && attempt < 6)
+                {
+                    Logger.LogDebug($"{System.IO.Path.GetFileName(dest)} is held ({ex.Message}); trying again.");
+                    await Task.Delay(500);
+                }
+                catch (Exception ex)
+                {
+                    PoliteHttp.TryDelete(temp);
+                    Failed($"Couldn't install the pack: {ex.Message}");
+                    return null;
+                }
+            }
+            if (!GodotObject.IsInstanceValid(this)) return dest;
+            _logAction($"Installed {System.IO.Path.GetFileName(dest)} from {where}.", "lime");
+            if (!quiet) SayInstalled(dest);
             if (_candidatesDialog != null && GodotObject.IsInstanceValid(_candidatesDialog))
             {
                 _candidatesDialog.Hide();
@@ -1144,7 +1191,27 @@ namespace AP_Atlas.Core
             _candidatesDialog = null;
             PopTrackerPackLoader.NotifyPacksChanged();
             await RefreshPackListAsync();
-            return true;
+            return dest;
+        }
+
+        /// <summary>Whether an installed pack's file holds the same pack as a download (its id, else its name): then the download replaces it.</summary>
+        private static bool SamePack(string installed, string downloaded)
+        {
+            PopTrackerManifest a, b;
+            try
+            {
+                a = ReadManifest(installed);
+                b = ReadManifest(downloaded);
+            }
+            catch (Exception ex) when (ex is IOException or InvalidDataException or JsonException or UnauthorizedAccessException)
+            {
+                Logger.LogDebug($"Couldn't compare {System.IO.Path.GetFileName(installed)} with the download: {ex.Message}");
+                return false;
+            }
+            if (a == null) return true; // not a readable pack: nothing of the user's is lost by replacing it
+            if (b == null) return false;
+            if (!string.IsNullOrEmpty(a.PackageUid) && !string.IsNullOrEmpty(b.PackageUid)) return string.Equals(a.PackageUid, b.PackageUid, StringComparison.OrdinalIgnoreCase);
+            return string.Equals(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
         }
 
         private void Failed(string message)

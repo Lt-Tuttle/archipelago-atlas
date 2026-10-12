@@ -130,6 +130,7 @@ namespace AP_Atlas.Core
             await TestAsync("Map packs: a file or image too big to read safely is refused before it fills memory; the rest of the pack works, and the user is told why", PackFilesCantFillMemory);
             await TestAsync("Pack Doctor: an analysis reads its own snapshot, never the fixes as they change", PackDoctorReadsASnapshot);
             await TestAsync("Pack scripts: the room's checked and missing ids and its seed are there to read (tables and text, as PopTracker gives them); Lua's \\u{} escapes read as their characters in mappings and scripts; a name shared by several locations is told apart by its detail", PackScriptsReadTheRoomAndTheEscapes);
+            await TestAsync("Map packs: a section that refers to another shows its check (and follows a fix); a mapping the scripts build as they run is read as PopTracker reads it; names match however a slash is read, numbered copies by their number; a section hosting an item holds no check, and a location mapped to that item shows there", PackReferencesAndBuiltMappings);
             await TestAsync("Key Items: Atlas's layout pick is the layout that fits the view and fills it best (the pack's own and Atlas's built ones alike; a tie keeps the pack's), else the least overflowing", KeyItemsAutoLayoutPicks);
             await TestAsync("Pack Doctor: a tile fix defines the item for a code no pack item has; exact name matches are linked by itself (a clash left alone) and Undo reverses them; a fix to a vanished item is reported", PackDoctorAppliesTileFixes);
             await TestAsync("Settings saved from a background thread are written on the main thread, and the log says so", OffThreadSavesMoveToTheMainThread);
@@ -531,13 +532,32 @@ namespace AP_Atlas.Core
 
             // Names for every installed game, fetched once, so each pack is loaded, checked and released in turn
             // (packs hold decoded map images: keeping 40 in memory at once could exhaust it).
-            var engine = new LogicEngineManager(install, _ => { });
-            var known = await engine.FetchLocalNamesAsync(new string[0]);
-            if (known != null)
+            // Or from a folder of name tables (ATLAS_SELFTEST_PACK_NAMES, the name cache's JSON): the test's data folder is
+            // empty, so without one of these the regression measures loading and scripts only, never linking.
+            string namesFolder = System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_PACK_NAMES");
+            if (!string.IsNullOrWhiteSpace(namesFolder) && Directory.Exists(namesFolder))
             {
-                PopTracker.GameNames.SetKnownGames(known.Value.KnownGames);
-                var all = await engine.FetchLocalNamesAsync(known.Value.KnownGames);
-                if (all != null) foreach (var t in all.Value.Tables.Values) PopTracker.GameNames.Store(t);
+                var games = new List<string>();
+                foreach (var file in Directory.GetFiles(namesFolder, "*.json"))
+                {
+                    var table = Newtonsoft.Json.JsonConvert.DeserializeObject<PopTracker.GameNameTable>(await File.ReadAllTextAsync(file));
+                    if (table == null || string.IsNullOrEmpty(table.Game)) continue;
+                    PopTracker.GameNames.Store(table);
+                    games.Add(table.Game);
+                }
+                PopTracker.GameNames.SetKnownGames(games);
+                Print($"  names for {games.Count} games from {namesFolder}");
+            }
+            else
+            {
+                var engine = new LogicEngineManager(install, _ => { });
+                var known = await engine.FetchLocalNamesAsync(new string[0]);
+                if (known != null)
+                {
+                    PopTracker.GameNames.SetKnownGames(known.Value.KnownGames);
+                    var all = await engine.FetchLocalNamesAsync(known.Value.KnownGames);
+                    if (all != null) foreach (var t in all.Value.Tables.Values) PopTracker.GameNames.Store(t);
+                }
             }
 
             var now = new Dictionary<string, PackBaselineEntry>(StringComparer.OrdinalIgnoreCase);
@@ -577,8 +597,27 @@ namespace AP_Atlas.Core
                         var inputs = PopTracker.PackDoctor.Prepare(pack, PopTracker.GameNames.Best(game));
                         var report = await Task.Run(() => PopTracker.PackDoctor.Analyze(inputs));
                         entry.SectionsPct = Pct(report.SectionsLinked, report.SectionsTotal);
+                        entry.SectionsLinked = report.SectionsLinked;
+                        entry.SectionsTotal = report.SectionsTotal;
+                        // What the Doctor's automatic pass links by itself on the pack's first check, and what's left for a person.
+                        var sure = PopTracker.PackDoctor.ExactMatches(report);
+                        entry.SureLinks = sure.Count;
+                        entry.ToReview = PopTracker.PackDoctor.Recommendations(report).Count - sure.Count;
+                        // ATLAS_SELFTEST_PACKS_DETAIL=1 lists what's left (local investigation of the matching rules).
+                        if (System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_PACKS_DETAIL") == "1")
+                        {
+                            foreach (var f in PopTracker.PackDoctor.Recommendations(report).Except(sure).Take(80))
+                                Print($"    review: {f.Query} -> {f.Suggestions[0].Label} ({f.Suggestions[0].Score:0.000})");
+                            foreach (var f in sure.Where(f => f.Suggestions[0].Reason != null).Take(20))
+                                Print($"    sure: {f.Query} -> {f.Suggestions[0].Label} ({f.Suggestions[0].Reason})");
+                            foreach (var f in report.Findings.Where(f => f.Key.StartsWith("loc:dangling") || f.Title.Contains("don't exist")).Take(3))
+                                foreach (var d in f.Details.Take(40)) Print($"    dangling: {d}");
+                            foreach (var name in report.UnplacedSample.Take(20)) Print($"    unplaced: {name}");
+                        }
                         entry.TilesPct = Pct(report.TilesLinked, report.TilesTotal);
                         entry.PlacedPct = Pct(report.ApLocationsPlaced, report.ApLocationsTotal);
+                        entry.LocationsPlaced = report.ApLocationsPlaced;
+                        entry.LocationsTotal = report.ApLocationsTotal;
                         entry.Problems = report.Findings.Count(f => f.Severity == PopTracker.FindingSeverity.Problem);
                         entry.ScriptsRan = report.ScriptsRan;
                     }
@@ -603,7 +642,7 @@ namespace AP_Atlas.Core
                 catch (Exception ex) { entry.Note = "the pack's scripts crashed Atlas's host: " + ex.GetType().Name + ": " + ex.Message; }
                 now[key] = entry;
                 Print($"  {key}: {(game ?? pack.Manifest?.GameName ?? "?")} · {entry.Maps} maps, {entry.Pins} pins, {entry.LoadIssues} load issues" +
-                      (entry.SectionsPct >= 0 ? $" · checks linked {entry.SectionsPct}%, tiles {entry.TilesPct}%, locations placed {entry.PlacedPct}%, {entry.Problems} problems" : "") +
+                      (entry.SectionsPct >= 0 ? $" · checks linked {entry.SectionsPct}% ({entry.SectionsLinked} of {entry.SectionsTotal}; {entry.SureLinks} more by the Doctor's own pass, {entry.ToReview} to review), tiles {entry.TilesPct}%, locations placed {entry.PlacedPct}% ({entry.LocationsPlaced} of {entry.LocationsTotal}), {entry.Problems} problems" : "") +
                       (entry.Note != null ? " · " + entry.Note : "") + $" ({sw.Elapsed.TotalSeconds:0.0}s)");
                 pack = null;
                 GC.Collect();
@@ -629,8 +668,14 @@ namespace AP_Atlas.Core
                 if (was.Loaded && !cur.Loaded) worse.Add($"{kv.Key} no longer loads ({cur.Note})");
                 if (cur.Note != null && cur.Note.Contains("crashed") && (was.Note == null || !was.Note.Contains("crashed"))) worse.Add($"{kv.Key}: {cur.Note}");
                 if (was.SectionsPct >= 0 && cur.SectionsPct >= 0 && cur.SectionsPct < was.SectionsPct - 1) worse.Add($"{kv.Key} links fewer checks ({was.SectionsPct}% → {cur.SectionsPct}%)");
+                // Exact counts, when the baseline has them: one link lost is a regression, however big the pack.
+                if (was.SectionsTotal > 0 && cur.SectionsTotal == was.SectionsTotal && cur.SectionsLinked + cur.SureLinks < was.SectionsLinked + was.SureLinks)
+                    worse.Add($"{kv.Key} links fewer checks, the Doctor's own pass included ({was.SectionsLinked} + {was.SureLinks} → {cur.SectionsLinked} + {cur.SureLinks})");
                 if (was.TilesPct >= 0 && cur.TilesPct >= 0 && cur.TilesPct < was.TilesPct - 1) worse.Add($"{kv.Key} links fewer tiles ({was.TilesPct}% → {cur.TilesPct}%)");
                 if (was.PlacedPct >= 0 && cur.PlacedPct >= 0 && cur.PlacedPct < was.PlacedPct - 1) worse.Add($"{kv.Key} places fewer locations ({was.PlacedPct}% → {cur.PlacedPct}%)");
+                // Exact too: one location that lost its pin is a regression, however many the game has.
+                if (was.LocationsTotal > 0 && cur.LocationsTotal == was.LocationsTotal && cur.LocationsPlaced < was.LocationsPlaced)
+                    worse.Add($"{kv.Key} places fewer locations ({was.LocationsPlaced} → {cur.LocationsPlaced} of {cur.LocationsTotal})");
                 if (cur.LoadIssues > was.LoadIssues) worse.Add($"{kv.Key} has more load issues ({was.LoadIssues} → {cur.LoadIssues})");
                 if (cur.ScriptsStopped != null) worse.Add($"{kv.Key}: Atlas stopped its scripts ({cur.ScriptsStopped})");
             }
@@ -676,6 +721,16 @@ namespace AP_Atlas.Core
             public long ScriptSteps { get; set; }
             /// <summary>Why Atlas stopped the pack's scripts (null: it didn't).</summary>
             public string ScriptsStopped { get; set; }
+            /// <summary>Pin sections linked, of all (exact counts; -1: not measured, an older baseline).</summary>
+            public int SectionsLinked { get; set; } = -1;
+            public int SectionsTotal { get; set; } = -1;
+            /// <summary>What the Doctor's automatic pass would link by itself (exact names, the only one of its kind).</summary>
+            public int SureLinks { get; set; } = -1;
+            /// <summary>Suggestions left for a person after that pass.</summary>
+            public int ToReview { get; set; } = -1;
+            /// <summary>The game's locations a pin shows, of all (exact counts; -1: not measured).</summary>
+            public int LocationsPlaced { get; set; } = -1;
+            public int LocationsTotal { get; set; } = -1;
         }
 
         public class SeedBaselineEntry
