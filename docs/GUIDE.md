@@ -71,7 +71,7 @@ Key Items (Ctrl+3) shows the progression items you've received. The Visual view 
 
 **Attention.** What the pack gets wrong for your seed, in plain words, as a group in the explorer (collapsed until you open it): pins that match none of your checks, tiles without an item or image, a missing map picture, a script that stopped or failed. Pick one and the Pack Doctor opens on the tab that fixes it; **Fix what Atlas can** at the top links every pin and tile whose best match is confident (85% or more, no clash) and sets the rest aside, in one step a card describes (Undo in the Doctor reverses it). Problems you ignored in the Doctor stay out; the solo test's report still lists everything.
 
-**Not on the map.** The seed's checks that the pack has no pin for are listed under **Not on the map** in the explorer (coloured by logic; pick one to see it in Properties), and the map says how many there are. Done and excluded checks aren't counted.
+**Not on the map.** The seed's checks that the pack has no pin for are listed under **Not on the map** in the explorer (coloured by logic; pick one to see it in Properties), and the map says how many there are, and how many of those are in logic (so the map rows' counts and the slot's add up). Done and excluded checks aren't counted.
 
 ## Logic Tracker
 

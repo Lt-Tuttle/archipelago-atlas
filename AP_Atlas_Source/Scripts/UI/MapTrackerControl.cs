@@ -278,7 +278,8 @@ namespace AP_Atlas.UI
             sortVBox.AddChild(sortHBox);
             sortVBox.AddChild(BuildDisplayOptions());
             sortMargin.AddChild(sortVBox);
-            var listScroll = new ScrollContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
+            // Never sideways: a long name under Not on the map widened the list and pushed the map rows' counts out of view.
+            var listScroll = new ScrollContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill, HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
             leftVBox.AddChild(listScroll);
             var listMargin = new MarginContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
             listScroll.AddChild(listMargin);
@@ -974,6 +975,9 @@ namespace AP_Atlas.UI
         /// <summary>The note on the map about checks without a pin, or null when none shows.</summary>
         public string UnplacedNote => _unplacedNote is { Visible: true } ? _unplacedNote.Text : null;
 
+        /// <summary>How many of the checks under Not on the map are in logic (for tests).</summary>
+        public int UnplacedInLogic { get; private set; }
+
         /// <summary>The checklist's header text (for tests).</summary>
         public string ChecklistNote { get; private set; } = "";
 
@@ -1147,14 +1151,20 @@ namespace AP_Atlas.UI
                         unplaced.Add((id, _session.Locations.GetLocationNameFromId(id) ?? id.ToString(System.Globalization.CultureInfo.InvariantCulture)));
             unplaced.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
             UnplacedNames = unplaced.Select(u => u.Name).ToList();
+            // How many of them are in logic, so the map rows' counts and the slot's add up (26 in logic, 1 on the maps).
+            UnplacedInLogic = LogicHidden ? 0 : unplaced.Count(u => _reachableLocs.Contains(u.Id));
             bool any = unplaced.Count > 0;
+            string count = unplaced.Count.ToString();
             _unplacedHeader.Visible = any;
-            _unplacedHeader.Text = (_unplacedOpen ? "▾ " : "▸ ") + Translate("Not on the map ({0})").Replace("{0}", unplaced.Count.ToString());
+            _unplacedHeader.Text = (_unplacedOpen ? "▾ " : "▸ ") + (UnplacedInLogic > 0
+                ? Translate("Not on the map ({0}, {1} in logic)").Replace("{0}", count).Replace("{1}", UnplacedInLogic.ToString())
+                : Translate("Not on the map ({0})").Replace("{0}", count));
             _unplacedBox.Visible = any && _unplacedOpen;
             _unplacedNote.Visible = any;
             if (_unplacedPill != null) _unplacedPill.Visible = any;
-            _unplacedNote.Text = unplaced.Count == 1 ? Translate("1 check not on these maps (see Not on the map)")
-                : Translate("{0} checks not on these maps (see Not on the map)").Replace("{0}", unplaced.Count.ToString());
+            string note = unplaced.Count == 1 ? Translate("1 check not on these maps") : Translate("{0} checks not on these maps").Replace("{0}", count);
+            if (UnplacedInLogic > 0) note += Translate(", {0} of them in logic").Replace("{0}", UnplacedInLogic.ToString());
+            _unplacedNote.Text = note + " " + Translate("(see Not on the map)");
             if (!_unplacedOpen) return;
             foreach (var (id, name) in unplaced)
             {
@@ -1164,6 +1174,7 @@ namespace AP_Atlas.UI
                 var button = Kit.Button(name, name + look.StateNote, () => PinPicked?.Invoke(null, locationName, new List<long> { locationId }), flat: true, small: true);
                 button.Alignment = HorizontalAlignment.Left;
                 button.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+                button.ClipText = true; // the name ends with "…" rather than widening the list
                 button.AddThemeColorOverride("font_color", ThemeColors.MapColourForText(look.SplitRight != null ? MapPinState.InLogic : StateFor(id)));
                 button.SetMeta("unplaced_row", name);
                 _unplacedBox.AddChild(button);
@@ -1304,7 +1315,7 @@ namespace AP_Atlas.UI
                 if (_appSettings?.MapCameras != null && _appSettings.MapCameras.TryGetValue(mapId, out var state) && state.Zoom > 0)
                     _canvas.SetView(new Vector2(state.X, state.Y), state.Zoom, fitIfSmaller: true);
                 else
-                    _canvas.FitToView();
+                    _canvas.FitToView(remember: false);
             }
             finally
             {

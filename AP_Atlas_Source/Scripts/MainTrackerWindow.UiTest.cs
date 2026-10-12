@@ -3293,7 +3293,7 @@ public partial class MainTrackerWindow
             // The check no pin places: listed and counted; done, it leaves.
             await UiTestWaitForAsync(() => map.UnplacedNames.SequenceEqual(new[] { "Hidden Chest" }) ? map : null, "the check without a pin under Not on the map");
             UiTestExpect(map.UnplacedNote?.Contains("1 check not on these maps") == true, $"the map doesn't count the check without a pin: {map.UnplacedNote}");
-            UiTestExpect(map.SidebarContent.FindChildren("*", nameof(Button), true, false).OfType<Button>().Any(b => b.HasMeta("unplaced_row") && b.GetMeta("unplaced_row").AsString() == "Hidden Chest"), "Not on the map has no row for the check");
+            UiTestExpect(map.SidebarContent.FindChildren("*", nameof(Button), true, false).OfType<Button>().Any(b => b.HasMeta("unplaced_row") && b.GetMeta("unplaced_row").AsString() == "Hidden Chest" && b.ClipText), "Not on the map has no row for the check, or its row can widen the list");
             await server.BroadcastAsync(FakeArchipelagoServer.LocationsChecked(2003));
             await UiTestWaitForAsync(() => map.UnplacedNames.Count == 0 && map.UnplacedNote == null ? map : null, "the done check to leave Not on the map");
             // Follow my checks: on for a pack that can't follow the game; a check on another map shows that map.
@@ -3660,6 +3660,37 @@ public partial class MainTrackerWindow
             UiTestExpect(slot.MapTracker.FindChildren("*", "Camera2D", true, false).Count == 0 && !canvas.IsProcessing() && !canvas.Surface.IsProcessing(),
                 "the map runs every frame, so Atlas never idles while a slot is connected");
             await UiTestWaitAsync(0.3); // the view settles in its place
+            // A fit made while the view was still a token size (a hidden view holds its scrollbars' own) is no fit, and
+            // Atlas's own fit is made again as the view grows, until the user moves the map: Dark Souls III's map opened
+            // at 5% in the owner's beta (2026-10-11), fitted to the 8 px it had while hidden.
+            var holder = new Control { Size = new Vector2(8, 8) };
+            GetTree().Root.AddChild(holder);
+            var probe = new AP_Atlas.UI.MapCanvas();
+            holder.AddChild(probe);
+            probe.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+            try
+            {
+                probe.SetMap(null, new Vector2(1600, 800));
+                probe.FitToView(remember: false);
+                await UiTestWaitAsync(0.1);
+                UiTestExpect(!probe.HasView && probe.AutoView, $"an 8 px view counts as a view ({probe.ViewSize}), or the fit isn't kept for later");
+                holder.Size = new Vector2(800, 400);
+                await UiTestWaitAsync(0.1);
+                UiTestExpect(Mathf.IsEqualApprox(probe.Zoom, 0.475f, 0.01f), $"the map wasn't fitted once the view grew: zoom {probe.Zoom} in {probe.ViewSize}");
+                holder.Size = new Vector2(1600, 800);
+                await UiTestWaitAsync(0.1);
+                UiTestExpect(Mathf.IsEqualApprox(probe.Zoom, 0.95f, 0.01f), $"the map wasn't fitted again as the view grew: zoom {probe.Zoom} in {probe.ViewSize}");
+                probe.ZoomAtCenter(1 / AP_Atlas.UI.MapCanvas.WheelStep);
+                await UiTestWaitAsync(0.1);
+                float userZoom = probe.Zoom;
+                holder.Size = new Vector2(400, 200);
+                await UiTestWaitAsync(0.1);
+                UiTestExpect(!probe.AutoView && Mathf.IsEqualApprox(probe.Zoom, userZoom), $"the user's zoom {userZoom} was changed by a resize: {probe.Zoom}");
+            }
+            finally
+            {
+                holder.QueueFree();
+            }
             // Fitted: the whole map is in view, and the view is remembered for the map.
             canvas.FitToView();
             UiTestExpect(canvas.MapSize.X * canvas.Zoom <= canvas.ViewSize.X + 0.5f && canvas.MapSize.Y * canvas.Zoom <= canvas.ViewSize.Y + 0.5f, $"after Fit the map ({canvas.MapSize * canvas.Zoom}) doesn't fit the view ({canvas.ViewSize})");

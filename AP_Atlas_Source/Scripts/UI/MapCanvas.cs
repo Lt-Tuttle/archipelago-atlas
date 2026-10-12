@@ -74,7 +74,8 @@ namespace AP_Atlas.UI
             {
                 if (!HasView) return;
                 if (_viewWhenSized is { } pending) SetView(pending.Center, pending.Zoom, pending.FitIfSmaller);
-                else if (_fitWhenSized) FitToView(remember: false);
+                else if (_autoView is { } applied) SetView(applied.Center, applied.Zoom, applied.FitIfSmaller);
+                else if (_fitWhenSized || _autoFit) FitToView(remember: false);
             };
             _scroll.GetHScrollBar().ValueChanged += _ => ViewChanged?.Invoke();
             _scroll.GetVScrollBar().ValueChanged += _ => ViewChanged?.Invoke();
@@ -87,8 +88,26 @@ namespace AP_Atlas.UI
         public Vector2 MapSize => _mapSize;
         public Vector2 ViewSize => _scroll.Size;
 
+        /// <summary>The least a view can be, in logical pixels: a hidden view holds its scrollbars' own token size, and a fit to that is no fit.</summary>
+        public const float MinView = 24f;
+
         /// <summary>The scrolling area has a size (before the window laid it out, a fit would be meaningless).</summary>
-        public bool HasView => _scroll.Size.X > 0 && _scroll.Size.Y > 0;
+        public bool HasView => _scroll.Size.X >= MinView && _scroll.Size.Y >= MinView;
+
+        // The view Atlas applied by itself (a fit, a remembered view, a centring), applied again whenever the view's size
+        // changes, until the user moves the map: a fit made while the view was still small used to stick, leaving the
+        // map tiny in a view that grew afterwards (Dark Souls III's, the owner's beta, 2026-10-11).
+        private bool _autoFit;
+        private (Vector2 Center, float Zoom, bool FitIfSmaller)? _autoView;
+
+        /// <summary>Whether Atlas keeps the view as it applied it (fitted, or at its view) as the view's size changes; false once the user moved the map (for tests).</summary>
+        public bool AutoView => _autoFit || _fitWhenSized || _autoView != null;
+
+        private void UserMoved()
+        {
+            _autoFit = false;
+            _autoView = null;
+        }
 
         private (Vector2 Center, float Zoom, bool FitIfSmaller)? _viewWhenSized;
 
@@ -191,6 +210,7 @@ namespace AP_Atlas.UI
         /// <summary>Zooms (within the limits) around a point of the view; the scroll follows a frame later, once the range grew.</summary>
         public void ZoomAt(Vector2 anchorInView, float factor)
         {
+            UserMoved();
             float oldZoom = _zoom;
             float newZoom = Math.Clamp(oldZoom * factor, MinZoom, MaxZoom);
             if (Math.Abs(newZoom - oldZoom) < 0.0001f) return;
@@ -217,6 +237,8 @@ namespace AP_Atlas.UI
                 return;
             }
             _fitWhenSized = false;
+            _autoFit = !remember; // Atlas's own fit is made again as the view grows; the user's Fit is the user's view
+            _autoView = null;
             if (!remember) _byCode++;
             try
             {
@@ -249,6 +271,8 @@ namespace AP_Atlas.UI
                 return;
             }
             _viewWhenSized = null;
+            _autoView = (center, zoom, fitIfSmaller);
+            _autoFit = false;
             if (fitIfSmaller && zoom < FitZoom() * 0.9f)
             {
                 FitToView(remember: false);
@@ -310,6 +334,7 @@ namespace AP_Atlas.UI
                     var delta = motion.GlobalPosition - _dragLast;
                     _dragLast = motion.GlobalPosition;
                     if (delta.Length() > 0) _dragMoved = _dragMoved || (motion.Position - _dragStart).Length() >= 3;
+                    if (delta.Length() > 0) UserMoved();
                     ScrollPosition -= delta;
                     _surface.AcceptEvent();
                     break;
