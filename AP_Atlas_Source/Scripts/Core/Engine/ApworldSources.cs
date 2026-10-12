@@ -360,16 +360,38 @@ namespace AP_Atlas.Core.EngineSetup
         }
 
         /// <summary>
-        /// The English documents the game's installed apworld bundles: its setup guide (docs/setup_en.md) and its game page
-        /// (docs/en_&lt;Game&gt;.md), as (apworld file, entry, whether it's the setup guide), the guide first. One look at the
-        /// zip's listing through SafeZip; nothing is read or written.
+        /// The English documents the game's world bundles: its setup guide (docs/setup_en.md) and its game page
+        /// (docs/en_&lt;Game&gt;.md), as (file, entry, whether it's the setup guide), the guide first. An installed .apworld
+        /// file's are named by (the zip, the entry); a world that ships with Archipelago keeps them as plain files in
+        /// worlds/&lt;world&gt;/docs/, named by (the file, ""), the folder found by its game page's name. One look at the
+        /// listing; nothing is read or written.
         /// </summary>
         public static List<(string File, string Entry, bool Setup)> BundledDocuments(EngineInstall install, string game)
         {
             var docs = new List<(string, string, bool)>();
             if (install == null) return docs;
             string file = InstalledCopies(install, game).Select(c => c.File).FirstOrDefault();
-            if (file == null) return docs;
+            if (file == null)
+            {
+                string pageName = "en_" + game + ".md";
+                foreach (var dir in install.WorldFolders())
+                {
+                    IEnumerable<string> worlds;
+                    try { worlds = Directory.EnumerateDirectories(dir); }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { continue; }
+                    foreach (var world in worlds)
+                    {
+                        string docsDir = Path.Combine(world, "docs");
+                        string page = Path.Combine(docsDir, pageName);
+                        if (!File.Exists(page)) continue;
+                        string setup = Path.Combine(docsDir, "setup_en.md");
+                        if (File.Exists(setup)) docs.Add((setup, "", true));
+                        docs.Add((page, "", false));
+                        return docs;
+                    }
+                }
+                return docs;
+            }
             try
             {
                 using var zip = SafeZip.Open(file);
@@ -389,31 +411,40 @@ namespace AP_Atlas.Core.EngineSetup
             return docs.OrderBy(d => d.Item3 ? 0 : 1).ToList();
         }
 
+        /// <summary>A bundled document's text (see <see cref="BundledDocuments"/>): the zip's entry, or the plain file; "" when it can't be read (logged).</summary>
+        public static string ReadBundledDocument(string file, string entry)
+        {
+            const long most = 4L * 1024 * 1024;
+            try
+            {
+                if (string.IsNullOrEmpty(entry))
+                {
+                    var info = new FileInfo(file);
+                    if (!info.Exists || info.Length > most) return "";
+                    return File.ReadAllText(file);
+                }
+                using var zip = SafeZip.Open(file);
+                var found = zip.GetEntry(entry);
+                return found == null ? "" : zip.ReadText(found);
+            }
+            catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+            {
+                Logger.LogWarning($"Couldn't read {(string.IsNullOrEmpty(entry) ? Path.GetFileName(file) : entry + " in " + Path.GetFileName(file))}: {ex.Message}");
+                return "";
+            }
+        }
+
         /// <summary>
         /// The tracker packs the game's own setup guide links to (its bundled docs/setup_en.md first, then its game page),
         /// as GitHub projects in the guide's order: the author's recommendation, which a search can't tell from any other
-        /// project. Empty when the apworld isn't installed or its documents name none.
+        /// project. Empty when the game's world isn't in the engine or its documents name none.
         /// </summary>
         public static List<(string Repo, string Text)> GuideTrackerProjects(EngineInstall install, string game)
         {
             var found = new List<(string Repo, string Text)>();
             foreach (var (file, entryName, _) in BundledDocuments(install, game))
-            {
-                string text;
-                try
-                {
-                    using var zip = SafeZip.Open(file);
-                    var entry = zip.GetEntry(entryName);
-                    text = entry == null ? "" : zip.ReadText(entry);
-                }
-                catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
-                {
-                    Logger.LogWarning($"Couldn't read {entryName} in {Path.GetFileName(file)}: {ex.Message}");
-                    continue;
-                }
-                foreach (var project in GuideLinks.TrackerProjects(text))
+                foreach (var project in GuideLinks.TrackerProjects(ReadBundledDocument(file, entryName)))
                     if (!found.Any(f => string.Equals(f.Repo, project.Repo, StringComparison.OrdinalIgnoreCase))) found.Add(project);
-            }
             return found;
         }
 

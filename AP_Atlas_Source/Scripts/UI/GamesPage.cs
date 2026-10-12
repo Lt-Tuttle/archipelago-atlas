@@ -524,24 +524,9 @@ namespace AP_Atlas.UI
             foreach (var (file, entryName, setup) in ApworldSources.BundledDocuments(install, game))
                 docs.Add(("apworld:" + game + ":" + (setup ? "setup" : "about"),
                     setup ? _tr("Setup guide (from the apworld)") : _tr("About the game (from the apworld)"),
-                    _tr("The apworld's own document ({0}), shown in the Help window; its links open in your browser.").Replace("{0}", Path.GetFileName(entryName)),
-                    () => ReadApworldText(file, entryName)));
+                    _tr("The apworld's own document ({0}), shown in the Help window; its links open in your browser.").Replace("{0}", Path.GetFileName(string.IsNullOrEmpty(entryName) ? file : entryName)),
+                    () => ApworldSources.ReadBundledDocument(file, entryName)));
             return docs;
-        }
-
-        private static string ReadApworldText(string file, string entryName)
-        {
-            try
-            {
-                using var zip = SafeZip.Open(file);
-                var entry = zip.GetEntry(entryName);
-                return entry == null ? "" : zip.ReadText(entry);
-            }
-            catch (Exception ex)
-            {
-                AP_Atlas.Core.Logger.LogWarning($"Couldn't read {entryName} in {Path.GetFileName(file)}: {ex.Message}");
-                return "";
-            }
         }
 
         /// <summary>What a game's link button says, by where the link leads, and the tooltip that explains it.</summary>

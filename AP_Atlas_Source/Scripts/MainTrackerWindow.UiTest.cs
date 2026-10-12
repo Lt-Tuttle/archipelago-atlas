@@ -3448,6 +3448,7 @@ public partial class MainTrackerWindow
         string zip = System.IO.Path.Combine(packs, "uitest_late_pack.zip"), second = System.IO.Path.Combine(packs, "uitest_late_pack_2.zip");
         string fromGitHub = System.IO.Path.Combine(packs, "uitest_github_pack.zip"), packSource = System.IO.Path.Combine(DataManager.GetDataDirectory(), "uitest_github_pack_source.zip");
         string guideApworld = System.IO.Path.Combine(AtlasEngine.ArchipelagoDir, "custom_worlds", "test_game_guide.apworld"); // its setup guide names a tracker
+        string folderDocs = System.IO.Path.Combine(AtlasEngine.ArchipelagoDir, "worlds", "uitest_folder_world", "docs"); // a world shipped as a folder
         await using var github = new AP_Atlas.Core.Testing.FakeWebSite();
         await using var server = new FakeArchipelagoServer();
         server.Games["Test Game"] = new FakeGame("0123456789abcdef0123456789abcdef01234567",
@@ -3519,6 +3520,13 @@ public partial class MainTrackerWindow
             AP_Atlas.Core.GitHubApi.ResetForTests();
             // The game's own setup guide (in its apworld's documents) names a tracker project the search doesn't return: it
             // comes first, marked as recommended, and the game's page offers it.
+            // A world that ships with Archipelago keeps its documents as plain files (worlds/<world>/docs/), found by its game page's name.
+            System.IO.Directory.CreateDirectory(folderDocs);
+            await System.IO.File.WriteAllTextAsync(System.IO.Path.Combine(folderDocs, "en_Test Game.md"), "# Test Game\n");
+            await System.IO.File.WriteAllTextAsync(System.IO.Path.Combine(folderDocs, "setup_en.md"), "# Setup\n\nUse the [map tracker](https://github.com/folder/test-game-tracker).\n");
+            UiTestExpect(AP_Atlas.Core.MapPackManagerControl.GuideRecommendations("Test Game").Select(r => r.Repo).SequenceEqual(new[] { "folder/test-game-tracker" }),
+                $"a shipped world's guide isn't read from its folder: {string.Join(", ", AP_Atlas.Core.MapPackManagerControl.GuideRecommendations("Test Game").Select(r => r.Repo))}");
+            System.IO.Directory.Delete(System.IO.Path.GetDirectoryName(folderDocs)!, true);
             System.IO.Directory.CreateDirectory(System.IO.Path.Combine(AtlasEngine.ArchipelagoDir, "custom_worlds"));
             static void WriteGuideApworld(string path)
             {
@@ -3644,6 +3652,7 @@ public partial class MainTrackerWindow
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
             if (_profiles.Contains(profile)) DeleteProfile(profile);
             foreach (string file in new[] { zip, second, fromGitHub, packSource, guideApworld }) AP_Atlas.Core.SafeFile.Delete(file);
+            if (System.IO.Directory.Exists(System.IO.Path.GetDirectoryName(folderDocs)!)) System.IO.Directory.Delete(System.IO.Path.GetDirectoryName(folderDocs)!, true);
         }
     }
 
