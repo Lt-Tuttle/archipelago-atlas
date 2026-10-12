@@ -229,42 +229,71 @@ namespace AP_Atlas.UI
             {
                 var (candidates, problem) = await AP_Atlas.Core.MapPackManagerControl.SearchPacksAsync(game);
                 if (!GodotObject.IsInstanceValid(this)) return;
-                _packStatus.Text = problem != null ? _tr("GitHub couldn't be searched: {0}").Replace("{0}", problem)
-                    : candidates.Count == 0 ? _tr("No map packs found on GitHub for {0}.").Replace("{0}", game)
-                    : _tr("Packs on GitHub for {0}. Packs are made by the community: check who made it before installing.").Replace("{0}", game);
-                foreach (var c in candidates)
-                {
-                    // The button first, so every choice sits in one column on the left.
-                    var row = new HBoxContainer();
-                    row.AddThemeConstantOverride("separation", 8);
-                    string repo = c.Repo;
-                    var install = Kit.Button(_tr("Install"), _tr("Downloads this pack's newest release and installs it."), () => PickPack(new PackChoice(repo)), small: true);
-                    install.CustomMinimumSize = new Vector2(170, 0);
-                    row.AddChild(install);
-                    var info = Kit.Text(c.Repo + "  ★" + c.Stars + (string.IsNullOrWhiteSpace(c.Description) ? "" : " · " + c.Description));
-                    info.ClipText = true;
-                    info.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-                    info.TooltipText = c.Description ?? "";
-                    row.AddChild(info);
-                    _packBox.AddChild(row);
-                }
-                var without = Kit.Button(_tr("Continue without a pack"), _tr("Pins, Key Items and the pack's scripts aren't scored then."), () => PickPack(new PackChoice(null)), small: true);
-                without.SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin;
-                _packBox.AddChild(without);
-                WindowFit.RequestShrink(this);
+                ShowPackCandidates(game, candidates, problem);
             }, "looking for packs for " + game);
             return _packChoice.Task;
+        }
+
+        /// <summary>GitHub's results as rows: Install, then the project, its stars, whether it's a fork, and its description.</summary>
+        internal void ShowPackCandidates(string game, IReadOnlyList<AP_Atlas.Core.MapPackManagerControl.PackCandidate> candidates, string? problem)
+        {
+            ClearPackRows();
+            _packBox.Visible = true;
+            _packStatus.Text = problem != null ? _tr("GitHub couldn't be searched: {0}").Replace("{0}", problem)
+                : candidates.Count == 0 ? _tr("No map packs found on GitHub for {0}.").Replace("{0}", game)
+                : _tr("Packs on GitHub for {0}. Packs are made by the community: check who made it before installing.").Replace("{0}", game);
+            foreach (var c in candidates)
+            {
+                // The button first, so every choice sits in one column on the left.
+                var row = new HBoxContainer();
+                row.AddThemeConstantOverride("separation", 8);
+                row.SetMeta("pack_row", c.Repo);
+                string repo = c.Repo;
+                var install = Kit.Button(_tr("Install"), _tr("Asks which release when the project has several, then downloads and installs it."), () => PickPack(new PackChoice(repo)), small: true);
+                install.CustomMinimumSize = new Vector2(170, 0);
+                row.AddChild(install);
+                // One line that clips with "…" (an autowrapped label beside the button drew nothing at all).
+                string fork = c.Fork ? " · " + _tr("a fork") : "";
+                var info = new Label
+                {
+                    Text = c.Repo + "  ★" + c.Stars + fork + (string.IsNullOrWhiteSpace(c.Description) ? "" : " · " + c.Description),
+                    ClipText = true,
+                    TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
+                    SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    TooltipText = c.Description ?? ""
+                };
+                info.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Text);
+                row.AddChild(info);
+                _packBox.AddChild(row);
+            }
+            var without = Kit.Button(_tr("Continue without a pack"), _tr("Pins, Key Items and the pack's scripts aren't scored then."), () => PickPack(new PackChoice(null)), small: true);
+            without.SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin;
+            _packBox.AddChild(without);
+            WindowFit.RequestShrink(this);
+        }
+
+        /// <summary>Takes the pack rows away again (a test showed them without a search).</summary>
+        internal void HidePackChoiceForTests()
+        {
+            ClearPackRows();
+            _packBox.Visible = false;
+        }
+
+        private void ClearPackRows()
+        {
+            foreach (Node child in _packBox.GetChildren().Skip(1).ToList())
+            {
+                _packBox.RemoveChild(child);
+                child.QueueFree();
+            }
         }
 
         private void PickPack(PackChoice choice)
         {
             _packChoice?.TrySetResult(choice);
             _packChoice = null;
-            foreach (Node child in _packBox.GetChildren().Skip(1).ToList())
-            {
-                _packBox.RemoveChild(child);
-                child.QueueFree();
-            }
+            ClearPackRows();
             _packStatus.Text = choice.Repo == null ? _tr("Going on without a pack.") : _tr("Installing the pack from github.com/{0}…").Replace("{0}", choice.Repo);
         }
 

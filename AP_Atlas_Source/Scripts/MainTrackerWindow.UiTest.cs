@@ -991,6 +991,19 @@ public partial class MainTrackerWindow
             UiTestExpect(button != null && !button.Disabled, "the game's page has no enabled Test this game… button");
             button!.EmitSignal(BaseButton.SignalName.Pressed);
             var dialog = await UiTestWaitForAsync(Dialog, "the solo test dialog");
+            // GitHub's pack results as rows, each naming its project (three bare Install buttons showed in the owner's beta).
+            dialog.ShowPackCandidates("Test Game", new List<AP_Atlas.Core.MapPackManagerControl.PackCandidate>
+            {
+                new() { Repo = "packs/test-game-poptracker", Stars = 3, Description = "A PopTracker pack for Test Game" },
+                new() { Repo = "fork/test-game-poptracker", Stars = 4, Fork = true }
+            }, null);
+            await UiTestWaitAsync(0.2);
+            var packRows = dialog.FindChildren("*", nameof(HBoxContainer), true, false).OfType<HBoxContainer>().Where(r => r.HasMeta("pack_row")).ToList();
+            var rowLabels = packRows.Select(r => r.GetChildren().OfType<Label>().FirstOrDefault()).ToList();
+            UiTestExpect(packRows.Count == 2 && rowLabels.All(l => l != null && l.IsVisibleInTree() && l.Size.X > 100 && l.Size.Y > 8)
+                && rowLabels[0]!.Text.StartsWith("packs/test-game-poptracker  ★3") && rowLabels[1]!.Text.StartsWith("fork/test-game-poptracker  ★4 · a fork"),
+                $"the pack rows don't name their projects: {string.Join(" | ", rowLabels.Select(l => l == null ? "no label" : l.Text + " " + l.Size))}");
+            dialog.HidePackChoiceForTests();
             dialog.StartForTests();
             await UiTestWaitForAsync(() => dialog.StepStates()[AP_Atlas.Core.Reports.SoloTestStep.Report] == AP_Atlas.Core.Reports.SoloStepOutcome.Done ? dialog : null, "the chain to end", 90);
             var states = dialog.StepStates();

@@ -24,7 +24,8 @@ public partial class MainTrackerWindow
         Settings = _appSettings,
         InstallApworldAsync = game => _gamesPage != null ? _gamesPage.InstallNewestAsync(game, this) : Task.FromResult(false),
         ChoosePackAsync = _ => Task.FromResult<PackChoice?>(null), // the dialog takes this over
-        InstallPackAsync = (game, repo) => _packManagerPanel.InstallPackFromRepoAsync(game, repo, confirm: false),
+        // Asked like the Map Packs page asks: a project with several releases offers them (a fork's newest can be for a newer apworld).
+        InstallPackAsync = (game, repo) => _packManagerPanel.InstallPackFromRepoAsync(game, repo, confirm: true),
         AddProfile = profile =>
         {
             _profiles.Add(profile);
