@@ -613,6 +613,19 @@ namespace AP_Atlas.Core
             public string Repo, Description, HtmlUrl;
             public int Stars;
             public DateTime? Updated;
+            /// <summary>A fork of another project: often how a pack is kept up with a new apworld.</summary>
+            public bool Fork;
+        }
+
+        /// <summary>One of a project's releases that holds a pack (for the choice before a download).</summary>
+        internal sealed class PackRelease
+        {
+            public string Tag, Name, Notes, Url, FileName;
+            public long Size;
+            public bool Prerelease;
+            public DateTime? Published;
+            /// <summary>The tag, and the release's name when it says more ("v1.0.6 · for v3.0.13").</summary>
+            public string Label => string.IsNullOrWhiteSpace(Name) || Name.Trim() == Tag ? Tag : $"{Tag} · {Name.Trim()}";
         }
 
         private static HashSet<string> InstalledPackGames()
@@ -697,7 +710,8 @@ namespace AP_Atlas.Core
                         Description = item["description"]?.ToString() ?? "",
                         HtmlUrl = item["html_url"]?.ToString(),
                         Stars = item["stargazers_count"]?.Value<int?>() ?? 0,
-                        Updated = item["pushed_at"]?.Value<DateTime?>()
+                        Updated = item["pushed_at"]?.Value<DateTime?>(),
+                        Fork = item["fork"]?.Value<bool?>() ?? false
                     });
                 }
                 if (list.Count > 0) break;
@@ -705,10 +719,14 @@ namespace AP_Atlas.Core
             return (list, null);
         }
 
-        /// <summary>At most two searches per game: the exact name, then a looser form (digits for roman numerals, the subtitle).</summary>
-        private static List<string> SearchQueries(string game)
+        /// <summary>
+        /// At most two searches per game: the exact name, then a looser form (digits for roman numerals, the subtitle). Forks
+        /// included: GitHub leaves them out unless asked, and a fork is how the community keeps a pack up with a new apworld
+        /// (the owner's Dark Souls III pack, 2026-10-11).
+        /// </summary>
+        internal static List<string> SearchQueries(string game)
         {
-            var queries = new List<string> { $"\"{game}\" poptracker" };
+            var queries = new List<string> { $"\"{game}\" poptracker fork:true" };
             string loose = game;
             loose = Regex.Replace(loose, @"\bVIII\b", "8");
             loose = Regex.Replace(loose, @"\bVII\b", "7");
@@ -718,7 +736,7 @@ namespace AP_Atlas.Core
             loose = Regex.Replace(loose, @"\bIII\b", "3");
             loose = Regex.Replace(loose, @"\bII\b", "2");
             if (loose.Contains(':')) loose = loose.Substring(loose.IndexOf(':') + 1).Trim();
-            queries.Add(loose.Length > 0 && !string.Equals(loose, game, StringComparison.OrdinalIgnoreCase) ? $"\"{loose}\" poptracker" : $"{game} poptracker");
+            queries.Add(loose.Length > 0 && !string.Equals(loose, game, StringComparison.OrdinalIgnoreCase) ? $"\"{loose}\" poptracker fork:true" : $"{game} poptracker fork:true");
             return queries;
         }
 
@@ -751,9 +769,10 @@ namespace AP_Atlas.Core
                     var row = new HBoxContainer();
                     row.AddThemeConstantOverride("separation", 8);
                     string updated = c.Updated.HasValue ? $" · updated {c.Updated.Value.ToLocalTime():yyyy-MM-dd}" : "";
+                    string fork = c.Fork ? " · a fork" : "";
                     var info = new Label
                     {
-                        Text = $"{c.Repo}  ★{c.Stars}{updated}" + (string.IsNullOrWhiteSpace(c.Description) ? "" : "\n" + c.Description),
+                        Text = $"{c.Repo}  ★{c.Stars}{updated}{fork}" + (string.IsNullOrWhiteSpace(c.Description) ? "" : "\n" + c.Description),
                         AutowrapMode = TextServer.AutowrapMode.WordSmart,
                         SizeFlagsHorizontal = SizeFlags.ExpandFill
                     };
@@ -792,15 +811,27 @@ namespace AP_Atlas.Core
 
         /// <summary>
         /// Installs a project's newest released pack (or its current files) for a game, asking first unless told not to
-        /// (the solo test, which said what it does); true once the pack is in Atlas's packs folder.
+        /// (the solo test, which said what it does); true once the pack is in Atlas's packs folder. When asking and the
+        /// project has several releases with a pack, the question offers them with their notes: a project's newest release
+        /// can be for a newer apworld than the engine's, and its notes say so.
         /// </summary>
         internal async Task<bool> InstallPackFromRepoAsync(string game, string repo, bool confirm)
         {
             GitHubApi.Result release;
+            var releases = new List<PackRelease>();
             _showOverlayAction();
-            try { release = await GitHubApi.GetAsync($"/repos/{repo}/releases/latest"); }
+            try
+            {
+                if (confirm)
+                {
+                    var list = await GitHubApi.GetAsync($"/repos/{repo}/releases?per_page=12");
+                    if (list.Ok) releases = ReleasesWithPacks(list.Json);
+                }
+                release = await GitHubApi.GetAsync($"/repos/{repo}/releases/latest");
+            }
             finally { _hideOverlayAction(); }
             if (!GodotObject.IsInstanceValid(this)) return false;
+            if (releases.Count > 1) return await ConfirmReleaseAsync(game, repo, releases);
             if (release.Unknown)
             {
                 _logAction($"Couldn't read {repo}'s releases: {release.Message}", "orange");
@@ -835,6 +866,86 @@ namespace AP_Atlas.Core
             AP_Atlas.UI.Dialogs.Confirm(this, "Install a map pack", text, "Download and install", () => AP_Atlas.Core.Async.Fire(async () => answered.TrySetResult(await DownloadPackAsync(downloadUrl, file, where)), "downloading a map pack"),
                 null, () => answered.TrySetResult(false));
             return await answered.Task;
+        }
+
+        /// <summary>A project's releases that hold a pack (a zip), as GitHub lists them: newest first, drafts left out.</summary>
+        internal static List<PackRelease> ReleasesWithPacks(JToken json)
+        {
+            var list = new List<PackRelease>();
+            foreach (var item in json as JArray ?? new JArray())
+            {
+                if (item["draft"]?.Value<bool?>() == true) continue;
+                var zip = (item["assets"] as JArray ?? new JArray()).FirstOrDefault(a => (a["name"]?.ToString() ?? "").EndsWith(".zip", StringComparison.OrdinalIgnoreCase));
+                if (zip == null) continue;
+                list.Add(new PackRelease
+                {
+                    Tag = item["tag_name"]?.ToString() ?? "",
+                    Name = item["name"]?.ToString() ?? "",
+                    Notes = item["body"]?.ToString() ?? "",
+                    Url = zip["browser_download_url"]?.ToString(),
+                    FileName = zip["name"]?.ToString(),
+                    Size = zip["size"]?.Value<long?>() ?? 0,
+                    Prerelease = item["prerelease"]?.Value<bool?>() == true,
+                    Published = item["published_at"]?.Value<DateTime?>()
+                });
+            }
+            return list;
+        }
+
+        /// <summary>The release notes as a short plain line or two: markdown marks dropped, cut after a few hundred characters.</summary>
+        internal static string NotesExcerpt(string notes, int most = 420)
+        {
+            if (string.IsNullOrWhiteSpace(notes)) return "";
+            string text = Regex.Replace(notes.Replace("\r", ""), @"^\s*#+\s*", "", RegexOptions.Multiline);
+            text = Regex.Replace(text, @"\[([^\]]+)\]\([^)]*\)", "$1");
+            text = Regex.Replace(text, @"[*_`]+", "");
+            text = Regex.Replace(text, @"\n{2,}", "\n").Trim();
+            return text.Length <= most ? text : text.Substring(0, most).TrimEnd() + "…";
+        }
+
+        /// <summary>The question before a download when the project has several releases: which one, with its notes shown.</summary>
+        private Task<bool> ConfirmReleaseAsync(string game, string repo, List<PackRelease> releases)
+        {
+            var answered = new TaskCompletionSource<bool>();
+            var dialog = new ConfirmationDialog { Title = "Install a map pack", OkButtonText = "Download and install", DialogHideOnOk = false };
+            dialog.SetMeta("release_picker", repo);
+            var box = new VBoxContainer();
+            box.AddThemeConstantOverride("separation", 8);
+            box.AddChild(new Label { Text = $"github.com/{repo} has {releases.Count} releases with a pack. Pick the one for your game's version (the notes often say which); the newest is first.", AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(520, 0) });
+            var picker = new OptionButton { Name = "Releases", SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            foreach (var r in releases) picker.AddItem(r.Label + (r.Prerelease ? " (pre-release)" : ""));
+            box.AddChild(picker);
+            var notes = Muted("");
+            notes.CustomMinimumSize = new Vector2(520, 0);
+            box.AddChild(notes);
+            var size = Muted("");
+            box.AddChild(size);
+            void ShowRelease(int i)
+            {
+                var r = releases[Math.Clamp(i, 0, releases.Count - 1)];
+                string when = r.Published.HasValue ? $", {r.Published.Value.ToLocalTime():yyyy-MM-dd}" : "";
+                size.Text = $"{r.FileName} ({r.Size / (1024.0 * 1024.0):0.0} MB{when}), installed as a map pack for {game}.";
+                string excerpt = NotesExcerpt(r.Notes);
+                notes.Text = excerpt.Length > 0 ? excerpt : "(The release has no notes.)";
+            }
+            picker.ItemSelected += i => ShowRelease((int)i);
+            ShowRelease(0);
+            box.AddChild(new Label { Text = Tr("Map packs are made by the community, and their scripts run inside Atlas's sandbox. Only install packs from projects you trust."), AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(520, 0) });
+            dialog.AddChild(box);
+            dialog.Confirmed += () =>
+            {
+                var r = releases[Math.Clamp(picker.Selected, 0, releases.Count - 1)];
+                dialog.QueueFree();
+                AP_Atlas.Core.Async.Fire(async () => answered.TrySetResult(await DownloadPackAsync(r.Url, r.FileName, "github.com/" + repo)), "downloading a map pack");
+            };
+            dialog.Canceled += () =>
+            {
+                dialog.QueueFree();
+                answered.TrySetResult(false);
+            };
+            AddChild(dialog);
+            AP_Atlas.UI.WindowFit.Pop(dialog, 580);
+            return answered.Task;
         }
 
         private async Task<bool> DownloadPackAsync(string url, string fileName, string where)

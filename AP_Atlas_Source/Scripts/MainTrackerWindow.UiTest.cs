@@ -3491,7 +3491,13 @@ public partial class MainTrackerWindow
                 if (path.StartsWith("/search/repositories"))
                     return new AP_Atlas.Core.Testing.FakeWebSite.FullAnswer(200, Json("{\"items\":[{\"full_name\":\"packs/test-game-poptracker\",\"description\":\"A PopTracker pack for Test Game\",\"html_url\":\"https://github.com/packs/test-game-poptracker\",\"stargazers_count\":3}]}"), "application/json");
                 if (path.StartsWith("/repos/packs/test-game-poptracker/releases/latest"))
-                    return new AP_Atlas.Core.Testing.FakeWebSite.FullAnswer(200, Json($"{{\"tag_name\":\"v1\",\"assets\":[{{\"name\":\"uitest_github_pack.zip\",\"browser_download_url\":\"{github.Site}/dl/uitest_github_pack.zip\",\"size\":{packBytes.Length}}}]}}"), "application/json");
+                    return new AP_Atlas.Core.Testing.FakeWebSite.FullAnswer(200, Json($"{{\"tag_name\":\"v2\",\"assets\":[{{\"name\":\"uitest_github_pack_v2.zip\",\"browser_download_url\":\"{github.Site}/dl/uitest_github_pack_v2.zip\",\"size\":{packBytes.Length}}}]}}"), "application/json");
+                // Two releases with a pack (and a draft): the question offers both, newest first, with the notes of the chosen one.
+                if (path.StartsWith("/repos/packs/test-game-poptracker/releases?"))
+                    return new AP_Atlas.Core.Testing.FakeWebSite.FullAnswer(200, Json(
+                        $"[{{\"tag_name\":\"v3\",\"name\":\"unfinished\",\"draft\":true,\"assets\":[{{\"name\":\"x.zip\",\"browser_download_url\":\"{github.Site}/dl/x.zip\",\"size\":1}}]}}," +
+                        $"{{\"tag_name\":\"v2\",\"name\":\"For the next apworld\",\"body\":\"## Warning\\nFor apworld 4.x; take **v1** for archipelago.gg.\",\"assets\":[{{\"name\":\"uitest_github_pack_v2.zip\",\"browser_download_url\":\"{github.Site}/dl/uitest_github_pack_v2.zip\",\"size\":{packBytes.Length}}}]}}," +
+                        $"{{\"tag_name\":\"v1\",\"name\":\"v1\",\"body\":\"\",\"assets\":[{{\"name\":\"uitest_github_pack.zip\",\"browser_download_url\":\"{github.Site}/dl/uitest_github_pack.zip\",\"size\":{packBytes.Length}}}]}}]"), "application/json");
                 if (path == "/dl/uitest_github_pack.zip") return new AP_Atlas.Core.Testing.FakeWebSite.FullAnswer(200, packBytes, "application/zip");
                 return new AP_Atlas.Core.Testing.FakeWebSite.FullAnswer(404, Array.Empty<byte>());
             };
@@ -3501,10 +3507,20 @@ public partial class MainTrackerWindow
             slot.MapTracker.FindPackButton.EmitSignal(BaseButton.SignalName.Pressed);
             await UiTestWaitForAsync(() => ShownContent() == _packManagerPanel ? _packManagerPanel : null, "the Map Packs page to show");
             var results = await UiTestWaitForAsync(() => _packManagerPanel.GetChildren().OfType<AcceptDialog>().FirstOrDefault(d => d.Title == "Map packs on GitHub"), "the search results", 20);
-            UiTestExpect(github.Requests.Count(r => r.StartsWith("/search/")) == 1, $"GitHub was searched {github.Requests.Count(r => r.StartsWith("/search/"))} times for one game");
+            UiTestExpect(github.Requests.Count(r => r.StartsWith("/search/")) == 1 && github.Requests.First(r => r.StartsWith("/search/")).Contains("fork%3Atrue"),
+                $"GitHub was searched {github.Requests.Count(r => r.StartsWith("/search/"))} times for one game, or without its forks: {github.Requests.FirstOrDefault(r => r.StartsWith("/search/"))}");
             results.FindChildren("*", nameof(Button), true, false).OfType<Button>().First(b => b.Text == "Install…").EmitSignal(BaseButton.SignalName.Pressed);
             var question = await UiTestWaitForAsync(() => _packManagerPanel.GetChildren().OfType<ConfirmationDialog>().FirstOrDefault(d => d.Title == "Install a map pack"), "the question before the download", 20);
             UiTestExpect(!System.IO.File.Exists(fromGitHub) && !github.Requests.Any(r => r.StartsWith("/dl/")), "the pack was downloaded before the question was answered");
+            // The project has two releases with a pack: both offered, newest first, the draft left out, the chosen one's notes shown.
+            var releasePicker = question.FindChildren("Releases", nameof(OptionButton), true, false).OfType<OptionButton>().FirstOrDefault();
+            UiTestExpect(question.HasMeta("release_picker") && releasePicker != null && releasePicker.ItemCount == 2 && releasePicker.GetItemText(0).StartsWith("v2 · For the next apworld") && releasePicker.GetItemText(1) == "v1",
+                $"the question doesn't offer the project's releases: {(releasePicker == null ? "no picker" : string.Join(" | ", Enumerable.Range(0, releasePicker.ItemCount).Select(releasePicker.GetItemText)))}");
+            var releaseNotes = question.FindChildren("*", nameof(Label), true, false).OfType<Label>().FirstOrDefault(l => l.Text.Contains("For apworld 4.x"));
+            UiTestExpect(releaseNotes != null && !releaseNotes.Text.Contains("##") && !releaseNotes.Text.Contains("**"), "the newest release's notes aren't shown as plain text");
+            releasePicker?.Select(1);
+            releasePicker?.EmitSignal(OptionButton.SignalName.ItemSelected, 1);
+            UiTestExpect(question.FindChildren("*", nameof(Label), true, false).OfType<Label>().Any(l => l.Text.Contains("uitest_github_pack.zip (")), "the chosen release's file isn't named");
             question.EmitSignal(AcceptDialog.SignalName.Confirmed);
             var fromSearch = await UiTestWaitForAsync(() => slot.Pack, "the slot to load the pack found on GitHub", 20);
             UiTestExpect(fromSearch.Manifest.Name == "UI test GitHub pack" && System.IO.File.Exists(fromGitHub), "the pack from GitHub wasn't installed for the slot");

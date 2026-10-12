@@ -488,9 +488,10 @@ namespace AP_Atlas.Core.EngineSetup
                     }
                 }
                 // Repositories about the game (precise), then ones named exactly like a known project (forks, re-uploads).
-                await SearchAsync($"\"{game}\" archipelago in:name,description", _ => true);
+                // fork:true: GitHub leaves forks out unless asked, and a fork is often where a game's apworld lives on.
+                await SearchAsync($"\"{game}\" archipelago in:name,description fork:true", _ => true);
                 foreach (var name in known.Select(r => r.Split('/').Last()).Distinct(StringComparer.OrdinalIgnoreCase))
-                    await SearchAsync($"{name} in:name", item => string.Equals(item["name"]?.ToString(), name, StringComparison.OrdinalIgnoreCase));
+                    await SearchAsync($"{name} in:name fork:true", item => string.Equals(item["name"]?.ToString(), name, StringComparison.OrdinalIgnoreCase));
                 foreach (var repo in candidates.Take(10))
                 {
                     found = await CheckAsync(repo);
@@ -577,7 +578,7 @@ namespace AP_Atlas.Core.EngineSetup
                 var candidates = new List<string>();
                 foreach (var name in names)
                 {
-                    var answer = await GitHubApi.GetAsync($"/search/repositories?q={Uri.EscapeDataString(name + " in:name")}&per_page=20", ct);
+                    var answer = await GitHubApi.GetAsync($"/search/repositories?q={Uri.EscapeDataString(name + " in:name fork:true")}&per_page=20", ct);
                     if (!answer.Ok)
                     {
                         incomplete = true;
