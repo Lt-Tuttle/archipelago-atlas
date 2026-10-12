@@ -397,8 +397,9 @@ namespace AP_Atlas.UI
                 var title = Kit.Text(owner._tr(kind.Title));
                 title.AddThemeColorOverride("font_color", ThemeColors.AccentText(ThemeColors.AccentTint));
                 box.AddChild(title);
-                box.AddChild(Wrapped(owner._tr(kind.Explanation), muted: true, width: PageWidth - 40));
+                box.AddChild(Wrapped(owner._tr(kind.Summary), width: PageWidth - 40));
                 if (!string.IsNullOrWhiteSpace(details)) box.AddChild(Wrapped(details, muted: true, width: PageWidth - 40));
+                box.AddChild(Kit.MoreInfo(owner._tr(kind.Explanation), owner._tr, PageWidth - 40));
                 var where = Wrapped(owner._tr("\"Allow once\" lasts until Atlas closes. You can take back \"Always allow\" in Settings → Privacy & permissions."), muted: true, width: PageWidth - 40);
                 where.SetMeta("font_size_ratio", 0.9f);
                 box.AddChild(where);
@@ -449,8 +450,8 @@ namespace AP_Atlas.UI
             header.AddChild(titles);
             box.AddChild(header);
             box.AddChild(Wrapped(_tr("Atlas shows your Archipelago multiworlds on their maps: every check and whether it's in logic, your items, your hints and the trackers your group uses, all in one window. A few pages set it up; each says what it does before anything happens.")));
-            box.AddChild(Wrapped(_tr("Atlas keeps everything in its own folder, never looks elsewhere on your PC, and goes online only for what you allow here or later. Each permission is a row on its page: Allow once, Always allow, or not now. You can take any answer back in Settings → Privacy & permissions."), muted: true));
-            box.AddChild(Wrapped(_tr("Skip this step is always there, and Help → Set up Atlas… or Home's Resume brings this window back at the first step left."), muted: true));
+            box.AddChild(Kit.MoreInfo(_tr("Atlas keeps everything in its own folder, never looks elsewhere on your PC, and goes online only for what you allow here or later. Each permission is a row on its page: Allow once, Always allow, or not now. You can take any answer back in Settings → Privacy & permissions.") + "\n\n"
+                + _tr("Skip this step is always there, and Help → Set up Atlas… or Home's Resume brings this window back at the first step left."), _tr, PageWidth - 20));
             return box;
         }
 

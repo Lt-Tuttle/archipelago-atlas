@@ -131,7 +131,10 @@ namespace AP_Atlas.UI
                 dialog.WrapControls = false;
                 dialog.Size = new Vector2I(dialog.Size.X, cap);
             }
-            dialog.Position = new Vector2I(Math.Max(0, (area.X - dialog.Size.X) / 2), Math.Max(0, (area.Y - dialog.Size.Y) / 2));
+            // Over the window that asked (a test's window, the setup window), else in the middle of Atlas's window.
+            var centre = dialog.GetParent()?.GetViewport() is Window { Visible: true, ForceNative: false } asker && asker != _root && asker != dialog
+                ? asker.Position + asker.Size / 2 : area / 2;
+            dialog.Position = new Vector2I(Math.Max(0, centre.X - dialog.Size.X / 2), Math.Max(0, centre.Y - dialog.Size.Y / 2));
             Fit(dialog);
         }
 
@@ -288,10 +291,15 @@ namespace AP_Atlas.UI
             if (fitted.Position != window.Position) window.Position = fitted.Position;
         }
 
-        /// <summary>The logical area an embedded window can take: its parent viewport's visible rectangle.</summary>
+        /// <summary>
+        /// The logical area an embedded window can take: the visible rectangle of the window it's embedded in. A window
+        /// asked from another embedded window (a test's window) is embedded in Atlas's own, not in the one that asked.
+        /// </summary>
         public static Rect2I AvailableLogical(Window window)
         {
-            var viewport = window.GetParent()?.GetViewport() ?? _root;
+            Viewport? viewport = window.GetParent()?.GetViewport() ?? _root;
+            while (viewport is Window { ForceNative: false } asking && asking != _root && !window.ForceNative && !asking.GuiEmbedSubwindows)
+                viewport = asking.GetParent()?.GetViewport() ?? _root;
             if (viewport == null) return new Rect2I(0, 0, 100000, 100000);
             var visible = viewport.GetVisibleRect();
             return new Rect2I(Vector2I.Zero, new Vector2I((int)visible.Size.X, (int)visible.Size.Y));

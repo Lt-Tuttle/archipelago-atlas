@@ -264,15 +264,17 @@ namespace AP_Atlas.UI
                 + (bytes > 0 && unknown > 0 ? _tr(", besides {0} whose size isn't listed").Replace("{0}", unknown.ToString()) : "");
             var untrusted = projects.Where(p => p.StartsWith("github.com/", StringComparison.OrdinalIgnoreCase) && !ApworldSources.IsRepoApproved(_hooks.Settings, p.Substring("github.com/".Length))).ToList();
             Dialogs.Confirm(DialogParent, _tr("Look inside {0}'s releases?").Replace("{0}", game),
-                _tr("To find the version that works with your map pack, Atlas downloads the newest {0} release(s) of the {1} apworld ({2}) from {3} into the game's folder, reads what each one's setup guide and manifest say and, with the Atlas Engine set up, loads each in a throwaway engine process to measure your map pack against its checks. Nothing is installed. Loading a release runs its code, as installing it would. Atlas asks this once for {1}.")
-                    .Replace("{0}", candidates.Count(c => c.LocalFile == null).ToString()).Replace("{1}", game).Replace("{2}", size).Replace("{3}", string.Join(", ", projects)),
+                _tr("Atlas downloads the newest {0} release(s) of {1} ({2}) to find the one that works with your map pack. Nothing is installed.")
+                    .Replace("{0}", candidates.Count(c => c.LocalFile == null).ToString()).Replace("{1}", game).Replace("{2}", size),
                 _tr("Look inside them"), () =>
                 {
                     foreach (var p in untrusted) ApworldSources.ApproveRepo(_hooks.Settings, p.Substring("github.com/".Length));
                     if (!_hooks.Settings.ReleaseLookGames.Contains(game, StringComparer.OrdinalIgnoreCase)) _hooks.Settings.ReleaseLookGames.Add(game);
                     DataManager.SaveSettingsSoon(_hooks.Settings);
                     Go();
-                }, untrusted.Count > 0 ? _tr("I trust {0}").Replace("{0}", string.Join(", ", untrusted)) : null, () => then?.Invoke(false));
+                }, untrusted.Count > 0 ? _tr("I trust {0}").Replace("{0}", string.Join(", ", untrusted)) : null, () => then?.Invoke(false),
+                _tr("From {0}, into the game's folder. Atlas reads what each release's setup guide and manifest say and, with the Atlas Engine set up, loads each in a throwaway engine process to measure your map pack against its checks. Loading a release runs its code, as installing it would, so this trusts the project. Atlas asks this once for {1}.")
+                    .Replace("{0}", string.Join(", ", projects)).Replace("{1}", game));
         }
 
         private async Task LookAsync(string game, List<ReleaseLook.Candidate> candidates, Action<bool>? then)

@@ -8,13 +8,15 @@ namespace AP_Atlas.UI
     public static class Dialogs
     {
         /// <summary>Asks to confirm; with <paramref name="requirement"/>, a statement the user has to switch on first.</summary>
-        public static void Confirm(Node parent, string title, string text, string okText, Action onConfirm, string requirement = null, Action onCancel = null)
+        /// <param name="details">The rest, folded under "More information" (null: none).</param>
+        public static void Confirm(Node parent, string title, string text, string okText, Action onConfirm, string requirement = null, Action onCancel = null, string details = null)
         {
             // The text is a label of a set width (the dialog's own wrapped text leaves a tall empty gap below it).
             var dialog = new ConfirmationDialog { Title = title, OkButtonText = okText, DialogHideOnOk = false };
             var box = new VBoxContainer();
             box.AddThemeConstantOverride("separation", 8);
             box.AddChild(new Label { Text = text, AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(460, 0) });
+            if (!string.IsNullOrWhiteSpace(details)) box.AddChild(Kit.MoreInfo(details, Kit.Translate));
             var confirmation = Requirement(dialog, requirement);
             if (confirmation != null) box.AddChild(confirmation);
             dialog.AddChild(box);

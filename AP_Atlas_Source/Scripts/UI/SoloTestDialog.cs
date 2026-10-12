@@ -52,10 +52,11 @@ namespace AP_Atlas.UI
             AddChild(scroll);
             scroll.AddChild(box);
             box.MinimumSizeChanged += () => scroll.CustomMinimumSize = new Vector2(0, Math.Min(box.GetCombinedMinimumSize().Y, ContentHeight));
-            var intro = Kit.Muted(tr("Start is the one confirmation: Atlas installs what's missing (the apworld, asking for its trust as always; the pack the game's setup guide recommends, or the one you pick, with the release that fits the game's names), makes a YAML with the game's default options, generates a one-player seed in the engine (minutes for a big game), hosts it on this PC only (127.0.0.1, no password), connects a slot called AtlasTest with that YAML, scores its logic and the pack, and writes a report in Atlas's folder with a few questions for you at the end. Atlas stays usable meanwhile; Close keeps the test and its server going, and Test this game… on the Games page brings this window back."));
+            var intro = Kit.Text(tr("Atlas plays the game on a one-player seed hosted on this PC, then writes a report. Start runs it all."));
             intro.AutowrapMode = TextServer.AutowrapMode.WordSmart;
             intro.CustomMinimumSize = new Vector2(ContentWidth, 0);
             box.AddChild(intro);
+            box.AddChild(Kit.MoreInfo(tr("Atlas installs what's missing (the apworld, asking for its trust as always; the pack the game's setup guide recommends, or the one you pick, with the release that fits the game's names), makes a YAML with the game's default options, generates a one-player seed in the engine (minutes for a big game), hosts it on this PC only (127.0.0.1, no password), connects a slot called AtlasTest with that YAML, scores its logic and the pack, and writes a report in Atlas's folder with a few questions for you at the end. Atlas stays usable meanwhile; Close keeps the test and its server going, and Test this game… on the Games page brings this window back."), tr, ContentWidth));
             var buttons = new HBoxContainer();
             buttons.AddThemeConstantOverride("separation", 8);
             _start = Kit.Button(tr("Start"), tr("Runs the whole chain; you can watch the map and Key Items while it goes."), Start);

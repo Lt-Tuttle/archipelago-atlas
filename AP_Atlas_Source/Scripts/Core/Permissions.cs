@@ -18,48 +18,58 @@ namespace AP_Atlas.Core
             public string Id { get; }
             /// <summary>What Atlas wants to do, as a short title ("Look for Archipelago on this PC").</summary>
             public string Title { get; }
-            /// <summary>Exactly what happens, in plain words, shown when asking.</summary>
+            /// <summary>Exactly what happens, in plain words: the question's "More information" and the Privacy page.</summary>
             public string Explanation { get; }
+            /// <summary>The one sentence a question says: what Atlas will do.</summary>
+            public string Summary { get; }
 
-            internal Kind(string id, string title, string explanation)
+            internal Kind(string id, string title, string summary, string explanation)
             {
                 Id = id;
                 Title = title;
+                Summary = summary;
                 Explanation = explanation;
             }
         }
 
         public static readonly Kind FindArchipelago = new Kind("pc.find-archipelago", "Look for Archipelago on this PC",
+            "Atlas looks for Archipelago in the usual places it's installed. Nothing is opened or changed.",
             "Atlas checks the usual places Archipelago is installed (Program Files, ProgramData, your local Programs folder, and " +
             "C:\\, D:\\ or E:\\Archipelago) and Windows' list of installed programs. It only looks for ArchipelagoLauncher.exe; " +
             "nothing is opened or changed.");
 
         public static readonly Kind WriteArchipelago = new Kind("pc.write-archipelago", "Let Atlas add its files to your Archipelago install",
+            "Atlas adds its bridge to your Archipelago install's worlds folder. Every change is recorded and can be undone.",
             "To run logic on your own Archipelago, Atlas adds its bridge (UltimateBridge.apworld) to the install's worlds folder and " +
             "updates it when Atlas updates. It also adds the Universal Tracker or an apworld there, but only when you ask it to. " +
             "Atlas records every change, and \"Remove Atlas's files\" in Atlas Engine undoes them.");
 
         public static readonly Kind GitHubLookups = new Kind("online.github-lookups", "Look up apworld versions on GitHub by itself",
+            "Atlas reads a game's release lists on GitHub to find the version a seed needs. Nothing is downloaded.",
             "When a seed was made with a different version of a game's apworld, Atlas reads the release lists of that game's GitHub " +
             "projects (and may search GitHub for where your copy came from) to find the seed's version, without you pressing a button. " +
             "Downloads still need you to trust their source first.");
 
         public static readonly Kind RoomStatusReads = new Kind("online.room-status", "Read a room's status from archipelago.gg",
+            "Atlas reads the room's small status page: its port and its players. A sleeping room isn't woken.",
             "Atlas reads the room's status page (api/room_status): the port the room runs on, its players and when it was last active. " +
             "One small read when you fill in a multiworld from its room link, and one when a reconnect fails (at most every ten minutes), " +
             "to say whether the room moved to another port or went to sleep. Atlas never requests the room's own page, which would wake a sleeping room.");
 
         public static readonly Kind UpdateChecks = new Kind("online.update-check", "Check GitHub for new versions of Atlas",
+            "Once a day at most, Atlas checks GitHub for a newer Atlas. Nothing downloads until you press Update.",
             "Once a day at most, Atlas reads the list of its own releases on GitHub: one small request, and an unchanged list is confirmed " +
             "rather than sent again. Nothing is downloaded until you press Update, and a download is checked against the release's " +
             "SHA-256 before it's used. Settings \u2192 Updates turns the daily check off.");
 
         public static readonly Kind CrashReports = new Kind("online.crash-report", "Send crash reports to Atlas's developer",
+            "After a crash, Atlas offers to send a scrubbed report to its developer. You see it first.",
             "When Atlas has had a problem it couldn't recover from, it offers to send a report to its developer through Sentry, a crash-reporting " +
             "service: what the code was doing, Atlas's version and the kind of PC, and nothing more. You see the whole report first, as it would be " +
             "sent. Names, paths, servers, slots, chat and log lines are never included. Reports stay in Atlas's logs folder either way.");
 
         public static readonly Kind EngineSetup = new Kind("online.engine-setup", "Download the Atlas Engine's parts into Atlas's folder",
+            "Atlas downloads what logic needs into its own folder, each file checked against a fixed hash: a game's world comes from Archipelago's release (about 22 MB, once).",
             "Logic, maps and hints run on Archipelago's own code. A game's world comes from Archipelago's release, downloaded once from GitHub " +
             "(about 22 MB) when a slot first needs one; a few games declare packages of their own, from PyPI. Without the engine that ships with " +
             "Atlas (run from source), Atlas downloads Python (from python.org), Archipelago and Universal Tracker (from GitHub) and Archipelago's " +

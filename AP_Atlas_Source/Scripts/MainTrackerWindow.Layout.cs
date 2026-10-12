@@ -462,7 +462,30 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         theme.SetStylebox("normal", "RichTextLabel", new StyleBoxFlat { BgColor = AP_Atlas.Core.ThemeColors.SurfaceSunken, ContentMarginLeft = 4, ContentMarginRight = 4, ContentMarginTop = 4, ContentMarginBottom = 4 });
         theme.SetStylebox("panel", "AcceptDialog", new StyleBoxFlat { BgColor = AP_Atlas.Core.ThemeColors.SurfacePanel, BorderColor = AP_Atlas.Core.ThemeColors.BorderSoft, BorderWidthTop = 1, BorderWidthBottom = 1, BorderWidthLeft = 1, BorderWidthRight = 1, ContentMarginLeft = 12, ContentMarginRight = 12, ContentMarginTop = 12, ContentMarginBottom = 12 });
         // An embedded window's title strip is drawn by its border's top edge, so that edge takes a surface colour, not the line's.
-        theme.SetStylebox("embedded_border", "Window", new StyleBoxFlat { BgColor = AP_Atlas.Core.ThemeColors.SurfacePanel, BorderColor = AP_Atlas.Core.ThemeColors.SurfaceRaised, BorderWidthTop = 28, BorderWidthBottom = 1, BorderWidthLeft = 1, BorderWidthRight = 1, ExpandMarginTop = 28, ExpandMarginLeft = 1, ExpandMarginRight = 1, ExpandMarginBottom = 1 });
+        // A dialog stands out from the page behind it: its title strip and edge in the accent, and a shadow under it (a
+        // window without the focus keeps a smaller shadow).
+        StyleBoxFlat WindowFrame(Godot.Color edge, int shadow) => new StyleBoxFlat
+        {
+            BgColor = AP_Atlas.Core.ThemeColors.SurfacePanel,
+            BorderColor = edge,
+            BorderWidthTop = 28,
+            BorderWidthBottom = 2,
+            BorderWidthLeft = 2,
+            BorderWidthRight = 2,
+            ExpandMarginTop = 28,
+            ExpandMarginLeft = 2,
+            ExpandMarginRight = 2,
+            ExpandMarginBottom = 2,
+            CornerRadiusTopLeft = 6,
+            CornerRadiusTopRight = 6,
+            CornerRadiusBottomLeft = 6,
+            CornerRadiusBottomRight = 6,
+            ShadowColor = new Godot.Color(0, 0, 0, 0.55f),
+            ShadowSize = shadow
+        };
+        theme.SetStylebox("embedded_border", "Window", WindowFrame(accentColor, 22));
+        theme.SetStylebox("embedded_unfocused_border", "Window", WindowFrame(accentColor, 10));
+        theme.SetColor("title_color", "Window", textOnAccent);
         this.Theme = theme;
         _alerts?.UseTheme(theme);
         // Popups and windows (dialogs, the Pack Doctor) live under the root, not this control, so share the theme there too.

@@ -32,6 +32,29 @@ namespace AP_Atlas.UI
         /// <summary>The theme type variation of a quiet button: no background until hovered, a tint while pressed.</summary>
         public const string QuietButton = "QuietButton";
 
+        /// <summary>
+        /// "More information": the details of a short question, folded until pressed (a dialog says the one thing to
+        /// decide; everything else is a press away). A popped dialog follows its content's size as it opens.
+        /// </summary>
+        public static VBoxContainer MoreInfo(string details, Func<string, string> tr, int width = 460)
+        {
+            var box = new VBoxContainer { Name = "MoreInfo" };
+            box.AddThemeConstantOverride("separation", 4);
+            var text = Wrapped(Muted(details));
+            text.CustomMinimumSize = new Vector2(width, 0);
+            text.Visible = false;
+            var toggle = new Button { Text = tr("More information ▸"), ThemeTypeVariation = QuietButton, Alignment = HorizontalAlignment.Left, SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin, Name = "MoreInfoButton" };
+            toggle.SetMeta("font_size_ratio", 0.9f);
+            toggle.Pressed += () =>
+            {
+                text.Visible = !text.Visible;
+                toggle.Text = text.Visible ? tr("Less information ▾") : tr("More information ▸");
+            };
+            box.AddChild(toggle);
+            box.AddChild(text);
+            return box;
+        }
+
         /// <summary>Translates text as it's shown, for parts built away from the window (the window sets it).</summary>
         public static Func<string, string> Translate { get; set; } = text => text;
 

@@ -114,7 +114,7 @@ public partial class MainTrackerWindow
             CommandPaletteAsync);
         await ScenarioAsync("Activity bar: Home alone at the top, then ATLAS TOOLS, EXTERNAL TOOLS and, at the bottom, ATLAS CONFIG, each caption on two lines on an accent band; every tool in its group, in order, with a shipped icon, its short name under it, its full title for screen readers and its key in the tooltip; the group captions sit on accent bands; pressing a button shows the tool, switching a tool any other way lights its button and names it in the header; the engine button opens the engine window",
             ActivityBarAsync);
-        await ScenarioAsync("Dialogs: a confirmation (with and without a requirement), a prompt and Save changes stand as tall as their content, under four fifths of the window, with their buttons and content inside (a wrapped line measured before its width used to make every dialog as tall as the screen)",
+        await ScenarioAsync("Dialogs: a confirmation (with and without a requirement), a prompt and Save changes stand as tall as their content, under four fifths of the window, with their buttons and content inside (a wrapped line measured before its width used to make every dialog as tall as the screen); a short question keeps its details under More information and grows to them; a dialog's frame stands out in the accent with a shadow; a question asked from another window opens over that window, inside Atlas's",
             DialogsStandAsTallAsTheirContentAsync);
         await ScenarioAsync("Slot picker: the tool header lists the connected slots with the selected one chosen; picking one shows its view, Ctrl+Tab and Ctrl+Shift+Tab go through them around the end, a slot selected elsewhere shows as picked, a tool that isn't per slot hides it, and a slot that ends leaves it",
             SlotPickerAsync);
@@ -3144,6 +3144,39 @@ public partial class MainTrackerWindow
         var save = await UiTestWaitForAsync(() => Find("Unsaved changes"), "Save changes");
         await UiTestDialogSizedAsync(save, "Save changes");
         save.EmitSignal(AcceptDialog.SignalName.Canceled);
+        // A question says the one thing to decide; the details wait under "More information", and the dialog grows to them.
+        AP_Atlas.UI.Dialogs.Confirm(this, "Short?", "Do the thing?", "OK", () => { }, null, null, fourLines);
+        var brief = await UiTestWaitForAsync(() => Find("Short?"), "the short confirmation");
+        await UiTestDialogSizedAsync(brief, "a short confirmation");
+        var more = brief.FindChildren("MoreInfoButton", "", true, false).OfType<Button>().First();
+        var folded = brief.FindChildren("*", nameof(Label), true, false).OfType<Label>().First(l => l.Text == fourLines);
+        UiTestExpect(!folded.IsVisibleInTree(), "the details show before More information is pressed");
+        float shortHeight = brief.Size.Y;
+        more.EmitSignal(BaseButton.SignalName.Pressed);
+        await UiTestDialogSizedAsync(brief, "a confirmation with its details open");
+        UiTestExpect(folded.IsVisibleInTree() && brief.Size.Y > shortHeight, $"More information didn't show the details, or the dialog didn't grow to them ({shortHeight} → {brief.Size.Y})");
+        // A dialog stands out: its frame's edge and title strip are the accent, with a shadow.
+        UiTestExpect(brief.GetThemeStylebox("embedded_border") is StyleBoxFlat frame && frame.BorderColor == AP_Atlas.Core.ThemeColors.Accent && frame.ShadowSize > 0,
+            "a dialog's frame doesn't stand out from the page");
+        brief.EmitSignal(AcceptDialog.SignalName.Canceled);
+        // A question asked from another window (a test's window) opens over that window, inside Atlas's.
+        var asker = new AcceptDialog { Title = "Asking window", Exclusive = false };
+        asker.AddChild(new Label { Text = "A window that asks something", CustomMinimumSize = new Vector2(360, 120) });
+        AddChild(asker);
+        asker.Popup(new Rect2I(new Vector2I(60, 80), new Vector2I(420, 220)));
+        await UiTestWaitAsync(0.1);
+        var inside = new Control();
+        asker.AddChild(inside);
+        AP_Atlas.UI.Dialogs.Confirm(inside, "Over the asker?", "Answer this?", "OK", () => { });
+        var nested = await UiTestWaitForAsync(() => inside.GetChildren().OfType<ConfirmationDialog>().FirstOrDefault(d => d.Title == "Over the asker?"), "the question asked from another window");
+        await UiTestDialogSizedAsync(nested, "a question asked from another window");
+        var askerCentre = asker.Position + asker.Size / 2;
+        var nestedCentre = nested.Position + nested.Size / 2;
+        var visible = GetViewport().GetVisibleRect();
+        UiTestExpect(Math.Abs(nestedCentre.X - askerCentre.X) <= 40 && nested.Position.X >= 0 && nested.Position.Y >= 0 && nested.Position.X + nested.Size.X <= visible.Size.X && nested.Position.Y + nested.Size.Y <= visible.Size.Y,
+            $"the question stands at {nested.Position} ({nested.Size}), not over the window that asked at {asker.Position} ({asker.Size})");
+        nested.EmitSignal(AcceptDialog.SignalName.Canceled);
+        asker.QueueFree();
         await UiTestWaitAsync(0.1);
     }
 

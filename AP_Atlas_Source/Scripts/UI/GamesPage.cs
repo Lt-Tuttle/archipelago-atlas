@@ -1018,13 +1018,13 @@ namespace AP_Atlas.UI
                 return;
             }
             Dialogs.Confirm(DialogParent, _tr("Trust this project?"),
-                _tr("Install {0} {1} from github.com/{2}? Apworlds are programs that run inside the logic engine, so only continue if you trust this project. The file is checked against its published SHA-256 when there is one.")
-                    .Replace("{0}", game).Replace("{1}", version.Version).Replace("{2}", repo),
+                _tr("Install {0} {1} from github.com/{2}?").Replace("{0}", game).Replace("{1}", version.Version).Replace("{2}", repo),
                 _tr("Trust and install"), () =>
                 {
                     ApworldSources.ApproveRepo(_hooks.Settings, repo);
                     Go();
-                }, _tr("github.com/{0} is a project I trust").Replace("{0}", repo), () => done?.TrySetResult(false));
+                }, _tr("github.com/{0} is a project I trust").Replace("{0}", repo), () => done?.TrySetResult(false),
+                _tr("Apworlds are programs that run inside the logic engine, so only continue if you trust this project. The file is checked against its published SHA-256 when there is one."));
         }
 
         private void InstallFile(string game)

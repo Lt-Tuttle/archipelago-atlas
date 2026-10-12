@@ -31,16 +31,14 @@ namespace AP_Atlas.UI
             var dialog = new ConfirmationDialog { Title = kind.Title, OkButtonText = "Allow once", CancelButtonText = "Don't allow", DialogHideOnOk = false };
             var box = new VBoxContainer();
             box.AddThemeConstantOverride("separation", 8);
-            box.AddChild(new Label { Text = kind.Explanation, AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(500, 0) });
+            box.AddChild(new Label { Text = Kit.Translate(kind.Summary), AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(440, 0) });
             if (!string.IsNullOrWhiteSpace(details))
             {
-                var detail = new Label { Text = details, AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(500, 0) };
-                detail.AddThemeColorOverride("font_color", new Color(0.8f, 0.8f, 0.8f));
+                var detail = new Label { Text = details, AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(440, 0) };
+                detail.AddThemeColorOverride("font_color", ThemeColors.TextMuted);
                 box.AddChild(detail);
             }
-            var where = new Label { Text = "\"Allow once\" lasts until Atlas closes. You can take back \"Always allow\" in Settings → Privacy & permissions.", AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(500, 0) };
-            where.AddThemeColorOverride("font_color", ThemeColors.TextSubtle);
-            box.AddChild(where);
+            box.AddChild(Kit.MoreInfo(Kit.Translate(kind.Explanation) + "\n\n" + Kit.Translate("\"Allow once\" lasts until Atlas closes. You can take back \"Always allow\" in Settings → Privacy & permissions."), Kit.Translate, 440));
             dialog.AddChild(box);
             dialog.AddButton("Always allow", true, "always");
             dialog.CustomAction += action =>
