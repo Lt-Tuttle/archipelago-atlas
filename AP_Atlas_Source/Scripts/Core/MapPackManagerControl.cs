@@ -615,6 +615,8 @@ namespace AP_Atlas.Core
             public DateTime? Updated;
             /// <summary>A fork of another project: often how a pack is kept up with a new apworld.</summary>
             public bool Fork;
+            /// <summary>The game's own setup guide links this project as its tracker: the author's recommendation.</summary>
+            public bool Recommended;
         }
 
         /// <summary>One of a project's releases that holds a pack (for the choice before a download).</summary>
@@ -693,7 +695,55 @@ namespace AP_Atlas.Core
             ShowPackCandidates(results, missing.Count);
         }
 
+        /// <summary>
+        /// A game's packs on GitHub: the project its own setup guide recommends first (marked), then what GitHub's search
+        /// finds. The guide's project is kept even when the search can't be made, and looked up once for its stars and
+        /// description when the search didn't return it.
+        /// </summary>
         internal static async Task<(List<PackCandidate> Candidates, string Problem)> SearchPacksAsync(string game)
+        {
+            var list = new List<PackCandidate>();
+            var (found, problem) = await SearchGitHubAsync(game);
+            list.AddRange(found);
+            foreach (var (repo, _) in GuideRecommendations(game).AsEnumerable().Reverse())
+            {
+                var known = list.FirstOrDefault(c => c.Repo.Equals(repo, StringComparison.OrdinalIgnoreCase));
+                if (known == null)
+                {
+                    known = new PackCandidate { Repo = repo, Description = "", HtmlUrl = "https://github.com/" + repo };
+                    var project = await GitHubApi.GetAsync($"/repos/{repo}");
+                    if (project.Ok && project.Json is JObject item)
+                    {
+                        known.Repo = item["full_name"]?.ToString() ?? repo;
+                        known.Description = item["description"]?.ToString() ?? "";
+                        known.HtmlUrl = item["html_url"]?.ToString() ?? known.HtmlUrl;
+                        known.Stars = item["stargazers_count"]?.Value<int?>() ?? 0;
+                        known.Updated = item["pushed_at"]?.Value<DateTime?>();
+                        known.Fork = item["fork"]?.Value<bool?>() ?? false;
+                    }
+                }
+                else list.Remove(known);
+                known.Recommended = true;
+                list.Insert(0, known);
+            }
+            return (list, problem);
+        }
+
+        /// <summary>The tracker projects the game's setup guide links to, from the engine's copy of the apworld; none without one.</summary>
+        internal static List<(string Repo, string Text)> GuideRecommendations(string game)
+        {
+            try
+            {
+                return AP_Atlas.Core.EngineSetup.AtlasEngine.Current is { } install ? AP_Atlas.Core.EngineSetup.ApworldSources.GuideTrackerProjects(install, game) : new List<(string, string)>();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning($"Couldn't read {game}'s setup guide for its tracker: {ex.Message}");
+                return new List<(string, string)>();
+            }
+        }
+
+        private static async Task<(List<PackCandidate> Candidates, string Problem)> SearchGitHubAsync(string game)
         {
             var list = new List<PackCandidate>();
             foreach (var query in SearchQueries(game))
@@ -776,9 +826,22 @@ namespace AP_Atlas.Core
                         AutowrapMode = TextServer.AutowrapMode.WordSmart,
                         SizeFlagsHorizontal = SizeFlags.ExpandFill
                     };
-                    row.AddChild(info);
+                    if (c.Recommended)
+                    {
+                        // The game's own guide names it: said above the project, in the accent, so it's the first thing read.
+                        var column = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+                        column.AddThemeConstantOverride("separation", 2);
+                        var recommended = new Label { Text = "Recommended by the game's setup guide" };
+                        recommended.SetMeta("recommended_pack", c.Repo);
+                        recommended.AddThemeColorOverride("font_color", ThemeColors.AccentText(ThemeColors.Surface));
+                        column.AddChild(recommended);
+                        column.AddChild(info);
+                        row.AddChild(column);
+                    }
+                    else row.AddChild(info);
                     string repo = c.Repo, g = game, page = c.HtmlUrl;
                     var install = new Button { Text = "Install…", TooltipText = "See what would be downloaded, then confirm" };
+                    install.SetMeta("candidate_repo", repo);
                     install.Pressed += () => InstallFromRepo(g, repo);
                     row.AddChild(install);
                     if (page != null)

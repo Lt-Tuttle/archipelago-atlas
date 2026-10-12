@@ -25,6 +25,8 @@ namespace AP_Atlas.UI
         public required Action OpenEngineSetup { get; init; }
         /// <summary>Shows the Map Packs page and searches GitHub for a game's packs (one search, when pressed).</summary>
         public required Action<string> FindPack { get; init; }
+        /// <summary>Installs a project's pack for a game (asking first, with the release choice when there are several).</summary>
+        public required Action<string, string> InstallPack { get; init; }
         /// <summary>Opens the solo test for a game ("Test this game…").</summary>
         public required Action<string> StartSoloTest { get; init; }
         /// <summary>Ends the running solo test's server (its slot and multiworld go).</summary>
@@ -400,16 +402,23 @@ namespace AP_Atlas.UI
                 : _tr("Not in the engine yet."), apworldButtons);
             if (entry.Section != Section.Official) steps.AddChild(VersionsSection(game, choices));
 
-            // 2. A map pack.
+            // 2. A map pack. The game's own setup guide may name the tracker its author recommends: offered first.
             var packs = PacksFor(game);
-            Step(steps, packs.Count > 0, _tr("A map pack"),
-                packs.Count > 0 ? _tr("Installed: {0}.").Replace("{0}", string.Join(", ", packs.Select(p => p.Manifest?.Name ?? Path.GetFileNameWithoutExtension(p.SourcePath))))
-                    : _tr("None installed: the Map Tracker shows the game's map with one (a PopTracker pack)."),
-                new List<Button>
-                {
-                    Kit.Button(_tr("Search GitHub for a pack…"), _tr("One search of GitHub for this game's PopTracker packs, when you press; you choose what to install."), () => _hooks.FindPack(game)),
-                    Kit.Button(_tr("Map Packs"), _tr("Install a pack from its project, or a .zip you have; the Pack Doctor looks it over."), () => _hooks.ShowTool(Tool.MapPacks))
-                });
+            var recommended = install != null ? ApworldSources.GuideTrackerProjects(install, game) : new List<(string Repo, string Text)>();
+            string packDetail = packs.Count > 0 ? _tr("Installed: {0}.").Replace("{0}", string.Join(", ", packs.Select(p => p.Manifest?.Name ?? Path.GetFileNameWithoutExtension(p.SourcePath))))
+                : _tr("None installed: the Map Tracker shows the game's map with one (a PopTracker pack).");
+            if (recommended.Count > 0) packDetail += " " + _tr("The game's setup guide recommends github.com/{0}.").Replace("{0}", recommended[0].Repo);
+            var packButtons = new List<Button>();
+            if (recommended.Count > 0 && packs.Count == 0)
+            {
+                string recommendedRepo = recommended[0].Repo;
+                var recommendedButton = Kit.Button(_tr("Install the recommended pack…"), _tr("The pack the game's own setup guide links to (github.com/{0}): Atlas shows what would be downloaded, and the release choice when there are several, then installs it.").Replace("{0}", recommendedRepo), () => _hooks.InstallPack(game, recommendedRepo));
+                recommendedButton.SetMeta("recommended_pack", recommendedRepo);
+                packButtons.Add(recommendedButton);
+            }
+            packButtons.Add(Kit.Button(_tr("Search GitHub for a pack…"), _tr("One search of GitHub for this game's PopTracker packs, when you press; you choose what to install."), () => _hooks.FindPack(game)));
+            packButtons.Add(Kit.Button(_tr("Map Packs"), _tr("Install a pack from its project, or a .zip you have; the Pack Doctor looks it over."), () => _hooks.ShowTool(Tool.MapPacks)));
+            Step(steps, packs.Count > 0, _tr("A map pack"), packDetail, packButtons);
 
             // 3. A YAML.
             var yamls = _yamls?.For(game) ?? new List<YamlEntry>();

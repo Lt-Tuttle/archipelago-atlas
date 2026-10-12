@@ -252,18 +252,20 @@ namespace AP_Atlas.UI
                 var install = Kit.Button(_tr("Install"), _tr("Asks which release when the project has several, then downloads and installs it."), () => PickPack(new PackChoice(repo)), small: true);
                 install.CustomMinimumSize = new Vector2(170, 0);
                 row.AddChild(install);
-                // One line that clips with "…" (an autowrapped label beside the button drew nothing at all).
+                // One line that clips with "…" (an autowrapped label beside the button drew nothing at all); the game's own
+                // guide's recommendation says so first, in the accent.
                 string fork = c.Fork ? " · " + _tr("a fork") : "";
+                string recommended = c.Recommended ? _tr("Recommended by the game's setup guide") + " · " : "";
                 var info = new Label
                 {
-                    Text = c.Repo + "  ★" + c.Stars + fork + (string.IsNullOrWhiteSpace(c.Description) ? "" : " · " + c.Description),
+                    Text = recommended + c.Repo + "  ★" + c.Stars + fork + (string.IsNullOrWhiteSpace(c.Description) ? "" : " · " + c.Description),
                     ClipText = true,
                     TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
                     SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
                     VerticalAlignment = VerticalAlignment.Center,
                     TooltipText = c.Description ?? ""
                 };
-                info.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Text);
+                info.AddThemeColorOverride("font_color", c.Recommended ? AP_Atlas.Core.ThemeColors.AccentText(AP_Atlas.Core.ThemeColors.SurfacePanel) : AP_Atlas.Core.ThemeColors.Text);
                 row.AddChild(info);
                 _packBox.AddChild(row);
             }

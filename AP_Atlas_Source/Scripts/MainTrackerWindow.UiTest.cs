@@ -3447,6 +3447,7 @@ public partial class MainTrackerWindow
         string packs = AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory();
         string zip = System.IO.Path.Combine(packs, "uitest_late_pack.zip"), second = System.IO.Path.Combine(packs, "uitest_late_pack_2.zip");
         string fromGitHub = System.IO.Path.Combine(packs, "uitest_github_pack.zip"), packSource = System.IO.Path.Combine(DataManager.GetDataDirectory(), "uitest_github_pack_source.zip");
+        string guideApworld = System.IO.Path.Combine(AtlasEngine.ArchipelagoDir, "custom_worlds", "test_game_guide.apworld"); // its setup guide names a tracker
         await using var github = new AP_Atlas.Core.Testing.FakeWebSite();
         await using var server = new FakeArchipelagoServer();
         server.Games["Test Game"] = new FakeGame("0123456789abcdef0123456789abcdef01234567",
@@ -3516,13 +3517,37 @@ public partial class MainTrackerWindow
             };
             AP_Atlas.Core.GitHubApi.TestSite = github.Site;
             AP_Atlas.Core.GitHubApi.ResetForTests();
+            // The game's own setup guide (in its apworld's documents) names a tracker project the search doesn't return: it
+            // comes first, marked as recommended, and the game's page offers it.
+            System.IO.Directory.CreateDirectory(System.IO.Path.Combine(AtlasEngine.ArchipelagoDir, "custom_worlds"));
+            static void WriteGuideApworld(string path)
+            {
+                using var stream = System.IO.File.Create(path);
+                using var archive = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Create);
+                foreach (var (name, text) in new[] { ("test_game/archipelago.json", "{\"game\": \"Test Game\"}"), ("test_game/docs/setup_en.md", "# Setup\n\n- [Map tracker](https://github.com/fork/test-game-poptracker)\n") })
+                {
+                    using var writer = new System.IO.StreamWriter(archive.CreateEntry(name).Open());
+                    writer.Write(text);
+                }
+            }
+            WriteGuideApworld(guideApworld);
+            UiTestExpect(AP_Atlas.Core.MapPackManagerControl.GuideRecommendations("Test Game").Select(r => r.Repo).SequenceEqual(new[] { "fork/test-game-poptracker" }), "the guide's tracker project isn't read from the apworld");
+            host.ShowTool(AP_Atlas.UI.Tool.Games);
+            _gamesPage.Select("Test Game");
+            await UiTestWaitForAsync(() => _gamesPage.FindChildren("*", nameof(Button), true, false).OfType<Button>().FirstOrDefault(b => b.HasMeta("recommended_pack")), "the game's page to offer the recommended pack");
+            host.ShowTool(AP_Atlas.UI.Tool.MapTracker);
+            await UiTestWaitAsync(0.2);
             UiTestExpect(slot.MapTracker.FindPackButton.Text == "Find a map pack for Test Game…", $"the empty map's button says \"{slot.MapTracker.FindPackButton.Text}\"");
             slot.MapTracker.FindPackButton.EmitSignal(BaseButton.SignalName.Pressed);
             await UiTestWaitForAsync(() => ShownContent() == _packManagerPanel ? _packManagerPanel : null, "the Map Packs page to show");
             var results = await UiTestWaitForAsync(() => _packManagerPanel.GetChildren().OfType<AcceptDialog>().FirstOrDefault(d => d.Title == "Map packs on GitHub"), "the search results", 20);
             UiTestExpect(github.Requests.Count(r => r.StartsWith("/search/")) == 1 && github.Requests.First(r => r.StartsWith("/search/")).Contains("fork%3Atrue"),
                 $"GitHub was searched {github.Requests.Count(r => r.StartsWith("/search/"))} times for one game, or without its forks: {github.Requests.FirstOrDefault(r => r.StartsWith("/search/"))}");
-            results.FindChildren("*", nameof(Button), true, false).OfType<Button>().First(b => b.Text == "Install…").EmitSignal(BaseButton.SignalName.Pressed);
+            var installButtons = results.FindChildren("*", nameof(Button), true, false).OfType<Button>().Where(b => b.HasMeta("candidate_repo")).ToList();
+            UiTestExpect(installButtons.Select(b => b.GetMeta("candidate_repo").AsString()).SequenceEqual(new[] { "fork/test-game-poptracker", "packs/test-game-poptracker" })
+                && results.FindChildren("*", nameof(Label), true, false).OfType<Label>().Any(l => l.HasMeta("recommended_pack") && l.Text == "Recommended by the game's setup guide"),
+                $"the guide's project isn't first and marked: {string.Join(", ", installButtons.Select(b => b.GetMeta("candidate_repo").AsString()))}");
+            installButtons[1].EmitSignal(BaseButton.SignalName.Pressed);
             var question = await UiTestWaitForAsync(() => _packManagerPanel.GetChildren().OfType<ConfirmationDialog>().FirstOrDefault(d => d.Title == "Install a map pack"), "the question before the download", 20);
             UiTestExpect(!System.IO.File.Exists(fromGitHub) && !github.Requests.Any(r => r.StartsWith("/dl/")), "the pack was downloaded before the question was answered");
             // The project has two releases with a pack: both offered, newest first, the draft left out, the chosen one's notes shown.
@@ -3610,7 +3635,7 @@ public partial class MainTrackerWindow
             AP_Atlas.Core.GitHubApi.ResetForTests();
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
             if (_profiles.Contains(profile)) DeleteProfile(profile);
-            foreach (string file in new[] { zip, second, fromGitHub, packSource }) AP_Atlas.Core.SafeFile.Delete(file);
+            foreach (string file in new[] { zip, second, fromGitHub, packSource, guideApworld }) AP_Atlas.Core.SafeFile.Delete(file);
         }
     }
 

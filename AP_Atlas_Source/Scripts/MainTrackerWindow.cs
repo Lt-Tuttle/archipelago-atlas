@@ -457,6 +457,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             ShowTool = tool => ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(tool),
             OpenEngineSetup = OpenEngineSetup,
             FindPack = FindMapPack,
+            InstallPack = (game, repo) => AP_Atlas.Core.Async.Fire(_packManagerPanel.InstallPackFromRepoAsync(game, repo, confirm: true), $"installing {repo}'s pack for {game}"),
             StartSoloTest = StartSoloTest,
             StartSoloBatch = StartSoloBatch,
             StopSoloTest = StopSoloTest,

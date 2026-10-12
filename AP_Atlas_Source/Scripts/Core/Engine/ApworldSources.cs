@@ -389,6 +389,34 @@ namespace AP_Atlas.Core.EngineSetup
             return docs.OrderBy(d => d.Item3 ? 0 : 1).ToList();
         }
 
+        /// <summary>
+        /// The tracker packs the game's own setup guide links to (its bundled docs/setup_en.md first, then its game page),
+        /// as GitHub projects in the guide's order: the author's recommendation, which a search can't tell from any other
+        /// project. Empty when the apworld isn't installed or its documents name none.
+        /// </summary>
+        public static List<(string Repo, string Text)> GuideTrackerProjects(EngineInstall install, string game)
+        {
+            var found = new List<(string Repo, string Text)>();
+            foreach (var (file, entryName, _) in BundledDocuments(install, game))
+            {
+                string text;
+                try
+                {
+                    using var zip = SafeZip.Open(file);
+                    var entry = zip.GetEntry(entryName);
+                    text = entry == null ? "" : zip.ReadText(entry);
+                }
+                catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+                {
+                    Logger.LogWarning($"Couldn't read {entryName} in {Path.GetFileName(file)}: {ex.Message}");
+                    continue;
+                }
+                foreach (var project in GuideLinks.TrackerProjects(text))
+                    if (!found.Any(f => string.Equals(f.Repo, project.Repo, StringComparison.OrdinalIgnoreCase))) found.Add(project);
+            }
+            return found;
+        }
+
         /// <summary>The games an engine has from .apworld files (one look at its world folders).</summary>
         public static HashSet<string> GamesWithApworldFiles(EngineInstall install)
         {
