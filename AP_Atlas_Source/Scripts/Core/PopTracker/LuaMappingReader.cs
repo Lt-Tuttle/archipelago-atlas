@@ -172,8 +172,52 @@ namespace AP_Atlas.Core.PopTracker
                     char c = _s[Pos++];
                     if (c == '\\' && !AtEnd)
                     {
+                        // Lua's escapes: the named ones, \xHH, \ddd, \u{XXXX} (5.3; packs use it for accents), \z (skips
+                        // the following whitespace), and a backslash before a line break (the break is kept).
                         char e = _s[Pos++];
-                        sb.Append(e switch { 'n' => '\n', 't' => '\t', _ => e });
+                        switch (e)
+                        {
+                            case 'n': sb.Append('\n'); break;
+                            case 't': sb.Append('\t'); break;
+                            case 'r': sb.Append('\r'); break;
+                            case 'a': sb.Append('\a'); break;
+                            case 'b': sb.Append('\b'); break;
+                            case 'f': sb.Append('\f'); break;
+                            case 'v': sb.Append('\v'); break;
+                            case '\n': sb.Append('\n'); break;
+                            case 'z': while (!AtEnd && char.IsWhiteSpace(Peek())) Pos++; break;
+                            case 'x':
+                                if (Pos + 1 < _s.Length && Uri.IsHexDigit(_s[Pos]) && Uri.IsHexDigit(_s[Pos + 1]))
+                                {
+                                    sb.Append((char)Convert.ToInt32(_s.Substring(Pos, 2), 16));
+                                    Pos += 2;
+                                }
+                                else sb.Append('x');
+                                break;
+                            case 'u':
+                                if (Pos < _s.Length && _s[Pos] == '{')
+                                {
+                                    int close = _s.IndexOf('}', Pos);
+                                    if (close > Pos + 1 && close - Pos - 1 <= 8 && int.TryParse(_s.AsSpan(Pos + 1, close - Pos - 1), System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out int point)
+                                        && point <= 0x10FFFF && (point < 0xD800 || point > 0xDFFF))
+                                    {
+                                        sb.Append(char.ConvertFromUtf32(point));
+                                        Pos = close + 1;
+                                    }
+                                    else sb.Append('u');
+                                }
+                                else sb.Append('u');
+                                break;
+                            default:
+                                if (char.IsDigit(e))
+                                {
+                                    int value = e - '0', digits = 1;
+                                    while (digits < 3 && !AtEnd && char.IsDigit(Peek())) { value = value * 10 + (_s[Pos++] - '0'); digits++; }
+                                    sb.Append((char)Math.Min(value, 255));
+                                }
+                                else sb.Append(e);
+                                break;
+                        }
                     }
                     else if (c == '\n') throw new FormatException("unterminated string");
                     else sb.Append(c);

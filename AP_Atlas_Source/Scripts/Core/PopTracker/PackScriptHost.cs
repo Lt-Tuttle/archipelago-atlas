@@ -288,8 +288,39 @@ namespace AP_Atlas.Core.PopTracker
         public void ApplyLocation(long locationId, string locationName) =>
             Work($"the location handler (for {(string.IsNullOrEmpty(locationName) ? "location " + locationId : locationName)})", () =>
             {
+                // A check moves from the missing ids to the checked ones before the handlers see it, as in PopTracker.
+                if (_checkedIds.Add(locationId)) _checkedTable.Append(DynValue.NewNumber(locationId));
+                if (_missingIds.Remove(locationId)) _archipelago["MissingLocations"] = IdTable(_missingIds);
                 foreach (var h in _locationHandlers) Run("location handler", () => CallLua(h, locationId, locationName ?? ""));
             });
+
+        private readonly HashSet<long> _checkedIds = new HashSet<long>();
+        private readonly SortedSet<long> _missingIds = new SortedSet<long>();
+        private Table _checkedTable;
+
+        /// <summary>
+        /// The room as the slot sees it, for Archipelago.CheckedLocations, MissingLocations and Seed: given before the clear
+        /// handler runs (PopTracker fills them before it, and scripts read them there) and kept up by each check after.
+        /// </summary>
+        public void SetRoom(IEnumerable<long> checkedIds, IEnumerable<long> missingIds, string seed) =>
+            Work("the room's locations", () =>
+            {
+                _checkedIds.Clear();
+                _missingIds.Clear();
+                foreach (long id in checkedIds ?? Array.Empty<long>()) _checkedIds.Add(id);
+                foreach (long id in missingIds ?? Array.Empty<long>()) if (!_checkedIds.Contains(id)) _missingIds.Add(id);
+                _checkedTable = IdTable(_checkedIds.OrderBy(id => id));
+                _archipelago["CheckedLocations"] = _checkedTable;
+                _archipelago["MissingLocations"] = IdTable(_missingIds);
+                _archipelago["Seed"] = seed ?? "";
+            });
+
+        private Table IdTable(IEnumerable<long> ids)
+        {
+            var table = new Table(_script);
+            foreach (long id in ids) table.Append(DynValue.NewNumber(id));
+            return table;
+        }
 
         /// <summary>A data storage key the scripts asked about changed (SetReply): its handlers get the key, the value and the old value.</summary>
         public void ApplySetReply(string key, JToken value, JToken oldValue) =>
@@ -401,6 +432,7 @@ namespace AP_Atlas.Core.PopTracker
         private DynValue Compile(string code, string name, Table env = null)
         {
             if (code.StartsWith(BinaryChunk, StringComparison.Ordinal)) throw new ScriptRuntimeException("Atlas doesn't load compiled (binary) chunks");
+            code = LuaText.ExpandUnicodeEscapes(code); // Lua 5.3's \u{XXXX}, which MoonSharp (5.2) doesn't know
             int depth = LuaNesting.Depth(code);
             if (depth > DeepestNesting) DeepestNesting = depth;
             if (depth > MaxNesting) throw new ScriptRuntimeException($"nested {depth:N0} levels deep, deeper than Atlas compiles ({MaxNesting:N0})");
@@ -901,6 +933,19 @@ namespace AP_Atlas.Core.PopTracker
             _archipelago = ApiTable("Archipelago");
             _archipelago["PlayerNumber"] = -1;
             _archipelago["TeamNumber"] = 0;
+            // The room's checked and missing location ids (tables, as PopTracker gives them; empty until the slot says) and
+            // its seed name; a script reads them in its clear handler (eleven of the forty corpus packs do).
+            _checkedTable = new Table(_script);
+            _archipelago["CheckedLocations"] = _checkedTable;
+            _archipelago["MissingLocations"] = new Table(_script);
+            _archipelago["Seed"] = "";
+            var clientStatus = new Table(_script);
+            clientStatus["UNKNOWN"] = 0;
+            clientStatus["CONNECTED"] = 5;
+            clientStatus["READY"] = 10;
+            clientStatus["PLAYING"] = 20;
+            clientStatus["GOAL"] = 30;
+            _archipelago["ClientStatus"] = clientStatus;
             _archipelago["AddClearHandler"] = Callback(args => AddHandler(_clearHandlers, args));
             _archipelago["AddItemHandler"] = Callback(args => AddHandler(_itemHandlers, args));
             _archipelago["AddLocationHandler"] = Callback(args => AddHandler(_locationHandlers, args));

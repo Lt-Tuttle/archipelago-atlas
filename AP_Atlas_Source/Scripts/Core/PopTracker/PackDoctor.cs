@@ -205,7 +205,7 @@ namespace AP_Atlas.Core.PopTracker
                     Key = "auto:" + t.Subject,
                     Category = "Key Items",
                     Severity = FindingSeverity.AutoFixed,
-                    Title = $"Linked tile '{t.Code}' to {t.ApItemName} (the names match)",
+                    Title = $"Linked tile '{t.Code}' to {t.ApItemName} " + (t.Source == "suggested" ? "(the closest name, taken by Fix what Atlas can)" : "(the names match)"),
                     Detail = "Made by the Doctor on the pack's first check. Reset it under Your fixes if it's wrong.",
                     Subject = t.Subject,
                     Actions = FindingActions.ResetFixes,
@@ -217,7 +217,7 @@ namespace AP_Atlas.Core.PopTracker
                     Key = "auto:" + l.Subject,
                     Category = "Locations",
                     Severity = FindingSeverity.AutoFixed,
-                    Title = $"Linked '{(string.IsNullOrEmpty(l.SectionName) ? l.PinPath : l.SectionName)}' to {l.ApLocationName} (the names match)",
+                    Title = $"Linked '{(string.IsNullOrEmpty(l.SectionName) ? l.PinPath : l.SectionName)}' to {l.ApLocationName} " + (l.Source == "suggested" ? "(the closest name, taken by Fix what Atlas can)" : "(the names match)"),
                     Detail = "Made by the Doctor on the pack's first check. Reset it under Your fixes if it's wrong.",
                     Subject = l.Subject,
                     Actions = FindingActions.ResetFixes,
@@ -941,7 +941,8 @@ namespace AP_Atlas.Core.PopTracker
                     : a.Area == b.Area ? 1.0
                     : a.Area.StartsWith(b.Area) || b.Area.StartsWith(a.Area) ? 0.96 // PW / PW1 / PW2
                     : 0.75;
-                if (a.Core == b.Core) return Math.Max(overall, 0.97 * area);
+                // The same thing in the same area: the detail decides between copies ("- shop", "- Yoel/Yuria shop", "- Orbeck").
+                if (a.Core == b.Core) return Math.Max(overall, 0.97 * area * (0.98 + 0.02 * overall));
                 double core = BlendScore(Prepare(a.Core), Prepare(b.Core));
                 if (core >= 0.85) overall = Math.Max(overall, core * 0.95 * area);
             }
@@ -1000,7 +1001,14 @@ namespace AP_Atlas.Core.PopTracker
                     sb.AppendLine();
                     continue;
                 }
-                foreach (var f in group)
+                // Atlas's own links, one line: for the author they mean "your names differ a little from the game's".
+                var linked = group.Where(f => f.Severity == FindingSeverity.AutoFixed && f.Title.StartsWith("Linked ", StringComparison.Ordinal)).ToList();
+                if (linked.Count > 0)
+                {
+                    var pairs = linked.Select(f => { string t = f.Title.Substring(7); int paren = t.LastIndexOf(" (", StringComparison.Ordinal); return (paren > 0 ? t.Substring(0, paren) : t).Replace("' to ", "' → "); }).ToList();
+                    sb.AppendLine($"- Atlas paired {linked.Count} of the pack's names with the game's where they differ a little (pack → game): " + string.Join("; ", pairs.Take(8)) + (pairs.Count > 8 ? $"; …and {pairs.Count - 8} more" : ""));
+                }
+                foreach (var f in group.Except(linked))
                 {
                     sb.AppendLine($"- {f.Title}" + (string.IsNullOrEmpty(f.Detail) || f.Severity == FindingSeverity.AutoFixed ? "" : $" — {f.Detail}"));
                     if (f.Suggestions.Count > 0 && f.Suggestions[0].Score >= 0.75) sb.AppendLine($"  - Likely Archipelago name: `{f.Suggestions[0].Label}`");

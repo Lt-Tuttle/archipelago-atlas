@@ -19,6 +19,22 @@ public static class LuaText
     /// over <see cref="MaxCommentLevel"/>, is taken as a line comment. Strings aren't told apart: "--" in one starts a
     /// comment here, which is close enough for looking through scripts.
     /// </summary>
+    /// <summary>
+    /// Lua 5.3's \u{XXXX} escapes written out as the characters they name (an invalid code point is left as written).
+    /// MoonSharp compiles Lua 5.2, which has no such escape: a pack's "Siegbr\u{00e4}u" would otherwise end up as
+    /// "Siegbru{00e4}u". The sequence can't occur in Lua 5.2 code outside a string, so the whole text is safe to expand.
+    /// </summary>
+    public static string ExpandUnicodeEscapes(string text)
+    {
+        if (string.IsNullOrEmpty(text) || !text.Contains("\\u{", StringComparison.Ordinal)) return text;
+        return System.Text.RegularExpressions.Regex.Replace(text, @"\\u\{([0-9A-Fa-f]{1,8})\}", m =>
+        {
+            if (!int.TryParse(m.Groups[1].Value, System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out int point)) return m.Value;
+            if (point < 0 || point > 0x10FFFF || (point >= 0xD800 && point <= 0xDFFF)) return m.Value;
+            return char.ConvertFromUtf32(point);
+        });
+    }
+
     public static string StripComments(string text)
     {
         var result = new StringBuilder(text.Length);

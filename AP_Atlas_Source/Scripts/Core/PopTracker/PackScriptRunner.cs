@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 
@@ -45,8 +46,10 @@ namespace AP_Atlas.Core.PopTracker
         /// Starts the pack's scripts: init, the clear handler with the slot's options, then every item and check so far.
         /// <paramref name="started"/> gets the scripts (null: the pack has none) and how long starting took, on the main thread.
         /// </summary>
+        /// <param name="missing">The room's location ids not yet checked (Archipelago.MissingLocations for the scripts).</param>
+        /// <param name="seed">The room's seed name (Archipelago.Seed).</param>
         public void Start(LoadedPack pack, int player, int team, JToken slotData, IReadOnlyList<(long ItemId, string ItemName, int Player)> items,
-            IReadOnlyList<(long Id, string Name)> locations, Action<PackScriptHost?, long> started)
+            IReadOnlyList<(long Id, string Name)> locations, Action<PackScriptHost?, long> started, IReadOnlyList<long>? missing = null, string? seed = null)
         {
             PackScriptHost? host = null;
             var clock = System.Diagnostics.Stopwatch.StartNew();
@@ -57,6 +60,7 @@ namespace AP_Atlas.Core.PopTracker
                 _stopReported = false;
                 if (host == null) return;
                 host.Initialize();
+                host.SetRoom(locations.Select(l => l.Id), missing ?? Array.Empty<long>(), seed ?? "");
                 host.Clear(player, team, slotData);
                 // Which options the seed settings reflect is read here, not on the main thread when Key Items first shows
                 // them: it scans all the pack's scripts (0.7 s for the biggest pack in the corpus).

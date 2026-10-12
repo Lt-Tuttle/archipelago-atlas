@@ -565,6 +565,45 @@ namespace AP_Atlas.Core
             Expect(report.Findings.Any(f => f.Key == "script:follows-maps") && report.Findings.Any(f => f.Key == "script:writes"), "the Pack Doctor doesn't report live map following or the ignored write");
         }
 
+        private static async Task PackScriptsReadTheRoomAndTheEscapes()
+        {
+            string zip = Scratch("selftest_room.zip");
+            AP_Atlas.Core.Testing.FakeMapPack.Write(zip, "Self-test room pack", "Self Test Game R", initLua: """
+                local function count()
+                    local sword = Tracker:FindObjectForCode("sword")
+                    sword.AcquiredCount = #Archipelago.CheckedLocations * 100 + #Archipelago.MissingLocations
+                end
+                Archipelago:AddClearHandler("room", function(slot_data)
+                    count()
+                    Tracker:FindObjectForCode("shield").Active = Archipelago.Seed == "seed-xyz" and Archipelago.ClientStatus.GOAL == 30 and UMLAUT == "Siegbräu"
+                end)
+                Archipelago:AddLocationHandler("room", function(id, name) count() end)
+                UMLAUT = "Siegbr\u{00e4}u"
+                """, files: new Dictionary<string, string>
+            {
+                ["scripts/autotracking/location_mapping.lua"] = "LOCATION_MAPPING = {\n    [100124] = \"@A/Siegbr\\u{00e4}u\",\n    [100125] = \"@B/\\x41\\66\\z   C\",\n}\n"
+            });
+            var pack = PopTracker.PopTrackerPackLoader.InspectZipPack(zip) ?? throw new InvalidOperationException("the test pack wasn't read");
+            Expect(pack.LocationMappingById.TryGetValue(100124, out var umlaut) && umlaut.Contains("@A/Siegbräu") && pack.LocationMappingById.TryGetValue(100125, out var escapes) && escapes.Contains("@B/ABC"),
+                $"the mapping's escapes weren't read: {string.Join(" | ", pack.LocationMappingById.Select(kv => kv.Key + "=" + string.Join(",", kv.Value)))}");
+            var host = PopTracker.PackScriptHost.Load(pack) ?? throw new InvalidOperationException("the pack has no scripts");
+            await Task.Run(() =>
+            {
+                host.Initialize();
+                host.SetRoom(new long[] { 1, 2 }, new long[] { 3, 4, 5 }, "seed-xyz");
+                host.Clear(1, 0, new Newtonsoft.Json.Linq.JObject());
+            });
+            Expect(host.Errors.Count == 0 && !host.Stopped, "the scripts didn't run cleanly: " + string.Join("; ", host.Errors));
+            Expect(host.StateOf("sword")?.Count == 203 && host.StateOf("shield")?.Active == true,
+                $"the room's tables, seed or the escaped text weren't as the scripts expect: sword {host.StateOf("sword")?.Count}, shield {host.StateOf("shield")?.Active}");
+            await Task.Run(() => host.ApplyLocation(3, "Three"));
+            Expect(host.StateOf("sword")?.Count == 302, $"a check didn't move from the missing ids to the checked: sword {host.StateOf("sword")?.Count}");
+            Expect(host.UnsupportedApis.Count == 0, "reading the room's tables counted as an unsupported call: " + string.Join(", ", host.UnsupportedApis));
+            var names = new Dictionary<long, string> { [1] = "FS: Soul Arrow - shop", [2] = "FS: Soul Arrow - Yoel/Yuria shop", [3] = "FS: Soul Arrow - Orbeck" };
+            var best = PopTracker.PackDoctor.Suggest("FS: Soul Arrow - Yoel or Yuria shop", names, 3);
+            Expect(best.Count == 3 && best[0].Id == 2 && best[0].Score >= 0.85, $"the detail didn't decide between the copies: {string.Join("; ", best.Select(s => s.Label + " " + s.Score.ToString("0.00")))}");
+        }
+
         private static async Task PackScriptsUseTheirOwnCompiledFiles()
         {
             string zip = Scratch("selftest_modules.zip");

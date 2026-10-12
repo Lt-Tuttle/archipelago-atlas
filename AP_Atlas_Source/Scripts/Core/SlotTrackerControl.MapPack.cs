@@ -217,6 +217,8 @@ public partial class SlotTrackerControl : MarginContainer
         _scripts ??= new AP_Atlas.Core.PopTracker.PackScriptRunner(work => AP_Atlas.UI.Ui.Defer(this, () => work()),
             message => AP_Atlas.Core.Logger.LogWarning($"[{_slotName}] {message}"), PackScriptsStopped);
         _scripts.OutboxReady ??= OnScriptsOutbox;
+        var missing = Session.Locations.AllMissingLocations.ToList();
+        string seed = Session.RoomState?.Seed ?? "";
         _scripts.Start(Pack, PlayerSlot, Team, slotData, items, locations, (host, ms) =>
         {
             if (_mapTracker != null)
@@ -232,7 +234,7 @@ public partial class SlotTrackerControl : MarginContainer
             foreach (var e in host.Errors) AppendDebugLog("[MapTracker] Pack script error: " + e);
             UpdateKeyItemsUI();
             StateChanged?.Invoke();
-        });
+        }, missing, seed);
     }
     /// <summary>The pack's scripts were stopped (a piece of their work went over its limits): the log and Key Items say why.</summary>
     private void PackScriptsStopped(string reason)

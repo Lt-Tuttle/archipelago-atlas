@@ -5,6 +5,15 @@ namespace AP_Atlas.Core.Tests;
 public class LuaTextTests
 {
     [Fact]
+    public void Lua_53_unicode_escapes_become_their_characters_and_the_rest_is_left_alone()
+    {
+        Assert.Equal("\"Siegbräu\"", LuaText.ExpandUnicodeEscapes("\"Siegbr\\u{00e4}u\""));
+        Assert.Equal("a 😀 b", LuaText.ExpandUnicodeEscapes("a \\u{1F600} b"));
+        Assert.Equal("\\u{D800} \\u{110000} \\u{} \\x41 \\n", LuaText.ExpandUnicodeEscapes("\\u{D800} \\u{110000} \\u{} \\x41 \\n"));
+        Assert.Equal("", LuaText.ExpandUnicodeEscapes(""));
+    }
+
+    [Fact]
     public void Comments_go_and_lines_keep_their_numbers()
     {
         const string lua = "local a = 1 -- one\n--[[ block\nstill block ]] local b = 2\n--[==[ level two ]] still ]==]\nlocal c = 3";
