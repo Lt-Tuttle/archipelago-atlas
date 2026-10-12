@@ -832,7 +832,7 @@ namespace AP_Atlas.UI
         /// </summary>
         private bool LoadVersions(string game, bool again, Action? then = null, Action? notLoaded = null)
         {
-            if (_progress.Visible) return false;
+            if (_busy) return false;
             var install = AtlasEngine.Current;
             bool loaded = false;
             Async.Fire(async () =>
@@ -939,15 +939,22 @@ namespace AP_Atlas.UI
         /// <summary>Runs one operation at a time, with its last line in the status and everything in the log. False when one is running.</summary>
         private bool Run<T>(string starting, Func<Action<string>, CancellationToken, Task<T>> work, Func<T, string> done)
         {
-            if (_progress.Visible) return false;
+            if (_busy) return false;
             Async.Fire(RunAsync(starting, work, done), starting);
             return true;
         }
 
         /// <summary>One operation at a time, with its progress in the status line: the work's result, or default when it was stopped, failed or couldn't start.</summary>
+        // Whether a run is going (it ends before its result's callbacks run, so they can start the next: reading a game's
+        // releases, then looking inside them, then installing one), and which run the progress line belongs to.
+        private bool _busy;
+        private int _runNumber;
+
         private async Task<T?> RunAsync<T>(string starting, Func<Action<string>, CancellationToken, Task<T>> work, Func<T, string> done)
         {
-            if (_progress.Visible) return default;
+            if (_busy) return default;
+            _busy = true;
+            int run = ++_runNumber;
             var cts = _running = new CancellationTokenSource();
             _progress.Visible = true;
             _status.Text = starting;
@@ -960,13 +967,16 @@ namespace AP_Atlas.UI
             T? result = default;
             try
             {
-                result = await Task.Run(() => work(Log, cts.Token));
+                try { result = await Task.Run(() => work(Log, cts.Token)); }
+                finally { _busy = false; }
                 message = done(result);
             }
             catch (OperationCanceledException) { message = _tr("Stopped."); }
             catch (Exception ex) { message = _tr("It didn't work: {0}").Replace("{0}", ex.Message); }
             Ui.Defer(this, () =>
             {
+                // A run its callbacks started meanwhile keeps its own progress line.
+                if (run != _runNumber) return;
                 _progress.Visible = false;
                 _status.Text = message;
                 Refresh();

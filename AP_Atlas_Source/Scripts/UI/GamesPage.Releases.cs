@@ -297,6 +297,14 @@ namespace AP_Atlas.UI
             Ui.Defer(this, () => then?.Invoke(found != null));
         }
 
+        /// <summary>Forgets what GitHub said of a game's releases this session (for tests: the next install reads them again first).</summary>
+        internal void ForgetVersionsForTests(string game)
+        {
+            _versions.Remove(game);
+            _versionsAsked.Remove(game);
+            _projects.Remove(game);
+        }
+
         /// <summary>Presses "Which version works with my map pack?" (for tests: the question is asked as the button asks it).</summary>
         internal void LookInsideForTests(string game) => LookInside(game);
 

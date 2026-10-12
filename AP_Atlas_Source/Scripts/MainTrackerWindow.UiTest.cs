@@ -1305,6 +1305,16 @@ public partial class MainTrackerWindow
             UiTestExpect(Question() == null, "the question was asked a second time for the game");
             await UiTestWaitForAsync(() => engine.ComponentRequests("AtlasChecksum").Count == 8 && page.StatusText.StartsWith("Looked inside 4 release(s)", StringComparison.Ordinal) ? page : null, "the second look to end", 60);
             UiTestExpect(Downloads() == 4, $"the second look downloaded again ({Downloads()} downloads)");
+            // A solo test's install with the game's releases not read yet this session: reading them, looking inside and
+            // installing follow one another (the beta's Ship of Harkinian test stopped at once: the look was refused while
+            // the reading's run was still marked busy).
+            page.ForgetVersionsForTests("Test Game");
+            var chained = page.InstallBestAsync("Test Game", null, look: true);
+            await UiTestWaitForAsync(() => chained.IsCompleted ? page : null, "the install after reading the releases", 60);
+            // (The fake engine's health check doesn't pass here, so the install itself reports a failure: what matters is that
+            // it ran, with Atlas's pick.)
+            UiTestExpect(page.StatusText.Contains("Test Game 2.1.0-beta") && Sha(await System.IO.File.ReadAllBytesAsync(installedFile)) == Sha(releases[1].Bytes),
+                $"the install after reading the releases didn't run with the pick; the page says: {page.StatusText}");
         }
         finally
         {
