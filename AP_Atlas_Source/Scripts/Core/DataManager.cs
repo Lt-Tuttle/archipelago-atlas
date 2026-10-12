@@ -112,8 +112,8 @@ public class AppSettings
     public List<string> SkippedHomeSteps { get; set; } = new List<string>();
     /// <summary>The setup window's pages the user passed with Next (page ids), for the steps Atlas's state alone can't tell (the look, the reports page).</summary>
     public List<string> SetupPagesDone { get; set; } = new List<string>();
-    /// <summary>Whether the setup window opens by itself on a start without the engine (off: the Welcome page's "Don't open this by itself again").</summary>
-    public bool SetupWizardAuto { get; set; } = true;
+    /// <summary>Whether Home's welcome card was put away ("Look around first"); Home's setup line keeps Resume.</summary>
+    public bool WelcomeDismissed { get; set; }
     public int LastFlagColor { get; set; } = 3;
 
     // Race mode: when restrictions apply, and whether they hide all logic or only the "why" explanations.

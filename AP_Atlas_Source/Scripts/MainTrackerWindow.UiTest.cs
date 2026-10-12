@@ -1561,21 +1561,29 @@ public partial class MainTrackerWindow
         UiTestExpect(noBlurb.Count == 0, $"tools without a line: {string.Join(", ", noBlurb)}");
         UiTestExpect(home.Links.Count > 0 && home.Links.All(l => l.Url.StartsWith("https://", StringComparison.Ordinal)) && home.Links.Any(l => l.Url == "https://discord.gg/8Z65BR2"),
             "a link isn't https, or the Discord one is missing");
-        // A first start: no multiworlds, so the card shows the "Set up Atlas" block with its two buttons, and the setup line counts
-        // nothing done (the engine's step follows the engine) with Resume beside it.
+        // A first start: Home greets it with the welcome card (nothing pops up), the multiworlds card offers Add a multiworld…,
+        // and the setup line counts nothing done (the engine's step follows the engine) with Resume beside it.
         var steps = SetupSteps;
-        UiTestExpect(home.RecentProfileIds.Count == 0 && home.SetUpButton != null && home.AddMultiworldButton != null, "a first start doesn't show the Set up Atlas block");
+        UiTestExpect(home.WelcomeShown && home.WelcomeSetUpButton.Visible && home.RecentProfileIds.Count == 0 && home.SetUpButton == null && home.AddMultiworldButton != null,
+            "a first start isn't greeted by the welcome card, or the setup's button shows twice");
+        UiTestExpect(!GetChildren().OfType<AP_Atlas.UI.SetupWizard>().Any(w => !w.IsQueuedForDeletion()), "the setup window opened by itself");
         UiTestExpect(steps.Done(AP_Atlas.UI.SetupSteps.Engine) == AP_Atlas.Core.EngineSetup.AtlasEngine.Current.CanLaunch
             && AP_Atlas.UI.SetupSteps.All.Where(s => s != AP_Atlas.UI.SetupSteps.Engine).All(s => !steps.Done(s) && !steps.Skipped(s)),
             $"steps done before anything happened: {string.Join(", ", AP_Atlas.UI.SetupSteps.All.Where(steps.Settled).Select(s => s.Id))}");
         UiTestExpect(home.SetupLine.StartsWith("Setup ", StringComparison.Ordinal) && home.SetupLine.Contains($" of {steps.Total} done") && home.ResumeButton.Visible, $"the setup line reads \"{home.SetupLine}\"");
-        // Set up Atlas… opens the setup window from its Welcome page, on Home; closing it leaves Home as it was.
-        home.SetUpButton!.EmitSignal(BaseButton.SignalName.Pressed);
+        // Set up Atlas opens the setup window on its Welcome page while nothing is set up, on Home; closing it leaves Home as it was.
+        home.WelcomeSetUpButton.EmitSignal(BaseButton.SignalName.Pressed);
         var wizard = await UiTestWaitForAsync(() => GetChildren().OfType<AP_Atlas.UI.SetupWizard>().FirstOrDefault(w => w.Visible && !w.IsQueuedForDeletion()), "the setup window from Home");
         UiTestExpect(wizard.CurrentPageId == "welcome" && ShownContent() == home, $"Set up Atlas… opened the window on {wizard.CurrentPageId}, or left Home");
         wizard.EmitSignal(Window.SignalName.CloseRequested);
         await UiTestWaitAsync(0.2);
         UiTestExpect(!IsInstanceValid(wizard) || wizard.IsQueuedForDeletion(), "closing the setup window didn't free it");
+        // Look around first puts the welcome card away (remembered); the multiworlds card offers Set up Atlas… then.
+        home.LookAroundButton.EmitSignal(BaseButton.SignalName.Pressed);
+        UiTestExpect(!home.WelcomeShown && _appSettings.WelcomeDismissed && home.SetUpButton != null && home.ResumeButton.Visible,
+            "Look around first didn't put the welcome card away, or nothing offers the setup afterwards");
+        _appSettings.WelcomeDismissed = false;
+        home.Refresh();
         // The block's "Add a multiworld…" takes the user to the Multiworlds page with the new one selected, its name ready to
         // type; a second Add selects it again instead of adding another.
         int beforeAdd = _profiles.Count;
@@ -1695,7 +1703,7 @@ public partial class MainTrackerWindow
         var host = (AP_Atlas.UI.IPropertiesHost)this;
         const string roomId = "AbCdEfGhIjKlMnOpQrStUw"; // a base64 UUID, as archipelago.gg names rooms
         string themeBefore = _appSettings.Theme;
-        bool dailyBefore = _appSettings.UpdateCheckDaily, offeredBefore = _appSettings.UpdateOffered, autoBefore = _appSettings.SetupWizardAuto;
+        bool dailyBefore = _appSettings.UpdateCheckDaily, offeredBefore = _appSettings.UpdateOffered;
         var pagesBefore = _appSettings.SetupPagesDone.ToList();
         var skippedBefore = _appSettings.SkippedHomeSteps.ToList();
         string packs = AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory();
@@ -1743,7 +1751,6 @@ public partial class MainTrackerWindow
         AP_Atlas.Core.Permissions.ResetSessionForTests();
         _appSettings.SetupPagesDone.Clear();
         _appSettings.SkippedHomeSteps.Clear();
-        _appSettings.SetupWizardAuto = true;
         AP_Atlas.UI.SetupWizard? Wizard() => GetChildren().OfType<AP_Atlas.UI.SetupWizard>().FirstOrDefault(w => !w.IsQueuedForDeletion());
         // Nothing opens on top of the setup window: no other window of the main window's, and none of the root's beyond those there now.
         var rootWindowsBefore = GetTree().Root.GetChildren().OfType<Window>().ToList();
@@ -1755,19 +1762,12 @@ public partial class MainTrackerWindow
         }
         try
         {
-            UiTestExpect(!AtlasEngine.Current.CanLaunch && ShouldOpenSetupAtStartup, "a fresh folder without the engine wouldn't open the setup by itself");
             host.ShowTool(AP_Atlas.UI.Tool.Home);
             var wizard = OpenSetupWizard(resume: true);
             await UiTestWaitAsync(0.3);
-            // Resume on a fresh folder is the first step: Look. Back is the Welcome page; "Don't open this by itself again" is kept.
-            UiTestExpect(wizard.CurrentPageId == AP_Atlas.UI.SetupSteps.Look.Id && !wizard.Exclusive, $"Resume opened on {wizard.CurrentPageId}, or the window is exclusive");
-            wizard.BackButton.EmitSignal(BaseButton.SignalName.Pressed);
-            UiTestExpect(wizard.CurrentPageId == "welcome" && !wizard.BackButton.Visible && !wizard.SkipButton.Visible && wizard.NextButton.Text == "Start", "the Welcome page isn't the first, or has Back or Skip");
-            var autoBox = (CheckBox)wizard.FindChild("AutoOpenBox", true, false);
-            autoBox.ButtonPressed = true;
-            UiTestExpect(!_appSettings.SetupWizardAuto && !ShouldOpenSetupAtStartup, "the Welcome tick didn't stop the window opening by itself");
-            autoBox.ButtonPressed = false;
-            UiTestExpect(_appSettings.SetupWizardAuto, "unticking didn't bring the automatic opening back");
+            // Resume while nothing is set up begins on the Welcome page: no Back or Skip there, and Start leads on.
+            UiTestExpect(wizard.CurrentPageId == "welcome" && !wizard.Exclusive && !wizard.BackButton.Visible && !wizard.SkipButton.Visible && wizard.NextButton.Text == "Start",
+                $"Resume on a fresh folder opened on {wizard.CurrentPageId}, or the Welcome page has Back or Skip, or the window is exclusive");
             await wizard.NextForTestsAsync();
             // Look: the theme applies as chosen; Next marks the page done.
             UiTestExpect(wizard.CurrentPageId == AP_Atlas.UI.SetupSteps.Look.Id && wizard.SkipButton.Visible, "Start didn't lead to Look");
@@ -1895,7 +1895,6 @@ public partial class MainTrackerWindow
             AP_Atlas.Core.Permissions.ResetSessionForTests();
             _appSettings.UpdateCheckDaily = dailyBefore;
             _appSettings.UpdateOffered = offeredBefore;
-            _appSettings.SetupWizardAuto = autoBefore;
             _appSettings.SetupPagesDone = pagesBefore;
             _appSettings.SkippedHomeSteps = skippedBefore;
             _appSettings.PreferredPacks.Remove("Test Game");

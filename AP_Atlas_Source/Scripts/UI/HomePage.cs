@@ -31,6 +31,9 @@ namespace AP_Atlas.UI
             public SetupSteps Steps { get; init; } = new SetupSteps(new SetupSteps.Hooks());
             /// <summary>Opens the setup window: at the first step left (true), or from its Welcome page.</summary>
             public Action<bool> OpenSetup { get; init; } = _ => { };
+            /// <summary>Whether the welcome card was put away ("Look around first"), and putting it away (remembered).</summary>
+            public Func<bool> WelcomeDismissed { get; init; } = () => false;
+            public Action DismissWelcome { get; init; } = () => { };
             /// <summary>Takes the user to the Multiworlds page with a new multiworld selected (the first start's second button).</summary>
             public Action AddMultiworld { get; init; } = () => { };
             /// <summary>New…: a new multiworld in a small dialog here.</summary>
@@ -101,6 +104,8 @@ namespace AP_Atlas.UI
         private readonly Button _whatsNewButton;
         private Button? _addMultiworldButton;
         private Button? _setUpButton;
+        private readonly PanelContainer _welcomeCard;
+        private readonly Button _welcomeSetUp, _lookAround;
         private readonly TextureRect _wordmark;
         private int _tipIndex = -1;
         private bool _twoColumns = true;
@@ -142,6 +147,33 @@ namespace AP_Atlas.UI
             tagline.HorizontalAlignment = HorizontalAlignment.Right;
             header.AddChild(tagline);
             body.AddChild(header);
+
+            // A first start is greeted here, nothing popping up: what Atlas does, and the setup a press away (or later).
+            _welcomeCard = Card(out var welcomeBox);
+            _welcomeCard.Name = "WelcomeCard";
+            welcomeBox.AddThemeConstantOverride("separation", 8);
+            welcomeBox.AddChild(Kit.Heading(_tr("Welcome to The Archipelago Atlas"), 1.3f));
+            var welcomeText = Kit.Text(_tr("Atlas shows your Archipelago games on their maps: every check and whether it's in logic, your items, your hints and the trackers your group uses, for every slot you play, in one window."));
+            welcomeText.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+            welcomeText.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+            welcomeBox.AddChild(welcomeText);
+            var welcomeMore = Kit.Text(_tr("Setting it up takes a few pages: your multiworld and slots, the games' map packs, the trackers. Skip anything, come back any time; nothing goes online without asking."), AP_Atlas.Core.ThemeColors.TextMuted);
+            welcomeMore.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+            welcomeMore.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+            welcomeBox.AddChild(welcomeMore);
+            var welcomeButtons = new HBoxContainer();
+            welcomeButtons.AddThemeConstantOverride("separation", 10);
+            _welcomeSetUp = Kit.Button(_tr("Set up Atlas"), _tr("The setup window, page by page, from its Welcome page."), () => _hooks.OpenSetup(true));
+            _welcomeSetUp.ThemeTypeVariation = Kit.PrimaryButton;
+            welcomeButtons.AddChild(_welcomeSetUp);
+            _lookAround = Kit.Button(_tr("Look around first"), _tr("Puts this card away. The setup line on the right keeps Resume, and Help → Set up Atlas… opens it any time."), () =>
+            {
+                _hooks.DismissWelcome();
+                Refresh();
+            }, flat: true);
+            welcomeButtons.AddChild(_lookAround);
+            welcomeBox.AddChild(welcomeButtons);
+            body.AddChild(_welcomeCard);
 
             // Two columns: the multiworlds and the tools; the setup, a tip, what's new and the links beside them.
             _columns.Vertical = false;
@@ -337,7 +369,14 @@ namespace AP_Atlas.UI
         /// <summary>The right column's right edge, in the window (for the fit check).</summary>
         public float RightColumnRight => _rightColumn.GlobalPosition.X + _rightColumn.Size.X;
 
-        /// <summary>The first start's "Set up Atlas…" button (null while multiworlds exist).</summary>
+        /// <summary>Whether the welcome card shows (a setup not finished, and the card not put away).</summary>
+        public bool WelcomeShown => _welcomeCard.Visible;
+
+        /// <summary>The welcome card's "Set up Atlas" and "Look around first".</summary>
+        public Button WelcomeSetUpButton => _welcomeSetUp;
+        public Button LookAroundButton => _lookAround;
+
+        /// <summary>The multiworlds card's "Set up Atlas…" on a first start once the welcome card is put away (null otherwise).</summary>
         public Button? SetUpButton => _setUpButton;
 
         /// <summary>The first start's "Add a multiworld…" button (null while multiworlds exist).</summary>
@@ -387,6 +426,7 @@ namespace AP_Atlas.UI
             _setupLine.AddThemeColorOverride("font_color", steps.AllSettled ? AP_Atlas.Core.ThemeColors.Success : AP_Atlas.Core.ThemeColors.TextMuted);
             _resume.Visible = !steps.AllSettled;
             _reopenSetup.Visible = steps.AllSettled;
+            _welcomeCard.Visible = !steps.AllSettled && !_hooks.WelcomeDismissed();
             if (!AP_Atlas.Core.EngineSetup.AtlasEngine.SetupRunning) _setupProgress.Visible = false;
             RefreshRecents();
             RefreshWhatsNew();
@@ -435,15 +475,20 @@ namespace AP_Atlas.UI
                 var block = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
                 block.AddThemeConstantOverride("separation", 8);
                 block.AddChild(new Control { CustomMinimumSize = new Vector2(0, 8) });
-                var welcome = Kit.Text(_tr("Nothing to play with yet. Setting Atlas up takes a few pages: its logic engine, your multiworld and slots, the games' map packs."));
+                var welcome = Kit.Text(_welcomeCard.Visible ? _tr("No multiworld yet: the setup adds one, or New… and Paste a room link… above.")
+                    : _tr("Nothing to play with yet. Setting Atlas up takes a few pages: your multiworld and slots, the games' map packs."));
                 welcome.AutowrapMode = TextServer.AutowrapMode.WordSmart;
                 welcome.SizeFlagsHorizontal = SizeFlags.ExpandFill;
                 block.AddChild(welcome);
                 var buttons = new HBoxContainer();
                 buttons.AddThemeConstantOverride("separation", 8);
-                _setUpButton = Kit.Button(_tr("Set up Atlas…"), _tr("The setup window, page by page."), () => _hooks.OpenSetup(false));
-                _setUpButton.ThemeTypeVariation = Kit.PrimaryButton;
-                buttons.AddChild(_setUpButton);
+                // The welcome card has the setup's button while it shows; once it's put away, this card offers it.
+                if (!_welcomeCard.Visible)
+                {
+                    _setUpButton = Kit.Button(_tr("Set up Atlas…"), _tr("The setup window, page by page."), () => _hooks.OpenSetup(true));
+                    _setUpButton.ThemeTypeVariation = Kit.PrimaryButton;
+                    buttons.AddChild(_setUpButton);
+                }
                 _addMultiworldButton = Kit.Button(_tr("Add a multiworld…"), _tr("Straight to the Multiworlds page, for a multiworld typed by hand."), () => _hooks.AddMultiworld());
                 buttons.AddChild(_addMultiworldButton);
                 block.AddChild(buttons);

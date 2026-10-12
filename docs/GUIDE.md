@@ -8,7 +8,7 @@ Atlas is an unofficial community tool: it isn't affiliated with or endorsed by t
 
 Atlas opens on Home (Ctrl+1) unless Settings → Behaviour → Open on says otherwise. Its header carries Atlas's icon and wordmark, which take the theme's colours and your accent. It has:
 
-- **Your multiworlds:** the ones you play, most recently played first, each with its server, slots and games, a "connected" chip while any of its slots is, **Open** (the Multiworlds page with it selected) and **Connect**, which connects every slot of it in turn. **New…** makes a multiworld in a small window right here (its name, server and password, and its slots, typed or from a YAML, which names a slot and its game); **Paste a room link…** starts one on the Multiworlds page with the room link box ready. On a first start, with no multiworld yet, this card offers **Set up Atlas…** (see Setting up Atlas below) and **Add a multiworld…**.
+- **Your multiworlds:** the ones you play, most recently played first, each with its server, slots and games, a "connected" chip while any of its slots is, **Open** (the Multiworlds page with it selected) and **Connect**, which connects every slot of it in turn. **New…** makes a multiworld in a small window right here (its name, server and password, and its slots, typed or from a YAML, which names a slot and its game); **Paste a room link…** starts one on the Multiworlds page with the room link box ready. On a first start, with no multiworld yet, this card offers **Add a multiworld…** (and **Set up Atlas…** once the welcome card above is put away; see Setting up Atlas below).
 - **Tools:** a button per tool.
 - **Setup:** one line about the setup ("Setup 4 of 7 done. Next: Games and map packs.") with **Resume**, which opens the setup window at that step; once every step is done or skipped it says "You're set up." with Open setup for changing anything later.
 - A tip, which changes each time Home shows.
@@ -17,7 +17,7 @@ Atlas opens on Home (Ctrl+1) unless Settings → Behaviour → Open on says othe
 
 ### Setting up Atlas
 
-The setup window walks Atlas's setup through page by page: Welcome, Look, The Atlas Engine, Your multiworld, Your slots, Games and map packs, Trackers (optional), Reports and updates, Ready. It opens by itself on a start without the engine (the Welcome page's "Don't open this by itself again" stops that), and from Home's setup line and Help → Set up Atlas… any time, at the first step left. Its rules:
+The setup window walks Atlas's setup through page by page: Welcome, Look, The Atlas Engine, Your multiworld, Your slots, Games and map packs, Trackers (optional), Reports and updates, Ready. Nothing pops up on a first start: Home greets it with a welcome card (what Atlas does, **Set up Atlas**, and **Look around first**, which puts the card away). Set up Atlas, Home's setup line (Resume) and Help → Set up Atlas… open the window at the first step left, on its Welcome page while nothing is set up yet. Its rules:
 
 - **Nothing opens on top of it.** A permission Atlas needs (downloading the engine, reading a room's status page, looking up apworld releases on GitHub) is a row on the page with Allow once, Always allow and a way to say not now; trusting a project is the tick beside its install; the one question it can't fold in, whether a Sphere Tracker room is the host's, opens on the window itself.
 - **Back keeps what you typed; Skip this step counts a step as done without doing it** (Home's line counts skipped steps as done; the Multiworlds, Games and Settings pages do each step by hand later).

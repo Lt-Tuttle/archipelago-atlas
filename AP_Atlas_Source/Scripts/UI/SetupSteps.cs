@@ -80,6 +80,9 @@ namespace AP_Atlas.UI
 
         public bool AllSettled => Next == null;
 
+        /// <summary>Nothing set up by the user yet: no page passed, none skipped (the setup window then begins on Welcome).</summary>
+        public bool Untouched => _hooks.PagesDone().Count == 0 && All.All(step => !Skipped(step));
+
         /// <summary>Home's one line about the setup: how far it is and what's next, or that it's done.</summary>
         public string Line(Func<string, string> tr)
         {

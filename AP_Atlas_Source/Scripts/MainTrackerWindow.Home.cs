@@ -20,6 +20,12 @@ public partial class MainTrackerWindow
             ContentFontSize = () => _appSettings.ContentFontSize,
             Steps = SetupSteps,
             OpenSetup = resume => OpenSetupWizard(resume),
+            WelcomeDismissed = () => _appSettings.WelcomeDismissed,
+            DismissWelcome = () =>
+            {
+                _appSettings.WelcomeDismissed = true;
+                DataManager.SaveSettingsSoon(_appSettings);
+            },
             AddMultiworld = OnAddProfilePressed,
             QuickAddMultiworld = () => AP_Atlas.UI.QuickSetup.NewMultiworld(this, QuickHooks()),
             AddFromRoomLink = AddProfileFromRoomLink,

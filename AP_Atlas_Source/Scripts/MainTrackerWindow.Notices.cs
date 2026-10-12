@@ -123,7 +123,6 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             return;
         }
         LogToSystem($"Logic engine: {problem} Settings → Atlas Engine sets it up.", "orange");
-        if (_setupOpensAtStartup) return; // the setup window says it, with the button to do it
         AP_Atlas.UI.Ui.Defer(this, () => ShowToast("Logic needs the Atlas Engine. Atlas can set it up for you: about 55 MB to download (160 MB on disk), no installer.", AP_Atlas.Core.ThemeColors.Warning, "Set up", OpenEngineSetup));
     }
     private void ShowToast(string message, Godot.Color color) => ShowToast(message, color, null, null);

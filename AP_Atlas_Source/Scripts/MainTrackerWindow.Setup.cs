@@ -8,8 +8,6 @@ using Godot;
 public partial class MainTrackerWindow
 {
     private AP_Atlas.UI.SetupSteps? _setupSteps;
-    // Decided before the engine's startup notice: when the setup window will open, the "Logic needs the Atlas Engine" card stays quiet.
-    private bool _setupOpensAtStartup;
 
     /// <summary>The setup steps Home's line and the setup window share.</summary>
     private AP_Atlas.UI.SetupSteps SetupSteps => _setupSteps ??= new AP_Atlas.UI.SetupSteps(new AP_Atlas.UI.SetupSteps.Hooks
@@ -35,9 +33,6 @@ public partial class MainTrackerWindow
         },
     });
 
-    /// <summary>Whether the setup window opens by itself on this start: the first start, or a start without the engine, unless the user turned that off.</summary>
-    private bool ShouldOpenSetupAtStartup => _appSettings.SetupWizardAuto && (_appSettings.Fresh || !AP_Atlas.Core.EngineSetup.AtlasEngine.Current.CanLaunch);
-
     /// <summary>Help → Set up Atlas…, Home's Resume and the first start: the setup window, at the first step left (resume) or from its Welcome page.</summary>
     internal AP_Atlas.UI.SetupWizard OpenSetupWizard(bool resume) => AP_Atlas.UI.SetupWizard.Open(this, SetupHooks(), resume);
 
@@ -49,11 +44,6 @@ public partial class MainTrackerWindow
             Tr = text => Tr(text),
             Settings = _appSettings,
             Steps = SetupSteps,
-            SetAutoOpen = auto =>
-            {
-                _appSettings.SetupWizardAuto = auto;
-                DataManager.SaveSettingsSoon(_appSettings);
-            },
             ApplyTheme = ApplyTheme,
             ApplyColourBlindSafe = ApplyColourBlindSafe,
             SetZoom = SetZoom,

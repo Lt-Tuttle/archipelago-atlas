@@ -481,7 +481,6 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _gamesPage.SidebarContent.Visible = false;
         _midLeftVBox.AddChild(_gamesPage.SidebarContent);
         _toolViews[AP_Atlas.UI.Tool.Games] = (_gamesPage, _gamesPage.SidebarContent, "Games", _gamesPage.OnShown);
-        _setupOpensAtStartup = !UiTestRequested && !VisualCheckRequested && !FirstRunSelfCheck && ShouldOpenSetupAtStartup;
         ReportEngineAtStartup();
         OfferToDeletePlainTextPasswordCopies();
         var statusTimer = new Godot.Timer { WaitTime = 0.5f, Autostart = true };
@@ -505,8 +504,6 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         }
         StartUpdateChecks();
         StartCrashReports();
-        // A start without the engine: the setup window, at the first step left (the test modes drive it themselves).
-        if (_setupOpensAtStartup) AP_Atlas.UI.Ui.Defer(this, () => OpenSetupWizard(resume: true));
         if (VisualCheckRequested) AP_Atlas.UI.Ui.Defer(this, RunVisualCheck);
         if (UiTestRequested) AP_Atlas.UI.Ui.Defer(this, RunUiTest);
     }

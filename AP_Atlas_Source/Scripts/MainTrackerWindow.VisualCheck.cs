@@ -93,7 +93,7 @@ public partial class MainTrackerWindow
         // The guide as the Help window renders it (the documents built in, through Markdown).
         await VisualCheckWindowAsync("help_guide", () => OpenHelp(null), 1.0);
         await VisualCheckWindowAsync("about", ShowAbout, 1.0);
-        // The setup window on its Welcome page (it opens by itself on a first start outside the checks).
+        // The setup window on its Welcome page (Home's welcome card opens it there on a first start).
         await VisualCheckWindowAsync("setup_welcome", () => OpenSetupWizard(resume: false), 1.0);
         OpenPrivacy();
         await VisualCheckWaitAsync(0.5);

@@ -31,7 +31,6 @@ namespace AP_Atlas.UI
             public required AppSettings Settings { get; init; }
             public required SetupSteps Steps { get; init; }
             /// <summary>The Welcome page's "Don't open this by itself again".</summary>
-            public required Action<bool> SetAutoOpen { get; init; }
             // The look.
             public required Action<string> ApplyTheme { get; init; }
             public required Action<bool> ApplyColourBlindSafe { get; init; }
@@ -120,7 +119,8 @@ namespace AP_Atlas.UI
             parent.AddChild(wizard);
             WindowFit.Pop(wizard, PageWidth + RailWidth + 60, 700);
             int start = 0;
-            if (resume)
+            // Resume goes to the first step left; while nothing is set up yet, that's the Welcome page.
+            if (resume && !hooks.Steps.Untouched)
             {
                 var next = hooks.Steps.Next;
                 start = next == null ? wizard._pages.Count - 1 : wizard._pages.FindIndex(p => p.Step == next);
@@ -450,11 +450,7 @@ namespace AP_Atlas.UI
             box.AddChild(header);
             box.AddChild(Wrapped(_tr("Atlas shows your Archipelago multiworlds on their maps: every check and whether it's in logic, your items, your hints and the trackers your group uses, all in one window. A few pages set it up; each says what it does before anything happens.")));
             box.AddChild(Wrapped(_tr("Atlas keeps everything in its own folder, never looks elsewhere on your PC, and goes online only for what you allow here or later. Each permission is a row on its page: Allow once, Always allow, or not now. You can take any answer back in Settings → Privacy & permissions."), muted: true));
-            box.AddChild(Wrapped(_tr("Skip this step is always there, and Help → Set up Atlas… brings this window back at the first step left."), muted: true));
-            var auto = new CheckBox { Text = _tr("Don't open this by itself again"), ButtonPressed = !_hooks.Settings.SetupWizardAuto, TooltipText = _tr("Atlas opens this on a start without its engine; ticked, it waits to be asked (Home's setup line, or Help → Set up Atlas…).") };
-            auto.Name = "AutoOpenBox";
-            auto.Toggled += on => _hooks.SetAutoOpen(!on);
-            box.AddChild(auto);
+            box.AddChild(Wrapped(_tr("Skip this step is always there, and Help → Set up Atlas… or Home's Resume brings this window back at the first step left."), muted: true));
             return box;
         }
 
