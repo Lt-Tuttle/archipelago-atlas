@@ -106,7 +106,7 @@ namespace AP_Atlas.Core.PopTracker
                 string version = original.Manifest?.GetActualVersion() ?? "";
                 // Once per pack version: exact name matches are linked by the Doctor itself (undoable; the edit queues a
                 // check with them in, which then lists what's left).
-                if (_settings?.PackDoctorAutoLink != false && fixes.AutoLinkedVersion != version && names != null)
+                if (_settings?.PackDoctorAutoLink != false && fixes.AutoLinkedVersion != AutoLinkStamp(original) && names != null)
                 {
                     int linked = AutoLinkExact(key, original, report);
                     if (linked > 0) Logger.LogInfo($"Pack Doctor linked {linked} exact name match{(linked == 1 ? "" : "es")} in '{original.Manifest?.Name}' by itself (Undo in the Doctor reverses them).");
@@ -134,13 +134,19 @@ namespace AP_Atlas.Core.PopTracker
         }
 
         /// <summary>
+        /// What the automatic pass is recorded against: the pack's version and Atlas's, so the pass runs again (for what's
+        /// still unlinked) when Atlas's rules improve, not only when the pack changes.
+        /// </summary>
+        public static string AutoLinkStamp(LoadedPack original) => (original?.Manifest?.GetActualVersion() ?? "") + " / Atlas " + AtlasVersion.Display;
+
+        /// <summary>
         /// Links every recommendation whose best match is exact and clashes with nothing (<see cref="PackDoctor.ExactMatches"/>)
         /// as fixes marked automatic, in one undoable step, and records the pass for the pack's version. Main thread.
         /// Returns how many it linked.
         /// </summary>
         public static int AutoLinkExact(string key, LoadedPack original, DoctorReport report)
         {
-            string version = original?.Manifest?.GetActualVersion() ?? "";
+            string version = AutoLinkStamp(original);
             var exact = PackDoctor.ExactMatches(report);
             if (exact.Count == 0)
             {
@@ -156,7 +162,7 @@ namespace AP_Atlas.Core.PopTracker
                     if (f.Actions.HasFlag(FindingActions.LinkItem))
                     {
                         file.Tiles.RemoveAll(t => t.Subject == f.Subject);
-                        file.Tiles.Add(new TileFix { Subject = f.Subject, Code = subject, ApItemId = s.Id, ApItemName = s.Label, Source = "automatic", AuthorStamp = PackFixes.AuthorStamp(original, f.Subject) });
+                        file.Tiles.Add(new TileFix { Subject = f.Subject, Code = subject, ApItemId = s.Id, ApItemName = s.Label, Source = "automatic", Reason = s.Reason, AuthorStamp = PackFixes.AuthorStamp(original, f.Subject) });
                     }
                     else
                     {
@@ -170,6 +176,7 @@ namespace AP_Atlas.Core.PopTracker
                             ApLocationId = s.Id,
                             ApLocationName = s.Label,
                             Source = "automatic",
+                            Reason = s.Reason,
                             AuthorStamp = PackFixes.AuthorStamp(original, f.Subject)
                         });
                     }

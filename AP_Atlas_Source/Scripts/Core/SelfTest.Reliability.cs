@@ -601,7 +601,17 @@ namespace AP_Atlas.Core
             Expect(host.UnsupportedApis.Count == 0, "reading the room's tables counted as an unsupported call: " + string.Join(", ", host.UnsupportedApis));
             var names = new Dictionary<long, string> { [1] = "FS: Soul Arrow - shop", [2] = "FS: Soul Arrow - Yoel/Yuria shop", [3] = "FS: Soul Arrow - Orbeck" };
             var best = PopTracker.PackDoctor.Suggest("FS: Soul Arrow - Yoel or Yuria shop", names, 3);
-            Expect(best.Count == 3 && best[0].Id == 2 && best[0].Score >= 0.85, $"the detail didn't decide between the copies: {string.Join("; ", best.Select(s => s.Label + " " + s.Score.ToString("0.00")))}");
+            Expect(best.Count == 3 && best[0].Id == 2 && best[0].Score >= 0.999, $"\"Yoel or Yuria\" and \"Yoel/Yuria\" aren't the same name, or the detail didn't decide between the copies: {string.Join("; ", best.Select(s => s.Label + " " + s.Score.ToString("0.00")))}");
+            var sirris = PopTracker.PackDoctor.Suggest("US: Sunset Helm - Pit of Hollows after killing Hodrick with Sirris", new Dictionary<long, string> { [4] = "US: Sunset Helm - Pit of Hollows after killing Hodrick w/Sirris" }, 1);
+            Expect(sirris.Count == 1 && sirris[0].Score >= 0.999, $"\"with Sirris\" and \"w/Sirris\" aren't the same name: {(sirris.Count > 0 ? sirris[0].Score : 0):0.00}");
+            // The only location of its kind in its area links by itself, whatever its detail says; one of several doesn't.
+            var game = new PopTracker.GameNameTable { Game = "Self Test Game R", Locations = new Dictionary<string, long> { ["FS: Firelink Armor - shop after placing all Cinders"] = 10, ["FS: Soul Arrow - shop"] = 1, ["FS: Soul Arrow - Orbeck"] = 3 } };
+            var armor = new PopTracker.Finding { Key = "loc:unmatched:A|Armor", Subject = "link:A|Armor", Actions = PopTracker.FindingActions.LinkLocation, Query = "FS: Firelink Armor - shop after beating KFF boss", Suggestions = PopTracker.PackDoctor.Suggest("FS: Firelink Armor - shop after beating KFF boss", game.LocationsById(), 3) };
+            var arrow = new PopTracker.Finding { Key = "loc:unmatched:A|Arrow", Subject = "link:A|Arrow", Actions = PopTracker.FindingActions.LinkLocation, Query = "FS: Soul Arrow - Yoel or Yuria shop", Suggestions = PopTracker.PackDoctor.Suggest("FS: Soul Arrow - Yoel or Yuria shop", game.LocationsById(), 3) };
+            var report = new PopTracker.DoctorReport { Names = game, Findings = { armor, arrow } };
+            var sure = PopTracker.PackDoctor.ExactMatches(report);
+            Expect(sure.Count == 1 && sure[0] == armor && armor.Suggestions[0].Id == 10 && armor.Suggestions[0].Reason == "the only 'Firelink Armor' in FS",
+                $"the only Firelink Armor in FS wasn't taken as sure (or Soul Arrow was): {string.Join(", ", sure.Select(f => f.Key))}; reason {armor.Suggestions[0].Reason}");
         }
 
         private static async Task PackScriptsUseTheirOwnCompiledFiles()
@@ -878,7 +888,7 @@ namespace AP_Atlas.Core
                 // Linked by the Doctor itself: the fixes are marked automatic, the pass is recorded for the version.
                 int linked = PopTracker.PackDoctorService.AutoLinkExact(key, pack, first);
                 var fixes = PopTracker.PackFixes.Get(key);
-                Expect(linked == 2 && fixes.Tiles.Count == 2 && fixes.Tiles.All(t => t.Automatic && t.ApItemId != null) && fixes.AutoLinkedVersion == "1.0",
+                Expect(linked == 2 && fixes.Tiles.Count == 2 && fixes.Tiles.All(t => t.Automatic && t.ApItemId != null) && fixes.AutoLinkedVersion == PopTracker.PackDoctorService.AutoLinkStamp(pack),
                     $"the automatic pass linked {linked} ({fixes.Tiles.Count} tile fixes, version '{fixes.AutoLinkedVersion}')");
 
                 // The fix defines the item: the next analysis sees the tile, linked, and records the automatic link.

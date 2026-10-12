@@ -23,6 +23,8 @@ namespace AP_Atlas.Core.PopTracker
         public DateTime Made { get; set; } = DateTime.Now;
         /// <summary>"automatic" when the Doctor made the fix itself (an exact name match); null for the user's own.</summary>
         public string Source { get; set; }
+        /// <summary>For an automatic fix: why the Doctor was sure ("the only 'Firelink Armor' in FS"); null when the names match.</summary>
+        public string Reason { get; set; }
 
         [JsonIgnore]
         public bool Automatic => Source is "automatic" or "suggested";

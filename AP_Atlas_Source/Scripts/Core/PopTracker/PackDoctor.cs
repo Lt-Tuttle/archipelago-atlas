@@ -39,6 +39,8 @@ namespace AP_Atlas.Core.PopTracker
         public long Id;
         /// <summary>0..1, how sure the match is.</summary>
         public double Score;
+        /// <summary>Why it counts as sure when the names aren't the same ("the only 'Firelink Armor' in FS"); null for a plain score.</summary>
+        public string Reason;
     }
 
     public sealed class Finding
@@ -53,6 +55,8 @@ namespace AP_Atlas.Core.PopTracker
         public string Subject = "";
         public FindingActions Actions;
         public List<Suggestion> Suggestions = new List<Suggestion>();
+        /// <summary>The name the suggestions were made for (the pin section's, the tile's).</summary>
+        public string Query = "";
         /// <summary>For grouped findings: the individual entries.</summary>
         public List<string> Details = new List<string>();
         /// <summary>Fix subjects the finding is about (for ResetFixes).</summary>
@@ -205,7 +209,7 @@ namespace AP_Atlas.Core.PopTracker
                     Key = "auto:" + t.Subject,
                     Category = "Key Items",
                     Severity = FindingSeverity.AutoFixed,
-                    Title = $"Linked tile '{t.Code}' to {t.ApItemName} " + (t.Source == "suggested" ? "(the closest name, taken by Fix what Atlas can)" : "(the names match)"),
+                    Title = $"Linked tile '{t.Code}' to {t.ApItemName} " + (t.Source == "suggested" ? "(the closest name, taken by Fix what Atlas can)" : "(" + (string.IsNullOrEmpty(t.Reason) ? "the names match" : t.Reason) + ")"),
                     Detail = "Made by the Doctor on the pack's first check. Reset it under Your fixes if it's wrong.",
                     Subject = t.Subject,
                     Actions = FindingActions.ResetFixes,
@@ -217,7 +221,7 @@ namespace AP_Atlas.Core.PopTracker
                     Key = "auto:" + l.Subject,
                     Category = "Locations",
                     Severity = FindingSeverity.AutoFixed,
-                    Title = $"Linked '{(string.IsNullOrEmpty(l.SectionName) ? l.PinPath : l.SectionName)}' to {l.ApLocationName} " + (l.Source == "suggested" ? "(the closest name, taken by Fix what Atlas can)" : "(the names match)"),
+                    Title = $"Linked '{(string.IsNullOrEmpty(l.SectionName) ? l.PinPath : l.SectionName)}' to {l.ApLocationName} " + (l.Source == "suggested" ? "(the closest name, taken by Fix what Atlas can)" : "(" + (string.IsNullOrEmpty(l.Reason) ? "the names match" : l.Reason) + ")"),
                     Detail = "Made by the Doctor on the pack's first check. Reset it under Your fixes if it's wrong.",
                     Subject = l.Subject,
                     Actions = FindingActions.ResetFixes,
@@ -617,6 +621,7 @@ namespace AP_Atlas.Core.PopTracker
                     Detail = $"On pin '{pin.FullPath}'. It stays red and never clears. Pick the location it stands for, or ignore it if the game doesn't have it.",
                     Subject = subject,
                     Actions = FindingActions.LinkLocation,
+                    Query = name,
                     // Prefer locations no pin shows yet; they're the likely partner.
                     Suggestions = Suggest(name, unplacedNames.Count > 0 ? unplacedNames : locNames, 6)
                 });
@@ -830,9 +835,37 @@ namespace AP_Atlas.Core.PopTracker
         /// </summary>
         public static List<Finding> ExactMatches(DoctorReport report)
         {
-            var recs = Recommendations(report).Where(f => f.Suggestions[0].Score >= 0.999).ToList();
+            var recs = Recommendations(report).Where(f => f.Suggestions[0].Score >= 0.999 || IsOnlyOneOfItsKind(report, f)).ToList();
             var conflicts = Conflicts(report, recs, f => f.Suggestions[0]);
             return recs.Where(f => !conflicts.ContainsKey(f.Key)).ToList();
+        }
+
+        /// <summary>
+        /// A pin whose identifying part ("FS: Firelink Armor" of "FS: Firelink Armor - shop after beating KFF boss") names
+        /// exactly one of the game's locations in that area, the best suggestion being it: the detail differs in wording
+        /// only, and nothing else it could be. The suggestion is marked sure, with the reason. With two or more of a kind
+        /// ("FS: Soul Arrow - shop", "- Orbeck"), the detail decides and the Doctor only suggests.
+        /// </summary>
+        private static bool IsOnlyOneOfItsKind(DoctorReport report, Finding f)
+        {
+            if (string.IsNullOrEmpty(f.Query) || report?.Names?.Locations == null || !f.Actions.HasFlag(FindingActions.LinkLocation) || f.Suggestions[0].Score < 0.6) return false;
+            var q = Prepare(f.Query);
+            if (q.Core.Length == 0 || q.Area.Length == 0) return false;
+            var best = Prepare(f.Suggestions[0].Label);
+            if (best.Area != q.Area || best.Core != q.Core) return false;
+            int same = 0;
+            foreach (var name in report.Names.Locations.Keys)
+            {
+                var p = Prepare(name);
+                if (p.Area == q.Area && p.Core == q.Core && ++same > 1) return false;
+            }
+            if (same != 1) return false;
+            int colon = f.Query.IndexOf(':');
+            string rest = colon > 0 ? f.Query.Substring(colon + 1).Trim() : f.Query;
+            int dash = rest.IndexOf(" - ", StringComparison.Ordinal);
+            f.Suggestions[0].Score = 1.0;
+            f.Suggestions[0].Reason = $"the only '{(dash > 0 ? rest.Substring(0, dash) : rest).Trim()}' in {(colon > 0 ? f.Query.Substring(0, colon).Trim() : "its area")}";
+            return true;
         }
 
         // =====================================================================
@@ -897,10 +930,21 @@ namespace AP_Atlas.Core.PopTracker
             return p;
         }
 
+        /// <summary>
+        /// Lower case, letters and digits only, one space between words; a few ways of writing the same thing read the same
+        /// first: "w/Sirris" and "with Sirris", "Yoel/Yuria" and "Yoel or Yuria", "&amp;" and "and".
+        /// </summary>
         private static string Normalize(string s)
         {
+            string t = s.ToLowerInvariant();
+            if (t.Contains('/') || t.Contains('&'))
+            {
+                t = System.Text.RegularExpressions.Regex.Replace(t, @"\bw/(?=\w)", "with ");
+                t = System.Text.RegularExpressions.Regex.Replace(t, @"(?<=\w)/(?=\w)", " or ");
+                t = t.Replace("&", " and ");
+            }
             var sb = new StringBuilder();
-            foreach (char c in s.ToLowerInvariant()) sb.Append(char.IsLetterOrDigit(c) ? c : ' ');
+            foreach (char c in t) sb.Append(char.IsLetterOrDigit(c) ? c : ' ');
             return string.Join(" ", sb.ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries));
         }
 
