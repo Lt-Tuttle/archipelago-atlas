@@ -755,6 +755,155 @@ namespace AP_Atlas.Core
                 $"a section without a check was counted or reported ({hostedReport.SectionsLinked} of {hostedReport.SectionsTotal}, {hostedReport.Index.NoCheckSections} without a check): " + string.Join(", ", hostedReport.Findings.Select(f => f.Key)));
         }
 
+        private static async Task PacksReadAsPopTrackerReadsThem()
+        {
+            // Ship of Harkinian's pack, in small: a progressive item whose code is on its stage, a label and one of the
+            // pack's own switches in the grid, scripts in Lua 5.3, shops whose "Item 1" the mapping leaves out, an overview's
+            // copy whose ref names a room that isn't there, the goal the mapping doesn't track, and a map no tab shows.
+            string zip = Scratch("selftest_poptracker.zip");
+            var spots = string.Join(",", Enumerable.Range(1, 16).Select(n => $"{{\"name\":\"Spot {n}\"}}"));
+            var spotMappings = string.Join("\n", Enumerable.Range(1, 16).Select(n => $"    [{300 + n}] = {{\"@Field/Spots/Spot {n}\"}},"));
+            AP_Atlas.Core.Testing.FakeMapPack.Write(zip, "Self-test PopTracker pack", "Self Test Game P",
+                initLua: """
+                    Tracker:AddItems("items/items.json")
+                    Tracker:AddItems("items/settings_main.json")
+                    Tracker:AddMaps("maps/maps.json")
+                    Tracker:AddLocations("locations/locations.json")
+                    Tracker:AddLayouts("layouts/tracker.json")
+                    HOOKS = 0
+                    ScriptHost:AddWatchForCode("hook", "hookshot", function(code) HOOKS = HOOKS + 1 end)
+                    local hook = Tracker:FindObjectForCode("hookshot")
+                    hook:SetOverlay("x")
+                    hook:SetOverlayFontSize(12)
+                    RESULT = string.format("%s|%s|%d|%d|%d|%d", nil, true, 7 // 2, 6 & 3, 1 << 4 | 1, ~0 & 0xF)
+                    Archipelago:AddClearHandler("t", function(slot_data)
+                        Tracker:FindObjectForCode("hookshot").Active = true
+                        Tracker:FindObjectForCode("shield").Active = RESULT == "nil|true|3|2|17|15" and HOOKS == 1
+                    end)
+                    """,
+                itemsJson: """
+                    [{"name":"Progressive Hookshot","type":"progressive","stages":[{"name":"Hookshot","img":"images/sword.png","codes":"hookshot"},{"name":"Longshot","img":"images/sword.png"}]},
+                     {"type":"static","img":"images/sword.png","codes":"label_dt"},
+                     {"name":"Shield","type":"toggle","img":"images/sword.png","codes":"shield"}]
+                    """,
+                layoutsJson: """
+                    {"tracker_default":{"type":"array","content":[
+                        {"type":"itemgrid","rows":[["label_dt","hookshot","shield","setting_auto_tab"]]},
+                        {"type":"tabbed","tabs":[{"title":"Overworld","content":{"type":"map","maps":["World"]}}]}]}}
+                    """,
+                locationsJson: "[" +
+                    """{"name":"Kokiri Forest","children":[{"name":"Shop","sections":[{"name":"Item 1"},{"name":"Item 2"},{"name":"Item 3"}],"map_locations":[{"map":"World","x":10,"y":10}]}]},""" +
+                    """{"name":"Goron City","children":[{"name":"Shop","sections":[{"name":"Item 1"},{"name":"Item 2"},{"name":"Item 3"}],"map_locations":[{"map":"World","x":20,"y":10}]}]},""" +
+                    """{"name":"Forest Temple","children":[{"name":"Basement Side Room","sections":[{"name":"Gold Skulltula"}],"map_locations":[{"map":"World","x":30,"y":10}]}]},""" +
+                    """{"name":"Overworld","children":[{"name":"Forest Temple","sections":[{"name":"Basement Side Room - Gold Skulltula","ref":"Forest Temple/Basement Chest Room/Gold Skulltula"}],"map_locations":[{"map":"World","x":40,"y":10}]}]},""" +
+                    """{"name":"Castle","children":[{"name":"Arena","sections":[{"name":"Ganon"}],"map_locations":[{"map":"World","x":50,"y":10}]}]},""" +
+                    """{"name":"Field","children":[{"name":"Spots","sections":[""" + spots + """],"map_locations":[{"map":"World","x":60,"y":10}]}]}]""",
+                files: new Dictionary<string, string>
+                {
+                    ["items/settings_main.json"] = """[{"name":"Auto Tab","type":"toggle","img":"images/sword.png","codes":"setting_auto_tab"}]""",
+                    ["scripts/autotracking/location_mapping.lua"] = "LOCATION_MAPPING = {\n" +
+                        "    [102] = {\"@Kokiri Forest/Shop/Item 2\"},\n    [103] = {\"@Kokiri Forest/Shop/Item 3\"},\n" +
+                        "    [112] = {\"@Goron City/Shop/Item 2\"},\n    [113] = {\"@Goron City/Shop/Item 3\"},\n" +
+                        "    [200] = {\"@Forest Temple/Basement Side Room/Gold Skulltula\"},\n" + spotMappings + "\n}\n"
+                });
+            var pack = await Task.Run(() => PopTracker.PopTrackerPackLoader.InspectZipPack(zip)) ?? throw new InvalidOperationException("the test pack wasn't read");
+            Expect(pack.ItemsByCode.TryGetValue("hookshot", out var hookshot) && hookshot.Name == "Progressive Hookshot",
+                "a progressive item isn't found by its stage's code (PopTracker finds it so)");
+            Expect(pack.UnusedMaps().SetEquals(new[] { "Broken" }), $"the map no tab shows and no pin is on isn't the unused one: {string.Join(", ", pack.UnusedMaps())}");
+
+            // The scripts: Lua 5.3's operators, %s of nil and true, the overlay methods, and a watch on the stage's code.
+            var host = PopTracker.PackScriptHost.Load(pack) ?? throw new InvalidOperationException("the pack has no scripts");
+            await Task.Run(() =>
+            {
+                host.Initialize();
+                host.Clear(1, 0, new Newtonsoft.Json.Linq.JObject());
+            });
+            Expect(host.Errors.Count == 0 && !host.Stopped, "the scripts didn't run cleanly: " + string.Join("; ", host.Errors));
+            Expect(host.StateOf("hookshot")?.Active == true && host.StateOf("shield")?.Active == true,
+                "Lua 5.3's operators, string.format of nil and true, or the watch on a stage's code didn't work as in PopTracker");
+
+            var names = new PopTracker.GameNameTable
+            {
+                Game = "Self Test Game P",
+                Locations = new Dictionary<string, long>
+                {
+                    ["KF Shop Item 1"] = 101,
+                    ["KF Shop Item 2"] = 102,
+                    ["KF Shop Item 3"] = 103,
+                    ["GC Shop Item 1"] = 111,
+                    ["GC Shop Item 2"] = 112,
+                    ["GC Shop Item 3"] = 113,
+                    ["Forest Temple GS Basement"] = 200,
+                },
+                Items = new Dictionary<string, long> { ["Hookshot"] = 50, ["Shield"] = 51 }
+            };
+            foreach (int n in Enumerable.Range(1, 16)) names.Locations[$"Field Spot {n}"] = 300 + n;
+            var report = await Task.Run(() => PopTracker.PackDoctor.Analyze(PopTracker.PackDoctor.Prepare(pack, names)));
+            var index = report.Index;
+            string Shown(long id) => index.ByLocation.TryGetValue(id, out var m) ? string.Join(", ", m.Select(x => x.Pin.FullPath + "/" + x.Section?.Name + ":" + x.Source)) : "";
+            // Each shop's "Item 1" takes its neighbours' form, not one shop's name for all.
+            Expect(Shown(101) == "Kokiri Forest/Shop/Item 1:NeighbourName" && Shown(111) == "Goron City/Shop/Item 1:NeighbourName",
+                $"the shops' \"Item 1\" weren't named like their neighbours: 101 [{Shown(101)}] 111 [{Shown(111)}]");
+            // The overview's copy follows its own name to the room the ref meant.
+            Expect(index.RepairedReferences.Count == 1 && index.UnresolvedReferences.Count == 0 && Shown(200).Contains("Overworld/Forest Temple/Basement Side Room - Gold Skulltula:MappingScript"),
+                $"the reference wasn't repaired from the section's own name: [{Shown(200)}]");
+            // The goal the pack's mapping doesn't name either is said as such.
+            Expect(report.Findings.Any(f => f.Key == "loc:untracked:Castle/Arena|Ganon" && f.Severity == PopTracker.FindingSeverity.Info)
+                && !report.Findings.Any(f => f.Key.StartsWith("loc:unmatched:", StringComparison.Ordinal))
+                && report.Findings.Any(f => f.Key == "loc:neighbours") && report.Findings.Any(f => f.Key == "loc:refs" && f.Details.Any(d => d.Contains("Atlas followed"))),
+                "the Doctor's location findings aren't the expected ones: " + string.Join(", ", report.Findings.Select(f => f.Key)));
+            // Tiles: the stage's code links by the stage's name; the label and the switch aren't tiles to link.
+            Expect(index.ItemIdsFor("hookshot").SequenceEqual(new long[] { 50 }) && report.TilesTotal == 2 && report.TilesLinked == 2
+                && report.TileDecorations == 1 && report.TileSwitches == 1 && !report.Findings.Any(f => f.Key.StartsWith("tile:", StringComparison.Ordinal)),
+                $"the grid's tiles weren't read as PopTracker reads them ({report.TilesLinked} of {report.TilesTotal}, {report.TileDecorations} labels, {report.TileSwitches} switches): "
+                + string.Join(", ", report.Findings.Where(f => f.Key.StartsWith("tile:", StringComparison.Ordinal)).Select(f => f.Key)));
+            Expect(report.Findings.Any(f => f.Key == "map:unused:Broken") && !report.Findings.Any(f => f.Key == "map:nobg:Broken"),
+                "the unused map was reported as a missing picture: " + string.Join(", ", report.Findings.Where(f => f.Key.StartsWith("map:", StringComparison.Ordinal)).Select(f => f.Key)));
+
+            // Two shops' "Item 1" choosing one location clash (eight shops aren't one check shown eight times), while an
+            // overview's copy named as the location is the same check.
+            PopTracker.Finding Choosing(string pinPath, string section, long id, string label) => new PopTracker.Finding
+            {
+                Key = "loc:unmatched:" + pinPath + "|" + section,
+                Subject = "link:" + pinPath + "|" + section,
+                Actions = PopTracker.FindingActions.LinkLocation,
+                Query = section,
+                Suggestions = { new PopTracker.Suggestion { Id = id, Label = label, Score = 0.9 } }
+            };
+            var kf = Choosing("Somewhere/Shop A", "Item 9", 900, "KF Shop Item 9");
+            var gc = Choosing("Elsewhere/Shop B", "Item 9", 900, "KF Shop Item 9");
+            var view = Choosing("Overview/Lake", "Fishing Prize", 901, "Fishing Prize");
+            var area = Choosing("Lake/Pond", "Fishing Prize", 901, "Fishing Prize");
+            var clashes = PopTracker.PackDoctor.Conflicts(report, new List<PopTracker.Finding> { kf, gc, view, area }, f => f.Suggestions[0]);
+            Expect(clashes.Count == 1 && (clashes.ContainsKey(kf.Key) || clashes.ContainsKey(gc.Key)),
+                "one check was told from two by its generic name: " + string.Join("; ", clashes.Select(c => c.Key + " " + c.Value)));
+
+            // Atlas's own links that sent two different checks to one location are taken back, and a tile it linked when the
+            // code seemed undefined (the code is on the item's stage); the user's own aren't.
+            string key = PopTracker.PackFixes.KeyFor(pack);
+            try
+            {
+                PopTracker.PackFixes.Edit(key, "self-test links", file =>
+                {
+                    file.Links.Add(new PopTracker.LocationLinkFix { Subject = "link:Kokiri Forest/Shop|Item 1", PinPath = "Kokiri Forest/Shop", SectionName = "Item 1", ApLocationId = 101, ApLocationName = "KF Shop Item 1", Source = "suggested" });
+                    file.Links.Add(new PopTracker.LocationLinkFix { Subject = "link:Goron City/Shop|Item 1", PinPath = "Goron City/Shop", SectionName = "Item 1", ApLocationId = 101, ApLocationName = "KF Shop Item 1", Source = "suggested" });
+                    file.Links.Add(new PopTracker.LocationLinkFix { Subject = "link:Castle/Arena|Ganon", PinPath = "Castle/Arena", SectionName = "Ganon", ApLocationId = 103, ApLocationName = "KF Shop Item 3" });
+                    file.Links.Add(new PopTracker.LocationLinkFix { Subject = "link:Field/Spots|Spot 1", PinPath = "Field/Spots", SectionName = "Spot 1", ApLocationId = 103, ApLocationName = "KF Shop Item 3" });
+                    file.Tiles.Add(new PopTracker.TileFix { Subject = "tile:hookshot", Code = "hookshot", ApItemId = 50, ApItemName = "Hookshot", Source = "automatic", AuthorStamp = "(absent)" });
+                    file.Tiles.Add(new PopTracker.TileFix { Subject = "tile:shield", Code = "shield", ApItemId = 51, ApItemName = "Shield", Source = "automatic", AuthorStamp = PopTracker.PackFixes.AuthorStamp(pack, "tile:shield") });
+                });
+                int forgotten = PopTracker.PackDoctorService.ForgetStaleGuesses(key, pack);
+                var left = PopTracker.PackFixes.Get(key).Links.Select(l => l.Subject).Concat(PopTracker.PackFixes.Get(key).Tiles.Select(t => t.Subject)).OrderBy(s => s, StringComparer.Ordinal).ToList();
+                Expect(forgotten == 3 && left.SequenceEqual(new[] { "link:Castle/Arena|Ganon", "link:Field/Spots|Spot 1", "tile:shield" }),
+                    $"Atlas's stale guesses weren't taken back alone ({forgotten} taken back; left: {string.Join(", ", left)})");
+            }
+            finally
+            {
+                PopTracker.PackFixes.Reset(key);
+                SafeFile.Delete(zip);
+            }
+        }
+
         private static async Task PackScriptsUseTheirOwnCompiledFiles()
         {
             string zip = Scratch("selftest_modules.zip");

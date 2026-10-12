@@ -635,13 +635,14 @@ namespace AP_Atlas.UI
             using var __perf = AP_Atlas.Core.PerfMonitor.Measure("Map Tracker: load pack");
             _pack = pack;
             _index = index;
+            _unusedMaps = pack.UnusedMaps();
             if (_emptyStateContainer != null) _emptyStateContainer.Visible = false;
             if (_canvasPanel != null) _canvasPanel.Visible = true;
             BuildLocationMaps();
             RefreshMapList();
             if (_pack.Maps.Count > 0 && (string.IsNullOrEmpty(_currentMapId) || !_pack.Maps.ContainsKey(_currentMapId)))
             {
-                SwitchMap(_pack.Maps.Keys.First());
+                SwitchMap(_pack.Maps.Keys.FirstOrDefault(k => !_unusedMaps.Contains(k)) ?? _pack.Maps.Keys.First());
             }
             else if (!string.IsNullOrEmpty(_currentMapId))
             {
@@ -804,7 +805,8 @@ namespace AP_Atlas.UI
                 n.QueueFree();
             }
             if (_pack == null) return;
-            var sortedMaps = _pack.Maps.Values.OrderBy(m => m.Name).ToList();
+            // Maps the pack declares but never shows (no tab, no pin) stay out of the list, as PopTracker never shows them.
+            var sortedMaps = _pack.Maps.Values.Where(m => !_unusedMaps.Contains(m.Id)).OrderBy(m => m.Name).ToList();
             foreach (var map in sortedMaps)
             {
                 var btn = new Button { SizeFlagsHorizontal = SizeFlags.ExpandFill };
@@ -838,6 +840,8 @@ namespace AP_Atlas.UI
             RefreshMapListCounters();
             OnDataRefreshed?.Invoke();
         }
+        private HashSet<string> _unusedMaps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         private void RefreshMapListCounters()
         {
             using var __perf = AP_Atlas.Core.PerfMonitor.Measure("Map Tracker: map list counters");

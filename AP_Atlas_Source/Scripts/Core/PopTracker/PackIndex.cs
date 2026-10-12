@@ -18,6 +18,11 @@ namespace AP_Atlas.Core.PopTracker
         ComposedName,
         /// <summary>A fix the user made in the Pack Doctor.</summary>
         UserFix,
+        /// <summary>
+        /// Named like the pin's other sections: the mapping gives "Item 2" … "Item 8" of Kokiri Forest's shop the game's
+        /// "KF Shop Item 2" … "KF Shop Item 8", so "Item 1" is "KF Shop Item 1".
+        /// </summary>
+        NeighbourName,
     }
 
     /// <summary>
@@ -59,6 +64,21 @@ namespace AP_Atlas.Core.PopTracker
         /// ordinary sections.
         /// </summary>
         public List<(PopTrackerLocation Pin, PopTrackerSection Section)> UnresolvedReferences { get; } = new List<(PopTrackerLocation, PopTrackerSection)>();
+
+        /// <summary>
+        /// Sections whose "ref" isn't in the pack but whose own name says which section it means: "Basement Side Room - Gold
+        /// Skulltula" with ref "Forest Temple/Basement Chest Room/Gold Skulltula" shows "Forest Temple/Basement Side
+        /// Room/Gold Skulltula" (the area from the ref, the room from its name, the same check). With the path Atlas used.
+        /// </summary>
+        public List<(PopTrackerLocation Pin, PopTrackerSection Section, string Repaired)> RepairedReferences { get; } = new List<(PopTrackerLocation, PopTrackerSection, string)>();
+
+        /// <summary>
+        /// Whether the pack's location mapping names this section (or section-less pin) at all, an id the game doesn't have
+        /// included: a section it never names is one the pack doesn't autotrack either.
+        /// </summary>
+        public bool MappingNames(PopTrackerLocation pin, PopTrackerSection section) => _mappingNamed.Contains((pin, section));
+
+        private readonly HashSet<(PopTrackerLocation, PopTrackerSection)> _mappingNamed = new HashSet<(PopTrackerLocation, PopTrackerSection)>();
 
         /// <summary>How many sections refer to another one that's in the pack (they show its check, linked or not).</summary>
         public int ReferenceSections => _refTargets.Count;
@@ -128,6 +148,8 @@ namespace AP_Atlas.Core.PopTracker
             //    section can still be paired by name below.
             foreach (var kv in Pack.LocationMappingById)
             {
+                foreach (var path in kv.Value)
+                    if (TargetOf(ResolvePath(path, pinsByPath, pinsByName)) is { } named) _mappingNamed.Add((named.Pin, named.Section));
                 if (_locationNames.Count > 0 && !_locationNames.ContainsKey(kv.Key))
                 {
                     UnknownMappedLocationIds.Add(kv.Key);
@@ -170,6 +192,7 @@ namespace AP_Atlas.Core.PopTracker
             foreach (var path in Pack.UnkeyedLocationPaths)
             {
                 var match = TargetOf(ResolvePath(path, pinsByPath, pinsByName));
+                if (match != null) _mappingNamed.Add((match.Value.Pin, match.Value.Section));
                 string name = LocationNameFromPath(path);
                 if (match == null || name == null || !_locationIdsByName.TryGetValue(name, out long id))
                 {
@@ -202,6 +225,34 @@ namespace AP_Atlas.Core.PopTracker
                 }
             }
 
+            // 3b. Sections named like their neighbours: when the mapping gives two or more of a pin's sections game names that
+            //     are one prefix and the section's name ("KF Shop " + "Item 2"), a section left over takes the same prefix
+            //     ("KF Shop Item 1"), if the game has that location and no pin shows it yet. (The Ship of Harkinian pack leaves
+            //     every shop's "Item 1" out of its mapping; by their own name alone, all eight looked like Kokiri Forest's.)
+            foreach (var pin in Pack.Locations)
+            {
+                if (pin.Sections == null || pin.Sections.Count < 3) continue;
+                var prefixes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                int named = 0;
+                foreach (var sec in pin.Sections)
+                {
+                    if (string.IsNullOrWhiteSpace(sec?.Name) || IsReference(sec)) continue;
+                    var ids = IdsFor(pin, sec);
+                    if (ids.Count != 1 || !ByLocation[ids[0]].Any(m => m.Pin == pin && m.Section == sec && m.Source == MatchSource.MappingScript)) continue;
+                    string game = LocationName(ids[0]) ?? "", own = sec.Name.Trim();
+                    if (game.Length <= own.Length || !game.EndsWith(own, StringComparison.OrdinalIgnoreCase)) continue;
+                    prefixes.Add(game.Substring(0, game.Length - own.Length));
+                    named++;
+                }
+                if (named < 2 || prefixes.Count != 1) continue;
+                string prefix = prefixes.First();
+                foreach (var sec in pin.Sections)
+                {
+                    if (string.IsNullOrWhiteSpace(sec?.Name) || IsReference(sec) || IsHintMarker(pin, sec) || HoldsNoCheck(sec) || IsCovered(pin, sec)) continue;
+                    if (_locationIdsByName.TryGetValue(prefix + sec.Name.Trim(), out long id) && !ByLocation.ContainsKey(id)) Add(id, pin, sec, MatchSource.NeighbourName);
+                }
+            }
+
             // 4. A section holding no check (a boss or entrance toggle) shows a location only when nothing else does and its
             //    name is the location's: placed is better than nowhere (Super Metroid's "Ridley" pin, a boss toggle, is the
             //    only place the game's "Ridley" can go).
@@ -222,6 +273,11 @@ namespace AP_Atlas.Core.PopTracker
                 {
                     if (sec == null || string.IsNullOrWhiteSpace(sec.Ref)) continue;
                     var target = FollowReference(sec, pinsByPath, pinsByName);
+                    if (target == null && RepairReference(sec, pinsByPath, pinsByName) is { } repaired)
+                    {
+                        target = repaired.Target;
+                        RepairedReferences.Add((pin, sec, repaired.Path));
+                    }
                     if (target == null)
                     {
                         UnresolvedReferences.Add((pin, sec));
@@ -254,6 +310,26 @@ namespace AP_Atlas.Core.PopTracker
                 current = ResolvePath("@" + target.Ref.Trim().TrimStart('@'), pinsByPath, pinsByName);
             }
             return null;
+        }
+
+        /// <summary>
+        /// The section a reference that isn't in the pack means, from the section's own name: packs name an overview map's
+        /// copy "Room - Check" after the section it shows, so the ref's area (its first part), the room and the check from the
+        /// name, make the path. Only when that section is in the pack and is the same check the ref names (its last part).
+        /// </summary>
+        private static ((PopTrackerLocation Pin, PopTrackerSection Section) Target, string Path)? RepairReference(PopTrackerSection section,
+            Dictionary<string, PopTrackerLocation> pinsByPath, Dictionary<string, List<PopTrackerLocation>> pinsByName)
+        {
+            var parts = section.Ref.Trim().TrimStart('@').Split('/');
+            string own = (section.Name ?? "").Trim();
+            int dash = own.LastIndexOf(" - ", StringComparison.Ordinal);
+            if (parts.Length < 2 || dash <= 0) return null;
+            string room = own.Substring(0, dash).Trim(), check = own.Substring(dash + 3).Trim();
+            if (!string.Equals(check, parts[^1].Trim(), StringComparison.OrdinalIgnoreCase)) return null;
+            string path = parts[0].Trim() + "/" + room + "/" + check;
+            var target = ResolvePath("@" + path, pinsByPath, pinsByName);
+            if (target == null || target.Value.Section == null || !string.IsNullOrWhiteSpace(target.Value.Section.Ref)) return null;
+            return (target.Value, path);
         }
 
         /// <summary>A mapping path that lands on a reference stands for the section the reference shows.</summary>
@@ -473,6 +549,15 @@ namespace AP_Atlas.Core.PopTracker
             {
                 if (_itemIdsByCode.ContainsKey(kv.Key)) continue;
                 if (kv.Value?.Name != null && idsByName.TryGetValue(kv.Value.Name, out long id)) AddItemCode(kv.Key, id);
+                // A stage's code: the stage that has it may be named for the game's item ("Hookshot" of "Progressive Hookshot").
+                else if (kv.Value?.Stages != null)
+                    foreach (var stage in kv.Value.Stages)
+                        if (stage?.Name != null && (stage.Codes ?? "").Split(',').Any(c => string.Equals(c.Trim(), kv.Key, StringComparison.OrdinalIgnoreCase))
+                            && idsByName.TryGetValue(stage.Name, out long stageId))
+                        {
+                            AddItemCode(kv.Key, stageId);
+                            break;
+                        }
             }
         }
 

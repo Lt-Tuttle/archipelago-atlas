@@ -345,7 +345,7 @@ namespace AP_Atlas.Core.EngineSetup
                                 foreach (long id in slot.Session.Locations.AllLocations.Where(id => !doctor.Index.ByLocation.ContainsKey(id)))
                                 {
                                     string name = slot.Session.Locations.GetLocationNameFromId(id) ?? id.ToString(System.Globalization.CultureInfo.InvariantCulture);
-                                    rawFindings.Add(new SoloRawFinding("seed:unplaced:" + id, "Locations", "Warning", name));
+                                    rawFindings.Add(new SoloRawFinding("seed:unplaced:" + id, "Locations", "Warning", $"\"{name}\" has no pin on any map"));
                                 }
                         }
                         var host = slot?.PackScripts;

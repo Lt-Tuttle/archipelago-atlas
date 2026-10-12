@@ -129,6 +129,7 @@ namespace AP_Atlas.Core
             await TestAsync("Pack scripts: code nested deeper than Atlas compiles is refused, never compiled; every loader compiles that way, with room to spare", PackScriptsCompileSafely);
             await TestAsync("Map packs: a file or image too big to read safely is refused before it fills memory; the rest of the pack works, and the user is told why", PackFilesCantFillMemory);
             await TestAsync("Pack Doctor: an analysis reads its own snapshot, never the fixes as they change", PackDoctorReadsASnapshot);
+            await TestAsync("Map packs read as PopTracker reads them: a progressive item by its stages' codes, labels and the pack's own switches aren't tiles, scripts in Lua 5.3 (its // and bitwise operators, %s of any value, overlay methods), each shop's \"Item 1\" named like its neighbours, a ref repaired from the section's own name, the goal the pack doesn't track said as such, a map no tab shows left out; Atlas's clashing guesses taken back", PacksReadAsPopTrackerReadsThem);
             await TestAsync("Pack scripts: the room's checked and missing ids and its seed are there to read (tables and text, as PopTracker gives them); Lua's \\u{} escapes read as their characters in mappings and scripts; a name shared by several locations is told apart by its detail", PackScriptsReadTheRoomAndTheEscapes);
             await TestAsync("Map packs: a section that refers to another shows its check (and follows a fix); a mapping the scripts build as they run is read as PopTracker reads it; names match however a slash is read, numbered copies by their number; a section hosting an item holds no check, and a location mapped to that item shows there", PackReferencesAndBuiltMappings);
             await TestAsync("Key Items: Atlas's layout pick is the layout that fits the view and fills it best (the pack's own and Atlas's built ones alike; a tie keeps the pack's), else the least overflowing", KeyItemsAutoLayoutPicks);
@@ -600,8 +601,10 @@ namespace AP_Atlas.Core
                         entry.SectionsLinked = report.SectionsLinked;
                         entry.SectionsTotal = report.SectionsTotal;
                         // What the Doctor's automatic pass links by itself on the pack's first check, and what's left for a person.
+                        // (Pin sections only: they're what "links fewer checks" compares; a tile the pack now defines itself
+                        // needs no link of the Doctor's.)
                         var sure = PopTracker.PackDoctor.ExactMatches(report);
-                        entry.SureLinks = sure.Count;
+                        entry.SureLinks = sure.Count(f => f.Actions.HasFlag(PopTracker.FindingActions.LinkLocation));
                         entry.ToReview = PopTracker.PackDoctor.Recommendations(report).Count - sure.Count;
                         // ATLAS_SELFTEST_PACKS_DETAIL=1 lists what's left (local investigation of the matching rules).
                         if (System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_PACKS_DETAIL") == "1")
@@ -637,6 +640,8 @@ namespace AP_Atlas.Core
                               $"the most memory {scripts.Peak.Memory / 1048576.0:0.0} MB, the longest {scripts.Peak.Time.TotalMilliseconds:0} ms; nested {scripts.DeepestNesting} deep at most; " +
                               $"{scripts.Errors.Count} script error(s)" +
                               (scripts.Stopped ? $" · STOPPED: {scripts.StopReason}" : ""));
+                        if (System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_PACKS_DETAIL") == "1")
+                            foreach (string error in scripts.Errors.Take(12)) Print($"    script error: {error}");
                     }
                 }
                 catch (Exception ex) { entry.Note = "the pack's scripts crashed Atlas's host: " + ex.GetType().Name + ": " + ex.Message; }

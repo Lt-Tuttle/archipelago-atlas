@@ -137,6 +137,36 @@ namespace AP_Atlas.Core.PopTracker
             }
             return list;
         }
+
+        /// <summary>
+        /// Every code the item answers to: its own, then each stage's (a progressive item's codes are often on its stages
+        /// only, as Ship of Harkinian's hookshot and spiritual stones are; PopTracker finds the item by any of them).
+        /// </summary>
+        public List<string> AllCodes()
+        {
+            var list = GetCodes();
+            foreach (var stage in Stages ?? new List<PopTrackerItemStage>())
+                foreach (var part in (stage?.Codes ?? "").Split(','))
+                {
+                    string code = part.Trim();
+                    if (code.Length > 0 && !list.Contains(code)) list.Add(code);
+                }
+            return list;
+        }
+
+        /// <summary>The pack file the item came from ("items/settings_main.json"); not part of the pack's JSON.</summary>
+        [JsonIgnore] public string SourceFile { get; set; } = "";
+
+        /// <summary>
+        /// One of the pack's own switches rather than a game item: a code that starts with "setting", or an item from a
+        /// settings file (Ship of Harkinian's "Auto Tab" and "Show Out of Logic Checks"). No Archipelago item lights it.
+        /// </summary>
+        public bool IsPackSwitch(string code) =>
+            (code ?? "").StartsWith("setting", System.StringComparison.OrdinalIgnoreCase)
+            || System.IO.Path.GetFileName(SourceFile ?? "").Contains("setting", System.StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>A picture or label in the grid (PopTracker's "static" items: a dungeon's name over its column): nothing to track.</summary>
+        public bool IsDecoration => string.Equals(Type, "static", System.StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>One itemgrid from the pack's layouts, with the group it sits under.</summary>

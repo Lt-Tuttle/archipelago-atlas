@@ -71,6 +71,28 @@ namespace AP_Atlas.Core.PopTracker
         /// "tabbed" layouts). A script switches the window to a tab by its title (Tracker:UiHint "ActivateTab").
         /// </summary>
         public Dictionary<string, List<string>> TabMaps { get; set; } = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// The maps the pack declares but never shows: no pin is on them and none of its tabs shows them (Ship of
+        /// Harkinian's "Gift from Rauru" and "Links Pocket", left without pictures). Atlas leaves them out of the map list.
+        /// A pack whose layouts name no maps at all has none (Atlas can't tell which it shows).
+        /// </summary>
+        public HashSet<string> UnusedMaps()
+        {
+            var unused = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (TabMaps.Count == 0) return unused;
+            var shown = new HashSet<string>(TabMaps.Values.SelectMany(m => m), StringComparer.OrdinalIgnoreCase);
+            var pinned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var pin in Locations)
+            {
+                if (!string.IsNullOrEmpty(pin.MapRef)) pinned.Add(pin.MapRef);
+                foreach (var ml in pin.MapLocations ?? new List<PopTrackerMapLocation>()) if (!string.IsNullOrEmpty(ml.Map)) pinned.Add(ml.Map);
+            }
+            foreach (var map in Maps.Values)
+                if (!shown.Contains(map.Id) && !shown.Contains(map.Name ?? "") && !pinned.Contains(map.Id) && !pinned.Contains(map.Name ?? "")) unused.Add(map.Id);
+            return unused;
+        }
+
         public List<PopTrackerLocation> Locations { get; set; } = new List<PopTrackerLocation>();
 
         /// <summary>From item_mapping.lua: Archipelago item id → pack item codes.</summary>
@@ -391,7 +413,8 @@ namespace AP_Atlas.Core.PopTracker
                                 continue;
                             }
                             if (item == null) continue;
-                            foreach (var code in item.GetCodes())
+                            item.SourceFile = entry.FullName.Substring(Math.Min(entry.FullName.Length, rootPrefix.Length));
+                            foreach (var code in item.AllCodes())
                             {
                                 // A code shared by several items (e.g. "cinders") keeps the first; specific codes stay unique.
                                 if (!pack.ItemsByCode.ContainsKey(code)) pack.ItemsByCode[code] = item;

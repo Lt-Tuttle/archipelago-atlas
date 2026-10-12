@@ -133,7 +133,8 @@ public class SoloTestReportTests
             "script:load", "script:none", "script:stopped", "script:error", "script:unsupported", "script:follows-maps", "script:writes",
             "script:unread-files", "script:noautotracking", "settings:noslotdata", "settings:summary", "settings:missing", "grid:hidden",
             "tile:unknown", "tile:unlinked", "tile:noimage", "itemmap:stale", "loc:unmatched", "loc:loose", "locmap:dangling", "locmap:stale",
-            "loc:unplaced", "loc:composed", "loc:hints", "map:nobg", "map:empty", "map:outside",
+            "loc:unplaced", "loc:composed", "loc:hints", "loc:neighbours", "loc:untracked", "loc:refs", "loc:no-check",
+            "map:nobg", "map:empty", "map:outside", "map:unused",
             "logic:differs", "sphere0:notreached", "sphere0:beyond", "seed:unplaced", "setup:guide",
         };
         var missing = kinds.Where(k => !FindingCatalog.Kinds.Contains(k)).ToList();
@@ -143,7 +144,7 @@ public class SoloTestReportTests
         Assert.Equal("file:nomapping", FindingCatalog.KindOf("file:nomapping"));
         Assert.Equal("auto", FindingCatalog.KindOf("auto:tile:x"));
         Assert.Equal("brand", FindingCatalog.KindOf("brand:new"));
-        foreach (string fixable in new[] { "loc:unmatched", "tile:unlinked", "tile:unknown" }) Assert.False(string.IsNullOrEmpty(FindingCatalog.ToDo(fixable)), fixable + " has no what-to-do line");
+        foreach (string fixable in new[] { "loc:unmatched", "loc:untracked", "tile:unlinked", "tile:unknown" }) Assert.False(string.IsNullOrEmpty(FindingCatalog.ToDo(fixable)), fixable + " has no what-to-do line");
         Assert.Null(FindingCatalog.ToDo("map:nobg"));
         Assert.True(FindingCatalog.MattersToSeed(new long[] { 5, 9 }, new HashSet<long> { 9 }));
         Assert.False(FindingCatalog.MattersToSeed(new long[] { 5 }, new HashSet<long> { 9 }));

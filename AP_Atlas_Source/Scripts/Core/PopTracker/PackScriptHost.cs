@@ -433,6 +433,7 @@ namespace AP_Atlas.Core.PopTracker
         {
             if (code.StartsWith(BinaryChunk, StringComparison.Ordinal)) throw new ScriptRuntimeException("Atlas doesn't load compiled (binary) chunks");
             code = LuaText.ExpandUnicodeEscapes(code); // Lua 5.3's \u{XXXX}, which MoonSharp (5.2) doesn't know
+            code = Lua53Operators.Rewrite(code); // Lua 5.3's // and bitwise operators, as calls (InstallLua53Operators)
             int depth = LuaNesting.Depth(code);
             if (depth > DeepestNesting) DeepestNesting = depth;
             if (depth > MaxNesting) throw new ScriptRuntimeException($"nested {depth:N0} levels deep, deeper than Atlas compiles ({MaxNesting:N0})");
@@ -755,6 +756,21 @@ namespace AP_Atlas.Core.PopTracker
                 double separator = args.Count > 2 && args[2].Type == DataType.String ? args[2].String.Length : 0;
                 _watchdog.GuardSize((args[0].String.Length + separator) * n * 4);
             });
+            // Lua 5.3 writes any value for %s (as tostring does), and packs' log lines pass nil (an item name the server
+            // didn't send) or a table; MoonSharp takes only strings and numbers, and its error ended the whole handler.
+            var format = strings.Get("format").Callback.ClrCallback;
+            strings["format"] = Callback((context, arguments) =>
+            {
+                var values = arguments.GetArray();
+                for (int i = 1; i < values.Length; i++)
+                {
+                    var v = values[i];
+                    if (v.Type is DataType.String or DataType.Number) continue;
+                    var meta = v.Type == DataType.Table ? context.GetMetamethod(v, "__tostring") : null;
+                    values[i] = meta != null ? context.Call(meta, v).ToScalar() : DynValue.NewString(v.ToPrintString());
+                }
+                return format(context, new CallbackArguments(values, arguments.IsMethodCall));
+            });
             var tables = _script.Globals.Get("table").Table;
             tables["concat"] = Checked(tables.Get("concat"), args =>
             {
@@ -873,6 +889,7 @@ namespace AP_Atlas.Core.PopTracker
         private void InstallApi()
         {
             var g = _script.Globals;
+            InstallLua53Operators(g);
             g["PopVersion"] = "0.32.0";
             g["AccessibilityLevel"] = MakeTable(new Dictionary<string, object>
             {
@@ -1022,6 +1039,38 @@ namespace AP_Atlas.Core.PopTracker
         /// library function's would be: pcall can catch it, and the interpreter unwinds. A stop, or the interpreter failing
         /// in Lua the function called in turn, passes through untouched.
         /// </summary>
+        /// <summary>
+        /// The functions Lua 5.3's operators become (<see cref="Lua53Operators"/>): floor division, and the bitwise operators
+        /// on 64-bit integers as Lua 5.3 has them (a string that reads as a number is one; a number with a fraction is an
+        /// error, as in Lua; shifts are logical, and 64 places or more give 0).
+        /// </summary>
+        private static void InstallLua53Operators(Table g)
+        {
+            static double Number(DynValue v, string what) =>
+                v.CastToNumber() ?? throw new ScriptRuntimeException($"attempt to perform {what} on a {v.Type.ToLuaTypeString()} value");
+            static long Integer(DynValue v)
+            {
+                double d = Number(v, "bitwise operation");
+                if (d != Math.Floor(d) || d < -9.2233720368547758E18 || d >= 9.2233720368547758E18) throw new ScriptRuntimeException("number has no integer representation");
+                return (long)d;
+            }
+            static long Shift(long x, long n) => n <= -64 || n >= 64 ? 0 : n >= 0 ? (long)((ulong)x << (int)n) : (long)((ulong)x >> (int)-n);
+            static DynValue Two(Func<long, long, long> f) => Callback(a => DynValue.NewNumber(f(Integer(a[0]), Integer(a[1]))));
+            g[Lua53Operators.FloorDivide] = Callback(a =>
+            {
+                double x = Number(a[0], "arithmetic"), y = Number(a[1], "arithmetic");
+                // Integers divided by zero are an error in Lua 5.3; numbers with fractions give infinity.
+                if (y == 0 && x == Math.Floor(x)) throw new ScriptRuntimeException("attempt to perform 'n//0'");
+                return DynValue.NewNumber(Math.Floor(x / y));
+            });
+            g[Lua53Operators.And] = Two((x, y) => x & y);
+            g[Lua53Operators.Or] = Two((x, y) => x | y);
+            g[Lua53Operators.Xor] = Two((x, y) => x ^ y);
+            g[Lua53Operators.ShiftLeft] = Two(Shift);
+            g[Lua53Operators.ShiftRight] = Two((x, n) => n == long.MinValue ? 0 : Shift(x, -n));
+            g[Lua53Operators.Not] = Callback(a => DynValue.NewNumber(~Integer(a[0])));
+        }
+
         private static DynValue Callback(Func<CallbackArguments, DynValue> f) => Callback((_, arguments) => f(arguments));
 
         /// <inheritdoc cref="Callback(Func{CallbackArguments, DynValue})"/>
@@ -1112,6 +1161,7 @@ namespace AP_Atlas.Core.PopTracker
                 string key = args[1].CastToString();
                 if (key == "Set") return Callback(a => { SetField(obj, a[1].CastToString(), a[2]); return DynValue.Nil; });
                 if (key == "Get") return Callback(a => obj.Fields.TryGetValue(a[1].CastToString() ?? "", out var v) ? v : DynValue.Nil);
+                if (OverlayField(key) is { } overlay) return Callback(a => { obj.Fields[overlay] = a.Count > 1 ? a[1] : DynValue.Nil; return DynValue.Nil; });
                 return key != null && obj.Fields.TryGetValue(key, out var value) ? value : DynValue.Nil;
             });
             meta["__newindex"] = Callback(args =>
@@ -1158,7 +1208,7 @@ namespace AP_Atlas.Core.PopTracker
                     _pendingReads.Clear();
                 }
             }
-            FireWatches(o.Def.GetCodes());
+            FireWatches(o.Def.AllCodes());
         }
 
         private void FireWatches(IEnumerable<string> codes)
@@ -1222,11 +1272,26 @@ namespace AP_Atlas.Core.PopTracker
                 return DynValue.Nil;
             });
             methods["Get"] = Callback(args => props.Get(args[1]));
+            foreach (string method in OverlayMethods)
+            {
+                string field = OverlayField(method);
+                methods[method] = Callback(args => { props.Set(field, args.Count > 1 ? args[1] : DynValue.Nil); return DynValue.Nil; });
+            }
             meta["__index"] = DynValue.NewTable(methods);
             item.MetaTable = meta;
             _luaItems.Add(item);
             return item;
         }
+
+        /// <summary>
+        /// PopTracker's methods for an item's overlay text (the number or label drawn over its tile): kept as the item's
+        /// fields ("Overlay", "OverlayBackground", …). Packs call them while they set up (Borderlands 2, Metroid Zero
+        /// Mission, Metroid Prime, VVVVVV), and without them the rest of that script didn't run.
+        /// </summary>
+        private static readonly string[] OverlayMethods = { "SetOverlay", "SetOverlayBackground", "SetOverlayFontSize", "SetOverlayAlign", "SetOverlayColor" };
+
+        private static string OverlayField(string method) =>
+            method != null && Array.IndexOf(OverlayMethods, method) >= 0 ? method.Substring("Set".Length) : null;
 
         private Table FindLuaItem(string code)
         {

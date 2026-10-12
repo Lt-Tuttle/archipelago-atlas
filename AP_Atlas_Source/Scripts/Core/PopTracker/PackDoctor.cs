@@ -72,6 +72,8 @@ namespace AP_Atlas.Core.PopTracker
         public List<Finding> Findings = new List<Finding>();
 
         public int TilesTotal, TilesLinked, TilesByScript;
+        /// <summary>Grid cells that aren't items to link: labels and pictures ("static" items), and the pack's own switches.</summary>
+        public int TileDecorations, TileSwitches;
         public int SectionsTotal, SectionsLinked, SectionsByScript, SectionsByName, SectionsLoose, SectionsByFix;
         public int ApLocationsTotal, ApLocationsPlaced;
         /// <summary>The locations of the seed a connected slot of this game plays (empty when none is connected): the Recommended tab puts their rows first.</summary>
@@ -248,7 +250,7 @@ namespace AP_Atlas.Core.PopTracker
             // Packs often show one check on two maps (an overview and the area map) under the same name; that's fine.
             // Differently named checks sharing one location is the sign of a wrong match.
             foreach (var group in fixes.Links.Where(l => l.ApLocationId != null).GroupBy(l => l.ApLocationId.Value)
-                         .Where(g => g.Select(l => SameCheckKey(l.PinPath, l.SectionName)).Distinct().Count() > 1))
+                         .Where(g => g.Select(l => CheckIdentity(l.PinPath, l.SectionName, l.ApLocationName)).Distinct().Count() > 1))
             {
                 string name = group.First().ApLocationName ?? $"location {group.Key}";
                 Add(new Finding
@@ -489,6 +491,13 @@ namespace AP_Atlas.Core.PopTracker
                 foreach (var code in grid.Rows.SelectMany(r => r).Where(c => !string.IsNullOrWhiteSpace(c)))
                 {
                     if (!seen.Add(code)) continue;
+                    if (pack.ItemsByCode.TryGetValue(code, out var shown) && (shown.IsDecoration || shown.IsPackSwitch(code)))
+                    {
+                        // A label or picture, or one of the pack's own switches: no game item lights it (as in PopTracker).
+                        if (shown.IsDecoration) report.TileDecorations++;
+                        else report.TileSwitches++;
+                        continue;
+                    }
                     if (!pack.ItemsByCode.TryGetValue(code, out var item))
                     {
                         add(new Finding
@@ -564,6 +573,18 @@ namespace AP_Atlas.Core.PopTracker
             return Normalize(name);
         }
 
+        /// <summary>
+        /// Which check a section is, to tell one check shown twice from two checks: a name that is the location's own names
+        /// it by itself (an overview's copy and the area's pin are one check), but a name that isn't ("Item 1", "Chest")
+        /// is only the same check on the same pin: eight shops' "Item 1" are eight checks.
+        /// </summary>
+        public static string CheckIdentity(string pinPath, string sectionName, string locationName)
+        {
+            string key = SameCheckKey(pinPath, sectionName);
+            if (!string.IsNullOrEmpty(locationName) && Normalize(locationName) == key) return key;
+            return Normalize(pinPath ?? "") + "|" + key;
+        }
+
         public static string TileImagePath(PopTrackerItem item, string code)
         {
             if (!string.IsNullOrEmpty(item.Img)) return item.Img;
@@ -596,6 +617,7 @@ namespace AP_Atlas.Core.PopTracker
                         case MatchSource.Name: report.SectionsByName++; break;
                         case MatchSource.LooseName: report.SectionsLoose++; break;
                         case MatchSource.ComposedName: report.SectionsByName++; break;
+                        case MatchSource.NeighbourName: report.SectionsByName++; break;
                         case MatchSource.UserFix: report.SectionsByFix++; break;
                     }
                 }
@@ -608,6 +630,9 @@ namespace AP_Atlas.Core.PopTracker
             var unplacedNames = locNames.Where(kv => unplaced.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
             report.UnplacedSample = unplacedNames.Values.OrderBy(n => n, StringComparer.Ordinal).Take(40).ToList();
 
+            // A pack whose own mapping names nearly every check (PopTracker's autotracking) but not this one: it doesn't
+            // track it either (Ship of Harkinian's "Ganon", the goal): said as such, not as a pairing Atlas missed.
+            bool mappingThorough = report.SectionsTotal >= 20 && report.SectionsByScript >= 0.8 * report.SectionsTotal;
             foreach (var (pin, sec) in index.UnmatchedSections())
             {
                 string name = sec != null && !string.IsNullOrEmpty(sec.Name) ? sec.Name : pin.Name;
@@ -615,14 +640,17 @@ namespace AP_Atlas.Core.PopTracker
                 if (string.IsNullOrWhiteSpace(name)) name = $"(unnamed pin in {pin.FullPath.TrimEnd('/')})";
                 string subject = $"link:{pin.FullPath}|{sec?.Name ?? ""}";
                 string reference = index.UnresolvedReferenceOf(pin.FullPath, sec?.Name ?? "");
+                bool untracked = reference == null && mappingThorough && !index.MappingNames(pin, sec);
                 add(new Finding
                 {
-                    Key = "loc:unmatched:" + pin.FullPath + "|" + (sec?.Name ?? ""),
+                    Key = (untracked ? "loc:untracked:" : "loc:unmatched:") + pin.FullPath + "|" + (sec?.Name ?? ""),
                     Category = "Locations",
-                    Severity = FindingSeverity.Warning,
-                    Title = $"Pin section \"{name}\" isn't linked to an Archipelago location",
+                    Severity = untracked ? FindingSeverity.Info : FindingSeverity.Warning,
+                    Title = untracked ? $"Pin section \"{name}\" isn't tracked by the pack's own mapping either" : $"Pin section \"{name}\" isn't linked to an Archipelago location",
                     Detail = reference != null
                         ? $"On pin '{pin.FullPath}'. It's meant to show the check of \"{reference}\", which isn't in the pack, so it stays red. Pick the location it stands for, or ignore it."
+                        : untracked
+                        ? $"On pin '{pin.FullPath}'. The pack's autotracking names nearly every check but not this one, and no location of the game has its name: in PopTracker too it doesn't clear by itself (often a goal or an event, like the final boss). Pick a location if it stands for one, or ignore it."
                         : $"On pin '{pin.FullPath}'. It stays red and never clears. Pick the location it stands for, or ignore it if the game doesn't have it.",
                     Subject = subject,
                     Actions = FindingActions.LinkLocation,
@@ -659,6 +687,19 @@ namespace AP_Atlas.Core.PopTracker
                     Details = composed.Take(200).Select(l => $"{l.Match.Pin.FullPath} / {l.Match.Section?.Name ?? l.Match.Pin.Name}  →  {index.LocationName(l.Id)}").ToList()
                 });
             }
+            var neighbours = index.ByLocation.SelectMany(kv => kv.Value.Where(m => m.Source == MatchSource.NeighbourName && m.Via == null).Select(m => (Id: kv.Key, Match: m))).ToList();
+            if (neighbours.Count > 0)
+            {
+                add(new Finding
+                {
+                    Key = "loc:neighbours",
+                    Category = "Locations",
+                    Severity = FindingSeverity.Info,
+                    Title = $"{neighbours.Count} pin sections were named like their neighbours",
+                    Detail = "The pack's mapping gives a pin's other sections the game's names (\"Item 2\" is \"KF Shop Item 2\"), but not these: each took the same form (\"Item 1\" is \"KF Shop Item 1\").",
+                    Details = neighbours.Take(200).Select(l => $"{l.Match.Pin.FullPath} / {l.Match.Section?.Name ?? l.Match.Pin.Name}  →  {index.LocationName(l.Id)}").ToList()
+                });
+            }
             if (index.HintMarkerSections > 0)
             {
                 add(new Finding
@@ -681,17 +722,22 @@ namespace AP_Atlas.Core.PopTracker
                     Detail = "Sections that host an item without an item_count (an entrance, a boss) count no check in PopTracker. Atlas leaves them out of the pairing and the counts; a location the pack's mapping sends to their item still shows there."
                 });
             }
-            if (index.UnresolvedReferences.Count > 0)
+            int badRefs = index.UnresolvedReferences.Count + index.RepairedReferences.Count;
+            if (badRefs > 0)
             {
-                // Said for the pack's author (the report includes it); the user's map is fine where the names paired.
+                // Said for the pack's author (the report includes it); the user's map is fine where Atlas followed the
+                // section's own name, or where the names paired.
                 add(new Finding
                 {
                     Key = "loc:refs",
                     Category = "Locations",
                     Severity = FindingSeverity.Info,
-                    Title = index.UnresolvedReferences.Count == 1 ? "A section refers to a section that isn't in the pack" : $"{index.UnresolvedReferences.Count} sections refer to sections that aren't in the pack",
-                    Detail = "A section with \"ref\" shows another section's check on its map. These name one the pack doesn't have, so Atlas paired them by their own names instead.",
-                    Details = index.UnresolvedReferences.Take(200).Select(r => $"{r.Pin.FullPath} / {r.Section.Name}  →  ref \"{r.Section.Ref}\"").ToList()
+                    Title = badRefs == 1 ? "A section refers to a section that isn't in the pack" : $"{badRefs} sections refer to sections that aren't in the pack",
+                    Detail = index.UnresolvedReferences.Count == 0
+                        ? "A section with \"ref\" shows another section's check on its map. These name one the pack doesn't have; each one's own name says which it means, and Atlas followed that."
+                        : "A section with \"ref\" shows another section's check on its map. These name one the pack doesn't have, so Atlas followed the section's own name where it says which it means, and paired the rest by their own names.",
+                    Details = index.RepairedReferences.Take(200).Select(r => $"{r.Pin.FullPath} / {r.Section.Name}  →  ref \"{r.Section.Ref}\" (Atlas followed \"{r.Repaired}\")")
+                        .Concat(index.UnresolvedReferences.Take(200).Select(r => $"{r.Pin.FullPath} / {r.Section.Name}  →  ref \"{r.Section.Ref}\"")).ToList()
                 });
             }
 
@@ -746,8 +792,23 @@ namespace AP_Atlas.Core.PopTracker
                 if (!string.IsNullOrEmpty(pin.MapRef)) Add(pinsByMap, pin.MapRef, (pin, pin.X, pin.Y));
                 foreach (var ml in pin.MapLocations ?? new List<PopTrackerMapLocation>()) if (!string.IsNullOrEmpty(ml.Map)) Add(pinsByMap, ml.Map, (pin, ml.X, ml.Y));
             }
+            var unused = pack.UnusedMaps();
             foreach (var map in pack.Maps.Values)
             {
+                if (unused.Contains(map.Id))
+                {
+                    // Declared, but no tab shows it and no pin is on it: PopTracker never shows it, so neither does Atlas.
+                    add(new Finding
+                    {
+                        Key = "map:unused:" + map.Id,
+                        Category = "Maps",
+                        Severity = FindingSeverity.Info,
+                        Title = $"Map \"{map.Name}\" isn't used by the pack",
+                        Detail = "None of the pack's tabs shows it and no pin is on it, so Atlas leaves it out of the map list" + (map.Background == null && !pack.HasMapBackground(map) ? " (its picture isn't in the pack either)." : "."),
+                        Subject = "map:" + map.Id
+                    });
+                    continue;
+                }
                 bool broken = pack.BrokenImages.Any(b => b.EndsWith(map.MapBg?.TrimStart('/') ?? "\0", StringComparison.OrdinalIgnoreCase));
                 // A background replaced by a fix, or the pack's own (decoded or not: the analysis needn't decode it).
                 if (map.Background == null && !pack.HasMapBackground(map))
@@ -846,8 +907,9 @@ namespace AP_Atlas.Core.PopTracker
                 var parts = f.Subject.Substring(f.Subject.IndexOf(':') + 1).Split('|');
                 // A section referring to one the pack doesn't have is meant to show another section's check: no clash.
                 if (report.Index.UnresolvedReferenceOf(parts[0], parts.Length > 1 ? parts[1] : "") != null) continue;
-                string mine = SameCheckKey(parts[0], parts.Length > 1 ? parts[1] : "");
-                var other = shownBy.FirstOrDefault(m => m.Via == null && SameCheckKey(m.Pin.FullPath, m.Section?.Name) != mine);
+                string location = report.Index.LocationName(id);
+                string mine = CheckIdentity(parts[0], parts.Length > 1 ? parts[1] : "", location);
+                var other = shownBy.FirstOrDefault(m => m.Via == null && CheckIdentity(m.Pin.FullPath, m.Section?.Name, location) != mine);
                 if (other != null) conflicts[f.Key] = $"Already shown by a different check: \"{other.Section?.Name ?? other.Pin.Name}\" on pin {other.Pin.FullPath}.";
             }
             foreach (var key in conflicts.Keys.ToList())
@@ -855,7 +917,14 @@ namespace AP_Atlas.Core.PopTracker
                 var f = recs.First(r => r.Key == key);
                 if (!conflicts[key].StartsWith("Same match as")) continue;
                 var rivals = recs.Where(r => r != f && r.Actions == f.Actions && chosen(r).Id == chosen(f).Id).ToList();
-                if (rivals.All(r => RowName(report, r).Equals(RowName(report, f), StringComparison.OrdinalIgnoreCase))) conflicts.Remove(key);
+                // One check shown twice is fine; for pin sections that's told by more than the name (see CheckIdentity).
+                string Identity(Finding row)
+                {
+                    if (!row.Actions.HasFlag(FindingActions.LinkLocation)) return RowName(report, row).ToLowerInvariant();
+                    var parts = row.Subject.Substring(row.Subject.IndexOf(':') + 1).Split('|');
+                    return CheckIdentity(parts[0], parts.Length > 1 ? parts[1] : "", chosen(row).Label);
+                }
+                if (rivals.All(r => Identity(r) == Identity(f))) conflicts.Remove(key);
             }
             return conflicts;
         }

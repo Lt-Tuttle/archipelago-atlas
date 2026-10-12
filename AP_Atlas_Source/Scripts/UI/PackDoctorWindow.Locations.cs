@@ -32,10 +32,14 @@ namespace AP_Atlas.UI
             bool Pass(params string[] texts) => _locationFilter.Length == 0 || texts.Any(t => t != null && t.IndexOf(_locationFilter, StringComparison.OrdinalIgnoreCase) >= 0);
 
             // ---- Unlinked sections ----
-            var unlinked = _report.Findings.Where(f => f.Key.StartsWith("loc:unmatched:") && !f.Ignored).ToList();
+            var unlinked = _report.Findings.Where(f => (f.Key.StartsWith("loc:unmatched:") || f.Key.StartsWith("loc:untracked:")) && !f.Ignored).ToList();
             box.AddChild(Kit.Heading($"Pin sections not linked to a location ({unlinked.Count})"));
             box.AddChild(Kit.Subtle("These pins stay red and never clear. Accept the suggested match, choose another, or ignore ones the game doesn't have."));
-            var strong = unlinked.Where(f => f.Suggestions.Count > 0 && f.Suggestions[0].Score >= 0.85).ToList();
+            // A strong match that clashes (another row would take the same location for a different check) isn't accepted
+            // in bulk: of eight shops' "Item 1", only one is Kokiri Forest's.
+            var suggested = unlinked.Where(f => f.Suggestions.Count > 0).ToList();
+            var clashes = PackDoctor.Conflicts(_report, suggested, f => f.Suggestions[0]);
+            var strong = suggested.Where(f => f.Suggestions[0].Score >= 0.85 && !clashes.ContainsKey(f.Key)).ToList();
             if (strong.Count > 0)
             {
                 box.AddChild(Kit.Button($"Accept all {strong.Count} strong suggestions (85%+)", "Link each to its best match in one step (undoable)", () =>
@@ -475,6 +479,8 @@ namespace AP_Atlas.UI
                     MatchSource.MappingScript => "script",
                     MatchSource.Name => "name",
                     MatchSource.LooseName => "partial name",
+                    MatchSource.ComposedName => "pin and section names",
+                    MatchSource.NeighbourName => "named like its neighbours",
                     _ => "your fix"
                 };
                 var row = new VBoxContainer();

@@ -108,6 +108,8 @@ namespace AP_Atlas.Core.PopTracker
                 // check with them in, which then lists what's left).
                 if (_settings?.PackDoctorAutoLink != false && fixes.AutoLinkedVersion != AutoLinkStamp(original) && names != null)
                 {
+                    int forgotten = ForgetStaleGuesses(key, original);
+                    if (forgotten > 0) Logger.LogInfo($"Pack Doctor took back {forgotten} of its own links in '{original.Manifest?.Name}' that its improved rules read differently; they link again where they can.");
                     int linked = AutoLinkExact(key, original, report);
                     if (linked > 0) Logger.LogInfo($"Pack Doctor linked {linked} exact name match{(linked == 1 ? "" : "es")} in '{original.Manifest?.Name}' by itself (Undo in the Doctor reverses them).");
                 }
@@ -148,10 +150,18 @@ namespace AP_Atlas.Core.PopTracker
         }
 
         /// <summary>
-        /// What the automatic pass is recorded against: the pack's version and Atlas's, so the pass runs again (for what's
-        /// still unlinked) when Atlas's rules improve, not only when the pack changes.
+        /// The Doctor's linking rules, counted: raised whenever they change (Atlas's version alone doesn't change between
+        /// builds of one beta), so the automatic pass runs again for packs checked before. 2: shops' "Item 1" named like
+        /// their neighbours, and generic names no longer taken for one check shown twice (2026-10-12).
         /// </summary>
-        public static string AutoLinkStamp(LoadedPack original) => (original?.Manifest?.GetActualVersion() ?? "") + " / Atlas " + AtlasVersion.Display;
+        public const int LinkRules = 2;
+
+        /// <summary>
+        /// What the automatic pass is recorded against: the pack's version, Atlas's and its linking rules', so the pass runs
+        /// again (for what's still unlinked, after taking back its own clashing guesses) when the rules improve, not only
+        /// when the pack changes.
+        /// </summary>
+        public static string AutoLinkStamp(LoadedPack original) => (original?.Manifest?.GetActualVersion() ?? "") + " / Atlas " + AtlasVersion.Display + " / rules " + LinkRules;
 
         /// <summary>
         /// Links every recommendation whose best match is exact and clashes with nothing (<see cref="PackDoctor.ExactMatches"/>)
@@ -198,6 +208,33 @@ namespace AP_Atlas.Core.PopTracker
                 file.AutoLinkedVersion = version;
             });
             return exact.Count;
+        }
+
+        /// <summary>
+        /// Atlas's own links (made by its automatic pass or by "Fix what Atlas can") that its improved rules read
+        /// differently, taken back when the rules change, so the rules link them again where they can: links that send
+        /// different checks to one location (all but one are wrong, and which can't be told: an earlier version linked every
+        /// shop's "Item 1" to Kokiri Forest's), and links made for what the pack has changed since as Atlas reads it (a tile
+        /// linked when its code seemed undefined, which Atlas now finds on the item's stage). The user's own links are never
+        /// touched. Main thread; returns how many it took back.
+        /// </summary>
+        public static int ForgetStaleGuesses(string key, LoadedPack original)
+        {
+            var file = PackFixes.Get(key);
+            static bool Guess(PackFixBase fix) => fix.Source is "automatic" or "suggested";
+            bool Changed(PackFixBase fix) => original != null && !string.IsNullOrEmpty(fix.AuthorStamp) && fix.AuthorStamp != PackFixes.AuthorStamp(original, fix.Subject);
+            var stale = file.Links.Where(l => l.ApLocationId != null && Guess(l)).GroupBy(l => l.ApLocationId.Value)
+                .Where(g => g.Select(l => PackDoctor.CheckIdentity(l.PinPath, l.SectionName, l.ApLocationName)).Distinct().Count() > 1)
+                .SelectMany(g => g.Select(l => l.Subject)).ToHashSet(StringComparer.Ordinal);
+            stale.UnionWith(file.Links.Where(l => Guess(l) && Changed(l)).Select(l => l.Subject));
+            stale.UnionWith(file.Tiles.Where(t => Guess(t) && Changed(t)).Select(t => t.Subject));
+            if (stale.Count == 0) return 0;
+            PackFixes.Edit(key, $"Take back {stale.Count} of Atlas's links that its improved rules read differently", f =>
+            {
+                f.Links.RemoveAll(l => Guess(l) && stale.Contains(l.Subject));
+                f.Tiles.RemoveAll(t => Guess(t) && stale.Contains(t.Subject));
+            });
+            return stale.Count;
         }
 
         /// <summary>What "Fix what Atlas can" did: the rows linked (name → match, score) and the rows set aside (ignored).</summary>
