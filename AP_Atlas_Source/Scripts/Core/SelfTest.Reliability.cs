@@ -896,6 +896,31 @@ namespace AP_Atlas.Core
             Expect(index.UnknownMappedLocationNames.SequenceEqual(new[] { "Not A Place" }) && index.UnknownMappedItemNames.SequenceEqual(new[] { "Not An Item" })
                 && report.Findings.Any(f => f.Key == "locmap:stale-names") && report.Findings.Any(f => f.Key == "itemmap:stale-names") && index.ItemIdsFor("shield").SequenceEqual(new long[] { 51 }),
                 "a mapping's names the game doesn't have weren't said, or the item mapping keyed by name didn't link: " + string.Join(", ", index.UnknownMappedLocationNames.Concat(index.UnknownMappedItemNames)));
+            // A mapping keyed by offsets from the game's ids (the pack's archipelago.lua subtracts a base before the lookup):
+            // the base is found and the keys read with it, for locations and for items.
+            string offsetZip = Scratch("selftest_lab1_offset.zip");
+            var offsetSections = string.Join(",", Enumerable.Range(1, 6).Select(n => $"{{\"name\":\"Crate {n}\"}}"));
+            string offsetLua = "LOCATION_MAPPING = {\n" + string.Join("", Enumerable.Range(0, 6).Select(n => $"    [{n}] = {{\"@Yard/Crate {n + 1}\"}},\n")) + "}\n";
+            string offsetItemLua = "ITEM_MAPPING = {\n" + string.Join("", Enumerable.Range(0, 4).Select(n => $"    [{n}] = {{\"tool{n}\", \"toggle\"}},\n")) + "}\n";
+            AP_Atlas.Core.Testing.FakeMapPack.Write(offsetZip, "Self-test offset pack", "Self Test Game O",
+                itemsJson: "[" + string.Join(",", Enumerable.Range(0, 4).Select(n => $"{{\"name\":\"Tool {n}\",\"type\":\"toggle\",\"img\":\"images/sword.png\",\"codes\":\"tool{n}\"}}")) + "]",
+                locationsJson: $"[{{\"name\":\"Yard\",\"sections\":[{offsetSections}],\"map_locations\":[{{\"map\":\"World\",\"x\":10,\"y\":10}}]}}]",
+                files: new Dictionary<string, string> { ["scripts/autotracking/location_mapping.lua"] = offsetLua, ["scripts/autotracking/item_mapping.lua"] = offsetItemLua });
+            var offsetPack = await Task.Run(() => PopTracker.PopTrackerPackLoader.InspectZipPack(offsetZip)) ?? throw new InvalidOperationException("the offset pack wasn't read");
+            var offsetNames = new PopTracker.GameNameTable
+            {
+                Game = "Self Test Game O",
+                Locations = Enumerable.Range(1, 6).ToDictionary(n => $"Yard Crate {n}", n => 7000L + n - 1),
+                Items = Enumerable.Range(0, 4).ToDictionary(n => $"Tool {n}", n => 9100L + n)
+            };
+            var offsetReport = await Task.Run(() => PopTracker.PackDoctor.Analyze(PopTracker.PackDoctor.Prepare(offsetPack, offsetNames)));
+            var offsetIndex = offsetReport.Index;
+            Expect(offsetIndex.LocationMappingOffset == 7000 && offsetIndex.ItemMappingOffset == 9100 && offsetIndex.UnknownMappedLocationIds.Count == 0 && offsetIndex.UnknownMappedItemIds.Count == 0
+                && offsetIndex.ByLocation.TryGetValue(7005, out var crate6) && crate6.Any(m => m.Source == PopTracker.MatchSource.MappingScript && m.Section?.Name == "Crate 6")
+                && offsetIndex.ItemIdsFor("tool3").SequenceEqual(new long[] { 9103 }) && offsetReport.Findings.Any(f => f.Key == "locmap:offset") && offsetReport.Findings.Any(f => f.Key == "itemmap:offset")
+                && !offsetReport.Findings.Any(f => f.Key == "locmap:stale" || f.Key.StartsWith("itemmap:stale", StringComparison.Ordinal)),
+                $"a mapping keyed by offsets from the game's ids wasn't read with its base: location base {offsetIndex.LocationMappingOffset}, item base {offsetIndex.ItemMappingOffset}, "
+                + $"{offsetIndex.UnknownMappedLocationIds.Count} + {offsetIndex.UnknownMappedItemIds.Count} unknown, tool3 [{string.Join(",", offsetIndex.ItemIdsFor("tool3"))}]");
             // The one location ending in the section's name after its area; two of a kind stay unmatched.
             Expect(Shown(3) == "Basement Pot 1:TailName" && Shown(5) == "" && Shown(6) == "", $"the only location ending in the section's name wasn't taken, or one of two was: 3 [{Shown(3)}] 5 [{Shown(5)}] 6 [{Shown(6)}]");
             Expect(report.Findings.Any(f => f.Key == "loc:tail" && f.Details.Count == 1), "the tail matches weren't listed for review");

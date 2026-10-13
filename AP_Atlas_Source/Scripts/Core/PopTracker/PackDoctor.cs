@@ -636,6 +636,17 @@ namespace AP_Atlas.Core.PopTracker
                     Details = index.UnknownMappedItemNames.Take(200).ToList()
                 });
             }
+            if (index.ItemMappingOffset is { } itemBase)
+            {
+                add(new Finding
+                {
+                    Key = "itemmap:offset",
+                    Category = "Key Items",
+                    Severity = FindingSeverity.Info,
+                    Title = $"item_mapping.lua is keyed by offsets from the game's item ids (base {itemBase})",
+                    Detail = "The pack's own script adds the base before it looks an id up; Atlas read the keys with it, so they are the game's items."
+                });
+            }
             foreach (var id in index.UnknownMappedItemIds)
             {
                 add(new Finding
@@ -886,6 +897,17 @@ namespace AP_Atlas.Core.PopTracker
                     Title = $"location_mapping.lua points at {index.DanglingPaths.Count} pins/sections that don't exist",
                     Detail = "Those Archipelago locations have no pin from the script. Names may still pair some of them.",
                     Details = index.DanglingPaths.Take(200).Select(d => (d.Id != null ? $"[{d.Id}] " : "") + d.Path).ToList()
+                });
+            }
+            if (index.LocationMappingOffset is { } locationBase)
+            {
+                add(new Finding
+                {
+                    Key = "locmap:offset",
+                    Category = "Locations",
+                    Severity = FindingSeverity.Info,
+                    Title = $"location_mapping.lua is keyed by offsets from the game's ids (base {locationBase})",
+                    Detail = "The pack's own script adds the base before it looks an id up; Atlas read the keys with it, so they are the game's locations."
                 });
             }
             if (index.UnknownMappedLocationIds.Count > 0)

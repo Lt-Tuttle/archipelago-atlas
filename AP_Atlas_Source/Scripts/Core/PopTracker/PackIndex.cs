@@ -61,6 +61,15 @@ namespace AP_Atlas.Core.PopTracker
         /// <summary>Mapping-script location ids that aren't locations of this game (stale script).</summary>
         public List<long> UnknownMappedLocationIds { get; } = new List<long>();
 
+        /// <summary>
+        /// The base added to location_mapping.lua's keys when they are offsets from the game's ids (the pack's script adds it
+        /// before the lookup: Streets of Rage, Tevi, CrossCode, Psychonauts, A Hat in Time), or null when the keys are the ids.
+        /// </summary>
+        public long? LocationMappingOffset { get; private set; }
+
+        /// <summary>The base added to item_mapping.lua's keys when they are offsets from the game's item ids, else null.</summary>
+        public long? ItemMappingOffset { get; private set; }
+
         /// <summary>Mapping-script item ids that aren't items of this game.</summary>
         public List<long> UnknownMappedItemIds { get; } = new List<long>();
 
@@ -115,6 +124,75 @@ namespace AP_Atlas.Core.PopTracker
         private readonly Dictionary<string, long> _locationIdsByName;
         private readonly Dictionary<long, string> _itemNames;
         private readonly Dictionary<string, List<long>> _itemIdsByCode = new Dictionary<string, List<long>>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// When a mapping's keys are offsets from the game's ids (see <see cref="MappingOffset"/>), shifts them onto the ids
+        /// and returns the base; otherwise leaves them and returns null.
+        /// </summary>
+        private static long? Rebase(Dictionary<long, string> names, Func<Dictionary<long, List<string>>[], bool> agrees, params Dictionary<long, List<string>>[] maps)
+        {
+            if (names.Count == 0) return null;
+            var keys = maps.SelectMany(m => m.Keys).Distinct().ToList();
+            long? by = MappingOffset.Infer(keys, names.Keys.ToList(), out _);
+            if (by == null) return null;
+            Shift(maps, by.Value);
+            // The numbers fit, but do the names? Another game numbered the same way (a pack named for the wrong game) fits
+            // by number alone; its sections name nothing of this game, and it's left as it was.
+            if (agrees(maps)) return by;
+            Shift(maps, -by.Value);
+            return null;
+        }
+
+        private static void Shift(Dictionary<long, List<string>>[] maps, long by)
+        {
+            foreach (var map in maps)
+            {
+                var shifted = map.Select(kv => (Key: unchecked(kv.Key + by), kv.Value)).ToList();
+                map.Clear();
+                foreach (var (key, value) in shifted)
+                {
+                    if (!map.TryGetValue(key, out var list)) map[key] = list = new List<string>();
+                    foreach (var v in value) if (!list.Contains(v)) list.Add(v);
+                }
+            }
+        }
+
+        /// <summary>The share of the mapping's known ids whose path ends in words of the game's name for it, or the reverse (a quarter is enough).</summary>
+        private bool PathsAgreeWithNames(Dictionary<long, List<string>> mappingById)
+        {
+            int known = 0, agree = 0;
+            foreach (var kv in mappingById)
+            {
+                if (!_locationNames.TryGetValue(kv.Key, out var name) || string.IsNullOrEmpty(name)) continue;
+                known++;
+                string looseName = Loose(name);
+                if (kv.Value.Any(path => path.Split('/').Reverse().Take(2).Select(Loose).Any(seg => seg.Length >= 3 && (looseName.Contains(seg, StringComparison.Ordinal) || seg.Contains(looseName, StringComparison.Ordinal)))))
+                    agree++;
+            }
+            return known > 0 && agree * 4 >= known;
+        }
+
+        /// <summary>The share of the mapping's known item ids whose codes (or the tiles they name) read as the game's name for the item.</summary>
+        private bool CodesAgreeWithNames(Dictionary<long, List<string>> itemMapping)
+        {
+            int known = 0, agree = 0;
+            foreach (var kv in itemMapping)
+            {
+                if (!_itemNames.TryGetValue(kv.Key, out var name) || string.IsNullOrEmpty(name)) continue;
+                known++;
+                string looseName = Loose(name);
+                bool any = false;
+                foreach (string code in kv.Value)
+                {
+                    string looseCode = Loose(code);
+                    string looseTile = Pack.ItemsByCode.TryGetValue(code, out var def) && def?.Name != null ? Loose(def.Name) : "";
+                    if ((looseCode.Length >= 3 && (looseName.Contains(looseCode, StringComparison.Ordinal) || looseCode.Contains(looseName, StringComparison.Ordinal)))
+                        || (looseTile.Length >= 3 && (looseName.Contains(looseTile, StringComparison.Ordinal) || looseTile.Contains(looseName, StringComparison.Ordinal)))) { any = true; break; }
+                }
+                if (any) agree++;
+            }
+            return known > 0 && agree * 4 >= known;
+        }
 
         /// <param name="locationNames">This game's location id → name (all locations of the slot or the game).</param>
         /// <param name="itemNames">This game's item id → name (may be empty when unknown).</param>
@@ -178,6 +256,9 @@ namespace AP_Atlas.Core.PopTracker
                     if (!list.Contains(value)) list.Add(value);
                 }
             }
+            // 1a. Keys that are offsets from the game's ids (the pack's script subtracts a base before it looks an id up):
+            //     the base that puts them on the game's ids is added, so they are read as the pack means them.
+            LocationMappingOffset = Rebase(_locationNames, maps => PathsAgreeWithNames(maps[0]), mappingById, codesById);
             foreach (var kv in mappingById)
             {
                 foreach (var path in kv.Value)
@@ -767,6 +848,7 @@ namespace AP_Atlas.Core.PopTracker
                 if (!itemMapping.TryGetValue(named, out var list)) itemMapping[named] = list = new List<string>();
                 list.AddRange(kv.Value.Where(c => !list.Contains(c)));
             }
+            ItemMappingOffset = Rebase(_itemNames, maps => CodesAgreeWithNames(maps[0]), itemMapping);
             foreach (var kv in itemMapping)
             {
                 // An id the game doesn't have (outdated script): set aside so the tile can pair by name instead.

@@ -28,6 +28,7 @@ The pack lab (CONTRIBUTING, "The pack lab") is how new rules are found: the corp
 | An image is decoded by its header, not its name: packs name JPEGs and WebPs ".png". | Mega Man 3; Undertale; Civilization VI |
 | An item the scripts make (`ScriptHost:CreateLuaItem`) answers to its codes: a grid cell with one isn't an undefined cell, it's the scripts' own tile, and Key Items draws it with the name and picture the script set (`Name`, `Icon`) and the state its `ProvidesCodeFunc` gives. | Super Metroid (transitions); A Link to the Past (enemizer); Celeste (Open World) |
 | A file the scripts load that the pack doesn't have is the pack's own note (PopTracker prints the same and goes on), not a failure of the scripts. | Fourteen packs loading a template's snes.lua |
+| A mapping keyed by offsets from the game's ids (the pack's archipelago.lua subtracts a base before the lookup: `LOCATION_MAPPING[id - (0xDEAFF00D + 50)]`) is read with the base that puts nine in ten of its keys on the game's ids (`MappingOffset`), for locations and items, when the names agree too (a quarter of the paths or codes read as the game's name for the id); the Doctor says which base (`locmap:offset`, `itemmap:offset`). Keys that are the game's ids already, that no base fits, or that fit by number alone (Tevi's and CrossCode's packs number another version's list: nine in ten keys land on an id, but on the wrong location) are left as they are. | Streets of Rage; A Hat in Time; Psychonauts; Tevi (the refusal) |
 
 ## Pairing names with the game's
 
@@ -62,6 +63,7 @@ The pack lab (CONTRIBUTING, "The pack lab") is how new rules are found: the corp
 ## What isn't a rule
 
 - Ids a mapping lists that this apworld doesn't have: the pack is for another version. Reported, never guessed.
+- A pack named for another game than the one its ids belong to (Celeste's Open World pack says "Celeste" and lists Celeste (Open World)'s ids; Hades II's says "Hades"): which game a pack is for is the pick rule's job; the ids are reported as stale, and an offset that fits by number alone (another game numbered the same way) is refused when the names don't agree.
 - Pins off their map's picture, typos in refs, missing pictures: the pack's own, in the author's section of the report.
 - A few rows of wording the rules don't cover: the Doctor's suggestions, "Fix what Atlas can", and the user's choice.
 - The clear handler's errors when the lab runs it without a slot (`slot_data.settings.x` on an empty table): a real seed's data is the test; `Tools/corpus_kinds.py` lists them apart, and the solo batch judges them.
