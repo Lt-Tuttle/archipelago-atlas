@@ -1,5 +1,6 @@
 #nullable disable
 using Godot;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -610,6 +611,19 @@ namespace AP_Atlas.Core.PopTracker
                 return;
             }
 
+            // A pack root: drawn as the pack lays it out (arrays side by side or stacked, docks, groups with their headers),
+            // not as its grids one under another (A Link to the Past's dungeon labels stand beside their columns).
+            if (_pack.Layouts.TryGetValue(layout, out var tree))
+            {
+                var drawn = LayoutNode(tree, layout, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { layout }, baseSize, commonSize, filter, 0);
+                if (drawn != null)
+                {
+                    _visualGrid.AddChild(drawn);
+                    RenderSeedSettings(baseSize, commonSize, filter);
+                    return;
+                }
+            }
+
             foreach (var grid in grids)
             {
                 if (!string.IsNullOrEmpty(grid.Header) && grid.Header != lastHeader && grids.Select(g => g.Header).Distinct().Count() > 1)
@@ -628,24 +642,210 @@ namespace AP_Atlas.Core.PopTracker
             RenderSeedSettings(baseSize, commonSize, filter);
         }
 
-        /// <summary>The visual view's shape (for tests): the tile rows drawn straight under the grid, and the built layout's id when one hosts them.</summary>
+        /// <summary>The visual view's shape (for tests): the tile rows drawn, wherever the layout put them, and the built layout's id when one hosts them.</summary>
         public (int Rows, string Built) VisualShape()
         {
             int rows = 0;
             string built = null;
-            foreach (Node n in _visualGrid.GetChildren())
+            void Count(Node node)
             {
-                if (n.IsQueuedForDeletion()) continue;
-                if (n.HasMeta("built_layout")) built = n.GetMeta("built_layout").AsString();
-                else if (n is HBoxContainer) rows++;
+                foreach (Node n in node.GetChildren())
+                {
+                    if (n.IsQueuedForDeletion()) continue;
+                    if (n.HasMeta("built_layout")) built = n.GetMeta("built_layout").AsString();
+                    if (n.HasMeta("tile_row")) rows++;
+                    else Count(n);
+                }
             }
+            Count(_visualGrid);
             return (rows, built);
+        }
+
+        /// <summary>The layout nodes drawn (for tests): each container's kind ("array:horizontal", "dock", "group") with how many parts it holds.</summary>
+        public List<(string Kind, int Parts)> LayoutNodes()
+        {
+            var nodes = new List<(string, int)>();
+            void Walk(Node node)
+            {
+                foreach (Node n in node.GetChildren())
+                {
+                    if (n.IsQueuedForDeletion()) continue;
+                    if (n.HasMeta("layout_node")) nodes.Add((n.GetMeta("layout_node").AsString(), n.GetChildCount()));
+                    Walk(n);
+                }
+            }
+            Walk(_visualGrid);
+            return nodes;
+        }
+
+        /// <summary>
+        /// One node of a pack's layout, drawn as PopTracker lays it out: an array's parts side by side or stacked, a dock's
+        /// left and right parts beside the rest, a group under its header, a referenced layout in its place, a grid as
+        /// rows of tiles. Maps, settings grids (shown under Seed settings) and decoration are left out, and so is any part
+        /// that ends up empty. Null when nothing of it shows.
+        /// </summary>
+        private Control LayoutNode(JToken token, string layoutKey, HashSet<string> visiting, float baseSize, int commonSize, string filter, int depth)
+        {
+            if (token == null || depth > 48) return null;
+            if (token is JArray array)
+            {
+                var box = new VBoxContainer { SizeFlagsVertical = SizeFlags.ShrinkBegin };
+                box.AddThemeConstantOverride("separation", 4);
+                var pending = new List<string>();
+                void FlushRow()
+                {
+                    if (pending.Count > 0) box.AddChild(TileRow(new List<string>(pending), baseSize, filter));
+                    pending.Clear();
+                }
+                foreach (var child in array)
+                {
+                    if (child is JObject co && co["type"]?.ToString() == "item" && co["item"] != null) { pending.Add(co["item"].ToString()); continue; }
+                    FlushRow();
+                    var part = LayoutNode(child, layoutKey, visiting, baseSize, commonSize, filter, depth + 1);
+                    if (part != null) box.AddChild(part);
+                }
+                FlushRow();
+                return Keep(box, "list");
+            }
+            if (token is not JObject obj) return null;
+            string type = (obj["type"]?.ToString() ?? "").ToLowerInvariant();
+            switch (type)
+            {
+                case "itemgrid":
+                    {
+                        var rows = (obj["rows"] as JArray)?.OfType<JArray>().Select(r => r.Select(c => c.Type == JTokenType.Null ? "" : c.ToString()).ToList()).Where(r => r.Count > 0).ToList() ?? new List<List<string>>();
+                        if (rows.Count == 0) return null;
+                        var known = _pack.ItemGridGroups.FirstOrDefault(g => g.Rows.Count == rows.Count && g.Rows.Zip(rows, (a, b) => a.SequenceEqual(b)).All(same => same));
+                        if (known != null && (known.LooksLikeSettings || known.Decorative)) return null;
+                        float size = baseSize * Math.Clamp((known?.ItemSize ?? 32) / (float)Math.Max(1, commonSize), 0.6f, 1.8f);
+                        var grid = new VBoxContainer { SizeFlagsVertical = SizeFlags.ShrinkBegin };
+                        grid.AddThemeConstantOverride("separation", 0);
+                        foreach (var row in rows) grid.AddChild(TileRow(row, size, filter));
+                        return Keep(grid, "grid");
+                    }
+                case "item":
+                    return obj["item"] != null ? TileRow(new List<string> { obj["item"].ToString() }, baseSize, filter) : null;
+                case "layout":
+                    {
+                        string key = obj["key"]?.ToString();
+                        if (key == null || !_pack.Layouts.TryGetValue(key, out var referenced) || !visiting.Add(key)) return null;
+                        var drawn = LayoutNode(referenced, key, visiting, baseSize, commonSize, filter, depth + 1);
+                        visiting.Remove(key);
+                        return drawn;
+                    }
+                case "group":
+                    {
+                        var inner = LayoutNode(obj["content"], layoutKey, visiting, baseSize, commonSize, filter, depth + 1);
+                        if (inner == null) return null;
+                        var box = new VBoxContainer { SizeFlagsVertical = SizeFlags.ShrinkBegin };
+                        box.AddThemeConstantOverride("separation", 4);
+                        string header = obj["header"]?.ToString();
+                        if (!string.IsNullOrWhiteSpace(header))
+                        {
+                            var label = new Label { Text = header.Replace("\n", " "), HorizontalAlignment = HorizontalAlignment.Center };
+                            label.AddThemeColorOverride("font_color", ThemeColors.AccentText(ThemeColors.Surface));
+                            box.AddChild(label);
+                        }
+                        box.AddChild(inner);
+                        return Keep(box, "group");
+                    }
+                case "array":
+                    {
+                        bool horizontal = string.Equals(obj["orientation"]?.ToString(), "horizontal", StringComparison.OrdinalIgnoreCase);
+                        var parts = Parts(obj["content"], layoutKey, visiting, baseSize, commonSize, filter, depth);
+                        if (parts.Count == 0) return null;
+                        Container box = horizontal ? new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center } : new VBoxContainer();
+                        box.SizeFlagsVertical = SizeFlags.ShrinkBegin;
+                        box.AddThemeConstantOverride("separation", horizontal ? 14 : 6);
+                        foreach (var part in parts) box.AddChild(part);
+                        return Keep(box, horizontal ? "array:horizontal" : "array:vertical");
+                    }
+                case "tabbed":
+                    {
+                        // Every tab's items, each under its title (PopTracker shows one tab at a time; maps stay with the Map Tracker).
+                        var box = new VBoxContainer { SizeFlagsVertical = SizeFlags.ShrinkBegin };
+                        box.AddThemeConstantOverride("separation", 6);
+                        foreach (var tab in (obj["tabs"] as JArray)?.OfType<JObject>() ?? Enumerable.Empty<JObject>())
+                        {
+                            var inner = LayoutNode(tab["content"], layoutKey, visiting, baseSize, commonSize, filter, depth + 1);
+                            if (inner == null) continue;
+                            string title = tab["title"]?.ToString();
+                            if (!string.IsNullOrWhiteSpace(title))
+                            {
+                                var label = new Label { Text = title, HorizontalAlignment = HorizontalAlignment.Center };
+                                label.AddThemeColorOverride("font_color", ThemeColors.AccentText(ThemeColors.Surface));
+                                box.AddChild(label);
+                            }
+                            box.AddChild(inner);
+                        }
+                        return Keep(box, "tabbed");
+                    }
+                case "map":
+                case "canvas":
+                case "text":
+                    return null;
+                default:
+                    {
+                        // A dock, a container, or anything else with content: parts docked left and right stand beside the rest.
+                        if (obj["content"] == null) return null;
+                        var content = obj["content"] is JArray list ? list.ToList() : new List<JToken> { obj["content"] };
+                        var lefts = new List<Control>(); var rights = new List<Control>(); var middle = new List<Control>();
+                        foreach (var child in content)
+                        {
+                            var part = LayoutNode(child, layoutKey, visiting, baseSize, commonSize, filter, depth + 1);
+                            if (part == null) continue;
+                            string dock = (child as JObject)?["dock"]?.ToString()?.ToLowerInvariant() ?? "";
+                            (dock == "left" ? lefts : dock == "right" ? rights : middle).Add(part);
+                        }
+                        if (lefts.Count + rights.Count + middle.Count == 0) return null;
+                        Control centre = null;
+                        if (middle.Count == 1) centre = middle[0];
+                        else if (middle.Count > 1)
+                        {
+                            var column = new VBoxContainer { SizeFlagsVertical = SizeFlags.ShrinkBegin };
+                            column.AddThemeConstantOverride("separation", 6);
+                            foreach (var part in middle) column.AddChild(part);
+                            centre = column;
+                        }
+                        if (lefts.Count + rights.Count == 0) return Keep(centre, type.Length > 0 ? type : "container");
+                        var row = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center, SizeFlagsVertical = SizeFlags.ShrinkBegin };
+                        row.AddThemeConstantOverride("separation", 14);
+                        foreach (var part in lefts) row.AddChild(part);
+                        if (centre != null) row.AddChild(centre);
+                        foreach (var part in rights) row.AddChild(part);
+                        return Keep(row, "dock");
+                    }
+            }
+
+            List<Control> Parts(JToken content, string key, HashSet<string> seen, float size, int common, string words, int at)
+            {
+                var parts = new List<Control>();
+                if (content is JArray many)
+                {
+                    foreach (var child in many)
+                    {
+                        var part = LayoutNode(child, key, seen, size, common, words, at + 1);
+                        if (part != null) parts.Add(part);
+                    }
+                }
+                else if (LayoutNode(content, key, seen, size, common, words, at + 1) is { } one) parts.Add(one);
+                return parts;
+            }
+
+            static Control Keep(Control node, string kind)
+            {
+                if (node == null) return null;
+                if (node.GetChildCount() == 0) { node.QueueFree(); return null; }
+                node.SetMeta("layout_node", kind);
+                return node;
+            }
         }
 
         /// <summary>One row of tiles (an empty cell, or a code nothing defines, keeps the row's spacing).</summary>
         private HBoxContainer TileRow(List<string> row, float zoomSize, string filter)
         {
             var rowContainer = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
+            rowContainer.SetMeta("tile_row", true);
             foreach (var code in row)
             {
                 var itemDef = string.IsNullOrWhiteSpace(code) ? null : TileDefinition(code);

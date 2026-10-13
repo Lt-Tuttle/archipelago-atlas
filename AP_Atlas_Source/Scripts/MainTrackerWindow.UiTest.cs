@@ -4207,7 +4207,7 @@ public partial class MainTrackerWindow
             FakeMapPack.Write(second, "UI test second pack", "Test Game", versionsUrl: "https://raw.githubusercontent.com/packs/test-game-poptracker/main/versions.json",
                 files: new Dictionary<string, string> { ["var_b/items/items.json"] = """[{"name":"Lantern","type":"toggle","img":"images/sword.png","codes":"lantern"}]""" },
                 variantsJson: """{"standard":{"display_name":"Standard"},"var_b":{"display_name":"Variant B"}}""",
-                layoutsJson: """{"tracker_default":{"type":"itemgrid","rows":[["sword","shield"]]},"tracker_horizontal":{"type":"group","header":"Gear","content":{"type":"itemgrid","rows":[["sword"],["shield"]]}}}""");
+                layoutsJson: """{"tracker_default":{"type":"itemgrid","rows":[["sword","shield"]]},"tracker_horizontal":{"type":"group","header":"Gear","content":{"type":"array","orientation":"horizontal","content":[{"type":"itemgrid","rows":[["sword"]]},{"type":"layout","key":"shield_grid"},{"type":"map","maps":["World"]}]}},"shield_grid":{"type":"itemgrid","rows":[["shield"]]}}""");
             AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
             var replacement = await UiTestWaitForAsync(() => slot.Pack, "the second pack");
             UiTestExpect(replacement.Manifest.Name == "UI test second pack" && !slot.MapTracker.ShowingEmptyState, "the second pack didn't take the first one's place");
@@ -4237,6 +4237,10 @@ public partial class MainTrackerWindow
             UiTestExpect(keyItems.VisualShape().Rows == 1 && keyItems.VisualShape().Built == null, $"the pack's default layout isn't drawn as its one row: {keyItems.VisualShape()}");
             keyItems.SetLayout("tracker_horizontal");
             UiTestExpect(keyItems.VisualShape().Rows == 2 && keyItems.VisualShape().Built == null, $"the pack's horizontal layout isn't drawn as its two rows: {keyItems.VisualShape()}");
+            // Drawn as the pack lays it out: the group under its header, its two grids side by side (the referenced layout in its place), the map left out.
+            var nodes = keyItems.LayoutNodes();
+            UiTestExpect(nodes.Any(n => n.Kind == "group" && n.Parts == 2) && nodes.Any(n => n.Kind == "array:horizontal" && n.Parts == 2),
+                $"the pack's layout isn't drawn as it lays it out: {string.Join(", ", nodes.Select(n => n.Kind + "(" + n.Parts + ")"))}");
             keyItems.SetLayout(AP_Atlas.Core.PopTracker.KeyItemsLayouts.Horizontal);
             UiTestExpect(keyItems.VisualShape().Built == AP_Atlas.Core.PopTracker.KeyItemsLayouts.Horizontal && _appSettings.KeyItemsLayout.TryGetValue(slotKey, out var layoutKept) && layoutKept == AP_Atlas.Core.PopTracker.KeyItemsLayouts.Horizontal,
                 "the built horizontal layout isn't drawn as blocks side by side, or wasn't kept for the slot");

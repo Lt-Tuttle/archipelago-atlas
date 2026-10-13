@@ -642,7 +642,8 @@ namespace AP_Atlas.UI
             RefreshMapList();
             if (_pack.Maps.Count > 0 && (string.IsNullOrEmpty(_currentMapId) || !_pack.Maps.ContainsKey(_currentMapId)))
             {
-                SwitchMap(_pack.Maps.Keys.FirstOrDefault(k => !_unusedMaps.Contains(k)) ?? _pack.Maps.Keys.First());
+                // The map with the most pins first (A Link to the Past's pack declares its entrance legend before its maps).
+                SwitchMap(MostPinnedMap() ?? _pack.Maps.Keys.First());
             }
             else if (!string.IsNullOrEmpty(_currentMapId))
             {
@@ -841,6 +842,18 @@ namespace AP_Atlas.UI
             OnDataRefreshed?.Invoke();
         }
         private HashSet<string> _unusedMaps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>The shown map with the most pins (null for a pack without pins).</summary>
+        private string MostPinnedMap()
+        {
+            var pins = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var pin in _pack.Locations)
+            {
+                if (!string.IsNullOrEmpty(pin.MapRef)) pins[pin.MapRef] = pins.GetValueOrDefault(pin.MapRef) + 1;
+                foreach (var ml in pin.MapLocations ?? new List<PopTrackerMapLocation>()) if (!string.IsNullOrEmpty(ml.Map)) pins[ml.Map] = pins.GetValueOrDefault(ml.Map) + 1;
+            }
+            return _pack.Maps.Keys.Where(k => !_unusedMaps.Contains(k) && pins.ContainsKey(k)).OrderByDescending(k => pins[k]).ThenBy(k => k, StringComparer.OrdinalIgnoreCase).FirstOrDefault();
+        }
 
         private void RefreshMapListCounters()
         {

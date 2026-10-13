@@ -165,8 +165,12 @@ namespace AP_Atlas.Core.PopTracker
             (code ?? "").StartsWith("setting", System.StringComparison.OrdinalIgnoreCase)
             || System.IO.Path.GetFileName(SourceFile ?? "").Contains("setting", System.StringComparison.OrdinalIgnoreCase);
 
-        /// <summary>A picture or label in the grid (PopTracker's "static" items: a dungeon's name over its column): nothing to track.</summary>
-        public bool IsDecoration => string.Equals(Type, "static", System.StringComparison.OrdinalIgnoreCase);
+        /// <summary>
+        /// A picture or label in the grid (PopTracker's "static" items: a dungeon's name over its column), or a tile made of two
+        /// others (a "composite_toggle": its parts are the items to link): nothing to track by itself.
+        /// </summary>
+        public bool IsDecoration => string.Equals(Type, "static", System.StringComparison.OrdinalIgnoreCase)
+            || string.Equals(Type, "composite_toggle", System.StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>One itemgrid from the pack's layouts, with the group it sits under.</summary>
@@ -181,5 +185,10 @@ namespace AP_Atlas.Core.PopTracker
         public List<List<string>> Rows { get; set; } = new List<List<string>>();
         /// <summary>Looks like tracker options (e.g. "Shuffle Weapons") rather than Archipelago items; hidden by default.</summary>
         public bool LooksLikeSettings { get; set; }
+        /// <summary>
+        /// Decoration, not tiles: a grid whose item_size is too small for a tile (A Link to the Past's "Route" grids of 3 px
+        /// black squares, drawn on by the pack's route mode). Key Items leaves it out, and the Doctor says nothing of it.
+        /// </summary>
+        public bool Decorative { get; set; }
     }
 }

@@ -28,6 +28,19 @@ namespace AP_Atlas.Core.PopTracker
         /// </summary>
         public Dictionary<string, List<PackItemGrid>> LayoutGrids { get; set; } = new Dictionary<string, List<PackItemGrid>>(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>Every layout of the pack by its key, as its JSON (the roots among them), so Key Items can draw a root as the pack lays it out.</summary>
+        public Dictionary<string, JToken> Layouts { get; set; } = new Dictionary<string, JToken>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// The item codes the pack's own scripts set (Tracker:FindObjectForCode("…") outside the mapping files): a tile
+        /// the scripts drive (a goal marker, a boss beaten, a pull-tree drop) isn't one an item lights.
+        /// </summary>
+        public HashSet<string> ScriptCodes { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>The codes the location mapping names (a check sets them): a boss marker lit by the boss's location.</summary>
+        public HashSet<string> CodesSetByChecks => _codesSetByChecks ??= new HashSet<string>(LocationCodesById.Values.SelectMany(c => c), StringComparer.OrdinalIgnoreCase);
+        private HashSet<string> _codesSetByChecks;
+
         /// <summary>The variant asked for when the pack was read (null: the default), the cache's key besides the zip.</summary>
         public string VariantKey { get; set; }
         /// <summary>Whether any variant brings its own maps or locations (then the Map Tracker offers the choice too; else only Key Items does).</summary>
@@ -732,6 +745,7 @@ namespace AP_Atlas.Core.PopTracker
                 }
             }
             if (layouts.Count == 0) return;
+            pack.Layouts = layouts;
             ExtractTabMaps(layouts, pack);
 
             // Every root's grids go into the merged list once (the same grid reached through another root is one grid), and
@@ -780,9 +794,10 @@ namespace AP_Atlas.Core.PopTracker
                         var grid = new PackItemGrid { Header = header, LayoutKey = layoutKey };
                         if (obj["item_size"] != null && int.TryParse(obj["item_size"].ToString().Split(',')[0].Trim(), out int size))
                         {
-                            // Some packs write tiny values ("4, 4") that can't be pixels; keep the default and report it.
+                            // A size too small for a tile ("3", "4, 4") is a grid of marks, not of items (A Link to the Past's route
+                            // grids of 3 px black squares): kept out of Key Items, nothing to report.
                             if (size >= 12) grid.ItemSize = size;
-                            else pack.LoadIssues.Add($"Layout '{layoutKey}': item_size \"{obj["item_size"]}\" is too small to be a pixel size; using the default.");
+                            else grid.Decorative = true;
                         }
                         if (obj["rows"] is JArray rows)
                         {
@@ -871,9 +886,27 @@ namespace AP_Atlas.Core.PopTracker
         /// </summary>
         private readonly record struct MappingFiles(string LocationFile, bool LocationsIncomplete, string ItemFile, bool ItemsIncomplete);
 
+        // Tracker:FindObjectForCode("code") in a script: the codes the pack's own scripts set. A literal and a character class:
+        // linear in the text (the scripts come from outside Atlas), with RegexDefaults' time limit.
+        private static readonly Regex ScriptCodeCall = new Regex(@"FindObjectForCode\(\s*""([^""]+)""", RegexOptions.CultureInvariant);
+
+        /// <summary>The codes the pack's scripts set (outside the mapping files, which name codes for ids, not to set them).</summary>
+        private static void ReadScriptCodes(SafeZip archive, string rootPrefix, LoadedPack pack)
+        {
+            foreach (var entry in archive.Entries)
+            {
+                string name = entry.FullName;
+                if (!name.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase) || !name.EndsWith(".lua", StringComparison.OrdinalIgnoreCase)) continue;
+                if (name.EndsWith("item_mapping.lua", StringComparison.OrdinalIgnoreCase) || name.EndsWith("location_mapping.lua", StringComparison.OrdinalIgnoreCase)) continue;
+                if (ReadText(archive, entry, pack) is not string code) continue;
+                foreach (Match m in ScriptCodeCall.Matches(code)) pack.ScriptCodes.Add(m.Groups[1].Value.Trim());
+            }
+        }
+
         /// <summary>Reads item_mapping.lua and location_mapping.lua, wherever the pack keeps them.</summary>
         private static MappingFiles ReadMappingScripts(SafeZip archive, string rootPrefix, LoadedPack pack)
         {
+            ReadScriptCodes(archive, rootPrefix, pack);
             bool itemsIncomplete = false, locationsIncomplete = false;
             var itemScript = archive.Entries.FirstOrDefault(e => e.FullName.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase) &&
                                                                  e.FullName.EndsWith("item_mapping.lua", StringComparison.OrdinalIgnoreCase));

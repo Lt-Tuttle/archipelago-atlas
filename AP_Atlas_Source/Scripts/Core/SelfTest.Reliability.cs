@@ -773,6 +773,7 @@ namespace AP_Atlas.Core
                     Tracker:AddLocations("locations/locations.json")
                     Tracker:AddLayouts("layouts/tracker.json")
                     HOOKS = 0
+                    Tracker:FindObjectForCode("go_mode").Active = false
                     ScriptHost:AddWatchForCode("hook", "hookshot", function(code) HOOKS = HOOKS + 1 end)
                     local hook = Tracker:FindObjectForCode("hookshot")
                     hook:SetOverlay("x")
@@ -786,11 +787,16 @@ namespace AP_Atlas.Core
                 itemsJson: """
                     [{"name":"Progressive Hookshot","type":"progressive","stages":[{"name":"Hookshot","img":"images/sword.png","codes":"hookshot"},{"name":"Longshot","img":"images/sword.png"}]},
                      {"type":"static","img":"images/sword.png","codes":"label_dt"},
-                     {"name":"Shield","type":"toggle","img":"images/sword.png","codes":"shield"}]
+                     {"name":"Shield","type":"toggle","img":"images/sword.png","codes":"shield"},
+                     {"name":"Shield","type":"toggle","img":"images/sword.png","codes":"shield_drop"},
+                     {"name":"Both","type":"composite_toggle","codes":"both","item_left":"hookshot","item_right":"shield"},
+                     {"name":"Boss Marker","type":"toggle","img":"images/sword.png","codes":"ft_boss"},
+                     {"name":"GO! Mode","type":"toggle","img":"images/sword.png","codes":"go_mode"}]
                     """,
                 layoutsJson: """
                     {"tracker_default":{"type":"array","content":[
-                        {"type":"itemgrid","rows":[["label_dt","hookshot","shield","setting_auto_tab"]]},
+                        {"type":"itemgrid","rows":[["label_dt","hookshot","shield","setting_auto_tab"],["shield_drop","both","ft_boss","go_mode"]]},
+                        {"type":"itemgrid","item_size":3,"rows":[["mark1","mark2"]]},
                         {"type":"tabbed","tabs":[{"title":"Overworld","content":{"type":"map","maps":["World"]}}]}]}}
                     """,
                 locationsJson: "[" +
@@ -806,12 +812,14 @@ namespace AP_Atlas.Core
                     ["scripts/autotracking/location_mapping.lua"] = "LOCATION_MAPPING = {\n" +
                         "    [102] = {\"@Kokiri Forest/Shop/Item 2\"},\n    [103] = {\"@Kokiri Forest/Shop/Item 3\"},\n" +
                         "    [112] = {\"@Goron City/Shop/Item 2\"},\n    [113] = {\"@Goron City/Shop/Item 3\"},\n" +
-                        "    [200] = {\"@Forest Temple/Basement Side Room/Gold Skulltula\"},\n" + spotMappings + "\n}\n"
+                        "    [200] = {\"@Forest Temple/Basement Side Room/Gold Skulltula\"},\n    [201] = {\"ft_boss\"},\n" + spotMappings + "\n}\n"
                 });
             var pack = await Task.Run(() => PopTracker.PopTrackerPackLoader.InspectZipPack(zip)) ?? throw new InvalidOperationException("the test pack wasn't read");
             Expect(pack.ItemsByCode.TryGetValue("hookshot", out var hookshot) && hookshot.Name == "Progressive Hookshot",
                 "a progressive item isn't found by its stage's code (PopTracker finds it so)");
             Expect(pack.UnusedMaps().SetEquals(new[] { "Broken" }), $"the map no tab shows and no pin is on isn't the unused one: {string.Join(", ", pack.UnusedMaps())}");
+            Expect(pack.ScriptCodes.SetEquals(new[] { "go_mode", "hookshot", "shield" }) && pack.CodesSetByChecks.SetEquals(new[] { "ft_boss" }) && pack.ItemGridGroups.Any(g => g.Decorative && g.Rows[0][0] == "mark1"),
+                $"the codes the scripts set ({string.Join(",", pack.ScriptCodes)}), the codes checks set ({string.Join(",", pack.CodesSetByChecks)}) or the decorative grid weren't read");
 
             // The scripts: Lua 5.3's operators, %s of nil and true, the overlay methods, and a watch on the stage's code.
             var host = PopTracker.PackScriptHost.Load(pack) ?? throw new InvalidOperationException("the pack has no scripts");
@@ -836,6 +844,7 @@ namespace AP_Atlas.Core
                     ["GC Shop Item 2"] = 112,
                     ["GC Shop Item 3"] = 113,
                     ["Forest Temple GS Basement"] = 200,
+                    ["Forest Temple Boss"] = 201,
                 },
                 Items = new Dictionary<string, long> { ["Hookshot"] = 50, ["Shield"] = 51 }
             };
@@ -854,11 +863,15 @@ namespace AP_Atlas.Core
                 && !report.Findings.Any(f => f.Key.StartsWith("loc:unmatched:", StringComparison.Ordinal))
                 && report.Findings.Any(f => f.Key == "loc:neighbours") && report.Findings.Any(f => f.Key == "loc:refs" && f.Details.Any(d => d.Contains("Atlas followed"))),
                 "the Doctor's location findings aren't the expected ones: " + string.Join(", ", report.Findings.Select(f => f.Key)));
-            // Tiles: the stage's code links by the stage's name; the label and the switch aren't tiles to link.
-            Expect(index.ItemIdsFor("hookshot").SequenceEqual(new long[] { 50 }) && report.TilesTotal == 2 && report.TilesLinked == 2
-                && report.TileDecorations == 1 && report.TileSwitches == 1 && !report.Findings.Any(f => f.Key.StartsWith("tile:", StringComparison.Ordinal)),
-                $"the grid's tiles weren't read as PopTracker reads them ({report.TilesLinked} of {report.TilesTotal}, {report.TileDecorations} labels, {report.TileSwitches} switches): "
-                + string.Join(", ", report.Findings.Where(f => f.Key.StartsWith("tile:", StringComparison.Ordinal)).Select(f => f.Key)));
+            // Tiles: the stage's code links by the stage's name; a tile named like a linked one links like it; the label, the
+            // composite and the switch aren't tiles to link; a tile a check sets and one the scripts set are said so; the
+            // decorative grid's marks are no tiles at all.
+            var tileFindings = report.Findings.Where(f => f.Key.StartsWith("tile:", StringComparison.Ordinal)).Select(f => f.Key).OrderBy(k => k, StringComparer.Ordinal).ToList();
+            Expect(index.ItemIdsFor("hookshot").SequenceEqual(new long[] { 50 }) && index.ItemIdsFor("shield_drop").SequenceEqual(new long[] { 51 })
+                && report.TilesTotal == 3 && report.TilesLinked == 3 && report.TileDecorations == 2 && report.TileSwitches == 1 && report.TilesByCheck == 1 && report.TilesScripted == 1
+                && tileFindings.SequenceEqual(new[] { "tile:bycheck:ft_boss", "tile:scripted:go_mode" }),
+                $"the grid's tiles weren't read as PopTracker reads them ({report.TilesLinked} of {report.TilesTotal}, {report.TileDecorations} decorations, {report.TileSwitches} switches, {report.TilesByCheck} by a check, {report.TilesScripted} by the scripts): "
+                + string.Join(", ", tileFindings));
             Expect(report.Findings.Any(f => f.Key == "map:unused:Broken") && !report.Findings.Any(f => f.Key == "map:nobg:Broken"),
                 "the unused map was reported as a missing picture: " + string.Join(", ", report.Findings.Where(f => f.Key.StartsWith("map:", StringComparison.Ordinal)).Select(f => f.Key)));
 

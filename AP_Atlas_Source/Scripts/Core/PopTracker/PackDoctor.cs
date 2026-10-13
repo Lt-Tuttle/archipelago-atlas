@@ -74,6 +74,8 @@ namespace AP_Atlas.Core.PopTracker
         public int TilesTotal, TilesLinked, TilesByScript;
         /// <summary>Grid cells that aren't items to link: labels and pictures ("static" items), and the pack's own switches.</summary>
         public int TileDecorations, TileSwitches;
+        /// <summary>Tiles a check sets (named by the location mapping) and tiles the pack's own scripts set: not items to link either.</summary>
+        public int TilesByCheck, TilesScripted;
         public int SectionsTotal, SectionsLinked, SectionsByScript, SectionsByName, SectionsLoose, SectionsByFix;
         public int ApLocationsTotal, ApLocationsPlaced;
         /// <summary>The locations of the seed a connected slot of this game plays (empty when none is connected): the Recommended tab puts their rows first.</summary>
@@ -486,16 +488,34 @@ namespace AP_Atlas.Core.PopTracker
 
             var mappedCodes = new HashSet<string>(original.ItemMapping.Values.SelectMany(v => v), StringComparer.OrdinalIgnoreCase);
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var grid in pack.ItemGridGroups.Where(g => !g.LooksLikeSettings))
+            foreach (var grid in pack.ItemGridGroups.Where(g => !g.LooksLikeSettings && !g.Decorative))
             {
                 foreach (var code in grid.Rows.SelectMany(r => r).Where(c => !string.IsNullOrWhiteSpace(c)))
                 {
                     if (!seen.Add(code)) continue;
                     if (pack.ItemsByCode.TryGetValue(code, out var shown) && (shown.IsDecoration || shown.IsPackSwitch(code)))
                     {
-                        // A label or picture, or one of the pack's own switches: no game item lights it (as in PopTracker).
+                        // A label or picture, a tile made of two others, or one of the pack's own switches: no game item lights it (as in PopTracker).
                         if (shown.IsDecoration) report.TileDecorations++;
                         else report.TileSwitches++;
+                        continue;
+                    }
+                    // A tile a check sets (a boss marker lit by the boss's location) or the pack's scripts set (a goal marker,
+                    // a drop worked out from the seed): not an item's tile, so not one to link. Said once, as information.
+                    if (shown != null && index.ItemIdsFor(code).Count == 0 && (original.CodesSetByChecks.Contains(code) || original.ScriptCodes.Contains(code)))
+                    {
+                        bool byCheck = original.CodesSetByChecks.Contains(code);
+                        if (byCheck) report.TilesByCheck++;
+                        else report.TilesScripted++;
+                        add(new Finding
+                        {
+                            Key = (byCheck ? "tile:bycheck:" : "tile:scripted:") + code,
+                            Category = "Key Items",
+                            Severity = FindingSeverity.Info,
+                            Title = byCheck ? $"Tile \"{shown.Name}\" is set by a check, not by an item" : $"Tile \"{shown.Name}\" is set by the pack's scripts, not by an item",
+                            Detail = byCheck ? "The pack's location mapping lights it when its check is done (a boss beaten, say)." : "The pack's own scripts work it out (a goal, a drop); no Archipelago item stands for it.",
+                            Subject = "tile:" + code
+                        });
                         continue;
                     }
                     if (!pack.ItemsByCode.TryGetValue(code, out var item))

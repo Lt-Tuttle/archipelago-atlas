@@ -559,6 +559,15 @@ namespace AP_Atlas.Core.PopTracker
                             break;
                         }
             }
+            // A tile named like a linked tile is the same item under another code (A Link to the Past's "Eastern Palace Small
+            // Key" is "ep_smallkey", which the mapping links, and "ep_smallkey_drop" for its key-drop layout, which it doesn't).
+            var idsByTileName = new Dictionary<string, List<long>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kv in Pack.ItemsByCode)
+                if (!string.IsNullOrEmpty(kv.Value?.Name) && _itemIdsByCode.TryGetValue(kv.Key, out var linked) && linked.Count > 0 && !idsByTileName.ContainsKey(kv.Value.Name))
+                    idsByTileName[kv.Value.Name] = linked;
+            foreach (var kv in Pack.ItemsByCode)
+                if (!_itemIdsByCode.ContainsKey(kv.Key) && !string.IsNullOrEmpty(kv.Value?.Name) && idsByTileName.TryGetValue(kv.Value.Name, out var same))
+                    foreach (long id in same) AddItemCode(kv.Key, id);
         }
 
         private void AddItemCode(string code, long id)

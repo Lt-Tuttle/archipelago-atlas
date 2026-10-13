@@ -132,7 +132,7 @@ public class SoloTestReportTests
             "names:none", "names:diff", "file", "file:nomapping", "auto", "tile:stalefix", "fixes:duplicate", "superseded",
             "script:load", "script:none", "script:stopped", "script:error", "script:unsupported", "script:follows-maps", "script:writes",
             "script:unread-files", "script:noautotracking", "settings:noslotdata", "settings:summary", "settings:missing", "grid:hidden",
-            "tile:unknown", "tile:unlinked", "tile:noimage", "itemmap:stale", "loc:unmatched", "loc:loose", "locmap:dangling", "locmap:stale",
+            "tile:unknown", "tile:unlinked", "tile:noimage", "tile:bycheck", "tile:scripted", "itemmap:stale", "loc:unmatched", "loc:loose", "locmap:dangling", "locmap:stale",
             "loc:unplaced", "loc:composed", "loc:hints", "loc:neighbours", "loc:untracked", "loc:refs", "loc:no-check",
             "map:nobg", "map:empty", "map:outside", "map:unused",
             "logic:differs", "sphere0:notreached", "sphere0:beyond", "seed:unplaced", "setup:guide",
