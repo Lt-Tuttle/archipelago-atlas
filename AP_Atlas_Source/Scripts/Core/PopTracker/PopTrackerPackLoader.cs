@@ -117,6 +117,12 @@ namespace AP_Atlas.Core.PopTracker
         /// <summary>From location_mapping.lua files that list paths without ids (matched to AP locations by name).</summary>
         public List<string> UnkeyedLocationPaths { get; set; } = new List<string>();
 
+        /// <summary>From item_mapping.lua entries keyed by the item's name (["Boo Portrait"] = {"boo_portrait"}): name → codes.</summary>
+        public Dictionary<string, List<string>> ItemMappingByName { get; set; } = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>From location_mapping.lua entries keyed by the location's name (["Passage - The Martyr"] = {"@…"}): name → paths (or codes, as <see cref="LocationCodesById"/>).</summary>
+        public Dictionary<string, List<string>> LocationMappingByName { get; set; } = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+
         /// <summary>
         /// From location_mapping.lua: Archipelago location id → item codes, where the mapping names the item a section hosts
         /// rather than the section's path (PopTracker sets that item when the location is checked).
@@ -914,16 +920,19 @@ namespace AP_Atlas.Core.PopTracker
             {
                 var result = LuaMappingReader.Read(itemCode);
                 foreach (var problem in result.Problems) pack.LoadIssues.Add($"{itemScript.FullName}: {problem}");
-                foreach (var entry in result.Entries.Where(e => e.Id != null))
+                foreach (var entry in result.Entries.Where(e => e.Id != null || e.Key != null))
                 {
                     var codes = entry.Strings.Where(s => !MappingTypeWords.Contains(s) && s.Length > 0).ToList();
                     if (codes.Count == 0) continue;
-                    if (!pack.ItemMapping.TryGetValue(entry.Id.Value, out var list)) pack.ItemMapping[entry.Id.Value] = list = new List<string>();
+                    List<string> list;
+                    if (entry.Id != null) { if (!pack.ItemMapping.TryGetValue(entry.Id.Value, out list)) pack.ItemMapping[entry.Id.Value] = list = new List<string>(); }
+                    else if (!pack.ItemMappingByName.TryGetValue(entry.Key, out list)) pack.ItemMappingByName[entry.Key] = list = new List<string>();
                     list.AddRange(codes.Where(c => !list.Contains(c)));
                 }
-                if (result.Entries.Count > 0 && pack.ItemMapping.Count == 0)
+                if (result.Entries.Count > 0 && pack.ItemMapping.Count == 0 && pack.ItemMappingByName.Count == 0)
                     pack.LoadIssues.Add($"{itemScript.FullName}: no entries keyed by item id were found.");
-                itemsIncomplete = result.Problems.Count > 0 || (result.Entries.Count > 0 && pack.ItemMapping.Count == 0) || FillsMappingInCode(itemCode, result);
+                // Entries keyed by names are resolved later through the game's names; the tables the scripts build are read as well, as for any file the reader can't take whole.
+                itemsIncomplete = result.Problems.Count > 0 || pack.ItemMappingByName.Count > 0 || (result.Entries.Count > 0 && pack.ItemMapping.Count == 0) || FillsMappingInCode(itemCode, result);
             }
 
             var locationScript = archive.Entries.FirstOrDefault(e => e.FullName.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase) &&
@@ -936,6 +945,14 @@ namespace AP_Atlas.Core.PopTracker
                 {
                     var paths = entry.Strings.Where(s => s.StartsWith("@")).ToList();
                     var codes = entry.Strings.Where(s => !s.StartsWith("@") && s.Length > 0 && !MappingTypeWords.Contains(s)).ToList();
+                    if (entry.Key != null)
+                    {
+                        // Keyed by the game's name: paths and codes alike, told apart by their "@" when the index resolves the name.
+                        if (paths.Count + codes.Count == 0) continue;
+                        if (!pack.LocationMappingByName.TryGetValue(entry.Key, out var named)) pack.LocationMappingByName[entry.Key] = named = new List<string>();
+                        named.AddRange(paths.Concat(codes).Where(s => !named.Contains(s)));
+                        continue;
+                    }
                     if (entry.Id != null && paths.Count == 0 && codes.Count > 0)
                     {
                         if (!pack.LocationCodesById.TryGetValue(entry.Id.Value, out var codeList)) pack.LocationCodesById[entry.Id.Value] = codeList = new List<string>();
@@ -949,7 +966,7 @@ namespace AP_Atlas.Core.PopTracker
                     }
                     else pack.UnkeyedLocationPaths.AddRange(paths);
                 }
-                locationsIncomplete = result.Problems.Count > 0 || pack.UnkeyedLocationPaths.Count > 0 || FillsMappingInCode(locationCode, result)
+                locationsIncomplete = result.Problems.Count > 0 || pack.UnkeyedLocationPaths.Count > 0 || pack.LocationMappingByName.Count > 0 || FillsMappingInCode(locationCode, result)
                     || (result.Entries.Count > 0 && pack.LocationMappingById.Count == 0 && pack.LocationCodesById.Count == 0);
             }
             return new MappingFiles(locationScript?.FullName, locationsIncomplete, itemScript?.FullName, itemsIncomplete);

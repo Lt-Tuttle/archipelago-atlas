@@ -624,6 +624,18 @@ namespace AP_Atlas.Core.PopTracker
                 else foreach (var f in unlinked) add(f);
             }
 
+            if (index.UnknownMappedItemNames.Count > 0)
+            {
+                add(new Finding
+                {
+                    Key = "itemmap:stale-names",
+                    Category = "Key Items",
+                    Severity = FindingSeverity.Warning,
+                    Title = $"item_mapping.lua names {index.UnknownMappedItemNames.Count} items this game doesn't have",
+                    Detail = "The script is keyed by item names; these aren't the game's (another version, or a typo).",
+                    Details = index.UnknownMappedItemNames.Take(200).ToList()
+                });
+            }
             foreach (var id in index.UnknownMappedItemIds)
             {
                 add(new Finding
@@ -886,6 +898,18 @@ namespace AP_Atlas.Core.PopTracker
                     Title = $"location_mapping.lua lists {index.UnknownMappedLocationIds.Count} ids that aren't locations of this game",
                     Detail = "The script may be outdated for your Archipelago version.",
                     Details = index.UnknownMappedLocationIds.Take(200).Select(id => id.ToString()).ToList()
+                });
+            }
+            if (index.UnknownMappedLocationNames.Count > 0)
+            {
+                add(new Finding
+                {
+                    Key = "locmap:stale-names",
+                    Category = "Locations",
+                    Severity = FindingSeverity.Warning,
+                    Title = $"location_mapping.lua names {index.UnknownMappedLocationNames.Count} locations this game doesn't have",
+                    Detail = "The script is keyed by location names; these aren't the game's (another version, or a typo).",
+                    Details = index.UnknownMappedLocationNames.Take(200).ToList()
                 });
             }
             if (unplaced.Count > 0)

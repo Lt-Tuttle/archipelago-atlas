@@ -9,6 +9,30 @@ namespace AP_Atlas.Core.Tests;
 public sealed class LuaMappingReaderTests
 {
     [Fact]
+    public void The_table_keyed_by_ids_is_the_mapping_when_a_table_of_names_comes_first()
+    {
+        const string lua = "SETTINGS_MAPPING = {\n  [\"Include_Temple\"] = \"YesTemple\",\n}\nITEM_MAPPING = {\n  [5] = {{\"PV1500Extensions\"}},\n}";
+        var result = LuaMappingReader.Read(lua);
+        Assert.Equal("ITEM_MAPPING", result.TableName);
+        Assert.Equal(5, result.Entries.Single().Id);
+        // With no id-keyed table, the one of names is the mapping.
+        Assert.Equal("ITEM_MAPPING", LuaMappingReader.Read("ITEM_MAPPING = {\n  [\"Boo Portrait\"] = {\"boo_portrait\"},\n}").TableName);
+    }
+
+    [Fact]
+    public void An_entry_keyed_by_a_name_keeps_the_name()
+    {
+        var result = LuaMappingReader.Read("LOCATION_MAPPING = {\n  [\"Passage - The Martyr\"] = {\"@Achievements/The Martyr/The Martyr\"},\n  [12] = {\"@A/B\"},\n}");
+        Assert.Empty(result.Problems);
+        Assert.Equal(2, result.Entries.Count);
+        Assert.Null(result.Entries[0].Id);
+        Assert.Equal("Passage - The Martyr", result.Entries[0].Key);
+        Assert.Equal(new[] { "@Achievements/The Martyr/The Martyr" }, result.Entries[0].Strings);
+        Assert.Equal(12, result.Entries[1].Id);
+        Assert.Null(result.Entries[1].Key);
+    }
+
+    [Fact]
     public void Plain_ids_nested_entries_and_unkeyed_paths_are_read_as_before()
     {
         const string lua = """
@@ -76,11 +100,11 @@ public sealed class LuaMappingReaderTests
             """;
         var result = LuaMappingReader.Read(lua);
         Assert.Equal(new long?[] { null, 123, null }, result.Entries.Select(e => e.Id).ToArray());
-        Assert.Equal(2, result.Problems.Count);
+        // A string key is the game's own name for the entry (the Entry's Key), not a problem.
+        Assert.Single(result.Problems);
         Assert.Contains("[SOMETHING_ELSE + 1]", result.Problems[0]);
         Assert.Contains("line 2", result.Problems[0]);
-        Assert.Contains("[pickups/Chozo Ruins]", result.Problems[1]);
-        Assert.Contains("line 4", result.Problems[1]);
+        Assert.Equal("pickups/Chozo Ruins", result.Entries[2].Key);
     }
 
     [Fact]

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 
 namespace AP_Atlas.Core.PopTracker;
@@ -9,6 +10,7 @@ namespace AP_Atlas.Core.PopTracker;
 /// Reads the data tables in PopTracker autotracking scripts (item_mapping.lua, location_mapping.lua) without
 /// running Lua. Understands the shapes packs use in practice:
 ///   [100824] = {"banner", "toggle"},              -- id → code, type
+///   ["Boo Portrait"] = {"boo_portrait"},           -- the item's name → code (the Entry's Key)
 ///   [102640] = {{"Rosabeth of Melfia", "toggle"}}, -- id → list of {code, type}
 ///   [100000] = {"@Area/Pin/Section"},              -- id → location path(s)
 ///   [0x69696A] = {"@Area/Pin/Section"},            -- a hexadecimal id
@@ -25,8 +27,10 @@ public static class LuaMappingReader
 
     public sealed class Entry
     {
-        /// <summary>The numeric key, or null for an unkeyed list entry.</summary>
+        /// <summary>The numeric key, or null for an unkeyed list entry or one keyed by a name.</summary>
         public long? Id;
+        /// <summary>The string key (["Passage - The Martyr"] = …: the game's own name for the location or item), or null.</summary>
+        public string? Key;
         /// <summary>Every string literal in the entry's value, in order (nested tables flattened).</summary>
         public List<string> Strings = new List<string>();
     }
@@ -47,15 +51,19 @@ public static class LuaMappingReader
         var p = new Parser(text);
         var tables = p.FindTableAssignments();
         if (tables.Count == 0) { result.Problems.Add("No table assignment (NAME = { ... }) was found."); return result; }
-        Result? first = null;
+        // The mapping is the table named for it with entries keyed by ids; one keyed by names only (a SETTINGS_MAPPING of option
+        // names before the ITEM_MAPPING, as PowerWash Simulator's pack has it) is taken only when no id-keyed one follows.
+        Result? first = null, named = null;
         foreach (var (name, start) in tables)
         {
             var table = ReadTable(p, start, Constants(text, start));
             table.TableName = name;
             first ??= table;
-            if (name.EndsWith("MAPPING", StringComparison.OrdinalIgnoreCase) && table.Entries.Count > 0) return table;
+            if (!name.EndsWith("MAPPING", StringComparison.OrdinalIgnoreCase) || table.Entries.Count == 0) continue;
+            if (table.Entries.Any(e => e.Id != null)) return table;
+            named ??= table;
         }
-        return first!;
+        return named ?? first!;
     }
 
     private static Result ReadTable(Parser p, int start, IReadOnlyDictionary<string, long> constants)
@@ -89,7 +97,7 @@ public static class LuaMappingReader
                             p.Expect(']');
                             p.Expect('=');
                             if (long.TryParse(key, NumberStyles.Integer, CultureInfo.InvariantCulture, out long id)) entry.Id = id;
-                            else Problem($"Entry with non-numeric key [{key}] near line {p.LineAt(entryStart)} was read without an id.");
+                            else entry.Key = key; // the game's own name for it (71 corpus packs key a mapping so)
                         }
                         else
                         {

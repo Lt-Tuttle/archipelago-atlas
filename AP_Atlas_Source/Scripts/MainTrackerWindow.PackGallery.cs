@@ -49,6 +49,12 @@ public partial class MainTrackerWindow
         var host = (AP_Atlas.UI.IPropertiesHost)this;
         GetTree().Root.GuiDisableInput = true;
         GetTree().Root.Size = VisualCheckWindowSize;
+        // The tool and its explorer alone (no slots panel, Properties or bottom pane): a map's list and the map itself side
+        // by side, as the owner looks at them, not cut off at the window's edge. The data folder is the gallery's scratch.
+        _appSettings.ShowSlotsPanel = false;
+        _appSettings.ShowPropertiesPanel = false;
+        _appSettings.ShowBottomPane = false;
+        ApplyWindowParts();
         await VisualCheckWaitAsync(1.0);
 
         // Every game's names, as the corpus check takes them.
@@ -128,7 +134,9 @@ public partial class MainTrackerWindow
                     }
                     OpenPackDoctor(installed);
                     await VisualCheckWaitAsync(2.0);
-                    await GalleryPictureAsync(packOut, "doctor");
+                    // The Doctor is a window of its own: its picture is its own viewport's.
+                    var doctor = GetTree().Root.GetChildren().OfType<AP_Atlas.UI.PackDoctorWindow>().FirstOrDefault();
+                    await GalleryPictureAsync(packOut, "doctor", doctor);
                     pictures++;
                     foreach (var window in GetTree().Root.GetChildren().OfType<AP_Atlas.UI.PackDoctorWindow>().ToList()) window.QueueFree();
                     await VisualCheckWaitAsync(0.3);
@@ -136,6 +144,8 @@ public partial class MainTrackerWindow
                 finally
                 {
                     if (_profiles.Contains(profile)) DeleteProfile(profile);
+                    // The cards this pack raised (the Doctor's review, the engine) don't belong on the next pack's pictures.
+                    if (_alerts != null) foreach (var card in _alerts.Cards.ToList()) _alerts.Dismiss(card);
                     await VisualCheckWaitAsync(0.4);
                     AP_Atlas.Core.SafeFile.Delete(installed);
                     AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
@@ -155,14 +165,20 @@ public partial class MainTrackerWindow
         return 0;
     }
 
-    private async Task GalleryPictureAsync(string folder, string name)
+    private async Task GalleryPictureAsync(string folder, string name, Viewport? of = null)
     {
         if (_globalStatusLabel != null && _globalStatusLabel.Text.StartsWith("Hitch ")) _globalStatusLabel.Text = Tr("Ready");
+        // The cards (the engine's offer, the Doctor's review) aren't the pack's picture.
+        if (_alerts != null && _alerts.Cards.Count > 0)
+        {
+            foreach (var card in _alerts.Cards.ToList()) _alerts.Dismiss(card);
+            await VisualCheckWaitAsync(0.5);
+        }
         GetViewport().GuiReleaseFocus();
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
         RenderingServer.ForceDraw();
-        var picture = GetViewport().GetTexture().GetImage();
+        var picture = (of ?? GetViewport()).GetTexture().GetImage();
         if (picture == null || picture.IsEmpty()) throw new InvalidOperationException("nothing was drawn (the gallery needs a window)");
         picture.Convert(Image.Format.Rgb8);
         AP_Atlas.Core.SafeFile.WriteAllBytes(Path.Combine(folder, name + ".png"), picture.SavePngToBuffer());

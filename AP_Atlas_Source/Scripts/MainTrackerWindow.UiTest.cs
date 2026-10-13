@@ -178,7 +178,7 @@ public partial class MainTrackerWindow
             PackImagesFollowTheirUsersAsync);
         await ScenarioAsync("Maps without a picture and checks without a pin: a map whose pack ships no usable picture lists its locations (named in a note, each opening in Properties) instead of dots on nothing, and a map with its picture shows its pins; the seed's checks no pin places are listed under Not on the map and counted on the map, and a check that's done leaves the list; Follow my checks is on for a pack that can't follow the game, shows the map of a check made on another map, leaves the map alone while the user zooms it, and is kept per slot",
             PicturelessMapsAsync);
-        await ScenarioAsync("Pack Doctor: on a pack's first check, a tile whose name matches an item exactly (once punctuation is ignored) is linked by itself as an automatic fix; the pack's row on the Map Packs page offers Review N, which opens the Doctor on Recommended; the Recommended tab lists what's left, Apply on a row writes the fix, the row goes after the check and the status says so; the rows are grouped by kind with what to do under each, filters by words, kind and map narrow them, Ignore selected hides the selection in one step and Undo brings it back; Undo takes the automatic link back; the Map Tracker's Attention group lists the pack's problems for this seed in plain words and opens the Doctor on the fixing tab; Fix what Atlas can (the pack row's Fix, the Attention group's button) links the confident matches and sets the rest aside in one undoable step, said in a card",
+        await ScenarioAsync("Pack Doctor: on a pack's first check, a pin section whose name matches a location exactly (once punctuation is ignored) is linked by itself as an automatic fix, and a tile named so is the index's own link; the pack's row on the Map Packs page offers Review N, which opens the Doctor on Recommended; the Recommended tab lists what's left, Apply on a row writes the fix, the row goes after the check and the status says so; the rows are grouped by kind with what to do under each, filters by words, kind and map narrow them, Ignore selected hides the selection in one step and Undo brings it back; Undo takes the automatic link back; the Map Tracker's Attention group lists the pack's problems for this seed in plain words and opens the Doctor on the fixing tab; Fix what Atlas can (the pack row's Fix, the Attention group's button) links the confident matches and sets the rest aside in one undoable step, said in a card",
             PackDoctorAsync);
         await ScenarioAsync("Map packs reach connected slots: Key Items offers the pack's layouts and two Atlas builds by item group, kept per slot; the chat's filters sit in one row; the Chat and System Log tabs carry a dot for lines that arrived while they weren't showing, cleared when shown; a slot without a pack offers \"Find a map pack for <game>…\" on its map, which shows Map Packs and searches GitHub once; a pack chosen from the results downloads with a progress line, installs with a card and reaches the slot's map; Atlas picks a game's pack by itself (of the projects found, one with more stars whose pack doesn't fit the game's names is passed over for the one that fits); a pack installed while a slot is connected shows on its map at once, without a reconnect; deleted, the map says there's no pack again; another pack for the game takes its place; a pack half of whose pins link to the seed's checks says so on the map, and its button makes its project's release found for the seed the game's pack, which the slot switches to",
             PacksReachConnectedSlotsAsync);
@@ -3906,16 +3906,18 @@ public partial class MainTrackerWindow
     private async Task PackDoctorAsync()
     {
         string zip = System.IO.Path.Combine(AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory(), "uitest_doctor_pack.zip");
-        // "Sword!" matches the game's "Sword" once punctuation is ignored (the index alone wouldn't link it); the pin "Cave" / "Chest" is close to
+        // "Sword!" is the game's "Sword" once punctuation is ignored: the index links it by itself (no fix). The pin "Cave" / "Chest" is close to
         // "Cave Chest Room" and "Far" / "Lantern" to "Far Lantern Box", neither exact (a game location named "Cave Chest" would pair by itself
-        // from the pin's name and the section's).
+        // from the pin's name and the section's); "Shrine" / "Bell!" is the game's "Bell" once punctuation is ignored, which the index doesn't
+        // read for sections, so the Doctor's first check links it as an automatic fix.
         FakeMapPack.Write(zip, "UI test doctor pack", "Doctor Test Game",
             itemsJson: """[{"name":"Sword!","type":"toggle","img":"images/sword.png","codes":"sword"},{"name":"Shield","type":"toggle","img":"images/broken.png","codes":"shield"}]""",
             locationsJson: """[{"name":"Cave","sections":[{"name":"Chest"}],"map_locations":[{"map":"World","x":10,"y":10}]},""" +
-                           """{"name":"Far","sections":[{"name":"Lantern"}],"map_locations":[{"map":"World","x":500,"y":10}]}]""");
+                           """{"name":"Far","sections":[{"name":"Lantern"}],"map_locations":[{"map":"World","x":500,"y":10}]},""" +
+                           """{"name":"Shrine","sections":[{"name":"Bell!"}],"map_locations":[{"map":"World","x":30,"y":10}]}]""");
         await using var server = new FakeArchipelagoServer { SlotGame = "Doctor Test Game" };
         server.Games["Doctor Test Game"] = new FakeGame("d0c70123456789abcdef0123456789abcdef0123",
-            new Dictionary<string, long> { ["Sword"] = 1000, ["Shield"] = 1001 }, new Dictionary<string, long> { ["Cave Chest Room"] = 2000, ["Far Lantern Box"] = 2001 });
+            new Dictionary<string, long> { ["Sword"] = 1000, ["Shield"] = 1001 }, new Dictionary<string, long> { ["Cave Chest Room"] = 2000, ["Far Lantern Box"] = 2001, ["Bell"] = 2002 });
         var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
         profile.Slots.Clear();
         profile.Slots.Add("Tester");
@@ -3928,10 +3930,10 @@ public partial class MainTrackerWindow
             var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
             var pack = await UiTestWaitForAsync(() => slot.Pack, "the slot to load the doctor pack");
             key = AP_Atlas.Core.PopTracker.PackFixes.KeyFor(pack);
-            // The first check links the exact match by itself.
-            var auto = await UiTestWaitForAsync(() => AP_Atlas.Core.PopTracker.PackFixes.Get(key).Tiles.FirstOrDefault(t => t.Code == "sword"), "the Doctor to link the exact match by itself");
-            UiTestExpect(auto.Automatic && auto.ApItemId == 1000 && auto.ApItemName == "Sword", $"the automatic link is wrong: {auto.ApItemName} ({auto.ApItemId}), automatic {auto.Automatic}");
-            UiTestExpect(!AP_Atlas.Core.PopTracker.PackFixes.Get(key).Tiles.Any(t => t.Code == "shield"), "an item the index links by name got a fix too");
+            // The first check links the exact match by itself; the tiles the index links by name get no fix.
+            var auto = await UiTestWaitForAsync(() => AP_Atlas.Core.PopTracker.PackFixes.Get(key).Links.FirstOrDefault(l => l.Subject == "link:Shrine|Bell!"), "the Doctor to link the exact match by itself");
+            UiTestExpect(auto.Automatic && auto.ApLocationId == 2002 && auto.ApLocationName == "Bell", $"the automatic link is wrong: {auto.ApLocationName} ({auto.ApLocationId}), automatic {auto.Automatic}");
+            UiTestExpect(AP_Atlas.Core.PopTracker.PackFixes.Get(key).Tiles.Count == 0 && slot.PackIndex.ItemIdsFor("sword").Contains(1000), "a tile the index links by name got a fix too, or \"Sword!\" wasn't paired with \"Sword\"");
             // The pack's row on the Map Packs page says what's left to review, and its button opens the Doctor on the Recommended
             // tab, which lists the pin that isn't exact and not the linked tile; Apply writes the fix and says so.
             host.ShowTool(AP_Atlas.UI.Tool.MapPacks);
@@ -3968,28 +3970,28 @@ public partial class MainTrackerWindow
             AP_Atlas.Core.PopTracker.PackFixes.Undo(key);
             await UiTestWaitForAsync(() => !AP_Atlas.Core.PopTracker.PackFixes.Get(key).Ignored.Contains(far.Key) ? window : null, "Undo to bring the ignored pin back");
             window.SetRecommendedFilter("", 0, null);
-            // Undo twice: the pin link, then the automatic tile link.
-            UiTestExpect(AP_Atlas.Core.PopTracker.PackFixes.Undo(key) && AP_Atlas.Core.PopTracker.PackFixes.Undo(key) && AP_Atlas.Core.PopTracker.PackFixes.Get(key).Tiles.Count == 0,
+            // Undo twice: the pin link, then the automatic link.
+            UiTestExpect(AP_Atlas.Core.PopTracker.PackFixes.Undo(key) && AP_Atlas.Core.PopTracker.PackFixes.Undo(key) && AP_Atlas.Core.PopTracker.PackFixes.Get(key).Links.Count == 0,
                 "Undo didn't take the automatic link back");
             window.EmitSignal(Window.SignalName.CloseRequested);
             await UiTestWaitForAsync(() => !GodotObject.IsInstanceValid(window) || window.IsQueuedForDeletion() || !window.Visible ? this : null, "the Doctor window to close");
             // The Map Tracker's Attention group lists the pack's problems for this seed (both pins, back after the undos) and opens the Doctor on the fixing tab.
             await UiTestWaitForAsync(() => slot.MapTracker.AttentionRows().Any(r => r.Key == far.Key) && slot.MapTracker.AttentionRows().Any(r => r.Key == pin.Key) ? slot : null, "the Attention group to list both unlinked pins");
-            // After the undos the Sword tile is unlinked again, so it's listed too; the broken map picture and the Shield's missing image as well.
+            // After the undos the Bell pin is unlinked again, so it's listed too; the broken map picture and the Shield's missing image as well.
             UiTestExpect(slot.MapTracker.AttentionRows().All(r => r.Text.Length > 0 && r.Tip.Contains("Opens the Pack Doctor"))
-                && new[] { "tile:unlinked:sword", "tile:noimage:shield", "map:nobg:Broken" }.All(k => slot.MapTracker.AttentionRows().Any(r => r.Key == k)),
+                && new[] { "loc:unmatched:Shrine|Bell!", "tile:noimage:shield", "map:nobg:Broken" }.All(k => slot.MapTracker.AttentionRows().Any(r => r.Key == k)),
                 $"the Attention rows aren't in plain words with their way to the Doctor, or miss a problem: {string.Join(" | ", slot.MapTracker.AttentionRows().Select(r => r.Key + ": " + r.Text))}");
             slot.MapTracker.PressAttention(far.Key);
             var reopened = await UiTestWaitForAsync(() => GetTree().Root.GetChildren().OfType<AP_Atlas.UI.PackDoctorWindow>().FirstOrDefault(w => w.Visible), "the Doctor window from the Attention row");
             UiTestExpect(reopened.CurrentTabTitle == "Recommended", $"the Attention row opened the Doctor on {reopened.CurrentTabTitle}, not Recommended");
             reopened.EmitSignal(Window.SignalName.CloseRequested);
-            // "Fix what Atlas can" (the pack row's Fix, the Attention group's button and the card all run it): the exact tile is linked,
+            // "Fix what Atlas can" (the pack row's Fix, the Attention group's button and the card all run it): the exact pin is linked,
             // the pins without a confident match are set aside, one undoable step; a card says what was done.
             host.ShowTool(AP_Atlas.UI.Tool.MapPacks);
             await UiTestWaitForAsync(() => _packManagerPanel.FixButtonFor(key) is { Visible: true } b ? b : null, "the pack row's Fix button");
             int cardsBefore = _alertLog.Entries.Count;
             slot.MapTracker.PressFixAll();
-            await UiTestWaitForAsync(() => AP_Atlas.Core.PopTracker.PackFixes.Get(key).Tiles.Any(t => t.Code == "sword" && t.ApItemId == 1000 && t.Automatic) ? slot : null, "the Sword to be linked by Fix what Atlas can");
+            await UiTestWaitForAsync(() => AP_Atlas.Core.PopTracker.PackFixes.Get(key).Links.Any(l => l.Subject == "link:Shrine|Bell!" && l.ApLocationId == 2002 && l.Automatic) ? slot : null, "the Bell to be linked by Fix what Atlas can");
             // Each pin is linked (its best match scores enough) or set aside; either way nothing fixable is left, and the card says so.
             var fixedFile = AP_Atlas.Core.PopTracker.PackFixes.Get(key);
             bool Handled(string subject, string? findingKey) => fixedFile.Ignored.Contains(findingKey) || fixedFile.Links.Any(l => l.Subject == subject);

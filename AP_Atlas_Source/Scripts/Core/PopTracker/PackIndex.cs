@@ -64,6 +64,10 @@ namespace AP_Atlas.Core.PopTracker
         /// <summary>Mapping-script item ids that aren't items of this game.</summary>
         public List<long> UnknownMappedItemIds { get; } = new List<long>();
 
+        /// <summary>Names a mapping script is keyed by (["Passage - The Martyr"] = …) that aren't locations, or items, of this game.</summary>
+        public List<string> UnknownMappedLocationNames { get; } = new List<string>();
+        public List<string> UnknownMappedItemNames { get; } = new List<string>();
+
         /// <summary>
         /// Sections that refer to another ("ref") which isn't in the pack: they're paired by their own names instead, as
         /// ordinary sections.
@@ -155,9 +159,26 @@ namespace AP_Atlas.Core.PopTracker
             //    on its own. One whose target isn't in the pack stays an ordinary section.
             ResolveReferences(pinsByPath, pinsByName);
 
-            // 1. Mapping script, keyed by id. An id the game doesn't have (an outdated script) is set aside, so the
-            //    section can still be paired by name below.
-            foreach (var kv in Pack.LocationMappingById)
+            // 1. Mapping script, keyed by id, or by the game's own name for the location (71 corpus packs: ["Passage - The
+            //    Martyr"] = {"@Achievements/The Martyr/The Martyr"}), which the names turn into its id. An id or name the game
+            //    doesn't have (an outdated script) is set aside, so the section can still be paired by name below.
+            var mappingById = new Dictionary<long, List<string>>(Pack.LocationMappingById);
+            var codesById = new Dictionary<long, List<string>>(Pack.LocationCodesById);
+            foreach (var kv in Pack.LocationMappingByName)
+            {
+                if (!TryLocationId(kv.Key, out long named))
+                {
+                    if (_locationNames.Count > 0) UnknownMappedLocationNames.Add(kv.Key);
+                    continue;
+                }
+                foreach (string value in kv.Value)
+                {
+                    var into = value.StartsWith("@") ? mappingById : codesById;
+                    if (!into.TryGetValue(named, out var list)) into[named] = list = new List<string>();
+                    if (!list.Contains(value)) list.Add(value);
+                }
+            }
+            foreach (var kv in mappingById)
             {
                 foreach (var path in kv.Value)
                     if (TargetOf(ResolvePath(path, pinsByPath, pinsByName)) is { } named) _mappingNamed.Add((named.Pin, named.Section));
@@ -175,9 +196,25 @@ namespace AP_Atlas.Core.PopTracker
             }
 
             // 1b. Mapping script, keyed by id, naming an item code rather than a path: the section that hosts that item shows
-            //     the location (PopTracker sets the hosted item when the location is checked).
-            if (Pack.LocationCodesById.Count > 0)
+            //     the location (PopTracker sets the hosted item when the location is checked). A value that is no item's code
+            //     is a section's name, found wherever it is (Spyro 3's mapping names its 3,899 sections so).
+            if (codesById.Count > 0)
             {
+                var sectionsByName = new Dictionary<string, List<(PopTrackerLocation Pin, PopTrackerSection Section)>>(StringComparer.OrdinalIgnoreCase);
+                foreach (var pin in Pack.Locations)
+                    foreach (var sec in pin.Sections ?? new List<PopTrackerSection>())
+                    {
+                        if (string.IsNullOrWhiteSpace(sec?.Name)) continue;
+                        if (!sectionsByName.TryGetValue(sec.Name.Trim(), out var list)) sectionsByName[sec.Name.Trim()] = list = new List<(PopTrackerLocation, PopTrackerSection)>();
+                        list.Add((pin, sec));
+                    }
+                var sectionsByLoose = new Dictionary<string, List<(PopTrackerLocation Pin, PopTrackerSection Section)>>(StringComparer.Ordinal);
+                foreach (var kv in sectionsByName)
+                {
+                    string loose = Loose(kv.Key);
+                    if (!sectionsByLoose.TryGetValue(loose, out var list)) sectionsByLoose[loose] = list = new List<(PopTrackerLocation, PopTrackerSection)>();
+                    list.AddRange(kv.Value);
+                }
                 var hosts = new Dictionary<string, List<(PopTrackerLocation Pin, PopTrackerSection Section)>>(StringComparer.OrdinalIgnoreCase);
                 foreach (var pin in Pack.Locations)
                     foreach (var sec in pin.Sections ?? new List<PopTrackerSection>())
@@ -186,7 +223,7 @@ namespace AP_Atlas.Core.PopTracker
                             if (!hosts.TryGetValue(code, out var list)) hosts[code] = list = new List<(PopTrackerLocation, PopTrackerSection)>();
                             list.Add((pin, sec));
                         }
-                foreach (var kv in Pack.LocationCodesById)
+                foreach (var kv in codesById)
                 {
                     if (_locationNames.Count > 0 && !_locationNames.ContainsKey(kv.Key))
                     {
@@ -194,8 +231,19 @@ namespace AP_Atlas.Core.PopTracker
                         continue;
                     }
                     foreach (string code in kv.Value)
+                    {
                         if (hosts.TryGetValue(code, out var list))
+                        {
                             foreach (var (pin, sec) in list) Add(kv.Key, pin, sec, MatchSource.MappingScript);
+                            continue;
+                        }
+                        if (Pack.ItemsByCode.ContainsKey(code)) continue; // an item nothing hosts: nothing to show
+                        if (sectionsByName.TryGetValue(code.Trim(), out var named) || sectionsByLoose.TryGetValue(Loose(code), out named))
+                        {
+                            foreach (var (pin, sec) in named) { Add(kv.Key, pin, sec, MatchSource.MappingScript); _mappingNamed.Add((pin, sec)); }
+                        }
+                        else DanglingPaths.Add((kv.Key, code));
+                    }
                 }
             }
 
@@ -613,9 +661,50 @@ namespace AP_Atlas.Core.PopTracker
         // Items
         // =====================================================================
 
+        /// <summary>A location's id by its name as a mapping script keys it: as written, or case and punctuation aside when that's unique.</summary>
+        private bool TryLocationId(string name, out long id)
+        {
+            id = 0;
+            if (string.IsNullOrWhiteSpace(name)) return false;
+            if (_locationIdsByName.TryGetValue(name.Trim(), out id)) return true;
+            _idsByLooseName ??= BuildLooseNames();
+            return _idsByLooseName.TryGetValue(Loose(name), out id);
+        }
+
+        private Dictionary<string, long> _idsByLooseName;
+
+        private Dictionary<string, long> BuildLooseNames()
+        {
+            var loose = new Dictionary<string, long>(StringComparer.Ordinal);
+            var clashing = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var kv in _locationIdsByName)
+            {
+                string key = Loose(kv.Key);
+                if (key.Length == 0) continue;
+                if (loose.ContainsKey(key)) clashing.Add(key);
+                else loose[key] = kv.Value;
+            }
+            foreach (string key in clashing) loose.Remove(key);
+            return loose;
+        }
+
         private void BuildItems()
         {
-            foreach (var kv in Pack.ItemMapping)
+            // A mapping keyed by the item's name (["Boo Portrait"] = {"boo_portrait"}, the Paper Mario packs) is the game's name for it.
+            var itemsByName = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kv in _itemNames) if (!string.IsNullOrEmpty(kv.Value)) itemsByName[kv.Value] = kv.Key;
+            var itemMapping = new Dictionary<long, List<string>>(Pack.ItemMapping);
+            foreach (var kv in Pack.ItemMappingByName)
+            {
+                if (!itemsByName.TryGetValue(kv.Key.Trim(), out long named))
+                {
+                    if (_itemNames.Count > 0) UnknownMappedItemNames.Add(kv.Key);
+                    continue;
+                }
+                if (!itemMapping.TryGetValue(named, out var list)) itemMapping[named] = list = new List<string>();
+                list.AddRange(kv.Value.Where(c => !list.Contains(c)));
+            }
+            foreach (var kv in itemMapping)
             {
                 // An id the game doesn't have (outdated script): set aside so the tile can pair by name instead.
                 if (_itemNames.Count > 0 && !_itemNames.ContainsKey(kv.Key))
@@ -643,6 +732,36 @@ namespace AP_Atlas.Core.PopTracker
                             break;
                         }
             }
+            // A tile named as the game names the item, case and punctuation aside ("HM01 - Cut" for "HM01 Cut"), when that's unique.
+            var looseItems = new Dictionary<string, long>(StringComparer.Ordinal);
+            var clashing = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var kv in idsByName)
+            {
+                string key = Loose(kv.Key);
+                if (key.Length == 0) continue;
+                if (looseItems.ContainsKey(key)) clashing.Add(key);
+                else looseItems[key] = kv.Value;
+            }
+            foreach (string key in clashing) looseItems.Remove(key);
+            foreach (var kv in Pack.ItemsByCode)
+                if (!_itemIdsByCode.ContainsKey(kv.Key) && !string.IsNullOrEmpty(kv.Value?.Name) && looseItems.TryGetValue(Loose(kv.Value.Name), out long id)) AddItemCode(kv.Key, id);
+            // Tiles named as the game's items plus one word they share ("Airborne Egg Aiming Silo", "Beak Bayonet Silo": Banjo-Tooie's
+            // silo moves): when three or more tiles end in the same word and each is the game's item without it, the word is the
+            // pack's own label.
+            var byLastWord = new Dictionary<string, List<(string Code, long Id)>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kv in Pack.ItemsByCode)
+            {
+                if (_itemIdsByCode.ContainsKey(kv.Key) || string.IsNullOrWhiteSpace(kv.Value?.Name)) continue;
+                string name = kv.Value.Name.Trim();
+                int space = name.LastIndexOf(' ');
+                if (space <= 0) continue;
+                string head = name.Substring(0, space).Trim(), last = name.Substring(space + 1);
+                if (head.Length == 0 || !(idsByName.TryGetValue(head, out long id) || looseItems.TryGetValue(Loose(head), out id))) continue;
+                if (!byLastWord.TryGetValue(last, out var list)) byLastWord[last] = list = new List<(string, long)>();
+                list.Add((kv.Key, id));
+            }
+            foreach (var group in byLastWord.Values.Where(g => g.Count >= 3))
+                foreach (var (code, id) in group) AddItemCode(code, id);
             // A tile named like a linked tile is the same item under another code (A Link to the Past's "Eastern Palace Small
             // Key" is "ep_smallkey", which the mapping links, and "ep_smallkey_drop" for its key-drop layout, which it doesn't).
             var idsByTileName = new Dictionary<string, List<long>>(StringComparer.OrdinalIgnoreCase);

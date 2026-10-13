@@ -811,7 +811,9 @@ namespace AP_Atlas.Core
                     Tracker:FindObjectForCode("sword").Active = COUNT == 4 and PRIORITY[4] == 1 and SEED == "x"
                         and BULK_SEEN == 0 and WAS_BULK == true and #WATCHED == 1 and WATCHED[1] == "shield"
                     """,
-                itemsJson: "[" + """{"name":"Sword","type":"toggle","img":"images/sword.png","codes":"sword"},{"name":"Shield","type":"toggle","img":"images/photo.png","codes":"shield"},""" + classes + "]",
+                itemsJson: "[" + """{"name":"Sword","type":"toggle","img":"images/sword.png","codes":"sword"},{"name":"Shield","type":"toggle","img":"images/photo.png","codes":"shield"},""" +
+                    """{"name":"HM01 - Cut","type":"toggle","img":"images/sword.png","codes":"hm01"},{"name":"Sword Silo","type":"toggle","img":"images/sword.png","codes":"silo1"},""" +
+                    """{"name":"Shield Silo","type":"toggle","img":"images/sword.png","codes":"silo2"},{"name":"Bow Silo","type":"toggle","img":"images/sword.png","codes":"silo3"},""" + classes + "]",
                 layoutsJson: """{"tracker_default":{"type":"array","content":[{"type":"itemgrid","rows":[["sword","shield","trans_a"]]},""" +
                     """{"type":"group","header":"Enemizer","content":{"type":"itemgrid","rows":[[""" + classRow + """]]}},""" +
                     """{"type":"tabbed","tabs":[{"title":"Overworld","content":{"type":"map","maps":["World"]}}]}]}}""",
@@ -822,11 +824,13 @@ namespace AP_Atlas.Core
                     """{"name":"Overview","sections":[{"name":"Shop - purchase 1","ref":"Shop/purchase 1"}],"map_locations":[{"map":"World","x":70,"y":10}]},""" +
                     """{"name":"Beachstickball","sections":[{"name":"10 Hits"}],"map_locations":[{"map":"World","x":20,"y":10}]},""" +
                     """{"name":"Basement","sections":[{"name":"Basement Pot 1"}],"map_locations":[{"map":"World","x":30,"y":10}]},""" +
-                    """{"name":"Ruins","sections":[{"name":"Collectors_Map"}],"map_locations":[{"map":"World","x":40,"y":10}]},""" +
+                    """{"name":"Ruins","sections":[{"name":"Collectors_Map"},{"name":"Relic"},{"name":"Lone Chest"}],"map_locations":[{"map":"World","x":40,"y":10}]},""" +
                     """{"name":"Field","sections":[""" + enemies + """],"map_locations":[{"map":"World","x":50,"y":10}]}]""",
                 files: new Dictionary<string, string>
                 {
-                    ["scripts/autotracking/location_mapping.lua"] = "LOCATION_MAPPING = {\n    [1] = {\"@Tier 1/Hub 1/Hub 1, item 1\"},\n    [7] = {\"@Shop/purchase 1\"},\n}\n"
+                    ["scripts/autotracking/location_mapping.lua"] = "LOCATION_MAPPING = {\n    [1] = {\"@Tier 1/Hub 1/Hub 1, item 1\"},\n    [7] = {\"@Shop/purchase 1\"},\n"
+                        + "    [\"Ruins Relic\"] = {\"@Ruins/Relic\"},\n    [9] = {\"Lone chest\"},\n    [\"Not A Place\"] = {\"@Ruins/Relic\"},\n}\n",
+                    ["scripts/autotracking/item_mapping.lua"] = "ITEM_MAPPING = {\n    [\"Shield\"] = {\"shield\", \"toggle\"},\n    [\"Not An Item\"] = {\"nothing\"},\n}\n",
                 },
                 binaryFiles: new Dictionary<string, byte[]> { ["images/photo.png"] = jpeg });
             var pack = await Task.Run(() => PopTracker.PopTrackerPackLoader.InspectZipPack(zip)) ?? throw new InvalidOperationException("the lab pack wasn't read");
@@ -855,11 +859,16 @@ namespace AP_Atlas.Core
                     ["Arcade 2: Double Banana 1"] = 5,
                     ["Arcade 3: Double Banana 1"] = 6,
                     ["Shop Purchase 1"] = 7,
+                    ["Ruins Relic"] = 8,
+                    ["Lone Chest"] = 9,
                 },
-                Items = new Dictionary<string, long> { ["Sword"] = 50, ["Shield"] = 51 }
+                Items = new Dictionary<string, long> { ["Sword"] = 50, ["Shield"] = 51, ["HM01 Cut"] = 52, ["Bow"] = 53 }
             };
             var report = await Task.Run(() => PopTracker.PackDoctor.Analyze(PopTracker.PackDoctor.Prepare(pack, names)));
             var index = report.Index;
+            // A tile named as the game names the item, punctuation aside; tiles named as items plus a word three of them share.
+            Expect(index.ItemIdsFor("hm01").SequenceEqual(new long[] { 52 }) && index.ItemIdsFor("silo3").SequenceEqual(new long[] { 53 }) && index.ItemIdsFor("silo1").SequenceEqual(new long[] { 50 }),
+                $"tiles weren't paired as the lab's rules say: hm01 [{string.Join(",", index.ItemIdsFor("hm01"))}] silo3 [{string.Join(",", index.ItemIdsFor("silo3"))}] silo1 [{string.Join(",", index.ItemIdsFor("silo1"))}]");
             string Shown(long id) => index.ByLocation.TryGetValue(id, out var m) ? string.Join(", ", m.OrderBy(x => x.Via == null ? 0 : 1).Select(x => x.Section?.Name + ":" + x.Source + (x.Via != null ? "*" : ""))) : "";
             // Two pins share "Tier 1/Hub 1": the mapping's path and the overworld's ref land on the one that has the section, named
             // as the author wrote it ("Hub 1, item 1" for "Hub 1 Item 1"); "Shop/purchase 1" is the child pin "Purchase 1" with one section.
@@ -867,6 +876,12 @@ namespace AP_Atlas.Core
                 && index.UnresolvedReferences.Count == 0 && index.DanglingPaths.Count == 0,
                 $"a path two pins share didn't resolve to the one with the section, or a path wasn't read as its author wrote it: 1 [{Shown(1)}] 7 [{Shown(7)}], {index.UnresolvedReferences.Count} unresolved, {index.DanglingPaths.Count} dangling");
             Expect(Shown(2) == "10 Hits:ComposedName", $"\"Beachstickball\" / \"10 Hits\" wasn't the game's \"Beachstickball (10 Hits)\": [{Shown(2)}]");
+            // A mapping keyed by the game's name, and a value that is a section's name (case aside) rather than a path or an item code.
+            Expect(Shown(8) == "Relic:MappingScript" && Shown(9) == "Lone Chest:MappingScript" && !pack.LoadIssues.Any(i => i.Contains("non-numeric")),
+                $"a mapping keyed by a name or naming a section wasn't read as the author wrote it: 8 [{Shown(8)}] 9 [{Shown(9)}]; {string.Join(" | ", pack.LoadIssues)}");
+            Expect(index.UnknownMappedLocationNames.SequenceEqual(new[] { "Not A Place" }) && index.UnknownMappedItemNames.SequenceEqual(new[] { "Not An Item" })
+                && report.Findings.Any(f => f.Key == "locmap:stale-names") && report.Findings.Any(f => f.Key == "itemmap:stale-names") && index.ItemIdsFor("shield").SequenceEqual(new long[] { 51 }),
+                "a mapping's names the game doesn't have weren't said, or the item mapping keyed by name didn't link: " + string.Join(", ", index.UnknownMappedLocationNames.Concat(index.UnknownMappedItemNames)));
             // The one location ending in the section's name after its area; two of a kind stay unmatched.
             Expect(Shown(3) == "Basement Pot 1:TailName" && Shown(5) == "" && Shown(6) == "", $"the only location ending in the section's name wasn't taken, or one of two was: 3 [{Shown(3)}] 5 [{Shown(5)}] 6 [{Shown(6)}]");
             Expect(report.Findings.Any(f => f.Key == "loc:tail" && f.Details.Count == 1), "the tail matches weren't listed for review");
