@@ -825,7 +825,10 @@ namespace AP_Atlas.Core
                     """{"name":"Beachstickball","sections":[{"name":"10 Hits"}],"map_locations":[{"map":"World","x":20,"y":10}]},""" +
                     """{"name":"Basement","sections":[{"name":"Basement Pot 1"}],"map_locations":[{"map":"World","x":30,"y":10}]},""" +
                     """{"name":"Ruins","sections":[{"name":"Collectors_Map"},{"name":"Relic"},{"name":"Lone Chest"}],"map_locations":[{"map":"World","x":40,"y":10}]},""" +
-                    """{"name":"Field","sections":[""" + enemies + """],"map_locations":[{"map":"World","x":50,"y":10}]}]""",
+                    """{"name":"Field","sections":[""" + enemies + """],"map_locations":[{"map":"World","x":50,"y":10}]},""" +
+                    """{"name":"Episode 3","children":[{"name":"E3L5: Movie Set","children":[{"name":"3DRealms Atomic Health","sections":[{"name":"3DRealms Atomic Health"}],"map_locations":[{"map":"World","x":60,"y":20}]}]}]},""" +
+                    """{"name":"Sinnoh","children":[{"name":"Amity Square","sections":[{"name":"(Left) Item Near Center Warp"}],"map_locations":[{"map":"World","x":60,"y":30}]}]},""" +
+                    """{"name":"Hub 2-5","sections":[{"name":"Hub 2-5 - Hub 2-5, item 9"}],"map_locations":[{"map":"World","x":60,"y":40}]}]""",
                 files: new Dictionary<string, string>
                 {
                     ["scripts/autotracking/location_mapping.lua"] = "LOCATION_MAPPING = {\n    [1] = {\"@Tier 1/Hub 1/Hub 1, item 1\"},\n    [7] = {\"@Shop/purchase 1\"},\n"
@@ -861,6 +864,9 @@ namespace AP_Atlas.Core
                     ["Shop Purchase 1"] = 7,
                     ["Ruins Relic"] = 8,
                     ["Lone Chest"] = 9,
+                    ["E3L5 3DRealms Atomic Health"] = 10,
+                    ["Amity Square (Left) - Item Near Center Warp"] = 11,
+                    ["Hub 2-5, item 09"] = 12,
                 },
                 Items = new Dictionary<string, long> { ["Sword"] = 50, ["Shield"] = 51, ["HM01 Cut"] = 52, ["Bow"] = 53 }
             };
@@ -876,6 +882,10 @@ namespace AP_Atlas.Core
                 && index.UnresolvedReferences.Count == 0 && index.DanglingPaths.Count == 0,
                 $"a path two pins share didn't resolve to the one with the section, or a path wasn't read as its author wrote it: 1 [{Shown(1)}] 7 [{Shown(7)}], {index.UnresolvedReferences.Count} unresolved, {index.DanglingPaths.Count} dangling");
             Expect(Shown(2) == "10 Hits:ComposedName", $"\"Beachstickball\" / \"10 Hits\" wasn't the game's \"Beachstickball (10 Hits)\": [{Shown(2)}]");
+            // Composed with an ancestor's code, with a leading parenthetical given to the pin, and a section that repeats its pin's name
+            // (matched case and punctuation aside: "item 9" for "item 09").
+            Expect(Shown(10) == "3DRealms Atomic Health:ComposedName" && Shown(11) == "(Left) Item Near Center Warp:ComposedName" && Shown(12) == "Hub 2-5 - Hub 2-5, item 9:ComposedName",
+                $"names composed from the pin's ancestors weren't paired: 10 [{Shown(10)}] 11 [{Shown(11)}] 12 [{Shown(12)}]");
             // A mapping keyed by the game's name, and a value that is a section's name (case aside) rather than a path or an item code.
             Expect(Shown(8) == "Relic:MappingScript" && Shown(9) == "Lone Chest:MappingScript" && !pack.LoadIssues.Any(i => i.Contains("non-numeric")),
                 $"a mapping keyed by a name or naming a section wasn't read as the author wrote it: 8 [{Shown(8)}] 9 [{Shown(9)}]; {string.Join(" | ", pack.LoadIssues)}");

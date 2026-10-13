@@ -451,19 +451,67 @@ namespace AP_Atlas.Core.PopTracker
             var candidates = new List<string>();
             string own = section != null && !string.IsNullOrEmpty(section.Name) ? section.Name.Trim() : null;
             string pinName = (pin?.Name ?? "").Trim();
-            if (own != null && pinName.Length > 0)
+            void With(string area, string name)
             {
-                candidates.Add(own + " (" + pinName + ")");
-                candidates.Add(pinName + " (" + own + ")");
-                candidates.Add(pinName + " - " + own);
-                candidates.Add(pinName + ": " + own);
-                candidates.Add(pinName + " " + own);
+                if (area.Length == 0 || name.Length == 0) return;
+                candidates.Add(name + " (" + area + ")");
+                candidates.Add(area + " (" + name + ")");
+                candidates.Add(area + " - " + name);
+                candidates.Add(area + ": " + name);
+                candidates.Add(area + " " + name);
+                candidates.Add(name + " [" + area + "]");
+            }
+            // A section that repeats its pin's name ("Hub 2-5 - Hub 2-5, item 9" under "Hub 2-5") is the rest of it.
+            if (own != null && pinName.Length > 0 && own.StartsWith(pinName + " - ", StringComparison.OrdinalIgnoreCase))
+            {
+                string rest = own.Substring(pinName.Length + 3).Trim();
+                candidates.Add(rest);
+                With(pinName, rest);
+            }
+            if (own != null) With(pinName, own);
+            // The pin's parents, nearest first, each whole and as its code (the part before ":" or " - "): Duke Nukem 3D's
+            // "E3L5 3DRealms Atomic Health" is the section under "Episode 3/E3L5: Movie Set".
+            string core = own ?? pinName;
+            var path = (pin?.FullPath ?? "").Split('/');
+            var ancestors = new List<string>();
+            for (int i = path.Length - 2; i >= 0; i--)
+            {
+                string ancestor = path[i].Trim();
+                if (ancestor.Length == 0 || ancestors.Contains(ancestor)) continue;
+                ancestors.Add(ancestor);
+                int cut = ancestor.IndexOf(':');
+                int dashCut = ancestor.IndexOf(" - ", StringComparison.Ordinal);
+                if (dashCut > 0 && (cut < 0 || dashCut < cut)) cut = dashCut;
+                if (cut > 0) ancestors.Add(ancestor.Substring(0, cut).Trim());
+            }
+            foreach (string ancestor in ancestors)
+            {
+                With(ancestor, core);
+                if (own != null && !string.Equals(core, pinName, StringComparison.OrdinalIgnoreCase)) With(ancestor, pinName + " " + own);
+            }
+            // A section's leading parenthetical belongs to the pin: "(Left) Item Near Center Warp" under "Amity Square" is the game's
+            // "Amity Square (Left) - Item Near Center Warp".
+            if (own != null && own.StartsWith("(") && own.IndexOf(") ", StringComparison.Ordinal) > 0)
+            {
+                int close = own.IndexOf(") ", StringComparison.Ordinal);
+                string paren = own.Substring(0, close + 1), rest = own.Substring(close + 2).Trim();
+                foreach (string area in new[] { pinName }.Concat(ancestors))
+                {
+                    if (area.Length == 0) continue;
+                    candidates.Add(area + " " + paren + " - " + rest);
+                    candidates.Add(area + " " + paren + " " + rest);
+                    candidates.Add(area + " " + paren + ": " + rest);
+                }
             }
             string reorder = own ?? pinName;
             int dash = reorder.IndexOf(" - ", StringComparison.Ordinal);
             if (dash > 0) candidates.Add(reorder[(dash + 3)..].Trim() + " (" + reorder[..dash].Trim() + ")");
             foreach (string candidate in candidates)
                 if (_locationIdsByName.TryGetValue(candidate, out id)) return true;
+            // As written, case and punctuation aside, when that names one location ("Clear Room 4" for "Clear Room 04").
+            _idsByLooseName ??= BuildLooseNames();
+            foreach (string candidate in candidates)
+                if (_idsByLooseName.TryGetValue(Loose(candidate), out id)) return true;
             return false;
         }
 
@@ -571,12 +619,27 @@ namespace AP_Atlas.Core.PopTracker
             return childPin == null ? null : (childPin, childPin.Sections != null && childPin.Sections.Count == 1 ? childPin.Sections[0] : null);
         }
 
-        /// <summary>A name as its author might write it another time: lower case, letters and digits only.</summary>
+        /// <summary>A name as its author might write it another time: lower case, letters and digits only, numbers without leading zeros ("Room 04" is "Room 4").</summary>
         private static string Loose(string name)
         {
             if (string.IsNullOrEmpty(name)) return "";
             var sb = new System.Text.StringBuilder(name.Length);
-            foreach (char c in name) if (char.IsLetterOrDigit(c)) sb.Append(char.ToLowerInvariant(c));
+            int i = 0;
+            while (i < name.Length)
+            {
+                char c = name[i];
+                if (char.IsDigit(c))
+                {
+                    int start = i;
+                    while (i < name.Length && char.IsDigit(name[i])) i++;
+                    int first = start;
+                    while (first < i - 1 && name[first] == '0') first++;
+                    sb.Append(name, first, i - first);
+                    continue;
+                }
+                if (char.IsLetter(c)) sb.Append(char.ToLowerInvariant(c));
+                i++;
+            }
             return sb.ToString();
         }
 
