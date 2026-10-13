@@ -240,11 +240,18 @@ else {
             $running | ForEach-Object { try { $_.Kill() } catch { } }
             Stop-Build 5 "The self-check's processes ($($case.Name)) were still running after 4 minutes. Logs: $checkData\logs"
         }
-        $logText = ''
-        foreach ($name in 'atlas_log.txt', 'atlas_update_log.txt') {
-            $logPath = Join-Path $checkData "logs\$name"
-            if (Test-Path -LiteralPath $logPath) { $logText += (Get-Content -Raw -LiteralPath $logPath) + "`n" }
-        }
+        # The supervisor is the first Atlas's own process, whose program file the swap moved into previous\: Windows then
+        # reports no path for it, so the wait above can end while it still runs. Its line lands within moments; wait for it.
+        $logDeadline = (Get-Date).AddSeconds(90)
+        do {
+            $logText = ''
+            foreach ($name in 'atlas_log.txt', 'atlas_update_log.txt') {
+                $logPath = Join-Path $checkData "logs\$name"
+                if (Test-Path -LiteralPath $logPath) { $logText += (Get-Content -Raw -LiteralPath $logPath) + "`n" }
+            }
+            if ($logText.Contains($case.Expect)) { break }
+            Start-Sleep -Milliseconds 500
+        } while ((Get-Date) -lt $logDeadline)
         if (-not $logText.Contains($case.Expect)) {
             Write-Host $logText
             Stop-Build 5 "The self-check ($($case.Name)) didn't log '$($case.Expect)'. Logs: $checkData\logs"
