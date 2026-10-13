@@ -58,7 +58,7 @@ New code that doesn't need Godot belongs in `AP_Atlas.Core`, with tests. The vis
 
 How Atlas is made robust for map packs and apworlds nobody has tested: a corpus of every game's packs and apworlds, read offline, and rules written from what recurs across packs (never a fix for one pack). The corpus lives outside the repository (third-party files); `AP_Atlas_Source/Tests/corpus_manifest.json` names every file's project, release and SHA-256 so it can be fetched again exactly.
 
-- `python Tools/build_corpus.py --corpus <folder>`: fetches every official and community game's packs and apworlds from GitHub through the authenticated `gh` CLI (paced, resumable, nothing run), into `<folder>\packs` and `<folder>pworlds`.
+- `python Tools/build_corpus.py --corpus <folder>`: fetches every official and community game's packs and apworlds from GitHub through the authenticated `gh` CLI (paced, resumable, nothing run), into `<folder>\packs` and `<folder>\apworlds`.
 - `python Tools/build_corpus_names.py --corpus <folder> --lab <folder>\lab`: every game's item and location names from the engine (the official worlds unpacked from Archipelago's release, the corpus's apworlds), into `<folder>
 ames`, with `_load_report.json` for the worlds that don't load.
 - The corpus check: `Tools/run_selftest.ps1` with `ATLAS_SELFTEST_PACKS=<folder>\packs`, `ATLAS_SELFTEST_PACK_NAMES=<folder>
