@@ -669,6 +669,29 @@ namespace AP_Atlas.Core.PopTracker
             return (rows, built);
         }
 
+        /// <summary>What each tile drawn shows (for tests): its code and whether it shows a picture (else the item's name on a plain tile).</summary>
+        public List<(string Code, bool Picture)> TileKinds()
+        {
+            var tiles = new List<(string, bool)>();
+            void Walk(Node node)
+            {
+                foreach (Node n in node.GetChildren())
+                {
+                    if (n.IsQueuedForDeletion()) continue;
+                    if (n.HasMeta("tile_row"))
+                    {
+                        // A row's cells: a tile by its code, or an empty cell ("?") for a code nothing defines.
+                        foreach (Node cell in n.GetChildren())
+                            if (!cell.IsQueuedForDeletion())
+                                tiles.Add((cell.HasMeta("tile") ? cell.GetMeta("tile").AsString() : "?", cell.HasMeta("tile_picture") && cell.GetMeta("tile_picture").AsBool()));
+                    }
+                    else Walk(n);
+                }
+            }
+            Walk(_visualGrid);
+            return tiles;
+        }
+
         /// <summary>The layout nodes drawn (for tests): each container's kind ("array:horizontal", "dock", "group") with how many parts it holds.</summary>
         public List<(string Kind, int Parts)> LayoutNodes()
         {
@@ -885,6 +908,7 @@ namespace AP_Atlas.Core.PopTracker
                 }
 
                 var tile = CreateVisualTile(itemDef, apName, receivedQty, zoomSize, stage);
+                tile.SetMeta("tile", code);
                 if (!isSearchMatch) tile.Modulate = new Color(0.2f, 0.2f, 0.2f, 0.2f);
                 rowContainer.AddChild(tile);
             }
@@ -1029,7 +1053,18 @@ namespace AP_Atlas.Core.PopTracker
                 }
             }
 
+            if (receivedQty == 0 && stage == null)
+            {
+                // Nothing received yet: PopTracker shows the item's disabled picture when it names one, else its picture or its
+                // first stage's, dimmed. A progressive item keeps its pictures on its stages (266 corpus packs, 10,373 items),
+                // and without this it was a name on a plain tile.
+                if (!string.IsNullOrEmpty(itemDef.DisabledImg)) imgPath = itemDef.DisabledImg;
+                else if (itemDef.Stages.Count > 0 && !string.IsNullOrEmpty(itemDef.Stages[0].DisabledImg)) imgPath = itemDef.Stages[0].DisabledImg;
+                else if (string.IsNullOrEmpty(imgPath) || _pack.FindImage(imgPath) == null) imgPath = PackDoctor.TileImagePath(itemDef, itemDef.AllCodes().FirstOrDefault() ?? "");
+            }
+
             Texture2D matchedTex = _pack.FindImage(imgPath);
+            container.SetMeta("tile_picture", matchedTex != null);
 
             if (matchedTex != null)
             {

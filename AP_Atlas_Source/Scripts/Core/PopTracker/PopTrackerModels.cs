@@ -103,6 +103,8 @@ namespace AP_Atlas.Core.PopTracker
     {
         [JsonProperty("name")] public string Name { get; set; } = "";
         [JsonProperty("img")] public string Img { get; set; } = "";
+        /// <summary>The picture PopTracker shows for the stage while the item isn't active (else the stage's picture, dimmed).</summary>
+        [JsonProperty("disabled_img")] public string DisabledImg { get; set; } = "";
         [JsonProperty("codes")] public string Codes { get; set; } = "";
     }
 
@@ -111,6 +113,8 @@ namespace AP_Atlas.Core.PopTracker
         [JsonProperty("name")] public string Name { get; set; } = "";
         [JsonProperty("type")] public string Type { get; set; } = "toggle"; // toggle, progressive, consumable
         [JsonProperty("img")] public string Img { get; set; } = "";
+        /// <summary>The picture PopTracker shows while the item isn't active (else its picture, dimmed).</summary>
+        [JsonProperty("disabled_img")] public string DisabledImg { get; set; } = "";
 
         // Sometimes codes is a string, sometimes an array. We can use a custom converter or JToken.
         [JsonProperty("codes")] public JToken CodesRaw { get; set; }

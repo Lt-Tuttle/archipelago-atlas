@@ -654,10 +654,11 @@ namespace AP_Atlas.Core.PopTracker
 
             /// <summary>
             /// For scripts/init.lua, which runs once as the pack loads and does the pack's whole setup: A Link to the Past's
-            /// enemizer packs build their tables in 50 to 60 million steps (MoonSharp runs 6 to 8 million a second with the
-            /// watchdog on), where a handler for one item or check never needs a tenth of that.
+            /// enemizer packs build their tables in 96 to 117 million steps (MoonSharp runs 3 to 8 million a second with the
+            /// watchdog on; 36 to 44 seconds on the development PC), where a handler for one item or check never needs a
+            /// tenth of that. The steps are the budget; the time only catches work that burns none, so it leaves a slower PC room.
             /// </summary>
-            public static ScriptLimits Init { get; } = new ScriptLimits { Steps = 300_000_000, Time = TimeSpan.FromSeconds(45) };
+            public static ScriptLimits Init { get; } = new ScriptLimits { Steps = 300_000_000, Time = TimeSpan.FromSeconds(90) };
         }
 
         private int _workDepth;

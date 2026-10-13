@@ -4213,9 +4213,11 @@ public partial class MainTrackerWindow
             // Another pack for the game takes its place. It has two variants: the map offers them, the pack's default in use;
             // picking the other reads the pack again as that variant (its own items) and is remembered for the slot.
             FakeMapPack.Write(second, "UI test second pack", "Test Game", versionsUrl: "https://raw.githubusercontent.com/packs/test-game-poptracker/main/versions.json",
+                itemsJson: """[{"name":"Sword","type":"toggle","img":"images/sword.png","codes":"sword"},{"name":"Shield","type":"toggle","img":"images/broken.png","codes":"shield"},""" +
+                    """{"name":"Progressive Bow","type":"progressive","stages":[{"name":"Bow","img":"images/sword.png","codes":"bow"},{"name":"Silver Bow","img":"images/sword.png","codes":"silver_bow"}]}]""",
                 files: new Dictionary<string, string> { ["var_b/items/items.json"] = """[{"name":"Lantern","type":"toggle","img":"images/sword.png","codes":"lantern"}]""" },
                 variantsJson: """{"standard":{"display_name":"Standard"},"var_b":{"display_name":"Variant B"}}""",
-                layoutsJson: """{"tracker_default":{"type":"itemgrid","rows":[["sword","shield"]]},"tracker_horizontal":{"type":"group","header":"Gear","content":{"type":"array","orientation":"horizontal","content":[{"type":"itemgrid","rows":[["sword"]]},{"type":"layout","key":"shield_grid"},{"type":"map","maps":["World"]}]}},"shield_grid":{"type":"itemgrid","rows":[["shield"]]}}""");
+                layoutsJson: """{"tracker_default":{"type":"itemgrid","rows":[["sword","shield","bow"]]},"tracker_horizontal":{"type":"group","header":"Gear","content":{"type":"array","orientation":"horizontal","content":[{"type":"itemgrid","rows":[["sword"]]},{"type":"layout","key":"shield_grid"},{"type":"map","maps":["World"]}]}},"shield_grid":{"type":"itemgrid","rows":[["shield"]]}}""");
             AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
             var replacement = await UiTestWaitForAsync(() => slot.Pack, "the second pack");
             UiTestExpect(replacement.Manifest.Name == "UI test second pack" && !slot.MapTracker.ShowingEmptyState, "the second pack didn't take the first one's place");
@@ -4228,6 +4230,11 @@ public partial class MainTrackerWindow
             string slotKey = AP_Atlas.Core.Annotations.SlotKey(profile.Id, "Tester");
             UiTestExpect(asVariant.ItemsByCode.ContainsKey("lantern") && !asVariant.ItemsByCode.ContainsKey("sword") && _appSettings.PackVariants.TryGetValue(slotKey, out var kept) && kept == "var_b",
                 "the variant's own items weren't read, or the choice wasn't kept for the slot");
+            _appSettings.PackVariants.Remove(slotKey);
+            // Back to the standard variant (its items are the ones the layouts name).
+            slot.ProgressionTracker.VariantPicker.Selected = 0;
+            slot.ProgressionTracker.VariantPicker.EmitSignal(OptionButton.SignalName.ItemSelected, 0);
+            await UiTestWaitForAsync(() => slot.Pack is { Variant: "standard" } p ? p : null, "the slot to read the pack again as the standard variant");
             _appSettings.PackVariants.Remove(slotKey);
             // Key Items offers the pack's two layouts and Atlas's two built ones; a pack layout draws its own rows, a built one its
             // blocks side by side; the choice is kept for the slot.
@@ -4243,6 +4250,11 @@ public partial class MainTrackerWindow
                 $"the picker doesn't name Atlas's pick first, or it isn't drawn: {keyItems.LayoutPicker.GetItemText(0)}, {keyItems.CurrentLayout} in use, {keyItems.AutoLayout} picked");
             keyItems.SetLayout("tracker_default");
             UiTestExpect(keyItems.VisualShape().Rows == 1 && keyItems.VisualShape().Built == null, $"the pack's default layout isn't drawn as its one row: {keyItems.VisualShape()}");
+            // Nothing received: the progressive item (its pictures on its stages) shows its first stage's picture, dimmed, as
+            // PopTracker does; the shield's picture can't be read, so its name stands on a plain tile.
+            var tiles = keyItems.TileKinds();
+            UiTestExpect(tiles.Any(t => t.Code == "bow" && t.Picture) && tiles.Any(t => t.Code == "sword" && t.Picture) && tiles.Any(t => t.Code == "shield" && !t.Picture),
+                $"the tiles don't show what PopTracker shows: {string.Join(", ", tiles.Select(t => t.Code + (t.Picture ? " picture" : " name")))}");
             keyItems.SetLayout("tracker_horizontal");
             UiTestExpect(keyItems.VisualShape().Rows == 2 && keyItems.VisualShape().Built == null, $"the pack's horizontal layout isn't drawn as its two rows: {keyItems.VisualShape()}");
             // Drawn as the pack lays it out: the group under its header, its two grids side by side (the referenced layout in its place), the map left out.
