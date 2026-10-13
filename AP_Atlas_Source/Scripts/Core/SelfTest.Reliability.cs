@@ -576,6 +576,7 @@ namespace AP_Atlas.Core
                 Archipelago:AddClearHandler("room", function(slot_data)
                     count()
                     Tracker:FindObjectForCode("shield").Active = Archipelago.Seed == "seed-xyz" and Archipelago.ClientStatus.GOAL == 30 and UMLAUT == "Siegbräu"
+                        and Archipelago:GetPlayerAlias(1) == "Tess" and Archipelago.GetPlayerName(1) == "Tester" and Archipelago:GetPlayerGame(2) == "Other Game" and Archipelago:GetPlayerAlias(9) == nil
                 end)
                 Archipelago:AddLocationHandler("room", function(id, name) count() end)
                 UMLAUT = "Siegbr\u{00e4}u"
@@ -591,11 +592,12 @@ namespace AP_Atlas.Core
             {
                 host.Initialize();
                 host.SetRoom(new long[] { 1, 2 }, new long[] { 3, 4, 5 }, "seed-xyz");
+                host.SetPlayers(new[] { (1, "Tester", "Tess", "Self Test Game R"), (2, "Other", "", "Other Game") });
                 host.Clear(1, 0, new Newtonsoft.Json.Linq.JObject());
             });
             Expect(host.Errors.Count == 0 && !host.Stopped, "the scripts didn't run cleanly: " + string.Join("; ", host.Errors));
             Expect(host.StateOf("sword")?.Count == 203 && host.StateOf("shield")?.Active == true,
-                $"the room's tables, seed or the escaped text weren't as the scripts expect: sword {host.StateOf("sword")?.Count}, shield {host.StateOf("shield")?.Active}");
+                $"the room's tables, seed, players or the escaped text weren't as the scripts expect: sword {host.StateOf("sword")?.Count}, shield {host.StateOf("shield")?.Active}");
             await Task.Run(() => host.ApplyLocation(3, "Three"));
             Expect(host.StateOf("sword")?.Count == 302, $"a check didn't move from the missing ids to the checked: sword {host.StateOf("sword")?.Count}");
             Expect(host.UnsupportedApis.Count == 0, "reading the room's tables counted as an unsupported call: " + string.Join(", ", host.UnsupportedApis));

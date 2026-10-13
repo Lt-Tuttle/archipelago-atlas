@@ -219,6 +219,7 @@ public partial class SlotTrackerControl : MarginContainer
         _scripts.OutboxReady ??= OnScriptsOutbox;
         var missing = Session.Locations.AllMissingLocations.ToList();
         string seed = Session.RoomState?.Seed ?? "";
+        var players = Session.Players.AllPlayers.Where(p => p != null).Select(p => (p.Slot, p.Name ?? "", p.Alias ?? "", p.Game ?? "")).ToList();
         _scripts.Start(Pack, PlayerSlot, Team, slotData, items, locations, (host, ms) =>
         {
             if (_mapTracker != null)
@@ -234,7 +235,7 @@ public partial class SlotTrackerControl : MarginContainer
             foreach (var e in host.Errors) AppendDebugLog("[MapTracker] Pack script error: " + e);
             UpdateKeyItemsUI();
             StateChanged?.Invoke();
-        }, missing, seed);
+        }, missing, seed, players);
     }
     /// <summary>The pack's scripts were stopped (a piece of their work went over its limits): the log and Key Items say why.</summary>
     private void PackScriptsStopped(string reason)

@@ -315,6 +315,27 @@ namespace AP_Atlas.Core.PopTracker
                 _archipelago["Seed"] = seed ?? "";
             });
 
+        /// <summary>
+        /// The room's players, for Archipelago:GetPlayerAlias, GetPlayerName and GetPlayerGame (a slot number; nil for one
+        /// the room doesn't have). A Link to the Past's pack reads the player's alias in its clear handler, and without it
+        /// the handler stopped there.
+        /// </summary>
+        public void SetPlayers(IEnumerable<(int Slot, string Name, string Alias, string Game)> players) => Work("the room's players", () =>
+        {
+            _players.Clear();
+            foreach (var p in players ?? Array.Empty<(int, string, string, string)>()) _players[p.Slot] = (p.Name ?? "", string.IsNullOrEmpty(p.Alias) ? p.Name ?? "" : p.Alias, p.Game ?? "");
+        });
+
+        private readonly Dictionary<int, (string Name, string Alias, string Game)> _players = new Dictionary<int, (string, string, string)>();
+
+        // Archipelago:GetPlayerAlias(slot) and Archipelago.GetPlayerAlias(slot) alike: the slot is the last number given.
+        private DynValue PlayerField(CallbackArguments args, Func<(string Name, string Alias, string Game), string> field)
+        {
+            for (int i = args.Count - 1; i >= 0; i--)
+                if (args[i].Type == DataType.Number) return _players.TryGetValue((int)args[i].Number, out var player) ? DynValue.NewString(field(player)) : DynValue.Nil;
+            return DynValue.Nil;
+        }
+
         private Table IdTable(IEnumerable<long> ids)
         {
             var table = new Table(_script);
@@ -963,6 +984,9 @@ namespace AP_Atlas.Core.PopTracker
             clientStatus["PLAYING"] = 20;
             clientStatus["GOAL"] = 30;
             _archipelago["ClientStatus"] = clientStatus;
+            _archipelago["GetPlayerAlias"] = Callback(args => PlayerField(args, p => p.Alias));
+            _archipelago["GetPlayerName"] = Callback(args => PlayerField(args, p => p.Name));
+            _archipelago["GetPlayerGame"] = Callback(args => PlayerField(args, p => p.Game));
             _archipelago["AddClearHandler"] = Callback(args => AddHandler(_clearHandlers, args));
             _archipelago["AddItemHandler"] = Callback(args => AddHandler(_itemHandlers, args));
             _archipelago["AddLocationHandler"] = Callback(args => AddHandler(_locationHandlers, args));

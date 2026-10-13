@@ -181,7 +181,10 @@ def ut_api_missing():
 
 
 def generate_with(tracker_cls, logger, cls, game, slot_name, slot_data, doc):
-    # Rebuilds one player's world from one YAML, in a folder of its own (no other YAML can affect it).
+    # Rebuilds one player's world from one YAML, in a folder of its own (no other YAML can affect it). The engine's own
+    # Players folder must exist, whatever the caller (a slot start makes it; the game sweep didn't, and on an engine no
+    # slot had used yet Universal Tracker couldn't generate and failed on its own log line: KeyError 'ut_status').
+    ensure_players_folder()
     folder = tempfile.mkdtemp(prefix='atlas_yaml_')
     try:
         with open(os.path.join(folder, 'player.yaml'), 'w', encoding='utf-8') as f:
@@ -197,8 +200,15 @@ def generate_with(tracker_cls, logger, cls, game, slot_name, slot_data, doc):
         shutil.rmtree(folder, ignore_errors=True)
 
 
+def server_ids(c):
+    # The ids the server knows the slot's locations by. A location whose address isn't a number isn't one of them: A Link
+    # to the Past's dungeon prizes list ROM addresses, and Universal Tracker leaves those out the same way (a set of them
+    # raised "unhashable type: 'list'", so no A Link to the Past slot's logic started).
+    return {l.address for l in c.multiworld.get_locations(c.player_id) if isinstance(l.address, int)}
+
+
 def verify(c, expected):
-    got = {l.address for l in c.multiworld.get_locations(c.player_id) if l.address is not None}
+    got = server_ids(c)
     exp = set(expected)
     if not exp:
         return {'expected': 0, 'got': len(got), 'missing': 0, 'extra': 0, 'match': None}
@@ -218,7 +228,7 @@ def smoke_test():
                                    {'name': 'AtlasCheck', 'game': game, game: {}})
             if c is None:
                 return {'game': game, 'ok': False, 'locations': 0, 'in_logic': 0, 'error': err}
-            locs = {l.address for l in c.multiworld.get_locations(c.player_id) if l.address is not None}
+            locs = server_ids(c)
             c.set_missing_locations(locs)
             c.set_items_received([])
             state = c.updateTracker()
@@ -982,7 +992,7 @@ def atlas_game_sweep(*args):
                     if c is None:
                         out['error'] = err or 'the world could not be generated with default options'
                     else:
-                        locs = {l.address for l in c.multiworld.get_locations(c.player_id) if l.address is not None}
+                        locs = server_ids(c)
                         reach, _ = reachable_after(c, [], locs)
                         out['locations'] = len(locs)
                         out['in_logic'] = len(reach)
