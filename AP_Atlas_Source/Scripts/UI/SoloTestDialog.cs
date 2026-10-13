@@ -279,6 +279,14 @@ namespace AP_Atlas.UI
                 info.AddThemeColorOverride("font_color", c.Recommended ? AP_Atlas.Core.ThemeColors.AccentText(AP_Atlas.Core.ThemeColors.SurfacePanel) : AP_Atlas.Core.ThemeColors.Text);
                 row.AddChild(info);
                 _packBox.AddChild(row);
+                // What Atlas's pack lab found about it, under its row.
+                foreach (string sentence in c.NoteSentences())
+                {
+                    var noted = Kit.Muted(sentence);
+                    noted.SetMeta("pack_note", c.Repo);
+                    noted.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Warning);
+                    _packBox.AddChild(noted);
+                }
             }
             var without = Kit.Button(_tr("Continue without a pack"), _tr("Pins, Key Items and the pack's scripts aren't scored then."), () => PickPack(new PackChoice(null)), small: true);
             without.SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin;

@@ -44,6 +44,9 @@ namespace AP_Atlas.Core.EngineSetup
         [JsonProperty("loads_with")] public string LoadsWith { get; set; }
         /// <summary>The map packs the pack lab fetched and measured for the game, the best fit first.</summary>
         [JsonProperty("packs")] public List<IndexPack> Packs { get; set; } = new();
+
+        /// <summary>Fields a newer list has that this Atlas doesn't know: kept, so nothing is lost when the list is saved.</summary>
+        [JsonExtensionData] public IDictionary<string, JToken> Unknown { get; set; }
     }
 
     /// <summary>A map pack in Atlas's game list: its project and release, and how it fit the game's checks when the lab measured it.</summary>
@@ -57,6 +60,18 @@ namespace AP_Atlas.Core.EngineSetup
         [JsonProperty("fit")] public int? Fit { get; set; }
         /// <summary>"1083 of 1322": the fit's counts.</summary>
         [JsonProperty("checks")] public string Checks { get; set; }
+
+        /// <summary>What the lab found about the pack, as short codes (AP_Atlas.Core.Games.IndexPackNotes says them in words); empty when nothing.</summary>
+        [JsonProperty("notes")] public List<string> Notes { get; set; } = new();
+
+        /// <summary>The game the pack's ids are for, when its manifest names another (the pack is listed under both).</summary>
+        [JsonProperty("for_game")] public string ForGame { get; set; }
+
+        /// <summary>The game the pack's manifest names, when the pack is listed under the game its ids are for.</summary>
+        [JsonProperty("named_game")] public string NamedGame { get; set; }
+
+        /// <summary>Fields a newer list has that this Atlas doesn't know: kept, so nothing is lost when the list is saved.</summary>
+        [JsonExtensionData] public IDictionary<string, JToken> Unknown { get; set; }
     }
 
     /// <summary>An apworld file Atlas has on disk and has identified: which game, which data checksum.</summary>
@@ -95,6 +110,35 @@ namespace AP_Atlas.Core.EngineSetup
 
         /// <summary>The map packs the game list knows for a game, the best fit first (none for a game it doesn't list).</summary>
         public static List<IndexPack> PacksFor(string game) => Find(game)?.Packs ?? new List<IndexPack>();
+
+        /// <summary>
+        /// The game list's entry for a pack file by its SHA-256 (the release the pack lab measured), with the game it's
+        /// listed under; the measured entry when the pack is listed twice (a pack whose manifest names another game). Null when
+        /// the list doesn't know the file.
+        /// </summary>
+        public static (string Game, IndexPack Pack)? PackBySha256(string sha256)
+        {
+            if (string.IsNullOrEmpty(sha256)) return null;
+            (string, IndexPack)? found = null;
+            foreach (var game in List.Games)
+                foreach (var pack in game.Packs ?? new List<IndexPack>())
+                    if (string.Equals(pack.Sha256, sha256, StringComparison.OrdinalIgnoreCase) && (found == null || (found.Value.Item2.Fit == null && pack.Fit != null)))
+                        found = (game.Game, pack);
+            return found;
+        }
+
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (long Length, DateTime Written, string Sha)> PackHashes = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>A pack file's SHA-256, kept while the file is unchanged (size and time). Any thread; reads the whole file the first time.</summary>
+        public static string Sha256OfPack(string path)
+        {
+            var info = new FileInfo(path);
+            if (!info.Exists) return null;
+            if (PackHashes.TryGetValue(path, out var known) && known.Length == info.Length && known.Written == info.LastWriteTimeUtc) return known.Sha;
+            string sha = EngineDownloader.Sha256Of(path);
+            PackHashes[path] = (info.Length, info.LastWriteTimeUtc, sha);
+            return sha;
+        }
 
         private static string RefreshedPath => Path.Combine(AtlasEngine.EngineDir, "apworld_sources.json");
         private static string CacheDir => Path.Combine(AtlasEngine.EngineDir, "apworld_cache");
@@ -221,6 +265,13 @@ namespace AP_Atlas.Core.EngineSetup
             List.Games.FirstOrDefault(g => string.Equals(g.Game, game, StringComparison.OrdinalIgnoreCase))
             ?? List.Games.FirstOrDefault(g => string.Equals(g.DisplayName, game, StringComparison.OrdinalIgnoreCase));
 
+        /// <summary>Forgets a list fetched by Update game list (for tests): the bundled one is used again.</summary>
+        internal static void ForgetRefreshed()
+        {
+            SafeFile.Delete(RefreshedPath);
+            _list = null;
+        }
+
         /// <summary>Downloads a newer list from a URL (e.g. a maintained fork of the index), validated before it's used.</summary>
         public static async Task<string> RefreshAsync(string url, CancellationToken ct)
         {
@@ -231,7 +282,8 @@ namespace AP_Atlas.Core.EngineSetup
                 return "That URL didn't return an Atlas apworld source list; the current list is unchanged.";
             if (list.Games.Any(g => g.Versions.Any(v => !v.Url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))))
                 return "That list has non-HTTPS download links; it wasn't used.";
-            SafeFile.WriteJson(RefreshedPath, list, Formatting.None);
+            // The text as fetched, not the list as this Atlas reads it: a field it doesn't know survives for the Atlas that does.
+            SafeFile.WriteAllText(RefreshedPath, text);
             _list = null;
             return $"Source list updated: {list.Games.Count} games (built {list.Built}).";
         }

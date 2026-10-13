@@ -69,7 +69,7 @@ public partial class MainTrackerWindow
             SearchPacksAsync = async game =>
             {
                 var (candidates, problem) = await AP_Atlas.Core.MapPackManagerControl.SearchPacksAsync(game);
-                return (candidates.Select(c => new AP_Atlas.UI.SetupPackCandidate(c.Repo, c.Description ?? "", c.Stars, c.Fork, c.Recommended)).ToList(), problem);
+                return (candidates.Select(c => new AP_Atlas.UI.SetupPackCandidate(c.Repo, c.Description ?? "", c.Stars, c.Fork, c.Recommended, c.IndexFit, c.NoteSentences())).ToList(), problem);
             },
             InstallPackAsync = async (game, repo, say) =>
             {

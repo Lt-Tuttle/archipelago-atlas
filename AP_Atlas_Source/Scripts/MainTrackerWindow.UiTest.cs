@@ -174,7 +174,7 @@ public partial class MainTrackerWindow
             RoomTextReachesEverySlotAsync);
         await ScenarioAsync("Moving a slot's panel: out of the window and docked elsewhere, the slot keeps its connection, views and updates, and shows what arrived meanwhile",
             SlotPanelMovesWholeAsync);
-        await ScenarioAsync("Map packs: a slot's pack has its images while the slot is connected (its map shows them), the Pack Doctor's while its window is open; then they're freed once another pack is used",
+        await ScenarioAsync("Map packs: a slot's pack has its images while the slot is connected (its map shows them), the Pack Doctor's while its window is open (its overview saying what Atlas's pack lab measured for that very file); then they're freed once another pack is used",
             PackImagesFollowTheirUsersAsync);
         await ScenarioAsync("Maps without a picture and checks without a pin: a map whose pack ships no usable picture lists its locations (named in a note, each opening in Properties) instead of dots on nothing, and a map with its picture shows its pins; the seed's checks no pin places are listed under Not on the map and counted on the map, and a check that's done leaves the list; Follow my checks is on for a pack that can't follow the game, shows the map of a check made on another map, leaves the map alone while the user zooms it, and is kept per slot",
             PicturelessMapsAsync);
@@ -3809,9 +3809,21 @@ public partial class MainTrackerWindow
             host.ShowTool(AP_Atlas.UI.Tool.MapTracker);
             await UiTestWaitForAsync(() => slot.MapTracker.FindChildren("*", "TextureRect", true, false).OfType<TextureRect>().FirstOrDefault(s => s.Texture != null), "the map's background on the Map Tracker");
 
+            // Atlas's game list knows this very file (by its SHA-256): the Doctor's overview says what the pack lab measured.
+            await using var listSite = new AP_Atlas.Core.Testing.FakeWebSite();
+            string zipSha = AP_Atlas.Core.EngineSetup.ApworldSources.Sha256OfPack(zip);
+            listSite.Respond = path => path == "/list.json"
+                ? (200, """{"format":"atlas-apworld-sources/1","built":"9999-12-31","source":"ui-test","games":[{"game":"Test Game","versions":[],"packs":[{"repo":"tests/pack","release":"v1","asset":"p.zip","sha256":"SHA","fit":100,"checks":"2 of 2"}]}]}""".Replace("SHA", zipSha))
+                : (404, "");
+            await AP_Atlas.Core.EngineSetup.ApworldSources.RefreshAsync(listSite.Site + "/list.json", System.Threading.CancellationToken.None);
+
             // The Pack Doctor window uses the pack while it's open.
             OpenPackDoctor(zip);
             var window = await UiTestWaitForAsync(() => GetTree().Root.GetChildren().OfType<AP_Atlas.UI.PackDoctorWindow>().FirstOrDefault(), "the Pack Doctor window");
+            var labLine = await UiTestWaitForAsync(() => window.FindChildren("*", nameof(Label), true, false).OfType<Label>().FirstOrDefault(l => IsInstanceValid(l) && !l.IsQueuedForDeletion() && l.HasMeta("lab_line")),
+                "the overview's line on what the pack lab measured for this file");
+            UiTestExpect(labLine.Text.StartsWith("Atlas's pack lab linked 100% of this pack's checks (2 of 2); here ", StringComparison.Ordinal), $"the overview's lab line says \"{labLine.Text}\"");
+            AP_Atlas.Core.EngineSetup.ApworldSources.ForgetRefreshed();
             await UiTestWaitForAsync(() => AP_Atlas.Core.PopTracker.PackImages.UsersOf(pack) == 2 && pack.ImagesLoaded ? window : null, "the Pack Doctor window to use the pack's images");
             // The overview's coverage rows: the name, the bar and the count on one line, what the count is made of under it.
             // (The overview is built again when the check's report arrives: each look finds the rows afresh.)

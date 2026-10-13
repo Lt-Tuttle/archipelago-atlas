@@ -623,6 +623,14 @@ namespace AP_Atlas.Core
             /// <summary>In Atlas's game list: how the pack lab measured the project's pack against the game's checks (percent), and the counts.</summary>
             public int? IndexFit;
             public string IndexChecks;
+            /// <summary>Listed in Atlas's game list for this game (measured or not).</summary>
+            public bool IndexListed;
+            /// <summary>What the pack lab found about it (codes), the game its checks are for, and the game its manifest names.</summary>
+            public List<string> IndexNotes = new();
+            public string IndexForGame, IndexNamedGame;
+
+            /// <summary>The lab's notes in words (empty when none).</summary>
+            public List<string> NoteSentences() => AP_Atlas.Core.Games.IndexPackNotes.Sentences(IndexNotes, IndexForGame, IndexNamedGame);
         }
 
         /// <summary>One of a project's releases that holds a pack (for the choice before a download).</summary>
@@ -750,6 +758,10 @@ namespace AP_Atlas.Core
                 }
                 known.IndexFit = pack.Fit;
                 known.IndexChecks = pack.Checks;
+                known.IndexListed = true;
+                known.IndexNotes = pack.Notes ?? new List<string>();
+                known.IndexForGame = pack.ForGame;
+                known.IndexNamedGame = pack.NamedGame;
             }
             return (list, problem);
         }
@@ -868,7 +880,7 @@ namespace AP_Atlas.Core
                     // The game's own guide names it, or Atlas's game list measured it: said above the project, in the accent, so it's the first thing read.
                     string note = c.Recommended ? "Recommended by the game's setup guide"
                         : c.IndexFit is int fit ? $"In Atlas's game list: fits {fit}% of the game's checks" + (string.IsNullOrEmpty(c.IndexChecks) ? "" : $" ({c.IndexChecks})")
-                        : c.IndexChecks != null || c.IndexFit != null ? "In Atlas's game list" : null;
+                        : c.IndexListed || c.IndexChecks != null || c.IndexFit != null ? "In Atlas's game list" : null;
                     if (note != null)
                     {
                         var column = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
@@ -878,6 +890,14 @@ namespace AP_Atlas.Core
                         else recommended.SetMeta("listed_pack", c.Repo);
                         recommended.AddThemeColorOverride("font_color", ThemeColors.AccentText(ThemeColors.Surface));
                         column.AddChild(recommended);
+                        // What the pack lab found about it (another version, another game, scripts that stop), before the project.
+                        foreach (string sentence in c.NoteSentences())
+                        {
+                            var lab = new Label { Text = sentence, AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill };
+                            lab.SetMeta("pack_note", c.Repo);
+                            lab.AddThemeColorOverride("font_color", ThemeColors.Warning);
+                            column.AddChild(lab);
+                        }
                         column.AddChild(info);
                         row.AddChild(column);
                     }
@@ -1132,10 +1152,19 @@ namespace AP_Atlas.Core
             return await InstallBestPackAsync(game, candidates, say);
         }
 
+        /// <summary>
+        /// The projects Atlas tries, in order, when it picks a pack by itself: the guide's recommendation, then the game list's
+        /// best fits, then GitHub's most starred and most recently updated; a pack the lab found made for another version or
+        /// game, or whose scripts stop, waits behind the rest (tried only when there's room). At most PackProjectPick.MostProjects.
+        /// </summary>
+        internal static List<PackCandidate> PickOrder(IReadOnlyList<PackCandidate> candidates) =>
+            candidates.Select((c, i) => (c, i)).OrderByDescending(x => x.c.Recommended).ThenBy(x => AP_Atlas.Core.Games.IndexPackNotes.WaitsBehind(x.c.IndexNotes))
+                .ThenByDescending(x => x.c.IndexFit ?? -1).ThenByDescending(x => x.c.Stars)
+                .ThenByDescending(x => x.c.Updated ?? DateTime.MinValue).ThenBy(x => x.i).Select(x => x.c).Take(AP_Atlas.Core.Games.PackProjectPick.MostProjects).ToList();
+
         internal async Task<(bool Ok, string Detail, string File, string Repo)> InstallBestPackAsync(string game, IReadOnlyList<PackCandidate> candidates, Action<string> say)
         {
-            var order = candidates.Select((c, i) => (c, i)).OrderByDescending(x => x.c.Recommended).ThenByDescending(x => x.c.IndexFit ?? -1).ThenByDescending(x => x.c.Stars)
-                .ThenByDescending(x => x.c.Updated ?? DateTime.MinValue).ThenBy(x => x.i).Select(x => x.c).Take(AP_Atlas.Core.Games.PackProjectPick.MostProjects).ToList();
+            var order = PickOrder(candidates);
             string trying = NewTryingFolder();
             try
             {

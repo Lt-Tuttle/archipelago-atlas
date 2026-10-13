@@ -82,6 +82,9 @@ namespace AP_Atlas.Core.PopTracker
         public HashSet<string> ScriptItemCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         public int SectionsTotal, SectionsLinked, SectionsByScript, SectionsByName, SectionsLoose, SectionsByFix;
         public int ApLocationsTotal, ApLocationsPlaced;
+        /// <summary>How Atlas's pack lab measured this very file (by its SHA-256): pin sections linked in percent and the counts, or null when the game list doesn't know it.</summary>
+        public int? LabFit;
+        public string LabChecks;
         /// <summary>The locations of the seed a connected slot of this game plays (empty when none is connected): the Recommended tab puts their rows first.</summary>
         public HashSet<long> SeedLocationIds = new HashSet<long>();
         /// <summary>Game locations no pin holds, by name (the first forty, sorted), for reports.</summary>

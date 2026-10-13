@@ -96,6 +96,18 @@ namespace AP_Atlas.Core.PopTracker
                 var report = await Task.Run(() => PackDoctor.Analyze(inputs, slotData));
                 try { report.SeedLocationIds = new HashSet<long>(SeedLocations?.Invoke(game) ?? Enumerable.Empty<long>()); }
                 catch (Exception ex) { Logger.LogDebug("The seed's locations for the Pack Doctor couldn't be read: " + ex.Message); }
+                // What the pack lab measured for this very file, when Atlas's game list knows it (the overview compares).
+                try
+                {
+                    string sha = await Task.Run(() => AP_Atlas.Core.EngineSetup.ApworldSources.Sha256OfPack(original.SourcePath));
+                    if (AP_Atlas.Core.EngineSetup.ApworldSources.PackBySha256(sha) is { } lab && lab.Pack.Fit is int labFit)
+                    {
+                        report.LabFit = labFit;
+                        report.LabChecks = lab.Pack.Checks;
+                    }
+                }
+                catch (System.IO.IOException ex) { Logger.LogDebug("The pack's file couldn't be read for the game list's measure: " + ex.Message); }
+                catch (UnauthorizedAccessException ex) { Logger.LogDebug("The pack's file couldn't be read for the game list's measure: " + ex.Message); }
                 Reports[key] = report;
                 ReportReady?.Invoke(key);
 

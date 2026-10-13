@@ -484,6 +484,23 @@ namespace AP_Atlas.UI
         private string _selectedFindingKey;
         private bool _showQuiet;
 
+        /// <summary>A result this many points under the lab's is said as worse.</summary>
+        internal const int LabWorseBy = 10;
+
+        /// <summary>
+        /// What Atlas's pack lab measured for this very file, and whether this check links clearly fewer (null when the game
+        /// list doesn't know the file): fewer usually means another version of the game's apworld than the one the lab used.
+        /// </summary>
+        internal (string Text, bool Worse)? LabLine()
+        {
+            if (_report?.LabFit is not int lab || _report.SectionsTotal <= 0) return null;
+            int here = (int)Math.Round(100.0 * _report.SectionsLinked / _report.SectionsTotal);
+            string measured = $"Atlas's pack lab linked {lab}% of this pack's checks" + (string.IsNullOrEmpty(_report.LabChecks) ? "" : $" ({_report.LabChecks})");
+            if (here + LabWorseBy <= lab)
+                return (measured + $"; here {here}%. That usually means another version of {_report.Names?.Game ?? "the game"}'s apworld than the lab's: its page on Games shows the versions and which one this pack fits.", true);
+            return (measured + $"; here {here}%.", false);
+        }
+
         private Control BuildOverview()
         {
             var split = new HSplitContainer { SizeFlagsVertical = Control.SizeFlags.ExpandFill };
@@ -504,6 +521,14 @@ namespace AP_Atlas.UI
             left.AddChild(CoverageBar("Pin sections linked", _report.SectionsLinked, _report.SectionsTotal,
                 $"script {_report.SectionsByScript} · name {_report.SectionsByName} · partial {_report.SectionsLoose} · yours {_report.SectionsByFix}"));
             left.AddChild(CoverageBar("Game locations on a map", _report.ApLocationsPlaced, _report.ApLocationsTotal, ""));
+            if (LabLine() is { } lab)
+            {
+                var labLabel = Kit.Subtle(lab.Text);
+                labLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+                labLabel.SetMeta("lab_line", lab.Worse);
+                if (lab.Worse) labLabel.AddThemeColorOverride("font_color", ThemeColors.Warning);
+                left.AddChild(labLabel);
+            }
 
             var recs = Recommendations();
             if (recs.Count > 0)

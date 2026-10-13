@@ -38,28 +38,28 @@
      "checks": "196 of 197"
     },
     {
-     "repo": "Mysteryem/ahit-poptracker",
-     "release": "v1.3.0",
-     "asset": "ahit-poptracker.zip",
-     "sha256": "c1a27f258da609a80a13375ebf5e8b7b115fe5a913fd43a470b3db00fe1d02b3",
-     "fit": 74,
-     "checks": "257 of 349"
-    },
-    {
      "repo": "subenji/ahit-poptracker",
      "release": "current files",
      "asset": "zipball",
      "sha256": "f698d95c2321e12a936e9460fbb7bf12da53b7661543ffa2b1914ea50fac737f",
-     "fit": 17,
-     "checks": "33 of 191"
+     "fit": 99,
+     "checks": "190 of 191"
     },
     {
      "repo": "sflavelle/ahit-poptracker",
      "release": "current files",
      "asset": "zipball",
      "sha256": "365461c30b4d8f3fce6a9a9f475eedb7fe2ac25b7da870de5d94aaa36c71c841",
-     "fit": 16,
-     "checks": "32 of 197"
+     "fit": 97,
+     "checks": "191 of 197"
+    },
+    {
+     "repo": "Mysteryem/ahit-poptracker",
+     "release": "v1.3.0",
+     "asset": "ahit-poptracker.zip",
+     "sha256": "c1a27f258da609a80a13375ebf5e8b7b115fe5a913fd43a470b3db00fe1d02b3",
+     "fit": 74,
+     "checks": "257 of 349"
     }
    ]
   },
@@ -110,7 +110,10 @@
      "asset": "alttp-ap-tracker-v0.5.2-beta-10.zip",
      "sha256": "0fda693c42043693aa86d7ba508203ca558eab563322cad82aafdf8517321246",
      "fit": 13,
-     "checks": "321 of 2390"
+     "checks": "321 of 2390",
+     "notes": [
+      "other_version"
+     ]
     },
     {
      "repo": "Nattle/alttp-ap-poptracker-pack",
@@ -118,7 +121,10 @@
      "asset": "zipball",
      "sha256": "fae889ae481daa69687543bba899ce99bc2cf237e7b920974e1621b8b5ed4c0b",
      "fit": 10,
-     "checks": "321 of 3141"
+     "checks": "321 of 3141",
+     "notes": [
+      "other_version"
+     ]
     },
     {
      "repo": "StripesOO7/alttp-ap-tracker",
@@ -258,6 +264,7 @@
      "sha256": "2e0c6f5603fbfd777a593726c308e77685e3cbed75bc0bad6e24faab5fa6b450"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "ladybunne/AnUntitledStory_PopTrackerPack",
@@ -267,8 +274,7 @@
      "fit": 100,
      "checks": "166 of 166"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "ANIMAL WELL",
@@ -343,6 +349,7 @@
      "sha256": "f255f7f25b87c515af9e9d066a2735a1517c12d3f671aae62985c5080ce854ac"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "PixieCatSupreme/anodyne-ap-tracker",
@@ -350,7 +357,10 @@
      "asset": "zipball",
      "sha256": "a134a236d1e199ca79359454f0386a9810e355b62f31a8a04d271c665b7f9f0e",
      "fit": 14,
-     "checks": "416 of 2966"
+     "checks": "416 of 2966",
+     "notes": [
+      "other_version"
+     ]
     },
     {
      "repo": "mayor-wren/anodyne-ap-tracker",
@@ -358,7 +368,10 @@
      "asset": "zipball",
      "sha256": "6670ca5e96a7828a0c2150520380e731e103fa5d81603365b5cf2d4aaf7b292b",
      "fit": 14,
-     "checks": "416 of 2953"
+     "checks": "416 of 2953",
+     "notes": [
+      "other_version"
+     ]
     },
     {
      "repo": "palex00/anodyne-ap-tracker",
@@ -366,7 +379,10 @@
      "asset": "zipball",
      "sha256": "7a6d0c002fd35797ef27733931915583defa936f62a972f03903e556758a998d",
      "fit": 14,
-     "checks": "416 of 2966"
+     "checks": "416 of 2966",
+     "notes": [
+      "other_version"
+     ]
     },
     {
      "repo": "Mysteryem/anodyne-ap-tracker",
@@ -374,7 +390,10 @@
      "asset": "zipball",
      "sha256": "b0b9c7a6006e23085f267371b28da95615304bc21e6e0568cb726c9b604a6303",
      "fit": 5,
-     "checks": "136 of 2635"
+     "checks": "136 of 2635",
+     "notes": [
+      "other_version"
+     ]
     },
     {
      "repo": "SephDB/anodyne-ap-tracker",
@@ -382,10 +401,12 @@
      "asset": "zipball",
      "sha256": "7a8f73fac2fc2ce3e3192fc4e089588cf945f1ecd2e5f5ae254bafc5eb8f897e",
      "fit": 5,
-     "checks": "136 of 2635"
+     "checks": "136 of 2635",
+     "notes": [
+      "other_version"
+     ]
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Another Crabs Treasure",
@@ -718,6 +739,7 @@
      "sha256": "52347d734459e6ba79797bf94d6911d9c28977f5b0a0d0e1d4e77d4e7a66cf32"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "Ouro-dev/astalon-poptracker",
@@ -737,8 +759,7 @@
      "asset": "zipball",
      "sha256": "b420082d4b96f4d7469574f853609c24c8d5baae6680e99625094b48edfe0a85"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Autopelago",
@@ -848,6 +869,7 @@
      "sha256": null
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "graygooglitch/balatroap_poptracker",
@@ -857,8 +879,7 @@
      "fit": 100,
      "checks": "969 of 969"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Banjo-Tooie",
@@ -878,6 +899,7 @@
      "sha256": null
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "Cyb3RGER/banjo-tooie-ap-tracker",
@@ -919,8 +941,7 @@
      "fit": 78,
      "checks": "4285 of 5505"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Bits & Bops",
@@ -1198,6 +1219,7 @@
      "sha256": "ae22c9a312b7dfaa3a7f111ff8a02d78f1ec2eb1ac821d9e076c0228f51cfecb"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "mrkssr/PopTracker-AP-Brotato",
@@ -1205,10 +1227,12 @@
      "asset": "zipball",
      "sha256": "a02b948ba97e239e6b842613c67b66224c4a155d1ef473c364cf56b66676452a",
      "fit": 98,
-     "checks": "2758 of 2804"
+     "checks": "2758 of 2804",
+     "notes": [
+      "no_pictures"
+     ]
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Buckshot Roulette",
@@ -1339,6 +1363,7 @@
      "sha256": "99f1c4b0a62ca1ad306aff4790fdfb8dedf6bd33d87c7e306d5793d5d9c49a9b"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "Apheayenne/Cat_Quest_Poptracker",
@@ -1362,10 +1387,12 @@
      "asset": "zipball",
      "sha256": "b4747ab7f3ffc2492ed94423fc206383d7f5d5e7c3cfcbb12f73f198a887eb20",
      "fit": 0,
-     "checks": "0 of 1"
+     "checks": "0 of 1",
+     "notes": [
+      "other_version"
+     ]
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Cave Story",
@@ -1435,6 +1462,7 @@
      "sha256": null
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "StripesOO7/Celeste-AP-Tracker",
@@ -1466,10 +1494,19 @@
      "asset": "Celeste-OW-Archipelago-Tracker-1.0.0.zip",
      "sha256": "160c6a6d14c2ce02dab21efa21db9f4039bf66ed983b9d48498530fd5efaf681",
      "fit": 0,
-     "checks": "0 of 408"
+     "checks": "0 of 408",
+     "notes": [
+      "other_game"
+     ],
+     "for_game": "Celeste (Open World)"
+    },
+    {
+     "repo": "Reisz/Celeste-OpenWorld-AP-Tracker",
+     "release": "current files",
+     "asset": "zipball",
+     "sha256": "083517240a9975d7a368efa8af31bcd33b7f916f008da46e6fe0e3b7bea4caa6"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Celeste (Open World)",
@@ -1489,10 +1526,11 @@
      "checks": "5048 of 5052"
     },
     {
-     "repo": "Reisz/Celeste-OpenWorld-AP-Tracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "083517240a9975d7a368efa8af31bcd33b7f916f008da46e6fe0e3b7bea4caa6"
+     "repo": "matthewjaykoster/Celeste-OW-Archipelago-Tracker",
+     "release": "v1.0.0",
+     "asset": "Celeste-OW-Archipelago-Tracker-1.0.0.zip",
+     "sha256": "160c6a6d14c2ce02dab21efa21db9f4039bf66ed983b9d48498530fd5efaf681",
+     "named_game": "Celeste"
     },
     {
      "repo": "Awsomekeldeo/Celeste-Open-World-AP-Tracker",
@@ -1520,6 +1558,7 @@
      "sha256": "04dfae6f87e3eaa24692a5dbf488cf5d8387e76f4419720a2248b21ef2b5f18b"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "checkerslogic/checksmate-poptracker",
@@ -1529,8 +1568,7 @@
      "fit": 100,
      "checks": "86 of 86"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Choo-Choo Charles",
@@ -1562,16 +1600,16 @@
      "release": "3.0.5",
      "asset": "Choo-Choo-Charles-Tracker.zip",
      "sha256": "bc081547a4866708bdaeb349e81b3cded3ee2c5243ecf3cffdcef2ae5527c518",
-     "fit": 79,
-     "checks": "710 of 894"
+     "fit": 80,
+     "checks": "712 of 894"
     },
     {
      "repo": "Ayden123kitten/Choo-Choo-Charles-PopTracker-Remake-Lite",
      "release": "3.0.5",
      "asset": "Choo-Choo-Charles-Tracker-Lite.zip",
      "sha256": "c6f7e07e20cf7344bc90dcc8062741ec2517dc4c96f2218f8bc42e79a5245323",
-     "fit": 79,
-     "checks": "710 of 894"
+     "fit": 80,
+     "checks": "712 of 894"
     }
    ]
   },
@@ -1761,6 +1799,7 @@
      "sha256": "c19c02af77aa1aafe068afb74ce3d269d10bd2c7f8b28cdb50fce0d5a072db8a"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "lurch9229/CrossCode-Poptracker-AP",
@@ -1800,10 +1839,12 @@
      "asset": "zipball",
      "sha256": "4c9148e7e7232e92d694398dc4bea649616321275d8338a3073aaa480ea23f17",
      "fit": 0,
-     "checks": "2 of 813"
+     "checks": "2 of 813",
+     "notes": [
+      "other_version"
+     ]
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "CrosswordAP",
@@ -1877,6 +1918,7 @@
      "sha256": "a1b88e511df5411d2fc27eb06ea35dbd1f434832c39df79dc65d44fcbb64c8f6"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "TheArcticFox42/CupheadPoptracker",
@@ -1892,8 +1934,7 @@
      "asset": "zipball",
      "sha256": "3d4f7ec7fbb95fc53a57bdae0694a3fd6f50e1c83c32ef148933f8c32785424f"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Dark Cloud 1",
@@ -1918,6 +1959,7 @@
      "sha256": "20c11777398fbe3abf437e3f64aed35b408aab7962b2405bece2ce45602436ac"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "cloudofdarkhole6/DC1-poptracker",
@@ -1925,8 +1967,7 @@
      "asset": "DC1-poptracker_0.1.2.zip",
      "sha256": "608753761b1180c14b4329f5232709c2d803de4206e22b23ab4fe9e071766fdf"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Dark Souls II",
@@ -1946,6 +1987,7 @@
      "sha256": "17aa8796be253157ad931543421ffca2b9ec4469bcde571945b59b9e90374dee"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "AkagiCritMagnet/Dark-Souls-2-poptracker-for-Archipelago",
@@ -1995,8 +2037,7 @@
      "fit": 98,
      "checks": "2981 of 3036"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Dark Souls III",
@@ -2061,6 +2102,7 @@
      "sha256": "17107b2e02df7d5cb6fa1ed0addebd301d124246c2b0d7a294d08ed6b815a5ee"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "routhken/Dark_Souls_Remastered_tracker",
@@ -2070,8 +2112,7 @@
      "fit": 72,
      "checks": "1172 of 1632"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "DELTARUNE",
@@ -2131,6 +2172,7 @@
      "sha256": "cbdc3e304676c9e026937b1b442664c0c89000db284da56af94b1b45595f0827"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "Tenebrosful/Deltarune-PopTracker",
@@ -2138,8 +2180,7 @@
      "asset": "zipball",
      "sha256": "82d85317759b116945b22eea35f6ded8ed9b8ce42559ab04edfd86ee26d05e45"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Devil May Cry 3",
@@ -2198,6 +2239,7 @@
      "sha256": "3abf357eb049e70fda855bc2b008228a5e87f9bcd43c5a3c396b2c77dd913729"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "Ozone31/diddy-kong-racing-ap-tracker",
@@ -2213,8 +2255,7 @@
      "asset": "DKR_AP_Pack.zip",
      "sha256": "0003227e8c95a22c202931ee24a2b8cf1ab1563a003bbb48d214377699a5208d"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Dome Keeper",
@@ -2369,7 +2410,10 @@
      "asset": "zipball",
      "sha256": "6647c99ab59e3c88e122572b36491d7785a21b8ccb68fe8360b7c8b6667ea045",
      "fit": 52,
-     "checks": "948 of 1824"
+     "checks": "948 of 1824",
+     "notes": [
+      "other_version"
+     ]
     },
     {
      "repo": "elfgang/doom-ap-tracker",
@@ -2377,7 +2421,10 @@
      "asset": "zipball",
      "sha256": "56f0c611ba4a6b43981d49e69bf44237989c01e52480176fccfc70ed7517c699",
      "fit": 52,
-     "checks": "948 of 1824"
+     "checks": "948 of 1824",
+     "notes": [
+      "other_version"
+     ]
     }
    ]
   },
@@ -2511,17 +2558,17 @@
      "sha256": null
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "Joxtacy/dukenukem3d-poptracker",
      "release": "v0.0.10",
      "asset": "duke_nukem_3d_ap_tracker_0.0.10.zip",
      "sha256": "75355343c10fe392a5f9b2e745ea3cf53147699986ca356b84a5dc70591acd44",
-     "fit": 0,
-     "checks": "0 of 1608"
+     "fit": 100,
+     "checks": "1608 of 1608"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "EarthBound",
@@ -2625,7 +2672,16 @@
      "sha256": "5bec1178120e695ea7f6f35596c049aa9b949d89a95d83233c636be4b605fd52"
     }
    ],
-   "loads_with": "0.6.7"
+   "loads_with": "0.6.7",
+   "packs": [
+    {
+     "repo": "CTConqueror/FF1PR-AP-MapTracker",
+     "release": "0.1.5",
+     "asset": "FF1PR-AP-MapTracker-0.1.5.zip",
+     "sha256": "03aabc5ab25293fc067012986a722f0864778a1922f2592d2eb0e370891d2fc4",
+     "named_game": "Final Fantasy"
+    }
+   ]
   },
   {
    "game": "Final Fantasy",
@@ -2654,7 +2710,11 @@
      "repo": "CTConqueror/FF1PR-AP-MapTracker",
      "release": "0.1.5",
      "asset": "FF1PR-AP-MapTracker-0.1.5.zip",
-     "sha256": "03aabc5ab25293fc067012986a722f0864778a1922f2592d2eb0e370891d2fc4"
+     "sha256": "03aabc5ab25293fc067012986a722f0864778a1922f2592d2eb0e370891d2fc4",
+     "notes": [
+      "other_game"
+     ],
+     "for_game": "FF1 Pixel Remaster"
     },
     {
      "repo": "CaptStack/ffxii-poptracker",
@@ -2787,6 +2847,25 @@
    ]
   },
   {
+   "game": "Final Fantasy XIV",
+   "display_name": null,
+   "apworld": null,
+   "home": null,
+   "repo": null,
+   "versions": [],
+   "official": true,
+   "packs": [
+    {
+     "repo": "shonicth/FFXIV-PopTracker",
+     "release": "current files",
+     "asset": "zipball",
+     "sha256": "ed2ae0f0422428051418c0e81c095ceb2cb74f0db9672b13dcf64ded3665744f",
+     "fit": 100,
+     "checks": "7957 of 7961"
+    }
+   ]
+  },
+  {
    "game": "Fire Emblem Sacred Stones",
    "display_name": null,
    "apworld": "fe8",
@@ -2858,6 +2937,7 @@
      "sha256": "9fce6b13e43cdeda0246aef394f26d9299b9c86a3df1c8694357813c7b8a90c2"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "Rooby-Roo/Frogmonster_Tracker",
@@ -2865,8 +2945,7 @@
      "asset": "Frogmonster.zip",
      "sha256": "54496f1b60ae68c9f21694e866cf529700947fca125bda1af372a11e0e9e9aad"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Garfield Kart - Furious Racing",
@@ -2971,6 +3050,7 @@
      "sha256": "5a8fd8b2078c809a2beda41218e74c7c56f11693a00555c71230263ea23c892b"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "Kryen112/gauntlet_legends_n64_ap_tracker",
@@ -2978,8 +3058,7 @@
      "asset": "zipball",
      "sha256": "d8dc980cb89cc79bce38b866f0d8308f0b28607d396e25da1c4654f1ce067137"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Glover",
@@ -3099,6 +3178,7 @@
      "sha256": "69ace9824f2a0015ce420cbec62ca373cd5e2d8a890a116e4f98e55692b82bbe"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "routhken/Grim_Dawn_tracker",
@@ -3108,8 +3188,7 @@
      "fit": 100,
      "checks": "1572 of 1572"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Hades",
@@ -3129,6 +3208,7 @@
      "sha256": "c11a61101c1c1edb9d060de1cfdbc1a99db88c1aa74ddac2dc3f21fdb8f22ae3"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "OmegaZeron/Hades-AP-Poptracker-Pack",
@@ -3146,8 +3226,7 @@
      "fit": 0,
      "checks": "1 of 2147"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Haste",
@@ -3352,6 +3431,7 @@
      "sha256": "bbb2870da51373933590f037d731189401e422e919b8163980410331bca5fd96"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "tustin2121/hifi-rush-poptracker",
@@ -3359,8 +3439,7 @@
      "asset": "zipball",
      "sha256": "dbfd6c4af0385561e28a739471fecc2b012deaaed73a28752aec806b03010655"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "HITMAN World of Assassination",
@@ -3404,7 +3483,10 @@
      "asset": "Hollow-Knight-Items-Only-Poptracker-Pack.zip",
      "sha256": "f97c4b097af808811a1482265dfd1b77c5b537b3a799f0e264cf4c9eb7fea4ed",
      "fit": 100,
-     "checks": "740 of 740"
+     "checks": "740 of 740",
+     "notes": [
+      "no_pictures"
+     ]
     },
     {
      "repo": "master-cheaf117/Hollow-Knight-Poptracker",
@@ -3449,6 +3531,7 @@
      "sha256": "991cb0016366d156c1089d67c1ef6f041feb5803bbb41c43dbe7fd69fc1b1838"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "ShinyNT/holo8-poptracker",
@@ -3458,8 +3541,7 @@
      "fit": 100,
      "checks": "172 of 172"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Hylics 2",
@@ -3508,6 +3590,7 @@
      "sha256": "208bf9bb0bfdda0189003370a137bec1add1a16beb59c1c43cd2035dd39229e5"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "ladybunne/Iji_PopTrackerPack",
@@ -3515,8 +3598,7 @@
      "asset": "zipball",
      "sha256": "28721046913f262571a40149562d04bc6a27b57382c2522e730aa529a83019fa"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Inscryption",
@@ -3581,6 +3663,7 @@
      "sha256": "c849ae013f12be7f4bb666e5e916194adfe0de60450ef22c4acad2b84843423d"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "Levisaxos/IslesOfSeaAndSky_PoptrackerPack",
@@ -3588,10 +3671,12 @@
      "asset": "isles_of_sea_and_sky_v0.4.0.zip",
      "sha256": "bcbdb1f7c572e8cae9ae72038b7972912f34934389e265366bab1f06fda72101",
      "fit": 2,
-     "checks": "24 of 1212"
+     "checks": "24 of 1212",
+     "notes": [
+      "other_version"
+     ]
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Ittle Dew 2",
@@ -3829,7 +3914,7 @@
      "asset": "zipball",
      "sha256": "ec6842194904056ae4d5e851ca9e3a10a32330d9a567b1001a9680d6a0bc2698",
      "fit": 100,
-     "checks": "1961 of 1968"
+     "checks": "1962 of 1968"
     },
     {
      "repo": "Eijebong/kh2-ap-tracker",
@@ -3837,7 +3922,7 @@
      "asset": "poptracker.zip",
      "sha256": "679c186fa0de6e5a51607bf77ca219346437a941c7b3d8accfdac6d7a347e0a0",
      "fit": 100,
-     "checks": "1961 of 1968"
+     "checks": "1962 of 1968"
     },
     {
      "repo": "JurnthReinal/kh2-ap-tracker",
@@ -3845,7 +3930,7 @@
      "asset": "zipball",
      "sha256": "1ef5ac32f173589c4d509fcded03baa07dad2c4c9f86e3e2399b7a00d8a54028",
      "fit": 100,
-     "checks": "1961 of 1968"
+     "checks": "1962 of 1968"
     },
     {
      "repo": "Valiron80/kh2-ap-tracker",
@@ -3853,7 +3938,7 @@
      "asset": "zipball",
      "sha256": "7c21f420bde42bd923cc6b7616566e414ab44565d5a054d3b8430dff3f1f4a58",
      "fit": 100,
-     "checks": "1961 of 1968"
+     "checks": "1962 of 1968"
     },
     {
      "repo": "nephalia/kh2-poptracker",
@@ -3861,7 +3946,7 @@
      "asset": "zipball",
      "sha256": "fff362307c747777c8966adb92f0f474c7452c5d1cb176b0193f4a700e70cc81",
      "fit": 100,
-     "checks": "1961 of 1968"
+     "checks": "1962 of 1968"
     },
     {
      "repo": "AnOctopus/kh2-ap-tracker",
@@ -3869,7 +3954,7 @@
      "asset": "zipball",
      "sha256": "28f599ecd3fd4387d7dad68bc02a86f373d7b3ab7f95018727daa564be5db3da",
      "fit": 99,
-     "checks": "1289 of 1297"
+     "checks": "1290 of 1297"
     }
    ]
   },
@@ -3891,6 +3976,7 @@
      "sha256": "2613f029485eb514e52ce199673bbc83ce961eb65715900f75547e0ce14ecb34"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "esutley/Kingdom-Hearts-BBS-AP-Tracker",
@@ -3900,8 +3986,7 @@
      "fit": 100,
      "checks": "1282 of 1282"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Kingdom Hearts Chain of Memories",
@@ -3960,6 +4045,7 @@
      "sha256": "f8ac177664d1498dddc7f94b01fa0f9bd6847b3880b106debce8eb9a70b09e82"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "jhobz/khddd-ap-tracker",
@@ -3973,8 +4059,7 @@
      "asset": "khddd-ap-tracker.zip",
      "sha256": "9d587a0b66cc06a4d5de2e77eb5662e14856706eeb55bb96a21a781ae876bc82"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Kingdom Hearts RE Chain of Memories",
@@ -3994,6 +4079,7 @@
      "sha256": "41fc01fc7231353f17dfdea9451a5e29846d3429a88349c8762fa23f798ba910"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "Kuzurreesh/Kingdom-Hearts-ReCom-Poptracker",
@@ -4003,8 +4089,7 @@
      "fit": 99,
      "checks": "1657 of 1668"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Kirby 64 - The Crystal Shards",
@@ -4061,17 +4146,17 @@
      "sha256": "44d3ea5e51cf13fb287dd84a8dfa54c041a58c7b22117400823379b982cf602b"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "lighting8282/KAR-Poptracker",
      "release": "v0.5.4",
      "asset": "KAR-Poptracker-v0.5.4.zip",
      "sha256": "59b8fdd49e8548b70370e3037e11764bb295a38fb9a8a0ce8b0730f0df890cef",
-     "fit": 89,
-     "checks": "1446 of 1633"
+     "fit": 94,
+     "checks": "1543 of 1633"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Kirby Super Star",
@@ -4198,6 +4283,7 @@
      "sha256": "171e091de5853fa876a5d7e75844e56e59fd96130568cd4d95b373f34780a762"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "Mysteryem/TCS_AP_PopTracker",
@@ -4207,8 +4293,7 @@
      "fit": 100,
      "checks": "1489 of 1490"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Lethal Company",
@@ -4283,6 +4368,7 @@
      "sha256": "7564564b42aa5ae2d2bd98a05d722e356734b31344bd09156ac08b4c87bea03e"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "CaFlavien/Lies-of-P-Poptracker",
@@ -4296,8 +4382,7 @@
      "asset": "Lies-of-P-Poptracker-v0.1.10.zip",
      "sha256": "17e47f3531a9169f87524568d314b8b1f0e9bdfca2948b6d13d204f4eee71c11"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Lightning Returns: Final Fantasy XIII",
@@ -4580,17 +4665,17 @@
      "sha256": "bb4d64e4f47cd8ee73eca6d7ffc7ca2cde0eaf181fbf78ef6ffb4d9675064f1f"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "ScorpioGameKing/Lunacid-Poptracker",
      "release": "beta-0.10.1",
      "asset": "Lunacid-Poptracker-0.10.1.zip",
      "sha256": "39b0ea20264af52b11c7b22faf92b889f4eed0fa6d8a7a27bcdede85a5280b10",
-     "fit": 74,
-     "checks": "1517 of 2045"
+     "fit": 75,
+     "checks": "1526 of 2045"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Manual_AlanWake2_Ninjabox",
@@ -5869,6 +5954,7 @@
      "sha256": "b863e17bce1645e9e5f1fc68ee0f7ae0e01c950bb1db645a72e92ac5a2c5f16c"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "skipperki1/manual_powerwashsimulator_hallojasper_PopTracker",
@@ -5878,8 +5964,7 @@
      "fit": 100,
      "checks": "1429 of 1430"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Manual_PrincessPeachShowtime_AliRobotnik",
@@ -6898,6 +6983,7 @@
      "sha256": "71e22513ef2446fc10c486ce6643ad77953b8e3d2253a441b1b6cec1603b3d98"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "l337f00l/mega-man-x4-ap-poptracker",
@@ -6907,8 +6993,7 @@
      "fit": 100,
      "checks": "172 of 172"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "MegaMan Battle Network 3",
@@ -6972,6 +7057,7 @@
      "sha256": "1c2dc4e79fe170f1e32343098c38957650cbcef12d866c936c81412f2bfd7718"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "RopeyRed/MGS-Masala_Garden_Salad-Poptracker_Pack",
@@ -6979,8 +7065,7 @@
      "asset": "MGS-Masala_Garden_Salad-Poptracker_Pack_v1.0.zip",
      "sha256": "7c0bbc85a6c54c42c42ce896fa78f4eead4911cefc030763f137abd95bc14b89"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "MetroCUBEvania",
@@ -7047,6 +7132,7 @@
      "sha256": "83f3bf6b35da7ec091fc9113d1d8aabcb623f7f70f36b38ac9adb93fb1e85f5f"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "ladybunne/MetroidZeroMission_PopTrackerPack",
@@ -7056,8 +7142,7 @@
      "fit": 100,
      "checks": "202 of 202"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Minecraft Dig",
@@ -7191,6 +7276,7 @@
      "sha256": "3ffaf7ba0770254804ffbc2cddbe63eda73f8fe7eba3d21622a8a1c895030599"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "FuyumiSogeki/Momodora-Moonlit-Farewell-Poptracker",
@@ -7200,8 +7286,7 @@
      "fit": 50,
      "checks": "164 of 325"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Monster Sanctuary",
@@ -7251,6 +7336,7 @@
      "sha256": "0e3534655f8aae6adf30feca3b727c7ed12787ad0869a07600449d950fc2d767"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "Cyb3RGER/monster_sanctuary_ap_pack",
@@ -7260,8 +7346,7 @@
      "fit": 89,
      "checks": "576 of 650"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "New 'n' Tasty",
@@ -7537,6 +7622,7 @@
      "sha256": "1e07344b49fad70a1ce1a1c7ee667a878d83803127de67820d764aadd9d00494"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "dkgervais/osu-poptracker",
@@ -7546,8 +7632,7 @@
      "fit": 0,
      "checks": "0 of 3"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Outer Wilds",
@@ -7637,6 +7722,7 @@
      "sha256": "4109418091ca4805e72372a23f87f412e41706878ad62eab67205d4f19ce3090"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "magicdotexe/Outer-Wilds-PopTracker-Pack",
@@ -7646,8 +7732,7 @@
      "fit": 0,
      "checks": "0 of 3"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Overcooked! 2",
@@ -7684,6 +7769,7 @@
      "sha256": null
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "Phantom5800/pmr-emotracker",
@@ -7711,10 +7797,13 @@
      "repo": "ZobeePlays/TTYD-Randomizer-AP-Tracker",
      "release": "1.1.3",
      "asset": "TTYD-AP-1.1.3.zip",
-     "sha256": "6cd755e85e6c7d16fd6ddef055deb44b86ac08e247cd208d18ae09261ec1a8d8"
+     "sha256": "6cd755e85e6c7d16fd6ddef055deb44b86ac08e247cd208d18ae09261ec1a8d8",
+     "notes": [
+      "other_game"
+     ],
+     "for_game": "Paper Mario: The Thousand-Year Door"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Paper Mario: The Thousand-Year Door",
@@ -7759,15 +7848,22 @@
      "sha256": "7f332862847021a05df07897f2f4140fd0f626a25b5e244da3313c332e92b33e"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
+    {
+     "repo": "ZobeePlays/TTYD-Randomizer-AP-Tracker",
+     "release": "1.1.3",
+     "asset": "TTYD-AP-1.1.3.zip",
+     "sha256": "6cd755e85e6c7d16fd6ddef055deb44b86ac08e247cd208d18ae09261ec1a8d8",
+     "named_game": "Paper Mario"
+    },
     {
      "repo": "JRTRCT/TTYD-Randomizer-AP-Tracker",
      "release": "v1.1.4_Beta-7",
      "asset": "TTYD-AP-1.1.4_Beta-7.zip",
      "sha256": "b7080ab57e9361f1a25104043d3debeb9352ef4801f0e19a955a2b10e912c52c"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Peaks of Yore",
@@ -8165,6 +8261,7 @@
      "sha256": "8313990c3da20154909698ecce3acf8b16e4e434371604f28ae1957ce90eedb9"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "ScarredSceptile/pmd_eos-AP-poptracker",
@@ -8174,8 +8271,7 @@
      "fit": 30,
      "checks": "444 of 1497"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Pokemon Pinball Ruby & Sapphire",
@@ -8200,7 +8296,10 @@
      "repo": "Kuzurreesh/Pokemon-Pinball-Ruby-Sapphire-Poptracker",
      "release": "current files",
      "asset": "zipball",
-     "sha256": "d6f8833cd58067e7fc9303ab0cecf7b3dbf8a31558b2480d5688c1136f43523a"
+     "sha256": "d6f8833cd58067e7fc9303ab0cecf7b3dbf8a31558b2480d5688c1136f43523a",
+     "notes": [
+      "scripts_stop"
+     ]
     }
    ]
   },
@@ -8242,6 +8341,7 @@
      "sha256": "7dbcbbc6fc25e52e34d4dc14a62ac7800ace8a828cebfb73b4f6d0042e09b576"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "palex00/platinum-ap-tracker",
@@ -8251,8 +8351,7 @@
      "fit": 76,
      "checks": "3440 of 4555"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "PokePark",
@@ -8423,6 +8522,7 @@
      "sha256": "534e564b61e8bcdaff4c3eb27d0aa0e9c9236ce8496bbd165bf1935d4b0c3d14"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "pterodactal666/Powerwash-Simulator-Archipelago-Poptracker",
@@ -8430,8 +8530,7 @@
      "asset": "zipball",
      "sha256": "7b3e8eb5f5bd5c6fdb93a471abe0b974515e83f5e7ff3cd54e9d8dee3b16c2f3"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Pseudoregalia",
@@ -8501,17 +8600,17 @@
      "sha256": "e82a33e7888cacb75fe8358d5887809411f33c24b9564e8efdd7f0011b456b54"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "Mysteryem/Psychonauts_AP_PopTracker",
      "release": "v1.1.1",
      "asset": "Psychonauts_AP_PopTracker.zip",
      "sha256": "60fe7584bf54b77643b3b29ed0d306fe063975819d32e225cffef08b4006fa34",
-     "fit": 93,
-     "checks": "343 of 367"
+     "fit": 99,
+     "checks": "364 of 367"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "R.E.P.O",
@@ -8593,7 +8692,16 @@
      "sha256": "0e7b9fde7ffa39d18e6cfaa761de794d5cf32b25b2ca0885b07ca14b5036d018"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
+    {
+     "repo": "jdmccork/Rain-World-PopTracker",
+     "release": "v0.7.1",
+     "asset": "Rain-World-PopTracker-0.7.1.zip",
+     "sha256": "2ed43057ac2125e428876c546ba9dfa3ed3dc459f810ef896793201c95d6e6df",
+     "fit": 100,
+     "checks": "1221 of 1222"
+    },
     {
      "repo": "ThePirateJaz/Rain-World-PopTracker",
      "release": "v0.4.1",
@@ -8601,17 +8709,8 @@
      "sha256": "f9fccd55764e7d8de3495d5df97ae00d5b4e97fa2a8fee96d68fad23487563c3",
      "fit": 99,
      "checks": "1203 of 1216"
-    },
-    {
-     "repo": "jdmccork/Rain-World-PopTracker",
-     "release": "v0.7.1",
-     "asset": "Rain-World-PopTracker-0.7.1.zip",
-     "sha256": "2ed43057ac2125e428876c546ba9dfa3ed3dc459f810ef896793201c95d6e6df",
-     "fit": 13,
-     "checks": "161 of 1222"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Ratchet & Clank",
@@ -8631,17 +8730,17 @@
      "sha256": "242cbbf02e8add49ef2e8249f72f4c38b8a39e37010fdebebba7cb9ad7f1ead0"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "ZobeePlays/RaC1-AP-Poptracker",
      "release": "current files",
      "asset": "zipball",
      "sha256": "1aeaf406b0a0927a0920ac9780ab9b3cbb4e55a6e02f80d549ea689d8a1fc860",
-     "fit": 23,
-     "checks": "96 of 426"
+     "fit": 44,
+     "checks": "188 of 426"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Ratchet & Clank 2",
@@ -8686,6 +8785,7 @@
      "sha256": "1943f7c44e62ec53d13999f7194edbd2ad8299bf62d23aa0522227b0c38a24e9"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "cloudofdarkhole6/RaC2-poptracker",
@@ -8703,8 +8803,7 @@
      "fit": 99,
      "checks": "216 of 218"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Ratchet and Clank 3",
@@ -8734,6 +8833,7 @@
      "sha256": "5caaf268e2c8b90bff3ba8b834d4f6fedcaaf18950f77a83ee79bcd7c2b1067c"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "SomeLazyGamer/RaC-3-UYA-AP-Poptracker",
@@ -8741,8 +8841,7 @@
      "asset": "RaC3_Tracker_SLG_1.6.1.zip",
      "sha256": "2e054c683b6e095a6c822f32983ad27fb8fdef1db8d16d106d278360217b6b6e"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Refunct",
@@ -8896,6 +8995,7 @@
      "sha256": "be3ddf8ba78df41814000134a67d1a9e282d386b681f6e3e1103d40f5c7037bb"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "fhnnhf/reventure_tracker",
@@ -8905,8 +9005,7 @@
      "fit": 96,
      "checks": "99 of 103"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Rift of the Necrodancer",
@@ -9034,6 +9133,7 @@
      "sha256": "10906919a9bd626ee735a9e27f01546870b0558c9021632090e580a831a4102b"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "Wateczny/RM-PopTracker",
@@ -9041,8 +9141,7 @@
      "asset": "zipball",
      "sha256": "5e4659a76b4e78983be8193072901d74f7fdc28d7ec538a4d211eda924b97655"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Satisfactory",
@@ -9059,7 +9158,7 @@
      "asset": "Satisfactory-PopTracker.v0.1.2.zip",
      "sha256": "bb387052a7fe3e25fa0a482a1480b2e406d3d44ecacb9b4e0e368dc83d99ceb5",
      "fit": 82,
-     "checks": "1083 of 1322"
+     "checks": "1089 of 1322"
     }
    ]
   },
@@ -9086,6 +9185,7 @@
      "sha256": "9b68d8a022dca483986466f3ab81477de33c8ebfe754eda22e012445145fe806"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "RazgrizEast/schedule-1-poptracker-razgriz",
@@ -9095,8 +9195,7 @@
      "fit": 100,
      "checks": "774 of 774"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Scooby-Doo! Night of 100 Frights",
@@ -9116,6 +9215,7 @@
      "sha256": "8b86a61419ba471139570fca00b87e8779092f96434af37c777b5fc7673145a9"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "DeltaJordan/n100f-poptracker-pack",
@@ -9129,8 +9229,7 @@
      "asset": "ap_n100f_1.0.1.zip",
      "sha256": "acacb22059574fb97536949d3dfd4b16aaf90f452a7a1b37c44fb0ba288bece8"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Severed Soul",
@@ -9180,6 +9279,7 @@
      "sha256": "8d1193632a39dcd2f30f7f71295fe36573a2ac3c747e793c6ccc4bd8097a4d7f"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "jxjacob/shadow-ap-tracker",
@@ -9189,8 +9289,7 @@
      "fit": 90,
      "checks": "1089 of 1207"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Ship of Harkinian",
@@ -9225,6 +9324,7 @@
      "sha256": "c6c8a78ba29479d8a8f8b2be915690f610d58a6b14b820c5d5ec0da759f82dda"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "Brian0255/ship-of-harkinian-ap-tracker",
@@ -9234,8 +9334,7 @@
      "fit": 100,
      "checks": "1851 of 1853"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Shivers",
@@ -9309,6 +9408,7 @@
      "sha256": "94b828e79e3ae90ae5802c05008938ac7d3a59cbeeb970507f67c6531b00e389"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "Germeister/SkywardSword_Germ",
@@ -9318,8 +9418,7 @@
      "fit": 90,
      "checks": "650 of 725"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Slay the Spire",
@@ -9419,6 +9518,7 @@
      "sha256": "6e881c066261f1735cd22c702a95f95d1421a24bc01dfa9ed5e058d6c794cbbf"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "Sparky5000/SlimeRancher-Poptracker",
@@ -9434,8 +9534,7 @@
      "asset": "zipball",
      "sha256": "43ca416e6699f46187111ff25a19cfa4834cb124fcee75127e85895801839a93"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Sly 2: Band of Thieves",
@@ -9465,6 +9564,7 @@
      "sha256": "5e153eb706bc21bade3588de7b9fc8a7627b2f09f0440663b4f846f9269923a9"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "lastingParadox/Sly2-Poptracker",
@@ -9474,8 +9574,7 @@
      "fit": 100,
      "checks": "395 of 395"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Sly Cooper and the Thievius Raccoonus",
@@ -9505,6 +9604,7 @@
      "sha256": null
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "Slinq17/Sly1-Poptracker",
@@ -9514,8 +9614,7 @@
      "fit": 99,
      "checks": "175 of 176"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Smushi Come Home",
@@ -9582,6 +9681,24 @@
    ]
   },
   {
+   "game": "Sonic Adventure 2 Battle",
+   "display_name": null,
+   "apworld": null,
+   "home": null,
+   "repo": null,
+   "versions": [],
+   "official": true,
+   "packs": [
+    {
+     "repo": "ClassicSpeed/SADX-AP-PopTracker",
+     "release": "current files",
+     "asset": "zipball",
+     "sha256": "8ee7b388a833c08efb42b5fa81d7a25483c67c58bc864a2f2721fda50201f318",
+     "named_game": "Sonic Adventure DX"
+    }
+   ]
+  },
+  {
    "game": "Sonic Adventure DX",
    "display_name": null,
    "apworld": "sadx",
@@ -9634,6 +9751,7 @@
      "sha256": "7bcd996aa55e31878d95dd88b1aa87733ddfabe6bda583102b294f16bb236c0e"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "ClassicSpeed/SADX-AP-PopTracker",
@@ -9641,10 +9759,13 @@
      "asset": "zipball",
      "sha256": "8ee7b388a833c08efb42b5fa81d7a25483c67c58bc864a2f2721fda50201f318",
      "fit": 0,
-     "checks": "0 of 1308"
+     "checks": "0 of 1308",
+     "notes": [
+      "other_game"
+     ],
+     "for_game": "Sonic Adventure 2 Battle"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Sonic Heroes",
@@ -9684,6 +9805,7 @@
      "sha256": "3bbb9a2c9d20c11168b1496b050defa5a4a91db3098c3495cdca276d67bceb55"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "Ethicallogic-Archipelago/SonicHeroesArchipelagoPopTracker",
@@ -9693,8 +9815,7 @@
      "fit": 96,
      "checks": "5216 of 5424"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Sonic Rush",
@@ -9744,6 +9865,7 @@
      "sha256": "3913b90071319151d622c09fb28fd5203a072189d47c2705605824e5b9113d66"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "powerlord/soulblazer-poptracker",
@@ -9751,8 +9873,7 @@
      "asset": "soulblazer-poptracker-2.5.2.zip",
      "sha256": "68a317fd1317fdc2a3fd1181e6bcf3b4e385f4f703b5e6221fc43e376a36152f"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Spelunker",
@@ -9866,6 +9987,7 @@
      "sha256": "d360ba431fda9bdbf6c10adc35ce39ddfdbd0608602a19d62eb8d4fa0d8368e1"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "routhken/Spyro_2_tracker",
@@ -9875,8 +9997,7 @@
      "fit": 100,
      "checks": "3308 of 3308"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Spyro 3",
@@ -10007,7 +10128,10 @@
      "asset": "zipball",
      "sha256": "d8883072f87733579fb429ba238d8f8244b25c79da8043ccb447f5906030d4ef",
      "fit": 100,
-     "checks": "7336 of 7336"
+     "checks": "7336 of 7336",
+     "notes": [
+      "no_pictures"
+     ]
     }
    ]
   },
@@ -10089,8 +10213,8 @@
      "release": "v0.0.4",
      "asset": "SOR_AP_Tracker_0.0.4.zip",
      "sha256": "ea7783888a42663d22551646c4fd38a449a59e73524ba63fb66f744ec75cd544",
-     "fit": 49,
-     "checks": "68 of 138"
+     "fit": 99,
+     "checks": "136 of 138"
     }
    ]
   },
@@ -10134,6 +10258,12 @@
      "checks": "164 of 165"
     },
     {
+     "repo": "soapergem/sm64ap-moves-tracker",
+     "release": "v1.0.0",
+     "asset": "sm64ap-moves-tracker-v1.0.0.zip",
+     "sha256": "1d51682f75207e10e2cef433a11ee1bb4e5bf6bd696742fc43c301e4988ad054"
+    },
+    {
      "repo": "RedKitsune8/Super-Mario-64-AP-Tracker",
      "release": "latest",
      "asset": "Super-Mario-64-AP-Tracker.zip",
@@ -10170,6 +10300,7 @@
      "sha256": "472fdf22dc406377c35b641e2238792db5ebd17c03175622eb0ca958aa57edda"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "LiterallyNoOne1/Sunshine_Pop",
@@ -10185,8 +10316,7 @@
      "asset": "zipball",
      "sha256": "bf02deccb136e13fc1404a96b5052bf950ab5677cb71c87e6d900736f9255564"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Super Mario Sunshine Arcade 2",
@@ -10242,12 +10372,6 @@
      "sha256": "3d81e7e3ee964d61cb1c2ed6b4415df179370ee9752884fad661b8dbd88f8198"
     },
     {
-     "repo": "soapergem/sm64ap-moves-tracker",
-     "release": "v1.0.0",
-     "asset": "sm64ap-moves-tracker-v1.0.0.zip",
-     "sha256": "1d51682f75207e10e2cef433a11ee1bb4e5bf6bd696742fc43c301e4988ad054"
-    },
-    {
      "repo": "studkid/subversion_ap_tracker",
      "release": "0.2",
      "asset": "subversion_ap_tracker.zip",
@@ -10274,6 +10398,7 @@
      "sha256": "c48624117e7caac41b7e21b2491ac9e2d358d5b19339af292556c227285b12d6"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "DorkmasterFlek/SOTN-AP-MapTracker",
@@ -10297,8 +10422,7 @@
      "asset": "zipball",
      "sha256": "2bfd71abedf50b6c95ba019fa6c4e76ee232460ebb7ffe1c18c3ed765196d537"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "TCG Card Shop Simulator",
@@ -10381,30 +10505,34 @@
      "sha256": null
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "vegemii/TEVI-Rando-PopTracker",
      "release": "v0.2.0",
      "asset": "TEVI_PopTracker_0.2.0.zip",
      "sha256": "0bd14b09cdc92406a6d04129eaffe88bee276a6a51b3d10eda7f22f4bf051367",
-     "fit": 50,
-     "checks": "13 of 26"
+     "fit": 100,
+     "checks": "26 of 26"
     },
     {
      "repo": "Swaga1icous/Tevi_Poptracker",
      "release": "v0.2",
      "asset": "Tevi.Poptracker.zip",
      "sha256": "0a9abef18aeb546a3ade41f48a518cb45e9d16b813c90b53b03ae2ea1cfe1e53",
-     "fit": 46,
-     "checks": "292 of 640"
+     "fit": 65,
+     "checks": "416 of 640"
     },
     {
      "repo": "BlackSoulKnight/Tevi_Poptracker",
      "release": "0.6.6",
      "asset": "Tevi_Poptracker.zip",
      "sha256": "a7ca051d3ac6a036b3ee36d84ff384faaf322e8835a8ec1861ccb12eaafdd4a0",
-     "fit": 19,
-     "checks": "281 of 1494"
+     "fit": 30,
+     "checks": "443 of 1494",
+     "notes": [
+      "other_version"
+     ]
     },
     {
      "repo": "vegemii/TEVI-PopTracker",
@@ -10412,8 +10540,7 @@
      "asset": "zipball",
      "sha256": "ecaae65193c8d749d3a28637ab825571cf6ff11c74368ff6e64cbd6171b5950c"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "The Binding of Isaac Repentance",
@@ -10488,6 +10615,7 @@
      "sha256": "056dd261f76cf7a711199e794703d2bc60960c78b5474ca1f592d5f3c2630e15"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "JAHapner01/Grinch-AP-Tracker",
@@ -10497,8 +10625,7 @@
      "fit": 97,
      "checks": "1014 of 1046"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "The Guardian Legend",
@@ -10598,17 +10725,17 @@
      "sha256": "379ee03da773f751d8df918789d26db1d328eac97221f87fea7681efc652cfc0"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "OmegaZeron/Oracle-of-Seasons-AP-Poptracker-Pack",
      "release": "9.0.1",
      "asset": "seasons_ap.zip",
      "sha256": "da7aab04fcbf6da1755cd588be386cca22f4cf7c6c44c89ac122086a1584f8eb",
-     "fit": 35,
-     "checks": "167 of 475"
+     "fit": 80,
+     "checks": "382 of 477"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "The Minish Cap",
@@ -10816,6 +10943,7 @@
      "sha256": "792f4f6a3d017689451d1b15fd68ca0dfe960c19e464e3187efe7157816412eb"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "culk/toem-poptracker-pack",
@@ -10825,8 +10953,7 @@
      "fit": 99,
      "checks": "586 of 591"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Tony Hawk's Pro Skater 1 + 2",
@@ -11233,6 +11360,7 @@
      "sha256": "c79390ebb5e94a91fff40e1832583e80873280bc39b7a882164e85420584e83c"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "BowserCrusher/UltrakillPoptracker",
@@ -11242,8 +11370,7 @@
      "fit": 87,
      "checks": "284 of 327"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "UNBEATABLE Arcade",
@@ -11290,7 +11417,10 @@
      "asset": "Undertale-Poptracker-0.0.2.zip",
      "sha256": "91fd56457266f1013cabc9f10f402e2c38d3dc3c9172bfe2edac50f3d7a2ef47",
      "fit": 20,
-     "checks": "121 of 615"
+     "checks": "121 of 615",
+     "notes": [
+      "other_version"
+     ]
     },
     {
      "repo": "jonloveslegos/undertale-ap-poptracker",
@@ -11328,6 +11458,7 @@
      "sha256": "6327e22eebfb047a8670b248f77e04ca95709830fa8c41742ec3bf082e0ae10a"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "lighting8282/Unfair-Flips-PopTracker",
@@ -11337,8 +11468,7 @@
      "fit": 100,
      "checks": "157 of 157"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Very Very Valet",
@@ -11486,6 +11616,7 @@
      "sha256": "673a82e93c392fde5fe74e9725d6783b119f601ce2935952c3f1342b03d7c88d"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "LizzieTwoShoes/WL3-AP-PopTracker-Pack",
@@ -11493,8 +11624,7 @@
      "asset": "WL3-AP-PopTracker-Pack.zip",
      "sha256": "dd4c39fedcb882d0c50c238ab6c79a5e9cd827674c4438015525c5d921154e05"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Wario Land 4",
@@ -11549,6 +11679,7 @@
      "sha256": "853c8fe6d7ce641599262f739fdf80dde9af784edeecc6105fa76c219e645bca"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "JackTHerbert/wl4_jth",
@@ -11558,8 +11689,7 @@
      "fit": 100,
      "checks": "656 of 657"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "We Love Katamari Reroll",
@@ -11780,6 +11910,7 @@
      "sha256": "f411821d4078d5b2cb6074d25ca039a4ff1e65697f4c734a782f376ff35bae2b"
     }
    ],
+   "loads_with": "0.6.7",
    "packs": [
     {
      "repo": "SeanCass/YohaneTheParhelion-BlazeInTheDeepblue-Poptracker",
@@ -11789,8 +11920,7 @@
      "fit": 33,
      "checks": "247 of 749"
     }
-   ],
-   "loads_with": "0.6.7"
+   ]
   },
   {
    "game": "Yoku's Island Express",

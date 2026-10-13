@@ -767,6 +767,40 @@ namespace AP_Atlas.Core
         /// make (Super Metroid, A Link to the Past), a display grid and numbered families said once (A Link to the Past,
         /// Undertale), a file the scripts load but the pack lacks as its own note (fourteen packs' snes.lua).
         /// </summary>
+        private static async Task GameListLabFacts()
+        {
+            const string sha = "00aa11bb22cc33dd44ee55ff66778899aabbccddeeff00112233445566778899";
+            string listJson = """{"format":"atlas-apworld-sources/1","built":"9999-12-31","source":"self-test","games":[{"game":"Self Test Listed","versions":[],"logic":{"result":"exact"},"packs":[{"repo":"someone/listed-pack","release":"v1","asset":"p.zip","sha256":"SHA","fit":42,"checks":"42 of 100","notes":["other_version"],"future_field":7}]}]}""".Replace("SHA", sha);
+            await using var site = new AP_Atlas.Core.Testing.FakeWebSite();
+            site.Respond = path => path == "/list.json" ? (200, listJson) : (404, "");
+            try
+            {
+                string said = await EngineSetup.ApworldSources.RefreshAsync(site.Site + "/list.json", CancellationToken.None);
+                var game = EngineSetup.ApworldSources.Find("Self Test Listed") ?? throw new InvalidOperationException("the fetched list wasn't used: " + said);
+                // Kept as fetched: the game's "logic" and the pack's "future_field" are in the saved file and round-trip through the classes.
+                string saved = System.IO.File.ReadAllText(System.IO.Path.Combine(EngineSetup.AtlasEngine.EngineDir, "apworld_sources.json"));
+                Expect(saved.Contains("logic", StringComparison.Ordinal) && saved.Contains("future_field", StringComparison.Ordinal), "the fetched list wasn't saved as fetched (an unknown field was dropped)");
+                Expect(game.Unknown?.ContainsKey("logic") == true && game.Packs[0].Unknown?.ContainsKey("future_field") == true,
+                    "fields this Atlas doesn't know weren't kept on the list's classes");
+                Expect(Newtonsoft.Json.JsonConvert.SerializeObject(game).Contains("logic", StringComparison.Ordinal), "a field this Atlas doesn't know is lost when the list is written again");
+                // The pack's notes, said in words; found by its SHA-256.
+                var pack = EngineSetup.ApworldSources.PacksFor("Self Test Listed").Single();
+                Expect(pack.Notes.SequenceEqual(new[] { "other_version" }) && AP_Atlas.Core.Games.IndexPackNotes.Sentences(pack.Notes).Single().StartsWith("Made for another version", StringComparison.Ordinal),
+                    "the pack's lab notes weren't read or said");
+                Expect(EngineSetup.ApworldSources.PackBySha256(sha.ToUpperInvariant()) is { } bySha && bySha.Game == "Self Test Listed" && bySha.Pack.Fit == 42 && EngineSetup.ApworldSources.PackBySha256("ff") == null,
+                    "a pack file wasn't found by its SHA-256");
+                string file = Scratch("selftest_lab_sha.zip");
+                System.IO.File.WriteAllBytes(file, new byte[] { 1, 2, 3 });
+                Expect(EngineSetup.ApworldSources.Sha256OfPack(file) == "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81", "a pack file's SHA-256 is wrong");
+                // Picking: the noted pack waits behind a usable one with no notes, though it's measured higher.
+                var noted = new MapPackManagerControl.PackCandidate { Repo = "a/noted", Stars = 50, IndexFit = 90, IndexListed = true, IndexNotes = new List<string> { "other_version" } };
+                var plain = new MapPackManagerControl.PackCandidate { Repo = "b/plain", Stars = 1, IndexFit = 60, IndexListed = true };
+                var order = MapPackManagerControl.PickOrder(new[] { noted, plain });
+                Expect(order.Select(c => c.Repo).SequenceEqual(new[] { "b/plain", "a/noted" }), "a pack the lab found made for another version didn't wait behind the rest: " + string.Join(", ", order.Select(c => c.Repo)));
+            }
+            finally { EngineSetup.ApworldSources.ForgetRefreshed(); }
+        }
+
         private static async Task PackLabRoundOne()
         {
             string zip = Scratch("selftest_lab1.zip");

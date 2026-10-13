@@ -12,7 +12,9 @@ namespace AP_Atlas.UI
     public sealed record SetupMultiworldDraft(string? ExistingId, string Name, string RoomLink, string Server, string Password, List<string> Slots, Dictionary<string, string> YamlBySlot, Dictionary<string, string> GameBySlot);
 
     /// <summary>A map pack GitHub's search found, as the setup window lists it.</summary>
-    public sealed record SetupPackCandidate(string Repo, string Description, int Stars, bool Fork, bool Recommended);
+    /// <param name="Fit">How the pack lab measured it against the game's checks (percent), when Atlas's game list knows it.</param>
+    /// <param name="Notes">What the lab found about it, in words (another version, another game, scripts that stop).</param>
+    public sealed record SetupPackCandidate(string Repo, string Description, int Stars, bool Fork, bool Recommended, int? Fit = null, IReadOnlyList<string>? Notes = null);
 
     /// <summary>
     /// Setting Atlas up as a click-through: one window, a list of pages on the left (a tick for each that's done, the
@@ -979,9 +981,10 @@ namespace AP_Atlas.UI
                 row.AddChild(install);
                 string fork = c.Fork ? " · " + _tr("a fork") : "";
                 string recommended = c.Recommended ? _tr("Recommended by the game's setup guide") + " · " : "";
+                string fits = c.Fit is int fit ? _tr("fits {0}% of the game's checks").Replace("{0}", fit.ToString()) + " · " : "";
                 var info = new Label
                 {
-                    Text = recommended + c.Repo + "  ★" + c.Stars + fork + (string.IsNullOrWhiteSpace(c.Description) ? "" : " · " + c.Description),
+                    Text = recommended + fits + c.Repo + "  ★" + c.Stars + fork + (string.IsNullOrWhiteSpace(c.Description) ? "" : " · " + c.Description),
                     ClipText = true,
                     TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
                     SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
@@ -990,6 +993,14 @@ namespace AP_Atlas.UI
                 };
                 row.AddChild(info);
                 into.AddChild(row);
+                // What Atlas's pack lab found about it, under its row.
+                foreach (string sentence in c.Notes ?? Array.Empty<string>())
+                {
+                    var noted = Kit.Muted(sentence);
+                    noted.SetMeta("pack_note", c.Repo);
+                    noted.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Warning);
+                    into.AddChild(noted);
+                }
                 into.AddChild(line);
             }
             WindowFit.RequestShrink(this);
