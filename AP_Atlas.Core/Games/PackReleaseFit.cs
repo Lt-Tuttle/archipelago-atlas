@@ -61,25 +61,38 @@ public static class PackProjectPick
     public const int MostProjects = 4;
     /// <summary>At most this many files are downloaded across them.</summary>
     public const int MostDownloads = 8;
-    /// <summary>With none fitting, the closest is taken only when at least this share of its pins link.</summary>
+    /// <summary>A pack is taken only when at least this share of its pins link (or it fits).</summary>
     public const double CloseEnough = 0.5;
+    /// <summary>
+    /// What a fork, and a project's current files (it has no release), give up against the others: forks are often copies
+    /// of an older version left as they were, and current files are what's being worked on. A fork that fits clearly
+    /// better (Dark Souls III's, kept up with the 3.0 apworld) still wins; one that fits as well as the original doesn't.
+    /// </summary>
+    public const double ForkWeight = 0.05, CurrentFilesWeight = 0.05;
+
+    /// <summary>One project tried: its best release (null: nothing of it could be read), and what it is.</summary>
+    public sealed record Tried(PackReleaseFit? Best, bool Fork, bool CurrentFiles)
+    {
+        /// <summary>How well it serves: the share of its pins that link, less the share of its stale ids and the weights above.</summary>
+        public double Score => Best == null ? double.MinValue
+            : Best.LinkedShare - Best.UnknownShare - (Fork ? ForkWeight : 0) - (CurrentFiles ? CurrentFilesWeight : 0);
+
+        /// <summary>Whether it may be taken at all: it fits, or links <see cref="CloseEnough"/>.</summary>
+        public bool Usable => Best != null && (Best.Fits || Best.LinkedShare >= CloseEnough);
+
+        /// <summary>Whether no other project needs trying: an original's release that fits.</summary>
+        public bool Settles => Best?.Fits == true && !Fork && !CurrentFiles;
+    }
 
     /// <summary>
-    /// The projects' best releases in the order they were tried (null: nothing of it could be read): the first that fits;
-    /// else the one whose pins link the most (then the fewest stale ids, then the earlier), if it links at least
-    /// <see cref="CloseEnough"/>; else none (-1).
+    /// The projects in the order they were tried: the usable one that serves best (<see cref="Tried.Score"/>; the earlier
+    /// on a tie); none (-1) when none is usable.
     /// </summary>
-    public static int Choose(IReadOnlyList<PackReleaseFit?> bests)
+    public static int Choose(IReadOnlyList<Tried> tried)
     {
-        for (int i = 0; i < bests.Count; i++)
-            if (bests[i]?.Fits == true) return i;
         int chosen = -1;
-        for (int i = 0; i < bests.Count; i++)
-        {
-            if (bests[i] is not { } fit || fit.LinkedShare < CloseEnough) continue;
-            if (chosen < 0 || fit.LinkedShare > bests[chosen]!.LinkedShare
-                || (fit.LinkedShare == bests[chosen]!.LinkedShare && fit.UnknownShare < bests[chosen]!.UnknownShare)) chosen = i;
-        }
+        for (int i = 0; i < tried.Count; i++)
+            if (tried[i].Usable && (chosen < 0 || tried[i].Score > tried[chosen].Score)) chosen = i;
         return chosen;
     }
 }

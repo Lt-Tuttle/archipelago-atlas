@@ -1124,11 +1124,14 @@ namespace AP_Atlas.Core
                     downloads += project.Downloads;
                     var best = AP_Atlas.Core.Games.PackReleasePick.Best(project.Tried);
                     tried.Add((candidate, project, best));
-                    if (best?.Fits == true) break;
+                    // An original's release that fits settles it; a fork's or current files that fit, not yet (an old
+                    // copy can fit as well as the original's newest release, which should win).
+                    if (Weighed(tried.Count - 1).Settles) break;
                 }
+                AP_Atlas.Core.Games.PackProjectPick.Tried Weighed(int i) => new(tried[i].Best, tried[i].Candidate.Fork, tried[i].Project.CurrentFiles);
                 string Summary(int except) => string.Join("; ", tried.Where((_, i) => i != except)
                     .Select(t => "github.com/" + t.Candidate.Repo + " " + (t.Best != null ? t.Best.Describe() : t.Project.Note ?? "couldn't be read")));
-                int chosen = AP_Atlas.Core.Games.PackProjectPick.Choose(tried.Select(t => t.Best).ToList());
+                int chosen = AP_Atlas.Core.Games.PackProjectPick.Choose(Enumerable.Range(0, tried.Count).Select(Weighed).ToList());
                 if (chosen < 0)
                     return (false, tried.Count == 0 ? "no project could be tried" : "none of the packs found fits " + game + "'s names (" + Summary(-1) + ")", null, null);
                 var (pick, picked, fit) = tried[chosen];
@@ -1136,7 +1139,7 @@ namespace AP_Atlas.Core
                 string installed = await InstallDownloadedAsync(picked.Files[fit.Tag], picked.Names[fit.Tag], where, quiet: false);
                 if (installed == null) return (false, where + " " + fit.Tag + " fits best, but it couldn't be put among the packs (the log says why)", null, null);
                 string others = Summary(chosen);
-                return (true, (fit.Fits ? "" : "none fits well; the closest: ") + where + " " + AP_Atlas.Core.Games.PackReleasePick.Describe(picked.Tried, fit)
+                return (true, (fit.Fits ? "" : "the best of the packs found (none fits fully): ") + where + " " + AP_Atlas.Core.Games.PackReleasePick.Describe(picked.Tried, fit)
                     + (pick.Recommended ? " (recommended by the game's setup guide)" : "") + (others.Length > 0 ? "; also tried " + others : ""), installed, pick.Repo);
             }
             finally { RemoveTryingFolder(trying, game); }
@@ -1149,6 +1152,8 @@ namespace AP_Atlas.Core
             public readonly Dictionary<string, string> Files = new Dictionary<string, string>(StringComparer.Ordinal);
             public readonly Dictionary<string, string> Names = new Dictionary<string, string>(StringComparer.Ordinal);
             public int Downloads;
+            /// <summary>The project has no release with a pack: its current files were tried.</summary>
+            public bool CurrentFiles;
             /// <summary>Why nothing could be tried, when nothing was.</summary>
             public string Note;
         }
@@ -1171,6 +1176,7 @@ namespace AP_Atlas.Core
             }
             if (!GodotObject.IsInstanceValid(this)) return result;
             // No released pack: the project's current files, as the Map Packs page offers them.
+            result.CurrentFiles = releases.Count == 0;
             var tries = releases.Count > 0
                 ? releases.Take(most).Select(r => (Tag: r.Tag, Url: r.Url, Name: SafeZipName(r.FileName))).ToList()
                 : new List<(string Tag, string Url, string Name)> { ("current files", $"{GitHubApi.Site}/repos/{repo}/zipball", repo.Replace('/', '_') + ".zip") };

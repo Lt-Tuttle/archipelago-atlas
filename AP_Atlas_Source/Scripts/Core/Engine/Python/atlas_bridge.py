@@ -1119,6 +1119,16 @@ def atlas_yaml_template(*args):
         send(_failure(e, code='template_failed'))
 
 
+def _no_output(self, output_directory):
+    # A world's other output steps can wait for its patch to be written: A Link to the Past's modify_multidata waits on
+    # rom_name_available_event, which its generate_output sets as it ends; skipped, the seed's output waited forever. Every
+    # event the world holds is set, as its own step does when it ends (an error included).
+    import threading
+    for value in list(vars(self).values()):
+        if isinstance(value, threading.Event):
+            value.set()
+
+
 def _skip_patch_output(games):
     # A world whose output needs a file this PC doesn't have (a base ROM) still generates: its output step is switched off
     # in this process only; the server data and the spoiler are all the tracker needs.
@@ -1128,7 +1138,7 @@ def _skip_patch_output(games):
         if cls is None:
             continue
         cls.stage_assert_generate = classmethod(lambda c, multiworld: None)
-        cls.generate_output = lambda self, output_directory: None
+        cls.generate_output = _no_output
         if hasattr(cls, 'stage_generate_output'):
             cls.stage_generate_output = classmethod(lambda c, multiworld, output_directory: None)
 

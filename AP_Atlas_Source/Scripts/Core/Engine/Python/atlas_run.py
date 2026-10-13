@@ -121,6 +121,14 @@ def main():
     import ModuleUpdate
     ModuleUpdate.update_ran = True
     keep_files_in_engine_folder()
+    # A setting naming a file Archipelago needs (a base ROM) is never asked for in a window: the engine's processes have
+    # none, Archipelago's question raised "No module named 'tkinter'" (A Link to the Past's solo test), and on a Python
+    # with tkinter it would open a file dialog on the user's desktop. A missing file is an error the caller handles.
+    try:
+        import settings
+        settings.no_gui = True
+    except ModuleNotFoundError:
+        pass  # an Archipelago without settings (Atlas's stand-in engine for its tests) asks nothing anyway
 
     logging.getLogger().addHandler(_WorldLoadFailures(level=logging.ERROR))
     if component == '--atlas-games':

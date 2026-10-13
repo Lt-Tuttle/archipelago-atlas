@@ -67,6 +67,9 @@ public partial class MainTrackerWindow
         float scale = float.TryParse(System.Environment.GetEnvironmentVariable("ATLAS_VISUALCHECK_SCALE"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float asked) && asked > 0 ? asked : 1f;
         AP_Atlas.UI.WindowFit.TestScale = scale;
         ApplyZoom();
+        // The PC's own mouse plays no part in the pictures: resting over where the window draws, it hovered a button and
+        // its tooltip showed in a picture. Every step here is driven from code, never through input.
+        GetTree().Root.GuiDisableInput = true;
         GetTree().Root.Size = VisualCheckWindowSize;
         await VisualCheckWaitAsync(1.5);
 

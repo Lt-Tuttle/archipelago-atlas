@@ -440,6 +440,10 @@ namespace AP_Atlas.Core.EngineSetup
         private static bool NeedsPatchSkip(JObject answer)
         {
             string error = (answer["error"]?.ToString() ?? "") + " " + (answer["error_type"]?.ToString() ?? "");
+            // A world asking for its base ROM names it in the trace (get_base_rom_path, rom_file), whatever the error says
+            // (Archipelago asked in a window, which raised for tkinter).
+            string trace = answer["trace"]?.ToString() ?? "";
+            if (trace.Contains("get_base_rom_path", StringComparison.Ordinal) || trace.Contains("rom_file", StringComparison.Ordinal) || error.Contains("tkinter", StringComparison.Ordinal)) return true;
             return error.Contains("FileNotFoundError", StringComparison.Ordinal) || error.Contains(".sfc", StringComparison.OrdinalIgnoreCase) || error.Contains(".z64", StringComparison.OrdinalIgnoreCase)
                 || error.Contains(".gba", StringComparison.OrdinalIgnoreCase) || error.Contains(".nes", StringComparison.OrdinalIgnoreCase) || error.Contains(".smc", StringComparison.OrdinalIgnoreCase)
                 || error.Contains("rom", StringComparison.OrdinalIgnoreCase);
