@@ -1319,7 +1319,10 @@ namespace AP_Atlas.Core.PopTracker
                     _pendingReads.Clear();
                 }
             }
-            FireWatches(o.Def);
+            // PopTracker's watches follow an item's state (Active, CurrentStage, AcquiredCount and its bounds); a new icon,
+            // name or overlay is a display change and runs none. Oracle of Seasons sets its dungeon icons from a "*" watch:
+            // run again for each icon, it called itself until the scripts were stopped.
+            if (key is "Active" or "CurrentStage" or "AcquiredCount" or "MinCount" or "MaxCount") FireWatches(o.Def);
         }
 
         /// <summary>Runs the code watches an item's change concerns, or queues the item while Tracker.BulkUpdate is on.</summary>

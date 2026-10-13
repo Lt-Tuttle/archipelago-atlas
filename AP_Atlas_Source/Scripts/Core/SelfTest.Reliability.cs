@@ -809,8 +809,20 @@ namespace AP_Atlas.Core
                     BULK_SEEN = #WATCHED
                     WAS_BULK = Tracker.BulkUpdate
                     Tracker.BulkUpdate = false
+                    local before_icon = #WATCHED
+                    shield.Icon = ImageReference:FromPackRelativePath("images/sword.png")
+                    shield.BadgeText = "!"
+                    ICON_QUIET = #WATCHED == before_icon
+                    LEFT = 0
+                    for d = 1, 2 do
+                        for _, v in ipairs({1, 2, 3}) do
+                            if v == 2 then goto found end
+                        end
+                        ::found::
+                        LEFT = LEFT + 1
+                    end
                     Tracker:FindObjectForCode("sword").Active = COUNT == 4 and PRIORITY[4] == 1 and SEED == "x"
-                        and BULK_SEEN == 0 and WAS_BULK == true and #WATCHED == 1 and WATCHED[1] == "shield"
+                        and BULK_SEEN == 0 and WAS_BULK == true and #WATCHED == 1 and WATCHED[1] == "shield" and ICON_QUIET and LEFT == 2
                     """,
                 itemsJson: "[" + """{"name":"Sword","type":"toggle","img":"images/sword.png","codes":"sword"},{"name":"Shield","type":"toggle","img":"images/photo.png","codes":"shield"},""" +
                     """{"name":"HM01 - Cut","type":"toggle","img":"images/sword.png","codes":"hm01"},{"name":"Sword Silo","type":"toggle","img":"images/sword.png","codes":"silo1"},""" +
@@ -847,7 +859,7 @@ namespace AP_Atlas.Core
             await Task.Run(() => host.Initialize());
             Expect(host.Errors.Count == 1 && host.Errors[0].StartsWith("LoadScript: 'scripts/missing.lua'", StringComparison.Ordinal) && !host.Stopped,
                 "the scripts didn't run as PopTracker runs them (a <const> local, a loop ending in its continue label, Highlight): " + string.Join("; ", host.Errors));
-            Expect(host.StateOf("sword")?.Active == true, "the loop with a continue label, the <const> local, Highlight, or Tracker.BulkUpdate (three changes under it run a \"*\" watch once, with the item's code) didn't work as in PopTracker");
+            Expect(host.StateOf("sword")?.Active == true, "the loop with a continue label, the <const> local, Highlight, Tracker.BulkUpdate (three changes under it run a \"*\" watch once, with the item's code), a display change running no watch, or a goto out of a loop didn't work as in PopTracker");
             Expect(!host.UnsupportedApis.Any(a => a.StartsWith("Tracker.BulkUpdate", StringComparison.Ordinal)), "Tracker.BulkUpdate was counted as an unsupported feature");
             Expect(host.ScriptItemProvides("trans_a") && !host.ScriptItemProvides("trans_b"), "an item the scripts make doesn't answer to its code (or answers to others)");
             var scripted = host.ScriptItemFor("trans_a");
