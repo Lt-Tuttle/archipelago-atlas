@@ -562,6 +562,8 @@ namespace AP_Atlas.Core
             }
 
             var now = new Dictionary<string, PackBaselineEntry>(StringComparer.OrdinalIgnoreCase);
+            string findingsPath = System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_PACKS_FINDINGS");
+            var allFindings = new List<Dictionary<string, object>>();
             foreach (var zip in zips)
             {
                 string key = Path.GetFileName(zip);
@@ -622,6 +624,21 @@ namespace AP_Atlas.Core
                         entry.LocationsPlaced = report.ApLocationsPlaced;
                         entry.LocationsTotal = report.ApLocationsTotal;
                         entry.Problems = report.Findings.Count(f => f.Severity == PopTracker.FindingSeverity.Problem);
+                        // ATLAS_SELFTEST_PACKS_FINDINGS=<file>: every finding of every pack, for the lab's kinds summary (Tools/corpus_kinds.py).
+                        if (!string.IsNullOrWhiteSpace(findingsPath))
+                            foreach (var f in report.Findings)
+                                allFindings.Add(new Dictionary<string, object>
+                                {
+                                    ["pack"] = key,
+                                    ["game"] = game,
+                                    ["key"] = f.Key,
+                                    ["severity"] = f.Severity.ToString(),
+                                    ["title"] = f.Title,
+                                    ["ignored"] = f.Ignored,
+                                    ["best"] = f.Suggestions.Count > 0 ? f.Suggestions[0].Label : null,
+                                    ["score"] = f.Suggestions.Count > 0 ? Math.Round(f.Suggestions[0].Score, 3) : (double?)null,
+                                    ["details"] = f.Details.Take(3).ToList()
+                                });
                         entry.ScriptsRan = report.ScriptsRan;
                     }
                     catch (Exception ex) { entry.Note = "the Pack Doctor crashed: " + ex.GetType().Name + ": " + ex.Message; }
@@ -653,6 +670,11 @@ namespace AP_Atlas.Core
                 GC.Collect();
             }
 
+            if (!string.IsNullOrWhiteSpace(findingsPath))
+            {
+                try { SafeFile.WriteAllText(findingsPath, Newtonsoft.Json.JsonConvert.SerializeObject(allFindings)); Print($"  findings written to {findingsPath}"); }
+                catch (Exception ex) { Print($"  findings not written: {ex.Message}"); }
+            }
             string baselinePath = System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_PACKS_BASELINE");
             if (string.IsNullOrWhiteSpace(baselinePath)) baselinePath = ProjectSettings.GlobalizePath("res://Tests/packs_baseline.json");
             Dictionary<string, PackBaselineEntry> baseline = null;

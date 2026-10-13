@@ -125,6 +125,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         }
         // The visual check (testing only) refuses a real data folder before anything in it is read or written.
         if (VisualCheckRequested && !VisualCheckAllowed()) return;
+        if (PackGalleryRequested && !VisualCheckAllowed()) return;
         // The UI test, too, refuses a real data folder before anything in it is read or written.
         if (UiTestRequested && !UiTestAllowed()) return;
         // The data folder first: nothing below reads or writes before it's settled (a folder that can't be written asks).
@@ -186,7 +187,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         MigrateZoom();
         ApplyZoom();
         // The alert feed: what Atlas tells the user, stacked at the bottom right, kept for Window → Notifications.
-        _alerts = new AP_Atlas.UI.AlertFeed(_alertLog, text => Tr(text), () => _appSettings.GlobalFontSize, VisualCheckRequested);
+        _alerts = new AP_Atlas.UI.AlertFeed(_alertLog, text => Tr(text), () => _appSettings.GlobalFontSize, VisualCheckRequested || PackGalleryRequested);
         AddChild(_alerts);
         AP_Atlas.Core.ThemeColors.SetAccent(_appSettings.ThemeAccentColor);
         AP_Atlas.Core.RaceRules.Initialize(_appSettings);
@@ -510,6 +511,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         StartUpdateChecks();
         StartCrashReports();
         if (VisualCheckRequested) AP_Atlas.UI.Ui.Defer(this, RunVisualCheck);
+        if (PackGalleryRequested) AP_Atlas.UI.Ui.Defer(this, RunPackGallery);
         if (UiTestRequested) AP_Atlas.UI.Ui.Defer(this, RunUiTest);
     }
 

@@ -54,6 +54,18 @@ The repository holds three .NET projects:
 
 New code that doesn't need Godot belongs in `AP_Atlas.Core`, with tests. The visual check needs a graphics card, so run it yourself, in each theme (`-Theme`, against that theme's baseline), before and after any change to how Atlas looks, and compare on the same PC.
 
+### The pack lab
+
+How Atlas is made robust for map packs and apworlds nobody has tested: a corpus of every game's packs and apworlds, read offline, and rules written from what recurs across packs (never a fix for one pack). The corpus lives outside the repository (third-party files); `AP_Atlas_Source/Tests/corpus_manifest.json` names every file's project, release and SHA-256 so it can be fetched again exactly.
+
+- `python Tools/build_corpus.py --corpus <folder>`: fetches every official and community game's packs and apworlds from GitHub through the authenticated `gh` CLI (paced, resumable, nothing run), into `<folder>\packs` and `<folder>pworlds`.
+- `python Tools/build_corpus_names.py --corpus <folder> --lab <folder>\lab`: every game's item and location names from the engine (the official worlds unpacked from Archipelago's release, the corpus's apworlds), into `<folder>
+ames`, with `_load_report.json` for the worlds that don't load.
+- The corpus check: `Tools/run_selftest.ps1` with `ATLAS_SELFTEST_PACKS=<folder>\packs`, `ATLAS_SELFTEST_PACK_NAMES=<folder>
+ames` and `ATLAS_SELFTEST_PACKS_FINDINGS=<file>` writes every pack's findings; `python Tools/corpus_kinds.py <file> [<run output>]` groups them by kind across packs (a kind touching two or more packs is a rule to write) and the scripts' errors by message. `AP_Atlas_Source/Tests/packs_baseline.json` is the ratchet: no pack may link or place fewer checks than it records.
+- `Tools/run_pack_gallery.ps1 -Corpus <folder> -OutDir <pictures>`: pictures of every pack as a connected slot sees it (the Map Tracker, Key Items on each layout, the Pack Doctor), to be read the way a user reads the screen (`MainTrackerWindow.PackGallery.cs`).
+- Every rule gets a self-test on a small pack, the corpus check green, the baseline re-recorded, and an entry in `docs/PACK_RULES.md`.
+
 ## Writing code
 
 - **Language and UI:** C# 14 on .NET 10. The UI is built in code from Godot Controls. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains how Atlas fits together.
