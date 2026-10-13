@@ -41,4 +41,26 @@ public sealed class PackReleaseFitTests
         Assert.Equal("took v1.0.6: 98% of its pins link, 0 stale ids; also tried v2.0.1: 88% of its pins link, 310 stale ids", line);
         Assert.Equal("took v4.1.1: 90% of its pins link, 129 stale ids", PackReleasePick.Describe(new[] { Outdated }, Outdated));
     }
+
+    [Fact]
+    public void Of_several_projects_the_first_that_fits_is_taken_though_another_has_more_stars()
+    {
+        // Dark Souls III: the original pack (more stars, tried first) is for the 2.x apworld; the fork kept up fits.
+        var original = new PackReleaseFit("v4.1.1", 1200, 400, 437, 129);
+        Assert.Equal(1, PackProjectPick.Choose(new PackReleaseFit?[] { original, ForThisApworld, ForNewerApworld }));
+        Assert.Equal(0, PackProjectPick.Choose(new PackReleaseFit?[] { ForThisApworld, null }));
+    }
+
+    [Fact]
+    public void With_none_fitting_the_closest_is_taken_only_when_half_its_pins_link()
+    {
+        var half = new PackReleaseFit("a", 100, 60, 100, 10);
+        var more = new PackReleaseFit("b", 100, 70, 100, 30);
+        var few = new PackReleaseFit("c", 100, 30, 0, 0);
+        Assert.Equal(2, PackProjectPick.Choose(new PackReleaseFit?[] { few, half, more }));
+        Assert.Equal(-1, PackProjectPick.Choose(new PackReleaseFit?[] { few, null }));
+        Assert.Equal(-1, PackProjectPick.Choose(Array.Empty<PackReleaseFit?>()));
+        var itemsOnly = new PackReleaseFit("items", 0, 0, 0, 0);
+        Assert.Equal(-1, PackProjectPick.Choose(new PackReleaseFit?[] { itemsOnly }));
+    }
 }

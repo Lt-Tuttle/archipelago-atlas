@@ -48,3 +48,38 @@ public static class PackReleasePick
         return "took " + chosen.Describe() + (others.Count > 0 ? "; also tried " + string.Join("; ", others) : "");
     }
 }
+
+/// <summary>
+/// Which project's pack Atlas takes for a game by itself, when the game's guide names none (or its project has no pack
+/// that fits): the projects GitHub finds are tried in turn (the guide's first, then by stars), each one's releases
+/// measured against the game's names as <see cref="PackReleasePick"/> does, and the first project whose best release fits
+/// is taken. A project kept up with the game's newest apworld (often a fork) fits where the original doesn't.
+/// </summary>
+public static class PackProjectPick
+{
+    /// <summary>At most this many projects are tried.</summary>
+    public const int MostProjects = 4;
+    /// <summary>At most this many files are downloaded across them.</summary>
+    public const int MostDownloads = 8;
+    /// <summary>With none fitting, the closest is taken only when at least this share of its pins link.</summary>
+    public const double CloseEnough = 0.5;
+
+    /// <summary>
+    /// The projects' best releases in the order they were tried (null: nothing of it could be read): the first that fits;
+    /// else the one whose pins link the most (then the fewest stale ids, then the earlier), if it links at least
+    /// <see cref="CloseEnough"/>; else none (-1).
+    /// </summary>
+    public static int Choose(IReadOnlyList<PackReleaseFit?> bests)
+    {
+        for (int i = 0; i < bests.Count; i++)
+            if (bests[i]?.Fits == true) return i;
+        int chosen = -1;
+        for (int i = 0; i < bests.Count; i++)
+        {
+            if (bests[i] is not { } fit || fit.LinkedShare < CloseEnough) continue;
+            if (chosen < 0 || fit.LinkedShare > bests[chosen]!.LinkedShare
+                || (fit.LinkedShare == bests[chosen]!.LinkedShare && fit.UnknownShare < bests[chosen]!.UnknownShare)) chosen = i;
+        }
+        return chosen;
+    }
+}

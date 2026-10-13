@@ -427,6 +427,11 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _packManagerPanel.Visible = false;
         _packManagerPanel.OpenDoctor = (path, tab) => OpenPackDoctor(path, tab);
         _packManagerPanel.FixPack = FixWhatAtlasCan;
+        _packManagerPanel.PreferPack = (game, file) =>
+        {
+            _appSettings.PreferredPacks[game] = file;
+            DataManager.SaveSettingsSoon(_appSettings);
+        };
         _packManagerPanel.Toast = ShowToast;
         _packManagerPanel.OnDataRefreshed += () =>
         {

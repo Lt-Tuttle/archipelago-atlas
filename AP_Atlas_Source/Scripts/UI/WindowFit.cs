@@ -83,6 +83,35 @@ namespace AP_Atlas.UI
         // Dialogs opened by Pop (dialog → its height cap), sized to their content, and the ones with a shrink pending this frame.
         private static readonly Dictionary<Window, int> _popped = new();
         private static readonly HashSet<Window> _shrinking = new();
+        // The size Atlas last gave each popped dialog; the ones the user has resized since (they keep their size: fitting
+        // them to their content again snapped a window the user had stretched back to its first size); and whether Atlas
+        // is sizing one right now (its own changes aren't the user's).
+        private static readonly Dictionary<Window, Vector2I> _sizedTo = new();
+        private static readonly HashSet<Window> _userSized = new();
+        private static int _sizing;
+
+        /// <summary>Whether the user has resized a dialog opened by <see cref="Pop"/> (it then keeps the size they gave it).</summary>
+        public static bool UserSized(Window dialog) => _userSized.Contains(dialog);
+
+        // A popped dialog's size changed: the user's doing when Atlas wasn't sizing it and Godot didn't just grow it to its
+        // content (Godot only ever grows a window, and to exactly its content's minimum).
+        private static void NoteResize(Window dialog)
+        {
+            if (_sizing > 0 || !_sizedTo.TryGetValue(dialog, out var ours) || _userSized.Contains(dialog)) return;
+            var size = dialog.Size;
+            var content = dialog.GetContentsMinimumSize();
+            static bool Godots(int now, int was, float least) => now == was || (now > was && now <= Math.Max(was, (int)Math.Ceiling(least)) + 1);
+            if (!Godots(size.X, ours.X, Math.Max(content.X, dialog.MinSize.X)) || !Godots(size.Y, ours.Y, Math.Max(content.Y, dialog.MinSize.Y))) _userSized.Add(dialog);
+        }
+
+        // Atlas's own sizing of a popped dialog: noted as Atlas's, then remembered as the size Atlas gave it.
+        private static void Sizing(Window dialog, Action change)
+        {
+            _sizing++;
+            try { change(); }
+            finally { _sizing--; }
+            if (_popped.ContainsKey(dialog)) _sizedTo[dialog] = dialog.Size;
+        }
 
         /// <summary>
         /// Opens a dialog centred at a width, as tall as its content and never the screen's height: Godot grows a window to
@@ -97,10 +126,11 @@ namespace AP_Atlas.UI
             dialog.WrapControls = true;
             dialog.MinSize = new Vector2I(width, 0); // ResetSize keeps the width: MinSize counts where it's the bigger
             _popped[dialog] = maxHeightLogical;
-            dialog.TreeExiting += () => { _popped.Remove(dialog); _shrinking.Remove(dialog); };
+            dialog.TreeExiting += () => { _popped.Remove(dialog); _shrinking.Remove(dialog); _sizedTo.Remove(dialog); _userSized.Remove(dialog); };
             // The caller's content box (AcceptDialog's own label and buttons are internal, not listed): its minimum changing is the cue.
             foreach (var content in dialog.GetChildren().OfType<Control>()) content.MinimumSizeChanged += () => RequestShrink(dialog);
-            dialog.PopupCentered(new Vector2I(width, 0));
+            dialog.SizeChanged += () => NoteResize(dialog);
+            Sizing(dialog, () => dialog.PopupCentered(new Vector2I(width, 0)));
             RequestShrink(dialog);
         }
 
@@ -120,21 +150,31 @@ namespace AP_Atlas.UI
         private static void ShrinkToContent(Window dialog)
         {
             if (!GodotObject.IsInstanceValid(dialog) || !dialog.Visible || dialog.ForceNative || !_popped.TryGetValue(dialog, out int maxHeight)) return;
+            // The user gave it a size: it keeps it, and its place (only kept within the screen); Godot still grows it when
+            // its content needs more room.
+            if (_userSized.Contains(dialog))
+            {
+                Fit(dialog);
+                return;
+            }
             var area = AvailableLogical(dialog).Size;
             if (area.X <= 0 || area.Y <= 0) return;
             int cap = Math.Min(maxHeight, Math.Max(80, area.Y - 8));
-            dialog.WrapControls = true;
-            dialog.ResetSize(); // max(MinSize, the content's minimum): the natural size
-            if (dialog.Size.Y > cap)
+            Sizing(dialog, () =>
             {
-                // The content's minimum would hold the window taller than the cap: the window stops following it (its lists scroll).
-                dialog.WrapControls = false;
-                dialog.Size = new Vector2I(dialog.Size.X, cap);
-            }
-            // Over the window that asked (a test's window, the setup window), else in the middle of Atlas's window.
-            var centre = dialog.GetParent()?.GetViewport() is Window { Visible: true, ForceNative: false } asker && asker != _root && asker != dialog
-                ? asker.Position + asker.Size / 2 : area / 2;
-            dialog.Position = new Vector2I(Math.Max(0, centre.X - dialog.Size.X / 2), Math.Max(0, centre.Y - dialog.Size.Y / 2));
+                dialog.WrapControls = true;
+                dialog.ResetSize(); // max(MinSize, the content's minimum): the natural size
+                if (dialog.Size.Y > cap)
+                {
+                    // The content's minimum would hold the window taller than the cap: the window stops following it (its lists scroll).
+                    dialog.WrapControls = false;
+                    dialog.Size = new Vector2I(dialog.Size.X, cap);
+                }
+                // Over the window that asked (a test's window, the setup window), else in the middle of Atlas's window.
+                var centre = dialog.GetParent()?.GetViewport() is Window { Visible: true, ForceNative: false } asker && asker != _root && asker != dialog
+                    ? asker.Position + asker.Size / 2 : area / 2;
+                dialog.Position = new Vector2I(Math.Max(0, centre.X - dialog.Size.X / 2), Math.Max(0, centre.Y - dialog.Size.Y / 2));
+            });
             Fit(dialog);
         }
 
@@ -329,12 +369,25 @@ namespace AP_Atlas.UI
             // A capped control changes the window's own smallest size on the next layout: fit once more then.
             if (capped) Ui.DeferQuiet(window, () => Fit(window));
             var most = new Vector2I(Math.Max(100, area.X - 8), Math.Max(80, area.Y - 8));
-            if (window.MinSize.X > most.X || window.MinSize.Y > most.Y) window.MinSize = new Vector2I(Math.Min(window.MinSize.X, most.X), Math.Min(window.MinSize.Y, most.Y));
-            if (window.Size.X > most.X || window.Size.Y > most.Y) window.Size = new Vector2I(Math.Min(window.Size.X, most.X), Math.Min(window.Size.Y, most.Y));
-            var fitted = ToGodot(IntRect.Fit(ToInt(new Rect2I(window.Position, window.Size)), new IntRect(0, 0, area.X, area.Y)));
-            if (fitted.Position != window.Position) window.Position = fitted.Position;
-            // A popped dialog standing at the clamp while its content asks for far less: sized to the content again.
-            if (_popped.ContainsKey(window) && window.Size.Y >= most.Y && window.GetContentsMinimumSize().Y + 2 < window.Size.Y) RequestShrink(window);
+            bool popped = _popped.ContainsKey(window);
+            void Clamp()
+            {
+                if (window.MinSize.X > most.X || window.MinSize.Y > most.Y) window.MinSize = new Vector2I(Math.Min(window.MinSize.X, most.X), Math.Min(window.MinSize.Y, most.Y));
+                if (window.Size.X > most.X || window.Size.Y > most.Y) window.Size = new Vector2I(Math.Min(window.Size.X, most.X), Math.Min(window.Size.Y, most.Y));
+                var fitted = ToGodot(IntRect.Fit(ToInt(new Rect2I(window.Position, window.Size)), new IntRect(0, 0, area.X, area.Y)));
+                if (fitted.Position != window.Position) window.Position = fitted.Position;
+            }
+            // Kept within the screen is Atlas's doing, not the user's, but a size the user gave stays theirs.
+            if (popped && !_userSized.Contains(window)) Sizing(window, Clamp);
+            else
+            {
+                _sizing++;
+                try { Clamp(); }
+                finally { _sizing--; }
+            }
+            // A popped dialog standing at the clamp while its content asks for far less: sized to the content again (unless
+            // the user made it that tall).
+            if (popped && !_userSized.Contains(window) && window.Size.Y >= most.Y && window.GetContentsMinimumSize().Y + 2 < window.Size.Y) RequestShrink(window);
         }
 
         /// <summary>Every open window fitted again (the main window resized, or its scale changed).</summary>

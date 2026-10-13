@@ -110,6 +110,13 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _sessions.ReconnectStopped += (slot, refusal) => AP_Atlas.UI.Ui.Defer(this, () => OnReconnectStopped(slot, refusal));
         _sessions.SocketError += (slot, message) => AP_Atlas.UI.Ui.Defer(this, () =>
         {
+            // A connection whose multiworld is gone was being closed on purpose (a deleted multiworld, a solo test's
+            // server stopped): its last words go to the log, not to the status bar as trouble.
+            if (ProfileById(slot.ProfileId) == null)
+            {
+                AP_Atlas.Core.Logger.LogDebug($"A closed connection of {slot.SlotName} ended: {message}");
+                return;
+            }
             LogToSystem("Socket Error (" + slot.SlotName + "): " + message, "red");
             ShowStatus(Tr("{0}: connection trouble (see the System Log)").Replace("{0}", slot.SlotName));
         });

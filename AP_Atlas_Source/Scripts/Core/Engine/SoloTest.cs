@@ -33,7 +33,13 @@ namespace AP_Atlas.Core.EngineSetup
         /// the release must be downloaded): whether it's there. Required, so a copy of the hooks can't leave it out.
         /// </summary>
         public required Func<string, Task<bool>> EnsureWorldAsync { get; init; }
-        /// <summary>Lets the user pick a pack from GitHub's results (or none).</summary>
+        /// <summary>
+        /// Lets Atlas pick a game's pack from GitHub's projects by itself (the first whose release fits the game's names;
+        /// see MapPackManagerControl.InstallBestPackAsync), saying what it tries: whether one was installed, what was tried
+        /// and taken, the file and its project.
+        /// </summary>
+        public required Func<string, Action<string>?, Task<(bool Ok, string Detail, string? File, string? Repo)>> PickPackAsync { get; init; }
+        /// <summary>Lets the user pick a pack from GitHub's results (or none): when Atlas found none that fits.</summary>
         public required Func<string, Task<PackChoice?>> ChoosePackAsync { get; init; }
         /// <summary>Installs a project's pack without asking (Start covered it): the release that fits the game's names; what was tried, and the file.</summary>
         public required Func<string, string, Action<string>?, Task<(bool Ok, string Detail, string? File)>> InstallPackAsync { get; init; }
@@ -181,9 +187,22 @@ namespace AP_Atlas.Core.EngineSetup
                     string? repo = recommended;
                     if (repo == null)
                     {
-                        progress?.Report(new SoloTestProgress(SoloTestStep.MapPack, SoloStepOutcome.Running, "looking for a pack on GitHub", null));
+                        // No guide names one: Atlas picks the pack that fits the game's names from what GitHub has (a project
+                        // kept up with the newest apworld, often a fork, over an older one with more stars), and asks only
+                        // when none fits.
+                        progress?.Report(new SoloTestProgress(SoloTestStep.MapPack, SoloStepOutcome.Running, "looking for a pack on GitHub that fits " + Game + "'s names", null));
+                        var picked = await hooks.PickPackAsync(Game, line => progress?.Report(new SoloTestProgress(SoloTestStep.MapPack, SoloStepOutcome.Running, line, null))).WaitAsync(ct);
+                        if (picked.Ok)
+                        {
+                            if (picked.File != null) hooks.PreferPack(Game, Path.GetFileName(picked.File));
+                            pack = InstalledPackFor(Game);
+                            return pack != null
+                                ? Done("installed " + pack.Manifest.Name + " " + pack.Manifest.GetActualVersion() + ", picked by Atlas: " + picked.Detail)
+                                : Failed("the installed pack isn't for " + Game);
+                        }
+                        progress?.Report(new SoloTestProgress(SoloTestStep.MapPack, SoloStepOutcome.Running, "no pack picked: " + picked.Detail + "; choose one, or continue without", null));
                         var choice = await hooks.ChoosePackAsync(Game).WaitAsync(ct);
-                        if (choice?.Repo == null) return Done("no pack: Pins, Key Items and Scripts aren't scored");
+                        if (choice?.Repo == null) return Done("no pack (" + picked.Detail + "): Pins, Key Items and Scripts aren't scored");
                         repo = choice.Repo;
                     }
                     progress?.Report(new SoloTestProgress(SoloTestStep.MapPack, SoloStepOutcome.Running, "installing the pack from github.com/" + repo + (recommended != null ? " (the game's setup guide recommends it)" : ""), null));
@@ -394,14 +413,16 @@ namespace AP_Atlas.Core.EngineSetup
         /// <summary>Ends the test server, disconnects the test slot and removes its multiworld.</summary>
         public void StopServer(SoloTestHooks? hooks)
         {
-            _host?.Stop();
-            _host = null;
-            ServerAddress = null;
+            // The slot goes first, then its server: stopped the other way round, the slot saw its server vanish and Atlas
+            // said "connection trouble" about a test that had ended as asked.
             if (Profile != null && hooks != null)
             {
                 hooks.Settings.SlotYamlPaths.Remove(Annotations.SlotKey(Profile.Id, SlotName));
                 hooks.RemoveProfile(Profile);
             }
+            _host?.Stop();
+            _host = null;
+            ServerAddress = null;
             Profile = null;
             StateChanged?.Invoke();
         }

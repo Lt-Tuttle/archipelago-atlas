@@ -167,6 +167,7 @@ namespace AP_Atlas.UI
                 Notice = _hooks.Notice,
                 InstallApworldAsync = _hooks.InstallApworldAsync,
                 EnsureWorldAsync = _hooks.EnsureWorldAsync,
+                PickPackAsync = _hooks.PickPackAsync,
                 ChoosePackAsync = ChoosePackAsync,
                 InstallPackAsync = _hooks.InstallPackAsync,
                 RecommendedPack = _hooks.RecommendedPack,
@@ -251,7 +252,7 @@ namespace AP_Atlas.UI
             _packBox.Visible = true;
             _packStatus.Text = problem != null ? _tr("GitHub couldn't be searched: {0}").Replace("{0}", problem)
                 : candidates.Count == 0 ? _tr("No map packs found on GitHub for {0}.").Replace("{0}", game)
-                : _tr("Packs on GitHub for {0}. Packs are made by the community: check who made it before installing.").Replace("{0}", game);
+                : _tr("None of the packs on GitHub for {0} fits its names well enough for Atlas to pick one by itself. Choose one, or continue without. Packs are made by the community: check who made it before installing.").Replace("{0}", game);
             foreach (var c in candidates)
             {
                 // The button first, so every choice sits in one column on the left.

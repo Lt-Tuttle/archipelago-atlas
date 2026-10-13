@@ -61,6 +61,8 @@ namespace AP_Atlas.UI
             public required Func<string, Task<(List<SetupPackCandidate> Candidates, string? Problem)>> SearchPacksAsync { get; init; }
             /// <summary>Installs a project's pack release that fits the game (nothing asked); what was tried, and the file.</summary>
             public required Func<string, string, Action<string>, Task<(bool Ok, string Detail, string? File)>> InstallPackAsync { get; init; }
+            /// <summary>Atlas picks a game's pack from GitHub's projects by itself (the first whose release fits the game's names): whether it installed one, what it tried, the file.</summary>
+            public required Func<string, Action<string>, Task<(bool Ok, string Detail, string? File)>> PickPackAsync { get; init; }
             public required Action<string, string> PreferPack { get; init; }
             // Trackers.
             public required Action<MultiworldProfile, string> LinkCheese { get; init; }
@@ -888,12 +890,13 @@ namespace AP_Atlas.UI
                 else
                 {
                     string? recommended = _hooks.RecommendedPack(game);
+                    // The guide's pack when it names one; else the pack Atlas finds fits the game's names best (it tries the
+                    // projects GitHub finds), so no game's pack has to be chosen by hand.
                     pack = new CheckBox
                     {
                         Text = recommended != null ? _tr("Install the map pack its setup guide recommends (github.com/{0})").Replace("{0}", recommended)
-                            : _tr("Install the map pack its setup guide recommends, when the apworld names one"),
-                        ButtonPressed = recommended != null || apworld != null,
-                        Visible = recommended != null || apworld != null
+                            : _tr("Install the map pack that fits it (Atlas tries the packs GitHub finds)"),
+                        ButtonPressed = true
                     };
                     pack.SetMeta("pack_tick", game);
                     cbox.AddChild(pack);
@@ -1021,7 +1024,14 @@ namespace AP_Atlas.UI
                     if (recommended == null)
                     {
                         if (_hooks.PackInstalledFor(game)) continue;
-                        problems.Add(_tr("{0}: its setup guide names no map tracker; Search GitHub for a pack… finds one.").Replace("{0}", game));
+                        _gamesStatus.Text = _tr("Finding the map pack that fits {0}…").Replace("{0}", game);
+                        _gamesStatus.Visible = true;
+                        var (picked, why, chosenFile) = await _hooks.PickPackAsync(game, said => Ui.Defer(this, () => _gamesStatus.Text = said));
+                        if (!IsInstanceValid(this)) return false;
+                        if (picked && chosenFile != null) _hooks.PreferPack(game, System.IO.Path.GetFileName(chosenFile));
+                        if (!picked) problems.Add(_tr("{0}: no map pack was installed ({1}); Search GitHub for a pack… lists what there is.").Replace("{0}", game).Replace("{1}", why));
+                        pack.ButtonPressed = picked ? false : pack.ButtonPressed;
+                        pack.Disabled = picked;
                         continue;
                     }
                     _gamesStatus.Text = _tr("Installing {0}'s map pack from github.com/{1}…").Replace("{0}", game).Replace("{1}", recommended);

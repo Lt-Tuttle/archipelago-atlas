@@ -76,6 +76,11 @@ public partial class MainTrackerWindow
                 var (ok, detail, file) = await _packManagerPanel.InstallFittingReleaseAsync(game, repo, say);
                 return (ok, detail, file);
             },
+            PickPackAsync = async (game, say) =>
+            {
+                var (ok, detail, file, _) = await _packManagerPanel.InstallBestPackAsync(game, say);
+                return (ok, detail, file);
+            },
             PreferPack = (game, file) =>
             {
                 _appSettings.PreferredPacks[game] = file;

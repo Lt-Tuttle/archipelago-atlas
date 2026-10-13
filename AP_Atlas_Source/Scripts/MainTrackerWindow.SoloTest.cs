@@ -25,6 +25,7 @@ public partial class MainTrackerWindow
         // The release Atlas picks, after looking inside the newest few (asked once per game, on the test's window).
         InstallApworldAsync = game => _gamesPage != null ? _gamesPage.InstallBestAsync(game, SoloQuestionParent(), look: true) : Task.FromResult<(bool, string?)>((false, null)),
         EnsureWorldAsync = EnsureGameWorldAsync,
+        PickPackAsync = async (game, say) => _packManagerPanel != null ? await _packManagerPanel.InstallBestPackAsync(game, say) : (false, "the Map Packs page isn't there", null, null),
         ChoosePackAsync = _ => Task.FromResult<PackChoice?>(null), // the dialog takes this over
         // Without asking (Start covered the downloads): the newest release that fits the game's names.
         InstallPackAsync = (game, repo, say) => _packManagerPanel.InstallFittingReleaseAsync(game, repo, say),

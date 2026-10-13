@@ -114,7 +114,7 @@ public partial class MainTrackerWindow
             CommandPaletteAsync);
         await ScenarioAsync("Activity bar: Home alone at the top, then ATLAS TOOLS, EXTERNAL TOOLS and, at the bottom, ATLAS CONFIG, each caption on two lines on an accent band; every tool in its group, in order, with a shipped icon, its short name under it, its full title for screen readers and its key in the tooltip; the group captions sit on accent bands; pressing a button shows the tool, switching a tool any other way lights its button and names it in the header; the engine button opens the engine window",
             ActivityBarAsync);
-        await ScenarioAsync("Dialogs: a confirmation (with and without a requirement), a prompt and Save changes stand as tall as their content, under four fifths of the window, with their buttons and content inside (a wrapped line measured before its width used to make every dialog as tall as the screen); a short question keeps its details under More information and grows to them; a dialog's frame stands out in the accent with a shadow; a question asked from another window opens over that window, inside Atlas's",
+        await ScenarioAsync("Dialogs: a confirmation (with and without a requirement), a prompt and Save changes stand as tall as their content, under four fifths of the window, with their buttons and content inside (a wrapped line measured before its width used to make every dialog as tall as the screen); a short question keeps its details under More information and grows to them; one the user resized keeps that size when its content changes or it's as tall as the window (it snapped back to its first size); a dialog's frame stands out in the accent with a shadow; a question asked from another window opens over that window, inside Atlas's",
             DialogsStandAsTallAsTheirContentAsync);
         await ScenarioAsync("Slot picker: the tool header lists the connected slots with the selected one chosen; picking one shows its view, Ctrl+Tab and Ctrl+Shift+Tab go through them around the end, a slot selected elsewhere shows as picked, a tool that isn't per slot hides it, and a slot that ends leaves it",
             SlotPickerAsync);
@@ -180,7 +180,7 @@ public partial class MainTrackerWindow
             PicturelessMapsAsync);
         await ScenarioAsync("Pack Doctor: on a pack's first check, a tile whose name matches an item exactly (once punctuation is ignored) is linked by itself as an automatic fix; the pack's row on the Map Packs page offers Review N, which opens the Doctor on Recommended; the Recommended tab lists what's left, Apply on a row writes the fix, the row goes after the check and the status says so; the rows are grouped by kind with what to do under each, filters by words, kind and map narrow them, Ignore selected hides the selection in one step and Undo brings it back; Undo takes the automatic link back; the Map Tracker's Attention group lists the pack's problems for this seed in plain words and opens the Doctor on the fixing tab; Fix what Atlas can (the pack row's Fix, the Attention group's button) links the confident matches and sets the rest aside in one undoable step, said in a card",
             PackDoctorAsync);
-        await ScenarioAsync("Map packs reach connected slots: Key Items offers the pack's layouts and two Atlas builds by item group, kept per slot; the chat's filters sit in one row; the Chat and System Log tabs carry a dot for lines that arrived while they weren't showing, cleared when shown; a slot without a pack offers \"Find a map pack for <game>…\" on its map, which shows Map Packs and searches GitHub once; a pack chosen from the results downloads with a progress line, installs with a card and reaches the slot's map; a pack installed while a slot is connected shows on its map at once, without a reconnect; deleted, the map says there's no pack again; another pack for the game takes its place; a pack half of whose pins link to the seed's checks says so on the map, and its button makes its project's release found for the seed the game's pack, which the slot switches to",
+        await ScenarioAsync("Map packs reach connected slots: Key Items offers the pack's layouts and two Atlas builds by item group, kept per slot; the chat's filters sit in one row; the Chat and System Log tabs carry a dot for lines that arrived while they weren't showing, cleared when shown; a slot without a pack offers \"Find a map pack for <game>…\" on its map, which shows Map Packs and searches GitHub once; a pack chosen from the results downloads with a progress line, installs with a card and reaches the slot's map; Atlas picks a game's pack by itself (of the projects found, one with more stars whose pack doesn't fit the game's names is passed over for the one that fits); a pack installed while a slot is connected shows on its map at once, without a reconnect; deleted, the map says there's no pack again; another pack for the game takes its place; a pack half of whose pins link to the seed's checks says so on the map, and its button makes its project's release found for the seed the game's pack, which the slot switches to",
             PacksReachConnectedSlotsAsync);
         await ScenarioAsync("Live map following: a pack whose scripts follow the game switches the map to the tab the room's data storage names, at connect and when it changes (Atlas asks the server about the key and never writes the room's data); with the switch off, the map stays; the switch is remembered per slot",
             LiveMapFollowingAsync);
@@ -971,6 +971,7 @@ public partial class MainTrackerWindow
                 return (await answer.Task, null);
             },
             EnsureWorldAsync = real.EnsureWorldAsync,
+            PickPackAsync = real.PickPackAsync,
             ChoosePackAsync = real.ChoosePackAsync,
             InstallPackAsync = real.InstallPackAsync,
             RecommendedPack = real.RecommendedPack,
@@ -3162,6 +3163,20 @@ public partial class MainTrackerWindow
         more.EmitSignal(BaseButton.SignalName.Pressed);
         await UiTestDialogSizedAsync(brief, "a confirmation with its details open");
         UiTestExpect(folded.IsVisibleInTree() && brief.Size.Y > shortHeight, $"More information didn't show the details, or the dialog didn't grow to them ({shortHeight} → {brief.Size.Y})");
+        // Resized by the user, a dialog keeps that size when its content changes, and when it's as tall as the window
+        // (it snapped back to its first size).
+        var userSize = new Vector2I(brief.Size.X + 160, brief.Size.Y + 120);
+        brief.Size = userSize;
+        await UiTestWaitAsync(0.1);
+        more.EmitSignal(BaseButton.SignalName.Pressed);
+        await UiTestWaitAsync(0.25);
+        UiTestExpect(AP_Atlas.UI.WindowFit.UserSized(brief) && brief.Size == userSize, $"the dialog the user resized went back to {brief.Size} (the user made it {userSize})");
+        var tallest = AP_Atlas.UI.WindowFit.AvailableLogical(brief).Size.Y - 8;
+        brief.Size = new Vector2I(userSize.X, tallest);
+        AP_Atlas.UI.WindowFit.Fit(brief);
+        AP_Atlas.UI.WindowFit.RequestShrink(brief);
+        await UiTestWaitAsync(0.25);
+        UiTestExpect(brief.Size == new Vector2I(userSize.X, tallest), $"the dialog the user made as tall as the window was shrunk to {brief.Size}");
         // A dialog stands out: its frame's edge and title strip are the accent, with a shadow.
         UiTestExpect(brief.GetThemeStylebox("embedded_border") is StyleBoxFlat frame && frame.BorderColor == AP_Atlas.Core.ThemeColors.Accent && frame.ShadowSize > 0,
             "a dialog's frame doesn't stand out from the page");
@@ -3792,6 +3807,12 @@ public partial class MainTrackerWindow
             OpenPackDoctor(zip);
             var window = await UiTestWaitForAsync(() => GetTree().Root.GetChildren().OfType<AP_Atlas.UI.PackDoctorWindow>().FirstOrDefault(), "the Pack Doctor window");
             await UiTestWaitForAsync(() => AP_Atlas.Core.PopTracker.PackImages.UsersOf(pack) == 2 && pack.ImagesLoaded ? window : null, "the Pack Doctor window to use the pack's images");
+            // The overview's coverage rows: the name, the bar and the count on one line, what the count is made of under it.
+            // (The overview is built again when the check's report arrives: each look finds the rows afresh.)
+            VBoxContainer? Coverage() => window.FindChildren("*", nameof(VBoxContainer), true, false).OfType<VBoxContainer>()
+                .FirstOrDefault(b => IsInstanceValid(b) && !b.IsQueuedForDeletion() && b.HasMeta("coverage_row") && b.GetMeta("coverage_row").AsString() == "Pin sections linked" && b.Size.X > 0);
+            await UiTestWaitForAsync(() => Coverage() is { } b && b.GetChildCount() == 2 && b.GetChild(1) is MarginContainer && b.GetChild<HBoxContainer>(0).Size.Y is > 0 and < 40 ? b : null,
+                "the overview's coverage row with its detail under the bar (beside it, the row stood many lines tall)");
             await UiTestWaitAsync(0.3); // the window takes the use on the main thread, after the images are decoded
             window.EmitSignal(Window.SignalName.CloseRequested);
             await UiTestWaitForAsync(() => AP_Atlas.Core.PopTracker.PackImages.UsersOf(pack) == 1 ? window : null, "the closed Pack Doctor window to stop using the pack");
@@ -4136,6 +4157,33 @@ public partial class MainTrackerWindow
             AP_Atlas.Core.SafeFile.Delete(fromGitHub);
             AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
             await UiTestWaitForAsync(() => slot.Pack == null && slot.MapTracker.ShowingEmptyState ? slot : null, "the map to say the fitting pack is gone");
+            // Atlas picks the game's pack by itself: of the projects GitHub finds, one with more stars whose pack is for
+            // other names is passed over for the one whose release fits (none installed until then, nothing left behind).
+            FakeMapPack.Write(packSource, "UI test wrong pack", "Test Game",
+                locationsJson: """[{"name":"Nowhere","sections":[{"name":"Thing 1"},{"name":"Thing 2"}],"map_locations":[{"map":"World","x":10,"y":10}]}]""");
+            byte[] wrongBytes = await System.IO.File.ReadAllBytesAsync(packSource);
+            AP_Atlas.Core.SafeFile.Delete(packSource);
+            var answered = github.Answer;
+            github.Answer = (path, headers) =>
+            {
+                static byte[] Json(string s) => System.Text.Encoding.UTF8.GetBytes(s);
+                if (path.StartsWith("/search/repositories"))
+                    return new AP_Atlas.Core.Testing.FakeWebSite.FullAnswer(200, Json("{\"items\":[{\"full_name\":\"packs/test-game-poptracker\",\"stargazers_count\":3},{\"full_name\":\"big/wrong-pack\",\"stargazers_count\":40}]}"), "application/json");
+                if (path.StartsWith("/repos/big/wrong-pack/releases?"))
+                    return new AP_Atlas.Core.Testing.FakeWebSite.FullAnswer(200, Json($"[{{\"tag_name\":\"v9\",\"assets\":[{{\"name\":\"wrong.zip\",\"browser_download_url\":\"{github.Site}/dl/wrong.zip\",\"size\":{wrongBytes.Length}}}]}}]"), "application/json");
+                if (path == "/dl/wrong.zip") return new AP_Atlas.Core.Testing.FakeWebSite.FullAnswer(200, wrongBytes, "application/zip");
+                return answered!(path, headers);
+            };
+            said.Clear();
+            var picked = await _packManagerPanel.InstallBestPackAsync("Test Game", said.Add);
+            github.Answer = answered;
+            UiTestExpect(picked.Ok && picked.Repo == "packs/test-game-poptracker" && picked.File == fromGitHub && System.IO.File.Exists(fromGitHub)
+                && picked.Detail.Contains("big/wrong-pack v9: 0% of its pins link") && said.Any(l => l.StartsWith("trying github.com/big/wrong-pack v9")),
+                $"Atlas didn't pick the pack that fits: {picked.Ok}, {picked.Repo}, \"{picked.Detail}\", said {string.Join(" | ", said)}");
+            UiTestExpect(!System.IO.Directory.Exists(trying) || System.IO.Directory.GetFileSystemEntries(trying).Length == 0, "the packs tried for the pick were left behind");
+            AP_Atlas.Core.SafeFile.Delete(fromGitHub);
+            AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
+            await UiTestWaitForAsync(() => slot.Pack == null && slot.MapTracker.ShowingEmptyState ? slot : null, "the map to say the picked pack is gone");
             host.ShowTool(AP_Atlas.UI.Tool.MapTracker);
             await UiTestWaitAsync(0.2);
 

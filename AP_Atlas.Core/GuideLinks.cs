@@ -52,6 +52,9 @@ public static class GuideLinks
 
     private static bool Says(string text, string word) => text.Contains(word, StringComparison.OrdinalIgnoreCase);
 
+    // PopTracker itself, and Archipelago itself: Universal Tracker is a fork of Archipelago that guides link as "Universal
+    // Tracker" (Stardew Valley's, the generic world's), not a pack.
     private static bool IsPopTrackerItself(string repo) =>
-        repo.EndsWith("/PopTracker", StringComparison.OrdinalIgnoreCase) || repo.EndsWith("/poptracker-pack", StringComparison.OrdinalIgnoreCase);
+        repo.EndsWith("/PopTracker", StringComparison.OrdinalIgnoreCase) || repo.EndsWith("/poptracker-pack", StringComparison.OrdinalIgnoreCase)
+        || repo.EndsWith("/Archipelago", StringComparison.OrdinalIgnoreCase);
 }

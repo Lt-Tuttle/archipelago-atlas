@@ -526,6 +526,9 @@ namespace AP_Atlas.Core
         /// <summary>Opens the Pack Doctor for a zip, on a tab (null: its first); set by the main window.</summary>
         public Action<string, string> OpenDoctor { get; set; }
 
+        /// <summary>Makes a pack (its zip's file name) the one a game's slots use: set by the window (the settings' PreferredPacks).</summary>
+        public Action<string, string> PreferPack { get; set; }
+
         // Zips seen this session (path → last write), so installs and updates are checked, but not every pack at startup.
         private static readonly Dictionary<string, DateTime> _seenPacks = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
         private static bool _firstScanDone;
@@ -814,6 +817,20 @@ namespace AP_Atlas.Core
                 box.AddChild(heading);
                 if (problem != null) box.AddChild(Muted($"GitHub couldn't be searched: {problem}"));
                 else if (candidates.Count == 0) box.AddChild(Muted("No map packs found on GitHub. Packs are often shared in the game's Archipelago Discord thread; install one from its zip with Install Pack (Zip)."));
+                if (candidates.Count > 0)
+                {
+                    string pickGame = game;
+                    var found = candidates;
+                    var pick = new Button
+                    {
+                        Text = "Install the one that fits",
+                        TooltipText = "Atlas tries these projects' newest releases against the game's names (the guide's project first, then by stars) and installs the first that fits; the rest are deleted",
+                        SizeFlagsHorizontal = SizeFlags.ShrinkBegin
+                    };
+                    pick.SetMeta("pick_pack", game);
+                    pick.Pressed += () => PickForGame(pickGame, found);
+                    box.AddChild(pick);
+                }
                 foreach (var c in candidates)
                 {
                     var row = new HBoxContainer();
@@ -865,6 +882,47 @@ namespace AP_Atlas.Core
             var l = AP_Atlas.UI.Kit.Subtle(text);
             l.CustomMinimumSize = new Vector2(680, 0);
             return l;
+        }
+
+        /// <summary>
+        /// "Install the one that fits": asks once (how many projects and files at most), then lets Atlas pick the game's pack
+        /// from what the search found (<see cref="InstallBestPackAsync(string, IReadOnlyList{PackCandidate}, Action{string})"/>),
+        /// makes it the game's pack, and says which and why.
+        /// </summary>
+        private void PickForGame(string game, IReadOnlyList<PackCandidate> candidates)
+        {
+            int projects = Math.Min(candidates.Count, AP_Atlas.Core.Games.PackProjectPick.MostProjects);
+            AP_Atlas.UI.Dialogs.Confirm(this, "Let Atlas pick the pack?",
+                $"Atlas downloads the newest releases of up to {projects} of these projects (at most {AP_Atlas.Core.Games.PackProjectPick.MostDownloads} files) beside the packs, measures each against {game}'s names, and installs the first that fits. The rest are deleted.",
+                "Pick and install", () => AP_Atlas.Core.Async.Fire(PickForGameAsync(game, candidates), "picking a map pack for " + game));
+        }
+
+        internal async Task<(bool Ok, string Detail, string File, string Repo)> PickForGameAsync(string game, IReadOnlyList<PackCandidate> candidates)
+        {
+            var answer = await InstallBestPackAsync(game, candidates, line => AP_Atlas.UI.Ui.Defer(this, () => ShowTrying(line)));
+            AP_Atlas.UI.Ui.Defer(this, () =>
+            {
+                _downloadRow.Visible = false;
+                if (answer.Ok && answer.File != null)
+                {
+                    PreferPack?.Invoke(game, System.IO.Path.GetFileName(answer.File));
+                    if (_candidatesDialog != null && GodotObject.IsInstanceValid(_candidatesDialog)) _candidatesDialog.QueueFree();
+                    PopTrackerPackLoader.NotifyPacksChanged();
+                }
+                Toast?.Invoke(answer.Ok ? $"{game}'s map pack: {answer.Detail}." : $"No pack was installed for {game}: {answer.Detail}.", answer.Ok ? ThemeColors.Success : ThemeColors.Warning);
+                _logAction($"Picking {game}'s map pack: {(answer.Ok ? "" : "nothing installed: ")}{answer.Detail}", answer.Ok ? "green" : "yellow");
+            });
+            return answer;
+        }
+
+        /// <summary>What a pick is trying now, on the page's download line.</summary>
+        private void ShowTrying(string line)
+        {
+            if (!GodotObject.IsInstanceValid(this)) return;
+            DownloadText = line;
+            _downloadLabel.Text = line;
+            _downloadBar.Indeterminate = true;
+            _downloadRow.Visible = true;
         }
 
         /// <summary>Looks up the project's latest release, then shows exactly what would be downloaded and asks.</summary>
@@ -1019,6 +1077,91 @@ namespace AP_Atlas.Core
         internal async Task<(bool Ok, string Detail, string File)> InstallFittingReleaseAsync(string game, string repo, Action<string> say)
         {
             // No overlay: whoever asked shows the progress (the solo test's window), and Atlas stays usable meanwhile.
+            string where = "github.com/" + repo, trying = NewTryingFolder();
+            try
+            {
+                var project = await TryProjectAsync(repo, trying, AP_Atlas.Core.Games.PackReleasePick.MostTried, say);
+                if (!GodotObject.IsInstanceValid(this)) return (false, "the window closed", null);
+                var chosen = AP_Atlas.Core.Games.PackReleasePick.Best(project.Tried);
+                if (chosen == null) return (false, project.Note ?? "no release of " + where + " could be downloaded and read", null);
+                string installed = await InstallDownloadedAsync(project.Files[chosen.Tag], project.Names[chosen.Tag], where, quiet: false);
+                if (installed == null) return (false, chosen.Tag + " fits best, but it couldn't be put among the packs (the log says why)", null);
+                return (true, AP_Atlas.Core.Games.PackReleasePick.Describe(project.Tried, chosen), installed);
+            }
+            finally { RemoveTryingFolder(trying, repo); }
+        }
+
+        /// <summary>
+        /// The pack Atlas picks for a game by itself, from GitHub's projects for it (see <see cref="SearchPacksAsync"/>):
+        /// the project the game's own setup guide links first, then by stars, then the most recently updated; each tried
+        /// as <see cref="InstallFittingReleaseAsync"/> tries one, and the first whose release fits the game's names is
+        /// installed. With none fitting, the closest is installed when half its pins link (<see cref="AP_Atlas.Core.Games.PackProjectPick"/>);
+        /// else nothing is, and the answer says why. No question (whoever asked said what it does); what was tried is said.
+        /// </summary>
+        internal async Task<(bool Ok, string Detail, string File, string Repo)> InstallBestPackAsync(string game, Action<string> say)
+        {
+            say?.Invoke($"looking on GitHub for {game}'s map packs");
+            var (candidates, problem) = await SearchPacksAsync(game);
+            if (candidates.Count == 0) return (false, problem != null ? "GitHub couldn't be searched: " + problem : "GitHub has no map pack for " + game, null, null);
+            return await InstallBestPackAsync(game, candidates, say);
+        }
+
+        internal async Task<(bool Ok, string Detail, string File, string Repo)> InstallBestPackAsync(string game, IReadOnlyList<PackCandidate> candidates, Action<string> say)
+        {
+            var order = candidates.Select((c, i) => (c, i)).OrderByDescending(x => x.c.Recommended).ThenByDescending(x => x.c.Stars)
+                .ThenByDescending(x => x.c.Updated ?? DateTime.MinValue).ThenBy(x => x.i).Select(x => x.c).Take(AP_Atlas.Core.Games.PackProjectPick.MostProjects).ToList();
+            string trying = NewTryingFolder();
+            try
+            {
+                var tried = new List<(PackCandidate Candidate, ProjectTry Project, AP_Atlas.Core.Games.PackReleaseFit Best)>();
+                int downloads = 0;
+                foreach (var candidate in order)
+                {
+                    int budget = Math.Min(AP_Atlas.Core.Games.PackReleasePick.MostTried, AP_Atlas.Core.Games.PackProjectPick.MostDownloads - downloads);
+                    if (budget <= 0) break;
+                    var project = await TryProjectAsync(candidate.Repo, trying, budget, say);
+                    if (!GodotObject.IsInstanceValid(this)) return (false, "the window closed", null, null);
+                    downloads += project.Downloads;
+                    var best = AP_Atlas.Core.Games.PackReleasePick.Best(project.Tried);
+                    tried.Add((candidate, project, best));
+                    if (best?.Fits == true) break;
+                }
+                string Summary(int except) => string.Join("; ", tried.Where((_, i) => i != except)
+                    .Select(t => "github.com/" + t.Candidate.Repo + " " + (t.Best != null ? t.Best.Describe() : t.Project.Note ?? "couldn't be read")));
+                int chosen = AP_Atlas.Core.Games.PackProjectPick.Choose(tried.Select(t => t.Best).ToList());
+                if (chosen < 0)
+                    return (false, tried.Count == 0 ? "no project could be tried" : "none of the packs found fits " + game + "'s names (" + Summary(-1) + ")", null, null);
+                var (pick, picked, fit) = tried[chosen];
+                string where = "github.com/" + pick.Repo;
+                string installed = await InstallDownloadedAsync(picked.Files[fit.Tag], picked.Names[fit.Tag], where, quiet: false);
+                if (installed == null) return (false, where + " " + fit.Tag + " fits best, but it couldn't be put among the packs (the log says why)", null, null);
+                string others = Summary(chosen);
+                return (true, (fit.Fits ? "" : "none fits well; the closest: ") + where + " " + AP_Atlas.Core.Games.PackReleasePick.Describe(picked.Tried, fit)
+                    + (pick.Recommended ? " (recommended by the game's setup guide)" : "") + (others.Length > 0 ? "; also tried " + others : ""), installed, pick.Repo);
+            }
+            finally { RemoveTryingFolder(trying, game); }
+        }
+
+        /// <summary>One project's releases (or its current files) downloaded beside the packs and measured: each one's fit, file and name.</summary>
+        private sealed class ProjectTry
+        {
+            public readonly List<AP_Atlas.Core.Games.PackReleaseFit> Tried = new List<AP_Atlas.Core.Games.PackReleaseFit>();
+            public readonly Dictionary<string, string> Files = new Dictionary<string, string>(StringComparer.Ordinal);
+            public readonly Dictionary<string, string> Names = new Dictionary<string, string>(StringComparer.Ordinal);
+            public int Downloads;
+            /// <summary>Why nothing could be tried, when nothing was.</summary>
+            public string Note;
+        }
+
+        /// <summary>
+        /// A project's newest releases with a pack (at most <paramref name="most"/>), or its current files when it has none,
+        /// each downloaded into <paramref name="trying"/> (never among the packs) and measured against the game's names;
+        /// it stops at the first that fits. Nothing is installed.
+        /// </summary>
+        private async Task<ProjectTry> TryProjectAsync(string repo, string trying, int most, Action<string> say)
+        {
+            var result = new ProjectTry();
+            string where = "github.com/" + repo;
             var list = await GitHubApi.GetAsync($"/repos/{repo}/releases?per_page=12");
             var releases = list.Ok ? ReleasesWithPacks(list.Json) : new List<PackRelease>();
             if (releases.Count == 0)
@@ -1026,51 +1169,45 @@ namespace AP_Atlas.Core
                 var latest = await GitHubApi.GetAsync($"/repos/{repo}/releases/latest");
                 if (latest.Ok && latest.Json is JObject one) releases = ReleasesWithPacks(new JArray(one));
             }
-            if (!GodotObject.IsInstanceValid(this)) return (false, "the window closed", null);
-            string where = "github.com/" + repo;
-            if (releases.Count == 0)
+            if (!GodotObject.IsInstanceValid(this)) return result;
+            // No released pack: the project's current files, as the Map Packs page offers them.
+            var tries = releases.Count > 0
+                ? releases.Take(most).Select(r => (Tag: r.Tag, Url: r.Url, Name: SafeZipName(r.FileName))).ToList()
+                : new List<(string Tag, string Url, string Name)> { ("current files", $"{GitHubApi.Site}/repos/{repo}/zipball", repo.Replace('/', '_') + ".zip") };
+            foreach (var (tag, url, name) in tries)
             {
-                // No released pack: the project's current files, as the Map Packs page offers them.
-                say?.Invoke($"downloading {where}'s current files");
-                string zipball = $"{GitHubApi.Site}/repos/{repo}/zipball", name = repo.Replace('/', '_') + ".zip";
-                bool got = await DownloadPackAsync(zipball, name, where, quiet: true);
-                return (got, got ? "the project's current files (it has no release)" : "the project's files couldn't be downloaded", got ? InstalledPackPath(name) : null);
+                say?.Invoke(releases.Count > 0 ? $"trying {where} {tag}" : $"trying {where}'s current files (it has no release)");
+                string file = System.IO.Path.Combine(trying, Guid.NewGuid().ToString("N") + ".zip");
+                result.Downloads++;
+                if (!await DownloadToAsync(url, where, file, name)) continue;
+                if (!GodotObject.IsInstanceValid(this)) return result;
+                var fit = await FitOfAsync(tag, file);
+                if (fit == null) continue;
+                result.Files[tag] = file;
+                result.Names[tag] = name;
+                result.Tried.Add(fit);
+                say?.Invoke(fit.Describe());
+                if (fit.Fits) break;
             }
-            // Each release tried is downloaded to a folder of its own beside the packs (never among them), measured there,
-            // and only the one kept is installed: no pack comes and goes, connected slots don't reload for a try, and no
-            // installed pack's file is written while something reads it (a release named like an installed one in another
-            // case is the same file on Windows).
+            if (result.Tried.Count == 0) result.Note = releases.Count > 0 ? "no release could be downloaded and read as a pack" : "its files couldn't be downloaded or aren't a pack";
+            return result;
+        }
+
+        // Each release tried is downloaded to a folder of its own beside the packs (never among them), measured there, and
+        // only the one kept is installed: no pack comes and goes, connected slots don't reload for a try, and no installed
+        // pack's file is written while something reads it (a release named like an installed one in another case is the
+        // same file on Windows).
+        private static string NewTryingFolder()
+        {
             string trying = System.IO.Path.Combine(DataManager.GetDataDirectory(), "packs", TryingFolder, Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(trying);
-            try
-            {
-                var tried = new List<AP_Atlas.Core.Games.PackReleaseFit>();
-                var files = new Dictionary<string, string>(StringComparer.Ordinal);
-                foreach (var release in releases.Take(AP_Atlas.Core.Games.PackReleasePick.MostTried))
-                {
-                    say?.Invoke($"trying {where} {release.Tag}");
-                    string file = System.IO.Path.Combine(trying, files.Count + ".zip");
-                    if (!await DownloadToAsync(release.Url, where, file, SafeZipName(release.FileName))) continue;
-                    if (!GodotObject.IsInstanceValid(this)) return (false, "the window closed", null);
-                    var fit = await FitOfAsync(release.Tag, file);
-                    if (fit == null) continue;
-                    files[release.Tag] = file;
-                    tried.Add(fit);
-                    say?.Invoke(fit.Describe());
-                    if (fit.Fits) break;
-                }
-                var chosen = AP_Atlas.Core.Games.PackReleasePick.Best(tried);
-                if (chosen == null) return (false, "no release of " + where + " could be downloaded and read", null);
-                var best = releases.First(r => r.Tag == chosen.Tag);
-                string installed = await InstallDownloadedAsync(files[chosen.Tag], SafeZipName(best.FileName), where, quiet: false);
-                if (installed == null) return (false, chosen.Tag + " fits best, but it couldn't be put among the packs (the log says why)", null);
-                return (true, AP_Atlas.Core.Games.PackReleasePick.Describe(tried, chosen), installed);
-            }
-            finally
-            {
-                try { Directory.Delete(trying, true); }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Logger.LogDebug($"The releases tried for {repo} weren't all removed: {ex.Message}"); }
-            }
+            return trying;
+        }
+
+        private static void RemoveTryingFolder(string trying, string what)
+        {
+            try { Directory.Delete(trying, true); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Logger.LogDebug($"The releases tried for {what} weren't all removed: {ex.Message}"); }
         }
 
         /// <summary>The folder beside the installed packs where releases being tried are downloaded (the pack lists read only the packs folder's own files).</summary>
@@ -1080,13 +1217,6 @@ namespace AP_Atlas.Core
         {
             string safeName = string.Concat((fileName ?? "pack.zip").Select(ch => System.IO.Path.GetInvalidFileNameChars().Contains(ch) ? '_' : ch));
             return safeName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ? safeName : safeName + ".zip";
-        }
-
-        private static string InstalledPackPath(string fileName)
-        {
-            string safeName = string.Concat((fileName ?? "pack.zip").Select(ch => System.IO.Path.GetInvalidFileNameChars().Contains(ch) ? '_' : ch));
-            if (!safeName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) safeName += ".zip";
-            return System.IO.Path.Combine(DataManager.GetDataDirectory(), "packs", safeName);
         }
 
         /// <summary>How a downloaded release fits the game's names, by the Pack Doctor's analysis (null when the zip isn't a pack).</summary>
@@ -1106,14 +1236,14 @@ namespace AP_Atlas.Core
             return new AP_Atlas.Core.Games.PackReleaseFit(tag, report.SectionsTotal, report.SectionsLinked, pack.LocationMappingById?.Count ?? 0, report.Index?.UnknownMappedLocationIds.Count ?? 0);
         }
 
-        private async Task<bool> DownloadPackAsync(string url, string fileName, string where, bool quiet = false)
+        private async Task<bool> DownloadPackAsync(string url, string fileName, string where)
         {
             string packsDir = System.IO.Path.Combine(DataManager.GetDataDirectory(), "packs");
             Directory.CreateDirectory(packsDir);
             string safeName = SafeZipName(fileName);
             string temp = System.IO.Path.Combine(packsDir, $".download-{Guid.NewGuid():N}.tmp");
             if (!await DownloadToAsync(url, where, temp, safeName)) return false;
-            return await InstallDownloadedAsync(temp, safeName, where, quiet) != null;
+            return await InstallDownloadedAsync(temp, safeName, where, quiet: false) != null;
         }
 
         /// <summary>Downloads a pack to a file, checked as a pack's zip; false (and said) when it can't be.</summary>

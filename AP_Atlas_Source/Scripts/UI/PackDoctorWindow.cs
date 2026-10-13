@@ -437,18 +437,44 @@ namespace AP_Atlas.UI
             _ => ThemeColors.TextMuted
         };
 
+        /// <summary>Width of a coverage row's name: the bar and its detail line start after it.</summary>
+        private const int CoverageLabelWidth = 200;
+
+        /// <summary>
+        /// One coverage row: its name, the bar and the count on one line, and what the count is made of on a line under the
+        /// bar (beside it, the detail wrapped a word to a line and stood the rows far apart).
+        /// </summary>
         private Control CoverageBar(string label, int done, int total, string detail)
         {
+            var box = new VBoxContainer();
+            box.AddThemeConstantOverride("separation", 0);
+            box.SetMeta("coverage_row", label);
             var row = new HBoxContainer();
             row.AddThemeConstantOverride("separation", 10);
-            row.AddChild(new Label { Text = label, CustomMinimumSize = new Vector2(220, 0) });
-            var bar = new ProgressBar { MinValue = 0, MaxValue = Math.Max(1, total), Value = done, ShowPercentage = false, CustomMinimumSize = new Vector2(260, 18), SizeFlagsVertical = Control.SizeFlags.ShrinkCenter };
+            row.AddChild(new Label { Text = label, CustomMinimumSize = new Vector2(CoverageLabelWidth, 0), VerticalAlignment = VerticalAlignment.Center });
+            var bar = new ProgressBar
+            {
+                MinValue = 0,
+                MaxValue = Math.Max(1, total),
+                Value = done,
+                ShowPercentage = false,
+                CustomMinimumSize = new Vector2(120, 18),
+                SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+                SizeFlagsVertical = Control.SizeFlags.ShrinkCenter
+            };
             var fill = new StyleBoxFlat { BgColor = total > 0 && done >= total ? Good : ThemeColors.Accent };
             bar.AddThemeStyleboxOverride("fill", fill);
             row.AddChild(bar);
-            row.AddChild(new Label { Text = total == 0 ? "—" : $"{done} / {total}" });
-            if (!string.IsNullOrEmpty(detail)) row.AddChild(Kit.Subtle(detail));
-            return row;
+            row.AddChild(new Label { Text = total == 0 ? "—" : $"{done} / {total}", VerticalAlignment = VerticalAlignment.Center });
+            box.AddChild(row);
+            if (!string.IsNullOrEmpty(detail))
+            {
+                var under = new MarginContainer();
+                under.AddThemeConstantOverride("margin_left", CoverageLabelWidth + 10);
+                under.AddChild(Kit.Subtle(detail));
+                box.AddChild(under);
+            }
+            return box;
         }
 
         // =====================================================================
