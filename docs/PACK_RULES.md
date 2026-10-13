@@ -19,7 +19,12 @@ The pack lab (CONTRIBUTING, "The pack lab") is how new rules are found: the corp
 | A tile named like a linked tile is the same item under another code. | A Link to the Past (key-drop layouts) |
 | A map no tab shows and no pin is on is left out of the map list; the Map Tracker opens on the map with the most pins. | Ship of Harkinian; A Link to the Past |
 | Key Items draws a pack's root layout as the pack lays it out: arrays side by side or stacked, docks, groups under headers, referenced layouts in place; maps and settings grids left to their own tools. | A Link to the Past |
-| Scripts run under limits (steps, memory, time, nesting) and can't freeze or crash Atlas; a stop is said in Key Items, the log, Properties and the Doctor. | The corpus (HITMAN's 5,771 checks) |
+| Scripts run under limits (steps, memory, time, nesting) and can't freeze or crash Atlas; a stop is said in Key Items, the log, Properties and the Doctor. The memory limit is on what the scripts hold (the heap's growth), not on what they allocate and drop. | The corpus (HITMAN's 5,771 checks); A Link to the Past (18 million steps of init churned a gigabyte) |
+| Several pins can share one path (a tier listed once with its checks and once on the overworld with refs to them; two world maps): a mapping path or a ref resolves to the pin that has the named section, as PopTracker finds it. A path's section is matched as its author wrote it (case and punctuation aside), or a child pin of that name with one section. | Satisfactory (555 refs); Choo-Choo Charles (56 mapping paths) |
+| Lua 5.4's `<const>` and `<close>` are taken off locals; a block that declares a local and ends in a label its `goto`s jump to (the "continue" idiom) is wrapped in `do … end`, which MoonSharp accepts where Lua 5.4 needs no help; PopTracker's `Highlight` levels are there. | Hades; Anodyne, Cat Quest, Donkey Kong 64; Kingdom Hearts II |
+| An image is decoded by its header, not its name: packs name JPEGs and WebPs ".png". | Mega Man 3; Undertale; Civilization VI |
+| An item the scripts make (`ScriptHost:CreateLuaItem`) answers to its codes: a grid cell with one isn't an undefined cell, it's the scripts' own tile. | Super Metroid (transitions); A Link to the Past (enemizer) |
+| A file the scripts load that the pack doesn't have is the pack's own note (PopTracker prints the same and goes on), not a failure of the scripts. | Fourteen packs loading a template's snes.lua |
 
 ## Pairing names with the game's
 
@@ -31,6 +36,9 @@ The pack lab (CONTRIBUTING, "The pack lab") is how new rules are found: the corp
 | Two sections with a generic name ("Item 1", "Chest") on different pins are two checks, not one check shown twice; a name that is the location's own is one check wherever it's shown. | Ship of Harkinian |
 | A section the pack's own thorough mapping doesn't name is "untracked by the pack too" (often the goal), not a pairing Atlas missed. | Ship of Harkinian |
 | Hint markers ("… - hint") aren't checks; composed names ("Wave 10 Completed" under "Brawler" is "Wave 10 Completed (Brawler)") pair. | Brotato |
+| An apostrophe is part of its word ("Collector's_Map" is "Collectors_Map"), not a gap. | Hollow Knight |
+| A pin's name and a section's compose either way: "Beachstickball (10 Hits)" from pin "Beachstickball" and section "10 Hits", as well as "Wave 10 Completed (Brawler)". | A Short Hike; Brotato |
+| A section named as the game names the check without its area ("Basement Pot 1" for "Waynehouse: Basement Pot 1") links when exactly one location ends so after its area, nothing shows it yet, and the name is on one pin only. | Hylics 2; A Short Hike |
 | Exact matches are linked on a pack's first check, as automatic fixes with Undo; the pass runs again when Atlas's rules change (`PackDoctorService.LinkRules`), after taking back Atlas's own guesses the new rules read differently. The user's own links are never touched. | Ship of Harkinian |
 
 ## Versions
@@ -41,8 +49,16 @@ The pack lab (CONTRIBUTING, "The pack lab") is how new rules are found: the corp
 | The game's own setup guide's tracker link is the author's recommendation and comes first; the apworld release whose guide names the tracker is Atlas's pick. | Dark Souls III; Dark Souls II |
 | A pack under 75% linked against the seed's names says so on the map, with a search for a release that fits. | Dark Souls III |
 
+## Reporting
+
+| Rule | Taught by |
+|---|---|
+| A grid none of whose tiles names an item of the game, in a pack whose other grids do, shows the pack's own state (an enemizer table): said once per grid, its tiles not counted among those to link. | A Link to the Past (2,057 rows); Super Mario 64; Shivers |
+| Numbered sections named alike ("Pot #1" to "Pot #40") that match nothing of the game's are one family (another version or fork of the apworld has them): said once, nothing to choose. | A Link to the Past (door and pot shuffle forks); Undertale |
+
 ## What isn't a rule
 
 - Ids a mapping lists that this apworld doesn't have: the pack is for another version. Reported, never guessed.
 - Pins off their map's picture, typos in refs, missing pictures: the pack's own, in the author's section of the report.
 - A few rows of wording the rules don't cover: the Doctor's suggestions, "Fix what Atlas can", and the user's choice.
+- The clear handler's errors when the lab runs it without a slot (`slot_data.settings.x` on an empty table): a real seed's data is the test; `Tools/corpus_kinds.py` lists them apart, and the solo batch judges them.

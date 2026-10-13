@@ -3,20 +3,41 @@ using System.Buffers.Binary;
 
 namespace AP_Atlas.Core;
 
+/// <summary>The image formats Atlas decodes, told by their headers (<see cref="ImageHeader.Format"/>).</summary>
+public enum ImageFormat { Unknown, Png, Jpeg, WebP, Bmp }
+
 /// <summary>
-/// An image's size, read from its header without decoding it (PNG, JPEG, WebP), so an image too large to decode safely
-/// can be refused first: a decoder sets aside width × height × 4 bytes from the header alone, and a file of a few bytes
-/// can claim to be gigapixels. Never throws.
+/// An image's format and size, read from its header without decoding it (PNG, JPEG, WebP, BMP), so an image too large to
+/// decode safely can be refused first: a decoder sets aside width × height × 4 bytes from the header alone, and a file of
+/// a few bytes can claim to be gigapixels. The format comes from the header, never the file's name: packs name JPEGs and
+/// WebPs ".png" (Mega Man 3's tiles, Undertale's maps, Civilization VI's), and PopTracker reads them all the same. Never throws.
 /// </summary>
 public static class ImageHeader
 {
-    /// <summary>Width and height in pixels, or null if the data isn't a PNG, JPEG or WebP image whose size can be read.</summary>
+    /// <summary>What the data is, by its header: a PNG, JPEG, WebP or BMP, or none of them.</summary>
+    public static ImageFormat Format(ReadOnlySpan<byte> data)
+    {
+        if (IsPng(data)) return ImageFormat.Png;
+        if (data.Length >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF) return ImageFormat.Jpeg;
+        if (data.Length >= 16 && data[..4].SequenceEqual("RIFF"u8) && data[8..12].SequenceEqual("WEBP"u8)) return ImageFormat.WebP;
+        if (data.Length >= 26 && data[0] == (byte)'B' && data[1] == (byte)'M') return ImageFormat.Bmp;
+        return ImageFormat.Unknown;
+    }
+
+    /// <summary>Width and height in pixels, or null if the data isn't a PNG, JPEG, WebP or BMP image whose size can be read.</summary>
     public static (int Width, int Height)? Size(ReadOnlySpan<byte> data)
     {
-        if (IsPng(data)) return Png(data);
-        if (data.Length >= 2 && data[0] == 0xFF && data[1] == 0xD8) return Jpeg(data);
-        if (data.Length >= 16 && data[..4].SequenceEqual("RIFF"u8) && data[8..12].SequenceEqual("WEBP"u8)) return WebP(data);
-        return null;
+        switch (Format(data))
+        {
+            case ImageFormat.Png: return Png(data);
+            case ImageFormat.Jpeg: return Jpeg(data);
+            case ImageFormat.WebP: return WebP(data);
+            case ImageFormat.Bmp:
+                // The info header: width and height as signed 32-bit little-endian (a negative height is a top-down image).
+                int width = BinaryPrimitives.ReadInt32LittleEndian(data[18..22]), height = BinaryPrimitives.ReadInt32LittleEndian(data[22..26]);
+                return width > 0 && height != 0 && height != int.MinValue ? Positive((uint)width, (uint)Math.Abs(height)) : null;
+            default: return null;
+        }
     }
 
     private static bool IsPng(ReadOnlySpan<byte> data) =>

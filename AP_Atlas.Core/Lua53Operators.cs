@@ -29,9 +29,10 @@ public static class Lua53Operators
     /// <summary>More operators than this in one file and the file is left as it is (real packs have a few dozen).</summary>
     public const int MaxRewrites = 20000;
 
-    private enum Kind { Name, Keyword, Number, String, Symbol, Open, Close, Operand }
+    internal enum Kind { Name, Keyword, Number, String, Symbol, Open, Close, Operand }
 
-    private sealed class Token
+    /// <summary>A token of Lua source, with the whitespace and comments before it (shared with <see cref="LuaGoto"/>).</summary>
+    internal sealed class Token
     {
         public Kind Kind;
         public string Text = "";
@@ -42,7 +43,7 @@ public static class Lua53Operators
     }
 
     /// <summary>A piece of a rewritten operand: some text, or a token (with or without the whitespace before it).</summary>
-    private readonly record struct Part(string? Text, Token? Token, bool WithLead);
+    internal readonly record struct Part(string? Text, Token? Token, bool WithLead);
 
     private static readonly HashSet<string> Keywords = new(StringComparer.Ordinal)
     {
@@ -114,7 +115,11 @@ public static class Lua53Operators
 
     // ---------------------------------------------------------------- tokens
 
-    private static (List<Token> Tokens, string Trailing) Tokenize(string s)
+    /// <summary>
+    /// The source as tokens (strings and long strings whole, comments in the next token's lead, brackets matched by
+    /// index), and the text after the last token. Throws <see cref="FormatException"/> on unbalanced brackets.
+    /// </summary>
+    internal static (List<Token> Tokens, string Trailing) Tokenize(string s)
     {
         var tokens = new List<Token>();
         var open = new Stack<int>();

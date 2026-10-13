@@ -23,6 +23,11 @@ namespace AP_Atlas.Core.PopTracker
         /// "KF Shop Item 2" … "KF Shop Item 8", so "Item 1" is "KF Shop Item 1".
         /// </summary>
         NeighbourName,
+        /// <summary>
+        /// The only location whose name ends in the section's, after its area ("Basement Pot 1" ↔ "Waynehouse: Basement Pot 1"):
+        /// packs name a check as the game does, without the game's area.
+        /// </summary>
+        TailName,
     }
 
     /// <summary>
@@ -130,11 +135,17 @@ namespace AP_Atlas.Core.PopTracker
 
         private void BuildLocations()
         {
-            var pinsByPath = new Dictionary<string, PopTrackerLocation>(StringComparer.OrdinalIgnoreCase);
+            var pinsByPath = new Dictionary<string, List<PopTrackerLocation>>(StringComparer.OrdinalIgnoreCase);
             var pinsByName = new Dictionary<string, List<PopTrackerLocation>>(StringComparer.OrdinalIgnoreCase);
             foreach (var pin in Pack.Locations)
             {
-                if (!string.IsNullOrEmpty(pin.FullPath)) pinsByPath[pin.FullPath] = pin;
+                if (!string.IsNullOrEmpty(pin.FullPath))
+                {
+                    // Several pins can share a path (Satisfactory lists its tiers once with their checks and once on the overworld
+                    // with refs to them; Choo-Choo Charles has two world maps): a path resolves to the one that has the named section.
+                    if (!pinsByPath.TryGetValue(pin.FullPath, out var same)) pinsByPath[pin.FullPath] = same = new List<PopTrackerLocation>();
+                    same.Add(pin);
+                }
                 if (!pinsByName.TryGetValue(pin.Name ?? "", out var list)) pinsByName[pin.Name ?? ""] = list = new List<PopTrackerLocation>();
                 list.Add(pin);
             }
@@ -215,7 +226,7 @@ namespace AP_Atlas.Core.PopTracker
                         if (IsCovered(pin, sec)) continue;
                         if (HoldsNoCheck(sec)) { holdingNoCheck.Add((pin, sec)); continue; }
                         string name = !string.IsNullOrEmpty(sec.Name) ? sec.Name : pin.Name;
-                        if (TryNameMatch(name, out long id, out var source) || TryComposedMatch(pin, sec, out id, out source)) Add(id, pin, sec, source);
+                        if (TryNameMatch(name, out long id, out var source) || TryComposedMatch(pin, sec, out id, out source) || TryTailMatch(sec, name, out id, out source)) Add(id, pin, sec, source);
                     }
                 }
                 else if (IsHintMarker(pin, null)) HintMarkerSections++;
@@ -259,12 +270,12 @@ namespace AP_Atlas.Core.PopTracker
             foreach (var (pin, sec) in holdingNoCheck)
             {
                 string name = !string.IsNullOrEmpty(sec.Name) ? sec.Name : pin.Name;
-                if ((TryNameMatch(name, out long id, out var source) || TryComposedMatch(pin, sec, out id, out source)) && !ByLocation.ContainsKey(id)) Add(id, pin, sec, source);
+                if ((TryNameMatch(name, out long id, out var source) || TryComposedMatch(pin, sec, out id, out source) || TryTailMatch(sec, name, out id, out source)) && !ByLocation.ContainsKey(id)) Add(id, pin, sec, source);
                 else NoCheckSections++;
             }
         }
 
-        private void ResolveReferences(Dictionary<string, PopTrackerLocation> pinsByPath, Dictionary<string, List<PopTrackerLocation>> pinsByName)
+        private void ResolveReferences(Dictionary<string, List<PopTrackerLocation>> pinsByPath, Dictionary<string, List<PopTrackerLocation>> pinsByName)
         {
             foreach (var pin in Pack.Locations)
             {
@@ -297,7 +308,7 @@ namespace AP_Atlas.Core.PopTracker
         /// without saying which (PopTracker can't show one either).
         /// </summary>
         private static (PopTrackerLocation Pin, PopTrackerSection Section)? FollowReference(PopTrackerSection section,
-            Dictionary<string, PopTrackerLocation> pinsByPath, Dictionary<string, List<PopTrackerLocation>> pinsByName)
+            Dictionary<string, List<PopTrackerLocation>> pinsByPath, Dictionary<string, List<PopTrackerLocation>> pinsByName)
         {
             var seen = new HashSet<PopTrackerSection>(ReferenceEqualityComparer.Instance) { section };
             var current = ResolvePath("@" + section.Ref.Trim().TrimStart('@'), pinsByPath, pinsByName);
@@ -318,7 +329,7 @@ namespace AP_Atlas.Core.PopTracker
         /// name, make the path. Only when that section is in the pack and is the same check the ref names (its last part).
         /// </summary>
         private static ((PopTrackerLocation Pin, PopTrackerSection Section) Target, string Path)? RepairReference(PopTrackerSection section,
-            Dictionary<string, PopTrackerLocation> pinsByPath, Dictionary<string, List<PopTrackerLocation>> pinsByName)
+            Dictionary<string, List<PopTrackerLocation>> pinsByPath, Dictionary<string, List<PopTrackerLocation>> pinsByName)
         {
             var parts = section.Ref.Trim().TrimStart('@').Split('/');
             string own = (section.Name ?? "").Trim();
@@ -381,8 +392,9 @@ namespace AP_Atlas.Core.PopTracker
 
         /// <summary>
         /// Names many packs build from the pin and the section: "Wave 10 Completed (Brawler)" from pin "Brawler" and
-        /// section "Wave 10 Completed" (or "Brawler - Wave 10 Completed", "Brawler: Wave 10 Completed"); and a pin or
-        /// section "A - B" for the game's "B (A)".
+        /// section "Wave 10 Completed" (or "Beachstickball (10 Hits)" from pin "Beachstickball" and section "10 Hits",
+        /// "Brawler - Wave 10 Completed", "Brawler: Wave 10 Completed", "Brawler Wave 10 Completed"); and a pin or section
+        /// "A - B" for the game's "B (A)".
         /// </summary>
         private bool TryComposedMatch(PopTrackerLocation pin, PopTrackerSection section, out long id, out MatchSource source)
         {
@@ -394,6 +406,7 @@ namespace AP_Atlas.Core.PopTracker
             if (own != null && pinName.Length > 0)
             {
                 candidates.Add(own + " (" + pinName + ")");
+                candidates.Add(pinName + " (" + own + ")");
                 candidates.Add(pinName + " - " + own);
                 candidates.Add(pinName + ": " + own);
                 candidates.Add(pinName + " " + own);
@@ -404,6 +417,51 @@ namespace AP_Atlas.Core.PopTracker
             foreach (string candidate in candidates)
                 if (_locationIdsByName.TryGetValue(candidate, out id)) return true;
             return false;
+        }
+
+        // Location names by their tail after the area ("Waynehouse: Basement Pot 1" → "Basement Pot 1"), and how many pins each
+        // section name is on; both built when first needed.
+        private Dictionary<string, List<long>> _idsByTail;
+        private Dictionary<string, int> _pinsPerSectionName;
+
+        /// <summary>
+        /// A section named as the game names the check without its area ("Basement Pot 1" for "Waynehouse: Basement Pot 1",
+        /// "Double Banana 1" for "Arcade 2: Double Banana 1"): when exactly one location's name ends so after its area, nothing
+        /// shows that location yet, and the section's name is on one pin only (a "Chest" on many pins says nothing), that
+        /// location is meant.
+        /// </summary>
+        private bool TryTailMatch(PopTrackerSection section, string name, out long id, out MatchSource source)
+        {
+            source = MatchSource.TailName;
+            id = 0;
+            if (section == null || string.IsNullOrWhiteSpace(name)) return false;
+            _idsByTail ??= BuildTails();
+            _pinsPerSectionName ??= Pack.Locations
+                .SelectMany(p => (p.Sections ?? new List<PopTrackerSection>()).Select(s => s?.Name?.Trim()).Where(n => !string.IsNullOrEmpty(n)).Distinct(StringComparer.OrdinalIgnoreCase))
+                .GroupBy(n => n, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
+            string own = name.Trim();
+            if (_pinsPerSectionName.TryGetValue(own, out int pins) && pins > 1) return false;
+            if (!_idsByTail.TryGetValue(own, out var ids) || ids.Count != 1 || ByLocation.ContainsKey(ids[0])) return false;
+            id = ids[0];
+            return true;
+        }
+
+        private Dictionary<string, List<long>> BuildTails()
+        {
+            var tails = new Dictionary<string, List<long>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kv in _locationIdsByName)
+            {
+                // The area is the part before the first ": " or " - ".
+                int colon = kv.Key.IndexOf(": ", StringComparison.Ordinal), dash = kv.Key.IndexOf(" - ", StringComparison.Ordinal);
+                int cut = colon > 0 && (dash < 0 || colon < dash) ? colon + 2 : dash > 0 ? dash + 3 : -1;
+                if (cut <= 0 || cut >= kv.Key.Length) continue;
+                string tail = kv.Key.Substring(cut).Trim();
+                if (tail.Length == 0) continue;
+                if (!tails.TryGetValue(tail, out var list)) tails[tail] = list = new List<long>();
+                list.Add(kv.Value);
+            }
+            return tails;
         }
 
         private bool TryNameMatch(string name, out long id, out MatchSource source)
@@ -424,28 +482,54 @@ namespace AP_Atlas.Core.PopTracker
 
         /// <summary>"@A/B/C" → pin "A/B" + section "C"; a trailing "/" means the pin itself (or its only section).</summary>
         private static (PopTrackerLocation Pin, PopTrackerSection Section)? ResolvePath(string path,
-            Dictionary<string, PopTrackerLocation> pinsByPath, Dictionary<string, List<PopTrackerLocation>> pinsByName)
+            Dictionary<string, List<PopTrackerLocation>> pinsByPath, Dictionary<string, List<PopTrackerLocation>> pinsByName)
         {
             var parts = path.TrimStart('@').Split('/');
             if (parts.Length < 2) return null;
             string sectionName = parts[parts.Length - 1].Trim();
             string pinPath = string.Join("/", parts.Take(parts.Length - 1)).Trim();
 
-            PopTrackerLocation pin = null;
-            if (!pinsByPath.TryGetValue(pinPath, out pin))
+            if (!pinsByPath.TryGetValue(pinPath, out var pins))
             {
                 // The script may address the pin without all its parents, or the pack may nest differently.
-                pin = pinsByPath.FirstOrDefault(kv => kv.Key.EndsWith("/" + pinPath, StringComparison.OrdinalIgnoreCase)).Value;
-                if (pin == null && pinsByName.TryGetValue(parts[parts.Length - 2].Trim(), out var named) && named.Count == 1) pin = named[0];
+                pins = pinsByPath.FirstOrDefault(kv => kv.Key.EndsWith("/" + pinPath, StringComparison.OrdinalIgnoreCase)).Value;
+                if (pins == null && pinsByName.TryGetValue(parts[parts.Length - 2].Trim(), out var named) && named.Count == 1) pins = named;
             }
-            if (pin == null) return null;
+            // Of the pins sharing the path, the one that has the section named (the first otherwise, as PopTracker finds it).
+            (PopTrackerLocation Pin, PopTrackerSection Section)? Resolve(PopTrackerLocation pin)
+            {
+                if (string.IsNullOrEmpty(sectionName))
+                    return (pin, pin.Sections != null && pin.Sections.Count == 1 ? pin.Sections[0] : null);
+                var section = pin.Sections?.FirstOrDefault(s => string.Equals(s.Name, sectionName, StringComparison.OrdinalIgnoreCase));
+                if (section == null && (pin.Sections == null || pin.Sections.Count == 0) && string.Equals(pin.Name, sectionName, StringComparison.OrdinalIgnoreCase))
+                    return (pin, null);
+                return section == null ? null : (pin, section);
+            }
+            foreach (var pin in pins ?? new List<PopTrackerLocation>())
+                if (Resolve(pin) is { } found) return found;
+            // As the pack's author wrote it: a section named case and punctuation aside ("Hub 1-5, item 1" for "Hub 1-5 Item 1"),
+            // or a child pin of that name with one section ("AWESOME Shop/Purchase 1" for a ref "AWESOME Shop/purchase 1"; the
+            // parent, with children only, isn't a pin itself). Satisfactory's overworld refers to its tiers' checks so, 555 times.
+            if (string.IsNullOrEmpty(sectionName)) return null;
+            string loose = Loose(sectionName);
+            foreach (var pin in pins ?? new List<PopTrackerLocation>())
+            {
+                var section = pin.Sections?.FirstOrDefault(s => Loose(s.Name) == loose);
+                if (section != null) return (pin, section);
+            }
+            var child = pinsByPath.TryGetValue(pinPath + "/" + sectionName, out var exact) ? exact
+                : pinsByPath.FirstOrDefault(kv => Loose(kv.Key) == Loose(pinPath + "/" + sectionName)).Value;
+            var childPin = child?.FirstOrDefault(p => p.Sections != null && p.Sections.Count > 0) ?? child?.FirstOrDefault();
+            return childPin == null ? null : (childPin, childPin.Sections != null && childPin.Sections.Count == 1 ? childPin.Sections[0] : null);
+        }
 
-            if (string.IsNullOrEmpty(sectionName))
-                return (pin, pin.Sections != null && pin.Sections.Count == 1 ? pin.Sections[0] : null);
-            var section = pin.Sections?.FirstOrDefault(s => string.Equals(s.Name, sectionName, StringComparison.OrdinalIgnoreCase));
-            if (section == null && (pin.Sections == null || pin.Sections.Count == 0) && string.Equals(pin.Name, sectionName, StringComparison.OrdinalIgnoreCase))
-                return (pin, null);
-            return section == null ? null : (pin, section);
+        /// <summary>A name as its author might write it another time: lower case, letters and digits only.</summary>
+        private static string Loose(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return "";
+            var sb = new System.Text.StringBuilder(name.Length);
+            foreach (char c in name) if (char.IsLetterOrDigit(c)) sb.Append(char.ToLowerInvariant(c));
+            return sb.ToString();
         }
 
         private static string LocationNameFromPath(string path)

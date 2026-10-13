@@ -28,7 +28,7 @@ public sealed class ImageBudget
     /// be decoded (null: it fits). A file whose size can't be read isn't decoded either: its decoder could find one.
     /// </summary>
     public string? Take(ReadOnlySpan<byte> file) =>
-        ImageHeader.Size(file) is { } size ? Take(size.Width, size.Height) : "it isn't a PNG, JPEG or WebP image whose size Atlas can read";
+        ImageHeader.Size(file) is { } size ? Take(size.Width, size.Height) : "it isn't a PNG, JPEG, WebP or BMP image whose size Atlas can read";
 
     /// <summary>Takes room for an image this size, or says why it can't be decoded (null: it fits).</summary>
     public string? Take(int width, int height)

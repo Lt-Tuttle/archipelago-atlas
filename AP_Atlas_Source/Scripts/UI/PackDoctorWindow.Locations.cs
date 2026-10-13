@@ -481,6 +481,7 @@ namespace AP_Atlas.UI
                     MatchSource.LooseName => "partial name",
                     MatchSource.ComposedName => "pin and section names",
                     MatchSource.NeighbourName => "named like its neighbours",
+                    MatchSource.TailName => "the only location ending in its name",
                     _ => "your fix"
                 };
                 var row = new VBoxContainer();

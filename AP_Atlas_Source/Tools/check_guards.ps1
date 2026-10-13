@@ -149,7 +149,7 @@ $rules = @(
     @{ Name = 'Unpacking a zip into a folder'; Pattern = 'ExtractToDirectory|ExtractToFile'
        Allowed = @('AP_Atlas_Source\Scripts\Core\Engine\AtlasEngine.cs'); Max = 3 },
     @{ Name = 'Decoding an image without checking its size first (use PackImages.DecodeImage)'; Pattern = 'Load(Png|Jpg|Webp|Bmp|Tga|Svg|Ktx|Exr|Dds)FromBuffer\s*\(|\bImage\.LoadFromFile\s*\('
-       Allowed = @('AP_Atlas_Source\Scripts\Core\PopTracker\PackImages.cs', 'AP_Atlas_Source\Scripts\MainTrackerWindow.VisualCheck.cs'); Max = 3 },
+       Allowed = @('AP_Atlas_Source\Scripts\Core\PopTracker\PackImages.cs', 'AP_Atlas_Source\Scripts\MainTrackerWindow.VisualCheck.cs'); Max = 4 },
     @{ Name = 'Rich text that reads BBCode outside SafeRichText (outside text could make Godot open a file)'
        Pattern = 'BbcodeEnabled\s*=(?!\s*false\b)|\bSetUseBbcode\s*\(|\bAppendText\s*\(|\bParseBbcode\s*\('
        Allowed = @('AP_Atlas_Source\Scripts\UI\SafeRichText.cs', 'AP_Atlas_Source\Scripts\Core\SelfTest.Safety.cs'); Max = 2 },

@@ -130,6 +130,7 @@ namespace AP_Atlas.Core
             await TestAsync("Map packs: a file or image too big to read safely is refused before it fills memory; the rest of the pack works, and the user is told why", PackFilesCantFillMemory);
             await TestAsync("Pack Doctor: an analysis reads its own snapshot, never the fixes as they change", PackDoctorReadsASnapshot);
             await TestAsync("Map packs read as PopTracker reads them: a progressive item by its stages' codes, labels and the pack's own switches aren't tiles, scripts in Lua 5.3 (its // and bitwise operators, %s of any value, overlay methods), each shop's \"Item 1\" named like its neighbours, a ref repaired from the section's own name, the goal the pack doesn't track said as such, a map no tab shows left out; Atlas's clashing guesses taken back", PacksReadAsPopTrackerReadsThem);
+            await TestAsync("Map packs, the lab's first round: two pins sharing a path, \"Pin (Section)\" names, the one location ending in a section's name, apostrophes, images by their header, Lua 5.4's attribs and continue labels, PopTracker's Highlight, items the scripts make, display grids and numbered families said once, a missing file as the pack's own note", PackLabRoundOne);
             await TestAsync("Pack scripts: the room's checked and missing ids, its seed and its players' names, aliases and games are there to read (tables and text, as PopTracker gives them); Lua's \\u{} escapes read as their characters in mappings and scripts; a name shared by several locations is told apart by its detail", PackScriptsReadTheRoomAndTheEscapes);
             await TestAsync("Map packs: a section that refers to another shows its check (and follows a fix); a mapping the scripts build as they run is read as PopTracker reads it; names match however a slash is read, numbered copies by their number; a section hosting an item holds no check, and a location mapped to that item shows there", PackReferencesAndBuiltMappings);
             await TestAsync("Key Items: Atlas's layout pick is the layout that fits the view and fills it best (the pack's own and Atlas's built ones alike; a tie keeps the pack's), else the least overflowing", KeyItemsAutoLayoutPicks);
@@ -704,7 +705,9 @@ namespace AP_Atlas.Core
                 if (was.LocationsTotal > 0 && cur.LocationsTotal == was.LocationsTotal && cur.LocationsPlaced < was.LocationsPlaced)
                     worse.Add($"{kv.Key} places fewer locations ({was.LocationsPlaced} → {cur.LocationsPlaced} of {cur.LocationsTotal})");
                 if (cur.LoadIssues > was.LoadIssues) worse.Add($"{kv.Key} has more load issues ({was.LoadIssues} → {cur.LoadIssues})");
-                if (cur.ScriptsStopped != null) worse.Add($"{kv.Key}: Atlas stopped its scripts ({cur.ScriptsStopped})");
+                // A stop the baseline didn't have: a pack that ran before and is stopped now. (A pack stopped in the baseline too is
+                // judged by the lab's kinds report, not here: the corpus has packs whose setup runs away in PopTracker as well.)
+                if (cur.ScriptsStopped != null && was.ScriptsStopped == null) worse.Add($"{kv.Key}: Atlas stopped its scripts ({cur.ScriptsStopped})");
             }
             Expect(worse.Count == 0, "map packs got worse: " + string.Join("; ", worse));
         }

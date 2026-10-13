@@ -229,6 +229,30 @@ public class PackLimitsTests
     }
 
     [Fact]
+    public void An_image_format_comes_from_its_header_not_its_name()
+    {
+        Assert.Equal(ImageFormat.Png, ImageHeader.Format(FakeMapPack.Png(2, 2)));
+        Assert.Equal(ImageFormat.Jpeg, ImageHeader.Format(Jpeg(640, 480)));
+        Assert.Equal(ImageFormat.WebP, ImageHeader.Format(WebPLossless(300, 200)));
+        Assert.Equal(ImageFormat.Bmp, ImageHeader.Format(Bmp(40, -30)));
+        Assert.Equal(ImageFormat.Unknown, ImageHeader.Format(new byte[] { 1, 2, 3, 4 }));
+        Assert.Equal(ImageFormat.Unknown, ImageHeader.Format(ReadOnlySpan<byte>.Empty));
+        // A BMP's height may be written negative (a top-down image); the size is still read.
+        Assert.Equal((40, 30), ImageHeader.Size(Bmp(40, -30)));
+        Assert.Null(ImageHeader.Size(Bmp(0, 30)));
+    }
+
+    private static byte[] Bmp(int width, int height)
+    {
+        var data = new byte[54];
+        data[0] = (byte)'B';
+        data[1] = (byte)'M';
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(18, 4), width);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(22, 4), height);
+        return data;
+    }
+
+    [Fact]
     public void A_JPEG_frame_is_found_where_a_decoder_finds_it()
     {
         // Decoders skip stray bytes before a marker and don't take 0xFF 0x00 as one. Read strictly by segment lengths,

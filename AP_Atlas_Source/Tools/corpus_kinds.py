@@ -55,6 +55,9 @@ def main():
             print(f'{"":45}  {e}')
     if args.output:
         errors = defaultdict(set)
+        # The clear handler runs here with an empty slot_data (no slot is connected), so its errors on slot_data's fields
+        # are the lab's, not the pack's or Atlas's: the solo batch, with a real seed's data, judges them.
+        no_slot = defaultdict(set)
         pack = None
         for line in open(args.output, encoding='utf-8-sig', errors='replace'):
             m = re.match(r'^  ([^ :]+\.zip): scripts ran', line)
@@ -62,11 +65,15 @@ def main():
                 pack = m.group(1)
             m = re.match(r'^\s+script error: (.*)$', line)
             if m and pack:
-                message = re.sub(r'\(\d+,[\d,-]+\)', '(L)', m.group(1).strip())
-                message = re.sub(r'^(clear handler|item handler|location handler|watch for \w+|init\.lua): ', r'\1: ', message)
-                errors[re.sub(r'^.*?:\(L\): ', '', message)[:120]].add(pack)
+                raw = m.group(1).strip()
+                message = re.sub(r'\(\d+,[\d,-]+\)', '(L)', raw)
+                key = re.sub(r'^.*?:\(L\): ', '', message)[:120]
+                (no_slot if raw.startswith('clear handler:') else errors)[key].add(pack)
         print('\nscript errors by message (packs):')
         for message, packs in sorted(errors.items(), key=lambda kv: -len(kv[1])):
+            print(f'{len(packs):4}  {message}')
+        print("\nclear handler errors, run without a slot's data (the solo batch judges these, not the lab):")
+        for message, packs in sorted(no_slot.items(), key=lambda kv: -len(kv[1])):
             print(f'{len(packs):4}  {message}')
 
 

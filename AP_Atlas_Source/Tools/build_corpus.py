@@ -37,7 +37,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SOURCE = os.path.dirname(HERE)
 DATA = os.path.join(SOURCE, 'Scripts', 'Core', 'Engine', 'Data')
 GH = os.environ.get('GH', r'C:\Program Files\GitHub CLI\gh.exe')
-SEARCH_PACE = 2.2   # seconds between searches: 30 a minute
+SEARCH_PACE = 3.0   # seconds between searches: under GitHub's 30 a minute, with room for its sliding window
 CALL_PACE = 0.35    # seconds between other calls
 MOST_PROJECTS = 4
 
@@ -59,19 +59,36 @@ def gh(args, binary_to=None):
     return r.returncode == 0, (r.stdout if r.returncode == 0 else r.stderr)
 
 
+def wait_for_limit(kind):
+    # GitHub's limit reached: sleep until it resets (the limit's own clock), never recording a failed call as an answer.
+    ok, out = gh(['api', 'rate_limit', '--jq', f'.resources.{kind}.reset'])
+    try:
+        reset = int(out.strip())
+    except ValueError:
+        reset = int(time.time()) + 60
+    wait = max(5, reset - int(time.time()) + 3)
+    log(f'  {kind} limit reached: waiting {wait} s')
+    time.sleep(wait)
+
+
 def gh_json(path, params=None, pace=CALL_PACE):
     args = ['api', '-X', 'GET', path]
     for k, v in (params or {}).items():
         args += ['-f', f'{k}={v}']
-    ok, out = gh(args)
-    time.sleep(pace)
-    if not ok:
+    for attempt in range(4):
+        ok, out = gh(args)
+        time.sleep(pace)
+        if ok:
+            try:
+                return json.loads(out)
+            except json.JSONDecodeError:
+                return None
+        if 'rate limit' in out.lower():
+            wait_for_limit('search' if path.startswith('search/') else 'core')
+            continue
         log('  gh failed:', path, out.strip()[:200])
         return None
-    try:
-        return json.loads(out)
-    except json.JSONDecodeError:
-        return None
+    raise RuntimeError('GitHub kept refusing ' + path)
 
 
 def sha256_of(path):

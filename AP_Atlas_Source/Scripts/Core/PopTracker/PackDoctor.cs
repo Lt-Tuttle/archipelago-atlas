@@ -76,6 +76,10 @@ namespace AP_Atlas.Core.PopTracker
         public int TileDecorations, TileSwitches;
         /// <summary>Tiles a check sets (named by the location mapping) and tiles the pack's own scripts set: not items to link either.</summary>
         public int TilesByCheck, TilesScripted;
+        /// <summary>Tiles of the pack's own display grids (an enemizer table): none names an item of the game while other grids do; not items to link.</summary>
+        public int TileDisplay;
+        /// <summary>Grid codes that items the pack's scripts make (CreateLuaItem) answer to: not undefined cells.</summary>
+        public HashSet<string> ScriptItemCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         public int SectionsTotal, SectionsLinked, SectionsByScript, SectionsByName, SectionsLoose, SectionsByFix;
         public int ApLocationsTotal, ApLocationsPlaced;
         /// <summary>The locations of the seed a connected slot of this game plays (empty when none is connected): the Recommended tab puts their rows first.</summary>
@@ -323,6 +327,9 @@ namespace AP_Atlas.Core.PopTracker
             host.Initialize();
             if (slotData?.SlotData != null) host.Clear(0, 0, slotData.SlotData);
             report.ScriptsRan = host.Errors.Count == 0 && !host.Stopped;
+            // Items the scripts make (ScriptHost:CreateLuaItem) answer to codes no file defines: a grid cell with one isn't empty.
+            foreach (var code in effective.ItemGridGroups.Where(g => !g.LooksLikeSettings && !g.Decorative).SelectMany(g => g.Rows).SelectMany(r => r).Distinct(StringComparer.OrdinalIgnoreCase))
+                if (!string.IsNullOrWhiteSpace(code) && !effective.ItemsByCode.ContainsKey(code) && host.ScriptItemProvides(code)) report.ScriptItemCodes.Add(code);
             if (host.Stopped)
             {
                 add(new Finding
@@ -338,13 +345,16 @@ namespace AP_Atlas.Core.PopTracker
 
             foreach (var e in host.Errors)
             {
+                // A file the scripts load that isn't in the pack: PopTracker prints the same and goes on, so it's the pack's own
+                // note, not a failure of the scripts (fourteen corpus packs load a template's snes.lua they never shipped).
+                bool missingFile = e.StartsWith("LoadScript: '", StringComparison.Ordinal);
                 add(new Finding
                 {
-                    Key = "script:error:" + e,
+                    Key = (missingFile ? "script:file:" : "script:error:") + e,
                     Category = "Scripts",
                     Severity = FindingSeverity.Warning,
-                    Title = "The pack's script hit an error",
-                    Detail = e + "\nKey Items fall back to the pack's item mappings where the script can't help."
+                    Title = missingFile ? "The pack's scripts load a file that isn't in the pack" : "The pack's script hit an error",
+                    Detail = e + (missingFile ? "\nAs in PopTracker, the rest of the scripts ran without it." : "\nKey Items fall back to the pack's item mappings where the script can't help.")
                 });
             }
             if (host.UnsupportedApis.Count > 0)
@@ -488,8 +498,14 @@ namespace AP_Atlas.Core.PopTracker
 
             var mappedCodes = new HashSet<string>(original.ItemMapping.Values.SelectMany(v => v), StringComparer.OrdinalIgnoreCase);
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            // Each grid's unlinked tiles are held back until every grid is counted: a grid none of whose tiles names an item of
+            // the game, in a pack whose other grids do, is the pack's own display, said once (below).
+            var grids = new List<(PackItemGrid Grid, int Linked, List<Finding> Unlinked)>();
             foreach (var grid in pack.ItemGridGroups.Where(g => !g.LooksLikeSettings && !g.Decorative))
             {
+                int gridLinked = 0;
+                var gridUnlinked = new List<Finding>();
+                grids.Add((grid, 0, gridUnlinked));
                 foreach (var code in grid.Rows.SelectMany(r => r).Where(c => !string.IsNullOrWhiteSpace(c)))
                 {
                     if (!seen.Add(code)) continue;
@@ -518,6 +534,21 @@ namespace AP_Atlas.Core.PopTracker
                         });
                         continue;
                     }
+                    if (shown == null && report.ScriptItemCodes.Contains(code))
+                    {
+                        // An item the pack's scripts make (Super Metroid's transitions, A Link to the Past's enemizer): the scripts set it.
+                        report.TilesScripted++;
+                        add(new Finding
+                        {
+                            Key = "tile:scriptitem:" + code,
+                            Category = "Key Items",
+                            Severity = FindingSeverity.Info,
+                            Title = $"Tile \"{code}\" is an item the pack's scripts make",
+                            Detail = "The pack's own scripts create and set it (PopTracker's CreateLuaItem); no Archipelago item stands for it.",
+                            Subject = "tile:" + code
+                        });
+                        continue;
+                    }
                     if (!pack.ItemsByCode.TryGetValue(code, out var item))
                     {
                         add(new Finding
@@ -538,11 +569,12 @@ namespace AP_Atlas.Core.PopTracker
                     if (ids.Count > 0)
                     {
                         report.TilesLinked++;
+                        gridLinked++;
                         if (mappedCodes.Contains(code)) report.TilesByScript++;
                     }
                     else if (itemNames.Count > 0)
                     {
-                        add(new Finding
+                        gridUnlinked.Add(new Finding
                         {
                             Key = "tile:unlinked:" + code,
                             Category = "Key Items",
@@ -568,6 +600,28 @@ namespace AP_Atlas.Core.PopTracker
                         });
                     }
                 }
+                grids[grids.Count - 1] = (grid, gridLinked, gridUnlinked);
+            }
+            foreach (var (grid, linked, unlinked) in grids)
+            {
+                if (linked == 0 && unlinked.Count >= DisplayGridTiles && report.TilesLinked > 0)
+                {
+                    // The pack's own display (A Link to the Past's enemizer tables, Super Mario 64's star doors): nothing from the
+                    // room lights it. Said once, not once per tile, and not counted among the tiles to link.
+                    report.TilesTotal -= unlinked.Count;
+                    report.TileDisplay += unlinked.Count;
+                    add(new Finding
+                    {
+                        Key = "grid:display:" + PackFixes.GridSubject(grid),
+                        Category = "Key Items",
+                        Severity = FindingSeverity.Info,
+                        Title = $"The \"{GridName(grid)}\" grid's {unlinked.Count} tiles show the pack's own state, not the game's items",
+                        Detail = "None of them names an item of the game while the pack's other grids do: the pack's own display (an enemizer table, a puzzle board). Nothing lights them from the room.",
+                        Subject = PackFixes.GridSubject(grid),
+                        Details = unlinked.Select(f => f.Title).Take(40).ToList()
+                    });
+                }
+                else foreach (var f in unlinked) add(f);
             }
 
             foreach (var id in index.UnknownMappedItemIds)
@@ -581,6 +635,22 @@ namespace AP_Atlas.Core.PopTracker
                     Detail = $"Codes: {string.Join(", ", original.ItemMapping[id])}. The script may be outdated for your Archipelago version."
                 });
             }
+        }
+
+        /// <summary>A grid with this many unlinked tiles and none linked, beside grids that link, shows the pack's own state.</summary>
+        public const int DisplayGridTiles = 6;
+
+        /// <summary>Numbered sections named alike (this many or more) that match nothing of the game's are one family, said once.</summary>
+        public const int FamilySize = 8;
+
+        private static string GridName(PackItemGrid grid) => string.IsNullOrEmpty(grid.Header) ? grid.LayoutKey : grid.Header;
+
+        /// <summary>The family a numbered section name belongs to ("Pot #7" → "pot #"): its normalized name with each number as "#", or null for a name without a number.</summary>
+        private static string FamilyOf(string name)
+        {
+            string key = Normalize(name ?? "");
+            if (key.Length == 0 || !key.Any(char.IsDigit)) return null;
+            return System.Text.RegularExpressions.Regex.Replace(key, @"\d+", "#");
         }
 
         /// <summary>
@@ -638,6 +708,7 @@ namespace AP_Atlas.Core.PopTracker
                         case MatchSource.LooseName: report.SectionsLoose++; break;
                         case MatchSource.ComposedName: report.SectionsByName++; break;
                         case MatchSource.NeighbourName: report.SectionsByName++; break;
+                        case MatchSource.TailName: report.SectionsByName++; break;
                         case MatchSource.UserFix: report.SectionsByFix++; break;
                     }
                 }
@@ -653,6 +724,7 @@ namespace AP_Atlas.Core.PopTracker
             // A pack whose own mapping names nearly every check (PopTracker's autotracking) but not this one: it doesn't
             // track it either (Ship of Harkinian's "Ganon", the goal): said as such, not as a pairing Atlas missed.
             bool mappingThorough = report.SectionsTotal >= 20 && report.SectionsByScript >= 0.8 * report.SectionsTotal;
+            var unmatchedFindings = new List<(Finding Finding, bool Candidate)>();
             foreach (var (pin, sec) in index.UnmatchedSections())
             {
                 string name = sec != null && !string.IsNullOrEmpty(sec.Name) ? sec.Name : pin.Name;
@@ -661,7 +733,7 @@ namespace AP_Atlas.Core.PopTracker
                 string subject = $"link:{pin.FullPath}|{sec?.Name ?? ""}";
                 string reference = index.UnresolvedReferenceOf(pin.FullPath, sec?.Name ?? "");
                 bool untracked = reference == null && mappingThorough && !index.MappingNames(pin, sec);
-                add(new Finding
+                unmatchedFindings.Add((new Finding
                 {
                     Key = (untracked ? "loc:untracked:" : "loc:unmatched:") + pin.FullPath + "|" + (sec?.Name ?? ""),
                     Category = "Locations",
@@ -677,6 +749,24 @@ namespace AP_Atlas.Core.PopTracker
                     Query = name,
                     // Prefer locations no pin shows yet; they're the likely partner.
                     Suggestions = Suggest(name, unplacedNames.Count > 0 ? unplacedNames : locNames, 6)
+                }, Candidate: reference == null && !untracked));
+            }
+            // Numbered sections named alike ("Pot #1" to "Pot #40", "Hotland Kill 1" to "Kill 12") that match nothing of the
+            // game's: another version or fork of the apworld has them, this one doesn't. Said once per family, not per section.
+            var families = unmatchedFindings.Where(u => u.Candidate && (u.Finding.Suggestions.Count == 0 || u.Finding.Suggestions[0].Score < 0.6))
+                .GroupBy(u => FamilyOf(u.Finding.Query)).Where(g => g.Key != null && g.Count() >= FamilySize).ToList();
+            var folded = new HashSet<Finding>(families.SelectMany(g => g.Select(u => u.Finding)));
+            foreach (var (finding, _) in unmatchedFindings) if (!folded.Contains(finding)) add(finding);
+            foreach (var family in families)
+            {
+                add(new Finding
+                {
+                    Key = "loc:family:" + family.Key,
+                    Category = "Locations",
+                    Severity = FindingSeverity.Info,
+                    Title = $"{family.Count()} pin sections named like \"{family.First().Finding.Query}\" aren't locations of this game",
+                    Detail = "None of them is close to any of the game's location names: another version or fork of the apworld has them (enemy or pot shuffle, say), this one doesn't. They stay red; nothing to choose.",
+                    Details = family.Select(u => u.Finding.Query).Take(40).ToList()
                 });
             }
 
@@ -705,6 +795,19 @@ namespace AP_Atlas.Core.PopTracker
                     Title = $"{composed.Count} pin sections were matched by their pin's name and their own",
                     Detail = "A pin \"Brawler\" with a section \"Wave 10 Completed\" was paired with the game's \"Wave 10 Completed (Brawler)\" (or \"A - B\" with \"B (A)\"). They're usually right; check any that look off.",
                     Details = composed.Take(200).Select(l => $"{l.Match.Pin.FullPath} / {l.Match.Section?.Name ?? l.Match.Pin.Name}  →  {index.LocationName(l.Id)}").ToList()
+                });
+            }
+            var tails = index.ByLocation.SelectMany(kv => kv.Value.Where(m => m.Source == MatchSource.TailName && m.Via == null).Select(m => (Id: kv.Key, Match: m))).ToList();
+            if (tails.Count > 0)
+            {
+                add(new Finding
+                {
+                    Key = "loc:tail",
+                    Category = "Locations",
+                    Severity = FindingSeverity.Info,
+                    Title = $"{tails.Count} pin sections were matched as the only location ending in their name",
+                    Detail = "A section \"Basement Pot 1\" was paired with the game's \"Waynehouse: Basement Pot 1\", the one location whose name ends so after its area. They're usually right; check any that look off.",
+                    Details = tails.Take(200).Select(l => $"{l.Match.Pin.FullPath} / {l.Match.Section?.Name ?? l.Match.Pin.Name}  →  {index.LocationName(l.Id)}").ToList()
                 });
             }
             var neighbours = index.ByLocation.SelectMany(kv => kv.Value.Where(m => m.Source == MatchSource.NeighbourName && m.Via == null).Select(m => (Id: kv.Key, Match: m))).ToList();
@@ -1075,6 +1178,8 @@ namespace AP_Atlas.Core.PopTracker
                 t = System.Text.RegularExpressions.Regex.Replace(t, @"(?<=\w)/(?=\w)", " or ");
                 t = t.Replace("&", " and ");
             }
+            // An apostrophe is part of its word ("Kingdom's", "Collector's"), not a gap: a pack writing "Kingdoms_Edge" means the same.
+            if (t.IndexOf('\'') >= 0 || t.IndexOf('\u2019') >= 0) t = t.Replace("'", "").Replace("\u2019", "");
             var sb = new StringBuilder();
             foreach (char c in t) sb.Append(char.IsLetterOrDigit(c) ? c : ' ');
             return string.Join(" ", sb.ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries));

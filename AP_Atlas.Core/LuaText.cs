@@ -30,6 +30,26 @@ public static class LuaText
     }
 
     /// <summary>
+    /// Lua 5.4's variable attributes taken off (<c>local X &lt;const&gt; = 1</c>, <c>&lt;close&gt;</c>): MoonSharp compiles
+    /// Lua 5.2, which has none, so a file with one didn't compile at all (the Hades packs' autotracking). Only on lines
+    /// that declare a local; the variable is then an ordinary local, which is what the attribute's promise amounts to
+    /// for a pack's script. Linear in the text's length.
+    /// </summary>
+    public static string StripAttribs(string text)
+    {
+        if (string.IsNullOrEmpty(text) || (!text.Contains("<const>", StringComparison.Ordinal) && !text.Contains("<close>", StringComparison.Ordinal)
+            && !text.Contains("< const", StringComparison.Ordinal) && !text.Contains("< close", StringComparison.Ordinal))) return text;
+        var lines = text.Split('\n');
+        for (int i = 0; i < lines.Length; i++)
+        {
+            string trimmed = lines[i].TrimStart();
+            if (!trimmed.StartsWith("local", StringComparison.Ordinal) || trimmed.Length <= 5 || !char.IsWhiteSpace(trimmed[5])) continue;
+            lines[i] = System.Text.RegularExpressions.Regex.Replace(lines[i], @"\s*<\s*(?:const|close)\s*>", "");
+        }
+        return string.Join('\n', lines);
+    }
+
+    /// <summary>
     /// The text without its comments. A block comment (--[[ … ]], --[==[ … ]==]) leaves its line breaks, so lines keep
     /// their numbers; a line comment goes to the end of its line. A block comment that's never closed, or whose level is
     /// over <see cref="MaxCommentLevel"/>, is taken as a line comment. Strings aren't told apart: "--" in one starts a

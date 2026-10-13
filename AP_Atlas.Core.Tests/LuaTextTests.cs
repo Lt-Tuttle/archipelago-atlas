@@ -14,6 +14,18 @@ public class LuaTextTests
     }
 
     [Fact]
+    public void Lua_54_attribs_come_off_locals_and_nothing_else()
+    {
+        // The Hades packs: a <const> local that stopped the whole file compiling.
+        Assert.Equal("local DEFAULT_SEED = \"default\"", LuaText.StripAttribs("local DEFAULT_SEED <const> = \"default\""));
+        Assert.Equal("  local a, b = f()", LuaText.StripAttribs("  local a <close>, b < const > = f()"));
+        // Comparisons stay, on lines that aren't declarations and on ones that are.
+        Assert.Same("if a <const> b then end", LuaText.StripAttribs("if a <const> b then end"));
+        Assert.Equal("local x = a <const2 and 1", LuaText.StripAttribs("local x = a <const2 and 1"));
+        Assert.Same("", LuaText.StripAttribs(""));
+    }
+
+    [Fact]
     public void Comments_go_and_lines_keep_their_numbers()
     {
         const string lua = "local a = 1 -- one\n--[[ block\nstill block ]] local b = 2\n--[==[ level two ]] still ]==]\nlocal c = 3";

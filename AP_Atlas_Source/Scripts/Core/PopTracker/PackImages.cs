@@ -199,7 +199,7 @@ namespace AP_Atlas.Core.PopTracker
         }
 
         /// <summary>
-        /// Decodes an image file from outside Atlas (PNG, JPEG or WebP, by its name), or says why it can't be: a decoder sets
+        /// Decodes an image file from outside Atlas (PNG, JPEG, WebP or BMP, by its header), or says why it can't be: a decoder sets
         /// aside width × height × 4 bytes from the header alone, so the size the header gives is taken from the budget first
         /// (see <see cref="ImageBudget"/>). Every image Atlas decodes from a pack, or from a file the user chose, comes here.
         /// </summary>
@@ -208,10 +208,19 @@ namespace AP_Atlas.Core.PopTracker
             why = budget.Take(file);
             if (why != null) return null;
             var image = new Image();
-            Error error;
-            if (path.EndsWith(".png", StringComparison.OrdinalIgnoreCase)) error = image.LoadPngFromBuffer(file);
-            else if (path.EndsWith(".webp", StringComparison.OrdinalIgnoreCase)) error = image.LoadWebpFromBuffer(file);
-            else error = image.LoadJpgFromBuffer(file);
+            // By the file's header, not its name: packs name JPEGs and WebPs ".png" (Mega Man 3's tiles, Undertale's maps,
+            // Civilization VI's), and PopTracker reads them all the same. The budget took the header already, so the format is
+            // known; the name decides only when it isn't (never today).
+            var format = ImageHeader.Format(file);
+            if (format == ImageFormat.Unknown)
+                format = path.EndsWith(".webp", StringComparison.OrdinalIgnoreCase) ? ImageFormat.WebP : path.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ? ImageFormat.Png : ImageFormat.Jpeg;
+            Error error = format switch
+            {
+                ImageFormat.Png => image.LoadPngFromBuffer(file),
+                ImageFormat.WebP => image.LoadWebpFromBuffer(file),
+                ImageFormat.Bmp => image.LoadBmpFromBuffer(file),
+                _ => image.LoadJpgFromBuffer(file)
+            };
             if (error == Error.Ok && !image.IsEmpty()) return image;
             why = error == Error.Ok ? "empty image" : error.ToString();
             image.Dispose();

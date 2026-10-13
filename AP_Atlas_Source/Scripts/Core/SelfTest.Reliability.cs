@@ -410,6 +410,7 @@ namespace AP_Atlas.Core
                 WritePack(c.Gem);
                 var host = PopTracker.PackScriptHost.Load(PopTracker.PopTrackerPackLoader.InspectZipPack(zip) ?? throw new InvalidOperationException("the test pack wasn't read"));
                 host.Limits = c.Limits;
+                host.InitLimits = c.Limits;
                 int before = -1;
                 var clock = System.Diagnostics.Stopwatch.StartNew();
                 await Task.Run(() =>
@@ -433,6 +434,7 @@ namespace AP_Atlas.Core
             AP_Atlas.Core.Testing.FakeMapPack.Write(zip, "Self-test runaway pack", "Self Test Game R", initLua: "while true do end");
             var init = PopTracker.PackScriptHost.Load(PopTracker.PopTrackerPackLoader.InspectZipPack(zip)!);
             init.Limits = small;
+            init.InitLimits = small;
             bool started = await Task.Run(() => init.Initialize());
             Expect(!started && init.StopReason?.StartsWith("init.lua was still running after ") == true, $"init.lua's loop: {init.StopReason ?? "not stopped"}");
             // The Pack Doctor says so (its scripts run with the limits as they ship).
@@ -755,6 +757,123 @@ namespace AP_Atlas.Core
                 && hostedReport.Findings.Where(f => f.Key.StartsWith("loc:unmatched:", StringComparison.Ordinal)).Select(f => f.Key).SequenceEqual(new[] { "loc:unmatched:Castle/Gate|Counted" })
                 && hostedReport.Findings.Any(f => f.Key == "loc:no-check"),
                 $"a section without a check was counted or reported ({hostedReport.SectionsLinked} of {hostedReport.SectionsTotal}, {hostedReport.Index.NoCheckSections} without a check): " + string.Join(", ", hostedReport.Findings.Select(f => f.Key)));
+        }
+
+        /// <summary>
+        /// The pack lab's first round of rules, each taught by two or more corpus packs: two pins sharing a path (Satisfactory,
+        /// Choo-Choo Charles), "Pin (Section)" names (A Short Hike), the one location ending in the section's name (Hylics 2),
+        /// apostrophes (Hollow Knight), a JPEG named .png (Mega Man 3, Undertale), Lua 5.4's attribs (Hades), a loop ending in
+        /// its continue label (Anodyne, Cat Quest, Donkey Kong 64), PopTracker's Highlight (Kingdom Hearts II), items the scripts
+        /// make (Super Metroid, A Link to the Past), a display grid and numbered families said once (A Link to the Past,
+        /// Undertale), a file the scripts load but the pack lacks as its own note (fourteen packs' snes.lua).
+        /// </summary>
+        private static async Task PackLabRoundOne()
+        {
+            string zip = Scratch("selftest_lab1.zip");
+            var enemies = string.Join(",", Enumerable.Range(1, 9).Select(n => $"{{\"name\":\"Enemy #{n}\"}}"));
+            var classes = string.Join(",", Enumerable.Range(0, 7).Select(n => $"{{\"name\":\"Anti-Fairy - Class {n}\",\"type\":\"toggle\",\"img\":\"images/sword.png\",\"codes\":\"class_{n}\"}}"));
+            var classRow = string.Join(",", Enumerable.Range(0, 7).Select(n => $"\"class_{n}\""));
+            // A JPEG by its bytes (a black 4×4), named .png as packs name them.
+            var photo = Godot.Image.CreateEmpty(4, 4, false, Godot.Image.Format.Rgb8);
+            byte[] jpeg = photo.SaveJpgToBuffer();
+            photo.Dispose();
+            AP_Atlas.Core.Testing.FakeMapPack.Write(zip, "Self-test lab pack", "Self Test Game L",
+                initLua: """
+                    Tracker:AddItems("items/items.json")
+                    Tracker:AddMaps("maps/maps.json")
+                    Tracker:AddLocations("locations/locations.json")
+                    Tracker:AddLayouts("layouts/tracker.json")
+                    ScriptHost:LoadScript("scripts/autotracking/location_mapping.lua")
+                    local SEED <const> = "x"
+                    local trans = ScriptHost:CreateLuaItem()
+                    trans.Name = "Transition A"
+                    trans.CanProvideCodeFunc = function(self, code) return code == "trans_a" end
+                    trans.ProvidesCodeFunc = function(self, code) return 1 end
+                    PRIORITY = { [Highlight.Priority] = 1, [Highlight.None] = 0 }
+                    COUNT = 0
+                    for i = 1, 3 do
+                        if i == 2 then goto continue end
+                        local x = i
+                        COUNT = COUNT + x
+                        ::continue::
+                    end
+                    ScriptHost:LoadScript("scripts/missing.lua")
+                    Tracker:FindObjectForCode("sword").Active = COUNT == 4 and PRIORITY[4] == 1 and SEED == "x"
+                    """,
+                itemsJson: "[" + """{"name":"Sword","type":"toggle","img":"images/sword.png","codes":"sword"},{"name":"Shield","type":"toggle","img":"images/photo.png","codes":"shield"},""" + classes + "]",
+                layoutsJson: """{"tracker_default":{"type":"array","content":[{"type":"itemgrid","rows":[["sword","shield","trans_a"]]},""" +
+                    """{"type":"group","header":"Enemizer","content":{"type":"itemgrid","rows":[[""" + classRow + """]]}},""" +
+                    """{"type":"tabbed","tabs":[{"title":"Overworld","content":{"type":"map","maps":["World"]}}]}]}}""",
+                locationsJson: "[" +
+                    """{"name":"Tier 1","children":[{"name":"Hub 1","sections":[{"name":"Hub 1 Item 1"}]}]},""" +
+                    """{"name":"Tier 1","children":[{"name":"Hub 1","sections":[{"name":"Hub 1 - item 1","ref":"Tier 1/Hub 1/Hub 1, item 1"}],"map_locations":[{"map":"World","x":10,"y":10}]}]},""" +
+                    """{"name":"Shop","children":[{"name":"Purchase 1","sections":[{"item_count":1}],"map_locations":[{"map":"World","x":60,"y":10}]}]},""" +
+                    """{"name":"Overview","sections":[{"name":"Shop - purchase 1","ref":"Shop/purchase 1"}],"map_locations":[{"map":"World","x":70,"y":10}]},""" +
+                    """{"name":"Beachstickball","sections":[{"name":"10 Hits"}],"map_locations":[{"map":"World","x":20,"y":10}]},""" +
+                    """{"name":"Basement","sections":[{"name":"Basement Pot 1"}],"map_locations":[{"map":"World","x":30,"y":10}]},""" +
+                    """{"name":"Ruins","sections":[{"name":"Collectors_Map"}],"map_locations":[{"map":"World","x":40,"y":10}]},""" +
+                    """{"name":"Field","sections":[""" + enemies + """],"map_locations":[{"map":"World","x":50,"y":10}]}]""",
+                files: new Dictionary<string, string>
+                {
+                    ["scripts/autotracking/location_mapping.lua"] = "LOCATION_MAPPING = {\n    [1] = {\"@Tier 1/Hub 1/Hub 1, item 1\"},\n    [7] = {\"@Shop/purchase 1\"},\n}\n"
+                },
+                binaryFiles: new Dictionary<string, byte[]> { ["images/photo.png"] = jpeg });
+            var pack = await Task.Run(() => PopTracker.PopTrackerPackLoader.InspectZipPack(zip)) ?? throw new InvalidOperationException("the lab pack wasn't read");
+            await Task.Run(() => PopTracker.PackImages.Check(pack));
+            Expect(pack.HasDecodableImage("images/photo.png") && !pack.BrokenImages.Contains("images/photo.png"), "a JPEG named .png wasn't decoded by its header: " + string.Join("; ", pack.LoadIssues));
+
+            // The scripts: Lua 5.4's <const>, a loop ending in its continue label after a local, PopTracker's Highlight, an item the
+            // scripts make, and a file they load that the pack doesn't have (an error noted, the rest runs, as in PopTracker).
+            var host = PopTracker.PackScriptHost.Load(pack) ?? throw new InvalidOperationException("the lab pack has no scripts");
+            await Task.Run(() => host.Initialize());
+            Expect(host.Errors.Count == 1 && host.Errors[0].StartsWith("LoadScript: 'scripts/missing.lua'", StringComparison.Ordinal) && !host.Stopped,
+                "the scripts didn't run as PopTracker runs them (a <const> local, a loop ending in its continue label, Highlight): " + string.Join("; ", host.Errors));
+            Expect(host.StateOf("sword")?.Active == true, "the loop with a continue label, the <const> local or Highlight didn't work as in Lua 5.4");
+            Expect(host.ScriptItemProvides("trans_a") && !host.ScriptItemProvides("trans_b"), "an item the scripts make doesn't answer to its code (or answers to others)");
+
+            var names = new PopTracker.GameNameTable
+            {
+                Game = "Self Test Game L",
+                Locations = new Dictionary<string, long>
+                {
+                    ["Hub 1, item 1"] = 1,
+                    ["Beachstickball (10 Hits)"] = 2,
+                    ["Waynehouse: Basement Pot 1"] = 3,
+                    ["Collector's_Map"] = 4,
+                    ["Arcade 2: Double Banana 1"] = 5,
+                    ["Arcade 3: Double Banana 1"] = 6,
+                    ["Shop Purchase 1"] = 7,
+                },
+                Items = new Dictionary<string, long> { ["Sword"] = 50, ["Shield"] = 51 }
+            };
+            var report = await Task.Run(() => PopTracker.PackDoctor.Analyze(PopTracker.PackDoctor.Prepare(pack, names)));
+            var index = report.Index;
+            string Shown(long id) => index.ByLocation.TryGetValue(id, out var m) ? string.Join(", ", m.OrderBy(x => x.Via == null ? 0 : 1).Select(x => x.Section?.Name + ":" + x.Source + (x.Via != null ? "*" : ""))) : "";
+            // Two pins share "Tier 1/Hub 1": the mapping's path and the overworld's ref land on the one that has the section, named
+            // as the author wrote it ("Hub 1, item 1" for "Hub 1 Item 1"); "Shop/purchase 1" is the child pin "Purchase 1" with one section.
+            Expect(Shown(1) == "Hub 1 Item 1:MappingScript, Hub 1 - item 1:MappingScript*" && Shown(7) == ":MappingScript, Shop - purchase 1:MappingScript*"
+                && index.UnresolvedReferences.Count == 0 && index.DanglingPaths.Count == 0,
+                $"a path two pins share didn't resolve to the one with the section, or a path wasn't read as its author wrote it: 1 [{Shown(1)}] 7 [{Shown(7)}], {index.UnresolvedReferences.Count} unresolved, {index.DanglingPaths.Count} dangling");
+            Expect(Shown(2) == "10 Hits:ComposedName", $"\"Beachstickball\" / \"10 Hits\" wasn't the game's \"Beachstickball (10 Hits)\": [{Shown(2)}]");
+            // The one location ending in the section's name after its area; two of a kind stay unmatched.
+            Expect(Shown(3) == "Basement Pot 1:TailName" && Shown(5) == "" && Shown(6) == "", $"the only location ending in the section's name wasn't taken, or one of two was: 3 [{Shown(3)}] 5 [{Shown(5)}] 6 [{Shown(6)}]");
+            Expect(report.Findings.Any(f => f.Key == "loc:tail" && f.Details.Count == 1), "the tail matches weren't listed for review");
+            // An apostrophe is part of its word: an exact match the Doctor links by itself.
+            var sure = PopTracker.PackDoctor.ExactMatches(report);
+            Expect(sure.Any(f => f.Key == "loc:unmatched:Ruins|Collectors_Map" && f.Suggestions[0].Id == 4 && f.Suggestions[0].Score >= 0.999),
+                "\"Collectors_Map\" and \"Collector's_Map\" aren't the same name: " + string.Join(", ", sure.Select(f => f.Key + " " + f.Suggestions[0].Score.ToString("0.00"))));
+            // Nine "Enemy #n" sections with nothing to match: one family, not nine rows.
+            var family = report.Findings.FirstOrDefault(f => f.Key.StartsWith("loc:family:", StringComparison.Ordinal));
+            Expect(family != null && family.Details.Count == 9 && !report.Findings.Any(f => f.Key.StartsWith("loc:unmatched:Field|", StringComparison.Ordinal)),
+                "the numbered sections that match nothing weren't said once as a family: " + string.Join(", ", report.Findings.Where(f => f.Key.StartsWith("loc:", StringComparison.Ordinal)).Select(f => f.Key)));
+            // Tiles: the scripts' item isn't an undefined cell; the enemizer grid is the pack's own display, said once; the two real tiles link.
+            var tileKeys = report.Findings.Where(f => f.Key.StartsWith("tile:", StringComparison.Ordinal) || f.Key.StartsWith("grid:", StringComparison.Ordinal)).Select(f => f.Key).OrderBy(k => k, StringComparer.Ordinal).ToList();
+            Expect(tileKeys.Count == 2 && tileKeys[0].StartsWith("grid:display:", StringComparison.Ordinal) && tileKeys[1] == "tile:scriptitem:trans_a"
+                && report.TilesTotal == 2 && report.TilesLinked == 2 && report.TileDisplay == 7 && report.TilesScripted == 1,
+                $"the tiles weren't read as the lab's rules say ({report.TilesLinked} of {report.TilesTotal}, {report.TileDisplay} display, {report.TilesScripted} by the scripts): " + string.Join(", ", tileKeys));
+            // The missing file is the pack's own note, not a script failure.
+            Expect(report.Findings.Any(f => f.Key.StartsWith("script:file:", StringComparison.Ordinal)) && !report.Findings.Any(f => f.Key.StartsWith("script:error:", StringComparison.Ordinal)),
+                "a file the scripts load but the pack lacks wasn't told from a script error: " + string.Join(", ", report.Findings.Where(f => f.Key.StartsWith("script:", StringComparison.Ordinal)).Select(f => f.Key)));
         }
 
         private static async Task PacksReadAsPopTrackerReadsThem()

@@ -100,6 +100,17 @@ namespace AP_Atlas.Core.PopTracker
         /// <summary>Codes the scripts looked up that the pack doesn't define.</summary>
         public HashSet<string> UnknownCodes { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>
+        /// Whether an item the pack's scripts made (ScriptHost:CreateLuaItem) answers to a code: Super Metroid's transitions
+        /// and A Link to the Past's enemizer tiles are such items, so a grid cell with their code isn't an undefined one.
+        /// </summary>
+        public bool ScriptItemProvides(string code)
+        {
+            bool provides = false;
+            Work("checking which tiles the scripts make", () => provides = !string.IsNullOrEmpty(code) && FindLuaItem(code) != null);
+            return provides;
+        }
+
         /// <summary>The scripts' print() output (capped).</summary>
         public List<string> Log { get; } = new List<string>();
 
@@ -113,6 +124,9 @@ namespace AP_Atlas.Core.PopTracker
 
         /// <summary>The limits each piece of work runs under (set before <see cref="Initialize"/>).</summary>
         public ScriptLimits Limits { get; set; } = ScriptLimits.Default;
+
+        /// <summary>The limits for scripts/init.lua (the pack's setup, once); <see cref="Limits"/> for everything after.</summary>
+        public ScriptLimits InitLimits { get; set; } = ScriptLimits.Init;
 
         /// <summary>The most any one piece of work has taken so far (each measure on its own), and the work that took the most steps.</summary>
         public (long Steps, long Memory, TimeSpan Time) Peak { get; private set; }
@@ -454,6 +468,8 @@ namespace AP_Atlas.Core.PopTracker
         {
             if (code.StartsWith(BinaryChunk, StringComparison.Ordinal)) throw new ScriptRuntimeException("Atlas doesn't load compiled (binary) chunks");
             code = LuaText.ExpandUnicodeEscapes(code); // Lua 5.3's \u{XXXX}, which MoonSharp (5.2) doesn't know
+            code = LuaText.StripAttribs(code); // Lua 5.4's <const> and <close>, which MoonSharp doesn't know either
+            code = LuaGoto.Rewrite(code); // a block ending in a jumped-to label after a local, which MoonSharp refuses (Lua allows it)
             code = Lua53Operators.Rewrite(code); // Lua 5.3's // and bitwise operators, as calls (InstallLua53Operators)
             int depth = LuaNesting.Depth(code);
             if (depth > DeepestNesting) DeepestNesting = depth;
@@ -594,12 +610,23 @@ namespace AP_Atlas.Core.PopTracker
         {
             /// <summary>Lua steps (instructions). MoonSharp runs 30-40 million a second on a desktop PC.</summary>
             public long Steps { get; init; } = 50_000_000;
-            /// <summary>Memory the work may allocate, in bytes (garbage included: MoonSharp allocates as it runs).</summary>
+            /// <summary>
+            /// Memory the work may hold, in bytes: the heap's growth while it runs. What it allocates and drops is collected and
+            /// not counted (MoonSharp allocates on every step, so A Link to the Past's init, 18 million steps, churned through a
+            /// gigabyte and was stopped though it held little).
+            /// </summary>
             public long Memory { get; init; } = 1L << 30;
             /// <summary>How long the work may take: a backstop for steps that each take long (big string work).</summary>
             public TimeSpan Time { get; init; } = TimeSpan.FromSeconds(10);
 
             public static ScriptLimits Default { get; } = new ScriptLimits();
+
+            /// <summary>
+            /// For scripts/init.lua, which runs once as the pack loads and does the pack's whole setup: A Link to the Past's
+            /// enemizer packs build their tables in 50 to 60 million steps (MoonSharp runs 6 to 8 million a second with the
+            /// watchdog on), where a handler for one item or check never needs a tenth of that.
+            /// </summary>
+            public static ScriptLimits Init { get; } = new ScriptLimits { Steps = 300_000_000, Time = TimeSpan.FromSeconds(45) };
         }
 
         private int _workDepth;
@@ -617,7 +644,7 @@ namespace AP_Atlas.Core.PopTracker
                 return true;
             }
             _workDepth++;
-            _watchdog.Begin(what, Limits);
+            _watchdog.Begin(what, what == "init.lua" ? InitLimits : Limits);
             try { action(); }
             catch (Exception ex) { Stop(what, ex); }
             finally
@@ -693,12 +720,14 @@ namespace AP_Atlas.Core.PopTracker
                 _limits = limits;
                 Steps = 0;
                 Stop = null;
-                _memoryAtStart = GC.GetAllocatedBytesForCurrentThread();
+                _memoryAtStart = GC.GetTotalMemory(false);
                 _clockAtStart = Stopwatch.GetTimestamp();
                 _clockLimit = (long)(limits.Time.TotalSeconds * Stopwatch.Frequency);
             }
 
-            public long MemoryUsed => GC.GetAllocatedBytesForCurrentThread() - _memoryAtStart;
+            // The heap's growth since the work began (other threads' work is in it too, far below the limit): what the scripts
+            // hold, once the collector has taken what they dropped.
+            public long MemoryUsed => Math.Max(0, GC.GetTotalMemory(false) - _memoryAtStart);
             public long MemoryLeft => _limits.Memory - MemoryUsed;
             public TimeSpan Elapsed => Stopwatch.GetElapsedTime(_clockAtStart);
 
@@ -921,6 +950,15 @@ namespace AP_Atlas.Core.PopTracker
                 ["Normal"] = 6,
                 ["Cleared"] = 7
             });
+            // PopTracker's hint highlight levels (a section's Highlight); the Kingdom Hearts II packs key a table by them as they load.
+            g["Highlight"] = MakeTable(new Dictionary<string, object>
+            {
+                ["None"] = 0,
+                ["NoPriority"] = 1,
+                ["Unspecified"] = 2,
+                ["Avoid"] = 3,
+                ["Priority"] = 4
+            });
 
             // Tracker
             var tracker = ApiTable("Tracker");
@@ -1139,6 +1177,7 @@ namespace AP_Atlas.Core.PopTracker
                     loc["ChestCount"] = count;
                     loc["AvailableChestCount"] = count;
                     loc["AccessibilityLevel"] = 6;
+                    loc["Highlight"] = 0;
                     loc["Owner"] = new Table(_script);
                     _locationObjects[code] = loc;
                 }
