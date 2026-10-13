@@ -623,7 +623,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             return new AP_Atlas.UI.GameStatus(version != null ? Tr("Its apworld is in the Atlas Engine ({0}), so its logic is ready.").Replace("{0}", version)
                 : fromFile ? Tr("Its apworld is in the Atlas Engine, so its logic is ready.") : Tr("It ships with Archipelago, so the Atlas Engine has it and its logic is ready."));
         }
-        bool known = AP_Atlas.Core.EngineSetup.ApworldSources.Find(game) != null || (_appSettings.ExtraApworldRepos?.ContainsKey(game) ?? false);
+        bool known = AP_Atlas.Core.EngineSetup.ApworldSources.Find(game)?.Repo != null || (_appSettings.ExtraApworldRepos?.ContainsKey(game) ?? false);
         if (known && _gamesPage != null)
             return new AP_Atlas.UI.GameStatus(Tr("Its apworld isn't in the Atlas Engine yet, so its logic can't run."), Tr("Install the newest apworld…"), () => _gamesPage.InstallNewest(game, this));
         return new AP_Atlas.UI.GameStatus(Tr("Its apworld isn't in the Atlas Engine yet, and no project is known for it: add one on the Games page."));

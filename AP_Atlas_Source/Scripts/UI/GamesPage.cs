@@ -97,6 +97,9 @@ namespace AP_Atlas.UI
         /// <summary>The list's group headers as shown, in order (for tests).</summary>
         public List<string> ShownSections { get; private set; } = new();
 
+        /// <summary>The overview's box for another list's URL (read when Update game list is pressed).</summary>
+        private LineEdit? _urlBox;
+
         /// <summary>The game whose page shows (null: the overview).</summary>
         public string? SelectedGame => _selected;
 
@@ -196,7 +199,8 @@ namespace AP_Atlas.UI
             var check = install != null ? AtlasEngine.LastCheck(install) : null;
             var inEngine = new HashSet<string>((check?.Games ?? new List<string>()).Where(g => g != "Archipelago" && g != "Universal Tracker"), StringComparer.OrdinalIgnoreCase);
             var games = new Dictionary<string, GameEntry>(StringComparer.OrdinalIgnoreCase);
-            foreach (var source in ApworldSources.List.Games.Where(g => !string.IsNullOrWhiteSpace(g.Game)))
+            // An official game's entry holds its packs only: it isn't a community source.
+            foreach (var source in ApworldSources.List.Games.Where(g => !string.IsNullOrWhiteSpace(g.Game) && !g.Official))
                 games[source.Game] = new GameEntry(source.Game, Section.Community, inEngine.Contains(source.Game), source.Repo, HttpsOrNull(source.Home));
             foreach (var (game, repos) in _hooks.Settings.ExtraApworldRepos ?? new Dictionary<string, List<string>>())
                 if (!games.ContainsKey(game)) games[game] = new GameEntry(game, Section.Yours, inEngine.Contains(game), repos.FirstOrDefault(), null);
@@ -331,21 +335,29 @@ namespace AP_Atlas.UI
             row.AddChild(Kit.Button(_tr("Open the YAML folder"), _tr("Where Atlas keeps the YAMLs you add."), () => OpenFolder(GameFiles.YamlsFolder(DataManager.GetDataDirectory()))));
             _detail.AddChild(row);
 
-            // The community index Atlas ships, and a newer copy from a URL of the user's choice (advanced).
-            _detail.AddChild(Kit.Heading(_tr("The community index"), 1.15f));
+            // Atlas's game list: the one it ships (the pack lab rebuilds it), the newest from its repository on request, or another from a URL of the user's choice.
+            _detail.AddChild(Kit.Heading(_tr("Atlas's game list"), 1.15f));
             var list = ApworldSources.List;
-            _detail.AddChild(Wrapped(Kit.Muted(_tr("Atlas ships a list of {0} community games with their projects (built {1}), and reads each project's GitHub releases when you allow it. A newer list can be read from a URL, such as a maintained fork of the index.")
-                .Replace("{0}", list.Games.Count.ToString()).Replace("{1}", list.Built ?? "?"))));
+            int communityCount = list.Games.Count(g => !g.Official), withPacks = list.Games.Count(g => g.Packs.Count > 0);
+            _detail.AddChild(Wrapped(Kit.Muted(_tr("Atlas ships a list of {0} community games with their projects and {1} games with map packs the pack lab measured (built {2}), and reads each project's GitHub releases when you allow it. Update game list fetches the newest list from Atlas's repository on GitHub; a list of your own can be read from a URL instead. Games the list doesn't know: Add a project… on a game's page, or a pull request to the list.")
+                .Replace("{0}", communityCount.ToString()).Replace("{1}", withPacks.ToString()).Replace("{2}", list.Built ?? "?"))));
             var sources = new HBoxContainer();
             sources.AddThemeConstantOverride("separation", 8);
-            var url = new LineEdit { PlaceholderText = _tr("Newer list URL (optional)"), Text = _hooks.Settings.ApworldSourcesUrl ?? "", SizeFlagsHorizontal = SizeFlags.ExpandFill, AccessibilityName = _tr("Newer list URL") };
-            sources.AddChild(url);
-            sources.AddChild(Kit.Button(_tr("Refresh the list"), _tr("Reads the list at that URL; it's used only if it's a valid Atlas apworld source list."), () =>
+            var update = Kit.Button(_tr("Update game list"), _tr("Fetches the newest list from Atlas's repository on GitHub (or the URL beside, when one is given); it's used only if it's a valid Atlas game list."), () =>
             {
-                _hooks.Settings.ApworldSourcesUrl = url.Text.Trim();
+                _hooks.Settings.ApworldSourcesUrl = _urlBox?.Text.Trim() ?? "";
                 DataManager.SaveSettings(_hooks.Settings);
-                Run(_tr("Refreshing the apworld source list…"), (log, ct) => ApworldSources.RefreshAsync(_hooks.Settings.ApworldSourcesUrl, ct), message => message);
-            }));
+                string from = string.IsNullOrWhiteSpace(_hooks.Settings.ApworldSourcesUrl) ? ApworldSources.DefaultIndexUrl : _hooks.Settings.ApworldSourcesUrl;
+                PermissionDialog.Ask(DialogParent, _hooks.Settings, Permissions.GitHubLookups, null, _tr("The newest game list, from Atlas's repository on GitHub."), allowed =>
+                {
+                    if (!allowed) return;
+                    Run(_tr("Updating the game list…"), (log, ct) => ApworldSources.RefreshAsync(from, ct), message => message);
+                });
+            });
+            update.SetMeta("update_game_list", true);
+            sources.AddChild(update);
+            _urlBox = new LineEdit { PlaceholderText = _tr("Another list's URL (optional)"), Text = _hooks.Settings.ApworldSourcesUrl ?? "", SizeFlagsHorizontal = SizeFlags.ExpandFill, AccessibilityName = _tr("Another list's URL") };
+            sources.AddChild(_urlBox);
             _detail.AddChild(sources);
         }
 

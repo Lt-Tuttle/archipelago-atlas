@@ -1495,6 +1495,12 @@ public partial class MainTrackerWindow
             await UiTestWaitAsync(0.2);
             var button = _gamesPage.FindChildren("*", nameof(Button), true, false).OfType<Button>().FirstOrDefault(b => b.HasMeta("solo_batch_button"));
             UiTestExpect(button != null && !button.Disabled, "the Games overview has no enabled Test every ready game… button");
+            // Atlas's game list: the overview offers Update game list, and the list ships official games' packs with their measured fit (no community source for them).
+            UiTestExpect(_gamesPage.FindChildren("*", nameof(Button), true, false).OfType<Button>().Any(b => b.HasMeta("update_game_list")), "the Games overview has no Update game list button");
+            var listed = AP_Atlas.Core.EngineSetup.ApworldSources.List.Games;
+            UiTestExpect(listed.Count(g => g.Official) > 50 && listed.Any(g => g.Official && g.Packs.Count > 0 && g.Packs[0].Fit != null) && listed.Any(g => !g.Official && g.LoadsWith == "0.6.7")
+                && !_gamesPage.GameNames().Contains("A Hat in Time") || _gamesPage.GameNames().Contains("A Hat in Time") && AP_Atlas.Core.EngineSetup.ApworldSources.Find("A Hat in Time")?.Repo == null,
+                "the bundled game list lacks official games' packs with their fit, or lists an official game as a community source");
             button!.EmitSignal(BaseButton.SignalName.Pressed);
             var dialog = await UiTestWaitForAsync(Dialog, "the batch dialog");
             // Only the game with a pack is ready; the other joins with the box ticked.

@@ -64,6 +64,7 @@ ames`, with `_load_report.json` for the worlds that don't load.
 - The corpus check: `Tools/run_selftest.ps1` with `ATLAS_SELFTEST_PACKS=<folder>\packs`, `ATLAS_SELFTEST_PACK_NAMES=<folder>
 ames` and `ATLAS_SELFTEST_PACKS_FINDINGS=<file>` writes every pack's findings; `python Tools/corpus_kinds.py <file> [<run output>]` groups them by kind across packs (a kind touching two or more packs is a rule to write) and the scripts' errors by message. `AP_Atlas_Source/Tests/packs_baseline.json` is the ratchet: no pack may link or place fewer checks than it records.
 - `Tools/run_pack_gallery.ps1 -Corpus <folder> -OutDir <pictures>`: pictures of every pack as a connected slot sees it (the Map Tracker, Key Items on each layout, the Pack Doctor), to be read the way a user reads the screen (`MainTrackerWindow.PackGallery.cs`).
+- `python Tools/build_game_index.py --corpus <folder> --baseline <packs baseline json>`: rebuilds the game list Atlas ships (`Scripts/Core/Engine/Data/apworld_sources.json`) from the corpus manifest, the lab's name tables and the corpus check's baseline: each game's projects and releases with their SHA-256, whether its newest release loads with the engine's Archipelago, and its packs with the fit the lab measured. "Update game list" fetches that file from the repository.
 - Every rule gets a self-test on a small pack, the corpus check green, the baseline re-recorded, and an entry in `docs/PACK_RULES.md`.
 
 ## Writing code

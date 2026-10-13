@@ -38,6 +38,25 @@ namespace AP_Atlas.Core.EngineSetup
         [JsonProperty("home")] public string Home { get; set; }
         [JsonProperty("repo")] public string Repo { get; set; }
         [JsonProperty("versions")] public List<ApworldVersion> Versions { get; set; } = new();
+        /// <summary>A game that ships with Archipelago: listed for its packs only (no project, no versions), not a community source.</summary>
+        [JsonProperty("official")] public bool Official { get; set; }
+        /// <summary>The Archipelago version the pack lab loaded the game's newest release with ("0.6.7"), or null when it didn't.</summary>
+        [JsonProperty("loads_with")] public string LoadsWith { get; set; }
+        /// <summary>The map packs the pack lab fetched and measured for the game, the best fit first.</summary>
+        [JsonProperty("packs")] public List<IndexPack> Packs { get; set; } = new();
+    }
+
+    /// <summary>A map pack in Atlas's game list: its project and release, and how it fit the game's checks when the lab measured it.</summary>
+    public class IndexPack
+    {
+        [JsonProperty("repo")] public string Repo { get; set; }
+        [JsonProperty("release")] public string Release { get; set; }
+        [JsonProperty("asset")] public string Asset { get; set; }
+        [JsonProperty("sha256")] public string Sha256 { get; set; }
+        /// <summary>Pin sections linked to the game's checks, in percent, or null when the lab had no names for the game.</summary>
+        [JsonProperty("fit")] public int? Fit { get; set; }
+        /// <summary>"1083 of 1322": the fit's counts.</summary>
+        [JsonProperty("checks")] public string Checks { get; set; }
     }
 
     /// <summary>An apworld file Atlas has on disk and has identified: which game, which data checksum.</summary>
@@ -70,6 +89,12 @@ namespace AP_Atlas.Core.EngineSetup
     {
         private const string Format = "atlas-apworld-sources/1";
         private static ApworldSourceList _list;
+
+        /// <summary>Where the newest game list lives: the file Atlas ships, in its repository (fetched by "Update game list").</summary>
+        public const string DefaultIndexUrl = "https://raw.githubusercontent.com/Lt-Tuttle/archipelago-atlas/main/AP_Atlas_Source/Scripts/Core/Engine/Data/apworld_sources.json";
+
+        /// <summary>The map packs the game list knows for a game, the best fit first (none for a game it doesn't list).</summary>
+        public static List<IndexPack> PacksFor(string game) => Find(game)?.Packs ?? new List<IndexPack>();
 
         private static string RefreshedPath => Path.Combine(AtlasEngine.EngineDir, "apworld_sources.json");
         private static string CacheDir => Path.Combine(AtlasEngine.EngineDir, "apworld_cache");

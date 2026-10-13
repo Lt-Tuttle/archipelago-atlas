@@ -620,6 +620,9 @@ namespace AP_Atlas.Core
             public bool Fork;
             /// <summary>The game's own setup guide links this project as its tracker: the author's recommendation.</summary>
             public bool Recommended;
+            /// <summary>In Atlas's game list: how the pack lab measured the project's pack against the game's checks (percent), and the counts.</summary>
+            public int? IndexFit;
+            public string IndexChecks;
         }
 
         /// <summary>One of a project's releases that holds a pack (for the choice before a download).</summary>
@@ -728,6 +731,25 @@ namespace AP_Atlas.Core
                 else list.Remove(known);
                 known.Recommended = true;
                 list.Insert(0, known);
+            }
+            // Atlas's game list: the packs the pack lab fetched and measured for the game, the best fit first, after the guide's own.
+            int afterRecommended = list.TakeWhile(c => c.Recommended).Count();
+            foreach (var pack in AP_Atlas.Core.EngineSetup.ApworldSources.PacksFor(game).AsEnumerable().Reverse())
+            {
+                if (string.IsNullOrWhiteSpace(pack.Repo)) continue;
+                var known = list.FirstOrDefault(c => c.Repo.Equals(pack.Repo, StringComparison.OrdinalIgnoreCase));
+                if (known == null)
+                {
+                    known = new PackCandidate { Repo = pack.Repo, Description = "", HtmlUrl = "https://github.com/" + pack.Repo };
+                    list.Insert(afterRecommended, known);
+                }
+                else if (!known.Recommended)
+                {
+                    list.Remove(known);
+                    list.Insert(afterRecommended, known);
+                }
+                known.IndexFit = pack.Fit;
+                known.IndexChecks = pack.Checks;
             }
             return (list, problem);
         }
@@ -843,13 +865,17 @@ namespace AP_Atlas.Core
                         AutowrapMode = TextServer.AutowrapMode.WordSmart,
                         SizeFlagsHorizontal = SizeFlags.ExpandFill
                     };
-                    if (c.Recommended)
+                    // The game's own guide names it, or Atlas's game list measured it: said above the project, in the accent, so it's the first thing read.
+                    string note = c.Recommended ? "Recommended by the game's setup guide"
+                        : c.IndexFit is int fit ? $"In Atlas's game list: fits {fit}% of the game's checks" + (string.IsNullOrEmpty(c.IndexChecks) ? "" : $" ({c.IndexChecks})")
+                        : c.IndexChecks != null || c.IndexFit != null ? "In Atlas's game list" : null;
+                    if (note != null)
                     {
-                        // The game's own guide names it: said above the project, in the accent, so it's the first thing read.
                         var column = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
                         column.AddThemeConstantOverride("separation", 2);
-                        var recommended = new Label { Text = "Recommended by the game's setup guide" };
-                        recommended.SetMeta("recommended_pack", c.Repo);
+                        var recommended = new Label { Text = note };
+                        if (c.Recommended) recommended.SetMeta("recommended_pack", c.Repo);
+                        else recommended.SetMeta("listed_pack", c.Repo);
                         recommended.AddThemeColorOverride("font_color", ThemeColors.AccentText(ThemeColors.Surface));
                         column.AddChild(recommended);
                         column.AddChild(info);
@@ -1108,7 +1134,7 @@ namespace AP_Atlas.Core
 
         internal async Task<(bool Ok, string Detail, string File, string Repo)> InstallBestPackAsync(string game, IReadOnlyList<PackCandidate> candidates, Action<string> say)
         {
-            var order = candidates.Select((c, i) => (c, i)).OrderByDescending(x => x.c.Recommended).ThenByDescending(x => x.c.Stars)
+            var order = candidates.Select((c, i) => (c, i)).OrderByDescending(x => x.c.Recommended).ThenByDescending(x => x.c.IndexFit ?? -1).ThenByDescending(x => x.c.Stars)
                 .ThenByDescending(x => x.c.Updated ?? DateTime.MinValue).ThenBy(x => x.i).Select(x => x.c).Take(AP_Atlas.Core.Games.PackProjectPick.MostProjects).ToList();
             string trying = NewTryingFolder();
             try
