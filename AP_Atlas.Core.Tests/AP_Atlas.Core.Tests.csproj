@@ -11,7 +11,7 @@
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="xunit.v3" Version="4.0.1" />
+    <PackageReference Include="xunit.v3" Version="4.0.2" />
     <PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" Version="18.7.23" PrivateAssets="all" IncludeAssets="runtime; build; native; contentfiles; analyzers; buildtransitive" />
   </ItemGroup>
   <ItemGroup>
