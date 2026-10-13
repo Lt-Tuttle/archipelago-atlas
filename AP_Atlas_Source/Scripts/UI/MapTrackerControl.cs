@@ -813,6 +813,8 @@ namespace AP_Atlas.UI
                 var btn = new Button { SizeFlagsHorizontal = SizeFlags.ExpandFill };
                 btn.SetMeta("map_id", map.Id);
                 btn.SetMeta("map_name", map.Name);
+                string shownName = _pack.DisplayNameOfMap(map.Name);
+                btn.SetMeta("map_title", shownName);
                 var margin = new MarginContainer { Name = "Margin", MouseFilter = MouseFilterEnum.Ignore };
                 margin.AddThemeConstantOverride("margin_left", 10);
                 margin.AddThemeConstantOverride("margin_right", 10);
@@ -821,7 +823,8 @@ namespace AP_Atlas.UI
                 margin.SetAnchorsPreset(Control.LayoutPreset.FullRect);
                 var hbox = new HBoxContainer { Name = "HBox", SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill, MouseFilter = MouseFilterEnum.Ignore };
                 hbox.AddThemeConstantOverride("separation", 10);
-                var lbl = new Label { Text = map.Name, SizeFlagsHorizontal = SizeFlags.ExpandFill, VerticalAlignment = Godot.VerticalAlignment.Center, MouseFilter = MouseFilterEnum.Ignore };
+                var lbl = new Label { Text = shownName, SizeFlagsHorizontal = SizeFlags.ExpandFill, VerticalAlignment = Godot.VerticalAlignment.Center, MouseFilter = MouseFilterEnum.Ignore };
+                if (shownName != map.Name) btn.TooltipText = map.Name;
                 hbox.AddChild(lbl);
                 var counterHBox = new HBoxContainer { Name = "Counters", SizeFlagsVertical = SizeFlags.ShrinkCenter, MouseFilter = MouseFilterEnum.Ignore };
                 counterHBox.AddThemeConstantOverride("separation", 4);
@@ -960,7 +963,7 @@ namespace AP_Atlas.UI
                 }
                 else // A-Z
                 {
-                    children = children.OrderBy(b => b.GetMeta("map_name").AsString(), StringComparer.OrdinalIgnoreCase).ToList();
+                    children = children.OrderBy(b => (b.HasMeta("map_title") ? b.GetMeta("map_title") : b.GetMeta("map_name")).AsString(), StringComparer.OrdinalIgnoreCase).ToList();
                 }
                 for (int i = 0; i < children.Count; i++)
                 {
@@ -1117,7 +1120,7 @@ namespace AP_Atlas.UI
             }
             string file = string.IsNullOrEmpty(map.Img) ? map.MapBg : map.Img;
             ChecklistNote = string.IsNullOrEmpty(file)
-                ? Translate("The pack has no picture for \"{0}\", so its locations are listed here instead. Pick one to see it in Properties.").Replace("{0}", map.Name)
+                ? Translate("The pack has no picture for \"{0}\", so its locations are listed here instead. Pick one to see it in Properties.").Replace("{0}", _pack.DisplayNameOfMap(map.Name))
                 : Translate("The pack's picture for \"{0}\" ({1}) isn't in the pack, or can't be read, so its locations are listed here instead. Pick one to see it in Properties.").Replace("{0}", map.Name).Replace("{1}", file);
             var note = new Label { Text = ChecklistNote, AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(240, 0) };
             note.AddThemeColorOverride("font_color", ThemeColors.TextMuted);

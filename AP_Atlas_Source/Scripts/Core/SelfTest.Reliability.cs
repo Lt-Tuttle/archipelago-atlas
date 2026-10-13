@@ -852,6 +852,9 @@ namespace AP_Atlas.Core
             var pack = await Task.Run(() => PopTracker.PopTrackerPackLoader.InspectZipPack(zip)) ?? throw new InvalidOperationException("the lab pack wasn't read");
             await Task.Run(() => PopTracker.PackImages.Check(pack));
             Expect(pack.HasDecodableImage("images/photo.png") && !pack.BrokenImages.Contains("images/photo.png"), "a JPEG named .png wasn't decoded by its header: " + string.Join("; ", pack.LoadIssues));
+            // The map list calls a map what the tab showing it alone is titled; a map without such a tab keeps its name.
+            Expect(pack.DisplayNameOfMap("World") == "Overworld" && pack.DisplayNameOfMap("Nowhere") == "Nowhere",
+                $"the map isn't listed by its tab's title: \"{pack.DisplayNameOfMap("World")}\"");
 
             // The scripts: Lua 5.4's <const>, a loop ending in its continue label after a local, PopTracker's Highlight, an item the
             // scripts make, and a file they load that the pack doesn't have (an error noted, the rest runs, as in PopTracker).

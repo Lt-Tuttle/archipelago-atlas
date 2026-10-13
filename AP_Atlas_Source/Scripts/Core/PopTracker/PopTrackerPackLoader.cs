@@ -86,6 +86,24 @@ namespace AP_Atlas.Core.PopTracker
         public Dictionary<string, List<string>> TabMaps { get; set; } = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
+        /// A map's name → the title of the first tab that shows that map alone: what PopTracker's window calls it ("Hoenn" for
+        /// "hoennmap", "Spirit's Grave" for "d1"; 195 corpus packs name 5,767 maps so). A map no tab shows alone has no entry.
+        /// </summary>
+        public Dictionary<string, string> MapTitles { get; set; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// The name the map list shows for a map: its tab's title when a tab shows it alone, unless the tab abbreviates a
+        /// readable name (Ship of Harkinian's "SFM" tab for "Sacred Forest Meadow": the title is shorter and the name has
+        /// spaces), else the map's own name.
+        /// </summary>
+        public string DisplayNameOfMap(string mapName)
+        {
+            if (string.IsNullOrEmpty(mapName) || !MapTitles.TryGetValue(mapName, out var title) || string.IsNullOrWhiteSpace(title)) return mapName ?? "";
+            if (title.Length < mapName.Length && mapName.Contains(' ')) return mapName;
+            return title;
+        }
+
+        /// <summary>
         /// The maps the pack declares but never shows: no pin is on them and none of its tabs shows them (Ship of
         /// Harkinian's "Gift from Rauru" and "Links Pocket", left without pictures). Atlas leaves them out of the map list.
         /// A pack whose layouts name no maps at all has none (Atlas can't tell which it shows).
@@ -690,6 +708,7 @@ namespace AP_Atlas.Core.PopTracker
                         if (title.Length == 0 || pack.TabMaps.ContainsKey(title)) continue;
                         var maps = MapsIn(tab["content"], new HashSet<string>(StringComparer.OrdinalIgnoreCase), depth + 1);
                         if (maps.Count > 0) pack.TabMaps[title] = maps;
+                        if (maps.Count == 1 && !pack.MapTitles.ContainsKey(maps[0])) pack.MapTitles[maps[0]] = title;
                     }
                 }
                 foreach (var prop in obj.Properties()) Walk(prop.Value, depth + 1);
