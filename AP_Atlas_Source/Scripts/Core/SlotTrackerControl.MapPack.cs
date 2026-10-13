@@ -272,6 +272,13 @@ public partial class SlotTrackerControl : MarginContainer
         if (!_scripts.Idle) return null;
         return host.StateOf(code);
     }
+    /// <summary>The tile an item the pack's scripts made stands for (null when they aren't running, or make none for the code).</summary>
+    public AP_Atlas.Core.PopTracker.PopTrackerItem ScriptItemOf(string code)
+    {
+        var host = PackScripts;
+        if (host == null || !host.Cleared || !_scripts.Idle) return null;
+        return host.ScriptItemFor(code);
+    }
     /// <summary>The seed's settings as the pack shows them (its settings grid plus anything set from slot data).</summary>
     public List<AP_Atlas.Core.PopTracker.PackScriptHost.SettingInfo> SeedSettings()
     {

@@ -108,7 +108,7 @@ def main():
 
     out = {'format': FORMAT, 'built': date.today().isoformat(), 'source': 'the Atlas pack lab (github.com/Lt-Tuttle/archipelago-atlas), seeded from Eijebong/Archipelago-index (archived)',
            'archipelago': ARCHIPELAGO, 'games': sorted(games.values(), key=lambda g: g['game'].lower())}
-    with open(args.out, 'w', encoding='utf-8', newline='\n') as f:
+    with open(args.out, 'w', encoding='utf-8', newline='\r\n') as f:
         json.dump(out, f, indent=1, ensure_ascii=False)
         f.write('\n')
     with_packs = sum(1 for g in out['games'] if g.get('packs'))

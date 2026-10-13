@@ -111,6 +111,31 @@ namespace AP_Atlas.Core.PopTracker
             return provides;
         }
 
+        /// <summary>
+        /// The tile for an item the pack's scripts made (ScriptHost:CreateLuaItem), named and pictured as the script set it
+        /// (its Name and Icon), or null when no such item answers to the code. Key Items draws it where the pack's files
+        /// define nothing (Celeste's and Super Metroid's packs make their tiles so); its state comes from <see cref="StateOf"/>.
+        /// </summary>
+        public PopTrackerItem ScriptItemFor(string code)
+        {
+            PopTrackerItem item = null;
+            Work("reading a tile the scripts make", () =>
+            {
+                var lua = string.IsNullOrEmpty(code) ? null : FindLuaItem(code);
+                if (lua == null) return;
+                var name = lua.RawGet("Name");
+                var icon = lua.RawGet("Icon");
+                item = new PopTrackerItem
+                {
+                    Name = name != null && name.Type == DataType.String && !string.IsNullOrWhiteSpace(name.String) ? name.String : code,
+                    Img = icon != null && icon.Type == DataType.String ? icon.String : "",
+                    Type = "toggle",
+                    CodesRaw = code,
+                };
+            });
+            return _stopReason == null ? item : null;
+        }
+
         /// <summary>The scripts' print() output (capped).</summary>
         public List<string> Log { get; } = new List<string>();
 

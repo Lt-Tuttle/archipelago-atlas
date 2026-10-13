@@ -73,7 +73,7 @@ The **Chat** tab's filters sit in one row: Chat, Hints and System (the kinds of 
 
 ## Key Items
 
-Key Items (Ctrl+3) shows the progression items you've received. The Visual view is the pack's own item grid (when the pack has one), with each tile as the pack's scripts show it; the Text view lists the items. Collected and Missing filter the list, the search box narrows it, and Item Size changes the tiles. Seed settings the pack shows are read from the slot's options.
+Key Items (Ctrl+3) shows the progression items you've received. The Visual view is the pack's own item grid (when the pack has one), with each tile as the pack's scripts show it, the tiles the scripts make themselves included (drawn with the name and picture the script gave them); the Text view lists the items. Collected and Missing filter the list, the search box narrows it, and Item Size changes the tiles. Seed settings the pack shows are read from the slot's options.
 
 **Layout:** the choice beside Visual / Text lists the pack's own layouts (PopTracker's default, horizontal, vertical and broadcast, whichever the pack has) and two Atlas builds from the pack's item groups: Vertical (by group) stacks each group under its header, Horizontal (by group) sets the groups side by side. Until you pick one, Atlas picks for you, named "Auto (…)" in the choice: the first of the pack's layouts that fits the view without scrolling (Dark Souls Remastered's horizontal, for one), measured again when the view's size changes; your own pick is kept per slot, and Auto brings Atlas's back.
 

@@ -787,6 +787,7 @@ namespace AP_Atlas.Core
                     local SEED <const> = "x"
                     local trans = ScriptHost:CreateLuaItem()
                     trans.Name = "Transition A"
+                    trans.Icon = ImageReference:FromPackRelativePath("images/sword.png")
                     trans.CanProvideCodeFunc = function(self, code) return code == "trans_a" end
                     trans.ProvidesCodeFunc = function(self, code) return 1 end
                     PRIORITY = { [Highlight.Priority] = 1, [Highlight.None] = 0 }
@@ -849,6 +850,9 @@ namespace AP_Atlas.Core
             Expect(host.StateOf("sword")?.Active == true, "the loop with a continue label, the <const> local, Highlight, or Tracker.BulkUpdate (three changes under it run a \"*\" watch once, with the item's code) didn't work as in PopTracker");
             Expect(!host.UnsupportedApis.Any(a => a.StartsWith("Tracker.BulkUpdate", StringComparison.Ordinal)), "Tracker.BulkUpdate was counted as an unsupported feature");
             Expect(host.ScriptItemProvides("trans_a") && !host.ScriptItemProvides("trans_b"), "an item the scripts make doesn't answer to its code (or answers to others)");
+            var scripted = host.ScriptItemFor("trans_a");
+            Expect(scripted?.Name == "Transition A" && scripted.Img == "images/sword.png" && host.ScriptItemFor("trans_b") == null,
+                "a tile the scripts make isn't named and pictured as the script set it (Key Items draws such tiles)");
 
             var names = new PopTracker.GameNameTable
             {

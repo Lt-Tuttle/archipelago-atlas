@@ -314,10 +314,18 @@ namespace AP_Atlas.Core.PopTracker
             return KeyItemsLayouts.BlocksByCategory(items);
         }
 
-        /// <summary>A tile's definition: the pack's item, or a plain one for a pool item (a game without a pack).</summary>
+        /// <summary>
+        /// A tile's definition: the pack's item, an item the pack's scripts make (named and pictured by the script), or a
+        /// plain one for a pool item (a game without a pack).
+        /// </summary>
         private PopTrackerItem TileDefinition(string code)
         {
             if (_pack != null && _pack.ItemsByCode.TryGetValue(code, out var itemDef)) return itemDef;
+            if (_pack != null)
+            {
+                var scripted = ScriptItem?.Invoke(code);
+                if (scripted != null) return scripted;
+            }
             if (code.StartsWith("atlas_pool_", StringComparison.Ordinal) && long.TryParse(code.Substring("atlas_pool_".Length), out long id))
             {
                 var item = _logicEngine?.LastItemPool?.FirstOrDefault(i => i.Id == id);
@@ -387,7 +395,7 @@ namespace AP_Atlas.Core.PopTracker
             };
             toolbar.AddChild(_layoutPicker);
             // The pack's variant (its author's versions of the layouts, most often the tiles' orientation), when it has more than one.
-            _variantPicker = new OptionButton { TooltipText = Tr("The pack's variants (its author's versions of the layouts and items); the pack's default unless you pick another for this slot"), AccessibilityName = Tr("Pack variant"), Visible = false };
+            _variantPicker = new OptionButton { TooltipText = Tr("The pack's variants (its author's versions of the layouts and items); the pack's default unless you pick another for this slot"), AccessibilityName = Tr("Pack variant"), Visible = false, ClipText = true, TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis };
             _variantPicker.ItemSelected += index =>
             {
                 if (_syncingVariant || index < 0 || index >= _variantIds.Count) return;
@@ -885,6 +893,9 @@ namespace AP_Atlas.Core.PopTracker
 
         /// <summary>Gets the pack scripts' state for a code (null when the scripts aren't running). Set by the owner.</summary>
         public Func<string, PackScriptHost.TileState> ScriptState { get; set; }
+
+        /// <summary>The tile an item the pack's scripts made stands for (null when they aren't running, or make none for the code). Set by the owner.</summary>
+        public Func<string, PopTrackerItem> ScriptItem { get; set; }
 
         /// <summary>The seed's settings as the pack shows them. Set by the owner.</summary>
         public Func<List<PackScriptHost.SettingInfo>> SeedSettings { get; set; }

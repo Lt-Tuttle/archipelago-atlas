@@ -356,7 +356,7 @@ namespace AP_Atlas.UI
             var variantLabel = new Label { Text = Translate("Pack variant:") };
             variantLabel.AddThemeColorOverride("font_color", ThemeColors.TextMuted);
             _variantRow.AddChild(variantLabel);
-            _variantPicker = new OptionButton { SizeFlagsHorizontal = SizeFlags.ExpandFill, AccessibilityName = Translate("Pack variant"), TooltipText = Translate("The pack's variants (its author's versions of the maps and items); the pack's default unless you pick another for this slot.") };
+            _variantPicker = new OptionButton { SizeFlagsHorizontal = SizeFlags.ExpandFill, ClipText = true, TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis, AccessibilityName = Translate("Pack variant"), TooltipText = Translate("The pack's variants (its author's versions of the maps and items); the pack's default unless you pick another for this slot.") };
             _variantPicker.ItemSelected += index =>
             {
                 if (!_syncingVariant && index >= 0 && index < _variantIds.Count) VariantPicked?.Invoke(_variantIds[(int)index]);

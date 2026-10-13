@@ -142,6 +142,7 @@ public partial class SlotTrackerControl : MarginContainer
 
         _progressionTracker.ItemPicked += name => Inspect(ItemTargetByName(name));
         _progressionTracker.ScriptState = ScriptStateOf;
+        _progressionTracker.ScriptItem = ScriptItemOf;
         _progressionTracker.SeedSettings = SeedSettings;
         _progressionTracker.ScriptStopReason = () => PackScripts?.StopReason;
         _progressionTracker.EmptyState = LogicEmptyState;
