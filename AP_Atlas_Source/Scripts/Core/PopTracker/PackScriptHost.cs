@@ -165,6 +165,12 @@ namespace AP_Atlas.Core.PopTracker
         private readonly List<Table> _luaItems = new List<Table>();
         private Table _archipelago;
         private int _watchDepth;
+        // Tracker.BulkUpdate: while a script holds it true, items that change are queued (once each) instead of running their
+        // watches, and run them when the script sets it back, as PopTracker does (87 corpus packs set it round their clear
+        // handler's item loop; without it a "*" watch recomputing the pack's logic ran once per item).
+        private bool _bulkUpdate, _allowDeferredLogicUpdate;
+        private readonly List<PopTrackerItem> _bulkItems = new List<PopTrackerItem>();
+        private readonly HashSet<PopTrackerItem> _bulkItemsSeen = new HashSet<PopTrackerItem>();
 
         private PackScriptHost(LoadedPack pack, string variant)
         {
@@ -963,8 +969,25 @@ namespace AP_Atlas.Core.PopTracker
             // Tracker
             var tracker = ApiTable("Tracker");
             tracker["ActiveVariantUID"] = Variant;
-            tracker["BulkUpdate"] = false;
-            tracker["AllowDeferredLogicUpdate"] = false;
+            // BulkUpdate and AllowDeferredLogicUpdate live in the metatable, so Atlas sees them set (a field in the table wouldn't be).
+            tracker.MetaTable["__index"] = Callback(args =>
+            {
+                string key = args.Count > 1 ? args[1].CastToString() : "?";
+                if (key == "BulkUpdate") return DynValue.NewBoolean(_bulkUpdate);
+                if (key == "AllowDeferredLogicUpdate") return DynValue.NewBoolean(_allowDeferredLogicUpdate);
+                UnsupportedApis.Add($"Tracker.{key}");
+                return NoOp();
+            });
+            tracker.MetaTable["__newindex"] = Callback(args =>
+            {
+                string key = args.Count > 1 ? args[1].CastToString() : null;
+                var value = args.Count > 2 ? args[2] : DynValue.Nil;
+                bool on = value.Type == DataType.Number ? value.Number != 0 : value.CastToBool();
+                if (key == "BulkUpdate") SetBulkUpdate(on);
+                else if (key == "AllowDeferredLogicUpdate") _allowDeferredLogicUpdate = on;
+                else if (key != null) tracker.Set(key, value);
+                return DynValue.Nil;
+            });
             // The files init.lua loads are noted (the Doctor compares them with what Atlas read); hints to the window go out.
             foreach (var name in new[] { "AddItems", "AddMaps", "AddLocations", "AddLayouts" })
             {
@@ -1271,7 +1294,34 @@ namespace AP_Atlas.Core.PopTracker
                     _pendingReads.Clear();
                 }
             }
-            FireWatches(o.Def.AllCodes());
+            FireWatches(o.Def);
+        }
+
+        /// <summary>Runs the code watches an item's change concerns, or queues the item while Tracker.BulkUpdate is on.</summary>
+        private void FireWatches(PopTrackerItem item)
+        {
+            if (_watches.Count == 0 || item == null) return;
+            if (_bulkUpdate)
+            {
+                if (_bulkItemsSeen.Add(item)) _bulkItems.Add(item);
+                return;
+            }
+            FireWatches(item.AllCodes());
+        }
+
+        private void SetBulkUpdate(bool on)
+        {
+            if (_bulkUpdate && !on)
+            {
+                // Set back: each item that changed meanwhile runs its watches once, in the order they first changed.
+                var items = _bulkItems.ToList();
+                _bulkItems.Clear();
+                _bulkItemsSeen.Clear();
+                _bulkUpdate = false;
+                foreach (var item in items) FireWatches(item.AllCodes());
+                return;
+            }
+            _bulkUpdate = on;
         }
 
         private void FireWatches(IEnumerable<string> codes)
@@ -1280,10 +1330,14 @@ namespace AP_Atlas.Core.PopTracker
             _watchDepth++;
             try
             {
-                foreach (var code in codes.Append("*"))
+                var list = codes.ToList();
+                // A wildcard watch is given the item's codes, as PopTracker gives them; a code's watch its code.
+                string all = string.Join(",", list);
+                foreach (var code in list.Append("*"))
                 {
-                    if (!_watches.TryGetValue(code, out var list)) continue;
-                    foreach (var fn in list.ToList()) Run($"watch for {code}", () => CallLua(fn, code));
+                    if (!_watches.TryGetValue(code, out var watches)) continue;
+                    string arg = code == "*" ? all : code;
+                    foreach (var fn in watches.ToList()) Run($"watch for {code}", () => CallLua(fn, arg));
                 }
             }
             finally { _watchDepth--; }

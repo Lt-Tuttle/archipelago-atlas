@@ -798,7 +798,18 @@ namespace AP_Atlas.Core
                         ::continue::
                     end
                     ScriptHost:LoadScript("scripts/missing.lua")
+                    WATCHED = {}
+                    ScriptHost:AddWatchForCode("count", "*", function(code) WATCHED[#WATCHED + 1] = code end)
+                    Tracker.BulkUpdate = true
+                    local shield = Tracker:FindObjectForCode("shield")
+                    shield.Active = true
+                    shield.Active = false
+                    shield.Active = true
+                    BULK_SEEN = #WATCHED
+                    WAS_BULK = Tracker.BulkUpdate
+                    Tracker.BulkUpdate = false
                     Tracker:FindObjectForCode("sword").Active = COUNT == 4 and PRIORITY[4] == 1 and SEED == "x"
+                        and BULK_SEEN == 0 and WAS_BULK == true and #WATCHED == 1 and WATCHED[1] == "shield"
                     """,
                 itemsJson: "[" + """{"name":"Sword","type":"toggle","img":"images/sword.png","codes":"sword"},{"name":"Shield","type":"toggle","img":"images/photo.png","codes":"shield"},""" + classes + "]",
                 layoutsJson: """{"tracker_default":{"type":"array","content":[{"type":"itemgrid","rows":[["sword","shield","trans_a"]]},""" +
@@ -828,7 +839,8 @@ namespace AP_Atlas.Core
             await Task.Run(() => host.Initialize());
             Expect(host.Errors.Count == 1 && host.Errors[0].StartsWith("LoadScript: 'scripts/missing.lua'", StringComparison.Ordinal) && !host.Stopped,
                 "the scripts didn't run as PopTracker runs them (a <const> local, a loop ending in its continue label, Highlight): " + string.Join("; ", host.Errors));
-            Expect(host.StateOf("sword")?.Active == true, "the loop with a continue label, the <const> local or Highlight didn't work as in Lua 5.4");
+            Expect(host.StateOf("sword")?.Active == true, "the loop with a continue label, the <const> local, Highlight, or Tracker.BulkUpdate (three changes under it run a \"*\" watch once, with the item's code) didn't work as in PopTracker");
+            Expect(!host.UnsupportedApis.Any(a => a.StartsWith("Tracker.BulkUpdate", StringComparison.Ordinal)), "Tracker.BulkUpdate was counted as an unsupported feature");
             Expect(host.ScriptItemProvides("trans_a") && !host.ScriptItemProvides("trans_b"), "an item the scripts make doesn't answer to its code (or answers to others)");
 
             var names = new PopTracker.GameNameTable
