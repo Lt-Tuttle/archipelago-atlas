@@ -15,7 +15,7 @@
     <!-- 13.0.1 and later limit JSON nesting to 64 levels by default, so deeply nested input can't overflow the stack. -->
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <!-- Build-time only (never shipped): flags async mistakes such as unobserved tasks and blocking waits. -->
-    <PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" Version="18.7.23" PrivateAssets="all" IncludeAssets="runtime; build; native; contentfiles; analyzers; buildtransitive" />
+    <PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" Version="18.12.1" PrivateAssets="all" IncludeAssets="runtime; build; native; contentfiles; analyzers; buildtransitive" />
   </ItemGroup>
   <ItemGroup>
     <!-- The fake logic engine's Python side, for tests (Testing/FakeLogicEngine.cs writes it out). -->
