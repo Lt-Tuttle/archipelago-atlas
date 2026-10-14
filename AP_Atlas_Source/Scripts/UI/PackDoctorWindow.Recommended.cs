@@ -60,8 +60,14 @@ namespace AP_Atlas.UI
         /// <summary>Selects every shown row at or above the confidence level, as the bar's button does (for tests).</summary>
         public void SelectShownRecommendations() => SelectShown(Recommendations());
 
-        /// <summary>Ignores every selected row in one undoable step, as the bar's button does (for tests).</summary>
-        public void IgnoreSelectedRecommendations() => IgnoreRecommendations(Recommendations().Where(IsTicked).ToList());
+        /// <summary>Previews ignoring every selected row in one undoable step, as the bar's button does (for tests: Apply on the preview does it).</summary>
+        public void IgnoreSelectedRecommendations() => PreviewIgnore(Recommendations().Where(IsTicked).ToList());
+
+        /// <summary>Previews applying every selected row, as the bar's button does (for tests).</summary>
+        public void ApplySelectedRecommendations() => PreviewApply(Recommendations().Where(IsTicked).ToList());
+
+        /// <summary>Previews "Fix what Atlas can", as the bar's button does (for tests).</summary>
+        public void FixWhatAtlasCanHere() => PreviewSuggested();
 
         /// <summary>Applies one recommendation's chosen match, as its Apply button does (for tests).</summary>
         public void ApplyRecommendation(string key)
@@ -233,18 +239,12 @@ namespace AP_Atlas.UI
             var actions = new HFlowContainer();
             actions.AddThemeConstantOverride("h_separation", 8);
             actions.AddThemeConstantOverride("v_separation", 6);
-            var applyAll = Kit.Button($"Apply {selected} selected", "Apply every selected row in one undoable step", () => ApplyRecommendations(recs.Where(IsTicked).ToList()), selected > 0);
+            var applyAll = Kit.Button($"Apply {selected} selected…", "Shows what applying every selected row changes, then applies it in one undoable step", () => PreviewApply(recs.Where(IsTicked).ToList()), selected > 0);
             applyAll.AddThemeColorOverride("font_color", selected > 0 ? Good : Muted);
             actions.AddChild(applyAll);
-            var ignoreAll = Kit.Button($"Ignore {selected} selected", "Hide every selected row in one undoable step (they stay in the report to the author)", () => IgnoreRecommendations(recs.Where(IsTicked).ToList()), selected > 0);
+            var ignoreAll = Kit.Button($"Ignore {selected} selected…", "Shows the rows it hides, then hides every selected row in one undoable step (they stay in the report to the author)", () => PreviewIgnore(recs.Where(IsTicked).ToList()), selected > 0);
             actions.AddChild(ignoreAll);
-            actions.AddChild(Kit.Button("Fix what Atlas can", "Links every row whose best match is confident (85% or more, no clash) and sets the rest aside, in one undoable step", () =>
-            {
-                var result = PackDoctorService.ApplySuggested(_key, _original, _report);
-                foreach (var f in recs) { _recTicked.Remove(f.Key); _recUnticked.Remove(f.Key); _appliedKeys.Add(f.Key); }
-                _appliedText = result.Describe(_original?.Manifest?.Name ?? "the pack");
-                SetStatus(_appliedText + " Checking the pack again…");
-            }, recs.Count > 0));
+            actions.AddChild(Kit.Button("Fix what Atlas can…", "Shows what it changes, then links every row whose best match is confident (85% or more, no clash) and sets the rest aside, in one undoable step", PreviewSuggested, recs.Count > 0));
             actions.AddChild(Kit.Button("Select shown", "Select every shown row at or above the confidence level", () => SelectShown(recs), shown.Count > 0));
             actions.AddChild(Kit.Button("Select none", "Clear the selection", () => { foreach (var f in recs) { _recUnticked.Add(f.Key); _recTicked.Remove(f.Key); } RenderCurrentTab(); }, recs.Count > 0));
             // The counts agree with the selection: rows at the level that aren't selected are the ones that clash.
@@ -314,9 +314,9 @@ namespace AP_Atlas.UI
                     if (on) { _recTicked.Add(fc.Key); _recUnticked.Remove(fc.Key); }
                     else { _recUnticked.Add(fc.Key); _recTicked.Remove(fc.Key); }
                     int n = recs.Count(IsTicked);
-                    applyAll.Text = $"Apply {n} selected";
+                    applyAll.Text = $"Apply {n} selected…";
                     applyAll.Disabled = n == 0;
-                    ignoreAll.Text = $"Ignore {n} selected";
+                    ignoreAll.Text = $"Ignore {n} selected…";
                     ignoreAll.Disabled = n == 0;
                 };
                 row.AddChild(tick);
@@ -424,27 +424,71 @@ namespace AP_Atlas.UI
             SetStatus(_appliedText + " Checking the pack again…");
         }
 
-        /// <summary>Ignores every given row, all as one undoable edit (they stay in the report to the author).</summary>
-        private void IgnoreRecommendations(List<Finding> findings)
+        // ---- Bulk actions: each shows its plan first (FixPreviewDialog), then carries out that plan ----
+
+        /// <summary>Previews linking every given row to its chosen match (clashing ones skipped), then applies it.</summary>
+        private void PreviewApply(List<Finding> findings)
         {
-            if (findings.Count == 0) return;
-            string description = findings.Count == 1 ? "Ignore: " + findings[0].Title : $"Ignore {findings.Count} suggestions";
-            try
+            if (findings.Count == 0 || _report == null) return;
+            var plan = PackBulk.Plan(_report, PackFixes.Get(_key), findings.Select(f => (f, ChosenSuggestion(f))));
+            FixPreviewDialog.Show(this, $"Apply {findings.Count} selected", plan, _report, () => RunPlan(plan, $"Apply {plan.Link.Count} suggested fixes",
+                $"Applied {plan.Link.Count} fix{(plan.Link.Count == 1 ? "" : "es")}" + (plan.Skipped.Count > 0 ? $" ({plan.Skipped.Count} skipped: they clash)" : "") + ". Undo reverses all of them."), SetStatus);
+        }
+
+        /// <summary>Previews setting every given row aside, then does it (they stay in the report to the author).</summary>
+        private void PreviewIgnore(List<Finding> findings)
+        {
+            if (findings.Count == 0 || _report == null) return;
+            var plan = PackBulk.Plan(_report, PackFixes.Get(_key), Enumerable.Empty<(Finding, Suggestion)>(), findings);
+            FixPreviewDialog.Show(this, $"Ignore {findings.Count} selected", plan, _report, () => RunPlan(plan, findings.Count == 1 ? "Ignore: " + findings[0].Title : $"Ignore {findings.Count} suggestions",
+                plan.SetAside.Count == 1 ? "Ignored one suggestion. Undo reverses it." : $"Ignored {plan.SetAside.Count} suggestions. Undo reverses all of them."), SetStatus);
+        }
+
+        /// <summary>Previews "Fix what Atlas can" (link the confident matches, set the rest aside), then does it.</summary>
+        private void PreviewSuggested()
+        {
+            if (_report == null) return;
+            var plan = PackBulk.Suggested(_report, PackFixes.Get(_key));
+            var report = _report;
+            FixPreviewDialog.Show(this, "Fix what Atlas can", plan, _report, () =>
             {
-                PackFixes.Edit(_key, description, file =>
+                try
                 {
-                    foreach (var f in findings) if (!file.Ignored.Contains(f.Key)) file.Ignored.Add(f.Key);
-                });
-            }
+                    var result = PackDoctorService.ApplyPlan(_key, _original, report, plan);
+                    Applied(plan, result.Describe(_original?.Manifest?.Name ?? "the pack"));
+                }
+                catch (Exception ex)
+                {
+                    AP_Atlas.Core.Logger.LogWarning($"Pack Doctor couldn't fix what it can: {ex.Message}");
+                    SetStatus($"Couldn't apply: {ex.Message}");
+                }
+            }, SetStatus);
+        }
+
+        /// <summary>Carries out a plan as one undoable edit and says so (the report after it says whether every row is gone).</summary>
+        private void RunPlan(BulkPlan plan, string description, string done)
+        {
+            try { PackBulk.Apply(_key, _original, plan, description); }
             catch (Exception ex)
             {
-                AP_Atlas.Core.Logger.LogWarning($"Pack Doctor couldn't ignore {description}: {ex.Message}");
-                SetStatus($"Couldn't ignore: {ex.Message}");
+                AP_Atlas.Core.Logger.LogWarning($"Pack Doctor couldn't apply {description}: {ex.Message}");
+                SetStatus($"Couldn't apply: {ex.Message}");
                 return;
             }
+            Applied(plan, done);
+        }
+
+        private void Applied(BulkPlan plan, string done)
+        {
             // Kept like an Apply, so the report after the re-check doesn't overwrite the line with a bare "Checked".
-            foreach (var f in findings) { _recTicked.Remove(f.Key); _recUnticked.Remove(f.Key); _appliedKeys.Add(f.Key); }
-            _appliedText = findings.Count == 1 ? "Ignored one suggestion. Undo reverses it." : $"Ignored {findings.Count} suggestions. Undo reverses all of them.";
+            foreach (var f in plan.Link.Select(x => x.Finding).Concat(plan.SetAside))
+            {
+                _recTicked.Remove(f.Key);
+                _recUnticked.Remove(f.Key);
+                _recChoice.Remove(f.Key);
+                _appliedKeys.Add(f.Key);
+            }
+            _appliedText = done;
             SetStatus(_appliedText + " Checking the pack again…");
         }
     }

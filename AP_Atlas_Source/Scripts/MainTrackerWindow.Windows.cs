@@ -26,14 +26,23 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         ShowToast(message, AP_Atlas.Core.ThemeColors.Warning, Tr("Fix now"), () => FixWhatAtlasCan(packKey));
     }
 
-    /// <summary>"Fix what Atlas can" for a pack, from the card, the Attention group, a pack row or the Doctor; the result as a card.</summary>
+    /// <summary>
+    /// "Fix what Atlas can" for a pack, from the card, the Notices, a pack row or the Doctor: what it will change first (the
+    /// preview), then the result as a card.
+    /// </summary>
     public void FixWhatAtlasCan(string packKey)
     {
         if (!AP_Atlas.Core.PopTracker.PackDoctorService.Reports.TryGetValue(packKey, out var report) || report?.Pack == null) { ShowToast(Tr("The pack hasn't been checked yet."), AP_Atlas.Core.ThemeColors.Warning); return; }
-        var original = AP_Atlas.Core.PopTracker.PopTrackerPackLoader.InspectZipPack(report.Pack.SourcePath);
-        var result = AP_Atlas.Core.PopTracker.PackDoctorService.ApplySuggested(packKey, original, report);
+        string name = report.Pack.Manifest?.Name ?? packKey;
         string path = report.Pack.SourcePath;
-        ShowToast(result.Describe(report.Pack.Manifest?.Name ?? packKey), result.Nothing ? AP_Atlas.Core.ThemeColors.TextMuted : AP_Atlas.Core.ThemeColors.Success, Tr("Open the Doctor"), () => OpenPackDoctor(path, "Overview"));
+        var plan = AP_Atlas.Core.PopTracker.PackBulk.Suggested(report, AP_Atlas.Core.PopTracker.PackFixes.Get(packKey));
+        AP_Atlas.UI.FixPreviewDialog.Show(this, Tr("Fix what Atlas can: {0}").Replace("{0}", name), plan, report, () =>
+        {
+            var original = AP_Atlas.Core.PopTracker.PopTrackerPackLoader.InspectZipPack(path);
+            if (original == null) { ShowToast(Tr("Couldn't read that map pack."), AP_Atlas.Core.ThemeColors.Error); return; }
+            var result = AP_Atlas.Core.PopTracker.PackDoctorService.ApplyPlan(packKey, original, report, plan);
+            ShowToast(result.Describe(name), result.Nothing ? AP_Atlas.Core.ThemeColors.TextMuted : AP_Atlas.Core.ThemeColors.Success, Tr("Open the Doctor"), () => OpenPackDoctor(path, "Overview"));
+        }, nothing => ShowToast(name + ": " + nothing, AP_Atlas.Core.ThemeColors.TextMuted));
     }
 
     /// <summary>Opens the Pack Doctor for a pack zip at a pin (its full path), on the Maps tab with the pin selected.</summary>

@@ -149,15 +149,20 @@ namespace AP_Atlas.Core.PopTracker
 
         /// <summary>
         /// The Doctor's analysis of a pack and nothing else a check does: no fixes linked, no prompt, no report kept, its
-        /// images left alone. How a release that's only being tried fits the game's names.
+        /// images left alone. How a release that's only being tried fits the game's names, or (with <paramref name="names"/>)
+        /// how the pack fits one table of names (the seed's, the installed apworld's) when the Doctor compares them.
         /// </summary>
-        public static async Task<DoctorReport> MeasureAsync(LoadedPack original)
+        public static async Task<DoctorReport> MeasureAsync(LoadedPack original, GameNameTable names = null)
         {
             if (original == null) return null;
-            string game = GameNames.ResolveGame(original.Manifest) ?? original.Manifest?.GameName;
-            await EnsureLocalNamesAsync(game);
-            game = GameNames.ResolveGame(original.Manifest) ?? game;
-            var inputs = PackDoctor.Prepare(original, GameNames.Best(game));
+            if (names == null)
+            {
+                string game = GameNames.ResolveGame(original.Manifest) ?? original.Manifest?.GameName;
+                await EnsureLocalNamesAsync(game);
+                game = GameNames.ResolveGame(original.Manifest) ?? game;
+                names = GameNames.Best(game);
+            }
+            var inputs = PackDoctor.Prepare(original, names);
             return await Task.Run(() => PackDoctor.Analyze(inputs));
         }
 
@@ -270,50 +275,18 @@ namespace AP_Atlas.Core.PopTracker
         /// aside (ignored) otherwise; one undoable step, each link marked "suggested". Main thread. The full list goes
         /// to the log; the result says the counts.
         /// </summary>
-        public static SuggestedFixResult ApplySuggested(string key, LoadedPack original, DoctorReport report)
+        public static SuggestedFixResult ApplySuggested(string key, LoadedPack original, DoctorReport report) =>
+            report == null ? new SuggestedFixResult() : ApplyPlan(key, original, report, PackBulk.Suggested(report, PackFixes.Get(key)));
+
+        /// <summary>Carries out a "Fix what Atlas can" plan (<see cref="PackBulk.Suggested"/>, as its preview showed it) and says what it did.</summary>
+        public static SuggestedFixResult ApplyPlan(string key, LoadedPack original, DoctorReport report, BulkPlan plan)
         {
             var result = new SuggestedFixResult();
-            if (report == null) return result;
-            var fixable = report.Findings.Where(f => !f.Ignored && (f.Actions.HasFlag(FindingActions.LinkItem) || f.Actions.HasFlag(FindingActions.LinkLocation))).ToList();
-            var recs = fixable.Where(f => f.Suggestions.Count > 0).ToList();
-            var conflicts = PackDoctor.Conflicts(report, recs, f => f.Suggestions[0]);
-            var link = recs.Where(f => f.Suggestions[0].Score >= SuggestedMinScore - 0.0001 && !conflicts.ContainsKey(f.Key)).ToList();
-            var aside = fixable.Where(f => !link.Contains(f)).ToList();
-            if (link.Count == 0 && aside.Count == 0) return result;
-            PackFixes.Edit(key, $"Fix what Atlas can: link {link.Count}, set aside {aside.Count}", file =>
-            {
-                foreach (var f in link)
-                {
-                    var s = f.Suggestions[0];
-                    string subject = f.Subject.Substring(f.Subject.IndexOf(':') + 1);
-                    if (f.Actions.HasFlag(FindingActions.LinkItem))
-                    {
-                        file.Tiles.RemoveAll(t => t.Subject == f.Subject);
-                        file.Tiles.Add(new TileFix { Subject = f.Subject, Code = subject, ApItemId = s.Id, ApItemName = s.Label, Source = "suggested", AuthorStamp = PackFixes.AuthorStamp(original, f.Subject) });
-                    }
-                    else
-                    {
-                        var parts = subject.Split('|');
-                        file.Links.RemoveAll(l => l.Subject == f.Subject);
-                        file.Links.Add(new LocationLinkFix
-                        {
-                            Subject = f.Subject,
-                            PinPath = parts[0],
-                            SectionName = parts.Length > 1 ? parts[1] : "",
-                            ApLocationId = s.Id,
-                            ApLocationName = s.Label,
-                            Source = "suggested",
-                            AuthorStamp = PackFixes.AuthorStamp(original, f.Subject)
-                        });
-                    }
-                    result.Linked.Add($"{PackDoctor.RowName(report, f)} → {s.Label} ({s.Score:P0})");
-                }
-                foreach (var f in aside)
-                {
-                    if (!file.Ignored.Contains(f.Key)) file.Ignored.Add(f.Key);
-                    result.SetAside.Add(PackDoctor.RowName(report, f) + (f.Suggestions.Count > 0 ? $" (best match {f.Suggestions[0].Label}, {f.Suggestions[0].Score:P0})" : " (no match)"));
-                }
-            });
+            if (plan == null || plan.Nothing) return result;
+            foreach (var (f, s) in plan.Link) result.Linked.Add($"{PackDoctor.RowName(report, f)} → {s.Label} ({s.Score:P0})");
+            foreach (var f in plan.SetAside)
+                result.SetAside.Add(PackDoctor.RowName(report, f) + (f.Suggestions.Count > 0 ? $" (best match {f.Suggestions[0].Label}, {f.Suggestions[0].Score:P0})" : " (no match)"));
+            PackBulk.Apply(key, original, plan, $"Fix what Atlas can: link {plan.Link.Count}, set aside {plan.SetAside.Count}");
             Logger.LogInfo($"Pack Doctor fixed what it could in '{original?.Manifest?.Name}': linked {result.Linked.Count}, set aside {result.SetAside.Count}."
                 + (result.Linked.Count > 0 ? "\n  Linked: " + string.Join("; ", result.Linked) : "") + (result.SetAside.Count > 0 ? "\n  Set aside: " + string.Join("; ", result.SetAside) : ""));
             return result;

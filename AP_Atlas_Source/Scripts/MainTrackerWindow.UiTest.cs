@@ -182,6 +182,8 @@ public partial class MainTrackerWindow
             FixInPlaceAsync);
         await ScenarioAsync("Pack Doctor: on a pack's first check, a pin section whose name matches a location exactly (once punctuation is ignored) is linked by itself as an automatic fix, and a tile named so is the index's own link; the pack's row on the Map Packs page offers Review N, which opens the Doctor on Recommended; the Recommended tab lists what's left, Apply on a row writes the fix, the row goes after the check and the status says so; the rows are grouped by kind with what to do under each, filters by words, kind and map narrow them, Ignore selected hides the selection in one step and Undo brings it back; Undo takes the automatic link back; the Map Tracker's Attention group lists the pack's problems for this seed in plain words and opens the Doctor on the fixing tab; Fix what Atlas can (the pack row's Fix, the Attention group's button) links the confident matches and sets the rest aside in one undoable step, said in a card",
             PackDoctorAsync);
+        await ScenarioAsync("Guided fixer: the Pack Doctor opens on Make this pack work, whose steps say what's left in order; two rows linked by hand in the one-by-one review teach a rule that links the rest, shown in a preview first and applied as one undoable step; the review's keys skip, say not a check, undo and take the first guess; the pack is measured against this seed's names",
+            GuidedFixerAsync);
         await ScenarioAsync("Map packs reach connected slots: Key Items offers the pack's layouts and two Atlas builds by item group, kept per slot; the chat's filters sit in one row; the Chat and System Log tabs carry a dot for lines that arrived while they weren't showing, cleared when shown; a slot without a pack offers \"Find a map pack for <game>…\" on its map, which shows Map Packs and searches GitHub once; a pack chosen from the results downloads with a progress line, installs with a card and reaches the slot's map; Atlas picks a game's pack by itself (of the projects found, one with more stars whose pack doesn't fit the game's names is passed over for the one that fits); a pack installed while a slot is connected shows on its map at once, without a reconnect; deleted, the map says there's no pack again; another pack for the game takes its place; a pack half of whose pins link to the seed's checks says so on the map, and its button makes its project's release found for the seed the game's pack, which the slot switches to",
             PacksReachConnectedSlotsAsync);
         await ScenarioAsync("Live map following: a pack whose scripts follow the game switches the map to the tab the room's data storage names, at connect and when it changes (Atlas asks the server about the key and never writes the room's data); with the switch off, the map stays; the switch is remembered per slot",
@@ -3819,8 +3821,8 @@ public partial class MainTrackerWindow
                 : (404, "");
             await AP_Atlas.Core.EngineSetup.ApworldSources.RefreshAsync(listSite.Site + "/list.json", System.Threading.CancellationToken.None);
 
-            // The Pack Doctor window uses the pack while it's open.
-            OpenPackDoctor(zip);
+            // The Pack Doctor window uses the pack while it's open (on its Overview: the guide is its first tab).
+            OpenPackDoctor(zip, "Overview");
             var window = await UiTestWaitForAsync(() => GetTree().Root.GetChildren().OfType<AP_Atlas.UI.PackDoctorWindow>().FirstOrDefault(), "the Pack Doctor window");
             var labLine = await UiTestWaitForAsync(() => window.FindChildren("*", nameof(Label), true, false).OfType<Label>().FirstOrDefault(l => IsInstanceValid(l) && !l.IsQueuedForDeletion() && l.HasMeta("lab_line")),
                 "the overview's line on what the pack lab measured for this file");
@@ -4058,6 +4060,114 @@ public partial class MainTrackerWindow
         }
     }
 
+    private async Task GuidedFixerAsync()
+    {
+        string zip = System.IO.Path.Combine(AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory(), "uitest_guide_pack.zip");
+        // The pin "Varatha" (a spear) has four rooms the game names "Clear Room n Spear Weapon", and "Stygius" (a sword) two named
+        // "... Sword Weapon": a room's own name fits both weapons alike, so they wait for a person; two linked by hand teach the rule,
+        // which reaches only the spear's rooms (both examples are on its pin). "Cave" / "Chest" and "Far" / "Lantern" are close to their checks.
+        FakeMapPack.Write(zip, "UI test guide pack", "Guide Test Game",
+            locationsJson: """[{"name":"Varatha","sections":[{"name":"Room 1"},{"name":"Room 2"},{"name":"Room 3"},{"name":"Room 4"}],"map_locations":[{"map":"World","x":200,"y":100}]},""" +
+                           """{"name":"Stygius","sections":[{"name":"Room 1"},{"name":"Room 2"}],"map_locations":[{"map":"World","x":300,"y":100}]},""" +
+                           """{"name":"Cave","sections":[{"name":"Chest"}],"map_locations":[{"map":"World","x":10,"y":10}]},""" +
+                           """{"name":"Far","sections":[{"name":"Lantern"}],"map_locations":[{"map":"World","x":500,"y":10}]}]""");
+        await using var server = new FakeArchipelagoServer { SlotGame = "Guide Test Game" };
+        server.Games["Guide Test Game"] = new FakeGame("6d1de0123456789abcdef0123456789abcdef012",
+            new Dictionary<string, long> { ["Sword"] = 1000 },
+            new Dictionary<string, long>
+            {
+                ["Clear Room 1 Spear Weapon"] = 3000,
+                ["Clear Room 2 Spear Weapon"] = 3001,
+                ["Clear Room 3 Spear Weapon"] = 3002,
+                ["Clear Room 4 Spear Weapon"] = 3003,
+                ["Clear Room 1 Sword Weapon"] = 3007,
+                ["Clear Room 2 Sword Weapon"] = 3008,
+                ["Cave Chest Room"] = 3004,
+                ["Far Lantern Box"] = 3005,
+                ["Lonely Spot"] = 3006
+            });
+        var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Tester");
+        _profiles.Add(profile);
+        string key = "";
+        try
+        {
+            await OnConnectSlotPressedAsync("Tester", profile);
+            var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
+            var pack = await UiTestWaitForAsync(() => slot.Pack, "the slot to load the guide pack");
+            key = AP_Atlas.Core.PopTracker.PackFixes.KeyFor(pack);
+            var fixes = () => AP_Atlas.Core.PopTracker.PackFixes.Get(key);
+            OpenPackDoctor(zip);
+            var window = await UiTestWaitForAsync(() => GetTree().Root.GetChildren().OfType<AP_Atlas.UI.PackDoctorWindow>().FirstOrDefault(w => w.Title.EndsWith("UI test guide pack", StringComparison.Ordinal)), "the Pack Doctor window");
+            UiTestExpect(window.CurrentTabTitle == AP_Atlas.UI.PackDoctorWindow.GuideTab, $"the Doctor opened on {window.CurrentTabTitle}, not Make this pack work");
+            await UiTestWaitForAsync(() => window.HasReport && window.GuideSteps().Any(s => s.Id == "triage") ? window : null, "the guide's steps");
+            await UiTestWaitAsync(1.0); // the report after the first check's automatic pass
+            UiTestExpect(window.GuideSteps().First(s => s.Id == "triage").Count >= 4, $"the guide has too few rows to decide: {string.Join(", ", window.RecommendedRows().Select(r => $"{r.Key} {r.Score:0.00}"))}; links {string.Join(", ", AP_Atlas.Core.PopTracker.PackFixes.Get(key).Links.Select(l => l.Subject + "=" + l.ApLocationName))}");
+            var steps = window.GuideSteps();
+            UiTestExpect(new[] { "confident", "example", "triage", "unplaced", "finish" }.All(id => steps.Any(s => s.Id == id))
+                && steps.First(s => s.Id == "unplaced").Count >= 1 && !steps.First(s => s.Id == "triage").Done,
+                $"the guide's steps are wrong: {string.Join(" | ", steps.Select(s => $"{s.Id} {s.Count} {(s.Done ? "done" : "")}"))}");
+
+            // One by one: skip to a Space section, choose its check by name (C), twice; the two links teach the rule.
+            window.StartTriage();
+            UiTestExpect(window.TriageCurrent != null, "the one-by-one review shows no row");
+            async Task LinkSpaceByHandAsync()
+            {
+                for (int guard = 0; guard < 10 && window.TriageCurrent is { } current && !current.Contains("Varatha|Room", StringComparison.Ordinal); guard++)
+                    UiTestExpect(window.TriageKey(Key.S), "S didn't skip the row");
+                string row = window.TriageCurrent ?? throw new InvalidOperationException("no spear room left in the review");
+                long id = 2999 + int.Parse(row.Substring(row.Length - 1), System.Globalization.CultureInfo.InvariantCulture); // the spear's "Room n" is "Clear Room n Spear Weapon"
+                UiTestExpect(window.TriageKey(Key.C), "C didn't open the name picker");
+                var picker = await UiTestWaitForAsync(() => GetTree().Root.GetChildren().OfType<AP_Atlas.UI.NamePickerDialog>().LastOrDefault(d => !d.IsQueuedForDeletion()), "the name picker");
+                picker.ChooseForTests(id);
+                string section = row.Substring(row.IndexOf('|') + 1);
+                await UiTestWaitForAsync(() => fixes().Links.FirstOrDefault(l => l.Subject == "link:Varatha|" + section && l.ApLocationId == id && l.Source == null), "the hand-made link");
+                UiTestExpect(window.TriageCurrent != row, "the review stayed on the row just linked");
+            }
+            await LinkSpaceByHandAsync();
+            UiTestExpect(window.Patterns().Count == 0, "one hand-made link offered a rule");
+            await LinkSpaceByHandAsync();
+            var handIds = fixes().Links.Where(l => l.Source == null && l.ApLocationId != null).Select(l => l.ApLocationId!.Value).ToHashSet();
+            var rules = await UiTestWaitForAsync(() => window.Patterns() is { Count: > 0 } found ? found : null, "a rule from the two hand-made links");
+            UiTestExpect(rules[0].Matches.Count == 2 && rules[0].Matches.All(m => m.Id is >= 3000 and <= 3003 && !handIds.Contains(m.Id) && m.Key.EndsWith((m.Id - 2999).ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal)),
+                $"the rule doesn't link the spear's other two rooms (and only them): {rules[0].Description}: {string.Join(", ", rules[0].Matches.Select(m => m.Key + " -> " + m.Name))}");
+            window.PreviewPattern(0);
+            var preview = await UiTestWaitForAsync(() => AP_Atlas.UI.FixPreviewDialog.Showing, "the rule's preview");
+            UiTestExpect(preview.Plan.Link.Count == 2 && preview.Plan.Source == "example" && !fixes().Links.Any(l => l.Source == "example"),
+                $"the rule's preview is wrong, or it changed something before Apply: {preview.Plan.Summary()}");
+            preview.ChooseForTests(true);
+            await UiTestWaitForAsync(() => fixes().Links.Count(l => l.Source == "example") == 2 ? window : null, "the rule's two links");
+
+            // The review's keys on what's left: N says it isn't a check, Ctrl+Z takes that back, Enter takes the first guess.
+            await UiTestWaitForAsync(() => window.HasReport && !window.RecommendedRows().Any(r => r.Key.Contains("Varatha|", StringComparison.Ordinal)) ? window : null, "the linked rows to leave the review");
+            window.TriageAgain(); // the rows skipped on the way to the Space sections
+            await UiTestWaitForAsync(() => window.TriageCurrent is { } now && !now.Contains("Varatha|", StringComparison.Ordinal) ? window : null, "the review to show a row left");
+            string rest = window.TriageCurrent!;
+            string subject = "link:" + rest.Substring("loc:unmatched:".Length);
+            UiTestExpect(window.TriageKey(Key.N), "N didn't mark the row");
+            await UiTestWaitForAsync(() => fixes().Ignored.Contains(rest) ? window : null, "the row marked as not a check");
+            UiTestExpect(window.TriageKey(Key.Z, ctrl: true), "Ctrl+Z did nothing");
+            await UiTestWaitForAsync(() => !fixes().Ignored.Contains(rest) && window.TriageCurrent == rest ? window : null, "Ctrl+Z to bring the row back to the review");
+            UiTestExpect(window.TriageKey(Key.Enter), "Enter didn't take the first guess");
+            await UiTestWaitForAsync(() => fixes().Links.FirstOrDefault(l => l.Subject == subject && l.ApLocationId != null), "the first guess's link");
+            UiTestExpect(window.TriageKey(Key.Escape) && window.TriageCurrent == null, "Escape didn't leave the review");
+
+            // Which version the pack fits: this seed's names are measured.
+            await window.CompareVersionsAsync();
+            UiTestExpect(window.VersionFits?.Any(v => v.Label.StartsWith("This seed's names", StringComparison.Ordinal) && v.Total >= 8) == true,
+                $"the pack wasn't measured against this seed's names: {string.Join(" | ", window.VersionFits?.Select(v => $"{v.Label} {v.Linked}/{v.Total}") ?? Array.Empty<string>())}");
+            window.EmitSignal(Window.SignalName.CloseRequested);
+        }
+        finally
+        {
+            foreach (var dialog in GetTree().Root.GetChildren().OfType<AP_Atlas.UI.PackDoctorWindow>()) dialog.QueueFree();
+            if (_profiles.Contains(profile)) DeleteProfile(profile);
+            if (key.Length > 0) AP_Atlas.Core.PopTracker.PackFixes.Reset(key);
+            AP_Atlas.Core.SafeFile.Delete(zip);
+        }
+    }
+
     private async Task PackDoctorAsync()
     {
         string zip = System.IO.Path.Combine(AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory(), "uitest_doctor_pack.zip");
@@ -4120,6 +4230,11 @@ public partial class MainTrackerWindow
             UiTestExpect(window.RecommendedShownKeys().SequenceEqual(new[] { far.Key }), $"the word and map filters didn't leave the Far pin alone: {string.Join(", ", window.RecommendedShownKeys())}");
             window.SelectShownRecommendations();
             window.IgnoreSelectedRecommendations();
+            // Every bulk action previews first: the plan names the row it sets aside, and nothing changes until Apply.
+            var ignorePreview = await UiTestWaitForAsync(() => AP_Atlas.UI.FixPreviewDialog.Showing, "the preview of Ignore selected");
+            UiTestExpect(ignorePreview.Plan.SetAside.Count == 1 && ignorePreview.Plan.SetAside[0].Key == far.Key && ignorePreview.Plan.Link.Count == 0 && !AP_Atlas.Core.PopTracker.PackFixes.Get(key).Ignored.Contains(far.Key),
+                $"the preview doesn't show the one row it sets aside, or something changed before Apply: {ignorePreview.Plan.Summary()}");
+            ignorePreview.ChooseForTests(true);
             await UiTestWaitForAsync(() => window.HasReport && AP_Atlas.Core.PopTracker.PackFixes.Get(key).Ignored.Contains(far.Key) && !window.RecommendedRows().Any(r => r.Key == far.Key) ? window : null, "the Far pin to be ignored");
             UiTestExpect(window.StatusText.Contains("Ignored"), $"the status doesn't say what was ignored: {window.StatusText}");
             AP_Atlas.Core.PopTracker.PackFixes.Undo(key);
@@ -4145,7 +4260,7 @@ public partial class MainTrackerWindow
             slot.MapTracker.ShowNotices(false);
             slot.MapTracker.PressAttention(far.Key);
             var reopened = await UiTestWaitForAsync(() => GetTree().Root.GetChildren().OfType<AP_Atlas.UI.PackDoctorWindow>().FirstOrDefault(w => w.Visible), "the Doctor window from the Attention row");
-            UiTestExpect(reopened.CurrentTabTitle == "Recommended", $"the Attention row opened the Doctor on {reopened.CurrentTabTitle}, not Recommended");
+            UiTestExpect(reopened.CurrentTabTitle == AP_Atlas.UI.PackDoctorWindow.GuideTab, $"the pack's notice opened the Doctor on {reopened.CurrentTabTitle}, not its guide");
             reopened.EmitSignal(Window.SignalName.CloseRequested);
             // "Fix what Atlas can" (the pack row's Fix, the Attention group's button and the card all run it): the exact pin is linked,
             // the pins without a confident match are set aside, one undoable step; a card says what was done.
@@ -4153,6 +4268,10 @@ public partial class MainTrackerWindow
             await UiTestWaitForAsync(() => _packManagerPanel.FixButtonFor(key) is { Visible: true } b ? b : null, "the pack row's Fix button");
             int cardsBefore = _alertLog.Entries.Count;
             slot.MapTracker.PressFixAll();
+            var fixPreview = await UiTestWaitForAsync(() => AP_Atlas.UI.FixPreviewDialog.Showing, "the preview of Fix what Atlas can");
+            UiTestExpect(fixPreview.Plan.Link.Count + fixPreview.Plan.SetAside.Count >= 3 && fixPreview.Plan.Summary().Contains("Undo") && !AP_Atlas.Core.PopTracker.PackFixes.Get(key).Links.Any(),
+                $"the preview of Fix what Atlas can doesn't cover the three pins, or something changed before Apply: {fixPreview.Plan.Summary()}");
+            fixPreview.ChooseForTests(true);
             await UiTestWaitForAsync(() => AP_Atlas.Core.PopTracker.PackFixes.Get(key).Links.Any(l => l.Subject == "link:Shrine|Bell!" && l.ApLocationId == 2002 && l.Automatic) ? slot : null, "the Bell to be linked by Fix what Atlas can");
             // Each pin is linked (its best match scores enough) or set aside; either way nothing fixable is left, and the card says so.
             var fixedFile = AP_Atlas.Core.PopTracker.PackFixes.Get(key);

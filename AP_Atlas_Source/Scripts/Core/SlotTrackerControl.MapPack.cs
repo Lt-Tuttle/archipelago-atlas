@@ -419,9 +419,9 @@ public partial class SlotTrackerControl : MarginContainer
     /// <summary>The kinds of Doctor findings the Attention group shows, and the Doctor tab that fixes each.</summary>
     private static readonly Dictionary<string, string> AttentionTabs = new Dictionary<string, string>(StringComparer.Ordinal)
     {
-        ["loc:unmatched"] = "Recommended",
-        ["tile:unlinked"] = "Recommended",
-        ["tile:unknown"] = "Recommended",
+        ["loc:unmatched"] = AP_Atlas.UI.PackDoctorWindow.GuideTab,
+        ["tile:unlinked"] = AP_Atlas.UI.PackDoctorWindow.GuideTab,
+        ["tile:unknown"] = AP_Atlas.UI.PackDoctorWindow.GuideTab,
         ["tile:noimage"] = "Key Items",
         ["map:nobg"] = "Maps",
         ["script:stopped"] = "Overview",

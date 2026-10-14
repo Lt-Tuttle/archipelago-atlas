@@ -568,6 +568,7 @@ namespace AP_Atlas.Core
             string findingsPath = System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_PACKS_FINDINGS");
             var allFindings = new List<Dictionary<string, object>>();
             (int Tried, int Right, int Strong, int StrongRight) suggestTotals = (0, 0, 0, 0);
+            (int Hand, int Linked, int Right) patternTotals = (0, 0, 0);
             foreach (var zip in zips)
             {
                 string key = Path.GetFileName(zip);
@@ -633,6 +634,15 @@ namespace AP_Atlas.Core
                         entry.SuggestStrong = strong;
                         entry.SuggestStrongRight = strongRight;
                         suggestTotals = (suggestTotals.Tried + tried, suggestTotals.Right + right, suggestTotals.Strong + strong, suggestTotals.StrongRight + strongRight);
+                        // Fix by example on the same cases: how many a person fixes by hand, how many the rules then link, how many right.
+                        // ATLAS_SELFTEST_PATTERN_MISSES=1 prints the wrong ones.
+                        var patternMisses = System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_PATTERN_MISSES") == "1" ? new List<string>() : null;
+                        var (byHand, byPattern, byPatternRight) = PopTracker.PackDoctor.EvaluatePatterns(report, wrong: patternMisses);
+                        foreach (var miss in patternMisses ?? new List<string>()) Print($"    pattern miss: {miss}");
+                        entry.PatternHand = byHand;
+                        entry.PatternLinked = byPattern;
+                        entry.PatternRight = byPatternRight;
+                        patternTotals = (patternTotals.Hand + byHand, patternTotals.Linked + byPattern, patternTotals.Right + byPatternRight);
                         entry.TilesPct = Pct(report.TilesLinked, report.TilesTotal);
                         entry.PlacedPct = Pct(report.ApLocationsPlaced, report.ApLocationsTotal);
                         entry.LocationsPlaced = report.ApLocationsPlaced;
@@ -687,6 +697,8 @@ namespace AP_Atlas.Core
             if (suggestTotals.Tried > 0)
                 Print($"  Suggestions on the packs' own mappings (sections named otherwise than the game): {suggestTotals.Tried} tried, the top one right for {suggestTotals.Right} ({Pct(suggestTotals.Right, suggestTotals.Tried)}%); "
                     + $"{suggestTotals.Strong} at 85%+, {suggestTotals.StrongRight} of them right ({Pct(suggestTotals.StrongRight, suggestTotals.Strong)}%).");
+            if (patternTotals.Hand + patternTotals.Linked > 0)
+                Print($"  Fix by example on the same mappings (what a person fixes by hand): {patternTotals.Hand} fixed by hand taught rules that linked {patternTotals.Linked} more, {patternTotals.Right} of them right ({Pct(patternTotals.Right, patternTotals.Linked)}%).");
             if (!string.IsNullOrWhiteSpace(findingsPath))
             {
                 try { SafeFile.WriteAllText(findingsPath, Newtonsoft.Json.JsonConvert.SerializeObject(allFindings)); Print($"  findings written to {findingsPath}"); }
@@ -782,6 +794,10 @@ namespace AP_Atlas.Core
             public int SuggestRight { get; set; } = -1;
             public int SuggestStrong { get; set; } = -1;
             public int SuggestStrongRight { get; set; } = -1;
+            /// <summary>Fix by example (PackDoctor.EvaluatePatterns): sections fixed by hand, linked by the rules they taught, right among those (-1: not measured).</summary>
+            public int PatternHand { get; set; } = -1;
+            public int PatternLinked { get; set; } = -1;
+            public int PatternRight { get; set; } = -1;
         }
 
         public class SeedBaselineEntry

@@ -69,6 +69,23 @@ written: 38% → 83%, and 51% → 92% at 85%+.
 | One location goes to one place: rows are given their best suggestions strongest first, each location once; a row whose best went to a stronger row has its next one first. | Anodyne |
 | A section that can only be looked at (every access rule PopTracker's "{…}": the player's position, entrance logic, hint signs) isn't a check, unless something links it. | Anodyne; TTYD; 35 more |
 
+### Fix by example (what a person teaches)
+
+When a person links two rows by hand, `PackPatterns` (AP_Atlas.Core) looks for the rule that makes both names: the check's
+name built from the row's own names (the section's, the pin's, the pin's group or area, a number) and fixed text between
+them. It reads nothing but the rows and the game's names, so it works for packs no one has seen. What keeps it right:
+
+| Rule | Taught by |
+|---|---|
+| Offered only when it reproduces both examples exactly; a row is linked only to a name the game has, that nothing shows yet, that no other row would get, and that no other rule fitting the examples names differently. | The method |
+| It reaches only rows like the examples: a name it doesn't use that both examples share (their pin "Cooked", their group, their sections' "Large Health Energy #") the row shares too. | Stardew Valley (Cooked and Shipped pins of one dish); Shadow the Hedgehog (one stage's counts); Mega Man 3 |
+| A number is never fixed text: "Scraps 1" copied from two first copies is wrong for the next pin's second. | Choo-Choo Charles; Kirby's Dream Land 3 |
+
+Measured on the packs' own mappings (`PackDoctor.EvaluatePatterns`): the sections a person would fix by hand (their top
+suggestion isn't right at 85%+) are fixed in order, and after each the best rule the hand links teach is applied to the
+rest. On the design side, 10,894 fixed by hand taught rules that linked 5,103 more, 99% of them right (65% before the last
+two rules). On the held-out games: 2,668 by hand, 719 more by rules, 99% right.
+
 ### The holdout
 
 A quarter of the corpus's games (`Tests/corpus_holdout.json`, made once by `Tools/corpus_holdout.py`, by game so nothing of a

@@ -1388,7 +1388,78 @@ namespace AP_Atlas.Core.PopTracker
         /// </summary>
         public static (int Tried, int Right, int Strong, int StrongRight) EvaluateSuggestions(DoctorReport report, bool plain = false, int most = 300, List<string> misses = null)
         {
-            if (report?.Index == null || report.Names?.Locations == null) return (0, 0, 0, 0);
+            var mapped = MappedCases(report);
+            if (mapped == null) return (0, 0, 0, 0);
+            var (locNames, context, cases) = mapped.Value;
+            int tried = 0, right = 0, strong = 0, strongRight = 0;
+            foreach (var (pin, section, ids, name) in cases)
+            {
+                if (tried >= most) break;
+                tried++;
+                var top = (plain ? Suggest(name, locNames, 1) : SuggestFor(pin, section, locNames, 1, context)).FirstOrDefault();
+                bool ok = top != null && ids.Contains(top.Id);
+                if (ok) right++;
+                else misses?.Add($"{pin.FullPath} | {name}  ->  {top?.Label ?? "(none)"} ({top?.Score:0.00})  |  truth: {string.Join(" / ", ids.Take(3).Select(id => locNames.GetValueOrDefault(id)))}");
+                if (top != null && top.Score >= 0.85)
+                {
+                    strong++;
+                    if (ok) strongRight++;
+                }
+            }
+            return (tried, right, strong, strongRight);
+        }
+
+        /// <summary>
+        /// How much fix by example saves, measured on the pack's own mapping: the sections a person would fix by hand (the
+        /// cases <see cref="EvaluateSuggestions"/> measures whose top suggestion isn't right at 85% or more) are fixed in
+        /// order, each with its mapped location; after each, the best rule the hand-made links explain
+        /// (<see cref="PackPatterns.FromExamples"/>) is applied to the rest. Says how many were fixed by hand, how many the
+        /// rules linked, and how many of those were right.
+        /// </summary>
+        public static (int ByHand, int ByPattern, int ByPatternRight) EvaluatePatterns(DoctorReport report, int most = 300, List<string> wrong = null)
+        {
+            var mapped = MappedCases(report);
+            if (mapped == null) return (0, 0, 0);
+            var (locNames, context, cases) = mapped.Value;
+            var names = locNames;
+            static PatternRow RowOf(PopTrackerLocation pin, PopTrackerSection section) =>
+                new PatternRow($"{pin.FullPath}|{section?.Name}", pin.FullPath, pin.Name ?? "", section?.Name ?? "");
+            var remaining = cases
+                .Where(c => SuggestFor(c.Pin, c.Section, locNames, 1, context).FirstOrDefault() is not { } top || top.Score < 0.85 || !c.Ids.Contains(top.Id))
+                .OrderBy(c => c.Pin.FullPath, StringComparer.Ordinal).ThenBy(c => c.Section?.Name, StringComparer.Ordinal)
+                .Take(most).ToList();
+            var truth = remaining.ToDictionary(c => RowOf(c.Pin, c.Section).Key, c => c.Ids);
+            var hand = new List<PatternExample>();
+            int byHand = 0, byPattern = 0, right = 0;
+            while (remaining.Count > 0)
+            {
+                var next = remaining[0];
+                remaining.RemoveAt(0);
+                byHand++;
+                hand.Insert(0, new PatternExample(RowOf(next.Pin, next.Section), names.GetValueOrDefault(next.Ids.First()) ?? ""));
+                if (hand.Count < PackPatterns.MinExamples) continue;
+                var rule = PackPatterns.FromExamples(hand, remaining.Select(c => RowOf(c.Pin, c.Section)), names).FirstOrDefault();
+                if (rule == null) continue;
+                var linked = rule.Matches.ToDictionary(m => m.Key, m => m.Id);
+                foreach (var (key, id) in linked)
+                {
+                    byPattern++;
+                    if (truth[key].Contains(id)) right++;
+                    else wrong?.Add($"{key}  ->  {names.GetValueOrDefault(id)}  (rule: {rule.Description})  |  truth: {string.Join(" / ", truth[key].Take(3).Select(t => names.GetValueOrDefault(t)))}");
+                }
+                remaining.RemoveAll(c => linked.ContainsKey(RowOf(c.Pin, c.Section).Key));
+            }
+            return (byHand, byPattern, right);
+        }
+
+        /// <summary>
+        /// The sections the pack's own mapping links whose name isn't their location's (what a person would have to decide),
+        /// with the game's names and the suggestion context; null when the pack can't be measured so (no index or names, or
+        /// its mapping is for another version: many sections named exactly as another location).
+        /// </summary>
+        private static (Dictionary<long, string> LocNames, SuggestContext Context, List<(PopTrackerLocation Pin, PopTrackerSection Section, HashSet<long> Ids, string Name)> Cases)? MappedCases(DoctorReport report)
+        {
+            if (report?.Index == null || report.Names?.Locations == null) return null;
             var locNames = report.Names.Locations.GroupBy(kv => kv.Value).ToDictionary(g => g.Key, g => g.First().Key);
             var context = SuggestContext.For(report.Index, locNames, learnFromMapping: false);
             // Each mapped section with every location the mapping gives it.
@@ -1414,23 +1485,8 @@ namespace AP_Atlas.Core.PopTracker
                 if (exactNames.Contains(Normalize(name)) || (pinIsTheName && exactNames.Contains(Normalize(pin.Name)) && !mappedNames.Contains(Normalize(pin.Name)))) { stale++; continue; }
                 cases.Add((pin, section, ids, name));
             }
-            if (stale >= 3 && stale >= 0.1 * (stale + cases.Count)) return (0, 0, 0, 0);
-            int tried = 0, right = 0, strong = 0, strongRight = 0;
-            foreach (var (pin, section, ids, name) in cases)
-            {
-                if (tried >= most) break;
-                tried++;
-                var top = (plain ? Suggest(name, locNames, 1) : SuggestFor(pin, section, locNames, 1, context)).FirstOrDefault();
-                bool ok = top != null && ids.Contains(top.Id);
-                if (ok) right++;
-                else misses?.Add($"{pin.FullPath} | {name}  ->  {top?.Label ?? "(none)"} ({top?.Score:0.00})  |  truth: {string.Join(" / ", ids.Take(3).Select(id => locNames.GetValueOrDefault(id)))}");
-                if (top != null && top.Score >= 0.85)
-                {
-                    strong++;
-                    if (ok) strongRight++;
-                }
-            }
-            return (tried, right, strong, strongRight);
+            if (stale >= 3 && stale >= 0.1 * (stale + cases.Count)) return null;
+            return (locNames, context, cases);
         }
 
         // =====================================================================

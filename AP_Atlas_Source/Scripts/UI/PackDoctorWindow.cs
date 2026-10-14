@@ -111,7 +111,7 @@ namespace AP_Atlas.UI
             done.Pressed += () => { PackDoctorService.MarkReviewed(_original); QueueFree(); };
             footer.AddChild(done);
 
-            foreach (var name in new[] { "Overview", "Recommended", "Key Items", "Locations", "Maps", "Your fixes", "Report" })
+            foreach (var name in new[] { GuideTab, "Overview", "Recommended", "Key Items", "Locations", "Maps", "Your fixes", "Report" })
             {
                 var page = new MarginContainer { Name = name };
                 page.AddThemeConstantOverride("margin_top", 8);
@@ -223,6 +223,7 @@ namespace AP_Atlas.UI
             }
             Control content = page.Name.ToString() switch
             {
+                GuideTab => BuildGuideTab(),
                 "Overview" => BuildOverview(),
                 "Recommended" => BuildRecommendedTab(),
                 "Key Items" => BuildItemsTab(),
