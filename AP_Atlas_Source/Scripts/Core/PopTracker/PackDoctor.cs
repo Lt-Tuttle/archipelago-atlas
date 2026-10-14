@@ -747,6 +747,7 @@ namespace AP_Atlas.Core.PopTracker
             var unplacedNames = locNames.Where(kv => unplaced.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
             report.UnplacedSample = unplacedNames.Values.OrderBy(n => n, StringComparer.Ordinal).Take(40).ToList();
 
+            var context = SuggestContext.For(index, locNames, learnFromMapping: true);
             // A pack whose own mapping names nearly every check (PopTracker's autotracking) but not this one: it doesn't
             // track it either (Ship of Harkinian's "Ganon", the goal): said as such, not as a pairing Atlas missed.
             bool mappingThorough = report.SectionsTotal >= 20 && report.SectionsByScript >= 0.8 * report.SectionsTotal;
@@ -773,10 +774,12 @@ namespace AP_Atlas.Core.PopTracker
                     Subject = subject,
                     Actions = FindingActions.LinkLocation,
                     Query = name,
-                    // Prefer locations no pin shows yet; they're the likely partner.
-                    Suggestions = Suggest(name, unplacedNames.Count > 0 ? unplacedNames : locNames, 6)
+                    // Prefer locations no pin shows yet; they're the likely partner. Scored with the pin's context (its
+                    // path, the areas the pack's own links teach).
+                    Suggestions = SuggestFor(pin, sec, unplacedNames.Count > 0 ? unplacedNames : locNames, 6, context)
                 }, Candidate: reference == null && !untracked));
             }
+            AssignOneToOne(unmatchedFindings.Select(u => u.Finding).ToList());
             // Numbered sections named alike ("Pot #1" to "Pot #40", "Hotland Kill 1" to "Kill 12") that match nothing of the
             // game's: another version or fork of the apworld has them, this one doesn't. Said once per family, not per section.
             var families = unmatchedFindings.Where(u => u.Candidate && (u.Finding.Suggestions.Count == 0 || u.Finding.Suggestions[0].Score < 0.6))
@@ -858,6 +861,17 @@ namespace AP_Atlas.Core.PopTracker
                     Severity = FindingSeverity.Info,
                     Title = $"{index.HintMarkerSections} sections are hint markers, not checks",
                     Detail = "Sections and pins named \"… - hint\" (or \"… Hints\") are PopTracker's hint tracking. Atlas leaves them out of the pairing and the counts."
+                });
+            }
+            if (index.InspectOnlySections > 0)
+            {
+                add(new Finding
+                {
+                    Key = "loc:inspect",
+                    Category = "Locations",
+                    Severity = FindingSeverity.Info,
+                    Title = $"{index.InspectOnlySections} sections can only be looked at: markers, not checks",
+                    Detail = "Every access rule of theirs is PopTracker's \"{…}\" form (checkable for a look, never obtainable): the player's position, entrance logic, hint signs. Atlas leaves them out of the pairing and the counts; one that a mapping or a name links is a check like any other."
                 });
             }
             if (index.NoCheckSections > 0)
@@ -1147,6 +1161,277 @@ namespace AP_Atlas.Core.PopTracker
         /// <summary>Whether two names' copy numbers say the same copy: the same numbers, or a "1" against none.</summary>
         private static bool SameCopy(HashSet<string> a, HashSet<string> b) =>
             a.SetEquals(b) || (a.Count == 0 && b.Count == 1 && b.Contains("1")) || (b.Count == 0 && a.Count == 1 && a.Contains("1"));
+
+        // =====================================================================
+        // Suggestions in context (general rules: nothing here names a pack or a game)
+        // =====================================================================
+
+        /// <summary>
+        /// What a pack teaches about its own places, for scoring a section against the game's locations: the places its
+        /// pins' paths name, and the game's area tags it writes out in full (learned from the links already made: when the
+        /// game's "UP: Andre" sits on a pin under "Undead Parish", again and again, "UP" means Undead Parish).
+        /// </summary>
+        public sealed class SuggestContext
+        {
+            /// <summary>Loose names of every place the pack's pin paths name (three letters or more).</summary>
+            public HashSet<string> Places = new HashSet<string>(StringComparer.Ordinal);
+            /// <summary>A game's area tag (loose) → the pack's place it stands for (loose).</summary>
+            public Dictionary<string, string> Aliases = new Dictionary<string, string>(StringComparer.Ordinal);
+            /// <summary>Section names (normalized) the pack gives sections on three or more pins: labels, not names ("Yarn", "Chest").</summary>
+            public HashSet<string> GenericSections = new HashSet<string>(StringComparer.Ordinal);
+
+            /// <summary>Reads the places and learns the aliases from the index's links (the mapping's too, unless told not to).</summary>
+            public static SuggestContext For(PackIndex index, IReadOnlyDictionary<long, string> locNames, bool learnFromMapping)
+            {
+                var ctx = new SuggestContext();
+                if (index?.Pack == null) return ctx;
+                var pinsBySection = new Dictionary<string, int>(StringComparer.Ordinal);
+                foreach (var pin in index.Pack.Locations)
+                {
+                    foreach (string seg in Segments(pin)) if (seg.Length >= 3) ctx.Places.Add(seg);
+                    foreach (string sec in (pin.Sections ?? new List<PopTrackerSection>()).Select(s => Normalize(s?.Name ?? "")).Where(s => s.Length > 0).Distinct())
+                        pinsBySection[sec] = pinsBySection.GetValueOrDefault(sec) + 1;
+                }
+                foreach (var kv in pinsBySection) if (kv.Value >= 3) ctx.GenericSections.Add(kv.Key);
+                // Co-occurrence of a location's area tag with the pin path's places, over the links already made.
+                var together = new Dictionary<(string Area, string Place), int>();
+                var areaLinks = new Dictionary<string, int>(StringComparer.Ordinal);
+                var placeAreas = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+                foreach (var kv in index.ByLocation)
+                {
+                    if (locNames == null || !locNames.TryGetValue(kv.Key, out var locName)) continue;
+                    string area = AreaOf(locName);
+                    if (area.Length == 0) continue;
+                    foreach (var m in kv.Value)
+                    {
+                        if (m.Via != null || m.Pin == null || (!learnFromMapping && m.Source == MatchSource.MappingScript)) continue;
+                        var segs = Segments(m.Pin).Where(s => s.Length >= 3).ToList();
+                        if (segs.Any(s => Related(s, area))) continue; // written out already: nothing to learn
+                        areaLinks[area] = areaLinks.GetValueOrDefault(area) + 1;
+                        foreach (string seg in segs.Distinct())
+                        {
+                            together[(area, seg)] = together.GetValueOrDefault((area, seg)) + 1;
+                            if (!placeAreas.TryGetValue(seg, out var set)) placeAreas[seg] = set = new HashSet<string>(StringComparer.Ordinal);
+                            set.Add(area);
+                        }
+                    }
+                }
+                foreach (var area in areaLinks.Keys)
+                {
+                    // The place seen with this tag most, and (between equals) the one seen with the fewest other tags: a
+                    // map's top level ("Overworld") is seen with every tag and says nothing.
+                    var best = together.Where(t => t.Key.Area == area && t.Value >= 2 && t.Value >= 0.6 * areaLinks[area])
+                        .OrderByDescending(t => t.Value).ThenBy(t => placeAreas[t.Key.Place].Count).Select(t => t.Key.Place).FirstOrDefault();
+                    if (best != null && placeAreas[best].Count <= 3 && best.Length > area.Length) ctx.Aliases[area] = best;
+                }
+                return ctx;
+            }
+        }
+
+        /// <summary>A pin's path as loose place names (each part, the pin's own name last).</summary>
+        private static IEnumerable<string> Segments(PopTrackerLocation pin) =>
+            (pin?.FullPath ?? pin?.Name ?? "").Split('/').Select(Squash).Where(s => s.Length > 0);
+
+        /// <summary>Letters and digits only, lower case: "Undead Parish" → "undeadparish".</summary>
+        private static string Squash(string s) => Normalize(s ?? "").Replace(" ", "");
+
+        /// <summary>
+        /// A location name's area tag, loose: the part before a short ":" ("UP: Andre" → "up") or else before the first " - "
+        /// ("Route 218 - Pokédex Upgrade" → "route218"); empty when it has none.
+        /// </summary>
+        internal static string AreaOf(string locationName)
+        {
+            if (string.IsNullOrEmpty(locationName)) return "";
+            int colon = locationName.IndexOf(':');
+            if (colon > 0 && colon <= 24) return Squash(locationName.Substring(0, colon));
+            int dash = locationName.IndexOf(" - ", StringComparison.Ordinal);
+            if (dash > 0 && dash <= 40) return Squash(locationName.Substring(0, dash));
+            return "";
+        }
+
+        /// <summary>Whether a place and an area tag name the same place, one within the other (three letters or more).</summary>
+        private static bool Related(string place, string area) =>
+            place.Length >= 3 && area.Length >= 3 && (place == area || place.Contains(area, StringComparison.Ordinal) || area.Contains(place, StringComparison.Ordinal));
+
+        /// <summary>
+        /// The best locations for a pin section, scored with its context: the section's name alone and composed with its
+        /// pin's and parents' names (a section "Chest" under "Crystal Den"); a location whose area tag is the pin's place
+        /// (written out, or by an alias the pack taught) scores a little higher, one whose area is another place of this
+        /// pack's clearly lower ("Oreburgh Gate B1F - …" for a pin on Stark Mountain).
+        /// </summary>
+        public static List<Suggestion> SuggestFor(PopTrackerLocation pin, PopTrackerSection section, IReadOnlyDictionary<long, string> candidates, int max, SuggestContext context)
+        {
+            string name = section != null && !string.IsNullOrEmpty(section.Name) ? section.Name : pin?.Name;
+            if (string.IsNullOrWhiteSpace(name) || candidates == null || candidates.Count == 0) return new List<Suggestion>();
+            var queries = new List<Prepared> { Prepare(name) };
+            if (section != null && pin != null)
+            {
+                var parts = (pin.FullPath ?? pin.Name ?? "").Split('/').Where(p => !string.IsNullOrWhiteSpace(p)).ToList();
+                foreach (string part in parts.AsEnumerable().Reverse().Take(3))
+                    if (!Normalize(name).Contains(Normalize(part), StringComparison.Ordinal)) queries.Add(Prepare(part + " " + name));
+                // A section without a copy number takes its pin's ("Boss" on pin "Ruins Boss 2" is the second): the name
+                // alone mustn't win against the copy the pin names.
+                bool generic = context != null && context.GenericSections.Contains(Normalize(name));
+                if (queries.Count > 1 && ((queries[0].Numbers.Count == 0 && Prepare(pin.Name ?? "").Numbers.Count > 0) || generic)) queries.RemoveAt(0);
+                // A generic label ("Yarn" on pin "Swamp Tree B") leaves the pin to name the check.
+                if (generic && !string.IsNullOrWhiteSpace(pin.Name)) queries.Add(Prepare(pin.Name));
+            }
+            var places = Segments(pin).Where(s => s.Length >= 3).ToList();
+            // The words that say which one: the section's own, and its pin's (not the parents', which hold every side).
+            var sideWords = new HashSet<string>(Prepare(name).Tokens.Concat(section != null && pin != null ? Prepare(pin.Name ?? "").Tokens : Enumerable.Empty<string>()), StringComparer.Ordinal);
+            var scored = new List<Suggestion>();
+            foreach (var kv in candidates)
+            {
+                var c = Prepare(kv.Value);
+                double s = 0;
+                foreach (var q in queries) s = Math.Max(s, Score(q, c));
+                if (s < 0.35) continue;
+                if (s < 0.999 && Contradicts(sideWords, c.Tokens)) s *= 0.8;
+                if (context != null && places.Count > 0 && s < 0.999)
+                {
+                    string area = AreaOf(kv.Value);
+                    if (area.Length > 0)
+                    {
+                        string full = context.Aliases.TryGetValue(area, out var alias) ? alias : area;
+                        bool here = places.Any(p => Related(p, full) || Related(p, area));
+                        bool elsewhere = !here && context.Places.Any(p => p == full || (full.Length >= 5 && p.Contains(full, StringComparison.Ordinal)));
+                        if (here) s = Math.Min(0.99, s * 1.05);
+                        else if (elsewhere) s *= 0.85;
+                    }
+                }
+                scored.Add(new Suggestion { Id = kv.Key, Label = kv.Value, Score = s });
+            }
+            var ranked = scored.Where(x => x.Score >= 0.35).OrderByDescending(x => x.Score).ToList();
+            // A query without a number against a numbered family ("Scraps" against "Scraps 1" to "Scraps 20"): any of them,
+            // so none with confidence (the first copy's small bonus mustn't make it a pick).
+            if (ranked.Count > 1 && queries.All(q => q.Numbers.Count == 0) && ranked[0].Score >= TieConfidence)
+            {
+                string family = Family(ranked[0].Label);
+                if (family.Length > 0 && ranked.Skip(1).Any(x => x.Id != ranked[0].Id && Family(x.Label) == family))
+                    foreach (var copy in ranked.Where(x => Family(x.Label) == family)) copy.Score = Math.Min(copy.Score, TieConfidence - 0.01);
+            }
+            // Two different locations scoring alike: the names can't tell which ("Scraps" on one pin of many, "Scraps 1"
+            // to "Scraps 20"). Still offered, never as a confident pick.
+            if (ranked.Count > 1 && ranked[0].Score >= TieConfidence && ranked[1].Score >= ranked[0].Score - TieMargin && ranked[1].Id != ranked[0].Id)
+                foreach (var tied in ranked.Where(x => x.Score >= ranked[0].Score - TieMargin)) tied.Score = Math.Min(tied.Score, TieConfidence - 0.01);
+            return ranked.Take(max).ToList();
+        }
+
+        /// <summary>A name without its numbers (normalized): the numbered family it belongs to; empty when it has no number.</summary>
+        private static string Family(string label)
+        {
+            string n = Normalize(label ?? "");
+            if (!n.Any(char.IsDigit)) return "";
+            return string.Join(" ", n.Split(' ').Where(w => !w.All(char.IsDigit)));
+        }
+
+        /// <summary>Scores within this of the best are a tie between them.</summary>
+        private const double TieMargin = 0.005;
+
+        /// <summary>A tie is said under this: below what "Fix what Atlas can" takes.</summary>
+        private const double TieConfidence = 0.85;
+
+        /// <summary>Words naming one of two sides; a name with one and not the other contradicts a name with the other.</summary>
+        private static readonly (string A, string B)[] Opposites =
+        {
+            ("left", "right"), ("top", "bottom"), ("upper", "lower"), ("north", "south"), ("east", "west"),
+            ("inside", "outside"), ("front", "back"), ("before", "after"), ("first", "last"), ("entrance", "exit"),
+        };
+
+        /// <summary>Whether a query and a candidate name opposite sides ("Top Left" and "Bottom Left").</summary>
+        private static bool Contradicts(HashSet<string> query, HashSet<string> candidate)
+        {
+            foreach (var (a, b) in Opposites)
+                if ((query.Contains(a) && !query.Contains(b) && candidate.Contains(b) && !candidate.Contains(a))
+                    || (query.Contains(b) && !query.Contains(a) && candidate.Contains(a) && !candidate.Contains(b))) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// One location, one place: the rows' best suggestions are given out strongest first, each location once (two
+        /// rows that are the same check on two maps may share it); a row whose best went to a stronger row has its next
+        /// free one put first. Nothing is dropped: the order of each row's list changes, and clashes the Doctor reports
+        /// become fewer.
+        /// </summary>
+        internal static void AssignOneToOne(List<Finding> rows)
+        {
+            var pairs = rows.Where(r => r.Suggestions.Count > 0)
+                .SelectMany(r => r.Suggestions.Select((s, i) => (Row: r, Suggestion: s, Rank: i)))
+                .OrderByDescending(p => p.Suggestion.Score).ThenBy(p => p.Rank).ToList();
+            var taken = new Dictionary<long, string>();
+            var given = new Dictionary<Finding, Suggestion>();
+            foreach (var (row, suggestion, _) in pairs)
+            {
+                if (given.ContainsKey(row)) continue;
+                string identity = Normalize(row.Query ?? "");
+                if (taken.TryGetValue(suggestion.Id, out var holder) && holder != identity) continue;
+                taken[suggestion.Id] = identity;
+                given[row] = suggestion;
+            }
+            foreach (var (row, suggestion) in given)
+            {
+                int at = row.Suggestions.IndexOf(suggestion);
+                if (at <= 0) continue;
+                row.Suggestions.RemoveAt(at);
+                row.Suggestions.Insert(0, suggestion);
+            }
+        }
+
+        /// <summary>
+        /// How right the Doctor's suggestions are, measured on the pack's own mapping: each section the mapping links whose
+        /// name isn't its location's (the cases a person would have to decide), its links set aside, gets the suggestion
+        /// the Doctor would make; the top one is right when it's one of the locations the mapping gives that section (a
+        /// section holding several checks is right with any). A section whose name is exactly another location's is left
+        /// out: the pack's mapping is the stale one there (another version), not the suggestion. At most
+        /// <paramref name="most"/> sections. <paramref name="plain"/> measures the name-only suggestions instead
+        /// (ATLAS_SELFTEST_SUGGEST_PLAIN=1), for comparison.
+        /// </summary>
+        public static (int Tried, int Right, int Strong, int StrongRight) EvaluateSuggestions(DoctorReport report, bool plain = false, int most = 300, List<string> misses = null)
+        {
+            if (report?.Index == null || report.Names?.Locations == null) return (0, 0, 0, 0);
+            var locNames = report.Names.Locations.GroupBy(kv => kv.Value).ToDictionary(g => g.Key, g => g.First().Key);
+            var context = SuggestContext.For(report.Index, locNames, learnFromMapping: false);
+            // Each mapped section with every location the mapping gives it.
+            var bySection = new Dictionary<(PopTrackerLocation Pin, PopTrackerSection Section), HashSet<long>>();
+            foreach (var kv in report.Index.ByLocation.OrderBy(kv => kv.Key))
+                foreach (var m in kv.Value.Where(x => x.Via == null && x.Source == MatchSource.MappingScript))
+                {
+                    if (!bySection.TryGetValue((m.Pin, m.Section), out var ids)) bySection[(m.Pin, m.Section)] = ids = new HashSet<long>();
+                    ids.Add(kv.Key);
+                }
+            var exactNames = new HashSet<string>(locNames.Values.Select(n => Normalize(n)), StringComparer.Ordinal);
+            // A section (or its one-section pin) named exactly as another location than the mapping gives it: the pack's
+            // mapping is for another version there. When that's common, the mapping can't be the measure for this pack.
+            var cases = new List<(PopTrackerLocation Pin, PopTrackerSection Section, HashSet<long> Ids, string Name)>();
+            int stale = 0;
+            foreach (var ((pin, section), ids) in bySection)
+            {
+                string name = section != null && !string.IsNullOrEmpty(section.Name) ? section.Name : pin.Name;
+                if (string.IsNullOrWhiteSpace(name)) continue;
+                var mappedNames = new HashSet<string>(ids.Select(id => locNames.TryGetValue(id, out var n) ? Normalize(n) : ""), StringComparer.Ordinal);
+                if (mappedNames.Contains(Normalize(name))) continue; // named as the game names it
+                bool pinIsTheName = pin.Sections != null && pin.Sections.Count == 1 && !string.IsNullOrEmpty(pin.Name);
+                if (exactNames.Contains(Normalize(name)) || (pinIsTheName && exactNames.Contains(Normalize(pin.Name)) && !mappedNames.Contains(Normalize(pin.Name)))) { stale++; continue; }
+                cases.Add((pin, section, ids, name));
+            }
+            if (stale >= 3 && stale >= 0.1 * (stale + cases.Count)) return (0, 0, 0, 0);
+            int tried = 0, right = 0, strong = 0, strongRight = 0;
+            foreach (var (pin, section, ids, name) in cases)
+            {
+                if (tried >= most) break;
+                tried++;
+                var top = (plain ? Suggest(name, locNames, 1) : SuggestFor(pin, section, locNames, 1, context)).FirstOrDefault();
+                bool ok = top != null && ids.Contains(top.Id);
+                if (ok) right++;
+                else misses?.Add($"{pin.FullPath} | {name}  ->  {top?.Label ?? "(none)"} ({top?.Score:0.00})  |  truth: {string.Join(" / ", ids.Take(3).Select(id => locNames.GetValueOrDefault(id)))}");
+                if (top != null && top.Score >= 0.85)
+                {
+                    strong++;
+                    if (ok) strongRight++;
+                }
+            }
+            return (tried, right, strong, strongRight);
+        }
 
         // =====================================================================
         // Similarity

@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Newtonsoft.Json.Linq;
 
 namespace AP_Atlas.Core.PopTracker
 {
@@ -499,6 +500,45 @@ namespace AP_Atlas.Core.PopTracker
         /// <summary>How many sections hold no check by PopTracker's count and nothing linked (left out of the pairing).</summary>
         public int NoCheckSections { get; private set; }
 
+        /// <summary>How many sections can only be inspected (every access rule "{...}") and nothing linked: markers, not checks.</summary>
+        public int InspectOnlySections => _inspectOnlySections ??= CountInspectOnly();
+        private int? _inspectOnlySections;
+
+        private int CountInspectOnly()
+        {
+            int n = 0;
+            foreach (var pin in Pack.Locations)
+            {
+                if (pin.Sections != null && pin.Sections.Count > 0)
+                {
+                    foreach (var sec in pin.Sections)
+                        if (!IsReference(sec) && !IsHintMarker(pin, sec) && !HoldsNoCheck(sec) && !IsCovered(pin, sec) && IsInspectOnly(pin, sec)) n++;
+                }
+                else if (!IsHintMarker(pin, null) && !IsCovered(pin, null) && IsInspectOnly(pin, null)) n++;
+            }
+            return n;
+        }
+
+        /// <summary>
+        /// A section (or a section-less pin) that can only ever be inspected: every access rule it has (else its pin's) is
+        /// PopTracker's "{...}" form, which makes it checkable for a look, never obtainable. Packs use it for markers that
+        /// aren't checks: the player's position, entrance logic, hint signs, settings toggles (37 corpus packs, 14,000
+        /// sections). A marker that a mapping or a name links is a check like any other.
+        /// </summary>
+        public static bool IsInspectOnly(PopTrackerLocation pin, PopTrackerSection section)
+        {
+            var rules = section?.AccessRulesRaw ?? pin?.AccessRulesRaw;
+            if (rules == null) return false;
+            var texts = new List<string>();
+            void Collect(JToken token)
+            {
+                if (token is JArray array) foreach (var child in array) Collect(child);
+                else if (token != null && token.Type == JTokenType.String) texts.Add(((string)token ?? "").Trim());
+            }
+            Collect(rules);
+            return texts.Count > 0 && texts.All(t => t.Length >= 2 && t[0] == '{' && t[t.Length - 1] == '}');
+        }
+
         /// <summary>
         /// A section PopTracker counts no check in: item_count 0, or a section that hosts an item (a toggle: an entrance, a
         /// boss) without an item_count. A mapping can still link one (a location mapped to the item it hosts).
@@ -516,7 +556,7 @@ namespace AP_Atlas.Core.PopTracker
         {
             if (IsCovered(pin, section)) return true;
             if (section != null && _refTargets.TryGetValue(section, out var target)) (pin, section) = target;
-            return !IsHintMarker(pin, section) && !HoldsNoCheck(section);
+            return !IsHintMarker(pin, section) && !HoldsNoCheck(section) && !IsInspectOnly(pin, section);
         }
 
         /// <summary>
@@ -788,9 +828,9 @@ namespace AP_Atlas.Core.PopTracker
                 if (pin.Sections != null && pin.Sections.Count > 0)
                 {
                     // A reference shows its target's check: the target is the one reported. A section without a check isn't one.
-                    foreach (var sec in pin.Sections) if (!IsReference(sec) && !IsHintMarker(pin, sec) && !HoldsNoCheck(sec) && !IsCovered(pin, sec)) yield return (pin, sec);
+                    foreach (var sec in pin.Sections) if (!IsReference(sec) && !IsHintMarker(pin, sec) && !HoldsNoCheck(sec) && !IsCovered(pin, sec) && !IsInspectOnly(pin, sec)) yield return (pin, sec);
                 }
-                else if (!IsHintMarker(pin, null) && !IsCovered(pin, null)) yield return (pin, null);
+                else if (!IsHintMarker(pin, null) && !IsCovered(pin, null) && !IsInspectOnly(pin, null)) yield return (pin, null);
             }
         }
 

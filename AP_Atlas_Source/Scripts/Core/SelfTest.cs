@@ -131,6 +131,7 @@ namespace AP_Atlas.Core
             await TestAsync("Pack Doctor: an analysis reads its own snapshot, never the fixes as they change", PackDoctorReadsASnapshot);
             await TestAsync("Map packs read as PopTracker reads them: a progressive item by its stages' codes, labels and the pack's own switches aren't tiles, scripts in Lua 5.3 (its // and bitwise operators, %s of any value, overlay methods), each shop's \"Item 1\" named like its neighbours, a ref repaired from the section's own name, the goal the pack doesn't track said as such, a map no tab shows left out; Atlas's clashing guesses taken back", PacksReadAsPopTrackerReadsThem);
             await TestAsync("Atlas's game list: a list fetched by Update game list is kept as fetched (fields this Atlas doesn't know survive), a pack's lab notes are read and said, a pack file is found by its SHA-256, and a pack the lab found made for another version waits behind the rest when Atlas picks", GameListLabFacts);
+            await TestAsync("Map packs, the guided fixer's first rules: a section's suggestions read its pin's place and copy number, area names the pack's own links teach (\"UP\" is Undead Parish), a place of the pack's elsewhere scores lower, a marker that can only be looked at isn't a check, one location goes to one place", GuidedFixerRules);
             await TestAsync("Map packs, the lab's first round: two pins sharing a path, \"Pin (Section)\" names, the one location ending in a section's name, apostrophes, images by their header, Lua 5.4's attribs and continue labels, PopTracker's Highlight, items the scripts make, display grids and numbered families said once, a missing file as the pack's own note, a mapping keyed by offsets from the game's ids, display changes that run no watch, a goto out of a loop, a map named by its tab", PackLabRoundOne);
             await TestAsync("Pack scripts: the room's checked and missing ids, its seed and its players' names, aliases and games are there to read (tables and text, as PopTracker gives them); Lua's \\u{} escapes read as their characters in mappings and scripts; a name shared by several locations is told apart by its detail", PackScriptsReadTheRoomAndTheEscapes);
             await TestAsync("Map packs: a section that refers to another shows its check (and follows a fix); a mapping the scripts build as they run is read as PopTracker reads it; names match however a slash is read, numbered copies by their number; a section hosting an item holds no check, and a location mapped to that item shows there", PackReferencesAndBuiltMappings);
@@ -566,6 +567,7 @@ namespace AP_Atlas.Core
             var now = new Dictionary<string, PackBaselineEntry>(StringComparer.OrdinalIgnoreCase);
             string findingsPath = System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_PACKS_FINDINGS");
             var allFindings = new List<Dictionary<string, object>>();
+            (int Tried, int Right, int Strong, int StrongRight) suggestTotals = (0, 0, 0, 0);
             foreach (var zip in zips)
             {
                 string key = Path.GetFileName(zip);
@@ -621,6 +623,16 @@ namespace AP_Atlas.Core
                                 foreach (var d in f.Details.Take(40)) Print($"    dangling: {d}");
                             foreach (var name in report.UnplacedSample.Take(20)) Print($"    unplaced: {name}");
                         }
+                        // How right the Doctor's suggestions are on the pack's own mapping (the sections it names differently).
+                        // ATLAS_SELFTEST_SUGGEST_MISSES=1 prints the wrong ones (local investigation of the suggestion rules).
+                        var misses = System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_SUGGEST_MISSES") == "1" ? new List<string>() : null;
+                        var (tried, right, strong, strongRight) = PopTracker.PackDoctor.EvaluateSuggestions(report, plain: System.Environment.GetEnvironmentVariable("ATLAS_SELFTEST_SUGGEST_PLAIN") == "1", misses: misses);
+                        foreach (var miss in misses ?? new List<string>()) Print($"    miss: {miss}");
+                        entry.SuggestTried = tried;
+                        entry.SuggestRight = right;
+                        entry.SuggestStrong = strong;
+                        entry.SuggestStrongRight = strongRight;
+                        suggestTotals = (suggestTotals.Tried + tried, suggestTotals.Right + right, suggestTotals.Strong + strong, suggestTotals.StrongRight + strongRight);
                         entry.TilesPct = Pct(report.TilesLinked, report.TilesTotal);
                         entry.PlacedPct = Pct(report.ApLocationsPlaced, report.ApLocationsTotal);
                         entry.LocationsPlaced = report.ApLocationsPlaced;
@@ -672,6 +684,9 @@ namespace AP_Atlas.Core
                 GC.Collect();
             }
 
+            if (suggestTotals.Tried > 0)
+                Print($"  Suggestions on the packs' own mappings (sections named otherwise than the game): {suggestTotals.Tried} tried, the top one right for {suggestTotals.Right} ({Pct(suggestTotals.Right, suggestTotals.Tried)}%); "
+                    + $"{suggestTotals.Strong} at 85%+, {suggestTotals.StrongRight} of them right ({Pct(suggestTotals.StrongRight, suggestTotals.Strong)}%).");
             if (!string.IsNullOrWhiteSpace(findingsPath))
             {
                 try { SafeFile.WriteAllText(findingsPath, Newtonsoft.Json.JsonConvert.SerializeObject(allFindings)); Print($"  findings written to {findingsPath}"); }
@@ -762,6 +777,11 @@ namespace AP_Atlas.Core
             /// <summary>The game's locations a pin shows, of all (exact counts; -1: not measured).</summary>
             public int LocationsPlaced { get; set; } = -1;
             public int LocationsTotal { get; set; } = -1;
+            /// <summary>The suggestion evaluation (PackDoctor.EvaluateSuggestions): sections tried, top one right, at 85%+, right among those (-1: not measured).</summary>
+            public int SuggestTried { get; set; } = -1;
+            public int SuggestRight { get; set; } = -1;
+            public int SuggestStrong { get; set; } = -1;
+            public int SuggestStrongRight { get; set; } = -1;
         }
 
         public class SeedBaselineEntry

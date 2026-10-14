@@ -767,6 +767,58 @@ namespace AP_Atlas.Core
         /// make (Super Metroid, A Link to the Past), a display grid and numbered families said once (A Link to the Past,
         /// Undertale), a file the scripts load but the pack lacks as its own note (fourteen packs' snes.lua).
         /// </summary>
+        private static async Task GuidedFixerRules()
+        {
+            string zip = Scratch("selftest_fixer1.zip");
+            string Pin(string name, string sections, int x) => "{\"name\":\"" + name + "\",\"sections\":[" + sections + "],\"map_locations\":[{\"map\":\"World\",\"x\":" + x + ",\"y\":10}]}";
+            string Secs(params string[] names) => string.Join(",", names.Select(n => "{\"name\":\"" + n + "\"}"));
+            string locations = "[" +
+                "{\"name\":\"Undead Parish\",\"children\":[" + Pin("Church", Secs("Bell Key", "Gargoyle Drop"), 10) + "," + Pin("Bridge", Secs("Bridge Chest"), 20) + "]}," +
+                "{\"name\":\"Upper Burg\",\"children\":[" + Pin("Hall", Secs("Hall Key", "Torch"), 30) + "]}," +
+                Pin("Ruins Boss 2", Secs("Boss"), 40) + "," +
+                "{\"name\":\"You're here\",\"access_rules\":[\"{}\"],\"sections\":[{\"name\":\"SPACE-20\"}],\"map_locations\":[{\"map\":\"World\",\"x\":50,\"y\":10}]}]";
+            AP_Atlas.Core.Testing.FakeMapPack.Write(zip, "Self-test fixer pack", "Self Test Game F", locationsJson: locations,
+                files: new Dictionary<string, string>
+                {
+                    ["scripts/autotracking/location_mapping.lua"] = "LOCATION_MAPPING = {\n" +
+                        "    [1] = {\"@Undead Parish/Church/Bell Key\"},\n    [2] = {\"@Undead Parish/Church/Gargoyle Drop\"},\n" +
+                        "    [5] = {\"@Upper Burg/Hall/Hall Key\"},\n    [6] = {\"@Upper Burg/Hall/Torch\"},\n}\n"
+                });
+            var pack = await Task.Run(() => PopTracker.PopTrackerPackLoader.InspectZipPack(zip)) ?? throw new InvalidOperationException("the fixer pack wasn't read");
+            var names = new PopTracker.GameNameTable
+            {
+                Game = "Self Test Game F",
+                Locations = new Dictionary<string, long>
+                {
+                    ["UP: Bell Key"] = 1,
+                    ["UP: Gargoyle Drop"] = 2,
+                    ["UB: Bridge Chest"] = 4,
+                    ["UP: Bridge Chest"] = 3, // UB first: by name alone it would win the tie
+                    ["UB: Hall Key"] = 5,
+                    ["UB: Torch"] = 6,
+                    ["Ruins Boss Fight 1"] = 7,
+                    ["Ruins Boss Fight 2"] = 8
+                },
+                Items = new Dictionary<string, long>()
+            };
+            var report = await Task.Run(() => PopTracker.PackDoctor.Analyze(PopTracker.PackDoctor.Prepare(pack, names)));
+            PopTracker.Suggestion? Top(string key) => report.Findings.FirstOrDefault(f => f.Key == key)?.Suggestions.FirstOrDefault();
+            // "UP" is learned from the two links under Undead Parish, "UB" from Upper Burg's: the bridge's chest is UP's.
+            var bridge = Top("loc:unmatched:Undead Parish/Bridge|Bridge Chest");
+            Expect(bridge?.Id == 3, $"the section's place and the pack's learned area names didn't decide between \"UP: Bridge Chest\" and \"UB: Bridge Chest\": {bridge?.Label} ({bridge?.Score:0.00})");
+            // "Boss" on pin "Ruins Boss 2" is the second fight.
+            var boss = Top("loc:unmatched:Ruins Boss 2|Boss");
+            Expect(boss?.Id == 8, $"the pin's copy number didn't decide the section's: {boss?.Label} ({boss?.Score:0.00})");
+            // The position marker isn't a check: not counted, not a row, said once.
+            Expect(!report.Findings.Any(f => f.Key.Contains("SPACE-20", StringComparison.Ordinal)) && report.Findings.Any(f => f.Key == "loc:inspect") && report.Index.InspectOnlySections == 1,
+                "a section that can only be looked at was taken for a check");
+            // One location, one place: two rows whose best is the same location; the weaker one gets its next.
+            var strong = new PopTracker.Finding { Key = "a", Query = "Gate Lever", Suggestions = new List<PopTracker.Suggestion> { new() { Id = 9, Label = "Gate Lever", Score = 0.95 } } };
+            var weak = new PopTracker.Finding { Key = "b", Query = "Gate Levers", Suggestions = new List<PopTracker.Suggestion> { new() { Id = 9, Label = "Gate Lever", Score = 0.9 }, new() { Id = 10, Label = "Gate Wheel", Score = 0.6 } } };
+            PopTracker.PackDoctor.AssignOneToOne(new List<PopTracker.Finding> { weak, strong });
+            Expect(strong.Suggestions[0].Id == 9 && weak.Suggestions[0].Id == 10 && weak.Suggestions.Count == 2, "a location was offered first to two rows");
+        }
+
         private static async Task GameListLabFacts()
         {
             const string sha = "00aa11bb22cc33dd44ee55ff66778899aabbccddeeff00112233445566778899";

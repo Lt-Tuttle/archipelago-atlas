@@ -101,8 +101,7 @@ def main():
                 if yamls:
                     entry['yaml_path'] = os.path.join(players, yamls[0])
             print(f'[rescore] {game}', flush=True)
-            if score(game, entry, time.time()) and entry.get('exact'):
-                shutil.rmtree(os.path.join(lab, 'batch', safe(game)), ignore_errors=True)
+            score(game, entry, time.time())
         games = []
 
     done = 0
@@ -149,9 +148,8 @@ def main():
                      sphere0=answer.get('sphere0'), generate_seconds=answer.get('seconds'), multidata=answer.get('multidata'))
         if not score(game, entry, started):
             continue
-        # The seed's folder is kept only when the logic differs (the spoiler helps a look); otherwise freed.
-        if entry.get('exact'):
-            shutil.rmtree(folder, ignore_errors=True)
+        # Every seed's folder is kept (about 100 KB a game): the spoiler helps a look at a difference, and the YAML probe
+        # (whether the logic rebuilds without the player's YAML) scores the same seed again.
 
     finished = [g for g, r in results.items() if r.get('finished')]
     exact = [g for g in finished if results[g].get('exact')]

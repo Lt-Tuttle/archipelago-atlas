@@ -49,6 +49,32 @@ The pack lab (CONTRIBUTING, "The pack lab") is how new rules are found: the corp
 | A section named as the game names the check without its area ("Basement Pot 1" for "Waynehouse: Basement Pot 1") links when exactly one location ends so after its area, nothing shows it yet, and the name is on one pin only. | Hylics 2; A Short Hike |
 | Exact matches are linked on a pack's first check, as automatic fixes with Undo; the pass runs again when Atlas's rules change (`PackDoctorService.LinkRules`), after taking back Atlas's own guesses the new rules read differently. The user's own links are never touched. | Ship of Harkinian |
 
+### Suggestions (what the Doctor offers when nothing links by itself)
+
+Measured, not guessed: most packs ship a mapping that says which location each section is, so hiding that answer and asking
+for a suggestion gives a right-or-wrong score on thousands of real cases (`PackDoctor.EvaluateSuggestions`, printed by the
+corpus check). On the design side (28,105 sections named otherwise than the game): the top suggestion was right for
+45% with the name alone, and is right for 78% now; of the picks scored 85%+ (what "Fix what Atlas can" applies),
+51% were right before and 91% now. On the held-out games, never looked at while these rules were
+written: 38% → 83%, and 51% → 92% at 85%+.
+
+| Rule | Taught by |
+|---|---|
+| A section is scored with its context: its name alone and composed with its pin's and parents' names ("Chest" under "Crystal Den"). | Many: generic section names |
+| A location whose area tag is the pin's place scores a little higher; one whose area is another place of this pack's, clearly lower. The pack's own links teach its abbreviations ("UP:" is Undead Parish when the game's "UP: …" sit under that place again and again). | Dark Souls; Pokémon Platinum (wrong-area picks) |
+| A section without a copy number takes its pin's ("Boss" on pin "Ruins Boss 2"). | Lunacid |
+| Opposite words contradict ("Top Left" isn't "Bottom Left": left/right, top/bottom, upper/lower, the compass, inside/outside, front/back, before/after, first/last, entrance/exit). | A Link to the Past (Ganon's Tower) |
+| A generic label (a section name the pack gives on three or more pins: "Yarn", "Scraps", "Chest") says nothing by itself; the pin's name speaks for it. | A Hat in Time; Banjo-Tooie |
+| Two different locations scoring alike, or a nameless copy of a numbered family ("Scraps" against "Scraps 1" to "Scraps 20"), are offered but never as a confident pick: only the pack's mapping knows which. | Choo-Choo Charles |
+| One location goes to one place: rows are given their best suggestions strongest first, each location once; a row whose best went to a stronger row has its next one first. | Anodyne |
+| A section that can only be looked at (every access rule PopTracker's "{…}": the player's position, entrance logic, hint signs) isn't a check, unless something links it. | Anodyne; TTYD; 35 more |
+
+### The holdout
+
+A quarter of the corpus's games (`Tests/corpus_holdout.json`, made once by `Tools/corpus_holdout.py`, by game so nothing of a
+held-out game leaks into a rule) is never looked at while rules are written. A rule ships when it helps the design side and
+also helps, or leaves unchanged, the holdout; no pack anywhere gets worse.
+
 ## Versions
 
 | Rule | Taught by |
