@@ -527,7 +527,8 @@ namespace AP_Atlas.Core.PopTracker
                     Name = ap.Name,
                     FullPath = ap.PinPath,
                     MapLocations = new List<PopTrackerMapLocation> { new PopTrackerMapLocation { Map = ap.MapId, X = ap.X, Y = ap.Y } },
-                    Sections = ap.ApLocationIds.Select(id => new PopTrackerSection { Name = "atlas:" + id }).ToList()
+                    Sections = ap.ApLocationIds.Select(id => new PopTrackerSection { Name = "atlas:" + id }).ToList(),
+                    PlacedByAtlas = ap.Source == PackPlacement.Source
                 });
             }
 

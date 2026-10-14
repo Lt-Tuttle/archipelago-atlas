@@ -22,6 +22,13 @@ public partial class SlotTrackerControl : MarginContainer
     /// <summary>Shows the Map Packs page and searches GitHub for a game's packs (set by MainTrackerWindow; the user pressed for it).</summary>
     public Action<string> FindMapPack { get; set; }
 
+    /// <summary>Starts a pack for the slot's game (the window's dialog).</summary>
+    public Action<string, SlotTrackerControl> StartPack { get; set; }
+
+    /// <summary>The progression items the slot has received (a started pack's Key Items, for a game with many items).</summary>
+    public IEnumerable<long> ProgressionReceived() =>
+        Session?.Items?.AllItemsReceived?.Where(i => i.Flags.HasFlag(Archipelago.MultiClient.Net.Enums.ItemFlags.Advancement)).Select(i => i.ItemId).Distinct() ?? Enumerable.Empty<long>();
+
     /// <summary>Opens the Pack Doctor for a pack's zip on a tab (set by the window; the Map Tracker's Attention rows use it).</summary>
     public Action<string, string> OpenPackDoctor { get; set; }
 

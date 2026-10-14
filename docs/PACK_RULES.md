@@ -107,6 +107,17 @@ also helps, or leaves unchanged, the holdout; no pack anywhere gets worse.
 | A grid none of whose tiles names an item of the game, in a pack whose other grids do, shows the pack's own state (an enemizer table): said once per grid, its tiles not counted among those to link. | A Link to the Past (2,057 rows); Super Mario 64; Shivers |
 | Numbered sections named alike ("Pot #1" to "Pot #40") that match nothing of the game's are one family (another version or fork of the apworld has them): said once, nothing to choose. | A Link to the Past (door and pot shuffle forks); Undertale |
 
+### Checks no pin shows (offered, previewed)
+
+| Rule | Taught by |
+|---|---|
+| A check with no pin goes beside a pin of a check from its area (the name's tag), on the map where most of that area's checks are, nearest their middle; checks put by one pin go round it. Offered in the guide with a preview, never by itself; the pins are Atlas's, drawn quieter. | The method; measured on the packs' own pins |
+
+Measured by taking the packs' own pins away and placing each check again (`PackPlacement.Evaluate`): on the design side
+36,257 placed, 97% on the pin's own map, 57% of those within a tenth of the map's spread of pins; on the held-out games
+10,488 placed, 100% on the right map, 46% that close. Good enough to put a check in the right part of the right map for a
+person to nudge, which is all it's offered as.
+
 ## Where new rules come from
 
 The corpus (with its holdout) and what users send: the Pack Doctor's **Suggest them to Atlas** sends the fixes a person made
@@ -117,6 +128,10 @@ rule does: a method that works from what any pack carries, proven on the corpus 
 ## What isn't a rule
 
 - Ids a mapping lists that this apworld doesn't have: the pack is for another version. Reported, never guessed.
+- Two fixers built for step 6 and not shipped, because nothing in the corpus needed them (the rule: a rule helps two or
+  more packs): a tile without a picture given the pack's picture named like the item (164 such tiles in all 398 packs,
+  none with a picture of that name), and a name-keyed mapping's older names followed to the checks a newer version calls
+  them (no pack keys its mapping by names of another version). They come back if user suggestions show the pattern.
 - A pack named for another game than the one its ids belong to (Celeste's Open World pack says "Celeste" and lists Celeste (Open World)'s ids; Hades II's says "Hades"): which game a pack is for is the pick rule's job; the ids are reported as stale, and an offset that fits by number alone (another game numbered the same way) is refused when the names don't agree.
 - Pins off their map's picture, typos in refs, missing pictures: the pack's own, in the author's section of the report.
 - A few rows of wording the rules don't cover: the Doctor's suggestions, "Fix what Atlas can", and the user's choice.

@@ -132,6 +132,7 @@ namespace AP_Atlas.Core
             await TestAsync("Map packs read as PopTracker reads them: a progressive item by its stages' codes, labels and the pack's own switches aren't tiles, scripts in Lua 5.3 (its // and bitwise operators, %s of any value, overlay methods), each shop's \"Item 1\" named like its neighbours, a ref repaired from the section's own name, the goal the pack doesn't track said as such, a map no tab shows left out; Atlas's clashing guesses taken back", PacksReadAsPopTrackerReadsThem);
             await TestAsync("Atlas's game list: a list fetched by Update game list is kept as fetched (fields this Atlas doesn't know survive), a pack's lab notes are read and said, a pack file is found by its SHA-256, and a pack the lab found made for another version waits behind the rest when Atlas picks", GameListLabFacts);
             await TestAsync("Map packs, the guided fixer's first rules: a section's suggestions read its pin's place and copy number, area names the pack's own links teach (\"UP\" is Undead Parish), a place of the pack's elsewhere scores lower, a marker that can only be looked at isn't a check, one location goes to one place", GuidedFixerRules);
+            await TestAsync("Map packs, the guided fixer's last rule: a check no pin shows placed beside a pin of its area, a check with no area left alone", GuidedFixerRulesTwo);
             await TestAsync("Map packs, the lab's first round: two pins sharing a path, \"Pin (Section)\" names, the one location ending in a section's name, apostrophes, images by their header, Lua 5.4's attribs and continue labels, PopTracker's Highlight, items the scripts make, display grids and numbered families said once, a missing file as the pack's own note, a mapping keyed by offsets from the game's ids, display changes that run no watch, a goto out of a loop, a map named by its tab", PackLabRoundOne);
             await TestAsync("Pack scripts: the room's checked and missing ids, its seed and its players' names, aliases and games are there to read (tables and text, as PopTracker gives them); Lua's \\u{} escapes read as their characters in mappings and scripts; a name shared by several locations is told apart by its detail", PackScriptsReadTheRoomAndTheEscapes);
             await TestAsync("Map packs: a section that refers to another shows its check (and follows a fix); a mapping the scripts build as they run is read as PopTracker reads it; names match however a slash is read, numbered copies by their number; a section hosting an item holds no check, and a location mapped to that item shows there", PackReferencesAndBuiltMappings);
@@ -569,6 +570,7 @@ namespace AP_Atlas.Core
             var allFindings = new List<Dictionary<string, object>>();
             (int Tried, int Right, int Strong, int StrongRight) suggestTotals = (0, 0, 0, 0);
             (int Hand, int Linked, int Right) patternTotals = (0, 0, 0);
+            (int Tried, int SameMap, int Close) placeTotals = (0, 0, 0);
             foreach (var zip in zips)
             {
                 string key = Path.GetFileName(zip);
@@ -643,6 +645,9 @@ namespace AP_Atlas.Core
                         entry.PatternLinked = byPattern;
                         entry.PatternRight = byPatternRight;
                         patternTotals = (patternTotals.Hand + byHand, patternTotals.Linked + byPattern, patternTotals.Right + byPatternRight);
+                        // Checks no pin shows, placed near their area: measured by taking the pack's own pins away and placing them again.
+                        var (placeTried, placeSameMap, placeClose) = PopTracker.PackPlacement.Evaluate(report.Pack, report.Index);
+                        placeTotals = (placeTotals.Tried + placeTried, placeTotals.SameMap + placeSameMap, placeTotals.Close + placeClose);
                         entry.TilesPct = Pct(report.TilesLinked, report.TilesTotal);
                         entry.PlacedPct = Pct(report.ApLocationsPlaced, report.ApLocationsTotal);
                         entry.LocationsPlaced = report.ApLocationsPlaced;
@@ -697,6 +702,8 @@ namespace AP_Atlas.Core
             if (suggestTotals.Tried > 0)
                 Print($"  Suggestions on the packs' own mappings (sections named otherwise than the game): {suggestTotals.Tried} tried, the top one right for {suggestTotals.Right} ({Pct(suggestTotals.Right, suggestTotals.Tried)}%); "
                     + $"{suggestTotals.Strong} at 85%+, {suggestTotals.StrongRight} of them right ({Pct(suggestTotals.StrongRight, suggestTotals.Strong)}%).");
+            if (placeTotals.Tried > 0)
+                Print($"  Checks placed near their area (the packs' own pins taken away and placed again): {placeTotals.Tried} placed, {placeTotals.SameMap} on the pin's own map ({Pct(placeTotals.SameMap, placeTotals.Tried)}%), {placeTotals.Close} of those within a tenth of the map's spread ({Pct(placeTotals.Close, placeTotals.SameMap)}%).");
             if (patternTotals.Hand + patternTotals.Linked > 0)
                 Print($"  Fix by example on the same mappings (what a person fixes by hand): {patternTotals.Hand} fixed by hand taught rules that linked {patternTotals.Linked} more, {patternTotals.Right} of them right ({Pct(patternTotals.Right, patternTotals.Linked)}%).");
             if (!string.IsNullOrWhiteSpace(findingsPath))

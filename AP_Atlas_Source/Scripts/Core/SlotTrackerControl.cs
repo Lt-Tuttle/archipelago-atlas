@@ -160,6 +160,7 @@ public partial class SlotTrackerControl : MarginContainer
         _mapTracker.SetSession(Session);
         _mapTracker.GameName = Game;
         _mapTracker.FindPackRequested += () => FindMapPack?.Invoke(Game);
+        _mapTracker.StartPackRequested += () => StartPack?.Invoke(Game, this);
         _mapTracker.NoticesChanged += () => NoticesChanged?.Invoke();
         _mapTracker.PinPicked += (mapId, pinName, ids) =>
         {

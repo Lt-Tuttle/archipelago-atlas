@@ -400,6 +400,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             if (!string.IsNullOrEmpty(game)) _gamesPage?.Select(game);
         };
         slotTracker.FindMapPack = FindMapPack;
+        slotTracker.StartPack = StartPack;
         slotTracker.OpenPackDoctor = (zip, tab) => OpenPackDoctor(zip, tab);
         slotTracker.OpenPackDoctorAtPin = OpenPackDoctorAtPin;
         slotTracker.FixWhatAtlasCan = FixWhatAtlasCan;

@@ -74,6 +74,9 @@ namespace AP_Atlas.UI
         /// <summary>The user pressed "Find a map pack for {game}…" on the empty state (the owner searches GitHub for one).</summary>
         public event Action FindPackRequested;
 
+        /// <summary>"Start a pack" was pressed (the slot makes one from the game's names).</summary>
+        public event Action StartPackRequested;
+
         private Button _findPackButton;
         private string _gameName = "";
 
@@ -86,11 +89,17 @@ namespace AP_Atlas.UI
                 _gameName = value ?? "";
                 if (_findPackButton != null)
                     _findPackButton.Text = _gameName.Length > 0 ? Translate("Find a map pack for {0}…").Replace("{0}", _gameName) : Translate("Find a map pack…");
+                if (_startPackButton != null)
+                    _startPackButton.Text = _gameName.Length > 0 ? Translate("Start a pack for {0}…").Replace("{0}", _gameName) : Translate("Start a pack…");
             }
         }
 
         /// <summary>The empty state's button (for tests).</summary>
         public Button FindPackButton => _findPackButton;
+
+        /// <summary>The empty state's "Start a pack" button (for tests).</summary>
+        public Button StartPackButton => _startPackButton;
+        private Button _startPackButton;
 
         private const int ModeShow = 0, ModeDim = 1, ModeHide = 2;
         private const float DimAlpha = 0.35f;
@@ -327,12 +336,15 @@ namespace AP_Atlas.UI
             var emptyLbl = new Label { Text = Translate("No map pack installed"), HorizontalAlignment = HorizontalAlignment.Center };
             emptyLbl.SetMeta("font_size_ratio", 2.0f);
             emptyVBox.AddChild(emptyLbl);
-            var emptySubLbl = new Label { Text = Translate("Atlas has no PopTracker map pack for this game.\nFind one on GitHub from here, or install one on the Map Packs page (Packs, on the left); it shows here at once."), HorizontalAlignment = Godot.HorizontalAlignment.Center };
+            var emptySubLbl = new Label { Text = Translate("Atlas has no PopTracker map pack for this game.\nFind one on GitHub from here, install one on the Map Packs page (Packs, on the left), or start one of your own; it shows here at once."), HorizontalAlignment = Godot.HorizontalAlignment.Center };
             emptySubLbl.AddThemeColorOverride("font_color", ThemeColors.TextSubtle);
             emptyVBox.AddChild(emptySubLbl);
             _findPackButton = Kit.Button(Translate("Find a map pack…"), Translate("One search of GitHub for this game's PopTracker packs, when you press; you choose what to install."), () => FindPackRequested?.Invoke());
             _findPackButton.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
             emptyVBox.AddChild(_findPackButton);
+            _startPackButton = Kit.Button(Translate("Start a pack…"), Translate("None exists? Atlas makes one from the game's own names: every location a pin, grouped by area, with its own autotracking (it works in PopTracker too). You move the pins onto a real map and share it."), () => StartPackRequested?.Invoke(), flat: true);
+            _startPackButton.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
+            emptyVBox.AddChild(_startPackButton);
             AddChild(_emptyStateContainer);
         }
 
@@ -1497,6 +1509,13 @@ namespace AP_Atlas.UI
                     int ring = Math.Max(3, (int)(size * 0.18f));
                     style.BorderWidthTop = style.BorderWidthBottom = style.BorderWidthLeft = style.BorderWidthRight = ring;
                     borderMap = ring;
+                }
+                if (loc.PlacedByAtlas)
+                {
+                    // Placed by Atlas near its area (the Pack Doctor's guide, at the user's say): a quieter outline, so it reads as a guess.
+                    style.BorderColor = ThemeColors.TextMuted;
+                    btn.TooltipText += "\n" + Translate("Placed by Atlas near its area: if it's elsewhere, right-click it to move it.");
+                    btn.SetMeta("placed_by_atlas", true);
                 }
                 if (MarkerLookup != null && ids.Count > 0)
                 {

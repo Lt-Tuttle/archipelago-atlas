@@ -186,6 +186,8 @@ public partial class MainTrackerWindow
             GuidedFixerAsync);
         await ScenarioAsync("Sharing fixes: the author's report lists what the user fixed by hand; a pack's fixes export to one file with their pictures and import into a pack without them (a preview first, one undo step), where both fixed the same thing the user's stays unless they tick the file's; Suggest them to Atlas shows the user's own fixes ticked and exactly what goes, sends only the ticked ones (scrubbed, with the pack's facts) as one event with the fixes attached, and keeps a copy",
             SharingFixesAsync);
+        await ScenarioAsync("Start a pack, and the last fixer: a game with no map pack gets Start a pack on its empty map, which makes a PopTracker pack from the game's names (every location a pin grouped by area, every item in Key Items, its own mapping) that the slot uses at once with every location linked; the guide places a check no pin shows beside its area's pin after a preview, drawn as Atlas's",
+            StartPackAndFixersAsync);
         await ScenarioAsync("Map packs reach connected slots: Key Items offers the pack's layouts and two Atlas builds by item group, kept per slot; the chat's filters sit in one row; the Chat and System Log tabs carry a dot for lines that arrived while they weren't showing, cleared when shown; a slot without a pack offers \"Find a map pack for <game>…\" on its map, which shows Map Packs and searches GitHub once; a pack chosen from the results downloads with a progress line, installs with a card and reaches the slot's map; Atlas picks a game's pack by itself (of the projects found, one with more stars whose pack doesn't fit the game's names is passed over for the one that fits); a pack installed while a slot is connected shows on its map at once, without a reconnect; deleted, the map says there's no pack again; another pack for the game takes its place; a pack half of whose pins link to the seed's checks says so on the map, and its button makes its project's release found for the seed the game's pack, which the slot switches to",
             PacksReachConnectedSlotsAsync);
         await ScenarioAsync("Live map following: a pack whose scripts follow the game switches the map to the tab the room's data storage names, at connect and when it changes (Atlas asks the server about the key and never writes the room's data); with the switch off, the map stays; the switch is remembered per slot",
@@ -4059,6 +4061,89 @@ public partial class MainTrackerWindow
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
             if (_profiles.Contains(profile)) DeleteProfile(profile);
             AP_Atlas.Core.SafeFile.Delete(zip);
+        }
+    }
+
+    private async Task StartPackAndFixersAsync()
+    {
+        string packs = AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory();
+        string started = System.IO.Path.Combine(packs, "UI test starter pack.zip");
+        string placeZip = System.IO.Path.Combine(packs, "uitest_place_pack.zip");
+        var profiles = new List<MultiworldProfile>();
+        string placeKey = "";
+        try
+        {
+            // 1. Start a pack: a game with none, its names from the room.
+            await using (var server = new FakeArchipelagoServer { SlotGame = "Starter Game" })
+            {
+                server.Slots.Add("Starter");
+                server.Games["Starter Game"] = new FakeGame("57a47e0123456789abcdef0123456789abcdef01",
+                    new Dictionary<string, long> { ["Sword"] = 1000, ["Shield"] = 1001 },
+                    new Dictionary<string, long> { ["UP: Andre"] = 5000, ["UP: Bell Key"] = 5001, ["Route 1 - Item Ball"] = 5002 });
+                var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
+                profile.Slots.Clear();
+                profile.Slots.Add("Starter");
+                _profiles.Add(profile);
+                profiles.Add(profile);
+                await OnConnectSlotPressedAsync("Starter", profile);
+                var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Starter"), "the slot's view");
+                var start = await UiTestWaitForAsync(() => slot.MapTracker.StartPackButton is { } b && b.Text == "Start a pack for Starter Game…" ? b : null, "the empty map's Start a pack button");
+                UiTestExpect(slot.Pack == null, "the game had a pack already");
+                start.EmitSignal(BaseButton.SignalName.Pressed);
+                var dialog = await UiTestWaitForAsync(() => AP_Atlas.UI.StartPackDialog.Showing, "the Start a pack dialog");
+                dialog.ChooseForTests("UI test starter pack");
+                await UiTestWaitForAsync(() => System.IO.File.Exists(started) ? slot : null, "the started pack's file");
+                var pack = await UiTestWaitForAsync(() => slot.Pack is { } p && p.Manifest?.Name == "UI test starter pack" ? p : null, "the slot to use the started pack");
+                await UiTestWaitForAsync(() => new long[] { 5000, 5001, 5002 }.All(id => slot.PackIndex.ByLocation.ContainsKey(id)) ? slot : null, "every location linked through the started pack's mapping");
+                UiTestExpect(pack.Locations.Count(l => l.Name == "Andre" || l.Name == "Bell Key" || l.Name == "Item Ball") == 3 && pack.Maps.Count == 1,
+                    $"the started pack's pins or map aren't as made: {string.Join(", ", pack.Locations.Select(l => l.FullPath))}");
+                UiTestExpect(slot.PackIndex.ItemIdsFor("sword").Contains(1000) && slot.PackIndex.ItemIdsFor("shield").Contains(1001), "the started pack's items aren't linked to the game's");
+            }
+
+            // 2. The last fixer, on a pack whose "UP: Lantern" has no pin.
+            AP_Atlas.Core.Testing.FakeMapPack.Write(placeZip, "UI test place pack", "Place Test Game",
+                locationsJson: """[{"name":"Church","sections":[{"name":"UP: Bell Key"},{"name":"UP: Altar"}],"map_locations":[{"map":"World","x":100,"y":100}]},""" +
+                               """{"name":"Hall","sections":[{"name":"UB: Torch"}],"map_locations":[{"map":"World","x":600,"y":400}]}]""");
+            await using (var server = new FakeArchipelagoServer { SlotGame = "Place Test Game" })
+            {
+                server.Slots.Add("Placer");
+                server.Games["Place Test Game"] = new FakeGame("91ace0123456789abcdef0123456789abcdef012",
+                    new Dictionary<string, long> { ["Sword"] = 1000, ["Shield"] = 1001 },
+                    new Dictionary<string, long> { ["UP: Bell Key"] = 6000, ["UP: Altar"] = 6001, ["UP: Lantern"] = 6002, ["UB: Torch"] = 6003 });
+                var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
+                profile.Slots.Clear();
+                profile.Slots.Add("Placer");
+                _profiles.Add(profile);
+                profiles.Add(profile);
+                await OnConnectSlotPressedAsync("Placer", profile);
+                var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Placer"), "the slot's view");
+                var pack = await UiTestWaitForAsync(() => slot.Pack is { ImagesChecked: true } p && p.Manifest?.Name == "UI test place pack" ? p : null, "the place pack");
+                placeKey = AP_Atlas.Core.PopTracker.PackFixes.KeyFor(pack);
+                string key = placeKey;
+                // The guide places "UP: Lantern" beside the Church (the UP checks' pin), after a preview.
+                OpenPackDoctor(placeZip);
+                var window = await UiTestWaitForAsync(() => GetTree().Root.GetChildren().OfType<AP_Atlas.UI.PackDoctorWindow>().FirstOrDefault(w => w.Title.EndsWith("UI test place pack", StringComparison.Ordinal)), "the Pack Doctor window");
+                await UiTestWaitForAsync(() => window.HasReport && window.PlannedPlacements().Count == 1 ? window : null, "the guide's plan to place the lantern");
+                var plan = window.PlannedPlacements()[0];
+                UiTestExpect(plan.Id == 6002 && plan.Near == "Church" && plan.MapId.Length > 0, $"the lantern isn't planned beside the Church: {plan}");
+                window.PreviewPlacements();
+                var confirm = await UiTestWaitForAsync(() => window.GetChildren().OfType<ConfirmationDialog>().FirstOrDefault(d => d.Title == "Place checks near their area"), "the placement's preview");
+                UiTestExpect(!AP_Atlas.Core.PopTracker.PackFixes.Get(key).AddedPins.Any(), "a pin was placed before the preview's Place");
+                confirm.EmitSignal(AcceptDialog.SignalName.Confirmed);
+                var added = await UiTestWaitForAsync(() => AP_Atlas.Core.PopTracker.PackFixes.Get(key).AddedPins.FirstOrDefault(a => a.ApLocationIds.Contains(6002)), "the lantern's pin");
+                UiTestExpect(added.Source == AP_Atlas.Core.PopTracker.PackPlacement.Source && Math.Abs(added.X - 100) < 80 && Math.Abs(added.Y - 100) < 80, $"the lantern's pin isn't Atlas's beside the Church: {added.Source} at {added.X},{added.Y}");
+                await UiTestWaitForAsync(() => slot.EffectivePack.Locations.FirstOrDefault(l => l.PlacedByAtlas) is { } placed && slot.PackIndex.ByLocation.ContainsKey(6002) ? placed : null, "the slot to show the placed pin as Atlas's");
+                window.EmitSignal(Window.SignalName.CloseRequested);
+            }
+        }
+        finally
+        {
+            foreach (var w in GetTree().Root.GetChildren().OfType<AP_Atlas.UI.PackDoctorWindow>()) w.QueueFree();
+            foreach (var profile in profiles) if (_profiles.Contains(profile)) DeleteProfile(profile);
+            if (placeKey.Length > 0) AP_Atlas.Core.PopTracker.PackFixes.Reset(placeKey);
+            AP_Atlas.Core.SafeFile.Delete(started);
+            AP_Atlas.Core.SafeFile.Delete(placeZip);
+            AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
         }
     }
 

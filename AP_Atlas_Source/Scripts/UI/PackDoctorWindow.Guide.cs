@@ -177,7 +177,20 @@ namespace AP_Atlas.UI
             var placeStep = Step(box, ++number, "unplaced", "Place the checks no pin shows", unplaced, unplaced == 0,
                 unplaced > 0 ? $"{unplaced} of {game}'s locations{(report.SeedLocationIds.Count > 0 ? " in your seed" : "")} have no pin. Put each on a map, add it to a pin, or leave the ones your options turn off."
                     : "Every location has a pin.");
-            if (unplaced > 0) placeStep.AddChild(Kit.Button("Place them", "Opens the list of locations with no pin", () => SelectTab("Locations")));
+            if (unplaced > 0)
+            {
+                var placeRow = new HFlowContainer();
+                placeRow.AddThemeConstantOverride("h_separation", 8);
+                int near = PlannedPlacements().Count;
+                if (near > 0)
+                {
+                    var placeNear = Kit.Button($"Place {near} near their area…", "Shows where each goes (beside a pin of a check from the same area), then places them as Atlas's pins in one undoable step; move any that's elsewhere", PreviewPlacements);
+                    placeNear.SetMeta("place_near", near);
+                    placeRow.AddChild(placeNear);
+                }
+                placeRow.AddChild(Kit.Button("Place them by hand", "Opens the list of locations with no pin", () => SelectTab("Locations")));
+                placeStep.AddChild(placeRow);
+            }
             // 6. Tiles and pictures.
             int tiles = TileProblems();
             var tileStep = Step(box, ++number, "tiles", "Tiles and pictures", tiles, tiles == 0,
@@ -246,6 +259,35 @@ namespace AP_Atlas.UI
             parent.AddChild(card);
             return column;
         }
+
+        // ---- Checks no pin shows, placed near their area ----
+
+        /// <summary>Where the checks no pin shows would go (this seed's, when a slot of the game is connected).</summary>
+        public List<Placement> PlannedPlacements()
+        {
+            if (_report?.Index == null || _report.Pack == null) return new List<Placement>();
+            var unplaced = _report.Index.UnplacedLocations();
+            if (_report.SeedLocationIds.Count > 0) unplaced = unplaced.Where(_report.SeedLocationIds.Contains);
+            return PackPlacement.Plan(_report.Pack, _report.Index, unplaced.ToList());
+        }
+
+        /// <summary>Shows where each check would go, then places them (for tests too: the dialog's Place applies).</summary>
+        public void PreviewPlacements()
+        {
+            var placements = PlannedPlacements();
+            if (placements.Count == 0) { SetStatus("No check left that has an area with pins."); return; }
+            string details = string.Join("\n", placements.Take(200).Select(p => $"{p.Name}  →  {MapName(p.MapId)}, beside {p.Near}"))
+                + (placements.Count > 200 ? $"\n… and {placements.Count - 200} more" : "");
+            Dialogs.Confirm(this, "Place checks near their area",
+                $"Places {placements.Count} check{(placements.Count == 1 ? "" : "s")} no pin shows beside a pin of a check from the same area, as Atlas's pins (a quieter outline; move or remove any like other added pins). One step: Undo reverses it.",
+                "Place", () =>
+                {
+                    PackPlacement.Apply(_original, placements);
+                    SetStatus($"Placed {placements.Count} check{(placements.Count == 1 ? "" : "s")} near their area. Undo reverses it.");
+                }, details: details);
+        }
+
+        private string MapName(string mapId) => _report?.Pack?.Maps.TryGetValue(mapId, out var map) == true ? _report.Pack.DisplayNameOfMap(map.Name) : mapId;
 
         // ---- Which version the pack fits ----
 

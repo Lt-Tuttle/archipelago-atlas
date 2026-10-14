@@ -50,6 +50,9 @@ namespace AP_Atlas.Core.PopTracker
         [JsonProperty("sections")] public List<PopTrackerSection> Sections { get; set; } = new List<PopTrackerSection>();
         [JsonProperty("children")] public List<PopTrackerLocation> Children { get; set; } = new List<PopTrackerLocation>();
 
+        /// <summary>A pin Atlas placed near its area (the Pack Doctor's guide, at the user's say): drawn with a quieter outline, so it reads as a guess.</summary>
+        [JsonIgnore] public bool PlacedByAtlas { get; set; }
+
         // Sometimes locations define item_count directly at the root if there are no sections
         [JsonProperty("item_count")] public int ItemCount { get; set; } = 1;
 

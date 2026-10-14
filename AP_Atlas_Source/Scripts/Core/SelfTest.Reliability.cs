@@ -819,6 +819,43 @@ namespace AP_Atlas.Core
             Expect(strong.Suggestions[0].Id == 9 && weak.Suggestions[0].Id == 10 && weak.Suggestions.Count == 2, "a location was offered first to two rows");
         }
 
+        /// <summary>
+        /// The guided fixer's last rule (step 6): a check no pin shows, placed beside its area's pins.
+        /// </summary>
+        private static async Task GuidedFixerRulesTwo()
+        {
+            string zip = Scratch("selftest_fixer2.zip");
+            string locations = "[" +
+                "{\"name\":\"Parish\",\"children\":[{\"name\":\"Church\",\"sections\":[{\"name\":\"Bell Key\"},{\"name\":\"Old Altar\"}],\"map_locations\":[{\"map\":\"World\",\"x\":100,\"y\":100}]}]}," +
+                "{\"name\":\"Burg\",\"children\":[{\"name\":\"Hall\",\"sections\":[{\"name\":\"Torch\"}],\"map_locations\":[{\"map\":\"World\",\"x\":600,\"y\":400}]}]}]";
+            AP_Atlas.Core.Testing.FakeMapPack.Write(zip, "Self-test fixer pack 2", "Self Test Game G", locationsJson: locations,
+                files: new Dictionary<string, string>
+                {
+                    ["scripts/autotracking/location_mapping.lua"] = "LOCATION_MAPPING = {\n" +
+                        "    [1] = {\"@Parish/Church/Bell Key\"},\n    [2] = {\"@Parish/Church/Old Altar\"},\n    [5] = {\"@Burg/Hall/Torch\"},\n}\n"
+                });
+            var pack = await Task.Run(() => PopTracker.PopTrackerPackLoader.InspectZipPack(zip)) ?? throw new InvalidOperationException("the fixer pack wasn't read");
+            var names = new PopTracker.GameNameTable
+            {
+                Game = "Self Test Game G",
+                Locations = new Dictionary<string, long>
+                {
+                    ["UP: Bell Key"] = 1,
+                    ["UP: Altar Treasure - behind the bell"] = 2,
+                    ["UP: Lantern"] = 3,
+                    ["UB: Torch"] = 5,
+                    ["Nowhere Prize"] = 6,
+                },
+                Items = new Dictionary<string, long> { ["Sword"] = 1000, ["Shield"] = 1001 }
+            };
+            var report = await Task.Run(() => PopTracker.PackDoctor.Analyze(PopTracker.PackDoctor.Prepare(pack, names)));
+            // "UP: Lantern" has no pin: it goes beside the Church (the UP checks' pin), on World; "Nowhere Prize" has no area and stays.
+            var placed = PopTracker.PackPlacement.Plan(report.Pack, report.Index, new long[] { 3, 6 });
+            var lantern = placed.SingleOrDefault();
+            Expect(lantern != null && lantern.Id == 3 && lantern.MapId == "World" && lantern.Near == "Church" && Math.Abs(lantern.X - 100) < 60 && Math.Abs(lantern.Y - 100) < 60 && (lantern.X != 100 || lantern.Y != 100),
+                $"the check wasn't placed beside its area's pin: {string.Join(", ", placed)}");
+        }
+
         private static async Task GameListLabFacts()
         {
             const string sha = "00aa11bb22cc33dd44ee55ff66778899aabbccddeeff00112233445566778899";
