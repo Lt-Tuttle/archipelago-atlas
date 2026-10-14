@@ -19,6 +19,9 @@ public partial class MainTrackerWindow
     /// <summary>Test hook: where reports go (the UI test's fake site), or "" for a build that can't report. Null: as built.</summary>
     internal static string? TestSentryDsn;
 
+    /// <summary>Test hook: where pack fix suggestions go (the UI test's fake site), or "" for a build that can't send them. Null: as built.</summary>
+    internal static string? TestFixesDsn;
+
     /// <summary>The service for this run: a released build reports to the address baked in (or ATLAS_SENTRY_DSN, for checking by hand).</summary>
     private void SetUpCrashReports()
     {
@@ -41,6 +44,10 @@ public partial class MainTrackerWindow
             SystemInfo = () => AP_Atlas.UI.AboutDialog.BuildSystemInfo(EngineLineForAbout(), AtlasVersion.Commit)
         };
         _crashReports.Changed += () => _settingsPage?.RefreshRows();
+        // Pack fix suggestions go to their own Sentry project, scrubbed like crash reports (the Pack Doctor sends them).
+        string fixesDsn = TestFixesDsn ?? System.Environment.GetEnvironmentVariable("ATLAS_SENTRY_FIXES_DSN") ?? AtlasVersion.SentryFixesDsn;
+        FixSuggestionService.Configure(fixesDsn, () => _crashReports!.Scrubber(), context, _appSettings, Path.Combine(DataManager.GetDataDirectory(), CrashReportService.ReportsFolder));
+        FixSuggestionService.Card = (text, kind) => ShowToast(text, kind == NoticeKind.Warning ? ThemeColors.Warning : ThemeColors.Info);
     }
 
     /// <summary>Once the window is ready: a problem last time is offered. A test or check run drives the service itself.</summary>

@@ -50,6 +50,8 @@ param(
     [string]$Godot = $env:ATLAS_GODOT,
     # Where crash reports go (Sentry's DSN, a public value), baked into the build; empty builds an Atlas that can't report.
     [string]$SentryDsn = $env:SENTRY_DSN,
+    # Where pack fix suggestions go (the DSN of their own Sentry project, a public value); empty: the build can't send them.
+    [string]$SentryFixesDsn = $env:SENTRY_FIXES_DSN,
     [switch]$SkipTests,
     [string]$ScratchRoot = [System.IO.Path]::GetTempPath()
 )
@@ -123,6 +125,7 @@ $psi.EnvironmentVariables['UseSharedCompilation'] = 'false'
 $psi.EnvironmentVariables['MSBUILDDISABLENODEREUSE'] = '1'
 # Directory.Build.props bakes SENTRY_DSN into the assemblies (AtlasVersion.SentryDsn).
 if ($SentryDsn) { $psi.EnvironmentVariables['SENTRY_DSN'] = $SentryDsn } else { $psi.EnvironmentVariables.Remove('SENTRY_DSN') }
+if ($SentryFixesDsn) { $psi.EnvironmentVariables['SENTRY_FIXES_DSN'] = $SentryFixesDsn } else { $psi.EnvironmentVariables.Remove('SENTRY_FIXES_DSN') }
 $proc = New-Object System.Diagnostics.Process
 $proc.StartInfo = $psi
 # Output is collected line by line as it arrives (not read to its end: a helper process holding the pipe open after Godot
@@ -192,6 +195,19 @@ if ($dsnBytes.Length -gt 0) {
     Write-Host "Crash reports: on (the build holds the address)."
 }
 else { Write-Host 'Crash reports: off (no SENTRY_DSN; a release build needs one).' -ForegroundColor Yellow }
+# The fix suggestions' address likewise.
+$fixesBytes = [System.Text.Encoding]::UTF8.GetBytes("$SentryFixesDsn")
+if ($fixesBytes.Length -gt 0) {
+    $fixesFound = $false
+    for ($i = 0; $i -le $coreBytes.Length - $fixesBytes.Length -and -not $fixesFound; $i++) {
+        $match = $true
+        for ($j = 0; $j -lt $fixesBytes.Length -and $match; $j++) { if ($coreBytes[$i + $j] -ne $fixesBytes[$j]) { $match = $false } }
+        if ($match) { $fixesFound = $true }
+    }
+    if (-not $fixesFound) { Stop-Build 4 'The fix suggestions address (SENTRY_FIXES_DSN) was given but the build does not hold it.' }
+    Write-Host "Fix suggestions: on (the build holds the address)."
+}
+else { Write-Host 'Fix suggestions: off (no SENTRY_FIXES_DSN).' -ForegroundColor Yellow }
 $commit = if ($coreVersion -match '\+([0-9a-f]{7,})') { $Matches[1].Substring(0, 7) } else { 'no commit recorded' }
 
 # 5. The tests, on the build that ships.

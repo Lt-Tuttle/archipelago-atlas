@@ -107,6 +107,13 @@ also helps, or leaves unchanged, the holdout; no pack anywhere gets worse.
 | A grid none of whose tiles names an item of the game, in a pack whose other grids do, shows the pack's own state (an enemizer table): said once per grid, its tiles not counted among those to link. | A Link to the Past (2,057 rows); Super Mario 64; Shivers |
 | Numbered sections named alike ("Pot #1" to "Pot #40") that match nothing of the game's are one family (another version or fork of the apworld has them): said once, nothing to choose. | A Link to the Past (door and pot shuffle forks); Undertale |
 
+## Where new rules come from
+
+The corpus (with its holdout) and what users send: the Pack Doctor's **Suggest them to Atlas** sends the fixes a person made
+by hand, and `Tools/review_suggestions.py` groups them by shape ("clear {section} spear weapon", "{pin} - {section}", a
+marker named "space-#") across packs. A shape seen in two or more packs is a candidate; it becomes a rule only as every
+rule does: a method that works from what any pack carries, proven on the corpus and the holdout, no pack worse.
+
 ## What isn't a rule
 
 - Ids a mapping lists that this apworld doesn't have: the pack is for another version. Reported, never guessed.

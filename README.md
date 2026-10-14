@@ -37,7 +37,7 @@ Atlas needs Windows 10 or 11 (64-bit). Updates are offered inside Atlas, with yo
 Your PC is yours, and so is your data.
 
 - **Nothing leaves your PC without your say.** Atlas asks the first time it needs to go anywhere new (an update check, a room's status page, Cheese Tracker, GitHub) and the first time it needs to look outside its own folder. Every answer is listed under **Settings → Privacy & permissions**, where you can take it back.
-- **No account, no telemetry, no analytics.** Crash reports are opt-in: after a problem, Atlas shows you the whole report before anything is sent, and it never includes names, paths, servers, slots, chat or log lines.
+- **No account, no telemetry, no analytics.** Crash reports are opt-in: after a problem, Atlas shows you the whole report before anything is sent, and it never includes names, paths, servers, slots, chat or log lines. So are map pack fix suggestions: you tick which of your fixes go and see exactly what's sent.
 - **Light on Archipelago's servers.** One request at a time per site, cached answers, backoff after failures, and Atlas never loads a room's page by itself (that would wake a sleeping room).
 - **Secrets stay encrypted** for your Windows account: room passwords and your Cheese Tracker API key.
 

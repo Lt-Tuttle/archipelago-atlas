@@ -68,6 +68,14 @@ namespace AP_Atlas.Core
             "service: what the code was doing, Atlas's version and the kind of PC, and nothing more. You see the whole report first, as it would be " +
             "sent. Names, paths, servers, slots, chat and log lines are never included. Reports stay in Atlas's logs folder either way.");
 
+        public static readonly Kind FixSuggestions = new Kind("online.fix-suggestions", "Send your map pack fixes to Atlas's developer",
+            "When you suggest your fixes to Atlas, it sends the ones you tick to its developer, who looks for patterns that help every pack. You see them first.",
+            "From the Pack Doctor (Your fixes, or the guide's last step), Atlas can send the fixes you made by hand to its developer through Sentry, " +
+            "in a project of their own apart from crash reports: for each fix you tick, what the pack wrote, what you chose and what Atlas had guessed; " +
+            "with them the game, the pack's name, version, project and file hash, Atlas's version and the kind of PC. You see exactly what's sent first. " +
+            "Names, paths, servers, slots and chat are never included. The developer reads them for patterns that become rules for every pack; " +
+            "no pack's fix is shipped to anyone as such. A copy of each suggestion sent stays in Atlas's reports folder.");
+
         public static readonly Kind EngineSetup = new Kind("online.engine-setup", "Download the Atlas Engine's parts into Atlas's folder",
             "Atlas downloads what logic needs into its own folder, each file checked against a fixed hash: a game's world comes from Archipelago's release (about 22 MB, once).",
             "Logic, maps and hints run on Archipelago's own code. A game's world comes from Archipelago's release, downloaded once from GitHub " +
@@ -80,13 +88,13 @@ namespace AP_Atlas.Core
             "To find the release that works with your map pack, Atlas downloads a game's newest few releases into its folder and tries each. Nothing is installed.",
             "Atlas downloads the newest four releases of a game's apworld from the game's projects on GitHub into the game's own folder (kept there, like every release Atlas downloads), reads what each one's setup guide and manifest say and, with the Atlas Engine set up, loads each in a throwaway engine process to measure your map pack against its checks. Loading a release runs its code, as installing it would, so the projects it comes from become ones you trust (listed under Settings \u2192 Privacy & permissions, where you can stop trusting them). Nothing is installed in the engine.");
 
-        public static IReadOnlyList<Kind> All { get; } = new[] { FindArchipelago, WriteArchipelago, EngineSetup, GitHubLookups, ReleaseLook, RoomStatusReads, UpdateChecks, CrashReports };
+        public static IReadOnlyList<Kind> All { get; } = new[] { FindArchipelago, WriteArchipelago, EngineSetup, GitHubLookups, ReleaseLook, RoomStatusReads, UpdateChecks, CrashReports, FixSuggestions };
 
         /// <summary>Every place Atlas reaches online, in plain words: the privacy statement (Settings → Privacy &amp; permissions, About). A new site joins it.</summary>
         public const string WhereAtlasGoesOnline =
             "The archipelago.gg rooms you connect to, and a room's status page when you allow it (to fill in a multiworld from its link, or after a failed reconnect). Cheese Tracker (your instance) and spheretracker.de (the host's room) for the multiworlds you link. " +
             "GitHub for apworld releases, and for new versions of Atlas (once a day at most, and only to download one when you ask), when you allow it. " +
-            "python.org, pypa.io and PyPI when you set up the Atlas Engine. Sentry (sentry.io), only to send a crash report you've seen and allowed. " +
+            "python.org, pypa.io and PyPI when you set up the Atlas Engine. Sentry (sentry.io), only to send a crash report or map pack fixes you've seen and allowed. " +
             "Nothing else, and nothing at startup.";
 
         private static readonly HashSet<string> _deniedThisSession = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

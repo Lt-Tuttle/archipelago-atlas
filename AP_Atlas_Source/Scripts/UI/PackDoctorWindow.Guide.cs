@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using AP_Atlas.Core;
 using AP_Atlas.Core.PopTracker;
+using AP_Atlas.Core.Reports;
 using Godot;
 
 namespace AP_Atlas.UI
@@ -191,8 +192,13 @@ namespace AP_Atlas.UI
             }
             else
             {
-                var endStep = Step(box, ++number, "finish", "Done", 0, true, "This pack works for your seed as far as Atlas can tell. Tell its author what you fixed, so the next version has it.");
-                endStep.AddChild(Kit.Button("Report to the author", "Opens the report for the pack's author", () => SelectTab("Report")));
+                var endStep = Step(box, ++number, "finish", "Done", 0, true, "This pack works for your seed as far as Atlas can tell. Tell its author what you fixed, so the next version has it, and suggest your fixes to Atlas, so other packs get the same help.");
+                var shareRow = new HFlowContainer();
+                shareRow.AddThemeConstantOverride("h_separation", 8);
+                shareRow.AddChild(Kit.Button("Report to the author", "Opens the report for the pack's author, with what you fixed", () => SelectTab("Report")));
+                if (FixSuggestionService.Available)
+                    shareRow.AddChild(Kit.Button("Suggest your fixes to Atlas…", "Sends the fixes you made by hand (you tick which, and see exactly what goes) to Atlas's developer", SuggestFixes, HandExamples().Count > 0 || PackFixes.Get(_key).Tiles.Any(t => t.Source == null)));
+                endStep.AddChild(shareRow);
             }
             if (!FitIsLow)
             {

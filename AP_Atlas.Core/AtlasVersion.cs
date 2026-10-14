@@ -39,6 +39,12 @@ namespace AP_Atlas.Core
         /// </summary>
         public static readonly string SentryDsn = Metadata("SentryDsn");
 
+        /// <summary>
+        /// Where pack fix suggestions go when the user sends them: the DSN of their own Sentry project (the SentryFixesDsn
+        /// property, or the SENTRY_FIXES_DSN variable in a release build), or "" in a build without one.
+        /// </summary>
+        public static readonly string SentryFixesDsn = Metadata("SentryFixesDsn");
+
         private static string Metadata(string key) =>
             typeof(AtlasVersion).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().FirstOrDefault(a => a.Key == key)?.Value?.Trim() ?? "";
 

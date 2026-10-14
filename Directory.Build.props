@@ -12,8 +12,12 @@
     <!-- Where crash reports go when the user allows them (Sentry's DSN, a public value): set by the release build from the
          SENTRY_DSN variable, or as a property; a build without one has no crash reporting. -->
     <SentryDsn Condition="'$(SentryDsn)' == ''">$(SENTRY_DSN)</SentryDsn>
+    <!-- Where pack fix suggestions go when the user sends them (Sentry's DSN of its own project, a public value): the
+         SENTRY_FIXES_DSN variable, or the property; a build without one can't send suggestions. -->
+    <SentryFixesDsn Condition="'$(SentryFixesDsn)' == ''">$(SENTRY_FIXES_DSN)</SentryFixesDsn>
   </PropertyGroup>
   <ItemGroup>
     <AssemblyMetadata Include="SentryDsn" Value="$(SentryDsn)" />
+    <AssemblyMetadata Include="SentryFixesDsn" Value="$(SentryFixesDsn)" />
   </ItemGroup>
 </Project>

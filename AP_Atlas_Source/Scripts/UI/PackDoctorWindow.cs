@@ -665,6 +665,7 @@ namespace AP_Atlas.UI
             top.AddChild(Kit.Button("Open fixes folder", "Show where fixes are saved", () => { Directory.CreateDirectory(PackFixes.Dir); ExternalLinks.OpenFolder(PackFixes.Dir); }));
             top.AddChild(Kit.Button("Reset everything…", "Remove all your fixes for this pack", () => Confirm("Remove every fix for this pack?", () => PackFixes.Reset(_key)), f.Count > 0 || f.Ignored.Count > 0));
             box.AddChild(top);
+            box.AddChild(SharingRow());
 
             void Group<T>(string title, string category, List<T> list, Func<T, string> describe) where T : PackFixBase
             {
@@ -730,13 +731,23 @@ namespace AP_Atlas.UI
         // Report to the author
         // =====================================================================
 
+        private bool _reportWithFixes = true;
+
+        /// <summary>The author's report as the Report tab shows it (for tests).</summary>
+        public string AuthorReportText() => PackDoctor.AuthorReport(_report) + (_reportWithFixes && WhatFixedIt() is { Length: > 0 } fixedIt ? "\n" + fixedIt : "");
+
         private Control BuildReportTab()
         {
             var box = new VBoxContainer { SizeFlagsVertical = Control.SizeFlags.ExpandFill };
             box.AddThemeConstantOverride("separation", 6);
-            box.AddChild(Kit.Subtle("A summary of problems in the pack itself, ready to paste into an issue on the pack's page. Your local fixes and settings aren't included."));
-            string text = PackDoctor.AuthorReport(_report);
+            box.AddChild(Kit.Subtle("A summary of problems in the pack itself, ready to paste into an issue on the pack's page (Copy, then the pack's issue page). Your settings aren't included; what you fixed by hand is, when the box below is ticked, so the author can see what worked."));
+            string fixedIt = WhatFixedIt();
+            var include = new CheckBox { Text = Tr("Include what I fixed"), ButtonPressed = _reportWithFixes, Disabled = fixedIt.Length == 0, TooltipText = Tr(fixedIt.Length == 0 ? "You haven't fixed anything by hand in this pack" : "Adds a section listing the fixes you made by hand") };
+            include.Toggled += on => { _reportWithFixes = on; RenderCurrentTab(); };
+            box.AddChild(include);
+            string text = PackDoctor.AuthorReport(_report) + (_reportWithFixes && fixedIt.Length > 0 ? "\n" + fixedIt : "");
             var edit = new TextEdit { Text = text, Editable = true, SizeFlagsVertical = Control.SizeFlags.ExpandFill, WrapMode = TextEdit.LineWrappingMode.Boundary };
+            edit.SetMeta("author_report", true);
             edit.AddThemeFontSizeOverride("font_size", _fontSize);
             box.AddChild(edit);
             var row = new HBoxContainer();

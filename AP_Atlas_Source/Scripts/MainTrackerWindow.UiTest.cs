@@ -184,6 +184,8 @@ public partial class MainTrackerWindow
             PackDoctorAsync);
         await ScenarioAsync("Guided fixer: the Pack Doctor opens on Make this pack work, whose steps say what's left in order; two rows linked by hand in the one-by-one review teach a rule that links the rest, shown in a preview first and applied as one undoable step; the review's keys skip, say not a check, undo and take the first guess; the pack is measured against this seed's names",
             GuidedFixerAsync);
+        await ScenarioAsync("Sharing fixes: the author's report lists what the user fixed by hand; a pack's fixes export to one file with their pictures and import into a pack without them (a preview first, one undo step), where both fixed the same thing the user's stays unless they tick the file's; Suggest them to Atlas shows the user's own fixes ticked and exactly what goes, sends only the ticked ones (scrubbed, with the pack's facts) as one event with the fixes attached, and keeps a copy",
+            SharingFixesAsync);
         await ScenarioAsync("Map packs reach connected slots: Key Items offers the pack's layouts and two Atlas builds by item group, kept per slot; the chat's filters sit in one row; the Chat and System Log tabs carry a dot for lines that arrived while they weren't showing, cleared when shown; a slot without a pack offers \"Find a map pack for <game>…\" on its map, which shows Map Packs and searches GitHub once; a pack chosen from the results downloads with a progress line, installs with a card and reaches the slot's map; Atlas picks a game's pack by itself (of the projects found, one with more stars whose pack doesn't fit the game's names is passed over for the one that fits); a pack installed while a slot is connected shows on its map at once, without a reconnect; deleted, the map says there's no pack again; another pack for the game takes its place; a pack half of whose pins link to the seed's checks says so on the map, and its button makes its project's release found for the seed the game's pack, which the slot switches to",
             PacksReachConnectedSlotsAsync);
         await ScenarioAsync("Live map following: a pack whose scripts follow the game switches the map to the tab the room's data storage names, at connect and when it changes (Atlas asks the server about the key and never writes the room's data); with the switch off, the map stays; the switch is remembered per slot",
@@ -4057,6 +4059,112 @@ public partial class MainTrackerWindow
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
             if (_profiles.Contains(profile)) DeleteProfile(profile);
             AP_Atlas.Core.SafeFile.Delete(zip);
+        }
+    }
+
+    private async Task SharingFixesAsync()
+    {
+        string zip = System.IO.Path.Combine(AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory(), "uitest_share_pack.zip");
+        string exported = System.IO.Path.Combine(DataManager.GetDataDirectory(), "uitest_shared_fixes.zip");
+        FakeMapPack.Write(zip, "UI test share pack", "Share Test Game",
+            locationsJson: """[{"name":"Cave","sections":[{"name":"Chest"}],"map_locations":[{"map":"World","x":10,"y":10}]},""" +
+                           """{"name":"Far","sections":[{"name":"Lantern"}],"map_locations":[{"map":"World","x":500,"y":10}]}]""");
+        await using var server = new FakeArchipelagoServer { SlotGame = "Share Test Game" };
+        server.Slots.Add("Sharer"); // the fake room knows only the slots it lists
+        server.Games["Share Test Game"] = new FakeGame("5ba7e0123456789abcdef0123456789abcdef012",
+            new Dictionary<string, long> { ["Sword"] = 1000, ["Shield"] = 1001 },
+            new Dictionary<string, long> { ["Cave Chest Room"] = 4000, ["Far Lantern Box"] = 4001 });
+        await using var sentry = new AP_Atlas.Core.Testing.FakeWebSite();
+        sentry.Answer = (path, _) => new AP_Atlas.Core.Testing.FakeWebSite.FullAnswer(path == "/api/43/envelope/" ? 200 : 404, System.Text.Encoding.UTF8.GetBytes("{\"id\":\"1\"}"));
+        var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Sharer");
+        _profiles.Add(profile);
+        string key = "";
+        TestFixesDsn = $"http://abc123@127.0.0.1:{new Uri(sentry.Site).Port}/43";
+        SetUpCrashReports();
+        AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.FixSuggestions, null, false);
+        AP_Atlas.Core.Permissions.DenyForSession(AP_Atlas.Core.Permissions.FixSuggestions);
+        try
+        {
+            await OnConnectSlotPressedAsync("Sharer", profile);
+            var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Sharer"), "the slot's view");
+            var pack = await UiTestWaitForAsync(() => slot.Pack is { ImagesChecked: true } p ? p : null, "the share pack, its images checked");
+            key = AP_Atlas.Core.PopTracker.PackFixes.KeyFor(pack);
+            var fixes = () => AP_Atlas.Core.PopTracker.PackFixes.Get(key);
+            var original = AP_Atlas.Core.PopTracker.PopTrackerPackLoader.InspectZipPack(zip)!;
+            await UiTestWaitForAsync(() => AP_Atlas.Core.PopTracker.PackDoctorService.Reports.ContainsKey(key) ? slot : null, "the pack's first check");
+            // Fixed by hand: a section's check, a marker that isn't one, a tile's picture.
+            AP_Atlas.Core.PopTracker.PackFixActions.LinkSection(original, "Cave", "Chest", 4000, "Cave Chest Room");
+            AP_Atlas.Core.PopTracker.PackFixActions.NotACheck(original, "Far", "Lantern");
+            AP_Atlas.Core.PopTracker.PackFixActions.SetTileImage(original, "shield", AP_Atlas.Core.PopTracker.PackFixActions.ImportPackImage(original, "images/sword.png"));
+            string picture = fixes().Tiles.First(x => x.Code == "shield").ImageFile;
+
+            // The author's report says what fixed it.
+            OpenPackDoctor(zip, "Report");
+            var window = await UiTestWaitForAsync(() => GetTree().Root.GetChildren().OfType<AP_Atlas.UI.PackDoctorWindow>().FirstOrDefault(w => w.Title.EndsWith("UI test share pack", StringComparison.Ordinal)), "the Pack Doctor window");
+            await UiTestWaitForAsync(() => window.HasReport ? window : null, "the Doctor's report");
+            string report = window.AuthorReportText();
+            UiTestExpect(report.Contains("### What fixed it") && report.Contains("section `Chest` is **Cave Chest Room**") && report.Contains("section `Lantern` isn't a check") && report.Contains("tile `shield` needed another picture"),
+                "the author's report doesn't say what fixed it: " + report);
+
+            // Export, then the fixes gone; import brings them back (with the picture) in one step.
+            window.ExportFixesTo(exported);
+            UiTestExpect(System.IO.File.Exists(exported), "the fixes file wasn't written");
+            AP_Atlas.Core.PopTracker.PackFixes.Reset(key);
+            UiTestExpect(fixes().Count == 0, "the fixes weren't reset");
+            window.ImportFixesFrom(exported);
+            var import = await UiTestWaitForAsync(() => AP_Atlas.UI.ImportFixesDialog.Showing, "the import's preview");
+            UiTestExpect(import.Plan.Adds.Count == 3 && import.Plan.Clashes.Count == 0 && fixes().Count == 0, $"the import's preview is wrong, or it changed something first: adds {import.Plan.Adds.Count}, clashes {import.Plan.Clashes.Count}");
+            import.ChooseForTests(true);
+            await UiTestWaitForAsync(() => fixes().Links.Any(l => l.Subject == "link:Cave|Chest" && l.ApLocationId == 4000) && fixes().Ignored.Contains("loc:unmatched:Far|Lantern") ? window : null, "the imported links");
+            var tile = fixes().Tiles.FirstOrDefault(x => x.Code == "shield");
+            UiTestExpect(tile?.ImageFile is { Length: > 0 } kept && kept != picture && System.IO.File.Exists(System.IO.Path.Combine(AP_Atlas.Core.PopTracker.PackFixes.AssetDir(key), kept)),
+                $"the imported tile's picture isn't kept under its own name: {tile?.ImageFile}");
+
+            // Both fixed the same thing: the user's stays unless they tick the file's.
+            AP_Atlas.Core.PopTracker.PackFixActions.LinkSection(original, "Cave", "Chest", 4001, "Far Lantern Box");
+            window.ImportFixesFrom(exported);
+            import = await UiTestWaitForAsync(() => AP_Atlas.UI.ImportFixesDialog.Showing, "the second import's preview");
+            var clash = import.Plan.Clashes.FirstOrDefault(r => r.Subject == "link:Cave|Chest");
+            UiTestExpect(clash != null && clash.Yours!.Contains("Far Lantern Box") && clash.Theirs.Contains("Cave Chest Room"), $"the clash isn't shown with both sides: {string.Join(" | ", import.Plan.Clashes.Select(r => r.Theirs + " / " + r.Yours))}");
+            import.TakeTheirs(clash!.Key);
+            import.ChooseForTests(true);
+            await UiTestWaitForAsync(() => fixes().Links.Any(l => l.Subject == "link:Cave|Chest" && l.ApLocationId == 4000) ? window : null, "the file's fix taken where ticked");
+            UiTestExpect(AP_Atlas.Core.PopTracker.PackFixes.Undo(key) && fixes().Links.Any(l => l.Subject == "link:Cave|Chest" && l.ApLocationId == 4001), "one Undo didn't take the import back");
+
+            // Suggest them to Atlas: the user's own fixes, ticked; untick one; what's shown is what goes.
+            await UiTestWaitForAsync(() => window.HasReport ? window : null, "the report after the undo");
+            window.SuggestFixes();
+            var suggest = await UiTestWaitForAsync(() => AP_Atlas.UI.SuggestFixesDialog.Showing, "the suggestion dialog");
+            // The user's own fixes: the section's check and the marker (the tile's picture isn't a name to suggest).
+            UiTestExpect(suggest.Ticked.Count == 2 && suggest.PreviewText.Contains("\"chose\": \"Far Lantern Box\"") && !suggest.PreviewText.Contains("Sharer"),
+                $"the suggestion doesn't list the user's two fixes, or names the slot: {suggest.Ticked.Count}\n{suggest.PreviewText}");
+            int lantern = suggest.Ticked.ToList().FindIndex(x => x.PackWrote == "Far / Lantern");
+            suggest.SetTicked(lantern, false);
+            UiTestExpect(!suggest.PreviewText.Contains("Far / Lantern"), "an unticked fix is still in what would be sent");
+            string shown = suggest.PreviewText;
+            suggest.Choose(AP_Atlas.Core.Reports.ReportDecision.SendOnce);
+            var posted = await UiTestWaitForAsync(() => sentry.Received.FirstOrDefault(), "the suggestion to be posted");
+            string body = System.Text.Encoding.UTF8.GetString(posted.Body);
+            UiTestExpect(posted.Path == "/api/43/envelope/" && body.Contains("\"type\":\"attachment\"") && body.Contains("\"chose\": \"Far Lantern Box\""), "the suggestion wasn't posted with its fixes attached: " + body);
+            UiTestExpect(!body.Contains("Far / Lantern") && !body.Contains("Sharer") && body.Replace("\r", "").Contains(shown.Replace("\r", "").Trim()), "what was sent isn't what was shown: " + body);
+            UiTestExpect(AP_Atlas.Core.Permissions.IsAllowed(_appSettings, AP_Atlas.Core.Permissions.FixSuggestions) && !AP_Atlas.Core.Permissions.IsAlwaysAllowed(_appSettings, AP_Atlas.Core.Permissions.FixSuggestions),
+                "Send once didn't allow it for this session only");
+            string copies = System.IO.Path.Combine(DataManager.GetDataDirectory(), "reports", AP_Atlas.Core.Reports.FixSuggestionService.Folder);
+            await UiTestWaitForAsync(() => System.IO.Directory.Exists(copies) && System.IO.Directory.GetFiles(copies).Length > 0 ? window : null, "the copy of what was sent");
+            window.EmitSignal(Window.SignalName.CloseRequested);
+        }
+        finally
+        {
+            foreach (var w in GetTree().Root.GetChildren().OfType<AP_Atlas.UI.PackDoctorWindow>()) w.QueueFree();
+            AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.FixSuggestions, null, false);
+            TestFixesDsn = null;
+            SetUpCrashReports();
+            if (_profiles.Contains(profile)) DeleteProfile(profile);
+            if (key.Length > 0) AP_Atlas.Core.PopTracker.PackFixes.Reset(key);
+            AP_Atlas.Core.SafeFile.Delete(zip);
+            AP_Atlas.Core.SafeFile.Delete(exported);
         }
     }
 
