@@ -30,6 +30,7 @@ namespace AP_Atlas.UI
         private readonly List<Tool> _order = new();
         private readonly List<Button> _styled = new();
         private readonly List<(PanelContainer Band, Label Label)> _bands = new();
+        private readonly Dictionary<Tool, (Label Label, int Count, string What)> _badges = new();
         private Button _engine = null!;
         private Control _frame = null!;
         private VBoxContainer _column = null!;
@@ -62,6 +63,52 @@ namespace AP_Atlas.UI
         public Button ButtonOf(Tool tool) => _buttons[tool];
 
         public Button EngineButton => _engine;
+
+        /// <summary>The count a tool's badge shows (0: none), for tests.</summary>
+        public int BadgeOf(Tool tool) => _badges.TryGetValue(tool, out var badge) ? badge.Count : 0;
+
+        /// <summary>
+        /// A small count on a tool's button (the Map Tracker's notices, say), with what it counts in its tooltip and its
+        /// screen-reader name; 0 hides it.
+        /// </summary>
+        public void SetBadge(Tool tool, int count, string what)
+        {
+            if (!_buttons.TryGetValue(tool, out var button)) return;
+            if (!_badges.TryGetValue(tool, out var badge))
+            {
+                var label = new Label { MouseFilter = MouseFilterEnum.Ignore, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+                label.AddThemeFontSizeOverride("font_size", 9);
+                label.AnchorLeft = 1;
+                label.AnchorRight = 1;
+                label.OffsetLeft = -22;
+                label.OffsetRight = -3;
+                label.OffsetTop = 2;
+                label.OffsetBottom = 15;
+                button.AddChild(label);
+                badge = (label, 0, what);
+                StyleBadge(label);
+            }
+            badge.Label.Text = count > 99 ? "99+" : count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            badge.Label.Visible = count > 0;
+            _badges[tool] = (badge.Label, count, what);
+            button.TooltipText = Tooltip(tool);
+            button.AccessibilityName = count > 0 ? $"{_tr(tool.Title)}, {count} {what}" : _tr(tool.Title);
+        }
+
+        private static void StyleBadge(Label label)
+        {
+            label.AddThemeStyleboxOverride("normal", new StyleBoxFlat
+            {
+                BgColor = AP_Atlas.Core.ThemeColors.Warning,
+                CornerRadiusTopLeft = 6,
+                CornerRadiusTopRight = 6,
+                CornerRadiusBottomLeft = 6,
+                CornerRadiusBottomRight = 6,
+                ContentMarginLeft = 3,
+                ContentMarginRight = 3
+            });
+            label.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextOn(AP_Atlas.Core.ThemeColors.Warning));
+        }
 
         /// <summary>The caption of the group a tool sits in ("ATLAS\nTOOLS", "EXTERNAL\nTOOLS", "ATLAS\nCONFIG"; "" for Home), as written in the code.</summary>
         public string CaptionOf(Tool tool) => _captions[tool];
@@ -165,7 +212,8 @@ namespace AP_Atlas.UI
         private string Tooltip(Tool tool)
         {
             string key = _keyOf(tool);
-            return key.Length > 0 ? $"{_tr(tool.Title)}  ({key})" : _tr(tool.Title);
+            string text = key.Length > 0 ? $"{_tr(tool.Title)}  ({key})" : _tr(tool.Title);
+            return _badges.TryGetValue(tool, out var badge) && badge.Count > 0 ? $"{text}\n{badge.Count} {badge.What}" : text;
         }
 
         /// <summary>Shows the tools' keys as they are now (after a rebind).</summary>

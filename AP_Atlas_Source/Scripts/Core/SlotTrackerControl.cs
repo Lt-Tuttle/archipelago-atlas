@@ -33,6 +33,9 @@ public partial class SlotTrackerControl : MarginContainer
     /// <summary>Raised on the main thread whenever items, checks, hints or logic change.</summary>
     public event Action StateChanged;
 
+    /// <summary>The Map Tracker's notices changed (their count is on the activity bar's Map button).</summary>
+    public event Action NoticesChanged;
+
     /// <summary>Whether this slot's goal can be completed with what it has now (go mode). Null: not known.</summary>
     public bool? GoalInLogic => Model.Logic.GoalInLogic;
 
@@ -157,6 +160,7 @@ public partial class SlotTrackerControl : MarginContainer
         _mapTracker.SetSession(Session);
         _mapTracker.GameName = Game;
         _mapTracker.FindPackRequested += () => FindMapPack?.Invoke(Game);
+        _mapTracker.NoticesChanged += () => NoticesChanged?.Invoke();
         _mapTracker.PinPicked += (mapId, pinName, ids) =>
         {
             // A pin with one check is that location; a pin covering several opens the pin's own view.

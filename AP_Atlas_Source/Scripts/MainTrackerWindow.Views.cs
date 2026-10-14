@@ -82,6 +82,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         using var __perf = AP_Atlas.Core.PerfMonitor.Measure("Refresh context views");
 
         RefreshSlotPicker();
+        RefreshNoticeBadge();
         _propertiesPanel?.OnSelectedSlotChanged(_currentSelectedSlot);
         UpdateSidebarHighlighting();
         RefreshTerminalView();
@@ -101,6 +102,13 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         SwapSidebar(_currentTool.ExplorerTitle, sidebar);
         SwapContentView(view);
     }
+    /// <summary>The Map button's count: the shown slot's notices (the pack's problems and checks no pin shows).</summary>
+    private void RefreshNoticeBadge()
+    {
+        var slot = _currentSelectedSlot != null && GodotObject.IsInstanceValid(_currentSelectedSlot) ? _currentSelectedSlot : null;
+        _activityBar?.SetBadge(AP_Atlas.UI.Tool.MapTracker, slot?.MapTracker?.NoticeCount ?? 0, Tr("notices"));
+    }
+
     /// <summary>Every slot started here, in the order they connected, while it lives (wherever its panel is).</summary>
     private readonly List<SlotTrackerControl> _slots = new();
 

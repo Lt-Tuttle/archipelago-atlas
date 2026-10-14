@@ -178,7 +178,7 @@ public partial class MainTrackerWindow
             PackImagesFollowTheirUsersAsync);
         await ScenarioAsync("Maps without a picture and checks without a pin: a map whose pack ships no usable picture lists its locations (named in a note, each opening in Properties) instead of dots on nothing, and a map with its picture shows its pins; the seed's checks no pin places are listed under Not on the map and counted on the map, and a check that's done leaves the list; Follow my checks is on for a pack that can't follow the game, shows the map of a check made on another map, leaves the map alone while the user zooms it, and is kept per slot",
             PicturelessMapsAsync);
-        await ScenarioAsync("Fix a problem where it shows: the Map Tracker's and Key Items' fix menus (a button, right-click on the map, a pin, a tile) give a map without a picture one of the pack's, move a pin, change which check a section shows, mark one as not a check, place a missing check, give a tile another picture; each a Pack Doctor fix the slot shows at once, with Undo",
+        await ScenarioAsync("Fix a problem where it shows: the Map Tracker's and Key Items' fix menus (a button, right-click on the map, a pin, a tile) give a map without a picture one of the pack's, move a pin, change which check a section shows, mark one as not a check, place a missing check, give a tile another picture; each a Pack Doctor fix the slot shows at once, with Undo; a check made in play that no pin shows becomes a notice (a release's burst doesn't), counted on the Map button, and its Pick its pin links the pin pressed next",
             FixInPlaceAsync);
         await ScenarioAsync("Pack Doctor: on a pack's first check, a pin section whose name matches a location exactly (once punctuation is ignored) is linked by itself as an automatic fix, and a tile named so is the index's own link; the pack's row on the Map Packs page offers Review N, which opens the Doctor on Recommended; the Recommended tab lists what's left, Apply on a row writes the fix, the row goes after the check and the status says so; the rows are grouped by kind with what to do under each, filters by words, kind and map narrow them, Ignore selected hides the selection in one step and Undo brings it back; Undo takes the automatic link back; the Map Tracker's Attention group lists the pack's problems for this seed in plain words and opens the Doctor on the fixing tab; Fix what Atlas can (the pack row's Fix, the Attention group's button) links the confident matches and sets the rest aside in one undoable step, said in a card",
             PackDoctorAsync);
@@ -3937,6 +3937,33 @@ public partial class MainTrackerWindow
             Dialog<AP_Atlas.UI.NamePickerDialog>().ChooseForTests(2000);
             await UiTestWaitForAsync(() => fixes().AddedPins.FirstOrDefault(p => p.ApLocationIds.Contains(2000) && p.MapId == world && p.X == 50 && p.Y == 60), "the placed check's pin");
 
+            // Learning while playing: Far Chest has no pin now (marked as not a check above). Checking it makes a notice,
+            // counted on the Map button; a burst (a release, a collect) makes none; Pick its pin, then a press on the pin, links it.
+            var noChecks = new System.Collections.ObjectModel.ReadOnlyCollection<long>(new List<long>());
+            map.UpdateLogicColors(null, noChecks, null);
+            map.UpdateLogicColors(null, new System.Collections.ObjectModel.ReadOnlyCollection<long>(Enumerable.Range(9000, AP_Atlas.UI.MapTrackerControl.PlayBurst + 1).Select(i => (long)i).ToList()), null);
+            UiTestExpect(!map.Notices().Any(n => n.FromPlay), "a burst of checks (a release or a collect) made notices");
+            map.UpdateLogicColors(null, noChecks, null);
+            map.UpdateLogicColors(null, new System.Collections.ObjectModel.ReadOnlyCollection<long>(new List<long> { 2001 }), null);
+            const string unshown = "play:unshown:2001";
+            var notice = map.Notices().FirstOrDefault(n => n.Key == unshown);
+            UiTestExpect(notice is { FromPlay: true } && notice.Title.Contains("Far Chest", StringComparison.Ordinal) && notice.Actions.Count == 2,
+                $"checking Far Chest (no pin) made no notice that names it: {string.Join(" | ", map.Notices().Select(n => n.Key + ": " + n.Title))}");
+            await UiTestWaitForAsync(() => _activityBar.BadgeOf(AP_Atlas.UI.Tool.MapTracker) == map.NoticeCount && map.NoticeCount > 0 ? map : null, "the Map button to count the notices");
+            map.ShowNotices(true);
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(map.SidebarContent.FindChildren("*", nameof(PanelContainer), true, false).OfType<PanelContainer>().Any(c => c.HasMeta("play_notice") && (string)c.GetMeta("play_notice") == unshown && c.IsVisibleInTree()),
+                "the Notices pane doesn't show the play notice's card");
+            map.PressNotice(unshown, 0);
+            UiTestExpect(map.PickingFor == "Far Chest" && !map.NoticesShown && map.Placing?.StartsWith("Click the pin that shows Far Chest", StringComparison.Ordinal) == true,
+                $"Pick its pin didn't wait for a pin: picking {map.PickingFor}, bar {map.Placing}");
+            far = slot.EffectivePack.Locations.First(l => l.Name == "Far");
+            UiTestExpect(map.PressPinForPicking(far) && map.PickingFor == null, "the pin pressed wasn't taken for the notice's check");
+            await UiTestWaitForAsync(() => fixes().Links.FirstOrDefault(l => l.PinPath == "Far" && l.SectionName == "Far Chest" && l.ApLocationId == 2001), "the picked pin's link");
+            await UiTestWaitForAsync(() => !map.Notices().Any(n => n.Key == unshown) ? map : null, "the notice to go once its check has a pin");
+            UiTestExpect(_activityBar.BadgeOf(AP_Atlas.UI.Tool.MapTracker) == map.NoticeCount, "the Map button's count didn't follow the notices");
+            map.UpdateLogicColors(null, noChecks, null);
+
             // Key Items: a tile given one of the pack's pictures (the shield's own can't be read), then Undo.
             host.ShowTool(AP_Atlas.UI.Tool.KeyItems);
             var items = slot.ProgressionTracker;
@@ -4109,6 +4136,13 @@ public partial class MainTrackerWindow
             UiTestExpect(slot.MapTracker.AttentionRows().All(r => r.Text.Length > 0 && r.Tip.Contains("Opens the Pack Doctor"))
                 && new[] { "loc:unmatched:Shrine|Bell!", "tile:noimage:shield", "map:nobg:Broken" }.All(k => slot.MapTracker.AttentionRows().Any(r => r.Key == k)),
                 $"the Attention rows aren't in plain words with their way to the Doctor, or miss a problem: {string.Join(" | ", slot.MapTracker.AttentionRows().Select(r => r.Key + ": " + r.Text))}");
+            UiTestExpect(slot.MapTracker.Notices().Any(n => n.Key == "map:nobg:Broken" && n.Actions.Count == 2 && n.Actions[0].Label == "Fix it here" && n.Detail.Length > 0),
+                "the missing map picture's notice doesn't say what it means or offer to fix it here");
+            slot.MapTracker.ShowNotices(true);
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(slot.MapTracker.SidebarContent.FindChildren("*", nameof(PanelContainer), true, false).OfType<PanelContainer>().Any(c => c.HasMeta("attention_row") && (string)c.GetMeta("attention_row") == far.Key),
+                "the Notices pane doesn't show the pack's notice as a card");
+            slot.MapTracker.ShowNotices(false);
             slot.MapTracker.PressAttention(far.Key);
             var reopened = await UiTestWaitForAsync(() => GetTree().Root.GetChildren().OfType<AP_Atlas.UI.PackDoctorWindow>().FirstOrDefault(w => w.Visible), "the Doctor window from the Attention row");
             UiTestExpect(reopened.CurrentTabTitle == "Recommended", $"the Attention row opened the Doctor on {reopened.CurrentTabTitle}, not Recommended");

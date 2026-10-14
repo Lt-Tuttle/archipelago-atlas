@@ -286,14 +286,16 @@ namespace AP_Atlas.UI
             sortMargin.AddChild(sortVBox);
             // Never sideways: a long name under Not on the map widened the list and pushed the map rows' counts out of view.
             var listScroll = new ScrollContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill, HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
+            // Maps | Notices: what the pack gets wrong and what play turned up, in a pane of their own.
+            leftVBox.AddChild(BuildNoticeTabs(listScroll));
             leftVBox.AddChild(listScroll);
+            leftVBox.AddChild(_noticesPane);
             var listMargin = new MarginContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
             listScroll.AddChild(listMargin);
             var listBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
             listMargin.AddChild(listBox);
             _mapListContainer = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
             listBox.AddChild(_mapListContainer);
-            BuildAttentionList(listBox);
             BuildUnplacedList(listBox);
             // --- The canvas ---
             var rightPanel = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
@@ -599,7 +601,9 @@ namespace AP_Atlas.UI
             {
                 var before = _checkedLocs;
                 _checkedLocs = new System.Collections.Generic.HashSet<long>(checkedLocs);
+                bool first = !_checksSeen;
                 FollowNewChecks(checkedLocs, before);
+                if (!first) NoticeUnshownChecks(checkedLocs, before);
             }
             if (hintedLocs != null) _hintedLocs = hintedLocs;
             (_colorsRefresh ??= new ViewRefresh(this, RedrawColors, "redrawing the map's colors")).Request();
@@ -630,6 +634,7 @@ namespace AP_Atlas.UI
                     }
                 }
             }
+            PrunePlayNotices();
         }
 
         private PackIndex _index;
@@ -670,6 +675,12 @@ namespace AP_Atlas.UI
             _index = null;
             _currentMapId = "";
             _locIdToMap.Clear();
+            CancelPlacing();
+            if (_playNotices.Count > 0)
+            {
+                _playNotices.Clear();
+                OnNoticesChanged();
+            }
             _canvas.SetPins(Array.Empty<MapCanvas.Pin>());
             _canvas.SetMap(null, Vector2.Zero);
             RefreshMapList();
@@ -1283,20 +1294,17 @@ namespace AP_Atlas.UI
             : _reachableLocs.Contains(id) ? MapPinState.InLogic
             : _glitchedLocs.Contains(id) ? MapPinState.SequenceBreak : MapPinState.OutOfLogic;
 
-        // ---- Attention: the pack's problems that matter for this seed, each opening its fix in the Pack Doctor ----
+        // ---- The pack's problems that matter for this seed (shown as Notices), each opening its fix in the Pack Doctor ----
 
-        /// <summary>One row of the Attention group: the finding's key, what it says in plain words, its tooltip, and what opens its fix.</summary>
+        /// <summary>One of the pack's notices: the finding's key, what it says in plain words, its tooltip, and what opens its fix.</summary>
         public readonly record struct AttentionRow(string Key, string Text, string Tip, Action Open);
 
-        private Button _attentionHeader;
-        private VBoxContainer _attentionBox;
-        private bool _attentionOpen;
         private IReadOnlyList<AttentionRow> _attention = Array.Empty<AttentionRow>();
 
-        /// <summary>The Attention group's rows as shown (for tests).</summary>
+        /// <summary>The pack's notices (for tests).</summary>
         public IReadOnlyList<AttentionRow> AttentionRows() => _attention;
 
-        /// <summary>Presses one Attention row (for tests).</summary>
+        /// <summary>Opens one of the pack's notices in the Pack Doctor (for tests).</summary>
         public void PressAttention(string key) => _attention.FirstOrDefault(r => r.Key == key).Open?.Invoke();
 
         private Action _fixAll;
@@ -1313,48 +1321,7 @@ namespace AP_Atlas.UI
         {
             _attention = rows ?? Array.Empty<AttentionRow>();
             _fixAll = fixAll;
-            if (_attentionBox == null) return;
-            foreach (Node child in _attentionBox.GetChildren())
-            {
-                _attentionBox.RemoveChild(child);
-                child.QueueFree();
-            }
-            bool any = _attention.Count > 0;
-            _attentionHeader.Visible = any;
-            _attentionHeader.Text = (_attentionOpen ? "▾ " : "▸ ") + Translate("Attention ({0})").Replace("{0}", _attention.Count.ToString());
-            _attentionBox.Visible = any && _attentionOpen;
-            if (!_attentionOpen) return;
-            if (fixAll != null)
-            {
-                _fixAllButton = Kit.Button(Translate("Fix what Atlas can"), Translate("Links every pin and tile whose best match is confident (85% or more, no clash) and sets the rest aside, in one step; a card says what was done, and Undo in the Pack Doctor reverses it."), () => fixAll(), small: true);
-                _fixAllButton.SetMeta("attention_fix", true);
-                _attentionBox.AddChild(_fixAllButton);
-            }
-            foreach (var row in _attention)
-            {
-                var open = row.Open;
-                var button = Kit.Button(row.Text, row.Tip, () => open?.Invoke(), flat: true, small: true);
-                button.Alignment = HorizontalAlignment.Left;
-                button.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-                button.ClipText = true;
-                button.AddThemeColorOverride("font_color", ThemeColors.Warning);
-                button.SetMeta("attention_row", row.Key);
-                _attentionBox.AddChild(button);
-            }
-        }
-
-        private void BuildAttentionList(VBoxContainer explorer)
-        {
-            _attentionHeader = Kit.Button("", Translate("What this pack gets wrong for your seed, in plain words: pins that match no check, tiles without an item or image, a missing map picture, a script that stopped. Pick one to open its fix in the Pack Doctor."), () =>
-            {
-                _attentionOpen = !_attentionOpen;
-                SetAttention(_attention);
-            }, flat: true);
-            _attentionHeader.Alignment = HorizontalAlignment.Left;
-            _attentionHeader.Visible = false;
-            explorer.AddChild(_attentionHeader);
-            _attentionBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, Visible = false };
-            explorer.AddChild(_attentionBox);
+            OnNoticesChanged();
         }
 
         private void BuildUnplacedList(VBoxContainer explorer)
@@ -1566,9 +1533,10 @@ namespace AP_Atlas.UI
                 var pinIds = ids;
                 string pinName = loc.Name;
                 string pinMap = _currentMapId;
-                btn.Pressed += () => PinPicked?.Invoke(pinMap, pinName, pinIds);
-                // The wheel over a pin zooms the map as it does elsewhere; a right click opens the pin's fixes.
                 var pinLoc = loc;
+                // A check waiting for its pin (a notice's "Pick its pin") takes the press; otherwise it shows the pin.
+                btn.Pressed += () => { if (!TakePinForPicking(pinLoc)) PinPicked?.Invoke(pinMap, pinName, pinIds); };
+                // The wheel over a pin zooms the map as it does elsewhere; a right click opens the pin's fixes.
                 float pinX = x, pinY = y;
                 btn.GuiInput += ev =>
                 {

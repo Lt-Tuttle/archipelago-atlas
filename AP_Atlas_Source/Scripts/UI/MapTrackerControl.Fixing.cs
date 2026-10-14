@@ -166,6 +166,7 @@ namespace AP_Atlas.UI
         public void CancelPlacing()
         {
             _placing = null;
+            _pickingFor = null;
             if (_placeBar != null) _placeBar.Visible = false;
         }
 
