@@ -25,6 +25,9 @@ public partial class SlotTrackerControl : MarginContainer
     /// <summary>Opens the Pack Doctor for a pack's zip on a tab (set by the window; the Map Tracker's Attention rows use it).</summary>
     public Action<string, string> OpenPackDoctor { get; set; }
 
+    /// <summary>Opens the Pack Doctor for a pack's zip at a pin (its full path) on the Maps tab (set by the window; the pin's fix menu uses it).</summary>
+    public Action<string, string> OpenPackDoctorAtPin { get; set; }
+
     /// <summary>"Fix what Atlas can" for a pack by its key (set by the window; the result shows as a card).</summary>
     public Action<string> FixWhatAtlasCan { get; set; }
 
@@ -185,6 +188,16 @@ public partial class SlotTrackerControl : MarginContainer
         EffectivePack = AP_Atlas.Core.PopTracker.PackFixes.Effective(Pack);
         PackIndex = new AP_Atlas.Core.PopTracker.PackIndex(EffectivePack, locationNames, itemNames);
         AP_Atlas.Core.PopTracker.PackFixes.ApplyLinks(PackIndex);
+        // Fixing in place ("Fix a problem", right-click): the author's pack, this slot's index, the window's Doctor and toasts.
+        var fixing = new AP_Atlas.UI.PackFixContext
+        {
+            Original = Pack,
+            Index = PackIndex,
+            OpenDoctor = (tab, pin) => { if (pin != null) OpenPackDoctorAtPin?.Invoke(Pack.SourcePath, pin); else OpenPackDoctor?.Invoke(Pack.SourcePath, tab); },
+            Say = (text, colour, label, action) => ShowActionToast?.Invoke(text, colour, label, action)
+        };
+        if (_mapTracker != null) _mapTracker.Fixing = fixing;
+        if (_progressionTracker != null) _progressionTracker.Fixing = fixing;
         _mapTracker?.LoadPack(EffectivePack, PackIndex);
         _progressionTracker?.SetPack(EffectivePack, PackIndex);
         StateChanged?.Invoke();

@@ -53,6 +53,9 @@ namespace AP_Atlas.UI
         /// <summary>A left click on the empty map, in map pixels.</summary>
         public event Action<Vector2>? Clicked;
 
+        /// <summary>A right click on the empty map (no drag), in map pixels: the map's fix menu.</summary>
+        public event Action<Vector2>? RightClicked;
+
         public MapCanvas()
         {
             SizeFlagsHorizontal = SizeFlags.ExpandFill;
@@ -328,6 +331,7 @@ namespace AP_Atlas.UI
                 case InputEventMouseButton release when !release.Pressed && _dragging && release.ButtonIndex is MouseButton.Left or MouseButton.Right or MouseButton.Middle:
                     _dragging = false;
                     if (!_dragMoved && release.ButtonIndex == MouseButton.Left) Clicked?.Invoke(ToMap(_dragStart));
+                    else if (!_dragMoved && release.ButtonIndex == MouseButton.Right) RightClicked?.Invoke(ToMap(_dragStart));
                     _surface.AcceptEvent();
                     break;
                 case InputEventMouseMotion motion when _dragging:

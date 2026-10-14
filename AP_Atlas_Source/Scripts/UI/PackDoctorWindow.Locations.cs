@@ -275,11 +275,7 @@ namespace AP_Atlas.UI
             {
                 if (_placeLocation == null) return;
                 var (id, name) = _placeLocation.Value;
-                PackFixes.Edit(_key, $"Place a pin for {name}", f =>
-                {
-                    f.AddedPins.RemoveAll(p => p.Subject == "added:pin:" + id);
-                    f.AddedPins.Add(new AddedPin { Subject = "added:pin:" + id, Name = name, MapId = _editorMapId, X = at.X, Y = at.Y, ApLocationIds = new List<long> { id } });
-                });
+                PackFixActions.PlacePin(_original, id, name, _editorMapId, at.X, at.Y);
                 _selectedPinPath = "atlas/" + name;
                 _placeLocation = null;
                 SetStatus($"Placed a pin for {name}.");
@@ -434,22 +430,8 @@ namespace AP_Atlas.UI
         private void MovePin(PopTrackerLocation pin, float x, float y, bool isAdded)
         {
             _selectedPinPath = pin.FullPath;
-            if (isAdded)
-            {
-                PackFixes.Edit(_key, $"Move added pin {pin.Name}", f =>
-                {
-                    var ap = f.AddedPins.FirstOrDefault(p => p.PinPath == pin.FullPath);
-                    if (ap != null) { ap.X = x; ap.Y = y; ap.MapId = _editorMapId; ap.Made = DateTime.Now; }
-                });
-                return;
-            }
-            string subject = $"pin:{pin.FullPath}@{_editorMapId}";
-            PackFixes.Edit(_key, $"Move pin {pin.Name}", f =>
-            {
-                f.Pins.RemoveAll(p => p.Subject == subject);
-                f.Pins.Add(new PinFix { Subject = subject, PinPath = pin.FullPath, MapId = _editorMapId, X = x, Y = y, AuthorStamp = PackFixes.AuthorStamp(_original, subject) });
-            });
-            SetStatus($"Moved {pin.Name}.");
+            PackFixActions.MovePin(_original, pin.FullPath, pin.Name, _editorMapId, x, y, isAdded);
+            if (!isAdded) SetStatus($"Moved {pin.Name}.");
         }
 
         private void BuildPinInspector(VBoxContainer box, LoadedPack pack)
@@ -505,19 +487,14 @@ namespace AP_Atlas.UI
             if (isAdded)
             {
                 var ap = fixes.AddedPins.First(p => p.PinPath == pin.FullPath);
-                box.AddChild(Kit.Button("Delete this pin", "Remove the pin you added", () => PackFixes.Edit(_key, "Delete added pin", f => f.AddedPins.RemoveAll(p => p.Subject == ap.Subject))));
+                box.AddChild(Kit.Button("Delete this pin", "Remove the pin you added", () => PackFixActions.RemovePin(_original, ap.PinPath, pin.Name, _editorMapId, isAdded: true)));
             }
             else
             {
                 string subject = $"pin:{pin.FullPath}@{_editorMapId}";
                 var pf = fixes.Pins.FirstOrDefault(p => p.Subject == subject);
                 if (pf != null && !pf.Removed) box.AddChild(Kit.Button("Reset position", "Back to the author's position", () => PackFixes.Reset(_key, "pins", subject)));
-                box.AddChild(Kit.Button("Remove this pin", "Hide it from the map (reset brings it back)", () =>
-                    PackFixes.Edit(_key, $"Remove pin {pin.Name}", f =>
-                    {
-                        f.Pins.RemoveAll(p => p.Subject == subject);
-                        f.Pins.Add(new PinFix { Subject = subject, PinPath = pin.FullPath, MapId = _editorMapId, Removed = true, AuthorStamp = PackFixes.AuthorStamp(_original, subject) });
-                    })));
+                box.AddChild(Kit.Button("Remove this pin", "Hide it from the map (reset brings it back)", () => PackFixActions.RemovePin(_original, pin.FullPath, pin.Name, _editorMapId, isAdded: false)));
             }
         }
 

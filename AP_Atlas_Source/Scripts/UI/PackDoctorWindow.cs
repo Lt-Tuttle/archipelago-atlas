@@ -245,32 +245,13 @@ namespace AP_Atlas.UI
 
         private void LinkTile(string code, long id, string name)
         {
-            PackFixes.Edit(_key, $"Link tile '{code}' to {name}", f =>
-            {
-                var t = UpsertTile(f, code);
-                t.ApItemId = id;
-                t.ApItemName = name;
-            });
+            PackFixActions.LinkTile(_original, code, id, name);
             SetStatus($"Tile '{code}' now tracks {name}.");
         }
 
-        private void SetTileHidden(string code, bool hidden)
-        {
-            PackFixes.Edit(_key, (hidden ? "Hide" : "Show") + $" tile '{code}'", f => UpsertTile(f, code).Hidden = hidden);
-        }
+        private void SetTileHidden(string code, bool hidden) => PackFixActions.SetTileHidden(_original, code, hidden);
 
-        private TileFix UpsertTile(PackFixFile f, string code)
-        {
-            string subject = "tile:" + code;
-            var t = f.Tiles.FirstOrDefault(x => x.Subject == subject);
-            if (t == null)
-            {
-                t = new TileFix { Subject = subject, Code = code, AuthorStamp = PackFixes.AuthorStamp(_original, subject) };
-                f.Tiles.Add(t);
-            }
-            t.Made = DateTime.Now;
-            return t;
-        }
+        private TileFix UpsertTile(PackFixFile f, string code) => PackFixActions.UpsertTile(_original, f, code);
 
         private void PickTileItem(string code, string query, List<Suggestion> suggestions)
         {
@@ -280,11 +261,7 @@ namespace AP_Atlas.UI
 
         private void PickTileImage(string code)
         {
-            PickImageFile("Choose an image for this tile", path =>
-            {
-                string stored = PackFixes.ImportImage(_key, path);
-                PackFixes.Edit(_key, $"New image for tile '{code}'", f => UpsertTile(f, code).ImageFile = stored);
-            });
+            PickImageFile("Choose an image for this tile", path => PackFixActions.SetTileImage(_original, code, PackFixes.ImportImage(_key, path)));
         }
 
         private void SetGridHidden(string subject, bool hidden)
@@ -306,20 +283,7 @@ namespace AP_Atlas.UI
 
         private void LinkSection(string pinPath, string sectionName, long? id, string name)
         {
-            string subject = $"link:{pinPath}|{sectionName}";
-            PackFixes.Edit(_key, id == null ? $"Unlink {sectionName}" : $"Link {sectionName} to {name}", f =>
-            {
-                f.Links.RemoveAll(x => x.Subject == subject);
-                f.Links.Add(new LocationLinkFix
-                {
-                    Subject = subject,
-                    PinPath = pinPath,
-                    SectionName = sectionName ?? "",
-                    ApLocationId = id,
-                    ApLocationName = name,
-                    AuthorStamp = PackFixes.AuthorStamp(_original, subject)
-                });
-            });
+            PackFixActions.LinkSection(_original, pinPath, sectionName, id, name);
             SetStatus(id == null ? $"'{sectionName}' unlinked." : $"'{sectionName}' now shows {name}.");
         }
 
@@ -341,16 +305,7 @@ namespace AP_Atlas.UI
 
         private void ReplaceMapImage(string mapId)
         {
-            PickImageFile("Choose a background image for this map", path =>
-            {
-                string stored = PackFixes.ImportImage(_key, path);
-                string subject = "map:" + mapId;
-                PackFixes.Edit(_key, $"New background for map '{mapId}'", f =>
-                {
-                    f.MapImages.RemoveAll(x => x.Subject == subject);
-                    f.MapImages.Add(new MapImageFix { Subject = subject, MapId = mapId, ImageFile = stored, AuthorStamp = PackFixes.AuthorStamp(_original, subject) });
-                });
-            });
+            PickImageFile("Choose a background image for this map", path => PackFixActions.SetMapImage(_original, mapId, PackFixes.ImportImage(_key, path)));
         }
 
         private void PickImageFile(string title, Action<string> onPicked)

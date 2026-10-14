@@ -276,6 +276,12 @@ namespace AP_Atlas.UI
             sortHBox.AddChild(Kit.Button("+", "Zoom in", () => _canvas.ZoomAtCenter(MapCanvas.WheelStep), small: true));
             var sortVBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
             sortVBox.AddChild(sortHBox);
+            // Fixing the pack where the problem shows: this menu, or right-click on the map, a pin or a Not on the map row.
+            var fixButton = Kit.Button(Translate("Fix a problem…"), Translate("A missing map picture, a pin in the wrong place or showing the wrong check, a check missing from the map: fixed here, with Undo. Right-click a pin or the map for its own fixes."),
+                () => PackFixMenus.Show(this, FixProblemItems()), small: true);
+            fixButton.SetMeta("fix_problem", "map");
+            fixButton.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
+            sortVBox.AddChild(fixButton);
             sortVBox.AddChild(BuildDisplayOptions());
             sortMargin.AddChild(sortVBox);
             // Never sideways: a long name under Not on the map widened the list and pushed the map rows' counts out of view.
@@ -301,6 +307,8 @@ namespace AP_Atlas.UI
             column.AddChild(stage);
             _canvas = new MapCanvas();
             _canvas.ViewChanged += SaveCurrentView;
+            _canvas.Clicked += PlaceAt;
+            _canvas.RightClicked += at => { CancelPlacing(); PackFixMenus.Show(this, MapItems(at)); };
             stage.AddChild(_canvas);
             BuildPicturelessParts(stage);
             var legendMargin = new MarginContainer();
@@ -1025,7 +1033,8 @@ namespace AP_Atlas.UI
         public string ChecklistNote { get; private set; } = "";
 
         private bool HasPicture(PopTrackerMap map) =>
-            _pack.HasMapBackground(map) && (Background(map) != null || !_pack.ImagesChecked || !_pack.BrokenImages.Contains((_pack.MapBackgroundPath(map) ?? "").TrimStart('/')));
+            // A picture decoded now (the pack's, or one a fix gave it) is a picture even when the pack's own can't be read.
+            Background(map) != null || (_pack.HasMapBackground(map) && (!_pack.ImagesChecked || !_pack.BrokenImages.Contains((_pack.MapBackgroundPath(map) ?? "").TrimStart('/'))));
 
         private void BuildPicturelessParts(Control rightPanel)
         {
@@ -1067,6 +1076,7 @@ namespace AP_Atlas.UI
             var notes = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ShrinkEnd, SizeFlagsVertical = SizeFlags.ShrinkBegin, MouseFilter = MouseFilterEnum.Ignore };
             notes.AddThemeConstantOverride("separation", 6);
             notes.AddChild(_unplacedPill);
+            notes.AddChild(BuildPlaceBar());
             // When the pack doesn't fit the seed: a note in the warning colour, its button the one thing that takes clicks here.
             _fitBar = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ShrinkEnd, MouseFilter = MouseFilterEnum.Pass, Visible = false };
             _fitBar.AddThemeStyleboxOverride("panel", new StyleBoxFlat
@@ -1255,6 +1265,14 @@ namespace AP_Atlas.UI
                 button.ClipText = true; // the name ends with "…" rather than widening the list
                 button.AddThemeColorOverride("font_color", ThemeColors.MapColourForText(look.SplitRight != null ? MapPinState.InLogic : StateFor(id)));
                 button.SetMeta("unplaced_row", name);
+                button.GuiInput += ev =>
+                {
+                    if (ev is InputEventMouseButton { Pressed: false, ButtonIndex: MouseButton.Right })
+                    {
+                        PackFixMenus.Show(this, UnplacedItems(locationId, locationName));
+                        button.AcceptEvent();
+                    }
+                };
                 _unplacedBox.AddChild(button);
             }
         }
@@ -1549,10 +1567,18 @@ namespace AP_Atlas.UI
                 string pinName = loc.Name;
                 string pinMap = _currentMapId;
                 btn.Pressed += () => PinPicked?.Invoke(pinMap, pinName, pinIds);
-                // The wheel over a pin zooms the map as it does elsewhere.
+                // The wheel over a pin zooms the map as it does elsewhere; a right click opens the pin's fixes.
+                var pinLoc = loc;
+                float pinX = x, pinY = y;
                 btn.GuiInput += ev =>
                 {
                     if (_canvas.HandleWheel(ev, btn)) btn.AcceptEvent();
+                    else if (ev is InputEventMouseButton { Pressed: false, ButtonIndex: MouseButton.Right })
+                    {
+                        CancelPlacing();
+                        PackFixMenus.Show(this, PinItems(pinLoc, pinX, pinY));
+                        btn.AcceptEvent();
+                    }
                 };
                 pins.Add(new MapCanvas.Pin { Key = $"{loc.Name}@{x},{y}", X = x, Y = y, Control = btn, MapSize = size + 2 * borderMap, MapBorder = borderMap });
                 if (newlyUnlocked != null && ids.Any(newlyUnlocked.Contains)) pulse.Add(btn);

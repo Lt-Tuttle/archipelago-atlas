@@ -401,6 +401,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         };
         slotTracker.FindMapPack = FindMapPack;
         slotTracker.OpenPackDoctor = (zip, tab) => OpenPackDoctor(zip, tab);
+        slotTracker.OpenPackDoctorAtPin = OpenPackDoctorAtPin;
         slotTracker.FixWhatAtlasCan = FixWhatAtlasCan;
         slotTracker.FindFittingPackRelease = FindFittingPackRelease;
         slotTracker.NewChatLines += () => MarkTerminalTabNew(0);

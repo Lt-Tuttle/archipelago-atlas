@@ -246,11 +246,7 @@ namespace AP_Atlas.UI
             NamePickerDialog.Open(this, "Add a tile for which Archipelago item?", null, ItemNames, new List<Suggestion>(), (id, name) =>
             {
                 int gridIndex = Math.Max(0, _report.Pack.ItemGridGroups.Where(g => !g.LooksLikeSettings).ToList().FindIndex(g => g == _report.Pack.ItemGridGroups.ElementAtOrDefault(_selectedGridIndex)));
-                PackFixes.Edit(_key, $"Add tile for {name}", f =>
-                {
-                    f.AddedTiles.RemoveAll(a => a.ApItemId == id);
-                    f.AddedTiles.Add(new AddedTile { Subject = "added:item:" + id, ApItemId = id, ApItemName = name, GridIndex = gridIndex });
-                });
+                PackFixActions.AddTile(_original, id, name, gridIndex);
                 _selectedTileCode = "atlas_item_" + id;
                 SetStatus($"Added a tile for {name}. Give it an image with \"Replace image…\".");
             });

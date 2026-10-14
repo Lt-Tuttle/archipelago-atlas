@@ -86,6 +86,15 @@ namespace AP_Atlas.UI
             QueueFree();
         }
 
+        /// <summary>Chooses a name by its id (for tests: what a double-click on its row does).</summary>
+        public void ChooseForTests(long id)
+        {
+            if (!_names.TryGetValue(id, out var name)) return;
+            _onChosen?.Invoke(id, name);
+            Hide();
+            QueueFree();
+        }
+
         /// <summary>Opens a picker over the given root node.</summary>
         public static void Open(Node parent, string title, string query, IReadOnlyDictionary<long, string> names, List<Suggestion> suggestions, Action<long, string> onChosen)
         {

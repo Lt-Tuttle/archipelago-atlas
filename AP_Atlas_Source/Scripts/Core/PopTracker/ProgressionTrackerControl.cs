@@ -425,6 +425,8 @@ namespace AP_Atlas.Core.PopTracker
             _optSortBy.ItemSelected += (idx) => RenderActiveMode();
             toolbar.AddChild(_optSortBy);
 
+            toolbar.AddChild(FixProblemButton());
+
             var spacer = new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill };
             toolbar.AddChild(spacer);
 
@@ -439,6 +441,15 @@ namespace AP_Atlas.Core.PopTracker
             _visualGrid = new VBoxContainer();
             visualCenter.AddChild(_visualGrid);
             AddChild(_visualScroll);
+            // A right click on the grid's empty space: a tile for an item the pack doesn't show (a tile's own click is its own).
+            _visualScroll.GuiInput += ev =>
+            {
+                if (ev is InputEventMouseButton { Pressed: false, ButtonIndex: MouseButton.Right })
+                {
+                    AP_Atlas.UI.PackFixMenus.Show(this, GridItems());
+                    _visualScroll.AcceptEvent();
+                }
+            };
 
             _visualFooter = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, Visible = false };
             var footerSpacer = new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill };
@@ -909,6 +920,7 @@ namespace AP_Atlas.Core.PopTracker
 
                 var tile = CreateVisualTile(itemDef, apName, receivedQty, zoomSize, stage);
                 tile.SetMeta("tile", code);
+                HookTileMenu(tile, code, apName);
                 if (!isSearchMatch) tile.Modulate = new Color(0.2f, 0.2f, 0.2f, 0.2f);
                 rowContainer.AddChild(tile);
             }

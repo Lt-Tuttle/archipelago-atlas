@@ -178,6 +178,8 @@ public partial class MainTrackerWindow
             PackImagesFollowTheirUsersAsync);
         await ScenarioAsync("Maps without a picture and checks without a pin: a map whose pack ships no usable picture lists its locations (named in a note, each opening in Properties) instead of dots on nothing, and a map with its picture shows its pins; the seed's checks no pin places are listed under Not on the map and counted on the map, and a check that's done leaves the list; Follow my checks is on for a pack that can't follow the game, shows the map of a check made on another map, leaves the map alone while the user zooms it, and is kept per slot",
             PicturelessMapsAsync);
+        await ScenarioAsync("Fix a problem where it shows: the Map Tracker's and Key Items' fix menus (a button, right-click on the map, a pin, a tile) give a map without a picture one of the pack's, move a pin, change which check a section shows, mark one as not a check, place a missing check, give a tile another picture; each a Pack Doctor fix the slot shows at once, with Undo",
+            FixInPlaceAsync);
         await ScenarioAsync("Pack Doctor: on a pack's first check, a pin section whose name matches a location exactly (once punctuation is ignored) is linked by itself as an automatic fix, and a tile named so is the index's own link; the pack's row on the Map Packs page offers Review N, which opens the Doctor on Recommended; the Recommended tab lists what's left, Apply on a row writes the fix, the row goes after the check and the status says so; the rows are grouped by kind with what to do under each, filters by words, kind and map narrow them, Ignore selected hides the selection in one step and Undo brings it back; Undo takes the automatic link back; the Map Tracker's Attention group lists the pack's problems for this seed in plain words and opens the Doctor on the fixing tab; Fix what Atlas can (the pack row's Fix, the Attention group's button) links the confident matches and sets the rest aside in one undoable step, said in a card",
             PackDoctorAsync);
         await ScenarioAsync("Map packs reach connected slots: Key Items offers the pack's layouts and two Atlas builds by item group, kept per slot; the chat's filters sit in one row; the Chat and System Log tabs carry a dot for lines that arrived while they weren't showing, cleared when shown; a slot without a pack offers \"Find a map pack for <game>…\" on its map, which shows Map Packs and searches GitHub once; a pack chosen from the results downloads with a progress line, installs with a card and reaches the slot's map; Atlas picks a game's pack by itself (of the projects found, one with more stars whose pack doesn't fit the game's names is passed over for the one that fits); a pack installed while a slot is connected shows on its map at once, without a reconnect; deleted, the map says there's no pack again; another pack for the game takes its place; a pack half of whose pins link to the seed's checks says so on the map, and its button makes its project's release found for the seed the game's pack, which the slot switches to",
@@ -3848,6 +3850,114 @@ public partial class MainTrackerWindow
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
             if (_profiles.Contains(profile)) DeleteProfile(profile);
             foreach (string file in new[] { zip, other }) AP_Atlas.Core.SafeFile.Delete(file);
+        }
+    }
+
+    private async Task FixInPlaceAsync()
+    {
+        string zip = System.IO.Path.Combine(AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory(), "uitest_fix_pack.zip");
+        FakeMapPack.Write(zip, "UI test fix pack", "Test Game", locationsJson:
+            """[{"name":"Cave","sections":[{"name":"Cave Chest"}],"map_locations":[{"map":"World","x":10,"y":10}]},""" +
+            """{"name":"Far","sections":[{"name":"Far Chest"}],"map_locations":[{"map":"World","x":500,"y":10}]},""" +
+            """{"name":"Lone","sections":[{"name":"Lone Chest"}],"map_locations":[{"map":"Broken","x":40,"y":40}]}]""");
+        await using var server = new FakeArchipelagoServer();
+        server.Games["Test Game"] = new FakeGame("aa11bb22cc33dd44ee55ff66aa77bb88cc99dd00", new Dictionary<string, long> { ["Sword"] = 1000, ["Shield"] = 1001 },
+            new Dictionary<string, long> { ["Cave Chest"] = 2000, ["Far Chest"] = 2001, ["Lone Chest"] = 2002, ["Hidden Chest"] = 2003 });
+        var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Tester");
+        _profiles.Add(profile);
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        string key = "";
+        try
+        {
+            await OnConnectSlotPressedAsync("Tester", profile);
+            var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
+            var pack = await UiTestWaitForAsync(() => slot.Pack is { ImagesChecked: true } p ? p : null, "the slot's map pack, its images checked");
+            key = AP_Atlas.Core.PopTracker.PackFixes.KeyFor(pack);
+            var fixes = () => AP_Atlas.Core.PopTracker.PackFixes.Get(key);
+            host.ShowTool(AP_Atlas.UI.Tool.MapTracker);
+            var map = slot.MapTracker;
+            await UiTestWaitForAsync(() => map.Fixing, "the map's fix menus to know the slot's pack");
+            UiTestExpect(GetTree().Root.FindChildren("*", nameof(Button), true, false).Any(b => b.HasMeta("fix_problem") && b.GetMeta("fix_problem").AsString() == "map"), "the Map Tracker has no Fix a problem button (it sits with the maps list)");
+            void Run(List<AP_Atlas.UI.FixItem> items, string startsWith)
+            {
+                var item = items.FirstOrDefault(i => i.Label.StartsWith(startsWith, StringComparison.Ordinal));
+                UiTestExpect(item?.Run != null, $"the fix menu has no \"{startsWith}\": {string.Join(" | ", items.Select(i => i.Label))}");
+                item!.Run!();
+            }
+            T Dialog<T>() where T : Node => GetTree().Root.GetChildren().OfType<T>().LastOrDefault(d => IsInstanceValid(d) && !d.IsQueuedForDeletion())
+                ?? throw new InvalidOperationException("no " + typeof(T).Name + " opened");
+
+            // A map without a picture: no picture of the pack's is named like it, so the menu says so; one chosen from the
+            // pack's pictures is its picture at once.
+            string broken = pack.Maps.Values.First(m => m.Name == "Broken").Id, world = pack.Maps.Values.First(m => m.Name == "World").Id;
+            map.ShowMap(broken);
+            await UiTestWaitAsync(0.1);
+            var mapItems = map.FixProblemItems();
+            UiTestExpect(mapItems.Any(i => i.Label.StartsWith("This map's picture is missing: none", StringComparison.Ordinal) && i.Run == null), "the menu doesn't say the map's picture is missing with no picture named like it");
+            Run(mapItems, "Choose this map's picture from the pack");
+            var picker = Dialog<AP_Atlas.UI.PackPicturePicker>();
+            UiTestExpect(picker.Listed.Contains("images/world.png") && !picker.Listed.Contains("images/broken.png"), $"the pack's pictures aren't listed (or a broken one is): {string.Join(", ", picker.Listed)}");
+            picker.ChooseForTests("images/world.png");
+            await UiTestWaitForAsync(() => fixes().MapImages.Any(m => m.MapId == broken) ? map : null, "the map's picture fix");
+            map.ShowMap(broken);
+            await UiTestWaitForAsync(() => !map.ChecklistShown ? map : null, "the map to show the chosen picture (not its checklist)");
+
+            // A pin moved: the next click on the map puts it there.
+            map.ShowMap(world);
+            await UiTestWaitAsync(0.1);
+            // A right click on a pin opens its fix menu (the menus' lines are checked through PinItems below).
+            async Task RightClickAsync(Control target, string what)
+            {
+                target.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Right, Pressed = false });
+                var menu = await UiTestWaitForAsync(() => target.GetTree().Root.FindChildren("*", nameof(PopupMenu), true, false).OfType<PopupMenu>().FirstOrDefault(m => m.HasMeta("fix_menu") && m.Visible), "a fix menu on a right click on " + what);
+                menu.Hide();
+            }
+            await RightClickAsync(map.FindChildren("*", "", true, false).OfType<AP_Atlas.UI.MapPinButton>().First(), "a pin");
+            var cave = slot.EffectivePack.Locations.First(l => l.Name == "Cave");
+            Run(map.PinItems(cave, 10, 10), "Move this pin");
+            UiTestExpect(map.Placing?.StartsWith("Click where Cave goes", StringComparison.Ordinal) == true, $"moving a pin doesn't ask where it goes: {map.Placing}");
+            map.PlaceAt(new Vector2(100, 120));
+            await UiTestWaitForAsync(() => fixes().Pins.FirstOrDefault(p => p.PinPath == "Cave" && p.MapId == world && p.X == 100 && p.Y == 120), "the pin's new place");
+            UiTestExpect(map.Placing == null, "the map still waits for a click after the pin was placed");
+
+            // Which check a section shows, chosen from the Doctor's suggestions; another section marked as not a check.
+            cave = slot.EffectivePack.Locations.First(l => l.Name == "Cave");
+            Run(map.PinItems(cave, 100, 120), "\"Cave Chest\": show a different check");
+            Dialog<AP_Atlas.UI.NamePickerDialog>().ChooseForTests(2003);
+            await UiTestWaitForAsync(() => fixes().Links.FirstOrDefault(l => l.PinPath == "Cave" && l.SectionName == "Cave Chest" && l.ApLocationId == 2003), "the section's new check");
+            await UiTestWaitForAsync(() => slot.PackIndex.ByLocation.TryGetValue(2003, out var shown) && shown.Any(m => m.Pin.Name == "Cave") ? slot : null, "the slot to show the section's new check");
+            var far = slot.EffectivePack.Locations.First(l => l.Name == "Far");
+            Run(map.PinItems(far, 500, 10), "\"Far Chest\" isn't a check");
+            await UiTestWaitForAsync(() => fixes().Ignored.Contains("loc:unmatched:Far|Far Chest") && fixes().Links.Any(l => l.PinPath == "Far" && l.ApLocationId == null) ? map : null, "the section marked as not a check");
+
+            // A check missing from the map, placed where the map was right-clicked (Cave Chest's own check has no pin now).
+            Run(map.MapItems(new Vector2(50, 60)), "Add a missing check here");
+            Dialog<AP_Atlas.UI.NamePickerDialog>().ChooseForTests(2000);
+            await UiTestWaitForAsync(() => fixes().AddedPins.FirstOrDefault(p => p.ApLocationIds.Contains(2000) && p.MapId == world && p.X == 50 && p.Y == 60), "the placed check's pin");
+
+            // Key Items: a tile given one of the pack's pictures (the shield's own can't be read), then Undo.
+            host.ShowTool(AP_Atlas.UI.Tool.KeyItems);
+            var items = slot.ProgressionTracker;
+            await UiTestWaitForAsync(() => items.Fixing, "Key Items' fix menus to know the slot's pack");
+            UiTestExpect(items.FindChildren("*", nameof(Button), true, false).Any(b => b.HasMeta("fix_problem")), "Key Items has no Fix a problem button");
+            await UiTestWaitForAsync(() => items.FindChildren("*", "", true, false).OfType<Control>().FirstOrDefault(c => c.HasMeta("tile") && c.GetMeta("tile").AsString() == "shield"), "the shield's tile");
+            await RightClickAsync(items.FindChildren("*", "", true, false).OfType<Control>().First(c => c.HasMeta("tile") && c.GetMeta("tile").AsString() == "shield"), "a tile");
+            Run(items.TileItems("shield", "Shield"), "Choose this tile's picture from the pack");
+            Dialog<AP_Atlas.UI.PackPicturePicker>().ChooseForTests("images/sword.png");
+            await UiTestWaitForAsync(() => fixes().Tiles.FirstOrDefault(x => x.Code == "shield" && !string.IsNullOrEmpty(x.ImageFile)), "the tile's picture fix");
+            await UiTestWaitForAsync(() => items.TileKinds().Any(x => x.Code == "shield" && x.Picture) ? items : null, "the shield's tile to show its new picture");
+            UiTestExpect(AP_Atlas.Core.PopTracker.PackFixes.Undo(key) && fixes().Tiles.All(x => x.Code != "shield" || string.IsNullOrEmpty(x.ImageFile)), "Undo didn't take the tile's picture back");
+            await UiTestWaitForAsync(() => items.TileKinds().Any(x => x.Code == "shield" && !x.Picture) ? items : null, "the shield's tile to show its name again after Undo");
+        }
+        finally
+        {
+            foreach (var dialog in GetTree().Root.GetChildren().Where(n => n is AP_Atlas.UI.PackPicturePicker or AP_Atlas.UI.NamePickerDialog)) dialog.QueueFree();
+            if (key.Length > 0) AP_Atlas.Core.PopTracker.PackFixes.Reset(key);
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+            if (_profiles.Contains(profile)) DeleteProfile(profile);
+            AP_Atlas.Core.SafeFile.Delete(zip);
         }
     }
 

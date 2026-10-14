@@ -36,6 +36,14 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         ShowToast(result.Describe(report.Pack.Manifest?.Name ?? packKey), result.Nothing ? AP_Atlas.Core.ThemeColors.TextMuted : AP_Atlas.Core.ThemeColors.Success, Tr("Open the Doctor"), () => OpenPackDoctor(path, "Overview"));
     }
 
+    /// <summary>Opens the Pack Doctor for a pack zip at a pin (its full path), on the Maps tab with the pin selected.</summary>
+    public void OpenPackDoctorAtPin(string zipPath, string pinPath)
+    {
+        var original = AP_Atlas.Core.PopTracker.PopTrackerPackLoader.InspectZipPack(zipPath);
+        if (original == null) { ShowToast("Couldn't read that map pack.", AP_Atlas.Core.ThemeColors.Error); return; }
+        AP_Atlas.UI.PackDoctorWindow.Open(this, original, _appSettings.ContentFontSize, "Maps", pinPath, _appSettings);
+    }
+
     /// <summary>Opens the Pack Doctor for a pack zip.</summary>
     public void OpenPackDoctor(string zipPath, string startTab = null)
     {
