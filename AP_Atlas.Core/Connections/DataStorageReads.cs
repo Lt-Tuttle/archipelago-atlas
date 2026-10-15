@@ -36,12 +36,22 @@ public sealed class DataStorageReads : IDisposable
         _session.Socket.PacketReceived += OnPacket;
     }
 
-    /// <summary>Asks the server to tell Atlas when these keys change (once per key).</summary>
-    public Task WatchAsync(IEnumerable<string> keys)
+    /// <summary>Asks the server to tell Atlas when these keys change (once per key; a key whose request couldn't be sent is asked again next time).</summary>
+    public async Task WatchAsync(IEnumerable<string> keys)
     {
         string[] fresh;
         lock (_lock) fresh = keys.Where(k => !string.IsNullOrEmpty(k) && _watched.Add(k)).ToArray();
-        return fresh.Length == 0 || _disposed ? Task.CompletedTask : _session.Socket.SendPacketAsync(new SetNotifyPacket { Keys = fresh });
+        if (fresh.Length == 0 || _disposed) return;
+        try
+        {
+            await _session.Socket.SendPacketAsync(new SetNotifyPacket { Keys = fresh }).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Not asked after all: the next call asks again. The failure itself goes to the caller.
+            lock (_lock) _watched.ExceptWith(fresh);
+            throw;
+        }
     }
 
     /// <summary>Reads these keys once.</summary>

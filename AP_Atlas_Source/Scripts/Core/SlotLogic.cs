@@ -16,7 +16,12 @@ namespace AP_Atlas.Core
         /// <summary>The first step's name: what's in logic before any item.</summary>
         public const string StartName = "Starting Logic";
 
+        /// <summary>A step opened by entrances the player found in the game (a world that learns them from the room).</summary>
+        public const string EntrancesName = "Entrances found in the game";
+
         public bool IsStart => ItemName == StartName;
+
+        public bool IsEntrances => ItemName == EntrancesName;
     }
 
     /// <summary>
@@ -44,7 +49,7 @@ namespace AP_Atlas.Core
         private readonly SlotModel _model;
         private readonly AppSettings _settings;
         private readonly Action<string> _log;
-        private readonly List<long> _inventory = new();
+        private readonly List<LogicItem> _inventory = new();
         private readonly List<LogicStep> _steps = new();
         private readonly HashSet<long> _reachable = new();
         // When the engine failed this slot lately, on the steady clock (setting the PC's clock can't clear or stretch the count).
@@ -54,6 +59,11 @@ namespace AP_Atlas.Core
         private int _explainCacheItems = -1;
         private int _evaluated;
         private bool _startingDone, _busy, _dirty, _disposed;
+        // The room's values for the world's found-entrance keys (Engine.LastEntranceKeys), as JSON text: the latest heard,
+        // and what this engine run was given. Read only: Atlas never writes the room's data storage.
+        private readonly Dictionary<string, string> _entranceValues = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, string> _entrancesSent = new(StringComparer.Ordinal);
+        private AP_Atlas.Core.Connections.DataStorageReads? _entranceReads;
         private int _run;
 
         public SlotLogic(SlotModel model, AppSettings settings, Action<string> log)
@@ -198,7 +208,7 @@ namespace AP_Atlas.Core
                 _log($"InitializeLogicEngine: StartEngineAsync Game='{_model.Game}', Slot='{_model.SlotName}', engine={Engine.Install.Describe()}");
                 // No ConfigureAwait(false): the continuation must resume on Godot's main thread.
                 bool started = await Engine.StartEngineAsync(_model.Game, _model.SlotName, _model.PlayerSlot, _model.SlotData, Session.Locations.AllLocations,
-                    LinkedYamlPath, SeedApworldFile(), ServerChecksum);
+                    LinkedYamlPath, SeedApworldFile(), ServerChecksum, _model.Team, Session.RoomState?.Seed);
                 if (_disposed || run != _run) return; // stopped meanwhile (an engine update, or the slot ended)
                 _log($"InitializeLogicEngine: StartEngineAsync returned {started}");
                 if (started)
@@ -206,6 +216,7 @@ namespace AP_Atlas.Core
                     Running = true;
                     ReportStart();
                     Notify(SlotChange.Logic | SlotChange.EngineStarted);
+                    WatchFoundEntrances();
                     Refresh();
                 }
                 else if (Engine.LastStartLoss is { Mine: false } loss)
@@ -258,6 +269,7 @@ namespace AP_Atlas.Core
             Engine.StopEngine();
             _evaluated = 0;
             _startingDone = false;
+            _entrancesSent.Clear(); // a new engine run hears every entrance found again
             _inventory.Clear();
             _steps.Clear();
             _reachable.Clear();
@@ -407,7 +419,7 @@ namespace AP_Atlas.Core
             var progression = Session.Items.AllItemsReceived
                 .Where(i => AP_Atlas.Core.LogicItemRule.Counts(i.Flags.HasFlag(ItemFlags.Advancement), i.Flags.HasFlag(ItemFlags.NeverExclude), poolProgression.Contains(i.ItemId), i.LocationId))
                 .ToList();
-            if (progression.Count == _evaluated && _startingDone) return true;
+            if (progression.Count == _evaluated && _startingDone) return await ApplyFoundEntrancesAsync(run, missing);
 
             bool first = true;
             do
@@ -415,7 +427,9 @@ namespace AP_Atlas.Core
                 bool start = !_startingDone;
                 var chunk = progression.Skip(_evaluated).Take(StepsPerRequest).ToList();
                 // A failed answer stops here, before anything of it is recorded: those items are worked out again after recovery.
-                var answer = await Engine.GetStepsAsync(_inventory.ToList(), chunk.Select(item => item.ItemId).ToList(), first ? missing : null, start);
+                // Each with the room's flags (and progression when the world's own pool says so: an admin's /send has none).
+                var asked = chunk.Select(item => new LogicItem(item.ItemId, (int)item.Flags | (poolProgression.Contains(item.ItemId) ? 1 : 0))).ToList();
+                var answer = await Engine.GetStepsAsync(_inventory.ToList(), asked, first ? missing : null, start);
                 if (run != _run) return false;
                 if (answer == null) throw new LogicEngineFailure(Engine.LastQueryFailure);
                 first = false;
@@ -432,12 +446,62 @@ namespace AP_Atlas.Core
                 }
                 for (int i = 0; i < chunk.Count; i++)
                 {
-                    _inventory.Add(chunk[i].ItemId);
+                    _inventory.Add(asked[i]);
                     _evaluated++;
                     var opened = answer.Opened[i].Where(_reachable.Add).ToList();
                     if (opened.Count > 0) _steps.Add(new LogicStep(Session.Items.GetItemName(chunk[i].ItemId) ?? "Unknown Item", opened));
                 }
             } while (_evaluated < progression.Count);
+            return await ApplyFoundEntrancesAsync(run, missing);
+        }
+
+        // =====================================================================
+        // Entrances found in the game
+        // =====================================================================
+
+        /// <summary>
+        /// For a world that learns the entrances the player found from the room's data storage (as Universal Tracker's own
+        /// client reads them): asks the server about its keys, and reads them now. Each value heard is passed to the engine
+        /// (<see cref="ApplyFoundEntrancesAsync"/>). Reading only; nothing is written.
+        /// </summary>
+        private void WatchFoundEntrances()
+        {
+            var keys = Engine.LastEntranceKeys;
+            if (keys.Count == 0) return;
+            _log($"This world learns the entrances found in the game from the room: {string.Join(", ", keys)}.");
+            if (_entranceReads == null)
+            {
+                _entranceReads = new AP_Atlas.Core.Connections.DataStorageReads(Session);
+                // On the connection's thread: handed to the main thread, in order.
+                _entranceReads.Changed += (key, value, _) => AP_Atlas.UI.Ui.Defer(null, () => OnFoundEntrances(key, value), $"reading the entrances {_model.SlotName} found");
+                _entranceReads.Read += (key, value) => AP_Atlas.UI.Ui.Defer(null, () => OnFoundEntrances(key, value), $"reading the entrances {_model.SlotName} found");
+            }
+            Async.Fire(_entranceReads.WatchAsync(keys), $"asking the room about the entrances {_model.SlotName} finds", tellUser: false);
+            Async.Fire(_entranceReads.ReadAsync(keys), $"reading the entrances {_model.SlotName} found", tellUser: false);
+        }
+
+        private void OnFoundEntrances(string key, JToken? value)
+        {
+            if (_disposed || !Engine.LastEntranceKeys.Contains(key)) return;
+            _entranceValues[key] = value?.ToString(Newtonsoft.Json.Formatting.None) ?? "null";
+            Refresh();
+        }
+
+        /// <summary>
+        /// Passes the entrances heard since the engine was last told to it, and records what they opened as a step of their
+        /// own. False when the run ended meanwhile.
+        /// </summary>
+        private async Task<bool> ApplyFoundEntrancesAsync(int run, List<long> missing)
+        {
+            var fresh = _entranceValues.Where(entry => !_entrancesSent.TryGetValue(entry.Key, out var sent) || sent != entry.Value).ToList();
+            if (fresh.Count == 0) return true;
+            var values = fresh.ToDictionary(entry => entry.Key, entry => JToken.Parse(entry.Value));
+            var reachable = await Engine.ApplyFoundEntrancesAsync(_inventory.ToList(), values, missing);
+            if (run != _run) return false;
+            if (reachable == null) throw new LogicEngineFailure(Engine.LastQueryFailure);
+            foreach (var (key, value) in fresh) _entrancesSent[key] = value;
+            var opened = reachable.Where(_reachable.Add).ToList();
+            if (opened.Count > 0) _steps.Add(new LogicStep(LogicStep.EntrancesName, opened));
             return true;
         }
 
@@ -627,6 +691,8 @@ namespace AP_Atlas.Core
             AtlasEngine.PartsChanged -= OnEnginePartsChanged;
             AtlasEngine.PauseRequested -= OnEnginePauseRequested;
             Engine.EngineLost -= OnEngineLost;
+            _entranceReads?.Dispose();
+            _entranceReads = null;
             Engine.StopEngine();
         }
     }

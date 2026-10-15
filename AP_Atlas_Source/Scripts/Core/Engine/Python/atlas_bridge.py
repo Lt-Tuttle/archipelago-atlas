@@ -3,6 +3,7 @@
 import os
 import re
 import sys
+import collections
 import json
 import shutil
 import logging
@@ -121,9 +122,35 @@ def pick_doc(docs, game, slot_name, require_name):
     return None
 
 
+def option_as_written(cls, key, option, value):
+    # Whether Archipelago's generator takes this value, written in a YAML, as the option's value: rolled as the
+    # generator rolls it (a list or a mapping under an option that takes weights would be read as a choice among its
+    # entries or as weights), then checked as the generator checks it (its allowed keys, its schema). Slot data often
+    # holds an option in the world's own form ("well_fed" for "Well Fed", {"flags": ..., "counts": ...} for a goal),
+    # which from_any alone accepts and the generator then refuses: such a value is left to the YAML.
+    if getattr(option, 'supports_weighting', True) and isinstance(value, (list, dict)):
+        return False
+    rolled = option.from_any(value)
+    try:
+        from Options import PlandoOptions
+        rolled.verify(cls, 'AtlasRebuild', PlandoOptions.bosses)
+    except AttributeError:
+        pass  # an option without checks of its own
+    yaml_round_trip(value)
+    return True
+
+
+def yaml_round_trip(value):
+    # The value as a YAML reader gets it back, refused when it isn't the same (a float written without a dot).
+    import yaml
+    if yaml.safe_load(yaml.safe_dump({'v': value}))['v'] != value:
+        raise ValueError('changes when written to a YAML')
+
+
 def resolved_options(cls, slot_data):
     # Option values the world put in its slot data. These are what the seed actually rolled, so they beat a YAML
-    # (which may say 'random'). Worlds keep them under 'options' or at the top level.
+    # (which may say 'random'), when the generator would take them as written (option_as_written). Worlds keep them
+    # under 'options' or at the top level.
     hints = cls.options_dataclass.type_hints
     sources = []
     if isinstance(slot_data.get('options'), dict):
@@ -134,9 +161,9 @@ def resolved_options(cls, slot_data):
         for key, value in src.items():
             if key in hints and key not in found:
                 try:
-                    hints[key].from_any(value)
-                    json.dumps(value)
-                    found[key] = value
+                    if option_as_written(cls, key, hints[key], value):
+                        json.dumps(value)
+                        found[key] = value
                 except Exception:
                     pass
     return found, len(hints)
@@ -180,19 +207,77 @@ def ut_api_missing():
     return missing
 
 
-def generate_with(tracker_cls, logger, cls, game, slot_name, slot_data, doc):
+def new_tracker(tracker_cls, logger, all_entrances_known=False):
+    # A tracker core. With all_entrances_known (the seed test), entrances a world would leave unconnected until the game
+    # reports them ("deferred") are connected as generated, as Universal Tracker's own fuzzer does.
+    c = tracker_cls(logger, False, False)
+    if all_entrances_known:
+        try:
+            from worlds.tracker import DeferredEntranceMode
+            c.enforce_deferred_connections = DeferredEntranceMode.disabled
+        except Exception as e:
+            note('Every entrance could not be connected for this test: ' + type(e).__name__ + ': ' + str(e))
+    return c
+
+
+def rebuild_seed(req):
+    # The generation seed a slot's world is rebuilt with: from the room's seed name and the slot, so it's the same each
+    # time the slot's engine starts. None (a new one each time, as Universal Tracker draws) without a seed name.
+    import hashlib
+    name = req.get('seed_name')
+    if not name:
+        return None
+    return int(hashlib.sha256((str(name) + ':' + str(req.get('slot'))).encode('utf-8')).hexdigest()[:15], 16)
+
+
+class fixed_generation_seed:
+    # While a world is rebuilt: Universal Tracker's generator takes this seed (it parses no command line, so it would
+    # draw a new one). Its options are rolled and its world made with it.
+    def __init__(self, seed):
+        self.seed = seed
+        self.module = None
+
+    def __enter__(self):
+        if self.seed is None:
+            return self
+        try:
+            import worlds.tracker.TrackerCore as module
+            original = module.mystery_argparse
+        except Exception as e:
+            note_once('The rebuild could not be given a fixed seed: ' + type(e).__name__ + ': ' + str(e))
+            return self
+        seed = self.seed
+
+        def seeded(*args, **kwargs):
+            parsed = original(*args, **kwargs)
+            parsed.seed = seed
+            return parsed
+        self.module, self.original = module, original
+        module.mystery_argparse = seeded
+        return self
+
+    def __exit__(self, *exc):
+        if self.module is not None:
+            self.module.mystery_argparse = self.original
+        return False
+
+
+def generate_with(tracker_cls, logger, cls, game, slot_name, slot_data, doc, all_entrances_known=False, seed=None):
     # Rebuilds one player's world from one YAML, in a folder of its own (no other YAML can affect it). The engine's own
     # Players folder must exist, whatever the caller (a slot start makes it; the game sweep didn't, and on an engine no
     # slot had used yet Universal Tracker couldn't generate and failed on its own log line: KeyError 'ut_status').
     ensure_players_folder()
     folder = tempfile.mkdtemp(prefix='atlas_yaml_')
     try:
+        import yaml
         with open(os.path.join(folder, 'player.yaml'), 'w', encoding='utf-8') as f:
-            json.dump(doc, f)  # JSON is valid YAML
-        c = tracker_cls(logger, False, False)
+            # As YAML, not JSON: a YAML reader takes JSON's 9e-07 for text (Factorio's pollution factor was refused).
+            yaml.safe_dump(doc, f, allow_unicode=True, sort_keys=False)
+        c = new_tracker(tracker_cls, logger, all_entrances_known)
         c.set_slot_params(game, 1, slot_name, 1)
-        c.run_generator(None, None, super_override_yaml_path=folder)
-        c.initalize_tracker_core(cls, slot_data)
+        with fixed_generation_seed(seed):
+            c.run_generator(None, None, super_override_yaml_path=folder)
+            c.initalize_tracker_core(cls, slot_data)
         if c.multiworld is None or c.player_id is None:
             return None, getattr(c, 'gen_error', None) or 'The world could not be generated from this YAML.'
         return c, None
@@ -240,7 +325,7 @@ def smoke_test():
                 from NetUtils import NetworkItem
                 prog = [it.code for it in c.multiworld.itempool
                         if it.player == c.player_id and it.code is not None and it.advancement]
-                c.set_items_received([NetworkItem(i, -1, -1, 0) for i in prog])
+                c.set_items_received([NetworkItem(i, -1, -1, 1) for i in prog])  # progression, as the room flags them
                 goal_all = goal_reachable(c, c.updateTracker())
             except Exception as e:
                 note('The health check could not test the goal with every item: ' + type(e).__name__ + ': ' + str(e))
@@ -338,10 +423,12 @@ def start_slot(req, logger):
         return None, {'code': 'ut_incompatible', 'message': 'This Universal Tracker version is incompatible with Atlas (missing: ' +
                       ', '.join(missing_api) + '). Install the tested version from the Atlas Engine window.'}
     players_dir = ensure_players_folder()
+    known = bool(req.get('all_entrances_known'))
     if getattr(cls, 'ut_can_gen_without_yaml', False):
-        c = TrackerCore(logger, False, False)
+        c = new_tracker(TrackerCore, logger, known)
         c.set_slot_params(game, 1, slot_name, 1)
-        c.initalize_tracker_core(cls, slot_data)
+        with fixed_generation_seed(rebuild_seed(req)):
+            c.initalize_tracker_core(cls, slot_data)
         if getattr(c, 'tracker_disabled', False):
             return None, {'code': 'ut_disabled', 'message': "This game's author asked for the Universal Tracker not to be used with it."}
         if c.multiworld is None or c.player_id is None:
@@ -354,11 +441,13 @@ def start_slot(req, logger):
     best = None
     for source, fname, doc in cands:
         try:
-            c, err = generate_with(TrackerCore, logger, cls, game, slot_name, slot_data, doc)
+            c, err = generate_with(TrackerCore, logger, cls, game, slot_name, slot_data, doc, known, rebuild_seed(req))
         except Exception as e:
             c, err = None, str(e)
         if c is None:
-            attempts.append({'source': source, 'file': fname, 'ok': False, 'error': (err or '')[:400]})
+            # The end of a traceback says what went wrong; its start only where.
+            text = (err or '').strip()
+            attempts.append({'source': source, 'file': fname, 'ok': False, 'error': text if len(text) <= 600 else '...' + text[-600:]})
             continue
         v = verify(c, all_locations)
         attempt = {'source': source, 'file': fname, 'ok': True}
@@ -395,19 +484,33 @@ def goal_reachable(core, tracker_state):
         return None
 
 
-def reachable_after(core, item_ids, missing_locations=None):
-    # The location ids in logic with these items received (the same query the live 'update' answers).
+def network_item(entry):
+    # An item as Atlas sends it: its id, or [id, flags] with the room's flags (1 progression, 2 useful, 4 trap).
+    # Universal Tracker counts an item as progression from those flags, as its own client does: a world's create_item
+    # alone often classes a seed's progression items otherwise (VVVVVV's trinkets, Pokemon's badges), and then they
+    # opened nothing.
     from NetUtils import NetworkItem
+    if isinstance(entry, (list, tuple)):
+        return NetworkItem(int(entry[0]), -1, -1, int(entry[1]) if len(entry) > 1 else 0)
+    return NetworkItem(int(entry), -1, -1, 0)
+
+
+def reachable_after(core, item_ids, missing_locations=None):
+    # The location ids in logic with these items received (the same query the live 'update' answers). Each item is an
+    # id or [id, flags] (network_item).
     if missing_locations is not None:
         core.set_missing_locations(set(missing_locations))
-    core.set_items_received([NetworkItem(i, -1, -1, 0) for i in item_ids])
+    core.set_items_received([network_item(i) for i in item_ids])
     state = core.updateTracker()
-    world = core.get_current_world()
-    ids = []
-    for loc_name in getattr(state, 'in_logic_locations', None) or []:
-        if loc_name in world.location_name_to_id:
-            ids.append(world.location_name_to_id[loc_name])
-    return ids, state
+    # By the tracker's own ids (locations_available), not its names: a world may name a location object otherwise
+    # than its data package does (Resident Evil 3 Remake's "Victory" is "Helipad - Victory" to the server), and a name
+    # looked up in the data package missed it.
+    available = getattr(core, 'locations_available', None)
+    if available is None:
+        # A tracker without its id list: by name, as before.
+        world = core.get_current_world()
+        return [world.location_name_to_id[n] for n in getattr(state, 'in_logic_locations', None) or [] if n in world.location_name_to_id], state
+    return [int(a) for a in available if isinstance(a, int)], state
 
 
 def item_pool(core):
@@ -465,6 +568,62 @@ class Slot:
         self.last_state = None
         self.last_glitch_state = None
         self.goal_unknown_noted = False
+        self.entrance_keys = []
+
+
+def found_entrance_keys(core, req):
+    # The room's data storage keys a world reads the entrances the player found from (found_entrances_datastorage_key,
+    # with {player} and {team} filled in), as Universal Tracker's own client asks for them. Such a world leaves those
+    # entrances unconnected until it hears of them (reconnect_found_entrances), so without them whatever lies behind
+    # stays out of logic. None when the world has none, or when entrances aren't deferred.
+    world = core.get_current_world()
+    keys = getattr(world, 'found_entrances_datastorage_key', None)
+    if not keys or not callable(getattr(world, 'reconnect_found_entrances', None)):
+        return []
+    try:
+        from worlds.tracker import DeferredEntranceMode
+        if core.enforce_deferred_connections == DeferredEntranceMode.disabled:
+            return []
+    except Exception as e:
+        note_once('Whether entrances wait for the game could not be read: ' + type(e).__name__ + ': ' + str(e))
+    if req.get('slot') is None or req.get('team') is None:
+        note_once("This world learns its entrances from the room, but the slot's number or team wasn't given: they stay unknown.")
+        return []
+    if isinstance(keys, str):
+        keys = [keys]
+    found = []
+    for key in keys:
+        try:
+            found.append(str(key).format(player=req['slot'], team=req['team']))
+        except Exception as e:
+            note('A data storage key the world names could not be filled in (' + str(key) + '): ' + type(e).__name__ + ': ' + str(e))
+    return found
+
+
+def handle_entrances(slot, req):
+    # The room's values for the slot's found-entrance keys ("values": key -> value), passed to the world as Universal
+    # Tracker's client passes them; then what's in logic with the slot's items ("base"). A value the world can't take
+    # is reported, the others still apply.
+    world = slot.core.get_current_world()
+    applied, errors = [], []
+    for key, value in (req.get('values') or {}).items():
+        if key not in slot.entrance_keys:
+            errors.append(key + ': not one of the keys this world reads')
+            continue
+        try:
+            world.reconnect_found_entrances(key, value)
+            applied.append(key)
+        except Exception as e:
+            errors.append(key + ': ' + type(e).__name__ + ': ' + str(e))
+            note('The world could not take the entrances found under ' + key + ': ' + type(e).__name__ + ': ' + str(e))
+    # New connections change what's reachable with the same items: nothing kept from before counts.
+    slot.last_items = None
+    slot.last_reachable = None
+    items = list(req.get('base') or [])
+    reachable, state = reachable_after(slot.core, items, req.get('missing_locations'))
+    reply = {'reachable': reachable, 'applied': applied, 'errors': errors}
+    reply.update(report_state(slot, items, reachable, state))
+    return reply
 
 
 def handle_init(req, logger):
@@ -479,25 +638,25 @@ def handle_init(req, logger):
     if all_locations:
         core.set_missing_locations(set(all_locations))
     from worlds.AutoWorld import AutoWorldRegister
-    reply = {'status': 'ready', 'item_pool': item_pool(core), 'yaml': info, 'versions': versions()}
+    slot = Slot(core)
+    slot.entrance_keys = found_entrance_keys(core, req)
+    reply = {'status': 'ready', 'item_pool': item_pool(core), 'yaml': info, 'versions': versions(), 'entrance_keys': slot.entrance_keys}
     world_cls = AutoWorldRegister.world_types.get(req.get('game'))
     if world_cls is not None:
         reply.update(world_identity(world_cls))
-    return reply, Slot(core)
+    return reply, slot
 
 
 def report_state(slot, items, reachable, state):
     # The slot's answer for these items: what the seed excluded, what's reachable only with glitches, and whether the
     # goal is. Kept as the slot's last answer ('explain' answers about this exact state; 'steps' starts from it).
     core = slot.core
-    world = core.get_current_world()
     excluded = []
     for loc in core.multiworld.get_locations(getattr(core, 'player_id', None) or 1):
         progress = getattr(loc, 'progress_type', None)
-        if progress is not None and getattr(progress, 'name', '') == 'EXCLUDED' and loc.name in world.location_name_to_id:
-            excluded.append(world.location_name_to_id[loc.name])
-    glitched = [world.location_name_to_id[name] for name in getattr(state, 'glitched_locations', []) or []
-                if name in world.location_name_to_id]
+        if progress is not None and getattr(progress, 'name', '') == 'EXCLUDED' and isinstance(loc.address, int):
+            excluded.append(loc.address)
+    glitched = [int(a) for a in (getattr(core, 'glitched_locations', None) or []) if isinstance(a, int)]
     slot.last_items = list(items)
     slot.last_reachable = set(reachable)
     slot.last_state = getattr(state, 'state', None)
@@ -607,7 +766,8 @@ def handle_explain(slot, req):
     if mw is None or loc_name is None:
         out['error'] = 'Location is not part of this world.'
         return out
-    loc = mw.get_location(loc_name, player)
+    # By its id (its object may be named otherwise than in the data package).
+    loc = next((l for l in mw.get_locations(player) if l.address == req.get('location')), None) or mw.get_location(loc_name, player)
     base = slot.last_state
     region = getattr(loc, 'parent_region', None)
     out['location'] = loc_name
@@ -728,7 +888,7 @@ def launch_bridge(*args):
                 slots.pop(key, None)
                 forget_cached_worlds()
                 reply = {'dropped': True}
-            elif action in ('update', 'steps', 'explain'):
+            elif action in ('update', 'steps', 'explain', 'entrances'):
                 slot = slots.get(key)
                 if slot is None:
                     reply = {'error': 'The logic engine has not been started for a slot yet.'}
@@ -736,6 +896,8 @@ def launch_bridge(*args):
                     reply = handle_update(slot, req)
                 elif action == 'steps':
                     reply = handle_steps(slot, req)
+                elif action == 'entrances':
+                    reply = handle_entrances(slot, req)
                 else:
                     reply = handle_explain(slot, req)
             else:
@@ -839,11 +1001,13 @@ def atlas_seed_test(*args):
                 result['checksum_match'] = result['local_checksum'] == expected_checksum
             locs = sorted(all_locations[player].keys())
             override = cached_apworld(req.get('apworld_cache_index'), game, expected_checksum)
-            core, start = start_slot({'game': game, 'player_name': name,
+            core, start = start_slot({'game': game, 'player_name': name, 'seed_name': data.get('seed_name'), 'slot': player,
                                       'slot_data': (data.get('slot_data') or {}).get(player) or {},
                                       'all_locations': locs,
                                       'yaml_path': (req.get('yaml_paths') or {}).get(str(player)),
-                                      'apworld_override': override, 'expected_checksum': expected_checksum}, logger)
+                                      'apworld_override': override, 'expected_checksum': expected_checksum,
+                                      # The seed's spheres assume every entrance where the generator put it.
+                                      'all_entrances_known': True}, logger)
             if cls is not None and expected_checksum and override:
                 # The test ran on the seed's own version when Atlas had it cached.
                 current = AutoWorldRegister.world_types.get(game)
@@ -861,24 +1025,227 @@ def atlas_seed_test(*args):
             steps = []
             for i, sphere in enumerate(spheres):
                 reached |= set(sphere.get(player, ()))
-                reach, _ = reachable_after(core, inventory, locs)
+                reach, tracked = reachable_after(core, inventory, locs)
                 reach = set(reach)
                 late, early = reached - reach, reach - reached
                 steps.append({'sphere': i, 'expected': len(reached), 'reachable': len(reach),
                               'late_count': len(late), 'early_count': len(early),
                               'late': [names.get(l, str(l)) for l in sorted(late)[:15]],
                               'early': [names.get(l, str(l)) for l in sorted(early)[:15]]})
+                if req.get('debug'):
+                    # What was fed, and what the tracker counted from it (for finding why a step differs).
+                    item_names = getattr(world, 'item_id_to_name', {}) or {}
+                    fed = collections.Counter(item_names.get(i[0] if isinstance(i, list) else i, str(i)) for i in inventory)
+                    steps[-1]['fed'] = dict(fed)
+                    steps[-1]['tracked'] = dict(getattr(tracked, 'prog_items', None) or {})
+                    steps[-1]['tracked_all'] = dict(getattr(tracked, 'all_items', None) or {})
+                    steps[-1]['tracker_errors'] = [str(getattr(line, 'text', line)) for lines in (getattr(core, 'log_lines', None) or {}).values() for line in lines if 'ERROR' in str(getattr(line, 'group', ''))][:5]
                 # The items found in this sphere that belong to this player (from any player's world).
                 for finder, found in sphere.items():
                     for loc in found:
                         entry = all_locations.get(finder, {}).get(loc)
                         if entry is not None and entry[1] == player:
-                            inventory.append(entry[0])
+                            # With the room's flags, as a live slot receives it.
+                            inventory.append([entry[0], entry[2] if len(entry) > 2 else 0])
+            # The generator lists a seed's unreachable locations (accessibility other than "full") as a last "sphere" of
+            # their own: they aren't late if Atlas can't reach them either with every item of the seed.
+            accessibility = getattr(getattr(getattr(world, 'options', None), 'accessibility', None), 'current_key', None)
+            if steps and spheres and accessibility not in (None, 'full'):
+                everything, _ = reachable_after(core, inventory, locs)
+                bucket = set(spheres[-1].get(player, ())) - set(everything)
+                if bucket and steps[-1]['late_count'] >= len(bucket):
+                    last = steps[-1]
+                    last['unreachable'] = len(bucket)
+                    last['late_count'] -= len(bucket)
+                    last['late'] = [n for n in last['late'] if n not in {names.get(l, str(l)) for l in bucket}]
+                    result['unreachable'] = len(bucket)
             result['steps'] = steps
             result['exact'] = bool(steps) and all(s['late_count'] == 0 and s['early_count'] == 0 for s in steps)
             result['seconds'] = round(time.time() - started, 1)
     except Exception:
         out['error'] = traceback.format_exc()[-1500:]
+    send(out)
+
+
+def plain_value(value, depth=0):
+    # A value as JSON-like data, for comparing two worlds: numbers, text, lists, sets (sorted) and mappings, enums by
+    # value. None for anything else (an object of the world's: a region, a location, the multiworld).
+    import enum
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, enum.Enum):
+        return plain_value(value.value, depth)
+    if depth > 4:
+        return '...'
+    if isinstance(value, dict):
+        out = {}
+        for k, v in value.items():
+            pk, pv = plain_value(k, depth + 1), plain_value(v, depth + 1)
+            if pk is None or (pv is None and v is not None):
+                return None
+            out[str(pk)] = pv
+        return out
+    if isinstance(value, (list, tuple, set, frozenset)):
+        items = [plain_value(v, depth + 1) for v in value]
+        if any(i is None and v is not None for i, v in zip(items, value)):
+            return None
+        return sorted(items, key=repr) if isinstance(value, (set, frozenset)) else items
+    return None
+
+
+def short_value(value):
+    text = json.dumps(value, sort_keys=True, default=str)
+    return text if len(text) <= 300 else text[:300] + '...'
+
+
+def tracker_support(cls):
+    # What the world does for Universal Tracker: rebuilds from its slot data (interpret_slot_data, and its code reading
+    # re_gen_passthrough), or without a YAML.
+    import inspect
+    package = cls.__module__.split('.')[:2]
+    reads = False
+    for name, module in list(sys.modules.items()):
+        if name.split('.')[:2] == package:
+            try:
+                if 're_gen_passthrough' in inspect.getsource(module):
+                    reads = True
+                    break
+            except (OSError, TypeError):
+                pass
+    return {'interpret_slot_data': callable(getattr(cls, 'interpret_slot_data', None)), 'reads_passthrough': reads,
+            'without_yaml': bool(getattr(cls, 'ut_can_gen_without_yaml', False))}
+
+
+def world_differences(seed_world, rebuilt_world):
+    # What differs between the generator's world and the rebuilt one: option values, the world's own values (plain
+    # data only; a rebuilt world's tracker flags left out) and where each entrance leads.
+    out = {'options': [], 'values': [], 'entrances': []}
+    seed_opts, rebuilt_opts = getattr(seed_world, 'options', None), getattr(rebuilt_world, 'options', None)
+    for name in sorted(set(vars(seed_opts) if seed_opts else ()) | set(vars(rebuilt_opts) if rebuilt_opts else ())):
+        a = plain_value(getattr(getattr(seed_opts, name, None), 'value', None))
+        b = plain_value(getattr(getattr(rebuilt_opts, name, None), 'value', None))
+        if a != b:
+            out['options'].append({'name': name, 'seed': short_value(a), 'rebuilt': short_value(b)})
+    ignore = {'options', 'multiworld', 'random', 'player'}
+    for name in sorted(set(vars(seed_world)) | set(vars(rebuilt_world))):
+        if name.startswith('__') or name in ignore:
+            continue
+        a, b = plain_value(getattr(seed_world, name, None)), plain_value(getattr(rebuilt_world, name, None))
+        if a is None and b is None:
+            continue
+        if a != b:
+            out['values'].append({'name': name, 'seed': short_value(a), 'rebuilt': short_value(b)})
+
+    def leads(world):
+        found = {}
+        for region in world.multiworld.get_regions(world.player):
+            for exit in region.exits:
+                found[exit.name] = exit.connected_region.name if exit.connected_region else None
+        return found
+    try:
+        a, b = leads(seed_world), leads(rebuilt_world)
+        for name in sorted(set(a) | set(b)):
+            if a.get(name, '(none)') != b.get(name, '(none)'):
+                out['entrances'].append({'name': name, 'seed': a.get(name, '(none)'), 'rebuilt': b.get(name, '(none)')})
+    except Exception as e:
+        out['entrances_error'] = type(e).__name__ + ': ' + str(e)
+    out['locked'] = []
+
+    def locked(world):
+        # Items a world places itself (locked), by location: a random placement here changes what's reachable.
+        return {l.name: l.item.name for l in world.multiworld.get_locations(world.player) if getattr(l, 'locked', False) and l.item is not None}
+    try:
+        a, b = locked(seed_world), locked(rebuilt_world)
+        for name in sorted(set(a) | set(b)):
+            if a.get(name) != b.get(name):
+                out['locked'].append({'name': name, 'seed': a.get(name), 'rebuilt': b.get(name)})
+    except Exception as e:
+        out['locked_error'] = type(e).__name__ + ': ' + str(e)
+    for key in ('options', 'values', 'entrances', 'locked'):
+        out[key + '_count'] = len(out[key])
+        out[key] = out[key][:40]
+    return out
+
+
+def atlas_seed_replay(*args):
+    # Development: tells a difference the seed test finds in Atlas's logic (the world rebuilt from the slot's data, as a
+    # live slot has it) from one in the test itself. The seed is generated again here from its players folder and seed
+    # number (the same seed comes out), and its spheres are replayed against the generator's own world: with the items
+    # of the spheres before i collected, the reachable set must be spheres 0..i. Exact here but not in the seed test: the
+    # rebuilt world isn't the seed's (the world doesn't rebuild its random choices from its slot data, or its logic needs
+    # more than Atlas gives it). Differing here too: the test's reading of the spheres.
+    # stdin: {"multidata": path, "players_dir": folder, "seed": number, "player": 1}.
+    import time
+    import tempfile as _tempfile
+    protect_channel()
+    _log_to_stderr()
+    req = _read_request()
+    out = {}
+    started = time.time()
+    work = _tempfile.mkdtemp(prefix='atlas_replay_')
+    try:
+        import Generate
+        import Main
+        from BaseClasses import CollectionState
+        data = load_multidata(req['multidata'])
+        player = int(req.get('player') or 1)
+        spheres = data.get('spheres') or []
+        _skip_patch_output(req.get('skip_patch_games'))
+        argv = ['--player_files_path', req['players_dir'], '--outputpath', work, '--spoiler', '0', '--multi', '1', '--seed', str(req['seed'])]
+        gen_args, seed = Generate.mystery_argparse(argv), None
+        gen_args, seed = Generate.main(gen_args)
+        multiworld = Main.main(gen_args, seed)
+        out['seed_name'] = multiworld.seed_name
+        out['same_seed'] = multiworld.seed_name == data.get('seed_name')
+        world = multiworld.worlds[player]
+        names = getattr(world, 'location_id_to_name', {}) or {}
+        by_address = {l.address: l for l in multiworld.get_locations(player) if isinstance(l.address, int)}
+        everywhere = {(l.player, l.address): l for l in multiworld.get_locations() if isinstance(l.address, int)}
+        all_locations = data['locations']
+        steps = []
+        found = []
+        reached = set()
+        for i, sphere in enumerate(spheres):
+            reached |= set(sphere.get(player, ()))
+            state = CollectionState(multiworld)
+            for item in found:
+                state.collect(item, True)
+            state.sweep_for_advancements(locations=[l for l in multiworld.get_locations() if not isinstance(l.address, int) or l.item is None or not isinstance(l.item.code, int)])
+            reach = {a for a, l in by_address.items() if l.can_reach(state)}
+            late, early = reached - reach, reach - reached
+            steps.append({'sphere': i, 'expected': len(reached), 'reachable': len(reach), 'late_count': len(late), 'early_count': len(early),
+                          'late': [names.get(l, str(l)) for l in sorted(late)[:15]], 'early': [names.get(l, str(l)) for l in sorted(early)[:15]]})
+            for finder, locs in sphere.items():
+                for loc in locs:
+                    location = everywhere.get((finder, loc))
+                    if location is not None and location.item is not None:
+                        found.append(location.item)
+        out['steps'] = steps
+        out['exact'] = bool(steps) and all(s['late_count'] == 0 and s['early_count'] == 0 for s in steps)
+        out['late'] = sum(s['late_count'] for s in steps)
+        out['early'] = sum(s['early_count'] for s in steps)
+        out['accessibility'] = getattr(getattr(world.options, 'accessibility', None), 'current_key', None)
+        if req.get('compare'):
+            # The world rebuilt as the seed test rebuilds it (a live slot's way), compared with the generator's.
+            slot = data['slot_info'][player]
+            core, start = start_slot({'game': slot.game, 'player_name': slot.name, 'seed_name': data.get('seed_name'), 'slot': player,
+                                      'slot_data': (data.get('slot_data') or {}).get(player) or {},
+                                      'all_locations': sorted(data['locations'][player].keys()),
+                                      'yaml_path': req.get('yaml_path'), 'all_entrances_known': True},
+                                     logging.getLogger('AtlasSeedReplay'))
+            if core is None:
+                out['compare'] = {'error': start}
+            else:
+                out['compare'] = world_differences(world, core.get_current_world())
+                out['compare']['tracker_support'] = tracker_support(type(world))
+                out['compare']['rebuild'] = {k: start.get(k) for k in ('source', 'file', 'match', 'missing', 'extra')}
+        out['seconds'] = round(time.time() - started, 1)
+    except BaseException as e:
+        if isinstance(e, KeyboardInterrupt):
+            raise
+        out['error'] = traceback.format_exc()[-1500:]
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
     send(out)
 
 
@@ -1278,6 +1645,7 @@ components.append(Component('UltimateBridge', None, func=launch_bridge, componen
 components.append(Component('AtlasNames', None, func=atlas_names, component_type=Type.CLIENT))
 components.append(Component('AtlasCheck', None, func=atlas_check, component_type=Type.CLIENT))
 components.append(Component('AtlasSeedTest', None, func=atlas_seed_test, component_type=Type.CLIENT))
+components.append(Component('AtlasSeedReplay', None, func=atlas_seed_replay, component_type=Type.CLIENT))
 components.append(Component('AtlasChecksum', None, func=atlas_checksum, component_type=Type.CLIENT))
 components.append(Component('AtlasGameSweep', None, func=atlas_game_sweep, component_type=Type.CLIENT))
 components.append(Component('AtlasYamlTemplate', None, func=atlas_yaml_template, component_type=Type.CLIENT))

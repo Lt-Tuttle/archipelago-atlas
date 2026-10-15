@@ -204,6 +204,8 @@ public partial class MainTrackerWindow
             LogicFollowsTheSlotAsync);
         await ScenarioAsync("Logic banner: when the engine runs but the game's apworld is missing, the Logic Tracker's banner offers the Games page (not the engine setup), and pressing it shows the Games page on the game",
             LogicBannerAsync);
+        await ScenarioAsync("Found entrances: a world that learns the entrances found in the game from the room's data storage (as Universal Tracker's own client does) has the slot ask the server about its key and read it at connect; each value is passed to the engine and what it opens is a step of its own; a new engine hears them again; Atlas never writes the key",
+            FoundEntrancesAsync);
         await ScenarioAsync("Solo test: Test this game… on a game's page runs the whole chain against the fake engine (the apworld already there, a pack installed, a YAML from the engine, a seed generated again without the game's patch output when the first try wants a ROM, a server on this PC, the AtlasTest slot connected with the YAML, logic and the pack scored) and writes a scrubbed report with a JSON twin; the owner's notes land in it once; Stop ends the server and removes the test multiworld; a generation that fails outright ends the chain with the report saying so",
             SoloTestAsync);
         await ScenarioAsync("Solo test questions: a question the test asks (trusting the apworld's project) opens on the test's own window, so a click on that window can't bury it; Cancel ends the test at once even while the question waits; closing the window then answers the question \"no\", and a permission question whose window goes is a \"no\" that isn't remembered",
@@ -1563,6 +1565,77 @@ public partial class MainTrackerWindow
             UiTestExpect(!slot.LogicNoticeButtons().Contains("Set up Atlas Engine…"), $"the banner offers the engine setup for a missing apworld: {string.Join(", ", slot.LogicNoticeButtons())}");
             slot.PressLogicNotice("Open the Games page");
             await UiTestWaitForAsync(() => ShownContent() == _gamesPage && _gamesPage!.SelectedGame == "Test Game" ? _gamesPage : null, "the Games page on the game");
+        }
+        finally
+        {
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+            DeleteProfile(profile);
+        }
+    }
+
+    private async Task FoundEntrancesAsync()
+    {
+        // The Locked Door also lies behind the Door Hall, an entrance the world connects only once the game reports it.
+        var engine = StartFakeEngine(UiTestPython(), fake =>
+        {
+            fake.EntranceKey = "fake_entrances_{team}_{player}";
+            fake.BehindEntrance[2001] = "Door Hall";
+        });
+        await using var server = LogicWorldServer();
+        var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Tester");
+        _profiles.Add(profile);
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        try
+        {
+            await OnConnectSlotPressedAsync("Tester", profile);
+            var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
+            host.ShowTool(AP_Atlas.UI.Tool.LogicTracker);
+            await UiTestWaitForAsync(() => slot.LogicSettled ? slot : null, "the slot's logic to start");
+            int team = slot.Session.ConnectionInfo.Team, number = slot.Session.ConnectionInfo.Slot;
+            string key = $"fake_entrances_{team}_{number}";
+            var init = engine.Requests("init").Single();
+            UiTestExpect((int?)init["team"] == team && (int?)init["slot"] == number, $"the engine wasn't told the slot's team and number: {init}");
+            // And the room's seed, from which the world's rebuild draws its generation seed (the same logic on every start).
+            UiTestExpect(!string.IsNullOrEmpty(slot.Session.RoomState.Seed) && (string?)init["seed_name"] == slot.Session.RoomState.Seed, $"the engine wasn't told the room's seed: {init}");
+            var keys = slot.Model.Logic.Engine.LastEntranceKeys;
+            UiTestExpect(keys.SequenceEqual(new[] { key }), $"the engine named the keys [{string.Join(", ", keys)}], not {key}");
+            // The slot asks the server about the key and reads it, as Universal Tracker's client does.
+            try
+            {
+                await UiTestWaitForAsync(() => server.Received.Any(p => (string?)p["cmd"] == "SetNotify" && p["keys"]?.ToObject<string[]>()?.Contains(key) == true)
+                    && server.Received.Any(p => (string?)p["cmd"] == "Get" && p["keys"]?.ToObject<string[]>()?.Contains(key) == true) ? server : null,
+                    "the slot to ask the server about its found entrances");
+            }
+            catch (TimeoutException ex)
+            {
+                var asked = server.Received.Where(p => (string?)p["cmd"] is "SetNotify" or "Get").Select(p => (string?)p["cmd"] + " " + p["keys"]?.ToString(Newtonsoft.Json.Formatting.None));
+                throw new InvalidOperationException($"{ex.Message} (the server was asked: {string.Join("; ", asked)})");
+            }
+
+            // The Sword alone doesn't open the door: its hall isn't found yet.
+            await server.BroadcastAsync(FakeArchipelagoServer.ReceivedItems(0, new long[] { 1000 }, flags: 1));
+            await UiTestWaitForAsync(() => slot.LogicSettled && slot.Session.Items.AllItemsReceived.Count == 1 && engine.Requests("steps").Count >= 2 ? slot : null, "the Sword's step");
+            ExpectLogic(slot, "with the Sword and the hall not found", inLogic: new long[] { 2000 }, outOfLogic: new long[] { 2001, 2002, 2003 }, goal: false, active: 1);
+
+            // The game reports the hall: the engine hears of it, and the door is in logic, opened by the entrances found.
+            await server.SetAsync(key, new JArray("Door Hall"));
+            await UiTestWaitForAsync(() => slot.LogicSettled && slot.IsLocationInLogic(2001) == true ? slot : null, "the found hall to open the door");
+            ExpectLogic(slot, "with the hall found", inLogic: new long[] { 2000, 2001 }, outOfLogic: new long[] { 2002, 2003 }, goal: false, active: 2);
+            var told = engine.Requests("entrances")[^1];
+            UiTestExpect(told["values"]?[key] is JArray found && found.Select(v => (string?)v).SequenceEqual(new[] { "Door Hall" }) && Ids(told["base"]).SequenceEqual(new long[] { 1000 }),
+                $"the engine wasn't told the entrances found with the slot's items: {told}");
+            UiTestExpect(slot.UnlockStepOf(2001)?.ItemName == AP_Atlas.Core.LogicStep.EntrancesName, $"the door's step is {slot.UnlockStepOf(2001)}");
+            await ExpectTreeAsync(slot, "with the hall found", "── Base Logic (Starting Reachable) ──", "Cave Chest",
+                $"── Unlocked by: {AP_Atlas.Core.LogicStep.EntrancesName} (1 checks) ──", "Locked Door");
+
+            // A new engine (Restart logic) hears the entrances found again, without asking the room.
+            int told1 = engine.Requests("entrances").Count;
+            slot.RetryLogicEngine();
+            await UiTestWaitForAsync(() => slot.LogicSettled && engine.Starts == 2 && engine.Requests("entrances").Count > told1 ? slot : null, "the new engine to hear the entrances found");
+            ExpectLogic(slot, "after restarting logic", inLogic: new long[] { 2000, 2001 }, outOfLogic: new long[] { 2002, 2003 }, goal: false, active: 2);
+            UiTestExpect(server.Count("Set") == 0, "Atlas wrote the room's data storage");
         }
         finally
         {
@@ -5059,7 +5132,7 @@ public partial class MainTrackerWindow
     /// Its world: a chest open from the start, a door behind the Sword, a tower behind the Sword and the Shield, a vault
     /// behind the Gem. The goal needs the Sword and the Shield.
     /// </summary>
-    private static FakeLogicEngine StartFakeEngine(string python)
+    private static FakeLogicEngine StartFakeEngine(string python, Action<FakeLogicEngine>? setup = null)
     {
         var engine = new FakeLogicEngine(AtlasEngine.ArchipelagoDir);
         engine.Pool.AddRange(new[] { new FakeItem(1000, "Sword", 1), new FakeItem(1001, "Shield", 1), new FakeItem(1002, "Rupee", 0), new FakeItem(1099, "Gem", 1) });
@@ -5070,6 +5143,7 @@ public partial class MainTrackerWindow
         });
         engine.Goal = new long[] { 1000, 1001 };
         engine.DataChecksum = LogicWorldChecksum;
+        setup?.Invoke(engine);
         engine.Apply();
         AtlasEngine.TestPython = python;
         AtlasEngine.InstallBridge(EngineInstall.Portable());
@@ -5122,6 +5196,8 @@ public partial class MainTrackerWindow
             UiTestExpect(slot.UnlockStepOf(2001) == (1, 2, "Sword"), $"the door's step is {slot.UnlockStepOf(2001)}, not step 1 (the 2nd check) by the Sword");
             var sword = engine.Requests("steps")[^1];
             UiTestExpect(Ids(sword["base"]).Length == 0 && Ids(sword["items"]).SequenceEqual(new long[] { 1000 }), $"the engine wasn't asked what the Sword opens: {sword}");
+            // With the room's flags: the engine counts it as progression from them, as Universal Tracker's own client does.
+            UiTestExpect(sword["items"]?[0] is JArray swordItem && (int)swordItem[1] == 1, $"the Sword went to the engine without its progression flag: {sword["items"]}");
             // Why the tower isn't in logic: the engine names the one item it lacks.
             var why = await slot.ExplainLocationAsync(2002);
             UiTestExpect(why is { InLogic: false } && why.SingleUnlocks?.SequenceEqual(new[] { "Shield" }) == true,
@@ -5617,7 +5693,8 @@ public partial class MainTrackerWindow
         }
     }
 
-    private static long[] Ids(JToken? list) => list?.Select(id => (long)id).ToArray() ?? Array.Empty<long>();
+    // Items as the engine is asked about them: [id, flags] (ids alone in older requests).
+    private static long[] Ids(JToken? list) => list?.Select(id => id is JArray pair ? (long)pair[0] : (long)id).ToArray() ?? Array.Empty<long>();
 
     /// <summary>Thrown by a scenario that can't run here (it reports SKIP instead of PASS or FAIL).</summary>
     private sealed class UiTestSkip(string reason) : Exception(reason);

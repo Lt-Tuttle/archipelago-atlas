@@ -8,6 +8,17 @@ using Godot;
 using Newtonsoft.Json.Linq;
 using System.Linq;
 
+/// <summary>
+/// An item as logic is asked about it: its id and the room's flags for it (1 progression, 2 useful, 4 trap). The engine
+/// counts an item as progression from these flags, as Universal Tracker's own client does: a world's create_item alone
+/// often classes a seed's progression items otherwise (VVVVVV's trinkets, Pokemon's badges), and they then opened nothing.
+/// </summary>
+public readonly record struct LogicItem(long Id, int Flags)
+{
+    /// <summary>As the engine reads it: [id, flags].</summary>
+    public JArray ToJson() => new JArray(Id, Flags);
+}
+
 public class WorldItemInfo
 {
     [Newtonsoft.Json.JsonProperty("id")]
@@ -188,11 +199,19 @@ public class LogicEngineManager
     /// <summary>From the last start that failed: how its engine was lost, if that's why (null otherwise).</summary>
     public AP_Atlas.Core.EngineSetup.EngineLoss LastStartLoss { get; private set; }
 
+    /// <summary>
+    /// The room's data storage keys the slot's world reads the entrances the player found from (from the last start; empty
+    /// for most worlds). Such a world leaves those entrances unconnected until it hears of them, as Universal Tracker's own
+    /// client tells it: <see cref="ApplyFoundEntrancesAsync"/>.
+    /// </summary>
+    public IReadOnlyList<string> LastEntranceKeys { get; private set; } = Array.Empty<string>();
+
     public async Task<bool> StartEngineAsync(string game, string playerName, int slot, Dictionary<string, object> slotData, IEnumerable<long> allLocations = null, string yamlPath = null,
-        string apworldOverride = null, string expectedChecksum = null)
+        string apworldOverride = null, string expectedChecksum = null, int? team = null, string seedName = null)
     {
         if (_seat is { Running: true }) return true;
         LastStartError = null;
+        LastEntranceKeys = Array.Empty<string>();
         LastStartLoss = null;
         LastGoalReachable = null;
         LastApworldOverride = null;
@@ -222,6 +241,10 @@ public class LogicEngineManager
                 { "game", game },
                 { "player_name", playerName },
                 { "slot", slot },
+                // With the slot, fills in the data storage keys a world names (its found entrances).
+                { "team", team },
+                // The room's seed: the world is rebuilt with a generation seed drawn from it, so its logic is the same on every start.
+                { "seed_name", string.IsNullOrEmpty(seedName) ? null : seedName },
                 { "slot_data", slotData },
                 { "all_locations", allLocations != null ? new List<long>(allLocations) : new List<long>() },
                 { "yaml_path", string.IsNullOrEmpty(yamlPath) ? null : yamlPath },
@@ -267,6 +290,7 @@ public class LogicEngineManager
                 LastYamlInfo = response["yaml"] as JObject;
                 LastDataChecksum = response["data_checksum"]?.ToString();
                 LastWorldVersion = response["world_version"]?.ToString();
+                LastEntranceKeys = (response["entrance_keys"] as JArray)?.Select(key => (string)key).Where(key => !string.IsNullOrEmpty(key)).ToList() ?? new List<string>();
                 var poolToken = response["item_pool"];
                 if (poolToken != null)
                 {
@@ -313,7 +337,7 @@ public class LogicEngineManager
     /// the engine couldn't answer (stopped, crashed, stuck, or reported an error): never an empty answer in place of one,
     /// so a failure can't be mistaken for "these items unlock nothing".
     /// </summary>
-    public async Task<LogicSteps> GetStepsAsync(IReadOnlyList<long> before, IReadOnlyList<long> items, IEnumerable<long> missingLocations, bool start)
+    public async Task<LogicSteps> GetStepsAsync(IReadOnlyList<LogicItem> before, IReadOnlyList<LogicItem> items, IEnumerable<long> missingLocations, bool start)
     {
         LastQueryFailure = null;
         var seat = _seat;
@@ -325,7 +349,13 @@ public class LogicEngineManager
 
         try
         {
-            var request = new JObject { ["action"] = "steps", ["base"] = new JArray(before), ["items"] = new JArray(items), ["start"] = start };
+            var request = new JObject
+            {
+                ["action"] = "steps",
+                ["base"] = new JArray(before.Select(i => i.ToJson())),
+                ["items"] = new JArray(items.Select(i => i.ToJson())),
+                ["start"] = start
+            };
             if (missingLocations != null) request["missing_locations"] = new JArray(missingLocations);
             // A big world on a slow PC can take a while; an engine that takes two minutes over a few items is stuck, and is
             // started again.
@@ -361,6 +391,60 @@ public class LogicEngineManager
         {
             LastQueryFailure = "the logic engine failed: " + ex.Message;
             _logger("GetStepsAsync Exception: " + ex.Message);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Passes the room's values for the world's found-entrance keys (<see cref="LastEntranceKeys"/>) to the engine, which
+    /// hands them to the world as Universal Tracker's client does, and returns what's in logic afterwards with
+    /// <paramref name="inventory"/>. Returns null when the engine couldn't answer (<see cref="LastQueryFailure"/> says why);
+    /// a value the world couldn't take is logged and the rest still apply.
+    /// </summary>
+    public async Task<IReadOnlyList<long>> ApplyFoundEntrancesAsync(IReadOnlyList<LogicItem> inventory, IReadOnlyDictionary<string, JToken> values, IEnumerable<long> missingLocations)
+    {
+        LastQueryFailure = null;
+        var seat = _seat;
+        if (seat is not { Running: true })
+        {
+            LastQueryFailure = "the logic engine isn't running";
+            return null;
+        }
+        try
+        {
+            var request = new JObject
+            {
+                ["action"] = "entrances",
+                ["values"] = new JObject(values.Select(entry => new JProperty(entry.Key, entry.Value?.DeepClone() ?? JValue.CreateNull()))),
+                ["base"] = new JArray(inventory.Select(i => i.ToJson()))
+            };
+            if (missingLocations != null) request["missing_locations"] = new JArray(missingLocations);
+            var answer = await seat.AskAsync(request, TimeSpan.FromMinutes(2)).ConfigureAwait(false);
+            var response = answer.Reply;
+            if (response == null)
+            {
+                LastQueryFailure = answer.Failure == AP_Atlas.Core.EngineSetup.EngineFailure.TimedOut ? "the logic engine stopped answering" : "the logic engine stopped";
+                _logger("ApplyFoundEntrancesAsync: " + LastQueryFailure + " (" + answer.Why + ").");
+                return null;
+            }
+            if (response["error"] != null || response["reachable"] is not JArray reachable)
+            {
+                LastQueryFailure = "the logic engine reported an error: " + (response["error"] ?? "no answer about logic");
+                _logger("ApplyFoundEntrancesAsync: bridge error: " + response["error"] + "\n" + response["trace"]);
+                return null;
+            }
+            if (response["errors"] is JArray { Count: > 0 } errors)
+                _logger("The world couldn't take some of the entrances found: " + string.Join("; ", errors.Select(e => (string)e)));
+            if (response["excluded"] is JArray excluded) LastExcludedLocations = new HashSet<long>(excluded.ToObject<List<long>>());
+            if (response["glitched"] is JArray glitched) LastGlitchedLocations = new HashSet<long>(glitched.ToObject<List<long>>());
+            var goal = response["goal"];
+            LastGoalReachable = goal?.Type == JTokenType.Boolean ? (bool)goal : null;
+            return reachable.ToObject<List<long>>() ?? new List<long>();
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            LastQueryFailure = "the logic engine failed: " + ex.Message;
+            _logger("ApplyFoundEntrancesAsync Exception: " + ex.Message);
             return null;
         }
     }

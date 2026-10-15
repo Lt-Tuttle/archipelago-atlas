@@ -232,7 +232,8 @@ public partial class SlotTrackerControl : MarginContainer
             }
             // Selecting a step divider inspects the item that unlocked it.
             if (isBase) { for (int c = 0; c < 3; c++) divider.SetSelectable(c, false); }
-            else divider.SetMetadata(0, step.ItemName);
+            // (Entrances found in the game are no item to inspect.)
+            else if (!step.IsEntrances) divider.SetMetadata(0, step.ItemName);
             if (!isBase) _logicSectionIndex++;
 
             foreach (var locId in shown)

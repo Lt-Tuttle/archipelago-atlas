@@ -64,7 +64,13 @@ def versions():
     return {'python': sys.version.split()[0], 'ap': 'fake', 'ut': 'fake', 'tested_ut': ['fake']}
 
 
+def ids(items):
+    # Items as Atlas sends them: ids, or [id, flags] pairs.
+    return [item[0] if isinstance(item, list) else item for item in items or []]
+
+
 def has_all(needs, items):
+    items = ids(items)
     return all(item in items for item in needs)
 
 
@@ -83,14 +89,23 @@ def start(req, rules):
         check = {'expected': 0, 'got': len(got), 'missing': 0, 'extra': 0, 'match': None}
     yaml = {'source': 'not_needed', 'apworld_override': None}
     yaml.update(check)
-    reply = {'status': 'ready', 'item_pool': rules['pool'], 'yaml': yaml, 'versions': versions()}
+    reply = {'status': 'ready', 'item_pool': rules['pool'], 'yaml': yaml, 'versions': versions(), 'entrance_keys': entrance_keys(req, rules)}
     if rules.get('data_checksum'):
         reply['data_checksum'] = rules['data_checksum']
     return reply
 
 
-def update(items, missing, rules):
-    reachable = [loc['id'] for loc in rules['locations'] if loc['id'] in missing and has_all(loc['needs'], items)]
+def entrance_keys(req, rules):
+    # As the bridge reads a world's found_entrances_datastorage_key: the rules' key with the slot and team filled in.
+    key = rules.get('entrance_key')
+    return [key.format(player=req.get('slot'), team=req.get('team'))] if key and req.get('slot') is not None and req.get('team') is not None else []
+
+
+def update(items, missing, rules, found=()):
+    # A location behind an entrance (the rules' behind_entrance) is in logic only once the entrance was found.
+    behind = rules.get('behind_entrance') or {}
+    reachable = [loc['id'] for loc in rules['locations'] if loc['id'] in missing and has_all(loc['needs'], items)
+                 and (str(loc['id']) not in behind or behind[str(loc['id'])] in found)]
     goal = rules.get('goal')
     return {'reachable': reachable, 'excluded': rules.get('excluded', []),
             'glitched': [loc for loc in rules.get('glitched', []) if loc in missing and loc not in reachable],
@@ -102,15 +117,16 @@ def steps(req, slot, rules):
     if req.get('missing_locations') is not None:
         slot['missing'] = set(req['missing_locations'])
     inventory = list(req.get('base') or [])
-    before = set(update(inventory, slot['missing'], rules)['reachable'])
+    found = slot['found']
+    before = set(update(inventory, slot['missing'], rules, found)['reachable'])
     reply = {'start': sorted(before)} if req.get('start') else {}
     opened = []
     for item in req.get('items') or []:
         inventory.append(item)
-        now = set(update(inventory, slot['missing'], rules)['reachable'])
+        now = set(update(inventory, slot['missing'], rules, found)['reachable'])
         opened.append(sorted(now - before))
         before = now
-    final = update(inventory, slot['missing'], rules)
+    final = update(inventory, slot['missing'], rules, found)
     slot['items'] = inventory
     if rules.get('short_steps') and opened:
         opened = opened[:-1]  # a broken answer: one item's step missing
@@ -126,7 +142,8 @@ def explain(req, items, rules):
         return {'error': 'Location is not part of this world.'}
     if items is None:
         return {'location': loc['name'], 'error': 'The logic engine has not evaluated any items yet.'}
-    lacking = [names.get(item, str(item)) for item in loc['needs'] if item not in items]
+    have = ids(items)
+    lacking = [names.get(item, str(item)) for item in loc['needs'] if item not in have]
     out = {'location': loc['name'], 'region': 'Fake Region', 'progress_type': 'DEFAULT',
            'rule': ' and '.join('Has ' + names.get(item, str(item)) for item in loc['needs']) or 'ALWAYS',
            'in_logic': not lacking, 'region_reachable': True, 'glitched': False, 'entrances': []}
@@ -170,7 +187,7 @@ def serve(*args):
         if delay:
             time.sleep(delay)
         crash = rules.get('crash')
-        if (crash and action in ('update', 'steps') and crash['on_item'] in (req.get('items') or []) + (req.get('base') or [])
+        if (crash and action in ('update', 'steps') and crash['on_item'] in ids(req.get('items')) + ids(req.get('base'))
                 and crashes_so_far() < crash.get('times', 1)):
             note({'event': 'crash', 'id': rid})
             os._exit(3)
@@ -190,20 +207,36 @@ def serve(*args):
         if action == 'init':
             reply = start(req, rules)
             if reply.get('status') == 'ready':
-                slots[key] = {'missing': set(req.get('all_locations') or [loc['id'] for loc in rules['locations']]), 'items': None}
+                slots[key] = {'missing': set(req.get('all_locations') or [loc['id'] for loc in rules['locations']]), 'items': None,
+                              'keys': reply['entrance_keys'], 'found': set()}
             else:
                 slots.pop(key, None)
         elif action == 'drop':
             slots.pop(key, None)
             reply = {'dropped': True}
-        elif action in ('update', 'steps', 'explain') and key not in slots:
+        elif action in ('update', 'steps', 'explain', 'entrances') and key not in slots:
             reply = {'error': 'The logic engine has not been started for a slot yet.'}
         elif action == 'update':
             slot = slots[key]
             if req.get('missing_locations') is not None:
                 slot['missing'] = set(req['missing_locations'])
             slot['items'] = list(req.get('items') or [])
-            reply = update(slot['items'], slot['missing'], rules)
+            reply = update(slot['items'], slot['missing'], rules, slot['found'])
+        elif action == 'entrances':
+            # The room's values for the slot's keys: here, lists of the entrances found.
+            slot = slots[key]
+            applied, errors = [], []
+            for name, value in (req.get('values') or {}).items():
+                if name not in slot['keys']:
+                    errors.append(name + ': not one of the keys this world reads')
+                elif isinstance(value, list):
+                    slot['found'].update(str(v) for v in value)
+                    applied.append(name)
+            if req.get('missing_locations') is not None:
+                slot['missing'] = set(req['missing_locations'])
+            slot['items'] = list(req.get('base') or [])
+            reply = update(slot['items'], slot['missing'], rules, slot['found'])
+            reply.update(applied=applied, errors=errors)
         elif action == 'steps':
             reply = steps(req, slots[key], rules)
         elif action == 'explain':

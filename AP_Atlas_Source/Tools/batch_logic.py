@@ -9,6 +9,7 @@ every recorded game whose seed is still on disk and whose logic wasn't exact) an
 """
 import argparse
 import json
+import re
 import os
 import shutil
 import subprocess
@@ -56,12 +57,16 @@ def main():
     ap.add_argument('--core', default=os.path.join(ROOT, 'Builds', 'engine-core'))
     ap.add_argument('--only', default='')
     ap.add_argument('--limit', type=int, default=0)
+    ap.add_argument('--start-at', default='', help='skip the games sorted before this one (to resume an interrupted --rescore or --replay)')
     ap.add_argument('--rescore', action='store_true')
+    ap.add_argument('--replay', action='store_true', help="replay each differing seed against the generator's own world (AtlasSeedReplay)")
+    ap.add_argument('--compare', action='store_true', help="with --replay: compare the generator's world with the one Atlas rebuilds (options, values, entrances)")
     args = ap.parse_args()
     lab = os.path.abspath(args.lab)
     python = os.path.join(args.core, 'python', 'python.exe')
     report = json.load(open(os.path.join(args.corpus, 'names', '_load_report.json'), encoding='utf-8-sig'))
     games = sorted(g for g in report.get('games', {}) if g not in ('Archipelago', 'Universal Tracker') and args.only.lower() in g.lower())
+    games = [g for g in games if g.lower() >= args.start_at.lower()]
     batch_dir = os.path.join(args.corpus, 'batch')
     os.makedirs(batch_dir, exist_ok=True)
     out_path = os.path.join(batch_dir, 'batch_logic.json')
@@ -85,9 +90,45 @@ def main():
                      early=sum(s.get('early_count', 0) for s in steps), score_error=p.get('error'), score_seconds=p.get('seconds'),
                      late_examples=[x for s in steps for x in s.get('late', [])][:8], early_examples=[x for s in steps for x in s.get('early', [])][:8],
                      seconds=round(time.time() - started, 1), finished=True)
+        # For judging a difference: how the slot's world was rebuilt (and whether it matched the seed's), and where it first differs.
+        entry.update(rebuild=p.get('rebuild'), first_difference=next((s for s in steps if s.get('late_count') or s.get('early_count')), None),
+                     sphere_counts=[[s.get('expected'), s.get('reachable'), s.get('late_count'), s.get('early_count')] for s in steps])
         print(f"   {'exact' if entry['exact'] else 'differs'}: {entry['locations']} locations, {entry['spheres']} spheres, late {entry['late']}, early {entry['early']} ({entry['seconds']} s)", flush=True)
         save()
         return True
+
+    if args.replay:
+        # Each seed whose logic differed, generated again and replayed against the generator's own world: exact there means
+        # the world Atlas rebuilds isn't the seed's; differing there too means the test's reading of the spheres.
+        for game in games:
+            entry = results.get(game)
+            if not entry or entry.get('step') != 'done' or entry.get('exact') or not entry.get('multidata') or not os.path.exists(entry['multidata']):
+                continue
+            players = os.path.join(lab, 'batch', safe(game), 'players')
+            # The generation's own seed is in the spoiler's first line (the seed's name is drawn from it, not the same).
+            seed = None
+            spoilers = [f for f in os.listdir(os.path.dirname(entry['multidata'])) if f.endswith('_Spoiler.txt')]
+            if spoilers:
+                with open(os.path.join(os.path.dirname(entry['multidata']), spoilers[0]), encoding='utf-8-sig') as f:
+                    found = re.search(r'Seed:\s*(\d+)', f.readline())
+                    seed = found.group(1) if found else None
+            print(f'[replay] {game}', flush=True)
+            answer, err = run_engine(python, args.core, lab, 'AtlasSeedReplay',
+                                     {'multidata': entry['multidata'], 'players_dir': players, 'seed': seed, 'player': 1, 'skip_patch_games': [game],
+                                      'compare': args.compare, 'yaml_path': entry.get('yaml_path')}, OTHER_TIMEOUT)
+            if not answer or answer.get('error'):
+                entry['replay'] = {'error': (answer or {}).get('error') or err}
+                print('   replay failed:', str(entry['replay']['error'])[-200:], flush=True)
+            else:
+                entry['replay'] = {k: answer.get(k) for k in ('exact', 'late', 'early', 'same_seed', 'accessibility', 'seconds')}
+                entry['replay']['first_difference'] = next((s for s in answer.get('steps') or [] if s.get('late_count') or s.get('early_count')), None)
+                if answer.get('compare') is not None:
+                    entry['compare'] = answer['compare']
+                    c = answer['compare']
+                    print(f"   compare: options {c.get('options_count')}, values {c.get('values_count')}, entrances {c.get('entrances_count')}, locked {c.get('locked_count')}{' ' + str(c.get('error'))[-150:] if c.get('error') else ''}", flush=True)
+                print(f"   replay {'exact' if answer.get('exact') else 'differs'}: late {answer.get('late')}, early {answer.get('early')}, same seed {answer.get('same_seed')}", flush=True)
+            save()
+        games = []
 
     if args.rescore:
         # The seed test again, with the YAML, for every recorded seed still on disk whose logic wasn't exact.

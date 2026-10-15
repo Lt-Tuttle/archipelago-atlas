@@ -99,7 +99,7 @@ internal static class FakeEngines
     public static JObject Update(long[] items, params long[] missing) =>
         new() { ["action"] = "update", ["items"] = new JArray(items), ["missing_locations"] = new JArray(missing) };
 
-    public static long[] Ids(JToken? list) => list?.Select(id => (long)id).ToArray() ?? Array.Empty<long>();
+    public static long[] Ids(JToken? list) => list?.Select(id => id is JArray pair ? (long)pair[0] : (long)id).ToArray() ?? Array.Empty<long>();
 }
 
 /// <summary>What the tests save with SafeFile.</summary>

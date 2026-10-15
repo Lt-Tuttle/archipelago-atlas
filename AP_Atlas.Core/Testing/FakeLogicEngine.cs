@@ -123,6 +123,15 @@ internal sealed class FakeLogicEngine
 
     public double GenerateSeconds { get; set; }
 
+    /// <summary>
+    /// The room's data storage key the world reads the entrances found in the game from, with {player} and {team} (as a
+    /// world's found_entrances_datastorage_key); null: none. Its value is a list of the entrances' names.
+    /// </summary>
+    public string? EntranceKey { get; set; }
+
+    /// <summary>Locations behind an entrance (by its name): in logic only once the room says it was found.</summary>
+    public Dictionary<long, string> BehindEntrance { get; } = new();
+
     /// <summary>Writes the rules. The engine reads them for every request, so changes apply to the next one.</summary>
     public void Apply()
     {
@@ -142,7 +151,9 @@ internal sealed class FakeLogicEngine
             ["spawn_child"] = SpawnChild,
             ["short_steps"] = ShortSteps,
             ["flood"] = new JObject { ["stdout"] = FloodAnswers, ["stderr"] = FloodErrors },
-            ["solo"] = new JObject { ["host_port"] = HostPort, ["generate_error"] = GenerateError, ["generate_seconds"] = GenerateSeconds }
+            ["solo"] = new JObject { ["host_port"] = HostPort, ["generate_error"] = GenerateError, ["generate_seconds"] = GenerateSeconds },
+            ["entrance_key"] = EntranceKey,
+            ["behind_entrance"] = new JObject(BehindEntrance.Select(entry => new JProperty(entry.Key.ToString(System.Globalization.CultureInfo.InvariantCulture), entry.Value)))
         };
         // Replaced whole, so the engine never reads half a file. It may be reading the old one this moment: then retry.
         string temp = _rules + ".tmp";

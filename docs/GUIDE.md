@@ -103,6 +103,8 @@ While logic can't run, a banner above the list says why and offers the way out: 
 
 The Logic Tracker (Ctrl+4) lists the slot's locations in the order they came into logic: Order, Location and Unlocked By (the item that opened it), from Archipelago's own logic running in the Atlas Engine. Properties explains any location: the items that open it, its access rule and the path to it.
 
+Some worlds with randomized entrances (Pokémon Crystal and FireRed/LeafGreen, Anodyne, Astalon, Glover and others) leave an entrance out of logic until the game reports finding it, as Universal Tracker does. Atlas reads what the game reports from the room (it only reads; it never writes the room's data), and what those entrances open is listed under **Unlocked by: Entrances found in the game**.
+
 The banner above the table says how far the logic can be trusted. It's exact when the slot's apworld matches the version the seed was made with; when it doesn't, Atlas can find and use that version (Fix automatically, which asks before looking anything up on GitHub and downloads only from sources you trust), or you can give it the apworld file the seed's host shared (Choose apworld file…), the YAML the seed was generated with (Link YAML…), or the GitHub project the apworld comes from (Add a source…).
 
 In race mode the explanations are off, and with Hide all logic the tracker is hidden (see Race mode).
