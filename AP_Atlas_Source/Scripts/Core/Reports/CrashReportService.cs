@@ -19,9 +19,10 @@ namespace AP_Atlas.Core.Reports
     /// Crash reports, with the user's say at every step: on a start after a problem, a card offers a report; the dialog
     /// shows exactly what would be sent (<see cref="CrashReporter.Preview"/>) with a box for a note; Send once, Always send
     /// and Don't send are the crash-report permission's three answers (Settings → Privacy &amp; permissions takes "always"
-    /// back). With the permission kept, reports go without asking, and a card says so. Help → Report a problem writes the
-    /// scrubbed bundle for an issue (<see cref="ProblemBundle"/>). A build without a DSN can't report; the bundle still works.
-    /// The window gives the cards, the dialog and the system information.
+    /// back). With the permission kept, reports go without asking, and a card says so. Help → Report a problem gathers the
+    /// scrubbed parts (<see cref="ProblemBundle"/>) for the user to tick and see, then sends them when the user presses Send
+    /// (<see cref="ProblemReport"/>, asked every time) or keeps them as a zip for an issue. A build without a DSN can't send
+    /// either; the zip still works. The window gives the cards, the dialogs and the system information.
     /// </summary>
     public sealed class CrashReportService
     {
@@ -65,11 +66,47 @@ namespace AP_Atlas.Core.Reports
         public string ReportsDir => Path.Combine(_dataDir, ReportsFolder);
         public bool Busy => _busy;
 
-        /// <summary>The scrubber for now: the Windows user name, and the servers and slot names of the user's multiworlds.</summary>
+        /// <summary>
+        /// The scrubber for reports that hold a crash or log lines (crash reports, Report a problem): the Windows user name
+        /// and profile folder, the servers, slot names and room passwords of the user's multiworlds, and every player and
+        /// server Atlas has seen in a room (<see cref="SeenNames"/>: a log line can name another slot's player).
+        /// </summary>
         public Scrubber Scrubber()
         {
             var profiles = _profiles().ToList();
+            var seen = SeenNames.Read(ReportsDir);
+            return new Scrubber(System.Environment.UserName, profiles.Select(p => p.ServerUrl).Concat(seen.Servers), profiles.SelectMany(p => p.Slots).Concat(seen.Names),
+                secrets: profiles.Select(p => p.Password), userFolder: UserFolderName());
+        }
+
+        /// <summary>
+        /// The scrubber for what holds no log lines (map pack fix suggestions, solo test reports): the Windows user name, and
+        /// the servers and slot names of the user's multiworlds. A solo test's own slot and server stay readable.
+        /// </summary>
+        public Scrubber NarrowScrubber()
+        {
+            var profiles = _profiles().ToList();
             return new Scrubber(System.Environment.UserName, profiles.Select(p => p.ServerUrl), profiles.SelectMany(p => p.Slots));
+        }
+
+        /// <summary>The name of the user's profile folder ("C:\Users\kimj"), which can differ from the user name.</summary>
+        private static string? UserFolderName()
+        {
+            string? profile = System.Environment.GetEnvironmentVariable("USERPROFILE");
+            return string.IsNullOrWhiteSpace(profile) ? null : Path.GetFileName(profile.TrimEnd('\\', '/'));
+        }
+
+        /// <summary>Remembers the players and the server of a room a slot connected to, so reports scrub them from now on.</summary>
+        public void RememberSeen(IEnumerable<string?> names, string? server)
+        {
+            try
+            {
+                SeenNames.Remember(ReportsDir, names, new[] { server });
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Logger.LogWarning("The names seen in a room couldn't be kept for scrubbing reports: " + ex.Message);
+            }
         }
 
         private CrashReporter Reporter() => new CrashReporter(LogsDir, ReportsDir, _dsn!, Scrubber(), _context);
@@ -162,12 +199,85 @@ namespace AP_Atlas.Core.Reports
             else Card($"The crash report couldn't be sent ({failure}). Atlas tries again next time.", NoticeKind.Warning, null, null);
         }
 
-        /// <summary>Help → Report a problem: the scrubbed bundle's path, or null (and a card) when it couldn't be written.</summary>
-        public string? WriteBundle()
+        /// <summary>
+        /// Help → Report a problem: every part a report can hold, scrubbed with <paramref name="scrubber"/> (one per report,
+        /// <see cref="Scrubber"/>); null (and a card) when they couldn't be read.
+        /// </summary>
+        public IReadOnlyList<ProblemPart>? GatherProblem(Scrubber scrubber)
         {
             try
             {
-                string path = ProblemBundle.Write(ReportsDir, LogsDir, Scrubber(), SystemInfo(), DateTime.Now); // wall clock: a file's name
+                return ProblemBundle.Gather(LogsDir, scrubber, SystemInfo());
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Logger.LogWarning("The problem report couldn't be gathered: " + ex.Message);
+                Card("The report couldn't be gathered: " + ex.Message, NoticeKind.Error, null, null);
+                return null;
+            }
+        }
+
+        /// <summary>The user's note, scrubbed as it will be sent and kept.</summary>
+        private static string? ScrubNote(string? note, Scrubber scrubber) => string.IsNullOrWhiteSpace(note) ? null : scrubber.Scrub(note.Trim());
+
+        /// <summary>The event a report would send, as the dialog shows it (the parts go with it as attachments).</summary>
+        public string ProblemPreview(string eventId, IReadOnlyList<ProblemPart> parts, string? note, Scrubber scrubber, DateTime createdUtc) =>
+            ProblemReport.Event(eventId, parts, ScrubNote(note, scrubber), _context, createdUtc).ToString(Newtonsoft.Json.Formatting.Indented);
+
+        /// <summary>Why a report can't be sent now (the dialog greys Send and says so), or null when it can.</summary>
+        public string? CannotSendProblem(IReadOnlyList<ProblemPart> parts)
+        {
+            if (_dsn == null) return "This build has no address to send reports to: Just save it keeps the report for an issue.";
+            if (_busy) return "A report is being sent.";
+            long size = ProblemReport.SizeOf(parts);
+            if (size > ProblemReport.MaxBytes)
+                return $"The ticked parts come to {size / (1024 * 1024.0):0.#} MB, more than the {ProblemReport.MaxBytes / (1024 * 1024)} MB a report may carry: untick a log, or Just save it.";
+            return null;
+        }
+
+        /// <summary>
+        /// Sends a report the user chose to send. Its id when it went (and a copy kept in the reports folder); null when it
+        /// didn't, with a card offering to save it instead.
+        /// </summary>
+        public async Task<string?> SendProblemAsync(string eventId, IReadOnlyList<ProblemPart> parts, string? note, Scrubber scrubber, DateTime createdUtc)
+        {
+            if (_dsn == null) return null;
+            if (_busy)
+            {
+                Card("Another report is being sent, so this one wasn't. Just save it keeps it for an issue.", NoticeKind.Warning, "Just save it", () => SavedProblem?.Invoke(SaveProblem(parts, note, scrubber, null)));
+                return null;
+            }
+            _busy = true;
+            Changed?.Invoke();
+            WebResponse response;
+            try
+            {
+                response = await ProblemReport.SendAsync(_dsn, eventId, parts, ScrubNote(note, scrubber), _context, createdUtc).ConfigureAwait(true);
+            }
+            finally
+            {
+                _busy = false;
+                Changed?.Invoke();
+            }
+            if (!response.Ok)
+            {
+                Card($"The report couldn't be sent ({response.Message}). Just save it keeps it for an issue.", NoticeKind.Warning, "Just save it", () => SavedProblem?.Invoke(SaveProblem(parts, note, scrubber, null)));
+                return null;
+            }
+            string id = ProblemReport.IdOf(eventId);
+            SaveProblem(parts, note, scrubber, id);
+            return id;
+        }
+
+        /// <summary>A report was kept as a zip after a failed send (its path, or null when it couldn't be written).</summary>
+        public Action<string?>? SavedProblem { get; set; }
+
+        /// <summary>Keeps a report as a zip in the reports folder (a sent one names its id); its path, or null and a card.</summary>
+        public string? SaveProblem(IReadOnlyList<ProblemPart> parts, string? note, Scrubber scrubber, string? reportId)
+        {
+            try
+            {
+                string path = ProblemBundle.Write(ReportsDir, parts, ScrubNote(note, scrubber), reportId, DateTime.Now); // wall clock: a file's name
                 Logger.LogInfo("A problem report was written: " + Path.GetFileName(path));
                 return path;
             }

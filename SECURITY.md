@@ -21,5 +21,5 @@ Only the latest release gets security fixes.
   - A world's own requirements can't point pip at other servers.
   - Apworlds download only from sources you trust.
 - **Every web request goes through one careful client:** one request at a time per site, size and time limits, and backoff after failures.
-- **Crash reports are opt-in and scrubbed:** after a problem, Atlas shows the whole report before anything is sent (what the code was doing, versions, the kind of PC) and never includes names, paths, servers, slots, chat or log lines. Help → Report a problem writes a scrubbed zip for you to attach to an issue; Atlas uploads nothing.
+- **Crash reports are opt-in and scrubbed:** after a problem, Atlas shows the whole report before anything is sent (what the code was doing, versions, the kind of PC) and never includes names, paths, servers, slots, chat or log lines. Help → Report a problem is the one report that holds log lines: it shows every part (the end of the log, the update log, the newest crash reports, the system information), each line scrubbed of paths, addresses, servers, slot and player names and room passwords, and sends only the parts you tick when you press Send (asked every time), or saves them as a zip for an issue.
 - **Saves are crash-safe,** with backups Atlas can recover from.

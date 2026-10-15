@@ -43,7 +43,7 @@ public partial class MainTrackerWindow
             if (_profiles.Contains(profile)) DeleteProfile(profile);
         },
         ConnectSlotAsync = ConnectForSoloTestAsync,
-        Scrubber = () => _crashReports?.Scrubber() ?? new AP_Atlas.Core.Reports.Scrubber(System.Environment.UserName),
+        Scrubber = () => _crashReports?.NarrowScrubber() ?? new AP_Atlas.Core.Reports.Scrubber(System.Environment.UserName),
         AtlasVersionLine = () => AP_Atlas.Core.AtlasVersion.Display,
         Notice = text => ShowToast(text, AP_Atlas.Core.ThemeColors.Text),
     };

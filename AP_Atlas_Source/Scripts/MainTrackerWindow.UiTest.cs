@@ -156,7 +156,7 @@ public partial class MainTrackerWindow
             EngineWindowSlotsAsync);
         await ScenarioAsync("Display scale: at Windows' 125% to 200% on 1080p, 1440p and 4K screens, and in an 1100-wide window at 125%, the window is drawn at that scale with a smallest size that fits, every pane stays inside it without overlapping (Properties hides itself when the width can't hold it, its setting kept), Home's cards take the columns the width allows, and the Engine window, About, Help, the shortcuts, a confirmation and the command palette each fit the window they open in",
             DisplayScaleAsync);
-        await ScenarioAsync("Crash reports: a problem last time is offered as a card; the dialog shows the whole report as it would be sent, with the user's name, paths, the server, the slot and an e-mail replaced by marks; Send once posts a Sentry envelope to the project (scrubbed, with the note) and the file isn't offered again; with Always send, the next is sent without asking; Don't send dismisses it and nothing is posted; Help → Report a problem writes a scrubbed zip in Atlas's folder and uploads nothing; a build without an address offers nothing",
+        await ScenarioAsync("Crash reports: a problem last time is offered as a card; the dialog shows the whole report as it would be sent, with the user's name, paths, the server, the slot and an e-mail replaced by marks; Send once posts a Sentry envelope to the project (scrubbed, with the note) and the file isn't offered again; with Always send, the next is sent without asking; Don't send dismisses it and nothing is posted; Help → Report a problem shows each part scrubbed (players seen in rooms too) with a tick and the event as it would be sent, posts nothing before Send, sends only the ticked parts with the note and shows the report's id, keeps a copy, and Just save it and Cancel post nothing; a build without an address offers nothing and greys Send with the reason",
             CrashReportsAsync);
         await ScenarioAsync("Customization: a custom accent of any colour recolours Atlas, is saved, and its headings and links still read (the preset choice says Custom); colour-blind-safe colours are the theme's other palette, held to the contrast rule, saved and undone; the zoom choice, Ctrl+= and Ctrl+- scale the window and are saved; the pin shape is saved and every map redraws, a diamond being a square on its corner; the page Atlas opens on is saved and the last tool shown is remembered for it",
             CustomizationAsync);
@@ -251,6 +251,9 @@ public partial class MainTrackerWindow
             UiTestExpect(_sessions.IsLoggedIn(slot), "the slot isn't logged in");
             UiTestExpect(first.Session?.Socket.Connected == true, "the slot's view has no open session");
             UiTestExpect(!_connectingSlots.Contains(SlotKey(profile.Id, "Tester")), "the slot still shows as connecting");
+            // Reports scrub the room's players and server from now on.
+            var seen = AP_Atlas.Core.Reports.SeenNames.Read(_crashReports!.ReportsDir);
+            UiTestExpect(seen.Names.Contains("Tester") && seen.Servers.Contains(profile.ServerUrl.Trim()), $"the room's players and server weren't kept for scrubbing reports: {string.Join(", ", seen.Names)} / {string.Join(", ", seen.Servers)}");
 
             // The server drops everyone: Atlas reconnects by itself and builds a new view.
             server.DropClients();
@@ -6413,29 +6416,73 @@ public partial class MainTrackerWindow
             await reports.OfferAsync();
             await UiTestWaitAsync(0.3);
             UiTestExpect(CardWith("had a problem") == null, "a dismissed report was offered again");
-            // 4. Report a problem: a scrubbed zip in Atlas's folder, and nothing uploaded.
-            AP_Atlas.Core.Logger.LogInfo($"UI test marker: {user} at C:\\Users\\{user}\\marker.txt");
+            // 4. Report a problem: every part scrubbed (a player seen in a room too) with a tick, the event as it would be sent;
+            //    nothing posted before Send; Send posts the ticked parts with the note and shows the report's id, a copy kept.
+            reports.RememberSeen(new[] { "Seenplayer" }, "play.example.org:4242");
+            AP_Atlas.Core.Logger.LogInfo($"UI test marker: {user} at C:\\Users\\{user}\\marker.txt met Seenplayer at play.example.org:4242");
             int posted = site.Received.Count;
-            _commands!.Run("help.report-problem");
-            var saved = await UiTestWaitForAsync(() => GetChildren().OfType<AcceptDialog>().FirstOrDefault(d => d.Title == Tr("Report a problem")), "the Report a problem dialog");
-            var zips = System.IO.Directory.GetFiles(reports.ReportsDir, "atlas-report-*.zip");
-            UiTestExpect(zips.Length == 1, $"{zips.Length} report zips were written");
-            using (var zip = AP_Atlas.Core.SafeZip.Open(zips[0]))
+            int zipsBefore = System.IO.Directory.Exists(reports.ReportsDir) ? System.IO.Directory.GetFiles(reports.ReportsDir, "atlas-report-*.zip").Length : 0;
+            AP_Atlas.UI.ProblemReportDialog OpenProblem()
             {
-                string log = zip.ReadText(zip.GetEntry("atlas_log.txt") ?? throw new InvalidOperationException("the bundle has no log"));
-                string system = zip.ReadText(zip.GetEntry("system.txt") ?? throw new InvalidOperationException("the bundle has no system information"));
-                UiTestExpect(log.Contains("UI test marker: <user> at <path>\\marker.txt") && !Mentions(log) && zip.GetEntry("README.txt") != null && system.Contains("Godot") && !Mentions(system),
-                    "the bundle's log isn't scrubbed, or the bundle lacks its parts");
+                _commands!.Run("help.report-problem");
+                return AP_Atlas.UI.ProblemReportDialog.Showing ?? throw new InvalidOperationException("Report a problem opened no dialog");
             }
-            UiTestExpect(site.Received.Count == posted, "Report a problem posted something");
-            saved.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
-            // 5. A build without an address: nothing is offered (the file stays for Report a problem).
+            AcceptDialog? Result(string id) => GetChildren().OfType<AcceptDialog>().FirstOrDefault(d => IsInstanceValid(d) && !d.IsQueuedForDeletion() && d.HasMeta("problem_result") && d.GetMeta("problem_result").AsString() == id);
+            var problem = OpenProblem();
+            var parts = problem.Ticked.ToList();
+            var logPart = parts.FirstOrDefault(p => p.Name == "atlas_log.txt");
+            var systemPart = parts.FirstOrDefault(p => p.Name == "system.txt");
+            UiTestExpect(logPart != null && systemPart != null && systemPart.Text.Contains("Godot") && parts.All(p => !Mentions(p.Text)), "the report's parts are missing or not scrubbed");
+            UiTestExpect(logPart!.Text.Contains("UI test marker: <user> at <path>\\marker.txt met <name> at <host>"), "the log's marker line isn't scrubbed of the user, the path, the seen player and their server");
+            problem.Note = $"It froze when {user} met Tester";
+            UiTestExpect(problem.PreviewText.Contains("\"kind\": \"problem-report\"") && problem.PreviewText.Contains("It froze when <user> met <name>") && !Mentions(problem.PreviewText),
+                "the event shown isn't the problem report with the scrubbed note: " + problem.PreviewText);
+            await UiTestWaitAsync(0.2);
+            UiTestExpect(site.Received.Count == posted, "Report a problem posted something before Send");
+            problem.SetTicked(parts.IndexOf(systemPart!), false);
+            UiTestExpect(problem.CanSend, "Send is greyed with parts ticked: " + problem.WhyNotSend);
+            problem.Choose(AP_Atlas.UI.ProblemChoice.Send);
+            await UiTestWaitForAsync(() => site.Received.Count == posted + 1 ? site : null, "the problem report to be posted");
+            string sent = System.Text.Encoding.UTF8.GetString(site.Received[^1].Body);
+            var shownId = await UiTestWaitForAsync(() => GetChildren().OfType<AcceptDialog>().FirstOrDefault(d => IsInstanceValid(d) && d.HasMeta("problem_result") && d.GetMeta("problem_result").AsString().Length > 0), "the sent report's id");
+            string id = shownId.GetMeta("problem_result").AsString();
+            UiTestExpect(id.Length == 8 && sent.Contains("\"event_id\":\"" + id) && sent.Contains("\"report_id\":\"" + id + "\"") && sent.Contains("\"filename\":\"atlas_log.txt\"")
+                && !sent.Contains("\"filename\":\"system.txt\"") && sent.Contains("It froze when <user> met <name>") && !Mentions(sent),
+                $"the posted report isn't the ticked parts with the note under id {id}: " + sent[..Math.Min(sent.Length, 2000)]);
+            var zips = System.IO.Directory.GetFiles(reports.ReportsDir, "atlas-report-*.zip");
+            UiTestExpect(zips.Length == zipsBefore + 1, $"{zips.Length - zipsBefore} copies of the sent report were kept");
+            shownId.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
+            // Just save it: a zip in Atlas's folder, nothing posted.
+            problem = OpenProblem();
+            problem.Choose(AP_Atlas.UI.ProblemChoice.Save);
+            var saved = await UiTestWaitForAsync(() => Result(""), "the saved report's dialog");
+            zips = System.IO.Directory.GetFiles(reports.ReportsDir, "atlas-report-*.zip");
+            UiTestExpect(zips.Length == zipsBefore + 2, $"Just save it wrote {zips.Length - zipsBefore - 1} zips");
+            string newest = zips.OrderByDescending(System.IO.File.GetLastWriteTimeUtc).ThenByDescending(z => z, StringComparer.Ordinal).First();
+            using (var zip = AP_Atlas.Core.SafeZip.Open(newest))
+            {
+                string log = zip.ReadText(zip.GetEntry("atlas_log.txt") ?? throw new InvalidOperationException("the saved report has no log"));
+                string system = zip.ReadText(zip.GetEntry("system.txt") ?? throw new InvalidOperationException("the saved report has no system information"));
+                UiTestExpect(log.Contains("UI test marker: <user> at <path>\\marker.txt") && !Mentions(log) && zip.GetEntry("README.txt") != null && system.Contains("Godot") && !Mentions(system),
+                    "the saved report's log isn't scrubbed, or it lacks its parts");
+            }
+            UiTestExpect(site.Received.Count == posted + 1, "Just save it posted something");
+            saved!.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
+            // Cancel: nothing posted or written.
+            problem = OpenProblem();
+            problem.Choose(AP_Atlas.UI.ProblemChoice.Cancel);
+            await UiTestWaitAsync(0.3);
+            UiTestExpect(site.Received.Count == posted + 1 && System.IO.Directory.GetFiles(reports.ReportsDir, "atlas-report-*.zip").Length == zipsBefore + 2, "Cancel posted or wrote something");
+            // 5. A build without an address: nothing is offered (the file stays for Report a problem), and Send is greyed with the reason.
             TestSentryDsn = "";
             SetUpCrashReports();
             Plant();
             await _crashReports!.OfferAsync();
             await UiTestWaitAsync(0.3);
             UiTestExpect(!_crashReports.Available && CardWith("had a problem") == null, "a build without an address offered a report");
+            problem = OpenProblem();
+            UiTestExpect(!problem.CanSend && problem.WhyNotSend.Contains("no address"), $"without an address, Send isn't greyed with the reason: \"{problem.WhyNotSend}\"");
+            problem.Choose(AP_Atlas.UI.ProblemChoice.Cancel);
         }
         finally
         {
@@ -6443,6 +6490,8 @@ public partial class MainTrackerWindow
             TestSentryDsn = null;
             SetUpCrashReports();
             foreach (var open in GetChildren().OfType<AP_Atlas.UI.CrashReportDialog>().ToList()) open.QueueFree();
+            AP_Atlas.UI.ProblemReportDialog.Showing?.QueueFree();
+            foreach (var open in GetChildren().OfType<AcceptDialog>().Where(d => d.HasMeta("problem_result")).ToList()) open.QueueFree();
             foreach (string path in planted) System.IO.File.Delete(path);
             DeleteProfile(profile);
         }

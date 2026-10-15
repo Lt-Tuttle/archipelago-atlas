@@ -379,6 +379,9 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         profile.SavedStats[slotName].GameName = session.ConnectionInfo.Game;
         profile.SavedStats[slotName].SlotNumber = session.ConnectionInfo.Slot;
         using (AP_Atlas.Core.PerfMonitor.Measure("Save multiworlds")) DataManager.SaveProfiles(_profiles);
+        // Reports scrub this room's players and server from now on (a log line may name them, even after the multiworld goes).
+        using (AP_Atlas.Core.PerfMonitor.Measure("Names for report scrubbing"))
+            _crashReports?.RememberSeen(session.Players.AllPlayers.Where(p => p != null && p.Slot > 0 && !p.IsGroup).SelectMany(p => new[] { p.Name, p.Alias }), profile.ServerUrl);
         // The model takes the session's events from here on (and the messages that arrived before it), and runs its logic.
         using var __model = AP_Atlas.Core.PerfMonitor.Measure($"[{slotName}] Slot set up");
         var model = new AP_Atlas.Core.SlotModel(connected, _appSettings, msg =>
