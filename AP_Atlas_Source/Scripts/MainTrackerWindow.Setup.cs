@@ -49,7 +49,7 @@ public partial class MainTrackerWindow
             SetZoom = SetZoom,
             ZoomSteps = ZoomSteps,
             EngineReady = () => AP_Atlas.Core.EngineSetup.AtlasEngine.Current.CanLaunch,
-            OpenEngineWindow = lines => OpenEngineWindow(lines),
+            ShowEnginePage = lines => ShowEnginePage(lines),
             Profiles = () => _profiles,
             SelectedProfile = () => _selectedProfile,
             SaveMultiworld = SaveSetupMultiworld,

@@ -559,7 +559,7 @@ namespace AP_Atlas.Core.EngineSetup
                 return install.Mode == EngineMode.Portable ? "The Atlas Engine isn't set up yet." : "Archipelago wasn't found at the chosen folder.";
             if (!install.HasTracker) return "The Universal Tracker isn't installed in the engine.";
             if (install.Mode == EngineMode.Existing && !MayWriteTo(install) && install.WorldsDir != null && !BridgeIsCurrent(install))
-                return "Atlas needs your OK before it adds its bridge to your Archipelago install (Atlas Engine → Allow…).";
+                return "Atlas needs your OK before it adds its bridge to your Archipelago install (Atlas Engine → Advanced → Allow…).";
             return null;
         }
 
@@ -653,7 +653,7 @@ namespace AP_Atlas.Core.EngineSetup
         private static void RequireWriteConsent(EngineInstall install)
         {
             if (!MayWriteTo(install))
-                throw new InvalidOperationException("Atlas needs your OK before it adds files to your Archipelago install (Atlas Engine → My Archipelago install → Allow…).");
+                throw new InvalidOperationException("Atlas needs your OK before it adds files to your Archipelago install (Atlas Engine → Advanced → My Archipelago install → Allow…).");
         }
 
         private static void RecordChange(EngineInstall install, string kind, string path, string movedTo = null)
@@ -1708,7 +1708,7 @@ namespace AP_Atlas.Core.EngineSetup
             if (worlds == null) return;
             if (!MayWriteTo(install))
             {
-                if (!BridgeIsCurrent(install)) log?.Invoke("Atlas needs your OK before it adds its bridge to your Archipelago install (Atlas Engine → Allow…).");
+                if (!BridgeIsCurrent(install)) log?.Invoke("Atlas needs your OK before it adds its bridge to your Archipelago install (Atlas Engine → Advanced → Allow…).");
                 return;
             }
             try

@@ -61,6 +61,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     private LineEdit _cheeseInput;
     private LineEdit _sphereInput;
     private AP_Atlas.UI.GamesPage _gamesPage;
+    private AP_Atlas.UI.EnginePage _enginePage;
     private Button _passwordToggle;
     private AP_Atlas.UI.CheeseTrackerTab _cheeseTab;
     private AP_Atlas.Core.Spheres.SphereService _spheres;
@@ -259,7 +260,6 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         // --- 0. THE ACTIVITY BAR: every tool, in its group; the lit one is the tool the content area shows ---
         _activityBar = new AP_Atlas.UI.ActivityBar(text => Tr(text), tool => _commands.ShortcutOf("tool." + tool.Id));
         _activityBar.ToolPressed += tool => ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(tool);
-        _activityBar.EnginePressed += () => OpenEngineWindow();
         appWorkspaceHBox.AddChild(_activityBar);
         _mainSplit = new HSplitContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, SplitOffsets = new[] { _appSettings.MainSplitOffset } };
         _mainSplit.Dragged += (offset) => { _appSettings.MainSplitOffset = (int)offset; DataManager.SaveSettingsSoon(_appSettings); };
@@ -479,6 +479,19 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             if (GodotObject.IsInstanceValid(_gamesPage) && _gamesPage.IsVisibleInTree()) _gamesPage.RefreshPacks();
         };
         _toolViews[AP_Atlas.UI.Tool.Games] = (_gamesPage, _gamesPage.SidebarContent, "Games", _gamesPage.OnShown);
+        // The Atlas Engine page: no explorer of its own (like Home). It checks the engine by itself only when the user shows it.
+        _enginePage = new AP_Atlas.UI.EnginePage(new AP_Atlas.UI.EngineHooks
+        {
+            Settings = _appSettings,
+            Tr = text => Tr(text),
+            Slots = () => ActiveSlotNodes().OfType<SlotTrackerControl>().Where(GodotObject.IsInstanceValid),
+            OpenGamesPage = () => ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.Games),
+            FontSize = () => _appSettings.ContentFontSize,
+            MayCheckByItself = () => _uiReady && !VisualCheckRequested
+        })
+        { Visible = false };
+        _contentStage.AddChild(_enginePage);
+        _toolViews[AP_Atlas.UI.Tool.Engine] = (_enginePage, null, "", _enginePage.OnShown);
         ReportEngineAtStartup();
         OfferToDeletePlainTextPasswordCopies();
         var statusTimer = new Godot.Timer { WaitTime = 0.5f, Autostart = true };

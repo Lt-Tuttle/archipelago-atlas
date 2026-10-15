@@ -74,7 +74,6 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _sphereTab.ShowView(view);
         ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.SphereTracker);
     }
-    /// <summary>Opens the Atlas Engine setup window.</summary>
     /// <summary>Window → Notifications: everything the alert feed said this session; the open window is brought back if there is one.</summary>
     private void OpenNotifications()
     {
@@ -115,42 +114,50 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     /// <summary>Settings → Privacy &amp; permissions: what the user allowed Atlas to do without asking, and trusted sources.</summary>
     private void OpenPrivacy() => ShowSettings("privacy");
     /// <summary>
-    /// The short way to a working engine (Home's checklist, the "logic needs the engine" cards, Settings): the download
-    /// asks its permission once, then the setup panel shows the step it's on in plain words. An engine that already works
-    /// opens the full window instead, where its parts and games are managed.
+    /// The short way to a working engine (Home's checklist, the "logic needs the engine" cards): the download asks its
+    /// permission once, then the setup panel shows the step it's on in plain words. An engine that already works (or an
+    /// install of the user's own) shows the Atlas Engine page instead, where its parts are managed.
     /// </summary>
     public void OpenEngineSetup()
     {
         var engine = AP_Atlas.Core.EngineSetup.AtlasEngine.Current;
         if (engine.CanLaunch && AP_Atlas.Core.EngineSetup.AtlasEngine.ProblemWith(engine) == null)
         {
-            OpenEngineWindow();
+            ShowEnginePage();
             return;
         }
         if (engine.Mode != AP_Atlas.Core.EngineSetup.EngineMode.Portable)
         {
-            OpenEngineWindow(); // an install of the user's own is chosen and checked there
+            ShowEnginePage(); // an install of the user's own is chosen and checked there
             return;
         }
         // The engine that ships with Atlas downloads nothing to get ready: no question then.
         if (!AP_Atlas.Core.EngineSetup.AtlasEngine.SetupDownloads(engine))
         {
-            AP_Atlas.UI.EngineSetupPanel.Open(this, text => Tr(text), lines => OpenEngineWindow(lines));
+            AP_Atlas.UI.EngineSetupPanel.Open(this, text => Tr(text), lines => ShowEnginePage(lines));
             return;
         }
         AP_Atlas.UI.PermissionDialog.Ask(this, _appSettings, AP_Atlas.Core.Permissions.EngineSetup, null, null, allowed =>
         {
             if (!allowed) return;
-            AP_Atlas.UI.EngineSetupPanel.Open(this, text => Tr(text), lines => OpenEngineWindow(lines));
+            AP_Atlas.UI.EngineSetupPanel.Open(this, text => Tr(text), lines => ShowEnginePage(lines));
         });
     }
 
-    /// <summary>The full engine window: every part, the games and the slots, with the log (Tools → Atlas Engine, the bar's bottom button).</summary>
-    public void OpenEngineWindow(IReadOnlyList<string> logLines = null)
+    /// <summary>
+    /// The Atlas Engine page (the bar's Engine button, Tools → Atlas Engine, Settings). With <paramref name="logLines"/>
+    /// (a run's Show details), its Advanced part open with those lines in its log.
+    /// </summary>
+    public void ShowEnginePage(IReadOnlyList<string> logLines = null)
     {
-        var window = AP_Atlas.UI.AtlasEngineWindow.Open(this, _appSettings, () => ActiveSlotNodes().OfType<SlotTrackerControl>(), _appSettings.ContentFontSize);
-        window.OpenGamesPage = () => ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.Games);
-        if (logLines != null && logLines.Count > 0) window.AppendLog(logLines);
+        void Show()
+        {
+            ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.Engine);
+            if (logLines != null) _enginePage?.ShowDetails(logLines);
+        }
+        // Unsaved edits on the Multiworlds page ask first; Cancel leaves the page (and Advanced's fold) as it was.
+        if (logLines != null && _currentTool == AP_Atlas.UI.Tool.Connections) GuardUnsaved(Show);
+        else Show();
     }
 
     /// <summary>

@@ -56,8 +56,8 @@ namespace AP_Atlas.UI
             var w = new PackDoctorWindow(original, fontSize) { _focusPinPath = focusPinPath };
             if (focusPinPath != null) startTab = "Maps";
             _open[key] = w;
-            WindowFit.ShowNative(w, anyNode, new Vector2I(1100, 760), new Vector2I(900, 600), AtlasEngineWindow.ToRect(settings?.PackDoctorWindowRect),
-                settings == null ? null : rect => { settings.PackDoctorWindowRect = AtlasEngineWindow.FromRect(rect); DataManager.SaveSettingsSoon(settings); });
+            WindowFit.ShowNative(w, anyNode, new Vector2I(1100, 760), new Vector2I(900, 600), WindowFit.ToRect(settings?.PackDoctorWindowRect),
+                settings == null ? null : rect => { settings.PackDoctorWindowRect = WindowFit.FromRect(rect); DataManager.SaveSettingsSoon(settings); });
             if (startTab != null) w.SelectTab(startTab);
         }
 

@@ -237,7 +237,7 @@ public partial class SlotTrackerControl : MarginContainer
     public bool UsingSeedApworld => Model.Logic.Running && Model.Logic.Engine.LastApworldOverride?["used"]?.Type == Newtonsoft.Json.Linq.JTokenType.Boolean &&
         (bool)Model.Logic.Engine.LastApworldOverride["used"];
 
-    /// <summary>Opens the Atlas Engine setup window (set by MainTrackerWindow).</summary>
+    /// <summary>Opens the Atlas Engine's setup, or its page when it works (set by MainTrackerWindow).</summary>
     public Action OpenEngineSetup { get; set; }
 
     /// <summary>Shows the Games page on a game (set by MainTrackerWindow): the banner's way to a missing apworld.</summary>

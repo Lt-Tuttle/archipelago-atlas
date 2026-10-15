@@ -220,7 +220,7 @@ public partial class MainTrackerWindow
                 _appSettings.PackDoctorAutoLink = on;
                 DataManager.SaveSettings(_appSettings);
             });
-        page.AddAction("tools", "engine", "Atlas Engine", "The logic engine: its install, version and mode.", "Open…", OpenEngineSetup);
+        page.AddAction("tools", "engine", "Atlas Engine", "The logic engine: whether logic can run, its parts, and which engine it is.", "Show", () => ShowEnginePage());
         page.AddAction("tools", "cheese", "Cheese Tracker", "Your API key, links and automatic updates.", "Open…", OpenCheeseSettings);
         page.AddAction("tools", "spheres", "Sphere Tracker", "The host's spheretracker.de room for each multiworld.", "Open…",
             () => ShowSphereTab(AP_Atlas.UI.SphereTrackerTab.SettingsView));
@@ -241,7 +241,7 @@ public partial class MainTrackerWindow
 
         page.AddSection("advanced", "Advanced");
         page.AddToggle("advanced", "developer-mode", "Developer mode",
-            "Shows Atlas's diagnostics: the Debug Log tab in the bottom pane, frame hitch warnings on the status bar and the Debug Log's menu items. Everything is written to the log file either way.",
+            "Shows Atlas's diagnostics: the Debug Log tab in the bottom pane, frame hitch warnings on the status bar, the Debug Log's menu items and the Atlas Engine page's seed test. Everything is written to the log file either way.",
             () => _appSettings.DeveloperMode, on =>
             {
                 _appSettings.DeveloperMode = on;

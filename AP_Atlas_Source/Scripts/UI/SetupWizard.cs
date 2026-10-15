@@ -40,7 +40,7 @@ namespace AP_Atlas.UI
             public required IReadOnlyList<int> ZoomSteps { get; init; }
             // The engine.
             public required Func<bool> EngineReady { get; init; }
-            public required Action<IReadOnlyList<string>> OpenEngineWindow { get; init; }
+            public required Action<IReadOnlyList<string>> ShowEnginePage { get; init; }
             // The multiworld and its slots.
             public required Func<IReadOnlyList<MultiworldProfile>> Profiles { get; init; }
             /// <summary>The multiworld selected on the Multiworlds page, if any.</summary>
@@ -514,7 +514,11 @@ namespace AP_Atlas.UI
             _engineButtons.AddThemeConstantOverride("separation", 8);
             _engineTryAgain = Kit.Button(_tr("Try again"), _tr("Runs the setup again from where it is."), () => _engineRun.Start());
             _engineButtons.AddChild(_engineTryAgain);
-            _engineDetails = Kit.Button(_tr("Show details"), _tr("The full engine window, with the setup's log."), () => _hooks.OpenEngineWindow(_engineRun.Log), flat: true);
+            _engineDetails = Kit.Button(_tr("Show details"), _tr("The Atlas Engine page, with the setup's log."), () =>
+            {
+                _hooks.ShowEnginePage(_engineRun.Log);
+                Hide(); // out of the page's way; Help → Set up Atlas… (or Home's Resume) brings it back as it was
+            }, flat: true);
             _engineButtons.AddChild(_engineDetails);
             box.AddChild(_engineButtons);
             return box;

@@ -8,7 +8,7 @@ namespace AP_Atlas.UI
     /// <summary>
     /// The column of tools on the far left of the window: every tool as an icon with its short name under it: Home alone at
     /// the top, then Atlas's tools, the external trackers and, at the bottom, the configuration pages, each group but Home
-    /// captioned on two lines on a band of the accent colour, and a button for the Atlas Engine window. One button is lit: the tool the window shows
+    /// captioned on two lines on a band of the accent colour (the Atlas Engine page last). One button is lit: the tool the window shows
     /// (<see cref="Select"/> follows the window, however the tool was switched). Each button's tooltip names the tool
     /// and its key, and screen readers get the full title. When the window is too short for the names, the bar shows
     /// the icons alone (<see cref="Compact"/>); the bar never asks the window for more height than that layout needs.
@@ -31,7 +31,6 @@ namespace AP_Atlas.UI
         private readonly List<Button> _styled = new();
         private readonly List<(PanelContainer Band, Label Label)> _bands = new();
         private readonly Dictionary<Tool, (Label Label, int Count, string What)> _badges = new();
-        private Button _engine = null!;
         private Control _frame = null!;
         private VBoxContainer _column = null!;
         private Color _accent = AP_Atlas.Core.ThemeColors.Accent;
@@ -39,9 +38,6 @@ namespace AP_Atlas.UI
 
         /// <summary>The user pressed a tool's button.</summary>
         public event Action<Tool>? ToolPressed;
-
-        /// <summary>The user pressed the Atlas Engine button.</summary>
-        public event Action? EnginePressed;
 
         /// <param name="tr">Translates text as it's shown.</param>
         /// <param name="keyOf">The key that shows a tool ("Ctrl+3"), or "" for none: shown in its tooltip.</param>
@@ -61,8 +57,6 @@ namespace AP_Atlas.UI
         public bool Compact { get; private set; }
 
         public Button ButtonOf(Tool tool) => _buttons[tool];
-
-        public Button EngineButton => _engine;
 
         /// <summary>The count a tool's badge shows (0: none), for tests.</summary>
         public int BadgeOf(Tool tool) => _badges.TryGetValue(tool, out var badge) ? badge.Count : 0;
@@ -148,9 +142,6 @@ namespace AP_Atlas.UI
             AddGroup("EXTERNAL\nTOOLS", ToolGroup.External);
             _column.AddChild(new Control { SizeFlagsVertical = SizeFlags.ExpandFill }); // the configuration pages sit at the bottom
             AddGroup("ATLAS\nCONFIG", ToolGroup.Config);
-            _engine = MakeButton("cpu", _tr("Atlas Engine"), _tr("Atlas Engine"), _tr("Engine"));
-            _engine.Pressed += () => EnginePressed?.Invoke();
-            _column.AddChild(_engine);
             ApplyAccent(_accent);
             // Measured once, in each layout: what the names need, and the least the bar ever asks for.
             _labelledNeeded = _column.GetCombinedMinimumSize().Y;
@@ -172,7 +163,6 @@ namespace AP_Atlas.UI
         {
             Compact = compact;
             foreach (var (tool, button) in _buttons) Lay(button, compact ? "" : _tr(tool.ShortTitle), compact);
-            Lay(_engine, compact ? "" : _tr("Engine"), compact);
             foreach (var (_, label) in _bands) label.Visible = !compact; // the bands stay as thin tinted dividers
         }
 

@@ -95,8 +95,12 @@ public partial class MainTrackerWindow
         host.ShowTool(AP_Atlas.UI.Tool.Connections);
         await VisualCheckWaitAsync(0.3);
 
-        // The engine window opens before anything is allowed, so it never goes online.
-        await VisualCheckWindowAsync("engine", () => OpenEngineWindow(), 1.5);
+        // The Atlas Engine page with its Advanced part open (which engine, its parts, the log); nothing goes online.
+        ShowEnginePage(System.Array.Empty<string>());
+        await VisualCheckWaitAsync(1.0);
+        await VisualCheckPictureAsync("engine");
+        host.ShowTool(AP_Atlas.UI.Tool.Connections);
+        await VisualCheckWaitAsync(0.3);
         // The guide as the Help window renders it (the documents built in, through Markdown).
         await VisualCheckWindowAsync("help_guide", () => OpenHelp(null), 1.0);
         await VisualCheckWindowAsync("about", ShowAbout, 1.0);

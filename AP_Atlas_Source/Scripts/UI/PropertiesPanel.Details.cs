@@ -222,7 +222,7 @@ namespace AP_Atlas.UI
 
             var tested = AP_Atlas.Core.EngineSetup.SeedVerifier.For(slot.Game, localChecksum);
             if (tested == null)
-                Row("Proven on a real seed", Colored("Not yet", Muted), "Atlas Engine → Verify logic against a seed replays a generated seed's playthrough to prove this game's logic");
+                Row("Proven on a real seed", Colored("Not yet", Muted), "In developer mode, Atlas Engine → Advanced → Verify logic against a seed replays a generated seed's playthrough to prove this game's logic");
             else if (tested.Exact)
                 Row("Proven on a real seed", Colored($"Exact on seed {tested.SeedName} ({tested.Spheres} spheres, {tested.Tested:d})", Good), tested.Verdict);
             else

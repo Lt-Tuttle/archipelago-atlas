@@ -424,7 +424,7 @@ def start_slot(req, logger):
     missing_api = ut_api_missing()
     if missing_api:
         return None, {'code': 'ut_incompatible', 'message': 'This Universal Tracker version is incompatible with Atlas (missing: ' +
-                      ', '.join(missing_api) + '). Install the tested version from the Atlas Engine window.'}
+                      ', '.join(missing_api) + '). Install the tested version from the Atlas Engine page.'}
     players_dir = ensure_players_folder()
     known = bool(req.get('all_entrances_known'))
     if getattr(cls, 'ut_can_gen_without_yaml', False):

@@ -102,7 +102,7 @@ public partial class MainTrackerWindow
             EndedSlotsAreFreedAsync);
         await ScenarioAsync("Ended slots with logic are freed: a deleted multiworld's engine stops, its engine pool is forgotten, and its slot's model and logic leave memory",
             EndedSlotsLogicIsFreedAsync);
-        await ScenarioAsync("Closed windows are freed: the Pack Doctor, the Atlas Engine window, the race mode dialog and the setup window, opened and closed again and again, leave nothing in memory and no node behind",
+        await ScenarioAsync("Closed windows are freed: the Pack Doctor, the race mode dialog and the setup window, opened and closed again and again, leave nothing in memory and no node behind",
             ClosedWindowsAreFreedAsync);
         await ScenarioAsync("Moving views: the Cheese and Sphere tabs and Properties keep following their events when moved to another parent (docking, pop-outs), and stop while out of the window",
             ViewsKeepTheirEventsWhenMovedAsync);
@@ -112,7 +112,7 @@ public partial class MainTrackerWindow
             MenuBarAndKeysAsync);
         await ScenarioAsync("Command palette: Ctrl+Shift+P opens it ready to type, it lists every command with its key, a typed word narrows it to the commands whose words start that way, Enter runs the pick and closes it, Escape only closes it",
             CommandPaletteAsync);
-        await ScenarioAsync("Activity bar: Home alone at the top, then ATLAS TOOLS, EXTERNAL TOOLS and, at the bottom, ATLAS CONFIG, each caption on two lines on an accent band; every tool in its group, in order, with a shipped icon, its short name under it, its full title for screen readers and its key in the tooltip; the group captions sit on accent bands; pressing a button shows the tool, switching a tool any other way lights its button and names it in the header; the engine button opens the engine window",
+        await ScenarioAsync("Activity bar: Home alone at the top, then ATLAS TOOLS, EXTERNAL TOOLS and, at the bottom, ATLAS CONFIG, each caption on two lines on an accent band; every tool in its group, in order, with a shipped icon, its short name under it, its full title for screen readers and its key in the tooltip; the group captions sit on accent bands; pressing a button shows the tool, switching a tool any other way lights its button and names it in the header; the Engine button, the last, shows the Atlas Engine page",
             ActivityBarAsync);
         await ScenarioAsync("Dialogs: a confirmation (with and without a requirement), a prompt and Save changes stand as tall as their content, under four fifths of the window, with their buttons and content inside (a wrapped line measured before its width used to make every dialog as tall as the screen); a short question keeps its details under More information and grows to them; one the user resized keeps that size when its content changes or it's as tall as the window (it snapped back to its first size); a dialog's frame stands out in the accent with a shadow; a question asked from another window opens over that window, inside Atlas's",
             DialogsStandAsTallAsTheirContentAsync);
@@ -148,13 +148,13 @@ public partial class MainTrackerWindow
             UpdatesWithoutGodotErrorsAsync);
         await ScenarioAsync("Data folder: a program folder that can't be written to needs a choice (the override and a writable folder don't, and nothing outside Atlas's folder is touched then); the dialog names the folder and the problem, Continue takes the local app data folder by default and makes it, another folder that can't be used is refused with the reason and the dialog stays, a usable one is taken and remembered in the pointer file, and Quit chooses nothing",
             DataFolderAsync);
-        await ScenarioAsync("Engine setup panel: the short setup asks the engine permission first and starts nothing until it's answered; the panel says the step it's on in plain words (never pip's lines) with one bar for the whole setup that never goes down, says why a run stopped with Try again and Show details, Try again runs it again, Show details opens the full window with its log (hidden by default otherwise), and Don't allow starts nothing",
+        await ScenarioAsync("Engine setup panel: the short setup asks the engine permission first and starts nothing until it's answered; the panel says the step it's on in plain words (never pip's lines) with one bar for the whole setup that never goes down, says why a run stopped with Try again and Show details, Try again runs it again, Show details shows the Atlas Engine page with the run's log, and Don't allow starts nothing",
             EngineSetupPanelAsync);
         await ScenarioAsync("Setup window: Resume opens at the first step left and Welcome can stop it opening by itself; the Look page applies the theme as chosen; the engine's permission is a row on the page, Allow once starts the run whose progress shows in the rail while the window moves on; a room link brings the status read's row and Next reads the room once (the server and the players to tick), Back keeps the values; the slots page saves the multiworld with its slot and game; the games page lists the game and installs a pack found on GitHub from the page; Skip skips the trackers; the reports page keeps its switches as the permissions; Finish connects the slot; nothing opens on top of the window; Home's line counts what was done and Resume opens at the step left, as does Help → Set up Atlas…",
             SetupWizardAsync);
-        await ScenarioAsync("Engine window slots: a slot whose logic doesn't ask for a YAML gets no Link YAML button; a linked YAML shows Change YAML and Unlink; unlinked, nothing; Copy log says so in the status line",
-            EngineWindowSlotsAsync);
-        await ScenarioAsync("Display scale: at Windows' 125% to 200% on 1080p, 1440p and 4K screens, and in an 1100-wide window at 125%, the window is drawn at that scale with a smallest size that fits, every pane stays inside it without overlapping (Properties hides itself when the width can't hold it, its setting kept), Home's cards take the columns the width allows, and the Engine window, About, Help, the shortcuts, a confirmation and the command palette each fit the window they open in",
+        await ScenarioAsync("Engine page slots: the Atlas Engine page's Your slots offers a YAML only when it would help (a linked one shows Change YAML and Unlink; unlinked, nothing); shown plainly, its Advanced part stays folded, Show details opens it; Copy log says so in the status line; the seed test shows only in developer mode",
+            EnginePageSlotsAsync);
+        await ScenarioAsync("Display scale: at Windows' 125% to 200% on 1080p, 1440p and 4K screens, and in an 1100-wide window at 125%, the window is drawn at that scale with a smallest size that fits, every pane stays inside it without overlapping (Properties hides itself when the width can't hold it, its setting kept), Home's cards take the columns the width allows, the Atlas Engine page fits the content area, and About, Help, the shortcuts, a confirmation and the command palette each fit the window they open in",
             DisplayScaleAsync);
         await ScenarioAsync("Crash reports: a problem last time is offered as a card; the dialog shows the whole report as it would be sent, with the user's name, paths, the server, the slot and an e-mail replaced by marks; Send once posts a Sentry envelope to the project (scrubbed, with the note) and the file isn't offered again; with Always send, the next is sent without asking; Don't send dismisses it and nothing is posted; Help → Report a problem shows each part scrubbed (players seen in rooms too) with a tick and the event as it would be sent, posts nothing before Send, sends only the ticked parts with the note and shows the report's id, keeps a copy, and Just save it and Cancel post nothing; a build without an address offers nothing and greys Send with the reason",
             CrashReportsAsync);
@@ -330,7 +330,7 @@ public partial class MainTrackerWindow
     }
 
     /// <summary>
-    /// Windows that close leave nothing behind: the Pack Doctor, the Atlas Engine window and the race mode dialog,
+    /// Windows that close leave nothing behind: the Pack Doctor and the race mode dialog,
     /// each opened and closed three times. A closed window still subscribed to a static event, kept in a static field or
     /// only hidden would stay for the rest of the session, with all it holds.
     /// </summary>
@@ -381,11 +381,6 @@ public partial class MainTrackerWindow
         await UiTestWaitAsync(0.3);
         doctor.EmitSignal(Window.SignalName.CloseRequested);
 
-        OpenEngineWindow();
-        var engine = await UiTestWaitForAsync(() => GetTree().Root.GetChildren().OfType<AP_Atlas.UI.AtlasEngineWindow>().FirstOrDefault(), "the Atlas Engine window");
-        await UiTestWaitAsync(0.3);
-        engine.EmitSignal(Window.SignalName.CloseRequested);
-
         ShowRaceModeInfo();
         var race = await UiTestWaitForAsync(() => GetChildren().OfType<AcceptDialog>().FirstOrDefault(d => d.Title == "Race Mode"), "the race mode dialog");
         await UiTestWaitAsync(0.3);
@@ -420,12 +415,11 @@ public partial class MainTrackerWindow
         await UiTestWaitAsync(0.3);
         setup.EmitSignal(Window.SignalName.CloseRequested);
 
-        await UiTestWaitForAsync(() => !IsInstanceValid(doctor) && !IsInstanceValid(engine) && !IsInstanceValid(race)
+        await UiTestWaitForAsync(() => !IsInstanceValid(doctor) && !IsInstanceValid(race)
             && !IsInstanceValid(shortcuts) && !IsInstanceValid(about) && !IsInstanceValid(palette) && !IsInstanceValid(setup) ? this : null, "the closed windows to be freed");
         return new List<(string What, System.WeakReference Weak)>
         {
             ("a closed Pack Doctor window", new System.WeakReference(doctor)),
-            ("a closed Atlas Engine window", new System.WeakReference(engine)),
             ("a closed race mode dialog", new System.WeakReference(race)),
             ("a closed Keyboard Shortcuts dialog", new System.WeakReference(shortcuts)),
             ("a closed About dialog", new System.WeakReference(about)),
@@ -630,6 +624,7 @@ public partial class MainTrackerWindow
             [AP_Atlas.UI.Tool.Settings] = _settingsPage!,
             [AP_Atlas.UI.Tool.Home] = _homePage!,
             [AP_Atlas.UI.Tool.Games] = _gamesPage!,
+            [AP_Atlas.UI.Tool.Engine] = _enginePage!,
         };
         var slotViews = new Dictionary<AP_Atlas.UI.Tool, Func<SlotTrackerControl, Control>>
         {
@@ -697,6 +692,9 @@ public partial class MainTrackerWindow
         UiTestExpect(ShownContent() == _gamesPage, "the Games command didn't show Games");
         UiTestExpect(_commands.Find("tool.map-packs") == null, "Map Packs is still a command of its own (it's part of Games)");
         UiTestExpect(_commands.ShortcutOf("tool.games") == "" && _commands.ShortcutOf("view.zoom-reset") == "Ctrl+0", "Ctrl+0 belongs to Reset Zoom, and Games has no default key");
+        _commands.Run("tool.engine");
+        UiTestExpect(ShownContent() == _enginePage && _commands.Find("tools.engine") == null && _commands.ShortcutOf("tool.engine") == "",
+            "Tools → Atlas Engine didn't show the Engine page, or the engine window's command is still there, or the page took a key");
         await PressAsync("Ctrl+9");
         UiTestExpect(ShownContent() == _sphereTab, "Ctrl+9 didn't show the Sphere Tracker");
         // A rebind in the settings takes over at once (as a user might type it), and the old key means nothing.
@@ -2979,6 +2977,11 @@ public partial class MainTrackerWindow
         UiTestExpect(migrated.LastTool == "games" && StartupTool(migrated) == AP_Atlas.UI.Tool.Games && migrated.KeyBindings.GetValueOrDefault("tool.games") == "Ctrl+F6" && !migrated.KeyBindings.ContainsKey("tool.map-packs"),
             $"settings saved with Map Packs load as {migrated.LastTool}, its key {migrated.KeyBindings.GetValueOrDefault("tool.games")}");
         _appSettings.KeyBindings.Remove("tool.map-packs");
+        _appSettings.KeyBindings["tools.engine"] = "Ctrl+F7";
+        DataManager.SaveSettings(_appSettings);
+        migrated = DataManager.LoadSettings();
+        UiTestExpect(migrated.KeyBindings.GetValueOrDefault("tool.engine") == "Ctrl+F7" && !migrated.KeyBindings.ContainsKey("tools.engine"), "a key given to the engine window's command didn't go to the Atlas Engine page's");
+        _appSettings.KeyBindings.Remove("tools.engine");
         _appSettings.LastTool = "hints";
         DataManager.SaveSettings(_appSettings);
         host.ShowTool(AP_Atlas.UI.Tool.Settings);
@@ -3453,7 +3456,7 @@ public partial class MainTrackerWindow
     {
         var host = (AP_Atlas.UI.IPropertiesHost)this;
         var order = string.Join(",", _activityBar.Order.Select(t => t.Title));
-        UiTestExpect(order == "Home,Map Tracker,Key Items,Logic Tracker,Item History,Hints,Multiworlds,Cheese Tracker,Sphere Tracker,Games,Settings", $"the activity bar's order is {order}");
+        UiTestExpect(order == "Home,Map Tracker,Key Items,Logic Tracker,Item History,Hints,Multiworlds,Cheese Tracker,Sphere Tracker,Games,Settings,Atlas Engine", $"the activity bar's order is {order}");
         UiTestExpect(_activityBar.CaptionOf(AP_Atlas.UI.Tool.Home) == "" && _activityBar.CaptionOf(AP_Atlas.UI.Tool.MapTracker) == "ATLAS\nTOOLS" && _activityBar.CaptionOf(AP_Atlas.UI.Tool.Connections) == "ATLAS\nTOOLS"
             && _activityBar.CaptionOf(AP_Atlas.UI.Tool.CheeseTracker) == "EXTERNAL\nTOOLS" && _activityBar.CaptionOf(AP_Atlas.UI.Tool.Games) == "ATLAS\nCONFIG",
             "the groups aren't captioned as designed");
@@ -3462,9 +3465,9 @@ public partial class MainTrackerWindow
         // The names under the icons (the window of the test is tall enough), the full titles for screen readers, the captions on bands.
         UiTestExpect(!_activityBar.Compact, "the bar shows icons alone in a window tall enough for the names");
         var misnamed = AP_Atlas.UI.Tool.All.Where(t => _activityBar.ButtonOf(t).Text != t.ShortTitle || _activityBar.ButtonOf(t).AccessibilityName != t.Title).Select(t => t.Title).ToList();
-        UiTestExpect(misnamed.Count == 0 && _activityBar.EngineButton.Text == "Engine", $"bar buttons without their short name under the icon and their full title for screen readers: {string.Join(", ", misnamed)}");
+        UiTestExpect(misnamed.Count == 0 && _activityBar.CaptionOf(AP_Atlas.UI.Tool.Engine) == "ATLAS\nCONFIG", $"bar buttons without their short name under the icon and their full title for screen readers: {string.Join(", ", misnamed)}");
         var shortNames = string.Join(",", _activityBar.Order.Select(t => t.ShortTitle));
-        UiTestExpect(shortNames == "Home,Map,Items,Logic,History,Hints,Worlds,Cheese,Spheres,Games,Settings", $"the short names are {shortNames}");
+        UiTestExpect(shortNames == "Home,Map,Items,Logic,History,Hints,Worlds,Cheese,Spheres,Games,Settings,Engine", $"the short names are {shortNames}");
         var bands = _activityBar.FindChildren("*", nameof(PanelContainer), true, false).OfType<PanelContainer>().Where(p => p != _activityBar).ToList();
         UiTestExpect(bands.Count == 3 && bands.All(b => b.GetThemeStylebox("panel") is StyleBoxFlat box && box.BgColor == AP_Atlas.Core.ThemeColors.AccentTint), $"{bands.Count} caption bands, not three in the accent's tint");
         UiTestExpect(bands.All(b => b.GetChild<Label>(0).Text.Split('\n').Length == 2 && b.GetChild<Label>(0).Visible) && _activityBar.ButtonOf(AP_Atlas.UI.Tool.Home).GetIndex() == 0,
@@ -3482,12 +3485,11 @@ public partial class MainTrackerWindow
             "Ctrl+9 didn't light the Sphere Tracker's button alone");
         UiTestExpect(_toolTitle.Text == "Sphere Tracker", $"the tool header says \"{_toolTitle.Text}\"");
 
-        // The engine button opens the engine window.
-        _activityBar.EngineButton.EmitSignal(BaseButton.SignalName.Pressed);
-        var engine = await UiTestWaitForAsync(() => GetTree().Root.GetChildren().OfType<AP_Atlas.UI.AtlasEngineWindow>().FirstOrDefault(), "the Atlas Engine window");
-        await UiTestWaitAsync(0.3);
-        engine.EmitSignal(Window.SignalName.CloseRequested);
-        await UiTestWaitAsync(0.3);
+        // The Engine button (the bar's last) shows the Atlas Engine page, lit like any tool.
+        _activityBar.ButtonOf(AP_Atlas.UI.Tool.Engine).EmitSignal(BaseButton.SignalName.Pressed);
+        await UiTestWaitAsync(0.05);
+        UiTestExpect(ShownContent() == _enginePage && _activityBar.Selected == AP_Atlas.UI.Tool.Engine && _activityBar.ButtonOf(AP_Atlas.UI.Tool.Engine).ButtonPressed && _toolTitle.Text == "Atlas Engine",
+            "the Engine button didn't show the Atlas Engine page");
         host.ShowTool(AP_Atlas.UI.Tool.Connections);
     }
 
@@ -6162,7 +6164,7 @@ public partial class MainTrackerWindow
                 float tall = size.Y / scale;
                 if (tall < 800) UiTestExpect(_activityBar.Compact, $"the activity bar keeps its names {at} ({tall:0} logical units tall)");
                 if (tall >= 900) UiTestExpect(!_activityBar.Compact, $"the activity bar drops its names {at} ({tall:0} logical units tall)");
-                UiTestExpect(_activityBar.EngineButton.GetGlobalRect().End.Y <= _activityBar.GetGlobalRect().End.Y + 0.5f, $"the bar's last button is cut off {at}");
+                UiTestExpect(_activityBar.ButtonOf(AP_Atlas.UI.Tool.Engine).GetGlobalRect().End.Y <= _activityBar.GetGlobalRect().End.Y + 0.5f, $"the bar's last button is cut off {at}");
 
                 ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.Home);
                 await UiTestWaitAsync(0.3);
@@ -6181,8 +6183,26 @@ public partial class MainTrackerWindow
                     close();
                     await UiTestWaitAsync(0.2);
                 }
-                OpenEngineWindow();
-                await FitsAsync(() => root.GetChildren().OfType<AP_Atlas.UI.AtlasEngineWindow>().FirstOrDefault(), "the Atlas Engine window", () => root.GetChildren().OfType<AP_Atlas.UI.AtlasEngineWindow>().First().EmitSignal(Window.SignalName.CloseRequested));
+                // The Atlas Engine page at its widest (Advanced open, its run shown, a long install path) needs no more width
+                // than the content area had: a wider page would widen the stage past its place (the stage always holds the page).
+                string? installPath = _appSettings.ArchipelagoInstallationPath;
+                _appSettings.ArchipelagoInstallationPath = @"C:\Users\Someone With A Long Name\AppData\Local\Programs\Archipelago Multiworld Randomizer";
+                try
+                {
+                    ShowEnginePage(Array.Empty<string>());
+                    _enginePage!.RunView.Visible = true;
+                    _enginePage.OnShown();
+                    await UiTestWaitAsync(0.3);
+                    var stage = _contentStage!.GetGlobalRect();
+                    UiTestExpect(stage.End.X <= visible.Size.X + 0.5f && stage.End.Y <= visible.Size.Y + 0.5f && _contentStage.Size.X <= width + 0.5f,
+                        $"the Atlas Engine page doesn't fit the content area {at}: the stage is {stage} (was {width} wide) in {visible.Size}");
+                }
+                finally
+                {
+                    _appSettings.ArchipelagoInstallationPath = installPath;
+                    _enginePage!.RunView.Visible = false;
+                }
+                ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.Home);
                 _commands!.Run("help.about");
                 await FitsAsync(() => GetChildren().OfType<AcceptDialog>().FirstOrDefault(d => d.Title == "About The Archipelago Atlas"), "the About dialog", () => GetChildren().OfType<AcceptDialog>().First(d => d.Title == "About The Archipelago Atlas").GetOkButton().EmitSignal(BaseButton.SignalName.Pressed));
                 _commands.Run("help.guide");
@@ -6206,13 +6226,13 @@ public partial class MainTrackerWindow
         }
     }
 
-    /// <summary>The engine window's Slots list offers a YAML only when it would help; Copy log says so in the status line.</summary>
-    private async Task EngineWindowSlotsAsync()
+    /// <summary>The Atlas Engine page's Your slots offers a YAML only when it would help; Advanced, Copy log and the seed test.</summary>
+    private async Task EnginePageSlotsAsync()
     {
         await using var server = new FakeArchipelagoServer();
         server.Games["Test Game"] = new FakeGame("0123456789abcdef0123456789abcdef01234567",
             new Dictionary<string, long> { ["Sword"] = 1000 }, new Dictionary<string, long> { ["Cave Chest"] = 2000 });
-        var profile = new MultiworldProfile { Name = "Engine window test", ServerUrl = server.Url.ToString() };
+        var profile = new MultiworldProfile { Name = "Engine page test", ServerUrl = server.Url.ToString() };
         profile.Slots.Clear();
         profile.Slots.Add("Tester");
         _profiles.Add(profile);
@@ -6224,9 +6244,29 @@ public partial class MainTrackerWindow
             var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
             await UiTestWaitForAsync(() => slot.EngineProblem != null ? slot : null, "the slot to report its engine problem (no engine is set up here)");
             UiTestExpect(!slot.YamlWouldHelp, $"a YAML is offered for \"{slot.EngineProblem?.Code}\", which no YAML would help");
-            OpenEngineWindow();
-            var window = await UiTestWaitForAsync(() => GetTree().Root.GetChildren().OfType<AP_Atlas.UI.AtlasEngineWindow>().FirstOrDefault(), "the engine window");
+            ShowEnginePage();
             await UiTestWaitAsync(0.3);
+            var window = _enginePage!;
+            UiTestExpect(ShownContent() == window, "the Atlas Engine page didn't show");
+            // Shown plainly, Advanced stays as the user left it (folded by default); Show details opens it.
+            if (window.AdvancedOpen) AP_Atlas.UI.Kit.ToggleFold(window, AP_Atlas.UI.EnginePage.AdvancedKey);
+            ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.Home);
+            ShowEnginePage();
+            await UiTestWaitAsync(0.2);
+            UiTestExpect(ShownContent() == window && !window.AdvancedOpen, "showing the page opened its Advanced part");
+            UiTestExpect(!window.VerifyShown, "the seed test shows outside developer mode");
+            bool developerBefore = _appSettings.DeveloperMode;
+            try
+            {
+                _appSettings.DeveloperMode = true;
+                window.OnShown();
+                UiTestExpect(window.VerifyShown, "the seed test doesn't show in developer mode");
+            }
+            finally
+            {
+                _appSettings.DeveloperMode = developerBefore;
+                window.OnShown();
+            }
             window.RefreshSlotsNow();
             UiTestExpect(!window.SlotButtonTexts.Any(t => t.StartsWith("Link YAML")) && window.SlotButtonTexts.Contains("Restart logic"),
                 $"the Slots list offers a YAML nobody asked for: {string.Join(", ", window.SlotButtonTexts)}");
@@ -6237,12 +6277,15 @@ public partial class MainTrackerWindow
             slot.LinkYaml(null);
             window.RefreshSlotsNow();
             UiTestExpect(!window.SlotButtonTexts.Any(t => t.Contains("YAML")), $"an unlinked YAML still shows: {string.Join(", ", window.SlotButtonTexts)}");
-            // Copy log says so.
+            // Show details opens Advanced with another run's lines in the log; Copy log says so.
+            ShowEnginePage(new[] { "a line from another run" });
+            UiTestExpect(window.AdvancedOpen && window.LogText.Contains("a line from another run"), "Show details didn't open Advanced with the lines in the log");
+            await UiTestWaitAsync(0.2);
+            UiTestExpect(window.LogInView, "Show details didn't bring the log into view");
             var copy = window.FindChildren("*", "Button", true, false).OfType<Button>().First(b => b.Text == "Copy log");
             copy.EmitSignal(BaseButton.SignalName.Pressed);
             UiTestExpect(window.StatusText == "Log copied.", $"Copy log said \"{window.StatusText}\"");
-            window.EmitSignal(Window.SignalName.CloseRequested);
-            await UiTestWaitAsync(0.2);
+            AP_Atlas.UI.Kit.ToggleFold(window, AP_Atlas.UI.EnginePage.AdvancedKey);
         }
         finally
         {
@@ -6294,22 +6337,15 @@ public partial class MainTrackerWindow
             await UiTestWaitForAsync(() => panel.OutcomeText.Contains("is set up") ? panel : null, "the second run's Ready");
             UiTestExpect(runs == 2 && !panel.TryAgainShown, "after success there's nothing to try again");
 
-            // Show details opens the full window with the run's lines, its log shown (it's hidden by default otherwise).
+            // Show details shows the Atlas Engine page, its Advanced part open with the run's lines in its log.
             panel.EmitSignal(AcceptDialog.SignalName.CustomAction, "details");
-            var window = await UiTestWaitForAsync(() => GetTree().Root.GetChildren().OfType<AP_Atlas.UI.AtlasEngineWindow>().FirstOrDefault(), "the engine window");
+            await UiTestWaitForAsync(() => ShownContent() == _enginePage ? _enginePage : null, "the Atlas Engine page");
+            UiTestExpect(_enginePage!.AdvancedOpen && _enginePage.LogText.Contains("pretend: pip would print this"), "Show details didn't open the page's Advanced part with the run's log");
             await UiTestWaitAsync(0.2);
-            UiTestExpect(window.LogShown, "Show details opens the window's log");
-            window.EmitSignal(Window.SignalName.CloseRequested);
-            panel.EmitSignal(AcceptDialog.SignalName.Confirmed); // Close
-            await UiTestWaitAsync(0.2);
-            UiTestExpect(Panel() == null, "Close frees the panel");
-
-            _appSettings.EngineLogShown = false;
-            OpenEngineWindow();
-            var fresh = await UiTestWaitForAsync(() => GetTree().Root.GetChildren().OfType<AP_Atlas.UI.AtlasEngineWindow>().FirstOrDefault(), "the engine window again");
-            await UiTestWaitAsync(0.2);
-            UiTestExpect(!fresh.LogShown, "the window's log is hidden until asked for");
-            fresh.EmitSignal(Window.SignalName.CloseRequested);
+            UiTestExpect(Panel() == null, "Show details left the panel over the page");
+            UiTestExpect(_enginePage.LogInView, "Show details didn't bring the run's log into view");
+            AP_Atlas.UI.Kit.ToggleFold(_enginePage, AP_Atlas.UI.EnginePage.AdvancedKey);
+            ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.Connections);
 
             // Don't allow: nothing starts, and the answer is kept for the session.
             AP_Atlas.Core.Permissions.SetAlways(_appSettings, kind, null, false); // forgets "Allow once"

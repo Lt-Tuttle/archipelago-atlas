@@ -7,7 +7,7 @@
       - Opening links or files through Windows: only ExternalLinks (https pages and existing folders, nothing else).
       - Making web requests: only PoliteHttp (one request at a time per site, backoff, size and time limits).
       - Reading the Windows registry: only AtlasEngine's install search, which runs only after the user agrees.
-      - Searching the PC for Archipelago: only from the Atlas Engine window's Find button, after the user agrees.
+      - Searching the PC for Archipelago: only from the Atlas Engine page's Find button, after the user agrees.
       - Letting Windows run a program by file type (UseShellExecute = true): nowhere.
       - "async void" methods, whose failures vanish: nowhere (start the work with Async.Fire instead).
       - Handing work to the main thread with Callable.From(...).CallDeferred(): only in Ui.Defer, which skips work whose
@@ -101,7 +101,7 @@ $rules = @(
     @{ Name = 'Opening links or files through Windows'; Pattern = 'OS\.ShellOpen\s*\('; Allowed = @('AP_Atlas_Source\Scripts\Core\ExternalLinks.cs') },
     @{ Name = 'Making web requests outside PoliteHttp'; Pattern = 'new\s+(System\.Net\.Http\.)?HttpClient\s*\(|WebClient\s*\(|HttpWebRequest'; Allowed = @('AP_Atlas.Core\PoliteHttp.cs') },
     @{ Name = 'Reading the Windows registry'; Pattern = 'Microsoft\.Win32\.Registry|RegistryKey'; Allowed = @('AP_Atlas_Source\Scripts\Core\Engine\AtlasEngine.cs') },
-    @{ Name = 'Searching the PC for Archipelago'; Pattern = 'FindArchipelagoInstalls\s*\('; Allowed = @('AP_Atlas_Source\Scripts\Core\Engine\AtlasEngine.cs', 'AP_Atlas_Source\Scripts\UI\AtlasEngineWindow.cs') },
+    @{ Name = 'Searching the PC for Archipelago'; Pattern = 'FindArchipelagoInstalls\s*\('; Allowed = @('AP_Atlas_Source\Scripts\Core\Engine\AtlasEngine.cs', 'AP_Atlas_Source\Scripts\UI\EnginePage.cs') },
     @{ Name = 'Letting Windows run a program by file type'; Pattern = 'UseShellExecute\s*=\s*true'; Allowed = @() },
     @{ Name = 'An async void method (use Async.Fire)'; Pattern = '\basync\s+void\b'; Allowed = @('AP_Atlas.Core\Async.cs') },
     @{ Name = 'Handing work to the main thread without Ui.Defer'; Pattern = '\)\.CallDeferred\(\)'; Allowed = @('AP_Atlas_Source\Scripts\UI\Ui.cs') },
@@ -224,7 +224,7 @@ foreach ($key in 'application/file_version', 'application/product_version') {
 # reworked. Counted by class (the file name up to its first dot), so splitting a class into partial files doesn't
 # change the count. This number only goes down, and must match: lower it in the same change that migrates a class, so
 # the progress can't be undone later.
-$nullableOptOutLimit = 52
+$nullableOptOutLimit = 51
 $optedOut = @($files | Where-Object { (Get-Content -LiteralPath $_.FullName -TotalCount 1) -eq '#nullable disable' } |
     ForEach-Object { $_.Name.Split('.')[0] } | Sort-Object -Unique).Count
 if ($optedOut -gt $nullableOptOutLimit) {
@@ -256,7 +256,7 @@ elseif ($colourLiterals -lt $colourLiteralLimit) {
 
 # Text the shell shows is translation-ready: it goes through Tr() where it's shown. The raw literals left in the shell
 # (Text = "...", TooltipText = "...", PlaceholderText = "...") can only go down.
-$rawTextLimit = 140
+$rawTextLimit = 112
 $rawText = 0
 foreach ($file in $files) {
     $inShell = $file.FullName -match '\\Scripts\\UI\\' -or $file.Name -like 'MainTrackerWindow*.cs'

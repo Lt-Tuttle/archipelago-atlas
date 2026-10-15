@@ -103,7 +103,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     }
     /// <summary>
     /// Says at startup whether logic can run. Atlas never searches the PC for an Archipelago install by itself: the user
-    /// chooses one, or presses Find in Atlas Engine (which asks first).
+    /// chooses one, or presses Find on the Atlas Engine page (which asks first).
     /// </summary>
     private void ReportEngineAtStartup()
     {
@@ -122,7 +122,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             LogToSystem($"Logic engine: {engine.Describe()}.", "gray");
             return;
         }
-        LogToSystem($"Logic engine: {problem} Settings → Atlas Engine sets it up.", "orange");
+        LogToSystem($"Logic engine: {problem} The Atlas Engine page (the bar's Engine button) sets it up.", "orange");
         AP_Atlas.UI.Ui.Defer(this, () => ShowToast("Logic needs the Atlas Engine. Atlas can set it up for you: about 55 MB to download (160 MB on disk), no installer.", AP_Atlas.Core.ThemeColors.Warning, "Set up", OpenEngineSetup));
     }
     private void ShowToast(string message, Godot.Color color) => ShowToast(message, color, null, null);

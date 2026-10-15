@@ -48,8 +48,6 @@ public class AppSettings
     /// <summary>Whether this is a new file (nothing was remembered): the window takes its first size and place.</summary>
     [Newtonsoft.Json.JsonIgnore]
     public bool Fresh { get; set; }
-    /// <summary>Whether the Atlas Engine window shows its log pane (pip's and Python's own lines); off until asked for.</summary>
-    public bool EngineLogShown { get; set; } = false;
     /// <summary>The Map Tracker's pin shape: "round", "square" or "diamond".</summary>
     public string MapMarkerStyle { get; set; } = "round";
     /// <summary>What Atlas opens on: "home", "last" (the tool shown when it closed) or "multiworlds".</summary>
@@ -169,8 +167,6 @@ public class AppSettings
     public Dictionary<string, TablePrefs> Tables { get; set; } = new Dictionary<string, TablePrefs>();
 
     // Window State
-    /// <summary>Where the Atlas Engine window was last (screen pixels); null until it's been moved or closed.</summary>
-    public SavedWindowRect EngineWindowRect { get; set; }
     /// <summary>Where the Pack Doctor window was last (screen pixels); null until it's been moved or closed.</summary>
     public SavedWindowRect PackDoctorWindowRect { get; set; }
     public int WindowWidth { get; set; } = 1024;
@@ -448,6 +444,8 @@ public static class DataManager
         if (settings.LastTool == "map-packs") settings.LastTool = "games";
         AP_Atlas.Core.Commands.MoveRebind(settings.KeyBindings, "tool.map-packs", "tool.games");
         settings.ExplorerSplitOffsets?.Remove("map-packs");
+        // The Atlas Engine window became a page (round 11): a key given to Tools → Atlas Engine… goes to it.
+        AP_Atlas.Core.Commands.MoveRebind(settings.KeyBindings, "tools.engine", "tool.engine");
         return settings;
     }
 

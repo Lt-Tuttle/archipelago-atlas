@@ -454,7 +454,7 @@ namespace AP_Atlas.UI
                 : entry.Section == Section.Official && AtlasEngine.WorldsToUnpack(install!, game).Count > 0
                     ? _tr("Ships with Archipelago {0}: its world is unpacked from Archipelago's release when a slot first needs it ({1}, downloaded once, asked first).").Replace("{0}", AtlasEngine.ArchipelagoVersion).Replace("{1}", AtlasEngine.WorldsZipSize)
                 : entry.InEngine ? _tr("In the engine") + (version != null ? " (" + version + ")" : "") + "." + (CheckSummary(install!, game) is { Length: > 0 } s ? " " + s : "")
-                : check == null ? _tr("Atlas hasn't checked the engine yet: the engine window's health check says which games it has.")
+                : check == null ? _tr("Atlas hasn't checked the engine yet: Check now on the Atlas Engine page says which games it has.")
                 : _tr("Not in the engine yet."), apworldButtons);
             if (entry.Section != Section.Official) steps.AddChild(VersionsSection(game, choices, installed));
 

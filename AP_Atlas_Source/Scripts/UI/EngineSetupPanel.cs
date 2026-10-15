@@ -10,7 +10,7 @@ namespace AP_Atlas.UI
     /// <summary>
     /// The short way to set up the Atlas Engine: one sentence, the run itself (<see cref="EngineSetupProgress"/>: the
     /// step it's on in plain words, a progress bar) and Cancel; then Ready, or what went wrong with Try again and Show
-    /// details (the full engine window with its log). One panel at a time.
+    /// details (the Atlas Engine page with its log). One panel at a time.
     /// </summary>
     public sealed partial class EngineSetupPanel : AcceptDialog
     {
@@ -31,7 +31,7 @@ namespace AP_Atlas.UI
         public bool TryAgainShown => _tryAgain.Visible;
         public bool DetailsShown => _details.Visible;
 
-        /// <param name="showDetails">Opens the full engine window with the lines the panel's run logged.</param>
+        /// <param name="showDetails">Shows the Atlas Engine page with the lines the panel's run logged.</param>
         public static EngineSetupPanel Open(Node parent, Func<string, string> tr, Action<IReadOnlyList<string>> showDetails)
         {
             if (_open != null && IsInstanceValid(_open))
@@ -83,7 +83,11 @@ namespace AP_Atlas.UI
             CustomAction += action =>
             {
                 if (action == "try-again") Start();
-                else if (action == "details") _showDetails(_run.Log);
+                else if (action == "details")
+                {
+                    _showDetails(_run.Log); // the page has the run's log now; the panel would only cover it
+                    QueueFree();
+                }
             };
             Confirmed += () =>
             {

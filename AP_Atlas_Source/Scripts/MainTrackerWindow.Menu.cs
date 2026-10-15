@@ -48,7 +48,7 @@ public partial class MainTrackerWindow
         Add("view.zoom-out", "View", "Zoom Out", "Ctrl+-", () => ZoomBy(-1));
         Add("view.zoom-reset", "View", "Reset Zoom", "Ctrl+0", () => SetZoom(100));
 
-        // The tools, Ctrl+1 to Ctrl+9 in the tool list's order (Home, the slot tools, Multiworlds, Cheese and Sphere Tracker); a later tool brings its own key (Settings: Ctrl+,; Games: none).
+        // The tools, Ctrl+1 to Ctrl+9 in the tool list's order (Home, the slot tools, Multiworlds, Cheese and Sphere Tracker); a later tool brings its own key (Settings: Ctrl+,; Games and the Atlas Engine: none).
         int number = 1;
         foreach (var tool in AP_Atlas.UI.Tool.All)
         {
@@ -56,7 +56,6 @@ public partial class MainTrackerWindow
             Add("tool." + shown.Id, "Tools", shown.Title, number <= 9 ? "Ctrl+" + number : shown.DefaultKey, () => ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(shown));
             number++;
         }
-        Add("tools.engine", "Tools", "Atlas Engine…", "", () => OpenEngineWindow());
         Add("tools.cheese-settings", "Tools", "Cheese Tracker Settings…", "", OpenCheeseSettings);
         Add("tools.sphere-settings", "Tools", "Sphere Tracker Settings…", "", () => ShowSphereTab(AP_Atlas.UI.SphereTrackerTab.SettingsView));
         Add("tools.privacy", "Tools", "Privacy & Permissions…", "", OpenPrivacy);
@@ -129,7 +128,7 @@ public partial class MainTrackerWindow
 
         AddCommandItems(menus["Tools"], AP_Atlas.UI.Tool.All.Select(t => "tool." + t.Id).ToArray());
         menus["Tools"].AddSeparator();
-        AddCommandItems(menus["Tools"], "tools.engine", "tools.cheese-settings", "tools.sphere-settings", "tools.privacy");
+        AddCommandItems(menus["Tools"], "tools.cheese-settings", "tools.sphere-settings", "tools.privacy");
 
         AddCommandItems(menus["Window"], "window.notifications");
         menus["Window"].AddSeparator();

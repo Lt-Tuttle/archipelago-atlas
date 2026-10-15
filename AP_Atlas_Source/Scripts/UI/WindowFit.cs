@@ -251,6 +251,12 @@ namespace AP_Atlas.UI
         /// </summary>
         /// <param name="remembered">Where the window was last (screen pixels), or null: it opens centred on the owner's screen.</param>
         /// <param name="remember">Told the window's place and size (screen pixels) when it moves, resizes or closes, to keep for next time.</param>
+        /// <summary>A remembered place as a rectangle (null: none remembered).</summary>
+        internal static Rect2I? ToRect(SavedWindowRect? saved) => saved == null ? null : new Rect2I(saved.X, saved.Y, saved.Width, saved.Height);
+
+        /// <summary>A window's place as the settings keep it.</summary>
+        internal static SavedWindowRect FromRect(Rect2I rect) => new() { X = rect.Position.X, Y = rect.Position.Y, Width = rect.Size.X, Height = rect.Size.Y };
+
         public static void ShowNative(Window window, Node owner, Vector2I wantedLogical, Vector2I minLogical, Rect2I? remembered = null, Action<Rect2I>? remember = null)
         {
             bool native = TestScale == null && TestUsableRect == null && DisplayServer.HasFeature(DisplayServer.Feature.Subwindows);

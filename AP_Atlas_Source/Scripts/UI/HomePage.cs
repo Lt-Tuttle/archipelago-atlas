@@ -345,6 +345,7 @@ namespace AP_Atlas.UI
             "sphere-tracker" => "The host's spheretracker.de room: the multiworld, sphere by sphere.",
             "connections" => "Your servers, passwords and slots.",
             "games" => "Every game, set up in one place: its apworld, its map packs (looked over by the Pack Doctor), your YAML and its files.",
+            "engine" => "The logic engine: whether logic can run, your slots' worlds, set up and repair.",
             "settings" => "Every setting, searchable; every key, yours to change.",
             _ => ""
         };
