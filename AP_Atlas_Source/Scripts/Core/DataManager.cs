@@ -91,6 +91,8 @@ public class AppSettings
     public Dictionary<string, string> MapColours { get; set; } = new Dictionary<string, string>();
     /// <summary>Slot key ("profileId|slotName") → whether its Map Tracker follows the game's current map (on unless turned off).</summary>
     public Dictionary<string, bool> MapFollowGame { get; set; } = new Dictionary<string, bool>();
+    /// <summary>Whether the Logic Tracker also lists the checks already done (greyed); off: only the checks left.</summary>
+    public bool LogicShowChecked { get; set; }
     /// <summary>Slot keys ("profileId|slotName") whose unsure logic is shown anyway (SlotLogic.Unsure; absent: shown as a checklist).</summary>
     public HashSet<string> ShowUnsureLogic { get; set; } = new HashSet<string>();
     /// <summary>Slot key → whether its Map Tracker switches to the map of a location just checked (absent: on for packs that can't follow the game).</summary>

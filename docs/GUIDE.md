@@ -101,7 +101,7 @@ While logic can't run, a banner above the list says why and offers the way out: 
 
 - Once everything your goal needs is reachable, the Logic Tracker says **GO MODE** above its list, your slot's card says "Go mode!", and Properties shows a Goal row.
 
-The Logic Tracker (Ctrl+4) lists the slot's locations in the order they came into logic: Order, Location and Unlocked By (the item that opened it), from Archipelago's own logic running in the Atlas Engine. Properties explains any location: the items that open it, its access rule and the path to it.
+The Logic Tracker (Ctrl+4) lists the slot's checks left in logic, in the order they came into logic: Order, Location and Unlocked By (the item that opened it), from Archipelago's own logic running in the Atlas Engine. A check you've done leaves the list, and so does a step with nothing left; each step's count says how many of its checks are left. **Show checked** lists the done ones too, greyed (remembered). Properties explains any location: the items that open it, its access rule and the path to it.
 
 Some worlds with randomized entrances (Pokémon Crystal and FireRed/LeafGreen, Anodyne, Astalon, Glover and others) leave an entrance out of logic until the game reports finding it, as Universal Tracker does. Atlas reads what the game reports from the room (it only reads; it never writes the room's data), and what those entrances open is listed under **Unlocked by: Entrances found in the game**.
 

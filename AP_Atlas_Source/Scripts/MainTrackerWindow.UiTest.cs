@@ -5313,6 +5313,14 @@ public partial class MainTrackerWindow
             // A check done in the game: it's no longer counted as one to do.
             await server.BroadcastAsync(FakeArchipelagoServer.LocationsChecked(2000));
             await UiTestWaitForAsync(() => slot.ActiveLogicCount == 2 ? slot : null, "the checked chest to leave the count");
+            // The Logic Tracker lists the checks left: the done chest goes, and its step with it; Show checked brings them back.
+            await ExpectTreeAsync(slot, "with the chest checked", "── Unlocked by: Sword (1 checks) ──", "Locked Door",
+                "── Unlocked by: Shield (1 checks) ──", "Tower Top");
+            slot.ShowCheckedLogic(true);
+            await ExpectTreeAsync(slot, "with Show checked", "── Base Logic (Starting Reachable) ──", "Cave Chest", "── Unlocked by: Sword (1 checks) ──", "Locked Door",
+                "── Unlocked by: Shield (1 checks) ──", "Tower Top");
+            UiTestExpect(_appSettings.LogicShowChecked, "Show checked wasn't remembered");
+            slot.ShowCheckedLogic(false);
 
             // The engine crashes on the Gem. Nothing half-done is kept: logic is unknown until a new engine has rebuilt it
             // from scratch, which starts after 2 seconds (the first of its restarts).
@@ -5764,7 +5772,8 @@ public partial class MainTrackerWindow
         List<string> Shown()
         {
             var shown = new List<string>();
-            for (var row = tree.GetRoot()?.GetFirstChild(); row != null; row = row.GetNext()) shown.Add(row.GetText(1));
+            for (var row = tree.GetRoot()?.GetFirstChild(); row != null; row = row.GetNext())
+                if (row.Visible) shown.Add(row.GetText(1));
             return shown;
         }
         try

@@ -35,6 +35,15 @@ public partial class SlotTrackerControl : MarginContainer
         _logicFlaggedOnly = new Button { ToggleMode = true, Text = "Flagged / special only", TooltipText = "Show only checks you flagged, noted or marked special." };
         _logicFlaggedOnly.Toggled += _ => ApplyAllLogicMarkers();
         toolbar.AddChild(_logicFlaggedOnly);
+        // Done checks are hidden: the list is what's left in logic. This brings them back (remembered).
+        _logicShowChecked = new Button { ToggleMode = true, Text = "Show checked", TooltipText = "Also list the checks you've done (greyed), under the step that opened them.", ButtonPressed = _appSettings.LogicShowChecked };
+        _logicShowChecked.Toggled += on =>
+        {
+            _appSettings.LogicShowChecked = on;
+            DataManager.SaveSettingsSoon(_appSettings);
+            ApplyLogicVisibility();
+        };
+        toolbar.AddChild(_logicShowChecked);
         _goModeLabel = new Label { Text = "GO MODE: your goal is in logic", Visible = false, TooltipText = "Everything the goal needs is reachable with what this slot has now" };
         _goModeLabel.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Success);
         toolbar.AddChild(_goModeLabel);
@@ -181,39 +190,72 @@ public partial class SlotTrackerControl : MarginContainer
         }
     }
     private HBoxContainer _logicNoticeActions;
-    private Button _logicFlaggedOnly;
+    private Button _logicFlaggedOnly, _logicShowChecked;
+    // Rows the user flagged, noted or marked special (for the "flagged only" filter), kept as their markers are drawn.
+    private readonly HashSet<long> _logicMarkedRows = new HashSet<long>();
 
-    /// <summary>Flag/special/note marker on a Logic Tracker row, and its visibility under the "flagged only" filter.</summary>
+    /// <summary>Turns the Logic Tracker's Show checked on or off, as its button does (for the UI test).</summary>
+    public void ShowCheckedLogic(bool on)
+    {
+        if (_logicShowChecked != null) _logicShowChecked.ButtonPressed = on;
+    }
+
+    /// <summary>Flag/special/note marker on a Logic Tracker row.</summary>
     private void ApplyLogicRowMarker(TreeItem row, long locId)
     {
         var a = AP_Atlas.Core.Annotations.Get(AnnotationKey, AP_Atlas.Core.Annotations.LocationKey(locId));
         bool special = AP_Atlas.Core.Annotations.IsSpecialLocation(Game, Session.Locations.GetLocationNameFromId(locId));
         row.SetIcon(1, AP_Atlas.Core.Annotations.MarkerIcon(a?.Flag ?? 0, special, !string.IsNullOrWhiteSpace(a?.Note)));
         row.SetIconMaxWidth(1, Math.Max(16, _appSettings.ContentFontSize * 2));
-        bool marked = a != null || special;
-        row.Visible = _logicFlaggedOnly == null || !_logicFlaggedOnly.ButtonPressed || marked;
+        if (a != null || special) _logicMarkedRows.Add(locId);
+        else _logicMarkedRows.Remove(locId);
     }
 
     private void ApplyAllLogicMarkers()
     {
         if (_logicTree == null || Session == null) return;
         foreach (var kv in _logicRows) ApplyLogicRowMarker(kv.Value, kv.Key);
-        // Hide step dividers with no visible rows under the filter.
-        bool filtering = _logicFlaggedOnly?.ButtonPressed == true;
+        ApplyLogicVisibility();
+    }
+
+    /// <summary>
+    /// Which rows show: the checks left (and the done ones with Show checked), only marked ones under "flagged only".
+    /// A step's count says how many of its checks show, and a step with none goes.
+    /// </summary>
+    private void ApplyLogicVisibility()
+    {
+        if (_logicTree == null || Session == null) return;
+        bool flaggedOnly = _logicFlaggedOnly?.ButtonPressed == true;
+        bool showChecked = _appSettings.LogicShowChecked;
+        foreach (var (locId, row) in _logicRows)
+        {
+            bool visible = (showChecked || !_logicRowsShownChecked.Contains(locId)) && (!flaggedOnly || _logicMarkedRows.Contains(locId));
+            if (row.Visible != visible) row.Visible = visible;
+        }
         TreeItem divider = null;
-        bool anyVisible = false;
+        int shown = 0;
+        void CloseStep()
+        {
+            if (divider == null) return;
+            if (divider.Visible != shown > 0) divider.Visible = shown > 0;
+            // A step's divider names the item that opened it (column 2) and how many of its checks show.
+            if (divider.GetText(0).StartsWith("● Step") && divider.GetText(2) is { Length: > 0 } item)
+            {
+                string text = $"── Unlocked by: {item} ({shown} checks) ──";
+                if (shown > 0 && divider.GetText(1) != text) divider.SetText(1, text);
+            }
+        }
         for (var child = _logicTree.GetRoot()?.GetFirstChild(); child != null; child = child.GetNext())
         {
-            bool isDivider = child.GetText(0).StartsWith("●");
-            if (isDivider)
+            if (child.GetText(0).StartsWith("●"))
             {
-                if (divider != null) divider.Visible = !filtering || anyVisible;
+                CloseStep();
                 divider = child;
-                anyVisible = false;
+                shown = 0;
             }
-            else if (child.Visible) anyVisible = true;
+            else if (child.Visible) shown++;
         }
-        if (divider != null) divider.Visible = !filtering || anyVisible;
+        CloseStep();
     }
 
     // Incremental render state. Godot's Tree re-shapes the text of every new cell (~0.05 ms each), so a full
@@ -266,6 +308,7 @@ public partial class SlotTrackerControl : MarginContainer
             _logicTree.CreateItem();
             _logicRows.Clear();
             _logicRowsShownChecked.Clear();
+            _logicMarkedRows.Clear();
             _logicPlaceholder = null;
             _logicRenderedSteps = 0;
             _logicOrderCount = 1;
@@ -361,7 +404,7 @@ public partial class SlotTrackerControl : MarginContainer
             if (isChecked) _logicRowsShownChecked.Add(kv.Key);
             else _logicRowsShownChecked.Remove(kv.Key);
         }
-        if (_logicFlaggedOnly?.ButtonPressed == true) ApplyAllLogicMarkers();
+        ApplyLogicVisibility();
     }
 
     private static void ColorLogicRow(TreeItem row, bool isChecked)
