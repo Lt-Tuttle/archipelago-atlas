@@ -19,7 +19,7 @@ public partial class SlotTrackerControl : MarginContainer
     // Map pack
     // =====================================================================
 
-    /// <summary>Shows the Map Packs page and searches GitHub for a game's packs (set by MainTrackerWindow; the user pressed for it).</summary>
+    /// <summary>Shows the game's page and searches GitHub for its packs (set by MainTrackerWindow; the user pressed for it).</summary>
     public Action<string> FindMapPack { get; set; }
 
     /// <summary>Starts a pack for the slot's game (the window's dialog).</summary>

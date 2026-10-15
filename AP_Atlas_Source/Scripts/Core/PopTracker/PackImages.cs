@@ -10,8 +10,8 @@ namespace AP_Atlas.Core.PopTracker
 {
     /// <summary>
     /// A map pack's images, decoded only while something uses the pack: a connected slot (its map and Key Items) or the
-    /// Pack Doctor window. Reading a pack (the Map Packs tab, the Pack Doctor's checks, Properties) takes only its
-    /// structure, so installed packs cost nothing until one is used. Images are most of a pack: opening the Map Packs tab
+    /// Pack Doctor window. Reading a pack (the Games page's packs, the Pack Doctor's checks, Properties) takes only its
+    /// structure, so installed packs cost nothing until one is used. Images are most of a pack: listing every installed pack
     /// with three large packs installed used to take 948 MB of textures.
     /// The pack released most recently keeps its images, so a slot that reconnects doesn't decode them again; older ones
     /// are freed at once. Thread-safe; decoding takes a while for a big pack, so it's done off the main thread.

@@ -34,6 +34,20 @@ public class CommandTests
     }
 
     [Fact]
+    public void A_key_bound_to_a_command_that_is_gone_moves_to_the_one_that_took_its_place()
+    {
+        var rebinds = new Dictionary<string, string> { ["tool.map-packs"] = "Ctrl+F6" };
+        Assert.True(Commands.MoveRebind(rebinds, "tool.map-packs", "tool.games"));
+        Assert.Equal(new Dictionary<string, string> { ["tool.games"] = "Ctrl+F6" }, rebinds);
+        // The new command's own key, chosen by the user, stays; the old entry goes either way.
+        rebinds = new Dictionary<string, string> { ["tool.map-packs"] = "Ctrl+F6", ["tool.games"] = "" };
+        Assert.False(Commands.MoveRebind(rebinds, "tool.map-packs", "tool.games"));
+        Assert.Equal(new Dictionary<string, string> { ["tool.games"] = "" }, rebinds);
+        Assert.False(Commands.MoveRebind(rebinds, "tool.map-packs", "tool.games"));
+        Assert.False(Commands.MoveRebind(null, "tool.map-packs", "tool.games"));
+    }
+
+    [Fact]
     public void A_rebind_replaces_the_default_and_an_empty_one_unbinds()
     {
         var rebinds = new Dictionary<string, string>();

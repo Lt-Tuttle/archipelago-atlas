@@ -444,6 +444,10 @@ public static class DataManager
         if (settings.MapMarkerStyle is not ("round" or "square" or "diamond")) settings.MapMarkerStyle = "round";
         if (settings.StartupPage is not ("home" or "last" or "multiworlds")) settings.StartupPage = "home";
         settings.LastTool ??= "";
+        // Map Packs became part of Games (round 11): the last tool shown and a key bound to it follow.
+        if (settings.LastTool == "map-packs") settings.LastTool = "games";
+        AP_Atlas.Core.Commands.MoveRebind(settings.KeyBindings, "tool.map-packs", "tool.games");
+        settings.ExplorerSplitOffsets?.Remove("map-packs");
         return settings;
     }
 

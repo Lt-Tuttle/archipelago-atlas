@@ -204,11 +204,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         AP_Atlas.Core.PopTracker.PackDoctorService.Initialize(_appSettings);
         // The Doctor's Recommended tab puts the rows about a connected slot's seed first.
         // The Pack Doctor's guide opens the Games page on a game (where another release is looked at and installed).
-        AP_Atlas.UI.PackDoctorWindow.OpenGamesPage = game =>
-        {
-            ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.Games);
-            _gamesPage?.Select(game);
-        };
+        AP_Atlas.UI.PackDoctorWindow.OpenGamesPage = ShowGamePage;
         AP_Atlas.Core.PopTracker.PackDoctorService.SeedLocations = game => ActiveSlotNodes().OfType<SlotTrackerControl>()
             .Where(s => GodotObject.IsInstanceValid(s) && s.Session?.Locations != null && string.Equals(s.Game, game, StringComparison.OrdinalIgnoreCase))
             .SelectMany(s => s.Session.Locations.AllLocations).ToList();
@@ -404,7 +400,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         ApplyConsoleTabs();
         _packManagerPanel = new AP_Atlas.Core.MapPackManagerControl(
             LogToSystem,
-            () => ShowConnectingOverlay("Managing Map Packs..."),
+            () => ShowConnectingOverlay("Managing map packs..."),
             () => HideConnectingOverlay(),
             () =>
             {
@@ -418,16 +414,6 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                     foreach (var s in p.SavedStats.Values)
                         if (!string.IsNullOrEmpty(s.GameName)) games.Add(s.GameName);
                 return games;
-            },
-            () =>
-            {
-                var sessions = new System.Collections.Generic.List<ArchipelagoSession>();
-                foreach (Node n in ActiveSlotNodes())
-                {
-                    var s = (n as SlotTrackerControl)?.Session;
-                    if (s != null && s.Socket.Connected) sessions.Add(s);
-                }
-                return sessions;
             }
         );
         _packManagerPanel.FontSize = () => _appSettings.ContentFontSize;
@@ -440,14 +426,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             DataManager.SaveSettingsSoon(_appSettings);
         };
         _packManagerPanel.Toast = ShowToast;
-        _packManagerPanel.OnDataRefreshed += () =>
-        {
-            SetFontSizeRecursive(_packManagerPanel, _appSettings.ContentFontSize);
-            SetFontSizeRecursive(_packManagerPanel.SidebarContent, _appSettings.ExplorerFontSize);
-        };
+        // The packs' service: no page of its own (the Games page lists the packs), in the tree so its dialogs show.
         _contentStage.AddChild(_packManagerPanel);
-        _packManagerPanel.SidebarContent.Visible = false;
-        _midLeftVBox.AddChild(_packManagerPanel.SidebarContent);
         _cheeseTab = new AP_Atlas.UI.CheeseTrackerTab(_appSettings, _cheese, () => _profiles, ShowToast) { Visible = false };
         _contentStage.AddChild(_cheeseTab);
         _cheeseTab.SidebarContent.Visible = false;
@@ -464,7 +444,6 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _toolViews = new Dictionary<AP_Atlas.UI.Tool, (Control, Control, string, Action)>
         {
             [AP_Atlas.UI.Tool.Connections] = (_connectionPanel, _connectionSidebarContent, "Multiworlds", null),
-            [AP_Atlas.UI.Tool.MapPacks] = (_packManagerPanel, _packManagerPanel.SidebarContent, "Packs", null),
             [AP_Atlas.UI.Tool.CheeseTracker] = (_cheeseTab, _cheeseTab.SidebarContent, "Cheese Tracker", _cheeseTab.OnShown),
             [AP_Atlas.UI.Tool.SphereTracker] = (_sphereTab, _sphereTab.SidebarContent, "Sphere Tracker", _sphereTab.OnShown),
             [AP_Atlas.UI.Tool.Settings] = (settingsPage, settingsPage.SectionList, "Sections", settingsPage.OnShown),
@@ -482,6 +461,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             ShowTool = tool => ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(tool),
             OpenEngineSetup = OpenEngineSetup,
             FindPack = FindMapPack,
+            Packs = _packManagerPanel,
             InstallPack = (game, repo) => AP_Atlas.Core.Async.Fire(_packManagerPanel.InstallPackFromRepoAsync(game, repo, confirm: true), $"installing {repo}'s pack for {game}"),
             StartSoloTest = StartSoloTest,
             StartSoloBatch = StartSoloBatch,
@@ -492,6 +472,12 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _contentStage.AddChild(_gamesPage);
         _gamesPage.SidebarContent.Visible = false;
         _midLeftVBox.AddChild(_gamesPage.SidebarContent);
+        _gamesPage.AddPackProgress(_packManagerPanel.ProgressRow);
+        // A rescan (when Games shows, after an install, a delete) redraws the page's lists of packs.
+        _packManagerPanel.PacksRescanned += () =>
+        {
+            if (GodotObject.IsInstanceValid(_gamesPage) && _gamesPage.IsVisibleInTree()) _gamesPage.RefreshPacks();
+        };
         _toolViews[AP_Atlas.UI.Tool.Games] = (_gamesPage, _gamesPage.SidebarContent, "Games", _gamesPage.OnShown);
         ReportEngineAtStartup();
         OfferToDeletePlainTextPasswordCopies();

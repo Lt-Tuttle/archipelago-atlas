@@ -49,8 +49,8 @@ public partial class MainTrackerWindow
 
     /// <summary>
     /// The explorer's width for the tool that shows: the width the user dragged it to for that tool, else the width a
-    /// returning user dragged before tools had their own, else the tool's starting width (Map Packs and Games start wider
-    /// than the minimum: their lists hold long names). The explorer doesn't expand, so the split's default position is its
+    /// returning user dragged before tools had their own, else the tool's starting width (Games starts wider than the
+    /// minimum: its list holds long names). The explorer doesn't expand, so the split's default position is its
     /// start and the offset is the explorer's width itself (clamped to its minimum).
     /// </summary>
     private void ApplyExplorerOffset(AP_Atlas.UI.Tool tool)

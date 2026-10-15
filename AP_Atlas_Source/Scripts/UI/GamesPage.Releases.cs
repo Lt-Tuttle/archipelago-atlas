@@ -25,10 +25,9 @@ namespace AP_Atlas.UI
         /// <summary>The game's map pack the page measures: the one its slots use (the preferred one), else the first installed.</summary>
         private LoadedPack? PackOf(string game)
         {
-            var packs = PacksFor(game);
-            if (_hooks.Settings.PreferredPacks.TryGetValue(game, out var preferred)
-                && packs.FirstOrDefault(p => string.Equals(Path.GetFileName(p.SourcePath), preferred, StringComparison.OrdinalIgnoreCase)) is { } chosen) return chosen;
-            return packs.FirstOrDefault();
+            // Only a pack already read: the pack service's rescan reads the rest off the main thread, then the page redraws.
+            var chosen = ChosenPack(game);
+            return chosen != null && PopTrackerPackLoader.IsPackCached(chosen.Path) ? PopTrackerPackLoader.InspectZipPack(chosen.Path) : null;
         }
 
         /// <summary>What the page knows of a game's releases: their facts, the pack measured, the engine's Archipelago, and Atlas's pick.</summary>
@@ -342,11 +341,12 @@ namespace AP_Atlas.UI
                 why = $"{chosen.Version} from {chosen.Source}: {reason}";
                 ConfirmInstall(game, RepoOf(chosen), version, done);
             }
-            void Ready()
+            // The game's pack is read first (off the main thread), so Atlas's pick knows how it fits.
+            void Ready() => ReadPackThen(game, () =>
             {
                 if (look && !LookedInside(game, Choices(game, new List<(string File, string Sha256)>()))) LookInside(game, _ => Offer());
                 else Offer();
-            }
+            });
             if (_versions.ContainsKey(game)) Ready();
             else AskThenLoad(game, again: false, Ready, () => done.TrySetResult(false));
             return WithWhyAsync();

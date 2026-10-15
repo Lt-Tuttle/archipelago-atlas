@@ -348,7 +348,7 @@ namespace AP_Atlas.UI
             var emptyLbl = new Label { Text = Translate("No map pack installed"), HorizontalAlignment = HorizontalAlignment.Center };
             emptyLbl.SetMeta("font_size_ratio", 2.0f);
             emptyVBox.AddChild(emptyLbl);
-            var emptySubLbl = new Label { Text = Translate("Atlas has no PopTracker map pack for this game.\nFind one on GitHub from here, install one on the Map Packs page (Packs, on the left), or start one of your own; it shows here at once."), HorizontalAlignment = Godot.HorizontalAlignment.Center };
+            var emptySubLbl = new Label { Text = Translate("Atlas has no PopTracker map pack for this game.\nFind one on GitHub from here, install one on its game's page (Games, on the left), or start one of your own; it shows here at once."), HorizontalAlignment = Godot.HorizontalAlignment.Center };
             emptySubLbl.AddThemeColorOverride("font_color", ThemeColors.TextSubtle);
             emptyVBox.AddChild(emptySubLbl);
             _findPackButton = Kit.Button(Translate("Find a map pack…"), Translate("One search of GitHub for this game's PopTracker packs, when you press; you choose what to install."), () => FindPackRequested?.Invoke());

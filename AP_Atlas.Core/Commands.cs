@@ -55,6 +55,19 @@ public sealed class Commands
     /// <summary>The command with this id, or null.</summary>
     public Command? Find(string id) => _byId.GetValueOrDefault(id);
 
+    /// <summary>
+    /// Moves the user's key from a command that's gone to the one that took its place (a tool folded into another), unless
+    /// that one has a key of the user's own; the old id's entry goes either way. True when the key moved.
+    /// </summary>
+    public static bool MoveRebind(IDictionary<string, string>? rebinds, string from, string to)
+    {
+        if (rebinds == null || !rebinds.TryGetValue(from, out var key)) return false;
+        rebinds.Remove(from);
+        if (rebinds.ContainsKey(to)) return false;
+        rebinds[to] = key;
+        return true;
+    }
+
     /// <summary>Adds a command. Two commands can't share an id: that's a programming error, caught by the tests.</summary>
     public Command Add(Command command)
     {

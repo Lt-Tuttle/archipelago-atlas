@@ -26,6 +26,10 @@ namespace AP_Atlas.UI
         void SelectProfile(string profileId);
         void Toast(string message, Color color);
         void OpenPackDoctor(string zipPath, string startTab = null);
+        /// <summary>The Games page on a game (its map packs, versions and setup).</summary>
+        void ShowGamePage(string game);
+        /// <summary>The Games page on the game a pack is for (All map packs when it's for none Atlas lists).</summary>
+        void ShowPackGame(string packZip);
         /// <summary>Cheese Tracker: linked trackers, slot statuses and changes.</summary>
         AP_Atlas.Core.CheeseTracker.CheeseTrackerService Cheese { get; }
         /// <summary>The Cheese Tracker tab's Settings page.</summary>

@@ -1386,7 +1386,7 @@ namespace AP_Atlas.UI
             BeginActions();
             if (File.Exists(path)) AddAction("Open folder", "Show the pack file in Explorer", () => AP_Atlas.Core.ExternalLinks.OpenFolder(Path.GetDirectoryName(path)));
             if (!string.IsNullOrEmpty(m?.VersionsUrl)) AddAction("Versions page", m.VersionsUrl, () => AP_Atlas.Core.ExternalLinks.OpenWeb(m.VersionsUrl));
-            AddAction("Map Packs", "Open the Map Packs tab", () => _host.ShowTool(Tool.MapPacks));
+            if (File.Exists(path)) AddAction("Game's page", "Open this pack's game on the Games page, where its map packs are listed (All map packs when it's for no game Atlas lists)", () => _host.ShowPackGame(path));
             if (File.Exists(path)) AddAction("Pack Doctor…", "Check this pack against the game and fix problems locally", () => _host.OpenPackDoctor(path));
             EndActions();
 

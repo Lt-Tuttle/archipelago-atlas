@@ -1,5 +1,4 @@
 #nullable disable
-using Archipelago.MultiClient.Net;
 using Godot;
 using System;
 using System.Collections.Generic;
@@ -14,10 +13,19 @@ using System.Text.RegularExpressions;
 
 namespace AP_Atlas.Core
 {
+    /// <summary>
+    /// The map packs' service (the Map Packs page is part of the Games page now, the owner's choice): installed packs as
+    /// rows built into the Games page's sections (<see cref="BuildPackRows"/>), the rescan that finds packs added, changed
+    /// or copied in by hand (<see cref="Rescan"/>), installs from GitHub or a zip, update checks and deletes. It stays in the
+    /// window's tree, hidden, so the dialogs it opens (its children) show over whatever page asked; a download's progress
+    /// is <see cref="ProgressRow"/>, which the Games page shows.
+    /// </summary>
     public partial class MapPackManagerControl : MarginContainer
     {
-        public event Action OnDataRefreshed;
-        private VBoxContainer _packListVBox;
+        /// <summary>A rescan finished (the packs folder was read again; the Games page redraws its lists).</summary>
+        public event Action PacksRescanned;
+        // The containers rows were built into (the Games page's sections), so a Doctor's report updates their badges.
+        private readonly List<VBoxContainer> _rowHosts = new List<VBoxContainer>();
         private PanelContainer _selectedPackRow;
         // Writes a line to the System Log: plain text, and its colour (null for none).
         private Action<string, string> _logAction;
@@ -25,10 +33,8 @@ namespace AP_Atlas.Core
         private Action _hideOverlayAction;
         private Func<HashSet<string>> _getActiveGamesFunc;
 
-        private Func<List<ArchipelagoSession>> _getActiveSessionsFunc;
-        private ScrollContainer _mainScroll;
-        private MarginContainer _inspectorContainer;
-        public Control SidebarContent { get; private set; }
+        /// <summary>A download's progress ("Downloading Ship of Harkinian: 3 of 11 MB" with a bar); the Games page shows it.</summary>
+        public Control ProgressRow => _downloadRow;
 
         /// <summary>The page's text size (the content setting); the window sets it.</summary>
         public Func<int> FontSize { get; set; } = () => 14;
@@ -46,53 +52,14 @@ namespace AP_Atlas.Core
         /// <summary>The last progress line shown for a download (for tests).</summary>
         public string DownloadText { get; private set; } = "";
 
-        public MapPackManagerControl(Action<string, string> logAction, Action showOverlayAction, Action hideOverlayAction, Func<HashSet<string>> getActiveGamesFunc, Func<List<ArchipelagoSession>> getActiveSessionsFunc = null)
+        public MapPackManagerControl(Action<string, string> logAction, Action showOverlayAction, Action hideOverlayAction, Func<HashSet<string>> getActiveGamesFunc)
         {
             _logAction = logAction;
             _showOverlayAction = showOverlayAction;
             _hideOverlayAction = hideOverlayAction;
             _getActiveGamesFunc = getActiveGamesFunc;
-            _getActiveSessionsFunc = getActiveSessionsFunc;
             SizeFlagsHorizontal = SizeFlags.ExpandFill;
             SizeFlagsVertical = SizeFlags.ExpandFill;
-
-            SidebarContent = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
-            var sidebarMargin = new MarginContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
-            SidebarContent.AddChild(sidebarMargin);
-            var sidebarVBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
-            sidebarMargin.AddChild(sidebarVBox);
-
-            _mainScroll = new ScrollContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
-            _packListVBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            _mainScroll.AddChild(_packListVBox);
-            sidebarVBox.AddChild(_mainScroll);
-
-            var btnVBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            btnVBox.AddThemeConstantOverride("separation", 10);
-
-            // The page's main action, filled with the accent (the owner's choice, 2026-10-09); the rest plain.
-            var searchBtn = new Button { Text = "Search GitHub for Packs…", TooltipText = "Look on GitHub for map packs for your connected games. You choose what to install.", ThemeTypeVariation = AP_Atlas.UI.Kit.PrimaryButton };
-            searchBtn.Pressed += OnSearchPressed;
-            btnVBox.AddChild(searchBtn);
-
-            var updatesBtn = new Button { Text = "Check for Updates" };
-            updatesBtn.Pressed += OnCheckUpdatesPressed;
-            btnVBox.AddChild(updatesBtn);
-
-            var importBtn = new Button { Text = "Install Pack (Zip)" };
-            importBtn.Pressed += OnImportPackPressed;
-            btnVBox.AddChild(importBtn);
-
-            var folderBtn = new Button { Text = "Open Packs Folder" };
-            folderBtn.Pressed += OnOpenFolderPressed;
-            btnVBox.AddChild(folderBtn);
-
-            var rescanBtn = new Button { Text = "Rescan Packs" };
-            rescanBtn.Pressed += RefreshPackList;
-            btnVBox.AddChild(rescanBtn);
-
-            sidebarVBox.AddChild(new HSeparator());
-            sidebarVBox.AddChild(btnVBox);
 
             // A download's progress: "Downloading <pack>: 3 of 11 MB" with a bar, in place of the whole-window overlay.
             _downloadRow = new HBoxContainer { Visible = false };
@@ -103,21 +70,8 @@ namespace AP_Atlas.Core
             _downloadRow.AddChild(_downloadLabel);
             _downloadBar = new ProgressBar { MaxValue = 1, Step = 0.001, ShowPercentage = false, CustomMinimumSize = new Vector2(100, 0), SizeFlagsVertical = SizeFlags.ShrinkCenter };
             _downloadRow.AddChild(_downloadBar);
-            sidebarVBox.AddChild(_downloadRow);
-
-            _inspectorContainer = new MarginContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
-            _inspectorContainer.AddThemeConstantOverride("margin_left", 20);
-            _inspectorContainer.AddThemeConstantOverride("margin_top", 20);
-            _inspectorContainer.AddThemeConstantOverride("margin_right", 20);
-            _inspectorContainer.AddThemeConstantOverride("margin_bottom", 20);
-            AddChild(_inspectorContainer);
-
-            var emptyLbl = new Label { Text = "Select a map pack to view details.", HorizontalAlignment = HorizontalAlignment.Center };
-            _inspectorContainer.AddChild(emptyLbl);
-
-            // Re-scan only when the packs folder changed since the list was last built.
-            VisibilityChanged += () => { if (Visible) RefreshPackListIfChanged(); };
         }
+
 
 
 
@@ -157,114 +111,27 @@ namespace AP_Atlas.Core
                 _selectedPackRow.AddThemeStyleboxOverride("panel", PackRowStyle(true));
         }
 
-        /// <summary>Shows a pack's details in the inspector (internal for the UI test).</summary>
-        internal void ShowPackDetails(string zipPath)
+        /// <summary>Deletes a pack from Atlas's packs folder after asking (the Pack Doctor's fixes are kept, in case it comes back).</summary>
+        internal void ConfirmDelete(string zipPath, string name)
         {
-            foreach (Node n in _inspectorContainer.GetChildren()) n.QueueFree();
-            var pack = PopTrackerPackLoader.InspectZipPack(zipPath, null);
-            if (pack == null) return;
-            _shownPackPath = zipPath;
-            var vbox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
-            _inspectorContainer.AddChild(vbox);
-
-            var title = new Label { Text = pack.Manifest.Name };
-            title.SetMeta("font_size_ratio", 1.7f);
-            vbox.AddChild(title);
-            // Built after the window sized this page: sized once the rows are in.
-            AP_Atlas.UI.Ui.NextFrame(this, () => MainTrackerWindow.SetFontSizeRecursive(vbox, FontSize()));
-
-            ArchipelagoSession activeSession = null;
-            if (_getActiveSessionsFunc != null)
-            {
-                var sessions = _getActiveSessionsFunc();
-                foreach (var s in sessions)
-                {
-                    if (PopTrackerPackLoader.IsGameNameMatch(pack.Manifest.GameName, s.ConnectionInfo.Game) || PopTrackerPackLoader.IsGameNameMatch(pack.Manifest.Name, s.ConnectionInfo.Game))
-                    {
-                        activeSession = s;
-                        break;
-                    }
-                }
-            }
-
-            var richText = new AP_Atlas.UI.SafeRichText { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
-            string txt = $"[b]Game:[/b] {Bbcode.Escape(pack.Manifest.GameName)}\n";
-            txt += $"[b]Author:[/b] {Bbcode.Escape(pack.Manifest.Author)}\n";
-            txt += $"[b]Version:[/b] {Bbcode.Escape(pack.Manifest.GetActualVersion())}\n\n";
-
-            txt += $"[b]--- METADATA ---[/b]\n";
-            txt += $"[color=lime]Key Items Extracted:[/color] {pack.ItemsByCode.Count}\n";
-            txt += $"[color=lime]Maps Extracted:[/color] {pack.Maps.Count}\n";
-            txt += $"[color=lime]Nodes Extracted:[/color] {pack.Locations.Count}\n\n";
-
-            // Pack Doctor summary: how well the pack pairs with the game's real items and locations.
-            txt += "[b]--- PACK DOCTOR ---[/b]\n";
-            if (PackDoctorService.Reports.TryGetValue(PackFixes.KeyFor(pack), out var report) && report != null)
-            {
-                int needs = report.NeedsReview.Count();
-                txt += report.Names == null
-                    ? "[color=orange]No name list for this game yet (connect a slot or set the Archipelago install path).[/color]\n"
-                    : Bbcode.Colored($"Checked against {report.Names.Game} names from the {report.Names.Source}.", "gray") + "\n";
-                txt += $"[color=cyan]Key Items tiles linked:[/color] {report.TilesLinked} / {report.TilesTotal}\n";
-                txt += $"[color=cyan]Pin sections linked:[/color] {report.SectionsLinked} / {report.SectionsTotal}\n";
-                txt += $"[color=cyan]Game locations on a map:[/color] {report.ApLocationsPlaced} / {report.ApLocationsTotal}\n";
-                txt += needs > 0 ? $"[color=orange]{needs} thing{(needs == 1 ? "" : "s")} to review.[/color]\n" : "[color=lime]Nothing needs your attention.[/color]\n";
-                int fixCount = PackFixes.Get(PackFixes.KeyFor(pack)).Count;
-                if (fixCount > 0) txt += $"[color=#FFC53D]{fixCount} local fix{(fixCount == 1 ? "" : "es")} applied.[/color]\n";
-            }
-            else
-            {
-                txt += "[color=gray]Checking…[/color]\n";
-                AP_Atlas.Core.Async.Fire(PackDoctorService.CheckAsync(pack, prompt: false), "checking a map pack");
-            }
-            _ = activeSession; // the Doctor uses every name source, not just a connected session
-
-            txt += $"\n[b]--- MAP LIST ---[/b]\n";
-            foreach (var map in pack.Maps.Values)
-            {
-                txt += $" - {Bbcode.Escape(map.Name)} " + Bbcode.Colored($"({map.Id})", "gray") + "\n";
-            }
-
-            richText.Markup = txt;
-            vbox.AddChild(richText);
-
-            vbox.AddChild(new HSeparator());
-            var btnHBox = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
-            btnHBox.AddThemeConstantOverride("separation", 20);
-
-            var doctorBtn = new Button { Text = "Pack Doctor…", CustomMinimumSize = new Vector2(200, 40), TooltipText = "Check this pack against the game and fix problems locally" };
-            doctorBtn.Pressed += () => OpenDoctor?.Invoke(zipPath, null);
-            btnHBox.AddChild(doctorBtn);
-
-            var updateBtn = new Button { Text = "Update Map Pack", CustomMinimumSize = new Vector2(200, 40) };
-            updateBtn.Pressed += () => CheckSinglePackUpdate(zipPath);
-            btnHBox.AddChild(updateBtn);
-
-            var deleteBtn = new Button { Text = "Delete Map Pack", CustomMinimumSize = new Vector2(200, 40) };
-            deleteBtn.AddThemeColorOverride("font_color", ThemeColors.Danger);
-            deleteBtn.Pressed += () => AP_Atlas.UI.Dialogs.Confirm(this, "Delete map pack",
-                $"Delete {pack.Manifest.Name} ({Path.GetFileName(zipPath)}) from Atlas's packs folder? Fixes you made in the Pack Doctor are kept, in case you install it again.",
-                "Delete", () =>
+            AP_Atlas.UI.Dialogs.Confirm(this, Tr("Delete map pack"),
+                Tr("Delete {0} ({1}) from Atlas's packs folder? Fixes you made in the Pack Doctor are kept, in case you install it again.").Replace("{0}", name).Replace("{1}", Path.GetFileName(zipPath)),
+                Tr("Delete"), () =>
                 {
                     try
                     {
                         SafeFile.Delete(zipPath);
                     }
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                     {
                         _logAction($"Couldn't delete the map pack: {ex.Message}", "red");
+                        Toast?.Invoke(Tr("Couldn't delete the map pack: ") + ex.Message, ThemeColors.Error);
                         return;
                     }
                     _logAction($"Deleted the map pack {Path.GetFileName(zipPath)}.", null);
                     PopTrackerPackLoader.NotifyPacksChanged();
-                    RefreshPackList();
-                    foreach (Node n in _inspectorContainer.GetChildren()) n.QueueFree();
-                    _inspectorContainer.AddChild(new Label { Text = "Select a map pack to view details.", HorizontalAlignment = HorizontalAlignment.Center });
+                    Rescan();
                 });
-            btnHBox.AddChild(deleteBtn);
-
-            vbox.AddChild(btnHBox);
-            OnDataRefreshed?.Invoke();
         }
 
         // =====================================================================
@@ -276,10 +143,12 @@ namespace AP_Atlas.Core
             public string Pack, Current, Latest, DownloadUrl, Sha256;
         }
 
-        private static PopTrackerManifest ReadManifest(string zipPath)
+        /// <summary>A pack zip's manifest.json, read on its own (null when it has none).</summary>
+        internal static PopTrackerManifest ReadManifest(string zipPath)
         {
             using var archive = SafeZip.Open(zipPath);
-            var manifestEntry = archive.Entries.FirstOrDefault(e => e.FullName.EndsWith("manifest.json", StringComparison.OrdinalIgnoreCase));
+            var manifestEntry = archive.Entries.FirstOrDefault(e => e.FullName.EndsWith("manifest.json", StringComparison.OrdinalIgnoreCase))
+                ?? archive.Entries.FirstOrDefault(e => e.FullName.EndsWith("pack.json", StringComparison.OrdinalIgnoreCase));
             if (manifestEntry == null) return null;
             return JsonConvert.DeserializeObject<PopTrackerManifest>(archive.ReadText(manifestEntry));
         }
@@ -334,11 +203,12 @@ namespace AP_Atlas.Core
             string host = new Uri(update.DownloadUrl).Host;
             AP_Atlas.UI.Dialogs.Confirm(this, "Map pack update",
                 $"{update.Pack} {update.Latest} is available (you have {update.Current}).\n\nOpen its download page on {host} in your browser? " +
-                "After downloading, install it with Install Pack (Zip). (Installing updates inside Atlas is coming.)",
+                "After downloading, install it with Install pack (zip)… under All map packs, at the foot of the Games list. (Installing updates inside Atlas is coming.)",
                 "Open download page", () => AP_Atlas.Core.ExternalLinks.OpenWeb(update.DownloadUrl));
         }
 
-        private void CheckSinglePackUpdate(string zipPath) => AP_Atlas.Core.Async.Fire(CheckSinglePackUpdateAsync(zipPath), "checking a map pack for updates");
+        /// <summary>Checks one pack's versions link (a row's Update).</summary>
+        internal void CheckUpdate(string zipPath) => AP_Atlas.Core.Async.Fire(CheckSinglePackUpdateAsync(zipPath), "checking a map pack for updates");
 
         private async Task CheckSinglePackUpdateAsync(string zipPath)
         {
@@ -364,82 +234,131 @@ namespace AP_Atlas.Core
             return Directory.GetFiles(dataDir, "*.zip");
         }
 
+        // A pack deleted while the folder is read is no pack (its size can't be asked of a file that's gone).
         private static string PackFolderSignature(string[] files) =>
-            string.Join("|", files.Select(f => { var i = new FileInfo(f); return $"{f}:{i.Length}:{i.LastWriteTimeUtc.Ticks}"; }));
-
-        private void RefreshPackListIfChanged()
-        {
-            if (PackFolderSignature(GetPackFiles()) != _packListSignature) RefreshPackList();
-        }
+            string.Join("|", files.Select(f => { var i = new FileInfo(f); return i.Exists ? $"{f}:{i.Length}:{i.LastWriteTimeUtc.Ticks}" : ""; }));
 
         /// <summary>
-        /// Rebuilds the pack list. Packs that haven't been read yet are read on a worker thread first, so opening the tab
-        /// doesn't freeze the UI. Only their structure is read: their images are decoded only while a slot or the Pack
-        /// Doctor window uses the pack (PackImages).
+        /// Reads the packs folder again: packs not read yet are read on a worker thread (only their structure: images are
+        /// decoded only while a slot or the Pack Doctor uses the pack), a pack copied in by hand reaches connected slots,
+        /// a new or changed pack is looked over by the Pack Doctor, and <see cref="PacksRescanned"/> says it's done. The
+        /// Games page asks when it shows; installs, imports and deletes ask after they change the folder.
         /// </summary>
-        private void RefreshPackList() => AP_Atlas.Core.Async.Fire(RefreshPackListAsync(), "reading your map packs");
+        public void Rescan() => AP_Atlas.Core.Async.Fire(RescanAsync(), "reading your map packs");
 
-        private async Task RefreshPackListAsync()
+        private bool _rescanAgain;
+
+        private async Task RescanAsync()
         {
-            if (_packListLoading) return;
+            if (_packListLoading)
+            {
+                _rescanAgain = true;
+                return;
+            }
             _packListLoading = true;
+            bool redraw = false;
             try
             {
-                var files = GetPackFiles();
-                var uncached = files.Where(f => !PopTrackerPackLoader.IsPackCached(f)).ToList();
-                if (uncached.Count > 0)
+                do
                 {
-                    foreach (Node n in _packListVBox.GetChildren()) n.QueueFree();
-                    var loading = new Label { Text = $"Reading {uncached.Count} map pack(s)...", HorizontalAlignment = HorizontalAlignment.Center };
-                    loading.AddThemeColorOverride("font_color", ThemeColors.TextSubtle);
-                    _packListVBox.AddChild(loading);
-                    _logAction($"Reading {uncached.Count} map pack(s) in the background...", "gray");
-                    var sw = System.Diagnostics.Stopwatch.StartNew();
-                    await Task.Run(() =>
+                    _rescanAgain = false;
+                    var files = GetPackFiles();
+                    // A pack read before at this version that isn't a pack Atlas can read isn't read again (until it changes).
+                    var uncached = files.Where(f => !PopTrackerPackLoader.IsPackCached(f) && !TriedAndFailed(f)).ToList();
+                    if (uncached.Count > 0)
                     {
-                        foreach (var f in uncached) PopTrackerPackLoader.InspectZipPack(f, null);
-                    });
-                    if (!GodotObject.IsInstanceValid(this)) return;
-                    _logAction($"Map packs ready ({sw.ElapsedMilliseconds} ms).", "gray");
+                        _logAction($"Reading {uncached.Count} map pack(s) in the background...", "gray");
+                        var sw = System.Diagnostics.Stopwatch.StartNew();
+                        await Task.Run(() =>
+                        {
+                            foreach (var f in uncached) PopTrackerPackLoader.InspectZipPack(f, null);
+                        });
+                        if (!GodotObject.IsInstanceValid(this)) return;
+                        foreach (var f in uncached) _tried[f] = File.GetLastWriteTimeUtc(f);
+                        _logAction($"Map packs ready ({sw.ElapsedMilliseconds} ms).", "gray");
+                        // The folder as it is now: a pack may have gone (or come) while they were read.
+                        files = GetPackFiles();
+                    }
+                    // A pack copied into the folder by hand (seen at a rescan) reaches connected slots too.
+                    string signature = PackFolderSignature(files);
+                    bool changed = _packListSignature != null && signature != _packListSignature;
+                    // The page redraws only for something it would show differently: packs read, or the folder changed.
+                    redraw |= uncached.Count > 0 || changed;
+                    _packListSignature = signature;
+                    if (changed) PopTrackerPackLoader.NotifyPacksChanged();
+                    CheckNewOrChangedPacks(files);
                 }
-                // A pack copied into the folder by hand (seen at a rescan) reaches connected slots too.
-                string signature = PackFolderSignature(files);
-                bool changed = _packListSignature != null && signature != _packListSignature;
-                _packListSignature = signature;
-                if (changed) PopTrackerPackLoader.NotifyPacksChanged();
-                using (PerfMonitor.Measure("Build map pack list"))
-                {
-                    BuildPackRows(files);
-                }
+                while (_rescanAgain);
+            }
+            catch
+            {
+                // Rows that say they're being read are drawn again either way.
+                redraw = true;
+                throw;
             }
             finally
             {
                 _packListLoading = false;
+                // Said even when the read failed, so the page doesn't wait on rows that say they're being read.
+                if (redraw && GodotObject.IsInstanceValid(this)) PacksRescanned?.Invoke();
             }
         }
 
-        private void BuildPackRows(string[] files)
+        // Packs a rescan read (or tried to: one that isn't a pack never reads), by their file's last write.
+        private readonly Dictionary<string, DateTime> _tried = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>A rescan tried this zip at its current version and couldn't read it (the loader keeps only packs it read).</summary>
+        private bool TriedAndFailed(string file) =>
+            !PopTrackerPackLoader.IsPackCached(file) && _tried.TryGetValue(file, out var tried) && tried == File.GetLastWriteTimeUtc(file);
+
+        /// <summary>Whether every installed pack has been read (a row for one that hasn't says it's being read).</summary>
+        internal bool Scanning => _packListLoading;
+
+        /// <summary>
+        /// Builds a row per pack into <paramref name="target"/> (a Games page section): its name (and game, with
+        /// <paramref name="showGame"/>), version and contents, the Pack Doctor's word with Review and Fix, and Doctor…,
+        /// Update and Delete; a click shows it in Properties. A pack not read yet says so (the rescan reads it, then the page
+        /// redraws), so building rows never reads a pack on the main thread.
+        /// </summary>
+        internal void BuildPackRows(VBoxContainer target, IReadOnlyList<string> files, bool showGame)
         {
-            foreach (Node n in _packListVBox.GetChildren()) n.QueueFree();
-            AP_Atlas.UI.Ui.NextFrame(this, () => MainTrackerWindow.SetFontSizeRecursive(_packListVBox, FontSize()));
-
-            if (files.Length == 0)
-            {
-                var lbl = new Label { Text = "No map packs installed.", HorizontalAlignment = HorizontalAlignment.Center };
-                lbl.AddThemeColorOverride("font_color", ThemeColors.TextSubtle);
-                _packListVBox.AddChild(lbl);
-                return;
-            }
-
+            _rowHosts.RemoveAll(host => !GodotObject.IsInstanceValid(host));
+            if (!_rowHosts.Contains(target)) _rowHosts.Add(target);
+            AP_Atlas.UI.Ui.NextFrame(target, () => MainTrackerWindow.SetFontSizeRecursive(target, FontSize()));
+            bool unread = false;
             foreach (var file in files)
             {
+                // A pack not read yet (new, or rewritten since): the rescan reads it off the main thread, then the page
+                // redraws. One a rescan already tried at this version and couldn't read is said so below.
+                if (TriedAndFailed(file))
+                {
+                    var unreadable = AP_Atlas.UI.Kit.Muted(Tr("{0}: not a map pack Atlas can read.").Replace("{0}", Path.GetFileName(file)));
+                    unreadable.SetMeta("pack_unreadable", file);
+                    target.AddChild(unreadable);
+                    continue;
+                }
+                if (!PopTrackerPackLoader.IsPackCached(file))
+                {
+                    var reading = AP_Atlas.UI.Kit.Muted(Tr("Reading {0}…").Replace("{0}", Path.GetFileName(file)));
+                    reading.SetMeta("pack_reading", file);
+                    target.AddChild(reading);
+                    unread = true;
+                    continue;
+                }
                 try
                 {
                     var pack = PopTrackerPackLoader.InspectZipPack(file, null);
-                    if (pack == null || pack.Manifest == null) continue;
+                    if (pack == null || pack.Manifest == null)
+                    {
+                        var unreadable = AP_Atlas.UI.Kit.Muted(Tr("{0}: not a map pack Atlas can read.").Replace("{0}", Path.GetFileName(file)));
+                        unreadable.SetMeta("pack_unreadable", file);
+                        target.AddChild(unreadable);
+                        continue;
+                    }
                     var manifest = pack.Manifest;
 
                     var row = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+                    row.SetMeta("pack_row", file);
                     row.AddThemeStyleboxOverride("panel", PackRowStyle(false));
 
                     var hbox = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
@@ -452,7 +371,7 @@ namespace AP_Atlas.Core
                     titleLbl.SetMeta("font_size_ratio", 1.15f);
                     titleLbl.AddThemeColorOverride("font_color", ThemeColors.Text);
                     titleRow.AddChild(titleLbl);
-                    var gameLbl = new Label { Text = manifest.GameName, SizeFlagsVertical = SizeFlags.ShrinkCenter };
+                    var gameLbl = new Label { Text = manifest.GameName, SizeFlagsVertical = SizeFlags.ShrinkCenter, Visible = showGame };
                     gameLbl.SetMeta("font_size_ratio", 0.85f);
                     gameLbl.AddThemeColorOverride("font_color", ThemeColors.TextMuted);
                     titleRow.AddChild(gameLbl);
@@ -485,6 +404,14 @@ namespace AP_Atlas.Core
                     fixBtn.SetMeta("pack_key", key);
                     capsHbox.AddChild(fixBtn);
                     UpdateDoctorBadge(doctorBadge, reviewBtn, fixBtn);
+                    // The pack's own actions, on its row (the page that listed them had them on a card of its own).
+                    string rowFile = file, rowName = manifest.Name;
+                    capsHbox.AddChild(AP_Atlas.UI.Kit.Button(Tr("Doctor…"), Tr("Check this pack against the game and fix problems locally"), () => OpenDoctor?.Invoke(rowFile, null), small: true));
+                    capsHbox.AddChild(AP_Atlas.UI.Kit.Button(Tr("Update"), Tr("Asks the pack's versions link whether a newer version is out"), () => CheckUpdate(rowFile), small: true));
+                    var deleteBtn = AP_Atlas.UI.Kit.Button(Tr("Delete…"), Tr("Deletes this pack from Atlas's packs folder (asked first)"), () => ConfirmDelete(rowFile, rowName), small: true);
+                    deleteBtn.AddThemeColorOverride("font_color", ThemeColors.Danger);
+                    deleteBtn.SetMeta("delete_pack", rowFile);
+                    capsHbox.AddChild(deleteBtn);
                     infoVBox.AddChild(capsHbox);
 
                     hbox.AddChild(infoVBox);
@@ -503,20 +430,21 @@ namespace AP_Atlas.Core
                             _selectedPackRow = row;
                             row.AddThemeStyleboxOverride("panel", PackRowStyle(true));
 
-                            ShowPackDetails(localFilePath);
                             Inspector.Inspect(InspectTarget.ForPack(localFilePath));
+                            // A pack nobody has checked this session (no slot uses it) is checked now: its row fills in.
+                            if (!PackDoctorService.Reports.TryGetValue(key, out var shownReport) || shownReport == null)
+                                AP_Atlas.Core.Async.Fire(PackDoctorService.CheckAsync(pack, prompt: false), "checking a map pack");
                         }
                     };
                     row.AddChild(hbox);
-                    _packListVBox.AddChild(row);
+                    target.AddChild(row);
                 }
                 catch (Exception e)
                 {
                     GD.PrintErr($"Failed to read pack {file}: {e.Message}");
                 }
             }
-            OnDataRefreshed?.Invoke();
-            CheckNewOrChangedPacks(files);
+            if (unread) AP_Atlas.UI.Ui.Defer(this, Rescan);
         }
 
         // =====================================================================
@@ -575,9 +503,13 @@ namespace AP_Atlas.Core
             if (fixValid) fix.Visible = report.Findings.Any(f => !f.Ignored && (f.Actions.HasFlag(FindingActions.LinkItem) || f.Actions.HasFlag(FindingActions.LinkLocation)));
         }
 
+        /// <summary>Every pack row built into a page that's still there.</summary>
+        private IEnumerable<Node> PackRows() =>
+            _rowHosts.Where(GodotObject.IsInstanceValid).SelectMany(host => host.GetChildren()).Where(row => GodotObject.IsInstanceValid(row) && !row.IsQueuedForDeletion() && row.HasMeta("pack_row"));
+
         /// <summary>A pack row's Fix button, by the pack's key (for tests).</summary>
         internal Button FixButtonFor(string key) =>
-            _packListVBox.GetChildren().Select(row => row.FindChild("FixButton", true, false) as Button).FirstOrDefault(b => b != null && b.GetMeta("pack_key").AsString() == key);
+            PackRows().Select(row => row.FindChild("FixButton", true, false) as Button).FirstOrDefault(b => b != null && b.GetMeta("pack_key").AsString() == key);
 
         /// <summary>The Doctor's tab for a pack's review: Recommended while it suggests matches, else the Overview.</summary>
         private static string ReviewTab(string key) =>
@@ -585,26 +517,16 @@ namespace AP_Atlas.Core
 
         /// <summary>A pack row's Review button, by the pack's key (for tests).</summary>
         internal Button ReviewButtonFor(string key) =>
-            _packListVBox.GetChildren().Select(row => row.FindChild("ReviewButton", true, false) as Button).FirstOrDefault(b => b != null && b.GetMeta("pack_key").AsString() == key);
+            PackRows().Select(row => row.FindChild("ReviewButton", true, false) as Button).FirstOrDefault(b => b != null && b.GetMeta("pack_key").AsString() == key);
 
         private void OnDoctorReportReady(string key)
         {
             if (!GodotObject.IsInstanceValid(this)) return;
-            foreach (Node row in _packListVBox.GetChildren())
+            foreach (Node row in PackRows())
             {
                 var badge = row.FindChild("DoctorBadge", true, false) as Label;
                 if (badge != null && badge.GetMeta("pack_key").AsString() == key) UpdateDoctorBadge(badge, row.FindChild("ReviewButton", true, false) as Button, row.FindChild("FixButton", true, false) as Button);
             }
-            if (_shownPackPath != null && PackFixes.KeyFor(PopTrackerPackLoader.InspectZipPack(_shownPackPath)) == key) ShowPackDetails(_shownPackPath);
-        }
-
-        private string _shownPackPath;
-
-        private void OnOpenFolderPressed()
-        {
-            string dataDir = System.IO.Path.Combine(DataManager.GetDataDirectory(), "packs");
-            if (!Directory.Exists(dataDir)) Directory.CreateDirectory(dataDir);
-            AP_Atlas.Core.ExternalLinks.OpenFolder(dataDir);
         }
 
         // =====================================================================
@@ -659,7 +581,8 @@ namespace AP_Atlas.Core
             return installed;
         }
 
-        private void OnSearchPressed() => AP_Atlas.Core.Async.Fire(OnSearchPressedAsync(), "searching GitHub for map packs");
+        /// <summary>Searches GitHub for the packs of the games the user plays that have none (All map packs).</summary>
+        internal void SearchYourGames() => AP_Atlas.Core.Async.Fire(OnSearchPressedAsync(), "searching GitHub for map packs");
 
         private async Task OnSearchPressedAsync()
         {
@@ -850,7 +773,7 @@ namespace AP_Atlas.Core
                 heading.AddThemeColorOverride("font_color", ThemeColors.AccentText(ThemeColors.Surface));
                 box.AddChild(heading);
                 if (problem != null) box.AddChild(Muted($"GitHub couldn't be searched: {problem}"));
-                else if (candidates.Count == 0) box.AddChild(Muted("No map packs found on GitHub. Packs are often shared in the game's Archipelago Discord thread; install one from its zip with Install Pack (Zip)."));
+                else if (candidates.Count == 0) box.AddChild(Muted("No map packs found on GitHub. Packs are often shared in the game's Archipelago Discord thread; install one from its zip with Install pack (zip)… under All map packs, at the foot of the Games list."));
                 if (candidates.Count > 0)
                 {
                     string pickGame = game;
@@ -1230,7 +1153,7 @@ namespace AP_Atlas.Core
                 if (latest.Ok && latest.Json is JObject one) releases = ReleasesWithPacks(new JArray(one));
             }
             if (!GodotObject.IsInstanceValid(this)) return result;
-            // No released pack: the project's current files, as the Map Packs page offers them.
+            // No released pack: the project's current files, as a pack search offers them.
             result.CurrentFiles = releases.Count == 0;
             var tries = releases.Count > 0
                 ? releases.Take(most).Select(r => (Tag: r.Tag, Url: r.Url, Name: SafeZipName(r.FileName))).ToList()
@@ -1381,7 +1304,7 @@ namespace AP_Atlas.Core
             }
             _candidatesDialog = null;
             PopTrackerPackLoader.NotifyPacksChanged();
-            await RefreshPackListAsync();
+            await RescanAsync();
             return dest;
         }
 
@@ -1457,7 +1380,8 @@ namespace AP_Atlas.Core
             }
         }
 
-        private void OnCheckUpdatesPressed() => AP_Atlas.Core.Async.Fire(OnCheckUpdatesPressedAsync(), "checking map packs for updates");
+        /// <summary>Checks every pack that publishes updates (All map packs' Check for updates).</summary>
+        internal void CheckUpdates() => AP_Atlas.Core.Async.Fire(OnCheckUpdatesPressedAsync(), "checking map packs for updates");
 
         private async Task OnCheckUpdatesPressedAsync()
         {
@@ -1516,7 +1440,8 @@ namespace AP_Atlas.Core
             dialog.PopupCentered();
         }
 
-        private void OnImportPackPressed()
+        /// <summary>Installs a pack from a zip the user picks (All map packs' Install pack (zip)…).</summary>
+        internal void ImportZip()
         {
             var fd = new FileDialog
             {
@@ -1550,7 +1475,7 @@ namespace AP_Atlas.Core
                         _logAction($"Installed the map pack {System.IO.Path.GetFileName(path)}.", "lime");
                         SayInstalled(destPath);
                         PopTrackerPackLoader.NotifyPacksChanged();
-                        RefreshPackList();
+                        Rescan();
                     }
                     catch (Exception ex)
                     {

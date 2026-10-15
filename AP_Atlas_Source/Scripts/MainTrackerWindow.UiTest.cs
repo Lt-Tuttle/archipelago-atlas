@@ -118,7 +118,7 @@ public partial class MainTrackerWindow
             DialogsStandAsTallAsTheirContentAsync);
         await ScenarioAsync("Slot picker: the tool header lists the connected slots with the selected one chosen; picking one shows its view, Ctrl+Tab and Ctrl+Shift+Tab go through them around the end, a slot selected elsewhere shows as picked, a tool that isn't per slot hides it, and a slot that ends leaves it",
             SlotPickerAsync);
-        await ScenarioAsync("Window parts: the View menu hides and shows the slots panel, the explorer (whatever tool shows), Properties, the bottom pane and the status bar, remembering each; each tool's explorer has its own width (Map Packs starts at 480, Games at 360, the Map Tracker at 340, Multiworlds at 300); focus mode leaves the content alone and, off again, brings each part back as the user had it",
+        await ScenarioAsync("Window parts: the View menu hides and shows the slots panel, the explorer (whatever tool shows), Properties, the bottom pane and the status bar, remembering each; each tool's explorer has its own width (Games starts at 360, the Map Tracker at 340, Multiworlds at 300); focus mode leaves the content alone and, off again, brings each part back as the user had it",
             WindowPartsAsync);
         await ScenarioAsync("Settings page: Ctrl+, shows it with the search box ready and the sections in the explorer; each kind of row changes its setting at once and saves it (a toggle, a choice, a number, a window part, a bottom pane tab); a setting changed elsewhere shows as it is; typed words narrow the rows; a section jump scrolls",
             SettingsPageAsync);
@@ -180,7 +180,7 @@ public partial class MainTrackerWindow
             PicturelessMapsAsync);
         await ScenarioAsync("Fix a problem where it shows: the Map Tracker's and Key Items' fix menus (a button, right-click on the map, a pin, a tile) give a map without a picture one of the pack's, move a pin, change which check a section shows, mark one as not a check, place a missing check, give a tile another picture; each a Pack Doctor fix the slot shows at once, with Undo; a check made in play that no pin shows becomes a notice (a release's burst doesn't), counted on the Map button, and its Pick its pin links the pin pressed next",
             FixInPlaceAsync);
-        await ScenarioAsync("Pack Doctor: on a pack's first check, a pin section whose name matches a location exactly (once punctuation is ignored) is linked by itself as an automatic fix, and a tile named so is the index's own link; the pack's row on the Map Packs page offers Review N, which opens the Doctor on Recommended; the Recommended tab lists what's left, Apply on a row writes the fix, the row goes after the check and the status says so; the rows are grouped by kind with what to do under each, filters by words, kind and map narrow them, Ignore selected hides the selection in one step and Undo brings it back; Undo takes the automatic link back; the Map Tracker's Attention group lists the pack's problems for this seed in plain words and opens the Doctor on the fixing tab; Fix what Atlas can (the pack row's Fix, the Attention group's button) links the confident matches and sets the rest aside in one undoable step, said in a card",
+        await ScenarioAsync("Pack Doctor: on a pack's first check, a pin section whose name matches a location exactly (once punctuation is ignored) is linked by itself as an automatic fix, and a tile named so is the index's own link; the pack's row on its game's page offers Review N, which opens the Doctor on Recommended; the Recommended tab lists what's left, Apply on a row writes the fix, the row goes after the check and the status says so; the rows are grouped by kind with what to do under each, filters by words, kind and map narrow them, Ignore selected hides the selection in one step and Undo brings it back; Undo takes the automatic link back; the Map Tracker's Attention group lists the pack's problems for this seed in plain words and opens the Doctor on the fixing tab; Fix what Atlas can (the pack row's Fix, the Attention group's button) links the confident matches and sets the rest aside in one undoable step, said in a card",
             PackDoctorAsync);
         await ScenarioAsync("Guided fixer: the Pack Doctor opens on Make this pack work, whose steps say what's left in order; two rows linked by hand in the one-by-one review teach a rule that links the rest, shown in a preview first and applied as one undoable step; the review's keys skip, say not a check, undo and take the first guess; the pack is measured against this seed's names",
             GuidedFixerAsync);
@@ -188,7 +188,7 @@ public partial class MainTrackerWindow
             SharingFixesAsync);
         await ScenarioAsync("Start a pack, and the last fixer: a game with no map pack gets Start a pack on its empty map, which makes a PopTracker pack from the game's names (every location a pin grouped by area, every item in Key Items, its own mapping) that the slot uses at once with every location linked; the guide places a check no pin shows beside its area's pin after a preview, drawn as Atlas's",
             StartPackAndFixersAsync);
-        await ScenarioAsync("Map packs reach connected slots: Key Items offers the pack's layouts and two Atlas builds by item group, kept per slot; the chat's filters sit in one row; the Chat and System Log tabs carry a dot for lines that arrived while they weren't showing, cleared when shown; a slot without a pack offers \"Find a map pack for <game>…\" on its map, which shows Map Packs and searches GitHub once; a pack chosen from the results downloads with a progress line, installs with a card and reaches the slot's map; Atlas picks a game's pack by itself (of the projects found, one with more stars whose pack doesn't fit the game's names is passed over for the one that fits); a pack installed while a slot is connected shows on its map at once, without a reconnect; deleted, the map says there's no pack again; another pack for the game takes its place; a pack half of whose pins link to the seed's checks says so on the map, and its button makes its project's release found for the seed the game's pack, which the slot switches to",
+        await ScenarioAsync("Map packs reach connected slots: Key Items offers the pack's layouts and two Atlas builds by item group, kept per slot; the chat's filters sit in one row; the Chat and System Log tabs carry a dot for lines that arrived while they weren't showing, cleared when shown; a slot without a pack offers \"Find a map pack for <game>…\" on its map, which shows the game's page and searches GitHub once; a pack chosen from the results downloads with a progress line, installs with a card and reaches the slot's map; Atlas picks a game's pack by itself (of the projects found, one with more stars whose pack doesn't fit the game's names is passed over for the one that fits); a pack installed while a slot is connected shows on its map at once, without a reconnect; deleted, the map says there's no pack again; another pack for the game takes its place; a pack half of whose pins link to the seed's checks says so on the map, and its button makes its project's release found for the seed the game's pack, which the slot switches to",
             PacksReachConnectedSlotsAsync);
         await ScenarioAsync("Live map following: a pack whose scripts follow the game switches the map to the tab the room's data storage names, at connect and when it changes (Atlas asks the server about the key and never writes the room's data); with the switch off, the map stays; the switch is remembered per slot",
             LiveMapFollowingAsync);
@@ -625,7 +625,6 @@ public partial class MainTrackerWindow
         var ownViews = new Dictionary<AP_Atlas.UI.Tool, Control>
         {
             [AP_Atlas.UI.Tool.Connections] = _connectionPanel,
-            [AP_Atlas.UI.Tool.MapPacks] = _packManagerPanel,
             [AP_Atlas.UI.Tool.CheeseTracker] = _cheeseTab,
             [AP_Atlas.UI.Tool.SphereTracker] = _sphereTab,
             [AP_Atlas.UI.Tool.Settings] = _settingsPage!,
@@ -643,7 +642,7 @@ public partial class MainTrackerWindow
         UiTestExpect(ownViews.Count + slotViews.Count == AP_Atlas.UI.Tool.All.Count, "a tool is missing from this test's table");
 
         // Atlas opens on Home, so start from another tab, as a user would.
-        host.ShowTool(AP_Atlas.UI.Tool.MapPacks);
+        host.ShowTool(AP_Atlas.UI.Tool.Games);
         // No slot connected: the tools that aren't per slot show their own view, and the slot tools ask for a slot.
         foreach (var tool in AP_Atlas.UI.Tool.All)
         {
@@ -694,17 +693,18 @@ public partial class MainTrackerWindow
             $"the Tools menu's first items are \"{tools.GetItemText(0)}\" ({ShortcutShown(tools, 0)}) and \"{tools.GetItemText(1)}\" ({ShortcutShown(tools, 1)})");
 
         host.ShowTool(AP_Atlas.UI.Tool.Connections);
-        _commands!.Run("tool.map-packs");
-        UiTestExpect(ShownContent() == _packManagerPanel, "the Map Packs command didn't show Map Packs");
-        UiTestExpect(_commands.ShortcutOf("tool.map-packs") == "" && _commands.ShortcutOf("view.zoom-reset") == "Ctrl+0", "Ctrl+0 belongs to Reset Zoom, and Map Packs has no default key");
+        _commands!.Run("tool.games");
+        UiTestExpect(ShownContent() == _gamesPage, "the Games command didn't show Games");
+        UiTestExpect(_commands.Find("tool.map-packs") == null, "Map Packs is still a command of its own (it's part of Games)");
+        UiTestExpect(_commands.ShortcutOf("tool.games") == "" && _commands.ShortcutOf("view.zoom-reset") == "Ctrl+0", "Ctrl+0 belongs to Reset Zoom, and Games has no default key");
         await PressAsync("Ctrl+9");
         UiTestExpect(ShownContent() == _sphereTab, "Ctrl+9 didn't show the Sphere Tracker");
         // A rebind in the settings takes over at once (as a user might type it), and the old key means nothing.
-        _appSettings.KeyBindings["tool.map-packs"] = "ctrl+f6";
+        _appSettings.KeyBindings["tool.games"] = "ctrl+f6";
         try
         {
             await PressAsync("Ctrl+F6");
-            UiTestExpect(ShownContent() == _packManagerPanel, "a rebound key (Ctrl+F6) didn't show Map Packs");
+            UiTestExpect(ShownContent() == _gamesPage, "a rebound key (Ctrl+F6) didn't show Games");
             host.ShowTool(AP_Atlas.UI.Tool.SphereTracker);
             await PressAsync("Ctrl+F7"); // nothing's key
             UiTestExpect(ShownContent() == _sphereTab, "a key that isn't anyone's switched tools");
@@ -712,13 +712,13 @@ public partial class MainTrackerWindow
             var shortcuts = await UiTestWaitForAsync(() => GetChildren().OfType<AcceptDialog>().FirstOrDefault(d => d.Title == "Keyboard Shortcuts"), "the shortcuts dialog");
             // The table lays out only the rows on screen: the list is its shown rows.
             var rows = shortcuts.FindChildren("Table_keys", "", true, false).OfType<AP_Atlas.UI.AtlasTable>().First().ShownRows.Select(r => r.Cells.Select(c => c.Text).ToArray()).ToList();
-            UiTestExpect(rows.Any(r => r[0] == "Map Packs" && r[1] == "Ctrl+F6") && rows.Any(r => r[0] == "Map Tracker" && r[1] == "Ctrl+2"),
+            UiTestExpect(rows.Any(r => r[0] == "Games" && r[1] == "Ctrl+F6") && rows.Any(r => r[0] == "Map Tracker" && r[1] == "Ctrl+2"),
                 "the shortcuts list doesn't show the keys as they are now");
             shortcuts.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
         }
         finally
         {
-            _appSettings.KeyBindings.Remove("tool.map-packs");
+            _appSettings.KeyBindings.Remove("tool.games");
         }
         _commands.Run("help.about");
         var about = await UiTestWaitForAsync(() => GetChildren().OfType<AcceptDialog>().FirstOrDefault(d => d.Title == "About The Archipelago Atlas"), "the About dialog");
@@ -840,9 +840,9 @@ public partial class MainTrackerWindow
     {
         var host = (AP_Atlas.UI.IPropertiesHost)this;
         var page = _settingsPage ?? throw new InvalidOperationException("The Settings page wasn't built.");
-        const string RowId = "key.tool.map-packs";
+        const string RowId = "key.tool.games";
         var tools = _menuHbox.GetChildren().OfType<MenuButton>().ToList()[3].GetPopup();
-        int item = tools.GetItemIndex((int)_commandItems[tools].First(entry => entry.Value == "tool.map-packs").Key);
+        int item = tools.GetItemIndex((int)_commandItems[tools].First(entry => entry.Value == "tool.games").Key);
         var capture = (AP_Atlas.UI.KeyCapture)page.ControlOf(RowId);
         var reset = page.KeyResetOf(RowId);
         var conflict = page.KeyConflictOf(RowId);
@@ -850,20 +850,20 @@ public partial class MainTrackerWindow
         ShowSettings("keyboard");
         await UiTestWaitAsync(0.1);
         UiTestExpect(ShownContent() == page && page.ScrollPosition > 0, "the keyboard section didn't show");
-        UiTestExpect(capture.Key == "" && reset.Disabled && !conflict.Visible, $"Map Packs' row shows \"{capture.Text}\" (no default key), reset {(reset.Disabled ? "off" : "on")}, conflict {conflict.Visible}");
+        UiTestExpect(capture.Key == "" && reset.Disabled && !conflict.Visible, $"Games' row shows \"{capture.Text}\" (no default key), reset {(reset.Disabled ? "off" : "on")}, conflict {conflict.Visible}");
         try
         {
             // Press the key's button, then a key: the command runs on it at once, the menus and the bar show it, and it's saved.
             capture.EmitSignal(BaseButton.SignalName.Pressed);
             UiTestExpect(capture.Capturing, "pressing the key's button didn't start waiting for a key");
             capture.EmitSignal(Control.SignalName.GuiInput, AP_Atlas.UI.CommandKeys.ToEvent("Ctrl+F6")!);
-            UiTestExpect(!capture.Capturing && capture.Key == "Ctrl+F6" && _appSettings.KeyBindings.GetValueOrDefault("tool.map-packs") == "Ctrl+F6"
-                && DataManager.LoadSettings().KeyBindings.GetValueOrDefault("tool.map-packs") == "Ctrl+F6", "the pressed key wasn't taken, or wasn't saved");
+            UiTestExpect(!capture.Capturing && capture.Key == "Ctrl+F6" && _appSettings.KeyBindings.GetValueOrDefault("tool.games") == "Ctrl+F6"
+                && DataManager.LoadSettings().KeyBindings.GetValueOrDefault("tool.games") == "Ctrl+F6", "the pressed key wasn't taken, or wasn't saved");
             UiTestExpect(!reset.Disabled, "a changed key leaves the reset off");
-            UiTestExpect(ShortcutShown(tools, item) == "Ctrl+F6" && _activityBar.ButtonOf(AP_Atlas.UI.Tool.MapPacks).TooltipText.Contains("Ctrl+F6"), "the menus and the bar don't show the new key");
+            UiTestExpect(ShortcutShown(tools, item) == "Ctrl+F6" && _activityBar.ButtonOf(AP_Atlas.UI.Tool.Games).TooltipText.Contains("Ctrl+F6"), "the menus and the bar don't show the new key");
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
             await PressAsync("Ctrl+F6");
-            UiTestExpect(ShownContent() == _packManagerPanel, "the new key doesn't run the command");
+            UiTestExpect(ShownContent() == _gamesPage, "the new key doesn't run the command");
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
             await PressAsync("Ctrl+0");
             UiTestExpect(ShownContent() == _connectionPanel, "the old key still runs the command");
@@ -872,18 +872,18 @@ public partial class MainTrackerWindow
             // A key another command has: both rows say so.
             capture.EmitSignal(BaseButton.SignalName.Pressed);
             capture.EmitSignal(Control.SignalName.GuiInput, AP_Atlas.UI.CommandKeys.ToEvent("Ctrl+2")!);
-            UiTestExpect(conflict.Visible && conflict.TooltipText.Contains("Map Tracker") && otherConflict.Visible && otherConflict.TooltipText.Contains("Map Packs"),
+            UiTestExpect(conflict.Visible && conflict.TooltipText.Contains("Map Tracker") && otherConflict.Visible && otherConflict.TooltipText.Contains("Games"),
                 $"a shared key isn't shown on both rows: {conflict.Visible} \"{conflict.TooltipText}\", {otherConflict.Visible} \"{otherConflict.TooltipText}\"");
 
             // Reset: the default key again, the rebind forgotten.
             reset.EmitSignal(BaseButton.SignalName.Pressed);
-            UiTestExpect(!_appSettings.KeyBindings.ContainsKey("tool.map-packs") && capture.Key == "" && reset.Disabled && !conflict.Visible && !otherConflict.Visible
+            UiTestExpect(!_appSettings.KeyBindings.ContainsKey("tool.games") && capture.Key == "" && reset.Disabled && !conflict.Visible && !otherConflict.Visible
                 && ShortcutShown(tools, item) == "", "the reset didn't bring the default (no key) back");
 
             // Backspace: no key at all.
             capture.EmitSignal(BaseButton.SignalName.Pressed);
             capture.EmitSignal(Control.SignalName.GuiInput, AP_Atlas.UI.CommandKeys.ToEvent("Backspace")!);
-            UiTestExpect(capture.Key == "" && capture.Text == "None" && _appSettings.KeyBindings.GetValueOrDefault("tool.map-packs") == "" && ShortcutShown(tools, item) == "",
+            UiTestExpect(capture.Key == "" && capture.Text == "None" && _appSettings.KeyBindings.GetValueOrDefault("tool.games") == "" && ShortcutShown(tools, item) == "",
                 $"Backspace didn't take the key away: \"{capture.Text}\", menu \"{ShortcutShown(tools, item)}\"");
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
             await PressAsync("Ctrl+0");
@@ -894,7 +894,7 @@ public partial class MainTrackerWindow
             // Escape keeps the key; a modifier on its own isn't a key; losing the focus ends the wait.
             capture.EmitSignal(BaseButton.SignalName.Pressed);
             capture.EmitSignal(Control.SignalName.GuiInput, AP_Atlas.UI.CommandKeys.ToEvent("Escape")!);
-            UiTestExpect(!capture.Capturing && capture.Key == "" && !_appSettings.KeyBindings.ContainsKey("tool.map-packs"), "Escape didn't keep the key as it was");
+            UiTestExpect(!capture.Capturing && capture.Key == "" && !_appSettings.KeyBindings.ContainsKey("tool.games"), "Escape didn't keep the key as it was");
             capture.EmitSignal(BaseButton.SignalName.Pressed);
             capture.EmitSignal(Control.SignalName.GuiInput, new InputEventKey { Pressed = true, Keycode = Key.Ctrl, CtrlPressed = true });
             UiTestExpect(capture.Capturing && capture.Key == "", "a modifier on its own was taken as the key");
@@ -902,7 +902,7 @@ public partial class MainTrackerWindow
             UiTestExpect(!capture.Capturing && capture.Key == "", "losing the focus didn't end the wait");
 
             // The rows are found by the command's words; the F1 list leads here.
-            page.Search("map packs");
+            page.Search("games");
             UiTestExpect(page.IsShown(RowId) && !page.IsShown("auto-reconnect"), "the key row isn't found by its command's name");
             page.Search("");
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
@@ -915,7 +915,7 @@ public partial class MainTrackerWindow
         }
         finally
         {
-            _appSettings.KeyBindings.Remove("tool.map-packs");
+            _appSettings.KeyBindings.Remove("tool.games");
             DataManager.SaveSettings(_appSettings);
             RefreshShortcutsShown();
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
@@ -1737,7 +1737,7 @@ public partial class MainTrackerWindow
     {
         var host = (AP_Atlas.UI.IPropertiesHost)this;
         var home = _homePage ?? throw new InvalidOperationException("Home wasn't built.");
-        host.ShowTool(AP_Atlas.UI.Tool.MapPacks);
+        host.ShowTool(AP_Atlas.UI.Tool.Games);
         await PressAsync("Ctrl+1");
         UiTestExpect(ShownContent() == home && _activityBar.Selected == AP_Atlas.UI.Tool.Home && !_midLeftSidebar.Visible, "Ctrl+1 didn't show Home on its own");
         // Every tool but Home has a button with a line of its own; every link is https, and the Discord one is the official invite.
@@ -1824,8 +1824,8 @@ public partial class MainTrackerWindow
             UiTestExpect(ShownContent() == _connectionPanel && _selectedProfile == profile, "Open didn't show the multiworld on its page");
             host.ShowTool(AP_Atlas.UI.Tool.Home);
             // A tool's button shows the tool.
-            home.ToolCardOf(AP_Atlas.UI.Tool.MapPacks).EmitSignal(BaseButton.SignalName.Pressed);
-            UiTestExpect(ShownContent() == _packManagerPanel, "the Map Packs button didn't show Map Packs");
+            home.ToolCardOf(AP_Atlas.UI.Tool.Games).EmitSignal(BaseButton.SignalName.Pressed);
+            UiTestExpect(ShownContent() == _gamesPage, "the Games button didn't show Games");
             host.ShowTool(AP_Atlas.UI.Tool.Home);
             // The columns: side by side when the page is wide enough, and the right column ends inside the page either way.
             await UiTestWaitAsync(0.2);
@@ -2125,6 +2125,8 @@ public partial class MainTrackerWindow
         profile.SavedStats["Me"] = new SlotStats { GameName = "Atlas Test Game", LastUpdated = DateTime.Now };
         _profiles.Add(profile);
         string yaml = System.IO.Path.Combine(DataManager.GetDataDirectory(), "uitest_two_games.yaml");
+        string packsDir = AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory();
+        string gamePack = System.IO.Path.Combine(packsDir, "uitest_games_pack.zip"), strayPack = System.IO.Path.Combine(packsDir, "uitest_stray_pack.zip");
         await using var github = new AP_Atlas.Core.Testing.FakeWebSite();
         try
         {
@@ -2212,6 +2214,39 @@ public partial class MainTrackerWindow
             UiTestExpect(github.Requests.Count(r => r.StartsWith("/search/")) == 1, $"GitHub was searched {github.Requests.Count(r => r.StartsWith("/search/"))} times, not once");
             UiTestExpect(!github.Requests.Any(r => r.StartsWith("/dl/")), "a version was downloaded without a press");
             UiTestExpect(page.Steps().Any(s => s.Title == "A map pack" && !s.Done), "the map pack step is missing");
+            // Map packs live on the Games page. A pack Atlas hasn't read yet still counts for its game (its manifest is read);
+            // its row shows in the game's Map packs section once the rescan has read it, and not on another game's page; All
+            // map packs, the entry at the list's foot, lists every pack, found by typed words, a pack for no game Atlas lists
+            // apart; a row's Delete… asks first, and the pack goes from the folder and the list.
+            System.IO.Directory.CreateDirectory(packsDir);
+            FakeMapPack.Write(gamePack, "UI test games pack", "Atlas Test Game");
+            FakeMapPack.Write(strayPack, "UI test stray pack", "No Such Game At All");
+            page.Refresh();
+            UiTestExpect(page.Steps().Any(s => s.Title == "A map pack" && s.Done), "a pack Atlas hasn't read yet doesn't count for its game");
+            _packManagerPanel.Rescan();
+            Node? PackRow(string zip) => page.FindChildren("*", "", true, false).FirstOrDefault(n => IsInstanceValid(n) && !n.IsQueuedForDeletion() && n.HasMeta("pack_row") && n.GetMeta("pack_row").AsString() == zip);
+            await UiTestWaitForAsync(() => PackRow(gamePack), "the game's pack row in its Map packs section");
+            UiTestExpect(PackRow(strayPack) == null && page.FindChildren("*", "", true, false).Any(n => n.HasMeta("game_packs") && n.GetMeta("game_packs").AsString() == "Atlas Test Game"),
+                "another game's pack is on this game's page, or the page has no Map packs section");
+            TreeItem? allEntry = null;
+            for (var item = tree.GetRoot()?.GetFirstChild(); item != null; item = item.GetNext())
+                if (item.GetMetadata(0).VariantType == Variant.Type.Int) allEntry = item;
+            UiTestExpect(allEntry != null && allEntry.GetNext() == null && allEntry.GetText(0) == $"All map packs ({System.IO.Directory.GetFiles(packsDir, "*.zip").Length})", $"the list's foot has no All map packs entry: {allEntry?.GetText(0)}");
+            allEntry!.Select(0);
+            await UiTestWaitForAsync(() => page.AllPacksShown && PackRow(strayPack) != null && PackRow(gamePack) != null ? page : null, "All map packs to list every pack");
+            UiTestExpect(page.UnmatchedPacks.Contains("UI test stray pack") && !page.UnmatchedPacks.Contains("UI test games pack") && page.ShownPacks.Contains("UI test games pack"),
+                $"All map packs doesn't set apart the pack for no game Atlas lists: shown {string.Join(", ", page.ShownPacks)}; for no game {string.Join(", ", page.UnmatchedPacks)}");
+            page.FilterPacks("stray");
+            UiTestExpect(page.ShownPacks.SequenceEqual(new[] { "UI test stray pack" }), $"the filter left {string.Join(", ", page.ShownPacks)}");
+            page.FilterPacks("");
+            var delete = PackRow(strayPack)!.FindChildren("*", nameof(Button), true, false).OfType<Button>().First(b => b.HasMeta("delete_pack"));
+            delete.EmitSignal(BaseButton.SignalName.Pressed);
+            var sure = await UiTestWaitForAsync(() => GetTree().Root.FindChildren("*", nameof(ConfirmationDialog), true, false).OfType<ConfirmationDialog>()
+                .FirstOrDefault(d => IsInstanceValid(d) && d.Visible && d.Title == "Delete map pack"), "Delete… to ask first");
+            UiTestExpect(System.IO.File.Exists(strayPack), "the pack was deleted before the question was answered");
+            sure.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
+            await UiTestWaitForAsync(() => !System.IO.File.Exists(strayPack) && PackRow(strayPack) == null && PackRow(gamePack) != null ? page : null, "the deleted pack to leave the folder and the list");
+            page.Select("Atlas Test Game");
             // Add YAML's menu offers Atlas's YAML folder (the install's Players folder and this game's downloads only when they exist).
             UiTestExpect(page.YamlMenuItems().SequenceEqual(new[] { "From Atlas's YAML folder…" }), $"the Add YAML menu offers: {string.Join(", ", page.YamlMenuItems())}");
             // The release-files dialog: sized, a check box per file (the release's files besides the apworld), Select all; nothing downloads without Download.
@@ -2238,6 +2273,8 @@ public partial class MainTrackerWindow
             _appSettings.ExtraApworldRepos.Remove("Atlas Test Game");
             _appSettings.ApprovedApworldSources.Remove("github.com/owner/atlas-test");
             AP_Atlas.Core.SafeFile.Delete(yaml);
+            foreach (string zip in new[] { gamePack, strayPack }) AP_Atlas.Core.SafeFile.Delete(zip);
+            AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
             if (_profiles.Contains(profile)) DeleteProfile(profile);
             host.ShowTool(AP_Atlas.UI.Tool.Home);
         }
@@ -2934,6 +2971,16 @@ public partial class MainTrackerWindow
             "the last tool shown wasn't remembered for where I left off");
         UiTestExpect(StartupTool(new AppSettings { StartupPage = "last", LastTool = "no-such-tool" }) == AP_Atlas.UI.Tool.Home && StartupTool(new AppSettings()) == AP_Atlas.UI.Tool.Home,
             "an unknown last tool, or the default, doesn't open on Home");
+        // Map Packs is part of Games now: settings saved with it as the last tool, or a key bound to it, load as Games.
+        _appSettings.LastTool = "map-packs";
+        _appSettings.KeyBindings["tool.map-packs"] = "Ctrl+F6";
+        DataManager.SaveSettings(_appSettings);
+        var migrated = DataManager.LoadSettings();
+        UiTestExpect(migrated.LastTool == "games" && StartupTool(migrated) == AP_Atlas.UI.Tool.Games && migrated.KeyBindings.GetValueOrDefault("tool.games") == "Ctrl+F6" && !migrated.KeyBindings.ContainsKey("tool.map-packs"),
+            $"settings saved with Map Packs load as {migrated.LastTool}, its key {migrated.KeyBindings.GetValueOrDefault("tool.games")}");
+        _appSettings.KeyBindings.Remove("tool.map-packs");
+        _appSettings.LastTool = "hints";
+        DataManager.SaveSettings(_appSettings);
         host.ShowTool(AP_Atlas.UI.Tool.Settings);
         startup.Select(0);
         startup.EmitSignal(OptionButton.SignalName.ItemSelected, 0);
@@ -3207,26 +3254,26 @@ public partial class MainTrackerWindow
             UiTestExpect(node.Visible && shown(_appSettings) && Checked(command) && shown(DataManager.LoadSettings()), $"{command} didn't show the part again");
         }
         // The explorer: hidden by the user, it stays hidden whatever tool shows, until shown again.
-        host.ShowTool(AP_Atlas.UI.Tool.MapPacks);
+        host.ShowTool(AP_Atlas.UI.Tool.Games);
         await UiTestWaitAsync(0.05);
-        UiTestExpect(_midLeftSidebar.Visible && Checked("view.explorer"), "Map Packs' explorer isn't shown to begin with");
-        // Each tool's explorer has its own width: Map Packs starts wider than the minimum (given the room: the slots panel and
+        UiTestExpect(_midLeftSidebar.Visible && Checked("view.explorer"), "Games' explorer isn't shown to begin with");
+        // Each tool's explorer has its own width: Games starts wider than the minimum (given the room: the slots panel and
         // Properties step aside in this narrow test window, since the split clamps to what fits), Multiworlds at it; a drag is kept per tool.
         _commands!.Run("view.slots-panel");
         _commands.Run("view.properties-panel");
         await UiTestWaitAsync(0.05);
-        UiTestExpect(_explorerSplit.SplitOffsets[0] == 480 && _midLeftSidebar.Size.X >= 478, $"Map Packs' explorer starts {_midLeftSidebar.Size.X} wide (offset {_explorerSplit.SplitOffsets[0]}), not 480");
+        UiTestExpect(_explorerSplit.SplitOffsets[0] == 360 && _midLeftSidebar.Size.X >= 358, $"Games' explorer starts {_midLeftSidebar.Size.X} wide (offset {_explorerSplit.SplitOffsets[0]}), not 360");
         _explorerSplit.EmitSignal(SplitContainer.SignalName.Dragged, 520);
         host.ShowTool(AP_Atlas.UI.Tool.Connections);
         await UiTestWaitAsync(0.05);
         UiTestExpect(_explorerSplit.SplitOffsets[0] == 300 && _midLeftSidebar.Size.X < 318 && !_appSettings.ExplorerSplitOffsets.ContainsKey("connections"),
-            $"the Multiworlds explorer is {_midLeftSidebar.Size.X} wide (offset {_explorerSplit.SplitOffsets[0]}) after a drag on Map Packs'");
-        host.ShowTool(AP_Atlas.UI.Tool.MapPacks);
+            $"the Multiworlds explorer is {_midLeftSidebar.Size.X} wide (offset {_explorerSplit.SplitOffsets[0]}) after a drag on Games'");
+        host.ShowTool(AP_Atlas.UI.Tool.Games);
         await UiTestWaitAsync(0.05);
-        UiTestExpect(_appSettings.ExplorerSplitOffsets.TryGetValue("map-packs", out int packsOffset) && packsOffset == 520 && _explorerSplit.SplitOffsets[0] == 520 && _midLeftSidebar.Size.X >= 518,
-            $"the drag on Map Packs' explorer isn't kept for it (offset {packsOffset}, {_midLeftSidebar.Size.X} wide)");
-        _appSettings.ExplorerSplitOffsets.Remove("map-packs");
-        ApplyExplorerOffset(AP_Atlas.UI.Tool.MapPacks);
+        UiTestExpect(_appSettings.ExplorerSplitOffsets.TryGetValue("games", out int gamesOffset) && gamesOffset == 520 && _explorerSplit.SplitOffsets[0] == 520 && _midLeftSidebar.Size.X >= 518,
+            $"the drag on Games' explorer isn't kept for it (offset {gamesOffset}, {_midLeftSidebar.Size.X} wide)");
+        _appSettings.ExplorerSplitOffsets.Remove("games");
+        ApplyExplorerOffset(AP_Atlas.UI.Tool.Games);
         _commands.Run("view.slots-panel");
         _commands.Run("view.properties-panel");
         await UiTestWaitAsync(0.05);
@@ -3294,7 +3341,7 @@ public partial class MainTrackerWindow
             host.SelectSlot(alice);
             await UiTestWaitAsync(0.05);
             UiTestExpect(picker.Selected == 0, "the picker doesn't follow a slot selected elsewhere");
-            host.ShowTool(AP_Atlas.UI.Tool.MapPacks);
+            host.ShowTool(AP_Atlas.UI.Tool.Games);
             await UiTestWaitAsync(0.05);
             UiTestExpect(!picker.Visible, "the picker shows on a tool that isn't per slot");
             host.ShowTool(AP_Atlas.UI.Tool.Hints);
@@ -3406,9 +3453,9 @@ public partial class MainTrackerWindow
     {
         var host = (AP_Atlas.UI.IPropertiesHost)this;
         var order = string.Join(",", _activityBar.Order.Select(t => t.Title));
-        UiTestExpect(order == "Home,Map Tracker,Key Items,Logic Tracker,Item History,Hints,Multiworlds,Cheese Tracker,Sphere Tracker,Games,Map Packs,Settings", $"the activity bar's order is {order}");
+        UiTestExpect(order == "Home,Map Tracker,Key Items,Logic Tracker,Item History,Hints,Multiworlds,Cheese Tracker,Sphere Tracker,Games,Settings", $"the activity bar's order is {order}");
         UiTestExpect(_activityBar.CaptionOf(AP_Atlas.UI.Tool.Home) == "" && _activityBar.CaptionOf(AP_Atlas.UI.Tool.MapTracker) == "ATLAS\nTOOLS" && _activityBar.CaptionOf(AP_Atlas.UI.Tool.Connections) == "ATLAS\nTOOLS"
-            && _activityBar.CaptionOf(AP_Atlas.UI.Tool.CheeseTracker) == "EXTERNAL\nTOOLS" && _activityBar.CaptionOf(AP_Atlas.UI.Tool.MapPacks) == "ATLAS\nCONFIG",
+            && _activityBar.CaptionOf(AP_Atlas.UI.Tool.CheeseTracker) == "EXTERNAL\nTOOLS" && _activityBar.CaptionOf(AP_Atlas.UI.Tool.Games) == "ATLAS\nCONFIG",
             "the groups aren't captioned as designed");
         var noIcon = AP_Atlas.UI.Tool.All.Where(t => !AP_Atlas.UI.LucideIcons.Names.Contains(t.Icon) || _activityBar.ButtonOf(t).Icon == null).Select(t => t.Title).ToList();
         UiTestExpect(noIcon.Count == 0, $"tools without a shipped icon: {string.Join(", ", noIcon)}");
@@ -3417,7 +3464,7 @@ public partial class MainTrackerWindow
         var misnamed = AP_Atlas.UI.Tool.All.Where(t => _activityBar.ButtonOf(t).Text != t.ShortTitle || _activityBar.ButtonOf(t).AccessibilityName != t.Title).Select(t => t.Title).ToList();
         UiTestExpect(misnamed.Count == 0 && _activityBar.EngineButton.Text == "Engine", $"bar buttons without their short name under the icon and their full title for screen readers: {string.Join(", ", misnamed)}");
         var shortNames = string.Join(",", _activityBar.Order.Select(t => t.ShortTitle));
-        UiTestExpect(shortNames == "Home,Map,Items,Logic,History,Hints,Worlds,Cheese,Spheres,Games,Packs,Settings", $"the short names are {shortNames}");
+        UiTestExpect(shortNames == "Home,Map,Items,Logic,History,Hints,Worlds,Cheese,Spheres,Games,Settings", $"the short names are {shortNames}");
         var bands = _activityBar.FindChildren("*", nameof(PanelContainer), true, false).OfType<PanelContainer>().Where(p => p != _activityBar).ToList();
         UiTestExpect(bands.Count == 3 && bands.All(b => b.GetThemeStylebox("panel") is StyleBoxFlat box && box.BgColor == AP_Atlas.Core.ThemeColors.AccentTint), $"{bands.Count} caption bands, not three in the accent's tint");
         UiTestExpect(bands.All(b => b.GetChild<Label>(0).Text.Split('\n').Length == 2 && b.GetChild<Label>(0).Visible) && _activityBar.ButtonOf(AP_Atlas.UI.Tool.Home).GetIndex() == 0,
@@ -3426,12 +3473,12 @@ public partial class MainTrackerWindow
 
         // Pressing a button shows the tool; switching a tool any other way lights its button and names it in the header.
         host.ShowTool(AP_Atlas.UI.Tool.Connections);
-        _activityBar.ButtonOf(AP_Atlas.UI.Tool.MapPacks).EmitSignal(BaseButton.SignalName.Pressed);
+        _activityBar.ButtonOf(AP_Atlas.UI.Tool.Games).EmitSignal(BaseButton.SignalName.Pressed);
         await UiTestWaitAsync(0.05);
-        UiTestExpect(ShownContent() == _packManagerPanel && _activityBar.Selected == AP_Atlas.UI.Tool.MapPacks, "pressing the Map Packs button didn't show Map Packs");
+        UiTestExpect(ShownContent() == _gamesPage && _activityBar.Selected == AP_Atlas.UI.Tool.Games, "pressing the Games button didn't show Games");
         await PressAsync("Ctrl+9");
         UiTestExpect(ShownContent() == _sphereTab && _activityBar.Selected == AP_Atlas.UI.Tool.SphereTracker
-            && _activityBar.ButtonOf(AP_Atlas.UI.Tool.SphereTracker).ButtonPressed && !_activityBar.ButtonOf(AP_Atlas.UI.Tool.MapPacks).ButtonPressed,
+            && _activityBar.ButtonOf(AP_Atlas.UI.Tool.SphereTracker).ButtonPressed && !_activityBar.ButtonOf(AP_Atlas.UI.Tool.Games).ButtonPressed,
             "Ctrl+9 didn't light the Sphere Tracker's button alone");
         UiTestExpect(_toolTitle.Text == "Sphere Tracker", $"the tool header says \"{_toolTitle.Text}\"");
 
@@ -3462,19 +3509,19 @@ public partial class MainTrackerWindow
             input.Text = text;
             input.EmitSignal(LineEdit.SignalName.TextChanged, text);
         }
-        Type("map p");
+        Type("gam");
         await UiTestWaitAsync(0.05);
         var rows = Rows(tree);
-        UiTestExpect(rows.Count == 1 && rows[0][0] == "Map Packs", $"typing \"map p\" lists {string.Join("; ", rows.Select(r => r[0]))}");
+        UiTestExpect(rows.Count == 1 && rows[0][0] == "Games", $"typing \"gam\" lists {string.Join("; ", rows.Select(r => r[0]))}");
         Type("zzz");
         await UiTestWaitAsync(0.05);
         UiTestExpect(Rows(tree).Count == 0 && palette.FindChildren("*", nameof(Label), true, false).OfType<Label>().Any(l => l.Visible && l.Text == "No command matches."),
             "a word nothing matches doesn't say so");
-        Type("map p");
+        Type("gam");
         await UiTestWaitAsync(0.05);
         // Enter runs the pick and closes the palette, which frees itself.
         input.EmitSignal(Control.SignalName.GuiInput, AP_Atlas.UI.CommandKeys.ToEvent("Enter")!);
-        await UiTestWaitForAsync(() => ShownContent() == _packManagerPanel ? this : null, "Map Packs to show after Enter in the palette");
+        await UiTestWaitForAsync(() => ShownContent() == _gamesPage ? this : null, "Games to show after Enter in the palette");
         await UiTestWaitForAsync(() => !IsInstanceValid(palette) ? this : null, "the palette to close and free itself");
 
         // Escape closes it and runs nothing.
@@ -3482,7 +3529,7 @@ public partial class MainTrackerWindow
         var again = await UiTestWaitForAsync(() => GetChildren().OfType<AP_Atlas.UI.CommandPalette>().FirstOrDefault(p => p.Visible), "the command palette again");
         again.FindChildren("*", nameof(LineEdit), true, false).OfType<LineEdit>().First().EmitSignal(Control.SignalName.GuiInput, AP_Atlas.UI.CommandKeys.ToEvent("Escape")!);
         await UiTestWaitForAsync(() => !IsInstanceValid(again) ? this : null, "the palette to close on Escape");
-        UiTestExpect(ShownContent() == _packManagerPanel, "Escape ran a command");
+        UiTestExpect(ShownContent() == _gamesPage, "Escape ran a command");
         host.ShowTool(AP_Atlas.UI.Tool.Connections);
     }
 
@@ -3966,8 +4013,8 @@ public partial class MainTrackerWindow
             // A map pack's details: its manifest is the pack author's text.
             string pack = System.IO.Path.Combine(dir, "uitest_markup_pack.zip");
             FakeMapPack.Write(pack, "UI test markup pack", "Game " + hostile);
-            _packManagerPanel.ShowPackDetails(pack);
-            UiTestExpect(PanelShowsText(_packManagerPanel, "Game: Game " + hostile), "the pack's details don't show its game as written");
+            AP_Atlas.Core.Inspector.Inspect(AP_Atlas.Core.InspectTarget.ForPack(pack));
+            await UiTestWaitForAsync(() => PanelShowsText(_propertiesPanel, "Game " + hostile) ? slot : null, "the pack's details in Properties to show its game as written");
 
             await UiTestWaitAsync(0.1);
             UiTestExpect(!Opened(), "Atlas opened a file named in text from outside");
@@ -4585,9 +4632,10 @@ public partial class MainTrackerWindow
             var auto = await UiTestWaitForAsync(() => AP_Atlas.Core.PopTracker.PackFixes.Get(key).Links.FirstOrDefault(l => l.Subject == "link:Shrine|Bell!"), "the Doctor to link the exact match by itself");
             UiTestExpect(auto.Automatic && auto.ApLocationId == 2002 && auto.ApLocationName == "Bell", $"the automatic link is wrong: {auto.ApLocationName} ({auto.ApLocationId}), automatic {auto.Automatic}");
             UiTestExpect(AP_Atlas.Core.PopTracker.PackFixes.Get(key).Tiles.Count == 0 && slot.PackIndex.ItemIdsFor("sword").Contains(1000), "a tile the index links by name got a fix too, or \"Sword!\" wasn't paired with \"Sword\"");
-            // The pack's row on the Map Packs page says what's left to review, and its button opens the Doctor on the Recommended
-            // tab, which lists the pin that isn't exact and not the linked tile; Apply writes the fix and says so.
-            host.ShowTool(AP_Atlas.UI.Tool.MapPacks);
+            // The pack's row (in its game's Map packs section on the Games page) says what's left to review, and its button
+            // opens the Doctor on the Recommended tab, which lists the pin that isn't exact and not the linked tile; Apply
+            // writes the fix and says so.
+            ShowGamePage("Doctor Test Game");
             var review = await UiTestWaitForAsync(() => _packManagerPanel.ReviewButtonFor(key) is { Visible: true } b
                 && b.Text == $"Review {AP_Atlas.Core.PopTracker.PackDoctorService.Reports[key].NeedsReview.Count()}" ? b : null, "the pack row's Review button with the count to review");
             review.EmitSignal(BaseButton.SignalName.Pressed);
@@ -4650,7 +4698,7 @@ public partial class MainTrackerWindow
             reopened.EmitSignal(Window.SignalName.CloseRequested);
             // "Fix what Atlas can" (the pack row's Fix, the Attention group's button and the card all run it): the exact pin is linked,
             // the pins without a confident match are set aside, one undoable step; a card says what was done.
-            host.ShowTool(AP_Atlas.UI.Tool.MapPacks);
+            ShowGamePage("Doctor Test Game");
             await UiTestWaitForAsync(() => _packManagerPanel.FixButtonFor(key) is { Visible: true } b ? b : null, "the pack row's Fix button");
             int cardsBefore = _alertLog.Entries.Count;
             slot.MapTracker.PressFixAll();
@@ -4759,9 +4807,9 @@ public partial class MainTrackerWindow
                 _appSettings.ChatFiltersOff = filtersBefore;
             }
 
-            // "Find a map pack for Test Game…" on the empty map: the window shows Map Packs and searches GitHub (a fake site)
-            // once for the game; the pack chosen from what it found downloads with a progress line, installs with a card,
-            // and reaches the slot's map.
+            // "Find a map pack for Test Game…" on the empty map: the window shows the game's page and searches GitHub (a fake
+            // site) once for the game; the pack chosen from what it found downloads with a progress line on that page, installs
+            // with a card, reaches the slot's map, and is listed in the game's Map packs section.
             FakeMapPack.Write(packSource, "UI test GitHub pack", "Test Game");
             byte[] packBytes = await System.IO.File.ReadAllBytesAsync(packSource);
             AP_Atlas.Core.SafeFile.Delete(packSource);
@@ -4812,7 +4860,8 @@ public partial class MainTrackerWindow
             await UiTestWaitAsync(0.2);
             UiTestExpect(slot.MapTracker.FindPackButton.Text == "Find a map pack for Test Game…", $"the empty map's button says \"{slot.MapTracker.FindPackButton.Text}\"");
             slot.MapTracker.FindPackButton.EmitSignal(BaseButton.SignalName.Pressed);
-            await UiTestWaitForAsync(() => ShownContent() == _packManagerPanel ? _packManagerPanel : null, "the Map Packs page to show");
+            await UiTestWaitForAsync(() => ShownContent() == _gamesPage && _gamesPage.SelectedGame == "Test Game" ? _gamesPage : null, "the game's page to show");
+            UiTestExpect(_gamesPage.IsAncestorOf(_packManagerPanel.ProgressRow), "a download's progress line isn't on the Games page");
             var results = await UiTestWaitForAsync(() => _packManagerPanel.GetChildren().OfType<AcceptDialog>().FirstOrDefault(d => d.Title == "Map packs on GitHub"), "the search results", 20);
             UiTestExpect(github.Requests.Count(r => r.StartsWith("/search/")) == 1 && github.Requests.First(r => r.StartsWith("/search/")).Contains("fork%3Atrue"),
                 $"GitHub was searched {github.Requests.Count(r => r.StartsWith("/search/"))} times for one game, or without its forks: {github.Requests.FirstOrDefault(r => r.StartsWith("/search/"))}");
@@ -4839,6 +4888,8 @@ public partial class MainTrackerWindow
             UiTestExpect(_packManagerPanel.DownloadText.StartsWith("Downloading uitest_github_pack.zip") && _packManagerPanel.DownloadText.Contains(" of ") && !_packManagerPanel.Downloading,
                 $"no progress line was shown for the download: \"{_packManagerPanel.DownloadText}\"");
             UiTestExpect(_alertLog.Entries.Any(e => e.Message.Contains("Installed UI test GitHub pack") && e.Message.Contains("Test Game")), "no card said the pack was installed");
+            await UiTestWaitForAsync(() => _gamesPage.FindChildren("*", "", true, false).FirstOrDefault(n => IsInstanceValid(n) && !n.IsQueuedForDeletion() && n.HasMeta("pack_row") && n.GetMeta("pack_row").AsString() == fromGitHub),
+                "the installed pack's row in the game's Map packs section");
             // Gone again, for the rest of the scenario.
             AP_Atlas.Core.SafeFile.Delete(fromGitHub);
             AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();

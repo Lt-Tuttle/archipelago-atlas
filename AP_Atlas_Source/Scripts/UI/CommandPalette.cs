@@ -6,8 +6,8 @@ namespace AP_Atlas.UI
 {
     /// <summary>
     /// The command palette (Ctrl+Shift+P): type a few letters, pick a command, Enter runs it. It lists the same commands
-    /// as the menus, with their keys. A typed word matches the start of a word in a command's name or menu, so "map p"
-    /// finds Map Packs and not Map Tracker. It frees itself when it closes.
+    /// as the menus, with their keys. A typed word matches the start of a word in a command's name or menu, so "key i"
+    /// finds Key Items and not Keyboard Shortcuts. It frees itself when it closes.
     /// </summary>
     public partial class CommandPalette : PopupPanel
     {

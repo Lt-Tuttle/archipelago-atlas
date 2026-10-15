@@ -153,11 +153,28 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         if (logLines != null && logLines.Count > 0) window.AppendLog(logLines);
     }
 
-    /// <summary>Shows the Map Packs page and searches GitHub for a game's packs: one search, because the user pressed for it (the map's empty state, a game's page).</summary>
+    /// <summary>
+    /// Shows the game's page and searches GitHub for its packs: one search, because the user pressed for it (the map's
+    /// empty state, a game's page). The results dialog shows over the page; a chosen pack downloads with its progress there.
+    /// </summary>
     private void FindMapPack(string game)
     {
-        ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.MapPacks);
+        ShowGamePage(game);
         _packManagerPanel.SearchForGame(game);
+    }
+
+    /// <summary>Shows the game a pack is for on the Games page, or All map packs when it's for none Atlas lists.</summary>
+    public void ShowPackGame(string packZip)
+    {
+        ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.Games);
+        _gamesPage?.SelectPackGame(packZip);
+    }
+
+    /// <summary>Shows the Games page on a game (its map packs, versions and setup).</summary>
+    public void ShowGamePage(string game)
+    {
+        ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.Games);
+        if (!string.IsNullOrEmpty(game)) _gamesPage?.Select(game);
     }
 
     /// <summary>

@@ -311,7 +311,7 @@ namespace AP_Atlas.Core
         }
 
         /// <summary>
-        /// The Pack Doctor, checking a pack nobody uses (one picked in the Map Packs tab, or just installed), learns which of
+        /// The Pack Doctor, checking a pack nobody uses (one picked on the Games page, or just installed), learns which of
         /// its images don't decode first, so its findings are those of a decoded pack, and keeps none of them.
         /// </summary>
         private static async Task PackDoctorChecksUnusedPacksImages()

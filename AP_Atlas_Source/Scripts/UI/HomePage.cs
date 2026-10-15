@@ -62,7 +62,7 @@ namespace AP_Atlas.UI
             "Click a name anywhere (an item, a location, a player) and the Properties panel tells you everything about it.",
             "Race mode hides what a race shouldn't show. It follows the room by itself; Multiworld → Race Mode… changes that.",
             "Every key can be changed: Settings → Keyboard, press the key's button, then the key you want.",
-            "The Pack Doctor, on the Map Packs page, looks a pack over and fixes what it can before you use it.",
+            "The Pack Doctor (a pack's Doctor… on its game's page) looks a pack over and fixes what it can before you use it.",
             "Each panel's … button changes its font size; Settings → Appearance sets them all.",
             "Atlas never looks outside its own folder, or goes online for something new, without asking. Settings → Privacy & permissions lists every answer.",
             "A dropped connection reconnects by itself: a few tries over about 20 minutes, then it stops, so a closed room is never kept busy.",
@@ -344,8 +344,7 @@ namespace AP_Atlas.UI
             "cheese-tracker" => "Your async multiworld's shared tracker, kept up to date from Atlas's logic.",
             "sphere-tracker" => "The host's spheretracker.de room: the multiworld, sphere by sphere.",
             "connections" => "Your servers, passwords and slots.",
-            "games" => "Every game, set up in one place: its apworld, a map pack, your YAML and its files.",
-            "map-packs" => "PopTracker packs for your games, looked over by the Pack Doctor.",
+            "games" => "Every game, set up in one place: its apworld, its map packs (looked over by the Pack Doctor), your YAML and its files.",
             "settings" => "Every setting, searchable; every key, yours to change.",
             _ => ""
         };

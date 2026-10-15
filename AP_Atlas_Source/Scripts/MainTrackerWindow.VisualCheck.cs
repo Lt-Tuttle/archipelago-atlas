@@ -88,6 +88,10 @@ public partial class MainTrackerWindow
         _gamesPage!.Select("Dark Souls Remastered");
         await VisualCheckWaitAsync(0.5);
         await VisualCheckPictureAsync("games_detail");
+        // All map packs, at the foot of the Games list (no pack in a fresh folder: what it says then, and its tools).
+        _gamesPage.SelectAllPacks();
+        await VisualCheckWaitAsync(0.5);
+        await VisualCheckPictureAsync("games_all_packs");
         host.ShowTool(AP_Atlas.UI.Tool.Connections);
         await VisualCheckWaitAsync(0.3);
 

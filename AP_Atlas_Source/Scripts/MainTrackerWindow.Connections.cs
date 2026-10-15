@@ -398,11 +398,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         slotTracker.ShowActionToast = ShowToast;
         slotTracker.OpenEngineSetup = OpenEngineSetup;
         slotTracker.OpenTool = tool => ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(tool);
-        slotTracker.OpenGamesPageFor = game =>
-        {
-            ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.Games);
-            if (!string.IsNullOrEmpty(game)) _gamesPage?.Select(game);
-        };
+        slotTracker.OpenGamesPageFor = ShowGamePage;
         slotTracker.FindMapPack = FindMapPack;
         slotTracker.StartPack = StartPack;
         slotTracker.OpenPackDoctor = (zip, tab) => OpenPackDoctor(zip, tab);

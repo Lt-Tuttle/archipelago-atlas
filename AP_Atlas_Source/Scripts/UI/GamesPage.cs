@@ -23,8 +23,10 @@ namespace AP_Atlas.UI
         public required Action<string, Color> Toast { get; init; }
         public required Action<Tool> ShowTool { get; init; }
         public required Action OpenEngineSetup { get; init; }
-        /// <summary>Shows the Map Packs page and searches GitHub for a game's packs (one search, when pressed).</summary>
+        /// <summary>Shows the game's page and searches GitHub for its packs (one search, when pressed).</summary>
         public required Action<string> FindPack { get; init; }
+        /// <summary>The map packs' service: the rows of a game's packs, installs, update checks, the rescan (null in a page made for a test of its own).</summary>
+        public MapPackManagerControl? Packs { get; init; }
         /// <summary>Installs a project's pack for a game (asking first, with the release choice when there are several).</summary>
         public required Action<string, string> InstallPack { get; init; }
         /// <summary>Opens the solo test for a game ("Test this game…").</summary>
@@ -72,7 +74,6 @@ namespace AP_Atlas.UI
         private string? _selected;
         private CancellationTokenSource? _running;
         private YamlLibrary? _yamls;
-        private List<LoadedPack> _packs = new();
         // What GitHub said this session, per game: the projects and every version they publish (nothing is asked twice).
         private readonly Dictionary<string, List<ApworldSources.ApworldRepo>> _projects = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, List<ApworldVersion>> _versions = new(StringComparer.OrdinalIgnoreCase);
@@ -147,7 +148,9 @@ namespace AP_Atlas.UI
             _list.ItemSelected += () =>
             {
                 var item = _list.GetSelected();
-                if (item != null && item.GetMetadata(0).VariantType == Variant.Type.String) ShowGame(item.GetMetadata(0).AsString());
+                if (item == null || _filling) return;
+                if (item.GetMetadata(0).VariantType == Variant.Type.String) ShowGame(item.GetMetadata(0).AsString());
+                else if (item.GetMetadata(0).VariantType == Variant.Type.Int) ShowAllPacks();
             };
             _explorer.AddChild(_list);
             _explorer.AddChild(Kit.Button(_tr("Add a game's project…"), _tr("Paste the GitHub link of a game's apworld project: Atlas lists the game under Added by you and can install it."), AddProject, small: true));
@@ -168,19 +171,32 @@ namespace AP_Atlas.UI
             margin.AddChild(_detail);
             scroll.AddChild(margin);
             AddChild(scroll);
+            _packProgressHost = new VBoxContainer();
+            AddChild(_packProgressHost);
             AddChild(statusRow);
         }
 
-        /// <summary>The page shows: its lists are read again (cheap: nothing is asked of any site).</summary>
-        public void OnShown() => Refresh();
+        /// <summary>
+        /// The page shows: its lists are read again (cheap: nothing is asked of any site), and the packs folder is read
+        /// again (a pack copied in by hand, a new or changed pack looked over); the page redraws when that's done.
+        /// </summary>
+        public void OnShown()
+        {
+            Refresh();
+            _hooks.Packs?.Rescan();
+        }
 
         public void Refresh()
         {
             _yamls = YamlLibrary.Load(DataManager.GetDataDirectory());
             _packs = ReadPacks();
             _games = CollectGames();
+            if (_selected != null && _selected != AllPacksKey && !_games.Any(g => g.Game == _selected))
+                _selected = (_games.FirstOrDefault(g => string.Equals(g.Game, _selected, StringComparison.OrdinalIgnoreCase))
+                             ?? _games.FirstOrDefault(g => PopTrackerPackLoader.IsGameNameMatch(_selected, g.Game)))?.Game ?? _selected;
             FillList();
-            if (_selected != null && _games.Any(g => g.Game == _selected)) ShowGame(_selected);
+            if (_selected == AllPacksKey) ShowAllPacks();
+            else if (_selected != null && _games.Any(g => g.Game == _selected)) ShowGame(_selected);
             else ShowOverview();
         }
 
@@ -254,7 +270,22 @@ namespace AP_Atlas.UI
 
         private bool IsReady(GameEntry entry) => entry.InEngine && PacksFor(entry.Game).Count > 0;
 
+        private bool _filling;
+
         private void FillList()
+        {
+            _filling = true;
+            try
+            {
+                FillListNow();
+            }
+            finally
+            {
+                _filling = false;
+            }
+        }
+
+        private void FillListNow()
         {
             _list.Clear();
             var root = _list.CreateItem();
@@ -296,6 +327,7 @@ namespace AP_Atlas.UI
                     ShownGames.Add(game.Game);
                 }
             }
+            AddAllPacksEntry(root);
         }
 
         private string SectionTitle(Section section) => section switch
@@ -429,7 +461,7 @@ namespace AP_Atlas.UI
             // 2. A map pack. The game's own setup guide may name the tracker its author recommends: offered first.
             var packs = PacksFor(game);
             var recommended = install != null ? ApworldSources.GuideTrackerProjects(install, game) : new List<(string Repo, string Text)>();
-            string packDetail = packs.Count > 0 ? _tr("Installed: {0}.").Replace("{0}", string.Join(", ", packs.Select(p => p.Manifest?.Name ?? Path.GetFileNameWithoutExtension(p.SourcePath))))
+            string packDetail = packs.Count > 0 ? _tr("Installed: {0} (under Map packs below).").Replace("{0}", string.Join(", ", packs.Select(p => p.Name)))
                 : _tr("None installed: the Map Tracker shows the game's map with one (a PopTracker pack).");
             if (recommended.Count > 0) packDetail += " " + _tr("The game's setup guide recommends github.com/{0}.").Replace("{0}", recommended[0].Repo);
             var packButtons = new List<Button>();
@@ -441,7 +473,6 @@ namespace AP_Atlas.UI
                 packButtons.Add(recommendedButton);
             }
             packButtons.Add(Kit.Button(_tr("Search GitHub for a pack…"), _tr("One search of GitHub for this game's PopTracker packs, when you press; you choose what to install."), () => _hooks.FindPack(game)));
-            packButtons.Add(Kit.Button(_tr("Map Packs"), _tr("Install a pack from its project, or a .zip you have; the Pack Doctor looks it over."), () => _hooks.ShowTool(Tool.MapPacks)));
             Step(steps, packs.Count > 0, _tr("A map pack"), packDetail, packButtons);
 
             // 3. A YAML.
@@ -501,6 +532,9 @@ namespace AP_Atlas.UI
                     toolRow.AddChild(Kit.Button(_tr("Add as YAML"), _tr("Keeps this file in Atlas's YAML folder as a player YAML, listed under its games."), () => AddYamlFile(toolPath), small: true));
                 _detail.AddChild(toolRow);
             }
+
+            // Its map packs, each with the Pack Doctor's word and its actions.
+            MapPacksSection(game, packs);
 
             // Your slots that play it, each with the version it should run.
             var slots = _hooks.LiveSlots().Where(s => string.Equals(s.Game, game, StringComparison.OrdinalIgnoreCase)).ToList();
@@ -1357,20 +1391,6 @@ namespace AP_Atlas.UI
         }
 
         // ---- Helpers ----
-
-        /// <summary>The installed packs Atlas has already read (the Map Packs page reads every pack; nothing is opened here).</summary>
-        private static List<LoadedPack> ReadPacks()
-        {
-            var packs = new List<LoadedPack>();
-            string dir = PopTrackerPackLoader.GetPacksDirectory();
-            if (!Directory.Exists(dir)) return packs;
-            foreach (var zip in Directory.GetFiles(dir, "*.zip"))
-                if (PopTrackerPackLoader.IsPackCached(zip) && PopTrackerPackLoader.InspectZipPack(zip) is { Manifest: not null } pack) packs.Add(pack);
-            return packs;
-        }
-
-        private List<LoadedPack> PacksFor(string game) =>
-            _packs.Where(p => PopTrackerPackLoader.IsGameNameMatch(p.Manifest.GameName, game) || PopTrackerPackLoader.IsGameNameMatch(p.Manifest.Name, game)).ToList();
 
         private void OpenFolder(string folder)
         {

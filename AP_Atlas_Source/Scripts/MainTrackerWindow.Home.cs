@@ -121,7 +121,7 @@ public partial class MainTrackerWindow
         _ => change.Kind
     };
 
-    /// <summary>Whether a map pack is installed: a zip in Atlas's own packs folder, as the Map Packs page lists them.</summary>
+    /// <summary>Whether a map pack is installed: a zip in Atlas's own packs folder, as the Games page lists them.</summary>
     private static bool AnyMapPackInstalled()
     {
         string packs = AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory();

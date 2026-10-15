@@ -90,7 +90,7 @@ public class MarkdownTests
             Assert.False(string.IsNullOrWhiteSpace(Markdown.ToBbcode(text)), name + " renders to nothing");
         }
         var titles = Markdown.Sections(Docs.Read(Docs.Guide)).Select(s => s.Title).ToList();
-        foreach (string tool in new[] { "Map Tracker", "Key Items", "Logic Tracker", "Item History", "Hints", "Cheese Tracker", "Sphere Tracker", "Multiworlds", "Map Packs", "Settings", "Home" })
+        foreach (string tool in new[] { "Map Tracker", "Key Items", "Logic Tracker", "Item History", "Hints", "Cheese Tracker", "Sphere Tracker", "Multiworlds", "Games", "Pack Doctor", "Settings", "Home" })
             Assert.Contains(titles, t => t.Contains(tool));
     }
 
