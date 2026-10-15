@@ -111,13 +111,8 @@ public partial class SlotTrackerControl : MarginContainer
     private ScrollContainer _chatScroll;
     private VBoxContainer _chatVBox;
     private LineEdit _chatInput;
-    private Button _filterHints;
-    private Button _filterChat;
-    private Button _filterSystem;
-    private Button _filterProgression;
-    private Button _filterUseful;
-    private Button _filterFiller;
-    private Button _filterTrap;
+    // The text client's filter buttons by their key (ChatLines.Chat, …); what's off is kept in AppSettings.ChatFiltersOff.
+    private readonly Dictionary<string, Button> _filterButtons = new();
 
     private bool _nextChatAltBg = false;
 
@@ -242,6 +237,7 @@ public partial class SlotTrackerControl : MarginContainer
             return (itemA?.Flag ?? 0, itemSpecial, !string.IsNullOrWhiteSpace(itemA?.Note), locA?.Flag ?? 0, locSpecial, !string.IsNullOrWhiteSpace(locA?.Note));
         };
         AP_Atlas.Core.Annotations.Changed += OnAnnotationsChanged;
+        ChatFiltersChanged += OnChatFiltersChanged;
         AP_Atlas.Core.PopTracker.PackFixes.Changed += OnPackFixesChanged;
         AP_Atlas.Core.PopTracker.PopTrackerPackLoader.PacksChanged += OnPacksChanged;
         AP_Atlas.Core.PopTracker.PackDoctorService.ReportReady += OnDoctorReport;
@@ -471,7 +467,13 @@ public partial class SlotTrackerControl : MarginContainer
     {
         _logicRefresh?.Flush();
         if (_logicTree == null || !_logicRows.TryGetValue(locationId, out var row)) return;
-        if (!row.Visible && _logicFlaggedOnly != null) _logicFlaggedOnly.ButtonPressed = false;
+        if (!row.Visible)
+        {
+            // Whatever hides the row is switched off so it can be seen: Flagged only for an unmarked check, Show checked
+            // for a done one (each button saves its setting and shows the rows again).
+            if (_logicFlaggedOnly?.ButtonPressed == true && !_logicMarkedRows.Contains(locationId)) _logicFlaggedOnly.ButtonPressed = false;
+            if (_logicRowsShownChecked.Contains(locationId) && _logicShowChecked != null && !_logicShowChecked.ButtonPressed) _logicShowChecked.ButtonPressed = true;
+        }
         row.Select(1);
         _logicTree.ScrollToItem(row, true);
     }
@@ -551,6 +553,7 @@ public partial class SlotTrackerControl : MarginContainer
         _ended = true;
         AP_Atlas.Core.ThemeColors.AccentChanged -= OnAccentChanged;
         AP_Atlas.Core.Annotations.Changed -= OnAnnotationsChanged;
+        ChatFiltersChanged -= OnChatFiltersChanged;
         AP_Atlas.Core.PopTracker.PackFixes.Changed -= OnPackFixesChanged;
         AP_Atlas.Core.PopTracker.PopTrackerPackLoader.PacksChanged -= OnPacksChanged;
         AP_Atlas.Core.PopTracker.PackDoctorService.ReportReady -= OnDoctorReport;

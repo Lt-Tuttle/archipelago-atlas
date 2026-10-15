@@ -146,5 +146,66 @@ namespace AP_Atlas.UI
         }
 
         private const string HeadingMeta = "kit_heading";
+
+        /// <summary>
+        /// A folding section: a quiet header ("▶  Title" closed, "▼  Title" open) and an indented body that rows go into.
+        /// It starts as its default and remembers the user opening or closing it (<see cref="Folds"/>, kept in the
+        /// settings under <paramref name="key"/>, shared by every view that uses the same key). It can sit in any parent,
+        /// another section's body included. Returns the body.
+        /// </summary>
+        public static VBoxContainer Section(Container parent, string title, string key, bool collapsedByDefault, AppSettings settings)
+        {
+            var collapsed = settings.CollapsedPropertySections ??= new System.Collections.Generic.List<string>();
+            var expanded = settings.ExpandedPropertySections ??= new System.Collections.Generic.List<string>();
+            bool isCollapsed = Folds.IsCollapsed(key, collapsedByDefault, collapsed, expanded);
+
+            var header = new Button
+            {
+                Text = (isCollapsed ? "▶  " : "▼  ") + title,
+                ThemeTypeVariation = QuietButton,
+                Alignment = HorizontalAlignment.Left,
+                SizeFlagsHorizontal = Control.SizeFlags.ExpandFill
+            };
+            header.AddThemeColorOverride("font_color", ThemeColors.AccentText(ThemeColors.Surface));
+            header.AddThemeColorOverride("font_hover_color", ThemeColors.Link);
+            header.SetMeta(SectionMeta, title);
+            header.SetMeta(SectionKeyMeta, key);
+            parent.AddChild(header);
+
+            var margin = new MarginContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, Visible = !isCollapsed };
+            margin.AddThemeConstantOverride("margin_left", 10);
+            margin.SetMeta(SectionBodyMeta, key);
+            parent.AddChild(margin);
+            var body = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+            body.AddThemeConstantOverride("separation", 4);
+            margin.AddChild(body);
+
+            header.Pressed += () =>
+            {
+                bool nowCollapsed = margin.Visible;
+                margin.Visible = !nowCollapsed;
+                header.Text = (nowCollapsed ? "▶  " : "▼  ") + title;
+                Folds.Remember(key, nowCollapsed, collapsedByDefault, collapsed, expanded);
+                DataManager.SaveSettings(settings);
+            };
+            return body;
+        }
+
+        /// <summary>Whether the section with this key under <paramref name="root"/> shows closed now; null when there's none (for tests).</summary>
+        public static bool? FoldedState(Node root, string key) => SectionHeader(root, key) is { } header ? header.Text.StartsWith("▶", StringComparison.Ordinal) : null;
+
+        /// <summary>Opens or closes the section with this key under <paramref name="root"/>, as its header does (for tests).</summary>
+        public static void ToggleFold(Node root, string key) => SectionHeader(root, key)?.EmitSignal(BaseButton.SignalName.Pressed);
+
+        /// <summary>The body of the section with this key under <paramref name="root"/> (for tests).</summary>
+        public static Control? SectionBody(Node root, string key) =>
+            System.Linq.Enumerable.FirstOrDefault(System.Linq.Enumerable.OfType<MarginContainer>(root.FindChildren("*", nameof(MarginContainer), true, false)),
+                m => !m.IsQueuedForDeletion() && m.HasMeta(SectionBodyMeta) && m.GetMeta(SectionBodyMeta).AsString() == key);
+
+        private static Button? SectionHeader(Node root, string key) =>
+            System.Linq.Enumerable.FirstOrDefault(System.Linq.Enumerable.OfType<Button>(root.FindChildren("*", nameof(Button), true, false)),
+                b => !b.IsQueuedForDeletion() && b.HasMeta(SectionKeyMeta) && b.GetMeta(SectionKeyMeta).AsString() == key);
+
+        private const string SectionMeta = "section", SectionKeyMeta = "section_key", SectionBodyMeta = "section_body";
     }
 }

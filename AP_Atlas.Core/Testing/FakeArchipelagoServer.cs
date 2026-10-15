@@ -746,6 +746,56 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
         ["data"] = new JArray(new JObject { ["text"] = $"{NameOf(0, slot)} (Team #1) has completed their goal." })
     };
 
+    /// <summary>The room's line saying a client left a slot, as a real server words it.</summary>
+    public JObject Left(string name) => new()
+    {
+        ["cmd"] = "PrintJSON",
+        ["type"] = "Part",
+        ["team"] = TeamOf(name),
+        ["slot"] = SlotNumber(name),
+        ["data"] = new JArray(new JObject { ["text"] = $"{name} (Team #{TeamOf(name) + 1}) has left the game." })
+    };
+
+    /// <summary>The room's line saying a client changed its tags (as <see cref="ChangeTagsAsync"/> sends it), for a client Atlas doesn't run.</summary>
+    public JObject TagsChangedLine(string name, string[] from, string[] to) => new()
+    {
+        ["cmd"] = "PrintJSON",
+        ["type"] = "TagsChanged",
+        ["team"] = TeamOf(name),
+        ["slot"] = SlotNumber(name),
+        ["tags"] = new JArray(to),
+        ["data"] = new JArray(new JObject { ["text"] = $"{name} (Team #{TeamOf(name) + 1}) has changed tags from {PythonList(from)} to {PythonList(to)}." })
+    };
+
+    /// <summary>A slot of team 0 released its remaining items, as the server tells the room.</summary>
+    public JObject Released(int slot) => new()
+    {
+        ["cmd"] = "PrintJSON",
+        ["type"] = "Release",
+        ["team"] = 0,
+        ["slot"] = slot,
+        ["data"] = new JArray(new JObject { ["text"] = $"{NameOf(0, slot)} (Team #1) has released all remaining items from their world." })
+    };
+
+    /// <summary>A slot of team 0 collected its remaining items, as the server tells the room.</summary>
+    public JObject Collected(int slot) => new()
+    {
+        ["cmd"] = "PrintJSON",
+        ["type"] = "Collect",
+        ["team"] = 0,
+        ["slot"] = slot,
+        ["data"] = new JArray(new JObject { ["text"] = $"{NameOf(0, slot)} (Team #1) has collected their items from other worlds." })
+    };
+
+    /// <summary>The server's countdown line.</summary>
+    public static JObject Countdown(int seconds) => new()
+    {
+        ["cmd"] = "PrintJSON",
+        ["type"] = "Countdown",
+        ["countdown"] = seconds,
+        ["data"] = new JArray(new JObject { ["text"] = $"[Server]: Starting countdown of {seconds}" })
+    };
+
     /// <summary>A chat line from slot 1, as the server relays it.</summary>
     public JObject Chat(string message) => new()
     {

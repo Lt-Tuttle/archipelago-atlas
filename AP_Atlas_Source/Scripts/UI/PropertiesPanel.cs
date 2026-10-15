@@ -381,10 +381,15 @@ namespace AP_Atlas.UI
 
         // --- Sections ---
 
-        /// <summary>The sections that are lists (many rows) and so start collapsed; the user's own toggle is remembered per section.</summary>
+        /// <summary>
+        /// The sections that start collapsed: lists (many rows) and technical detail. The user's own toggle is remembered
+        /// per section key, and a key is shared by every kind of target that has a section of that title ("Advanced",
+        /// "File", "Room").
+        /// </summary>
         internal static readonly HashSet<string> CollapsedByDefault = new HashSet<string>(StringComparer.Ordinal)
         {
-            "Seed settings", "Slot data", "Flagged & noted", "Pins with open checks", "All copies", "With", "Logic", "Hinted locations", "Logic impact", "◆ Special", "Slots", "Cheese Tracker", "Advanced"
+            "Seed settings", "Slot data", "Flagged & noted", "Pins with open checks", "All copies", "With", "Logic", "Hinted locations", "Logic impact", "◆ Special", "Slots", "Cheese Tracker", "Advanced",
+            "Accuracy", "Room", "Tracking", "Pack data", "Map pack item", "File", "Rules"
         };
 
         /// <summary>A section's key in the settings: its title without a count or a name ("All copies (3)" → "All copies", "With Alice" → "With").</summary>
@@ -395,75 +400,27 @@ namespace AP_Atlas.UI
             return title.StartsWith("With ", StringComparison.Ordinal) ? "With" : title;
         }
 
-        /// <summary>Whether a section starts collapsed: the user's choice when there is one, else the default for lists.</summary>
-        internal bool IsSectionCollapsed(string title)
-        {
-            string key = SectionKey(title);
-            var collapsed = _host.Settings.CollapsedPropertySections ??= new List<string>();
-            var expanded = _host.Settings.ExpandedPropertySections ??= new List<string>();
-            if (collapsed.Contains(key)) return true;
-            if (expanded.Contains(key)) return false;
-            return CollapsedByDefault.Contains(key);
-        }
-
         /// <summary>Whether the section with this title shows collapsed now, or null when it isn't shown (for tests).</summary>
-        internal bool? SectionCollapsed(string title)
-        {
-            var header = _content.GetChildren().OfType<Button>().FirstOrDefault(b => !b.IsQueuedForDeletion() && b.HasMeta("section") && b.GetMeta("section").AsString() == title);
-            return header == null ? null : header.Text.StartsWith("▶", StringComparison.Ordinal);
-        }
+        internal bool? SectionCollapsed(string title) => Kit.FoldedState(_content, SectionKey(title));
 
         /// <summary>Opens or closes a section as its header does (for tests).</summary>
-        internal void ToggleSection(string title) =>
-            _content.GetChildren().OfType<Button>().FirstOrDefault(b => !b.IsQueuedForDeletion() && b.HasMeta("section") && b.GetMeta("section").AsString() == title)?.EmitSignal(BaseButton.SignalName.Pressed);
+        internal void ToggleSection(string title) => Kit.ToggleFold(_content, SectionKey(title));
+
+        /// <summary>The body of the section with this title, or null (for tests).</summary>
+        internal Control SectionBody(string title) => Kit.SectionBody(_content, SectionKey(title));
 
         /// <summary>Starts a collapsible section. Subsequent rows go into it until the next section.</summary>
-        private void Section(string title)
+        private void Section(string title) => _currentSectionBody = Fold(_content, title);
+
+        /// <summary>A collapsible part inside the current section; rows go into it while <see cref="_currentSectionBody"/> is set to it.</summary>
+        private VBoxContainer SubSection(string title) => Fold(Target, title);
+
+        private VBoxContainer Fold(Container parent, string title)
         {
             string key = SectionKey(title);
-            var collapsed = _host.Settings.CollapsedPropertySections ??= new List<string>();
-            var expanded = _host.Settings.ExpandedPropertySections ??= new List<string>();
-            bool isCollapsed = IsSectionCollapsed(title);
-
-            var header = new Button
-            {
-                Text = (isCollapsed ? "▶  " : "▼  ") + title,
-                ThemeTypeVariation = "QuietButton",
-                Alignment = HorizontalAlignment.Left,
-                SizeFlagsHorizontal = SizeFlags.ExpandFill
-            };
-            header.AddThemeColorOverride("font_color", ThemeColors.AccentText(ThemeColors.Surface));
-            header.AddThemeColorOverride("font_hover_color", ThemeColors.Link);
-            header.SetMeta("section", title);
-            _content.AddChild(header);
-
-            var margin = new MarginContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, Visible = !isCollapsed };
-            margin.AddThemeConstantOverride("margin_left", 10);
-            _content.AddChild(margin);
-            var body = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            body.AddThemeConstantOverride("separation", 4);
-            margin.AddChild(body);
-            _currentSectionBody = body;
-
-            header.Pressed += () =>
-            {
-                bool nowCollapsed = margin.Visible;
-                margin.Visible = !nowCollapsed;
-                header.Text = (nowCollapsed ? "▶  " : "▼  ") + title;
-                // Remembered against the default: a list closed stays closed, a list opened stays open.
-                if (nowCollapsed)
-                {
-                    expanded.Remove(key);
-                    if (!CollapsedByDefault.Contains(key) && !collapsed.Contains(key)) collapsed.Add(key);
-                }
-                else
-                {
-                    collapsed.Remove(key);
-                    if (CollapsedByDefault.Contains(key) && !expanded.Contains(key)) expanded.Add(key);
-                }
-                DataManager.SaveSettings(_host.Settings);
-            };
+            var body = Kit.Section(parent, title, key, CollapsedByDefault.Contains(key), _host.Settings);
             _plainText.AppendLine("[" + title + "]");
+            return body;
         }
 
         /// <summary>A labelled value. The value is BBCode (use Link/LinkTo/Colored); right-click copies it.</summary>

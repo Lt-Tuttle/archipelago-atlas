@@ -194,6 +194,9 @@ public partial class SlotTrackerControl : MarginContainer
     // Rows the user flagged, noted or marked special (for the "flagged only" filter), kept as their markers are drawn.
     private readonly HashSet<long> _logicMarkedRows = new HashSet<long>();
 
+    /// <summary>The Logic Tracker's selected row (its location's name), for the UI test.</summary>
+    internal string SelectedLogicRow => _logicTree?.GetSelected()?.GetText(1);
+
     /// <summary>Turns the Logic Tracker's Show checked on or off, as its button does (for the UI test).</summary>
     public void ShowCheckedLogic(bool on)
     {

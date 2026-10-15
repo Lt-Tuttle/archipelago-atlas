@@ -41,6 +41,18 @@ public sealed partial class SessionManagerTests
         {
             lock (_lines) return _lines.OfType<T>().Count();
         }
+
+        /// <summary>The lines of this kind, in order.</summary>
+        public List<T> Of<T>() where T : LogMessage
+        {
+            lock (_lines) return _lines.OfType<T>().ToList();
+        }
+
+        /// <summary>The first line containing this text.</summary>
+        public LogMessage Find(string text)
+        {
+            lock (_lines) return _lines.First(line => line.ToString().Contains(text, StringComparison.Ordinal));
+        }
     }
 
     private async Task<ConnectedSlot[]> ConnectAll(SessionManager manager, FakeArchipelagoServer server, string profile, params string[] slots)

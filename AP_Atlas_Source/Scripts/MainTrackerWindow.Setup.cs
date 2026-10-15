@@ -51,6 +51,7 @@ public partial class MainTrackerWindow
             EngineReady = () => AP_Atlas.Core.EngineSetup.AtlasEngine.Current.CanLaunch,
             OpenEngineWindow = lines => OpenEngineWindow(lines),
             Profiles = () => _profiles,
+            SelectedProfile = () => _selectedProfile,
             SaveMultiworld = SaveSetupMultiworld,
             PickYaml = PickYamlFor,
             KeepYaml = KeepYamlForSlots,

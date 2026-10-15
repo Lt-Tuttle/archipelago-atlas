@@ -170,7 +170,9 @@ namespace AP_Atlas.UI
         /// </summary>
         private void BuildAccuracy(SlotTrackerControl slot)
         {
-            Section("Accuracy");
+            // Folded by default: its title says when something inside needs a look.
+            bool needsLook = !slot.LogicHidden && (slot.LogicAccuracyWarning != null || slot.ApworldMatchesSeed == false);
+            Section(needsLook ? "Accuracy (needs a look)" : "Accuracy");
             Row("Checks, items, hints", Colored("From the server (exact)", Good), "Atlas shows these exactly as the server reports them");
             if (slot.LogicHidden) { Row("Logic", Colored("Hidden by race mode", Muted)); return; }
             if (!slot.EngineRunning)
@@ -756,6 +758,7 @@ namespace AP_Atlas.UI
             PlainRow("World slot", ownerPlayer.ToString());
             PlainRow("Viewed from", view.SlotName);
             if (owner != null) PlainRow("Tracked by", owner.SlotName);
+            BuildLocationPackRows(owner, t.LocationId);
         }
 
         private void BuildExplanation(SlotTrackerControl owner, long locationId)
@@ -795,6 +798,8 @@ namespace AP_Atlas.UI
                                 AddHint("Needs a combination of items; no single item is required on every route.");
                             if (ex.Partial) AddHint($"Partial answer: stopped after the time limit ({ex.Candidates} candidate items).");
                         }
+                        // The engine's own rules (code, entrances) are detail: a folded Rules part of Logic.
+                        if (!string.IsNullOrWhiteSpace(ex.Rule) || ex.Entrances is { Count: > 0 }) _currentSectionBody = SubSection("Rules");
                         if (!string.IsNullOrWhiteSpace(ex.Rule))
                         {
                             AddText(Colored("Access rule", ThemeColors.TextSubtle));
@@ -849,13 +854,22 @@ namespace AP_Atlas.UI
                 AddHint("This map pack doesn't place this location on any map.");
                 return;
             }
-            foreach (var (pin, section, maps) in pins)
+            // The maps it's on; the pins, their sections and the pack's own rules are under Advanced (BuildLocationPackRows).
+            var allMaps = pins.SelectMany(p => p.Maps).Distinct().ToList();
+            if (allMaps.Count > 0)
+                Row("Maps", string.Join(", ", allMaps.Select(m => LinkTo(map.Pack.Maps.TryGetValue(m, out var pm) ? pm.Name : m, InspectTarget.ForMap(owner.ProfileId, owner.SlotName, m)))));
+        }
+
+        /// <summary>The pack's own detail for a location, in its Advanced section: each pin, its section and the pack's access and visibility rules.</summary>
+        private void BuildLocationPackRows(SlotTrackerControl owner, long locationId)
+        {
+            var map = owner?.MapTracker;
+            if (map?.Pack == null) return;
+            foreach (var (pin, section, maps) in map.PinsFor(locationId))
             {
                 string firstMap = maps.FirstOrDefault() ?? "";
                 Row("Pin", LinkTo(pin.Name, InspectTarget.ForPackLocation(owner.ProfileId, owner.SlotName, firstMap, pin.Name)));
                 if (section != null && !string.IsNullOrEmpty(section.Name) && section.Name != pin.Name) PlainRow("Section", section.Name);
-                if (maps.Count > 0)
-                    Row("Maps", string.Join(", ", maps.Select(m => LinkTo(map.Pack.Maps.TryGetValue(m, out var pm) ? pm.Name : m, InspectTarget.ForMap(owner.ProfileId, owner.SlotName, m)))));
                 var rules = section?.AccessRulesRaw ?? pin.AccessRulesRaw;
                 if (rules != null && rules.HasValues) { AddText(Colored("Pack access rules", ThemeColors.TextSubtle)); AddCode(rules.ToString(Newtonsoft.Json.Formatting.None)); }
                 var vis = section?.VisibilityRulesRaw;

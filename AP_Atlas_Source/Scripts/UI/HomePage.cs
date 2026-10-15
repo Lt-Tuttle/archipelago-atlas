@@ -463,11 +463,7 @@ namespace AP_Atlas.UI
             _addMultiworldButton = null;
             _setUpButton = null;
             var profiles = _hooks.Profiles();
-            var ordered = profiles.Select((profile, index) => (profile, index))
-                .OrderByDescending(p => p.profile.SavedStats.Count == 0 ? DateTime.MinValue : p.profile.SavedStats.Values.Max(s => s.LastUpdated))
-                .ThenBy(p => p.index)
-                .Select(p => p.profile)
-                .ToList();
+            var ordered = MultiworldProfile.MostRecentFirst(profiles);
             RecentProfileIds = ordered.Take(8).Select(p => p.Id).ToList();
             if (ordered.Count == 0)
             {

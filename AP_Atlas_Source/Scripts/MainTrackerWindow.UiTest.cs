@@ -2059,8 +2059,32 @@ public partial class MainTrackerWindow
             _commands!.Run("help.setup");
             await UiTestWaitAsync(0.1);
             UiTestExpect(Wizard() == resumed, "Help → Set up Atlas… opened a second window");
+            // Welcome, which isn't a setup step, is ticked once the window has gone past it.
+            UiTestExpect(resumed.RailButtonOf("welcome").TooltipText == "Done", $"Welcome's tick: \"{resumed.RailButtonOf("welcome").TooltipText}\"");
             resumed.EmitSignal(Window.SignalName.CloseRequested);
             await UiTestWaitAsync(0.2);
+            // Everything settled (the engine skipped), Resume opens on Ready in a new window that never saw Your slots: it
+            // is about the multiworld selected on the Multiworlds page, or else the one played most recently.
+            SetupSteps.SetSkipped(AP_Atlas.UI.SetupSteps.Engine, true);
+            var selectedBefore = _selectedProfile;
+            _selectedProfile = saved;
+            var ready = OpenSetupWizard(resume: true);
+            await UiTestWaitAsync(0.2);
+            List<string> ReadyLines() => ready.PageOf("ready").FindChildren("*", nameof(Label), true, false).OfType<Label>().Where(l => l.Visible && !l.IsQueuedForDeletion()).Select(l => l.Text).ToList();
+            UiTestExpect(ready.CurrentPageId == "ready" && ready.ShownProfile == saved && ReadyLines().Any(l => l.StartsWith("✓ Wizard MW:", StringComparison.Ordinal))
+                && !ReadyLines().Any(l => l.Contains("No multiworld yet", StringComparison.Ordinal)), $"Ready after Resume says: {string.Join(" | ", ReadyLines())}");
+            ready.EmitSignal(Window.SignalName.CloseRequested);
+            await UiTestWaitAsync(0.2);
+            _selectedProfile = null;
+            var newer = new MultiworldProfile { Name = "Newer MW", ServerUrl = "localhost:1" };
+            newer.SavedStats["Me"] = new SlotStats { GameName = "Test Game", LastUpdated = DateTime.Now.AddMinutes(1) }; // wall clock: a saved stat's date, as Atlas saves it
+            _profiles.Add(newer);
+            ready = OpenSetupWizard(resume: true);
+            await UiTestWaitAsync(0.2);
+            UiTestExpect(ready.ShownProfile == newer && ReadyLines().Any(l => l.StartsWith("✓ Newer MW:", StringComparison.Ordinal)), $"with nothing selected, Ready isn't about the newest multiworld: {string.Join(" | ", ReadyLines())}");
+            ready.EmitSignal(Window.SignalName.CloseRequested);
+            await UiTestWaitAsync(0.2);
+            _selectedProfile = selectedBefore;
         }
         finally
         {
@@ -2080,7 +2104,7 @@ public partial class MainTrackerWindow
             DataManager.SaveSettings(_appSettings);
             _settingsPage?.RefreshRows();
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
-            foreach (var p in _profiles.Where(p => p.Name == "Wizard MW").ToList()) DeleteProfile(p);
+            foreach (var p in _profiles.Where(p => p.Name is "Wizard MW" or "Newer MW").ToList()) DeleteProfile(p);
             AP_Atlas.Core.SafeFile.Delete(fromGitHub);
             AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
         }
@@ -4159,7 +4183,7 @@ public partial class MainTrackerWindow
         FakeMapPack.Write(zip, "UI test pictureless pack", "Test Game", locationsJson:
             """[{"name":"Cave","sections":[{"name":"Cave Chest"}],"map_locations":[{"map":"World","x":10,"y":10}]},""" +
             """{"name":"Far","sections":[{"name":"Far Chest"}],"map_locations":[{"map":"World","x":500,"y":10}]},""" +
-            """{"name":"Lone","sections":[{"name":"Lone Chest"}],"map_locations":[{"map":"Broken","x":40,"y":40}]}]""");
+            """{"name":"Lone","sections":[{"name":"Lone Chest","access_rules":["sword"],"visibility_rules":["sword"]}],"map_locations":[{"map":"Broken","x":40,"y":40}]}]""");
         await using var server = new FakeArchipelagoServer();
         server.Games["Test Game"] = new FakeGame("fedcba9876543210fedcba9876543210fe1c7e57", new Dictionary<string, long> { ["Sword"] = 1000 },
             new Dictionary<string, long> { ["Cave Chest"] = 2000, ["Far Chest"] = 2001, ["Lone Chest"] = 2002, ["Hidden Chest"] = 2003 });
@@ -4185,6 +4209,13 @@ public partial class MainTrackerWindow
                 $"the map without a picture isn't a checklist naming its picture: {map.ChecklistShown}, rows {string.Join(", ", map.ChecklistRows())}, note {map.ChecklistNote}");
             map.FindChildren("*", nameof(Button), true, false).OfType<Button>().First(b => b.HasMeta("checklist_row")).EmitSignal(BaseButton.SignalName.Pressed);
             UiTestExpect(picked == 1, $"a checklist row doesn't open its location (it sent {sent})");
+            // Properties keeps the pack's detail out of sight: the Map section names the maps; the pin, its section and the
+            // pack's rules are under the folded Advanced.
+            await UiTestWaitForAsync(() => _propertiesPanel.SectionCollapsed("Map") != null ? slot : null, "the Lone Chest in Properties");
+            UiTestExpect(_propertiesPanel.SectionCollapsed("Map") == false && _propertiesPanel.SectionCollapsed("Advanced") == true
+                && !ShowsText(_propertiesPanel.SectionBody("Map")!, "Pack access rules") && ShowsText(_propertiesPanel.SectionBody("Map")!, "Broken")
+                && ShowsText(_propertiesPanel.SectionBody("Advanced")!, "Pack access rules") && ShowsText(_propertiesPanel.SectionBody("Advanced")!, "Visibility rules")
+                && ShowsText(_propertiesPanel.SectionBody("Advanced")!, "Lone"), "the pack's rules aren't under Advanced (or the Map section lost its maps)");
             // The map with its picture shows its pins.
             map.ShowMap(pack.Maps.Values.First(m => m.Name == "World").Id);
             await UiTestWaitAsync(0.1);
@@ -4694,6 +4725,34 @@ public partial class MainTrackerWindow
             ShowTerminalTab(1);
             UiTestExpect(!TerminalTabHasNew(1), "showing System Log didn't clear its dot");
             ShowTerminalTab(0);
+
+            // System off hides the room's bookkeeping (joins, leaves, tag changes, "!" commands), which then lights no dot;
+            // a goal still shows. The choice is remembered (and shared by every slot); System on brings the lines back.
+            var filtersBefore = new HashSet<string>(_appSettings.ChatFiltersOff);
+            try
+            {
+                var system = slot.ChatFilterButtons[AP_Atlas.Core.Connections.ChatLines.System];
+                system.ButtonPressed = false;
+                UiTestExpect(_appSettings.ChatFiltersOff.SetEquals(new[] { AP_Atlas.Core.Connections.ChatLines.System }), "turning System off wasn't remembered");
+                ShowTerminalTab(1);
+                await UiTestWaitAsync(0.2);
+                ClearTerminalTabNew(0);
+                await server.BroadcastAsync(server.Joined("Visitor", "Tracker"), server.Left("Visitor"),
+                    server.TagsChangedLine("Visitor", new[] { "Tracker" }, new[] { "Tracker", "NoText" }), server.Chat("!alias Lamp"));
+                await UiTestWaitAsync(0.4);
+                UiTestExpect(!TerminalTabHasNew(0), "lines the filters hide lit the Chat tab's dot");
+                await server.BroadcastAsync(server.Goal(1));
+                await UiTestWaitForAsync(() => TerminalTabHasNew(0) ? slot : null, "a goal line to light the Chat tab's dot");
+                ShowTerminalTab(0);
+                await UiTestWaitForAsync(() => PanelShowsText(slot, "has completed their goal") ? slot : null, "the goal line with System off");
+                UiTestExpect(!PanelShowsText(slot, "!alias Lamp") && !PanelShowsText(slot, "Visitor (Team #1)"), "System off still shows joins, leaves or commands");
+                system.ButtonPressed = true;
+                await UiTestWaitForAsync(() => PanelShowsText(slot, "!alias Lamp") && PanelShowsText(slot, "Visitor (Team #1) has left the game.") ? slot : null, "System on to show those lines again");
+            }
+            finally
+            {
+                _appSettings.ChatFiltersOff = filtersBefore;
+            }
 
             // "Find a map pack for Test Game…" on the empty map: the window shows Map Packs and searches GitHub (a fake site)
             // once for the game; the pack chosen from what it found downloads with a progress line, installs with a card,
@@ -5286,6 +5345,22 @@ public partial class MainTrackerWindow
             var why = await slot.ExplainLocationAsync(2002);
             UiTestExpect(why is { InLogic: false } && why.SingleUnlocks?.SequenceEqual(new[] { "Shield" }) == true,
                 $"the tower's \"why\" didn't name the Shield: {(why == null ? "no answer" : Newtonsoft.Json.JsonConvert.SerializeObject(why))}");
+            // Properties: the plain answer in Logic; the access rule (the engine's own detail) in a folded Rules part of it.
+            var foldsBefore = (_appSettings.CollapsedPropertySections.ToList(), _appSettings.ExpandedPropertySections.ToList());
+            AP_Atlas.Core.Inspector.Inspect(slot.LocationTarget(2002));
+            await UiTestWaitForAsync(() => _propertiesPanel.SectionCollapsed("Rules") != null ? slot : null, "the tower's Rules part in Properties");
+            UiTestExpect(_propertiesPanel.SectionCollapsed("Logic") == true && _propertiesPanel.SectionCollapsed("Rules") == true, "Logic or its Rules part doesn't start folded");
+            UiTestExpect(ShowsText(_propertiesPanel.SectionBody("Rules")!, "Has Shield") && ShowsText(_propertiesPanel.SectionBody("Logic")!, "Opens with any one of"),
+                "the access rule isn't in Rules, or the plain answer left Logic");
+            _propertiesPanel.ToggleSection("Rules");
+            UiTestExpect(_propertiesPanel.SectionCollapsed("Rules") == false && _appSettings.ExpandedPropertySections.Contains("Rules"), "opening Rules wasn't remembered");
+            _propertiesPanel.ToggleSection("Rules");
+            // A slot's dense sections start folded too; its overview doesn't.
+            AP_Atlas.Core.Inspector.Inspect(AP_Atlas.Core.InspectTarget.ForSlot(profile.Id, "Tester"));
+            await UiTestWaitForAsync(() => _propertiesPanel.SectionCollapsed("Overview") != null ? slot : null, "the slot in Properties");
+            UiTestExpect(_propertiesPanel.SectionCollapsed("Overview") == false && _propertiesPanel.SectionCollapsed("Accuracy") == true
+                && _propertiesPanel.SectionCollapsed("Room") == true && _propertiesPanel.SectionCollapsed("Tracking") == true, "the slot's Accuracy, Room or Tracking doesn't start folded");
+            (_appSettings.CollapsedPropertySections, _appSettings.ExpandedPropertySections) = foldsBefore;
 
             // The Shield, sent without flags (as the server's /send does): still progression, because the world says so.
             await server.BroadcastAsync(FakeArchipelagoServer.ReceivedItems(1, new long[] { 1001 }));
@@ -5320,6 +5395,10 @@ public partial class MainTrackerWindow
             await ExpectTreeAsync(slot, "with Show checked", "── Base Logic (Starting Reachable) ──", "Cave Chest", "── Unlocked by: Sword (1 checks) ──", "Locked Door",
                 "── Unlocked by: Shield (1 checks) ──", "Tower Top");
             UiTestExpect(_appSettings.LogicShowChecked, "Show checked wasn't remembered");
+            slot.ShowCheckedLogic(false);
+            // Find in Logic Tracker (Properties' button) on the done chest turns Show checked on, so its row shows, selected.
+            slot.RevealLogicRow(2000);
+            UiTestExpect(_appSettings.LogicShowChecked && slot.SelectedLogicRow == "Cave Chest", $"revealing a done check: Show checked {_appSettings.LogicShowChecked}, selected {slot.SelectedLogicRow}");
             slot.ShowCheckedLogic(false);
 
             // The engine crashes on the Gem. Nothing half-done is kept: logic is unknown until a new engine has rebuilt it
@@ -5800,6 +5879,10 @@ public partial class MainTrackerWindow
         panel.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().Any(label => label.Text.Replace(ZeroWidthSpace, "").Contains(text));
 
     /// <summary>Whether a panel's labels show this text, as read on screen (BBCode applied; zero-width spaces left out).</summary>
+    /// <summary>Whether any label or rich text under <paramref name="root"/> shows this text.</summary>
+    private static bool ShowsText(Node root, string text) =>
+        PanelShowsText(root, text) || root.FindChildren("*", nameof(Label), true, false).OfType<Label>().Any(label => label.Text.Contains(text, StringComparison.Ordinal));
+
     private static bool PanelShowsText(Node panel, string text) =>
         panel.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().Any(label => label.GetParsedText().Replace(ZeroWidthSpace, "").Contains(text));
 

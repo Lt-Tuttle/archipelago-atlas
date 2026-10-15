@@ -33,22 +33,31 @@ public partial class SlotTrackerControl : MarginContainer
         filters.AddThemeConstantOverride("v_separation", 4);
         filters.SetMeta("chat_filters", true);
         filterMargin.AddChild(filters);
-        Button Filter(string text, string tip)
+        // Each filter is remembered (what's off), and every slot's text client follows a change at once.
+        void Filter(string text, string tip, string key)
         {
-            var b = new Button { ToggleMode = true, Text = AP_Atlas.UI.Kit.Translate(text), ButtonPressed = true, TooltipText = AP_Atlas.UI.Kit.Translate(tip) };
+            var b = new Button { ToggleMode = true, Text = AP_Atlas.UI.Kit.Translate(text), ButtonPressed = !_appSettings.ChatFiltersOff.Contains(key), TooltipText = AP_Atlas.UI.Kit.Translate(tip) };
             b.AccessibilityName = b.Text;
-            b.Toggled += _ => RedrawChat();
+            b.SetMeta("chat_filter", key);
+            b.Toggled += on =>
+            {
+                if (on) _appSettings.ChatFiltersOff.Remove(key);
+                else _appSettings.ChatFiltersOff.Add(key);
+                DataManager.SaveSettingsSoon(_appSettings);
+                RedrawChat();
+                ChatFiltersChanged?.Invoke();
+            };
             filters.AddChild(b);
-            return b;
+            _filterButtons[key] = b;
         }
-        _filterChat = Filter("Chat", "Show what players say");
-        _filterHints = Filter("Hints", "Show hint lines");
-        _filterSystem = Filter("System", "Show the room's own lines (joins, releases, commands)");
+        Filter("Chat", "Show what players say", AP_Atlas.Core.Connections.ChatLines.Chat);
+        Filter("Hints", "Show hint lines", AP_Atlas.Core.Connections.ChatLines.Hints);
+        Filter("System", "Show the room's own lines: joins, leaves, tag changes, commands and their answers (goals, releases, collects and countdowns always show)", AP_Atlas.Core.Connections.ChatLines.System);
         filters.AddChild(new VSeparator());
-        _filterProgression = Filter("Progression", "Show items that unlock progress");
-        _filterUseful = Filter("Useful", "Show useful items");
-        _filterFiller = Filter("Filler", "Show filler items");
-        _filterTrap = Filter("Traps", "Show traps");
+        Filter("Progression", "Show items that unlock progress", AP_Atlas.Core.Connections.ChatLines.Progression);
+        Filter("Useful", "Show useful items", AP_Atlas.Core.Connections.ChatLines.Useful);
+        Filter("Filler", "Show filler items", AP_Atlas.Core.Connections.ChatLines.Filler);
+        Filter("Traps", "Show traps", AP_Atlas.Core.Connections.ChatLines.Traps);
 
         _chatScroll = new ScrollContainer
         {
@@ -96,7 +105,8 @@ public partial class SlotTrackerControl : MarginContainer
             if (entry.Sequence <= _announcedSequence) continue;
             _announcedSequence = entry.Sequence;
             if (entry.Early) continue;
-            fresh = true;
+            // The Chat tab's dot is for lines the filters show.
+            if (ShowsEntry(entry)) fresh = true;
             if (entry.IsSystemMessage) continue;
             if (entry.Hint != null) AnnounceSpecialHint(entry.Hint);
             else AnnounceSpecialItem(entry.APMessage);
@@ -126,17 +136,10 @@ public partial class SlotTrackerControl : MarginContainer
             }
             _shownSequence = entry.Sequence;
             drew = true;
-            if (entry.IsSystemMessage)
-            {
-                if (_filterSystem == null || _filterSystem.ButtonPressed) ShowSystemLine(entry.SystemMessage);
-                continue;
-            }
-            if (entry.Hint != null)
-            {
-                if (_filterHints == null || _filterHints.ButtonPressed) AppendHintToChat(entry.Hint);
-                continue;
-            }
-            if (!ShouldFilterMessage(entry.APMessage)) AppendMessageToChat(entry.APMessage);
+            if (!ShowsEntry(entry)) continue;
+            if (entry.IsSystemMessage) ShowSystemLine(entry.SystemMessage);
+            else if (entry.Hint != null) AppendHintToChat(entry.Hint);
+            else AppendMessageToChat(entry.APMessage);
         }
         if (drew) ScrollChatToBottom();
     }
@@ -186,25 +189,37 @@ public partial class SlotTrackerControl : MarginContainer
         _chatRefresh?.Request();
     }
 
-    private bool ShouldFilterMessage(LogMessage msg)
+    /// <summary>
+    /// Whether the text client shows a line with the filters the user turned off: Atlas's own lines (connected, lost) as
+    /// System, a hint from the hint list as Hints, a line of the room's by its kind (ChatLines.Shows).
+    /// </summary>
+    private bool ShowsEntry(AP_Atlas.Core.ChatEntry entry)
     {
-        if (msg is HintItemSendLogMessage && (_filterHints == null || !_filterHints.ButtonPressed)) return true;
-        if (msg is ChatLogMessage && (_filterChat == null || !_filterChat.ButtonPressed)) return true;
-
-        if (msg is ItemSendLogMessage itemMsg)
-        {
-            var itemPart = itemMsg.Parts.OfType<Archipelago.MultiClient.Net.MessageLog.Parts.ItemMessagePart>().FirstOrDefault();
-            if (itemPart != null)
-            {
-                if (itemPart.Flags.HasFlag(ItemFlags.Advancement) && (_filterProgression == null || !_filterProgression.ButtonPressed)) return true;
-                else if (itemPart.Flags.HasFlag(ItemFlags.NeverExclude) && (_filterUseful == null || !_filterUseful.ButtonPressed)) return true;
-                else if (itemPart.Flags.HasFlag(ItemFlags.Trap) && (_filterTrap == null || !_filterTrap.ButtonPressed)) return true;
-                else if (!itemPart.Flags.HasFlag(ItemFlags.Advancement) && !itemPart.Flags.HasFlag(ItemFlags.NeverExclude) && !itemPart.Flags.HasFlag(ItemFlags.Trap) && (_filterFiller == null || !_filterFiller.ButtonPressed)) return true;
-            }
-        }
-
-        return false;
+        var off = _appSettings.ChatFiltersOff;
+        if (entry.IsSystemMessage) return !off.Contains(AP_Atlas.Core.Connections.ChatLines.System);
+        if (entry.Hint != null) return !off.Contains(AP_Atlas.Core.Connections.ChatLines.Hints);
+        return entry.APMessage == null || AP_Atlas.Core.Connections.ChatLines.Shows(entry.APMessage, off);
     }
+
+    /// <summary>A text client's filter changed: every slot's follows (the filters are shared).</summary>
+    private static event Action ChatFiltersChanged;
+
+    private void OnChatFiltersChanged()
+    {
+        if (!GodotObject.IsInstanceValid(this)) return;
+        bool changed = false;
+        foreach (var (key, button) in _filterButtons)
+        {
+            bool on = !_appSettings.ChatFiltersOff.Contains(key);
+            if (button.ButtonPressed == on) continue;
+            button.SetPressedNoSignal(on);
+            changed = true;
+        }
+        if (changed) RedrawChat();
+    }
+
+    /// <summary>The filter buttons by their key (for the UI test).</summary>
+    internal IReadOnlyDictionary<string, Button> ChatFilterButtons => _filterButtons;
 
     /// <summary>
     /// The most of one line the text client shows, in characters, and about the most new text it lays out in one frame

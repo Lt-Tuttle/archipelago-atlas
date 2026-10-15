@@ -43,6 +43,8 @@ namespace AP_Atlas.UI
             public required Action<IReadOnlyList<string>> OpenEngineWindow { get; init; }
             // The multiworld and its slots.
             public required Func<IReadOnlyList<MultiworldProfile>> Profiles { get; init; }
+            /// <summary>The multiworld selected on the Multiworlds page, if any.</summary>
+            public required Func<MultiworldProfile?> SelectedProfile { get; init; }
             /// <summary>Saves the draft as a new multiworld, or into the existing one it names, and hands it back.</summary>
             public required Func<SetupMultiworldDraft, MultiworldProfile> SaveMultiworld { get; init; }
             public required Action<Action<string>> PickYaml { get; init; }
@@ -107,6 +109,13 @@ namespace AP_Atlas.UI
 
         // What the pages gather.
         private MultiworldProfile? _profile;
+
+        /// <summary>
+        /// The multiworld the pages after Your slots are about: the one saved on Your slots in this window; else (opened
+        /// past it, as Resume does for a set-up Atlas) the one chosen on Your multiworld, the one selected on the
+        /// Multiworlds page, or the one played most recently.
+        /// </summary>
+        private MultiworldProfile? Profile => _profile ?? ChosenExisting ?? _hooks.SelectedProfile() ?? MultiworldProfile.MostRecentFirst(_hooks.Profiles()).FirstOrDefault();
         private List<string> _roomPlayers = new();
 
         /// <summary>Opens the window: at the Welcome page, or (resume) at the first step not done or skipped.</summary>
@@ -246,7 +255,8 @@ namespace AP_Atlas.UI
             for (int i = 0; i < _pages.Count; i++)
             {
                 var page = _pages[i];
-                bool done = page.Step != null && _hooks.Steps.Done(page.Step);
+                // A page that isn't a setup step (Welcome) is done once the window has gone past it.
+                bool done = page.Step != null ? _hooks.Steps.Done(page.Step) : i < _furthest;
                 bool skipped = page.Step != null && !done && _hooks.Steps.Skipped(page.Step);
                 string icon = i == _current ? "circle-dot" : done ? "circle-check" : skipped ? "circle-check" : "circle";
                 var colour = i == _current ? ThemeColors.Heading : done ? ThemeColors.Success : skipped ? ThemeColors.TextMuted : ThemeColors.TextSubtle;
@@ -857,9 +867,12 @@ namespace AP_Atlas.UI
             return box;
         }
 
-        private IEnumerable<string> SlotGames() =>
-            _profile == null ? Enumerable.Empty<string>()
-            : _profile.Slots.Select(slot => _profile.SavedStats.TryGetValue(slot, out var stats) ? stats.GameName : null).Where(g => !string.IsNullOrWhiteSpace(g)).Select(g => g!).Distinct(StringComparer.OrdinalIgnoreCase);
+        private IEnumerable<string> SlotGames()
+        {
+            var profile = Profile;
+            return profile == null ? Enumerable.Empty<string>()
+                : profile.Slots.Select(slot => profile.SavedStats.TryGetValue(slot, out var stats) ? stats.GameName : null).Where(g => !string.IsNullOrWhiteSpace(g)).Select(g => g!).Distinct(StringComparer.OrdinalIgnoreCase);
+        }
 
         private void RefreshGamesPage()
         {
@@ -1089,21 +1102,23 @@ namespace AP_Atlas.UI
 
         private void RefreshTrackersPage()
         {
-            _trackersFor.Text = _profile == null ? _tr("No multiworld yet: the pages before make one.") : _tr("For {0}.").Replace("{0}", _profile.Name);
-            if (_profile != null)
+            var profile = Profile;
+            _trackersFor.Text = profile == null ? _tr("No multiworld yet: the pages before make one.") : _tr("For {0}.").Replace("{0}", profile.Name);
+            if (profile != null)
             {
-                if (_cheese.Text.Length == 0) _cheese.Text = _profile.CheeseTrackerUrl ?? "";
-                if (_sphere.Text.Length == 0) _sphere.Text = _profile.SphereTrackerUrl ?? "";
+                if (_cheese.Text.Length == 0) _cheese.Text = profile.CheeseTrackerUrl ?? "";
+                if (_sphere.Text.Length == 0) _sphere.Text = profile.SphereTrackerUrl ?? "";
             }
         }
 
         private Task<bool> TrackersNextAsync()
         {
-            if (_profile != null)
+            var profile = Profile;
+            if (profile != null)
             {
                 string cheese = _cheese.Text.Trim(), sphere = _sphere.Text.Trim();
-                if (cheese.Length > 0 && cheese != (_profile.CheeseTrackerUrl ?? "")) _hooks.LinkCheese(_profile, cheese);
-                if (sphere.Length > 0 && sphere != (_profile.SphereTrackerUrl ?? "")) _hooks.LinkSphere(this, _profile, sphere);
+                if (cheese.Length > 0 && cheese != (profile.CheeseTrackerUrl ?? "")) _hooks.LinkCheese(profile, cheese);
+                if (sphere.Length > 0 && sphere != (profile.SphereTrackerUrl ?? "")) _hooks.LinkSphere(this, profile, sphere);
             }
             _hooks.Steps.MarkPageDone(SetupSteps.Trackers);
             return Task.FromResult(true);
@@ -1165,17 +1180,18 @@ namespace AP_Atlas.UI
             bool ready = _hooks.EngineReady();
             Line(ready ? _tr("✓ The Atlas Engine is set up.") : _engineRun.Running ? _tr("… The Atlas Engine is still installing: Finish waits for it.") : _tr("✗ The Atlas Engine isn't set up: logic, maps and hints wait until it is (Home's setup line, or the Engine button on the bar)."),
                 ready ? ThemeColors.Success : _engineRun.Running ? ThemeColors.Text : ThemeColors.Warning);
-            if (_profile == null) Line(_tr("✗ No multiworld yet: Back to Your multiworld makes one."), ThemeColors.Warning);
+            var profile = Profile;
+            if (profile == null) Line(_tr("✗ No multiworld yet: Back to Your multiworld makes one."), ThemeColors.Warning);
             else
             {
-                Line(_tr("✓ {0}: {1}").Replace("{0}", _profile.Name).Replace("{1}", string.IsNullOrWhiteSpace(_profile.ServerUrl) ? _tr("no server address yet") : _profile.ServerUrl), ThemeColors.Success);
+                Line(_tr("✓ {0}: {1}").Replace("{0}", profile.Name).Replace("{1}", string.IsNullOrWhiteSpace(profile.ServerUrl) ? _tr("no server address yet") : profile.ServerUrl), ThemeColors.Success);
                 var games = SlotGames().ToList();
-                Line(_tr("✓ Slots: {0}").Replace("{0}", string.Join(", ", _profile.Slots)) + (games.Count > 0 ? "  ·  " + string.Join(", ", games) : ""), ThemeColors.Success);
-                bool hasServer = !string.IsNullOrWhiteSpace(_profile.ServerUrl);
+                Line(_tr("✓ Slots: {0}").Replace("{0}", string.Join(", ", profile.Slots)) + (games.Count > 0 ? "  ·  " + string.Join(", ", games) : ""), ThemeColors.Success);
+                bool hasServer = !string.IsNullOrWhiteSpace(profile.ServerUrl);
                 _connectBox.AddChild(Kit.Text(_tr("Connect now")));
-                foreach (string slot in _profile.Slots)
+                foreach (string slot in profile.Slots)
                 {
-                    bool live = _hooks.IsSlotLive(_profile.Id, slot);
+                    bool live = _hooks.IsSlotLive(profile.Id, slot);
                     var check = new CheckBox { Text = live ? _tr("{0} (connected)").Replace("{0}", slot) : slot, ButtonPressed = hasServer && !live, Disabled = live || !hasServer };
                     check.SetMeta("connect_slot", slot);
                     _connectBox.AddChild(check);
@@ -1188,9 +1204,10 @@ namespace AP_Atlas.UI
 
         private Task<bool> FinishAsync()
         {
-            if (_profile != null)
+            var profile = Profile;
+            if (profile != null)
                 foreach (var check in _connectChecks.Where(c => c.ButtonPressed && !c.Disabled))
-                    _hooks.ConnectSlot(_profile, check.GetMeta("connect_slot").AsString());
+                    _hooks.ConnectSlot(profile, check.GetMeta("connect_slot").AsString());
             Hide();
             QueueFree();
             return Task.FromResult(true);
@@ -1206,6 +1223,7 @@ namespace AP_Atlas.UI
         internal Button RailButtonOf(string id) => _pages.First(p => p.Id == id).RailButton;
         internal bool Busy => _busy;
         internal MultiworldProfile? SavedProfile => _profile;
+        internal MultiworldProfile? ShownProfile => Profile;
         internal IReadOnlyList<string> RoomPlayers => _roomPlayers;
         internal Task NextForTestsAsync() => NextAsync();
     }

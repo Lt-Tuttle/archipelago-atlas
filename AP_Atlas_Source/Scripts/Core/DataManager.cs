@@ -93,6 +93,8 @@ public class AppSettings
     public Dictionary<string, bool> MapFollowGame { get; set; } = new Dictionary<string, bool>();
     /// <summary>Whether the Logic Tracker also lists the checks already done (greyed); off: only the checks left.</summary>
     public bool LogicShowChecked { get; set; }
+    /// <summary>The text client's filters turned off (ChatLines' keys: chat, hints, system, progression, useful, filler, traps), shared by every slot.</summary>
+    public HashSet<string> ChatFiltersOff { get; set; } = new HashSet<string>();
     /// <summary>Slot keys ("profileId|slotName") whose unsure logic is shown anyway (SlotLogic.Unsure; absent: shown as a checklist).</summary>
     public HashSet<string> ShowUnsureLogic { get; set; } = new HashSet<string>();
     /// <summary>Slot key → whether its Map Tracker switches to the map of a location just checked (absent: on for packs that can't follow the game).</summary>
@@ -216,6 +218,14 @@ public class SavedWindowRect
 
 public class MultiworldProfile
 {
+    /// <summary>Multiworlds, most recently played first (by their slots' last update; never played last, in their order).</summary>
+    public static List<MultiworldProfile> MostRecentFirst(IEnumerable<MultiworldProfile> profiles) =>
+        profiles.Select((profile, index) => (profile, index))
+            .OrderByDescending(p => p.profile.SavedStats.Count == 0 ? System.DateTime.MinValue : p.profile.SavedStats.Values.Max(s => s.LastUpdated))
+            .ThenBy(p => p.index)
+            .Select(p => p.profile)
+            .ToList();
+
     public string Id { get; set; } = System.Guid.NewGuid().ToString();
     public string Name { get; set; } = "New Multiworld";
     /// <summary>The server and the room's port as the room page shows them ("archipelago.gg:12345"); empty until typed or filled from the room link.</summary>
@@ -419,6 +429,7 @@ public static class DataManager
         if (settings.MapNodeScale <= 0 || float.IsNaN(settings.MapNodeScale)) settings.MapNodeScale = 1f;
         settings.MapColours ??= new Dictionary<string, string>();
         settings.MapFollowGame ??= new Dictionary<string, bool>();
+        settings.ChatFiltersOff ??= new HashSet<string>();
         settings.ShowUnsureLogic ??= new HashSet<string>();
         settings.MapFollowChecks ??= new Dictionary<string, bool>();
         settings.PackVariants ??= new Dictionary<string, string>();
