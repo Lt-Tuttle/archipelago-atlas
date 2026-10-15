@@ -64,6 +64,10 @@ namespace AP_Atlas.Core
         private readonly Dictionary<string, string> _entranceValues = new(StringComparer.Ordinal);
         private readonly Dictionary<string, string> _entrancesSent = new(StringComparer.Ordinal);
         private AP_Atlas.Core.Connections.DataStorageReads? _entranceReads;
+        // Whether this engine run still has to check whether its logic can be trusted (CheckTrustOnceAsync), and what's
+        // unsure: the locations the check rebuilds disagree about and those the rebuilt world lacks.
+        private bool _trustPending;
+        private HashSet<long> _unsure = new();
         private int _run;
 
         public SlotLogic(SlotModel model, AppSettings settings, Action<string> log)
@@ -108,6 +112,19 @@ namespace AP_Atlas.Core
         /// side didn't report one). It can't see rule-only changes, which the location check and seed tests cover.
         /// </summary>
         public bool? ApworldMatchesSeed { get; private set; }
+
+        /// <summary>
+        /// The locations logic can't vouch for: the server's that the rebuilt world lacks, and those whose logic the check
+        /// rebuilds (other seeds) see otherwise, so whether they're in logic depends on a choice the seed made that the
+        /// world doesn't keep in its slot data. Shown as a checklist unless the slot's "Show logic anyway" is on.
+        /// </summary>
+        public IReadOnlySet<long> Unsure => _unsure;
+
+        /// <summary>What the check rebuilds found for this engine run (null until checked).</summary>
+        public LogicEngineManager.TrustCheck? Trust { get; private set; }
+
+        /// <summary>Whether the check rebuilds are being built now.</summary>
+        public bool CheckingTrust { get; private set; }
 
         /// <summary>Every location logic has reached so far (it isn't told when one is checked).</summary>
         public IReadOnlySet<long> Reachable => _reachable;
@@ -214,6 +231,8 @@ namespace AP_Atlas.Core
                 if (started)
                 {
                     Running = true;
+                    _trustPending = true;
+                    _unsure = new HashSet<long>(Engine.LastMissingLocations);
                     ReportStart();
                     Notify(SlotChange.Logic | SlotChange.EngineStarted);
                     WatchFoundEntrances();
@@ -270,6 +289,10 @@ namespace AP_Atlas.Core
             _evaluated = 0;
             _startingDone = false;
             _entrancesSent.Clear(); // a new engine run hears every entrance found again
+            _trustPending = false;
+            CheckingTrust = false;
+            Trust = null;
+            _unsure = new HashSet<long>();
             _inventory.Clear();
             _steps.Clear();
             _reachable.Clear();
@@ -383,6 +406,9 @@ namespace AP_Atlas.Core
                 } while (_dirty);
                 // The last answer was for everything received so far, so its goal flag describes the slot now.
                 GoalInLogic = Engine.LastGoalReachable;
+                var unsure = new HashSet<long>(Engine.LastUnsure);
+                unsure.UnionWith(Engine.LastMissingLocations);
+                _unsure = unsure;
                 Loaded = true;
                 Notify();
             }
@@ -419,7 +445,7 @@ namespace AP_Atlas.Core
             var progression = Session.Items.AllItemsReceived
                 .Where(i => AP_Atlas.Core.LogicItemRule.Counts(i.Flags.HasFlag(ItemFlags.Advancement), i.Flags.HasFlag(ItemFlags.NeverExclude), poolProgression.Contains(i.ItemId), i.LocationId))
                 .ToList();
-            if (progression.Count == _evaluated && _startingDone) return await ApplyFoundEntrancesAsync(run, missing);
+            if (progression.Count == _evaluated && _startingDone) return await ApplyFoundEntrancesAsync(run, missing) && await CheckTrustOnceAsync(run, missing);
 
             bool first = true;
             do
@@ -452,7 +478,29 @@ namespace AP_Atlas.Core
                     if (opened.Count > 0) _steps.Add(new LogicStep(Session.Items.GetItemName(chunk[i].ItemId) ?? "Unknown Item", opened));
                 }
             } while (_evaluated < progression.Count);
-            return await ApplyFoundEntrancesAsync(run, missing);
+            return await ApplyFoundEntrancesAsync(run, missing) && await CheckTrustOnceAsync(run, missing);
+        }
+
+        /// <summary>
+        /// Once per engine run, after its first logic: rebuilds the world again with other seeds to see whether its logic
+        /// can be trusted (LogicEngineManager.CheckTrustAsync). From then on each answer names what's unsure. False when the
+        /// run ended meanwhile.
+        /// </summary>
+        private async Task<bool> CheckTrustOnceAsync(int run, List<long> missing)
+        {
+            if (!_trustPending) return true;
+            _trustPending = false;
+            CheckingTrust = true;
+            Notify();
+            var check = await Engine.CheckTrustAsync(_inventory.ToList(), missing);
+            if (run != _run) return false;
+            CheckingTrust = false;
+            if (check == null) throw new LogicEngineFailure(Engine.LastQueryFailure);
+            Trust = check;
+            _log(!check.Built ? $"Whether this slot's logic can be trusted couldn't be checked: {check.Error}"
+                : check.Same ? "This world rebuilds the same with other seeds: its logic is the seed's."
+                : $"This world rebuilds otherwise with other seeds ({string.Join(", ", check.Examples)}): logic for the checks the rebuilds disagree about is unsure.");
+            return true;
         }
 
         // =====================================================================

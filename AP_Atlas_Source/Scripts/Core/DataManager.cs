@@ -91,6 +91,8 @@ public class AppSettings
     public Dictionary<string, string> MapColours { get; set; } = new Dictionary<string, string>();
     /// <summary>Slot key ("profileId|slotName") → whether its Map Tracker follows the game's current map (on unless turned off).</summary>
     public Dictionary<string, bool> MapFollowGame { get; set; } = new Dictionary<string, bool>();
+    /// <summary>Slot keys ("profileId|slotName") whose unsure logic is shown anyway (SlotLogic.Unsure; absent: shown as a checklist).</summary>
+    public HashSet<string> ShowUnsureLogic { get; set; } = new HashSet<string>();
     /// <summary>Slot key → whether its Map Tracker switches to the map of a location just checked (absent: on for packs that can't follow the game).</summary>
     public Dictionary<string, bool> MapFollowChecks { get; set; } = new Dictionary<string, bool>();
     /// <summary>The map pack variant each slot uses (slot key → variant id); absent: the pack's default.</summary>
@@ -415,6 +417,7 @@ public static class DataManager
         if (settings.MapNodeScale <= 0 || float.IsNaN(settings.MapNodeScale)) settings.MapNodeScale = 1f;
         settings.MapColours ??= new Dictionary<string, string>();
         settings.MapFollowGame ??= new Dictionary<string, bool>();
+        settings.ShowUnsureLogic ??= new HashSet<string>();
         settings.MapFollowChecks ??= new Dictionary<string, bool>();
         settings.PackVariants ??= new Dictionary<string, string>();
         settings.PreferredPacks ??= new Dictionary<string, string>();

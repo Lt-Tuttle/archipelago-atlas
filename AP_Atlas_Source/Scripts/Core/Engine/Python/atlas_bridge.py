@@ -220,14 +220,15 @@ def new_tracker(tracker_cls, logger, all_entrances_known=False):
     return c
 
 
-def rebuild_seed(req):
+def rebuild_seed(req, salt=''):
     # The generation seed a slot's world is rebuilt with: from the room's seed name and the slot, so it's the same each
-    # time the slot's engine starts. None (a new one each time, as Universal Tracker draws) without a seed name.
+    # time the slot's engine starts. None (a new one each time, as Universal Tracker draws) without a seed name. The
+    # second rebuild that checks the first (build_check_core) takes another ("check").
     import hashlib
     name = req.get('seed_name')
     if not name:
         return None
-    return int(hashlib.sha256((str(name) + ':' + str(req.get('slot'))).encode('utf-8')).hexdigest()[:15], 16)
+    return int(hashlib.sha256((str(name) + ':' + str(req.get('slot')) + salt).encode('utf-8')).hexdigest()[:15], 16)
 
 
 class fixed_generation_seed:
@@ -267,6 +268,8 @@ def generate_with(tracker_cls, logger, cls, game, slot_name, slot_data, doc, all
     # Players folder must exist, whatever the caller (a slot start makes it; the game sweep didn't, and on an engine no
     # slot had used yet Universal Tracker couldn't generate and failed on its own log line: KeyError 'ut_status').
     ensure_players_folder()
+    # Universal Tracker hands back the world it last built for the same slot data: every rebuild here is its own.
+    forget_cached_worlds()
     folder = tempfile.mkdtemp(prefix='atlas_yaml_')
     try:
         import yaml
@@ -425,6 +428,7 @@ def start_slot(req, logger):
     players_dir = ensure_players_folder()
     known = bool(req.get('all_entrances_known'))
     if getattr(cls, 'ut_can_gen_without_yaml', False):
+        forget_cached_worlds()
         c = new_tracker(TrackerCore, logger, known)
         c.set_slot_params(game, 1, slot_name, 1)
         with fixed_generation_seed(rebuild_seed(req)):
@@ -433,7 +437,7 @@ def start_slot(req, logger):
             return None, {'code': 'ut_disabled', 'message': "This game's author asked for the Universal Tracker not to be used with it."}
         if c.multiworld is None or c.player_id is None:
             return None, {'code': 'generation_failed', 'message': getattr(c, 'gen_error', None) or 'The world could not be rebuilt from the slot data.'}
-        info = {'source': 'not_needed', 'apworld_override': override}
+        info = {'source': 'not_needed', 'apworld_override': override, '_rebuild': None}
         info.update(verify(c, all_locations))
         return c, info
     cands, notes, used, total = yaml_candidates(cls, game, slot_name, slot_data, req.get('yaml_path'), players_dir)
@@ -455,7 +459,7 @@ def start_slot(req, logger):
         attempts.append(attempt)
         score = v['missing'] + v['extra']
         if best is None or score < best[0]:
-            best = (score, c, source, fname, v)
+            best = (score, c, source, fname, v, doc)
         if v['match'] is not False:
             break  # this YAML rebuilds exactly the server's locations
     if best is None:
@@ -464,9 +468,40 @@ def start_slot(req, logger):
                    game + " needs this player's YAML: its slot data doesn't include the options.")
         return None, {'code': code, 'message': message, 'attempts': attempts, 'notes': notes}
     info = {'source': best[2], 'file': best[3], 'options_from_slot_data': used, 'options_total': total,
-            'attempts': attempts, 'notes': notes, 'apworld_override': override}
+            'attempts': attempts, 'notes': notes, 'apworld_override': override, '_rebuild': best[5]}
     info.update(best[4])
     return best[1], info
+
+
+def build_check_core(req, logger, cls, doc, salt=':check'):
+    # A second rebuild of the slot's world, as the first was built (from its slot data alone, or from the YAML doc) but
+    # with another generation seed. A world that restores every choice of the seed from its slot data comes out the
+    # same; one that leaves a choice to chance (a song list, a course order, a shop's prices) comes out otherwise, and
+    # where the two disagree about a location, Atlas can't tell which is the seed's.
+    from worlds.tracker.TrackerCore import TrackerCore
+    seed = rebuild_seed(req, salt)
+    known = bool(req.get('all_entrances_known'))
+    game, slot_name, slot_data = req.get('game'), req.get('player_name'), req.get('slot_data') or {}
+    if doc is None:
+        ensure_players_folder()  # the tracker writes its log page there (KeyError 'ut_status' without it)
+        forget_cached_worlds()
+        c = new_tracker(TrackerCore, logger, known)
+        c.set_slot_params(game, 1, slot_name, 1)
+        with fixed_generation_seed(seed):
+            c.initalize_tracker_core(cls, slot_data)
+        if c.multiworld is None or c.player_id is None:
+            return None, getattr(c, 'gen_error', None) or 'The world could not be rebuilt a second time.'
+        return c, None
+    return generate_with(TrackerCore, logger, cls, game, slot_name, slot_data, doc, known, seed)
+
+
+def unsure_locations(slot, items, reachable, missing=None):
+    # The missing locations whose logic another rebuild sees otherwise with the same items (none without one).
+    unsure = set()
+    for check in slot.check_cores:
+        other, _ = reachable_after(check, items, missing if missing is not None else slot.core.missing_locations)
+        unsure |= set(reachable) ^ set(other)
+    return sorted(unsure)
 
 
 def goal_reachable(core, tracker_state):
@@ -569,6 +604,11 @@ class Slot:
         self.last_glitch_state = None
         self.goal_unknown_noted = False
         self.entrance_keys = []
+        # The second rebuild (handle_check), and what it takes: the start request and how the world was built.
+        self.check_cores = []
+        self.start_req = None
+        self.rebuild = None
+        self.world_cls = None
 
 
 def found_entrance_keys(core, req):
@@ -612,6 +652,8 @@ def handle_entrances(slot, req):
             continue
         try:
             world.reconnect_found_entrances(key, value)
+            for check in slot.check_cores:
+                check.get_current_world().reconnect_found_entrances(key, value)
             applied.append(key)
         except Exception as e:
             errors.append(key + ': ' + type(e).__name__ + ': ' + str(e))
@@ -621,7 +663,7 @@ def handle_entrances(slot, req):
     slot.last_reachable = None
     items = list(req.get('base') or [])
     reachable, state = reachable_after(slot.core, items, req.get('missing_locations'))
-    reply = {'reachable': reachable, 'applied': applied, 'errors': errors}
+    reply = {'reachable': reachable, 'applied': applied, 'errors': errors, 'unsure': unsure_locations(slot, items, reachable)}
     reply.update(report_state(slot, items, reachable, state))
     return reply
 
@@ -640,8 +682,13 @@ def handle_init(req, logger):
     from worlds.AutoWorld import AutoWorldRegister
     slot = Slot(core)
     slot.entrance_keys = found_entrance_keys(core, req)
-    reply = {'status': 'ready', 'item_pool': item_pool(core), 'yaml': info, 'versions': versions(), 'entrance_keys': slot.entrance_keys}
+    slot.start_req = dict(req)
+    slot.rebuild = info.pop('_rebuild', None)
+    reply = {'status': 'ready', 'item_pool': item_pool(core), 'yaml': info, 'versions': versions(), 'entrance_keys': slot.entrance_keys,
+             # The server's locations the rebuilt world doesn't have: logic can't say anything about them.
+             'missing_locations': sorted(set(all_locations) - server_ids(core)) if all_locations else []}
     world_cls = AutoWorldRegister.world_types.get(req.get('game'))
+    slot.world_cls = world_cls
     if world_cls is not None:
         reply.update(world_identity(world_cls))
     return reply, slot
@@ -672,7 +719,74 @@ def handle_update(slot, req):
     # What's in logic with these items: the same query the seed test checks against real playthroughs.
     items = req.get('items', [])
     reachable, state = reachable_after(slot.core, items, req.get('missing_locations'))
-    reply = {'reachable': reachable}
+    reply = {'reachable': reachable, 'unsure': unsure_locations(slot, items, reachable)}
+    reply.update(report_state(slot, items, reachable, state))
+    return reply
+
+
+def build_checks(start_req, logger, cls, doc, core):
+    # The check rebuilds for a slot whose world is `core`. One is built first: when it comes out the same as the first
+    # rebuild (no option, value, entrance or placed item differs, and logic agrees with no items, half the progression
+    # items and all of them), the world restores the seed's choices and no check is kept (a slot pays nothing more).
+    # When it differs, two more are built: more draws catch more of the choices a seed could have made (on the logic
+    # batch, Muse Dash's every difference fell inside the unsure locations with three, about half with one).
+    # Returns (checks kept, what differs, error).
+    first, err = build_check_core(start_req, logger, cls, doc, ':check')
+    if first is None:
+        return [], None, err
+    try:
+        differs = world_differences(core.get_current_world(), first.get_current_world())
+    except Exception as e:
+        differs = {'error': type(e).__name__ + ': ' + str(e)}
+    summary = {k: differs.get(k) for k in ('options_count', 'values_count', 'entrances_count', 'locked_count', 'error')}
+    summary['examples'] = [x['name'] for key in ('options', 'values', 'entrances', 'locked') for x in (differs.get(key) or [])][:6]
+    same = not any(summary.get(k) for k in ('options_count', 'values_count', 'entrances_count', 'locked_count', 'error'))
+    # Logic itself, with no items, half the progression items and all of them: rebuilds that differ only in details
+    # logic doesn't use agree here (their checks are kept all the same: a state in play may tell them apart).
+    progression = [[i['id'], 1] for i in item_pool(core) if i['flags'] & 1]
+    missing = set(core.missing_locations) or server_ids(core)  # a slot's missing locations; every location without a slot
+    summary['logic_differs'] = False
+    for items in ([], progression[:len(progression) // 2], progression):
+        a, _ = reachable_after(core, items, missing)
+        b, _ = reachable_after(first, items, missing)
+        if set(a) != set(b):
+            same = False
+            summary['logic_differs'] = True
+            break
+    summary['same'] = same
+    if same:
+        return [], summary, None
+    checks = [first]
+    for n in (2, 3):
+        more, err = build_check_core(start_req, logger, cls, doc, ':check' + str(n))
+        if more is None:
+            break  # the ones built still count
+        checks.append(more)
+    return checks, summary, None
+
+
+def handle_check(slot, req, logger):
+    # Builds the slot's check rebuilds (build_checks) and says what differs, and the locations whose logic differs now
+    # with the slot's items ("base"). From then on every logic answer says what's unsure.
+    import time
+    started = time.time()
+    if slot.world_cls is None or slot.start_req is None:
+        return {'check': 'failed', 'error': "The slot's world isn't known."}
+    try:
+        checks, summary, err = build_checks(slot.start_req, logger, slot.world_cls, slot.rebuild, slot.core)
+    except Exception as e:
+        checks, summary, err = [], None, type(e).__name__ + ': ' + str(e)
+    slot.check_cores = checks
+    if summary is None:
+        text = (err or '').strip()
+        return {'check': 'failed', 'error': text if len(text) <= 600 else '...' + text[-600:], 'seconds': round(time.time() - started, 1)}
+    items = list(req.get('base') or [])
+    missing = req.get('missing_locations')
+    reachable, state = reachable_after(slot.core, items, missing)
+    reply = {'check': 'built', 'differs': summary, 'rebuilds': len(checks),
+             'unsure': unsure_locations(slot, items, reachable, set(missing) if missing is not None else None),
+             'seconds': round(time.time() - started, 1)}
+    slot.last_items = None  # the check rebuilds left the tracker's state elsewhere
     reply.update(report_state(slot, items, reachable, state))
     return reply
 
@@ -709,6 +823,7 @@ def handle_steps(slot, req):
         reachable, state = reachable_after(core, inventory)
         before = set(reachable)
     reply['steps'] = steps
+    reply['unsure'] = unsure_locations(slot, inventory, before)
     reply.update(report_state(slot, inventory, before, state))
     return reply
 
@@ -888,7 +1003,7 @@ def launch_bridge(*args):
                 slots.pop(key, None)
                 forget_cached_worlds()
                 reply = {'dropped': True}
-            elif action in ('update', 'steps', 'explain', 'entrances'):
+            elif action in ('update', 'steps', 'explain', 'entrances', 'check'):
                 slot = slots.get(key)
                 if slot is None:
                     reply = {'error': 'The logic engine has not been started for a slot yet.'}
@@ -898,6 +1013,8 @@ def launch_bridge(*args):
                     reply = handle_steps(slot, req)
                 elif action == 'entrances':
                     reply = handle_entrances(slot, req)
+                elif action == 'check':
+                    reply = handle_check(slot, req, logger)
                 else:
                     reply = handle_explain(slot, req)
             else:
@@ -1020,18 +1137,43 @@ def atlas_seed_test(*args):
             result['rebuild'] = {k: start.get(k) for k in ('source', 'file', 'match', 'expected', 'got', 'missing', 'extra')}
             world = core.get_current_world()
             names = getattr(world, 'location_id_to_name', {}) or {}
+            # What a live slot treats as unsure: the server's locations the rebuilt world lacks, and (with "check") those
+            # whose logic a second rebuild with another seed sees otherwise. Late and early count the rest.
+            lacking = set(locs) - server_ids(core)
+            probe = None
+            if req.get('check'):
+                start_req = {'game': game, 'player_name': name, 'seed_name': data.get('seed_name'), 'slot': player,
+                             'slot_data': (data.get('slot_data') or {}).get(player) or {}, 'all_entrances_known': True}
+                try:
+                    checks, summary, err = build_checks(start_req, logger, AutoWorldRegister.world_types.get(game), start.get('_rebuild'), core)
+                except Exception as e:
+                    checks, summary, err = [], None, type(e).__name__ + ': ' + str(e)
+                probe = Slot(core) if summary is not None else None
+                if probe is not None:
+                    probe.check_cores = checks
+                result['rebuilds'] = len(checks)
+                result['differs'] = summary
+                result['check'] = 'built' if probe is not None else 'failed: ' + str(err)[-300:]
             inventory = list(precollected.get(player, []))
             reached = set()
             steps = []
+            unsure_ever = set()
             for i, sphere in enumerate(spheres):
                 reached |= set(sphere.get(player, ()))
                 reach, tracked = reachable_after(core, inventory, locs)
                 reach = set(reach)
-                late, early = reached - reach, reach - reached
+                unsure = set(lacking)
+                if probe is not None:
+                    unsure |= set(unsure_locations(probe, inventory, reach, set(locs)))
+                unsure_ever |= unsure
+                late_all, early_all = reached - reach, reach - reached
+                late, early = late_all - unsure, early_all - unsure
+                last_late, last_late_all = late, late_all
                 steps.append({'sphere': i, 'expected': len(reached), 'reachable': len(reach),
                               'late_count': len(late), 'early_count': len(early),
                               'late': [names.get(l, str(l)) for l in sorted(late)[:15]],
-                              'early': [names.get(l, str(l)) for l in sorted(early)[:15]]})
+                              'early': [names.get(l, str(l)) for l in sorted(early)[:15]],
+                              'unsure_count': len(unsure), 'late_all': len(late_all), 'early_all': len(early_all)})
                 if req.get('debug'):
                     # What was fed, and what the tracker counted from it (for finding why a step differs).
                     item_names = getattr(world, 'item_id_to_name', {}) or {}
@@ -1053,14 +1195,18 @@ def atlas_seed_test(*args):
             if steps and spheres and accessibility not in (None, 'full'):
                 everything, _ = reachable_after(core, inventory, locs)
                 bucket = set(spheres[-1].get(player, ())) - set(everything)
-                if bucket and steps[-1]['late_count'] >= len(bucket):
+                if bucket and bucket <= last_late_all:
                     last = steps[-1]
                     last['unreachable'] = len(bucket)
-                    last['late_count'] -= len(bucket)
-                    last['late'] = [n for n in last['late'] if n not in {names.get(l, str(l)) for l in bucket}]
+                    last['late_count'] = len(last_late - bucket)
+                    last['late_all'] = len(last_late_all - bucket)
+                    last['late'] = [names.get(l, str(l)) for l in sorted(last_late - bucket)[:15]]
                     result['unreachable'] = len(bucket)
             result['steps'] = steps
             result['exact'] = bool(steps) and all(s['late_count'] == 0 and s['early_count'] == 0 for s in steps)
+            # Without setting the unsure ones apart (the logic a slot would show with "Show logic anyway").
+            result['exact_all'] = bool(steps) and all(s.get('late_all', 0) == 0 and s.get('early_all', 0) == 0 for s in steps)
+            result['unsure'] = len(unsure_ever)
             result['seconds'] = round(time.time() - started, 1)
     except Exception:
         out['error'] = traceback.format_exc()[-1500:]
@@ -1329,6 +1475,30 @@ def atlas_checksum(*args):
     send(out)
 
 
+def sweep_trust(cls, game, c, doc, logger):
+    # Whether a slot of this game gets the seed's logic: the slot data the world writes for this rebuild (as a seed's
+    # would carry it), then the world rebuilt from it as a slot is (start_slot's way) and checked with other seeds
+    # (build_checks). "same": every choice comes back from the slot data.
+    try:
+        written = c.get_current_world().fill_slot_data() or {}
+        slot_data = json.loads(json.dumps(written, default=lambda o: getattr(o, 'value', str(o))))
+    except Exception as e:
+        return {'error': "its slot data can't be written without a whole seed (" + type(e).__name__ + ')'}
+    req = {'game': game, 'player_name': 'AtlasSweep', 'slot_data': slot_data, 'seed_name': 'atlas-sweep', 'slot': 1}
+    rebuild_doc = None if getattr(cls, 'ut_can_gen_without_yaml', False) else doc
+    try:
+        main, err = build_check_core(req, logger, cls, rebuild_doc, '')
+        if main is None:
+            return {'error': "it couldn't be rebuilt from its slot data (" + str(err or '').strip()[-200:] + ')'}
+        checks, summary, err = build_checks(req, logger, cls, rebuild_doc, main)
+    except Exception as e:
+        return {'error': type(e).__name__ + ': ' + str(e)[:200], 'trace': traceback.format_exc()[-800:]}
+    if summary is None:
+        return {'error': "it couldn't be rebuilt a second time (" + str(err or '').strip()[-200:] + ')'}
+    return {'same': bool(summary.get('same')), 'logic_differs': bool(summary.get('logic_differs')), 'examples': summary.get('examples') or [],
+            'rebuilds': len(checks)}
+
+
 def atlas_game_sweep(*args):
     # Rebuilds games with default options and computes their starting logic, to find worlds that can't be tracked
     # before a user connects one. stdin: {"games": [names] (optional: all installed)}. One JSON line per game, then
@@ -1355,7 +1525,8 @@ def atlas_game_sweep(*args):
                 if out['ut_disabled']:
                     out['error'] = "the game's author disabled the Universal Tracker for it"
                 else:
-                    c, err = generate_with(TrackerCore, logger, cls, game, 'AtlasSweep', {}, {'name': 'AtlasSweep', 'game': game, game: {}})
+                    doc = {'name': 'AtlasSweep', 'game': game, game: {}}
+                    c, err = generate_with(TrackerCore, logger, cls, game, 'AtlasSweep', {}, doc)
                     if c is None:
                         out['error'] = err or 'the world could not be generated with default options'
                     else:
@@ -1364,6 +1535,8 @@ def atlas_game_sweep(*args):
                         out['locations'] = len(locs)
                         out['in_logic'] = len(reach)
                         out['ok'] = len(locs) > 0
+                        if req.get('trust'):
+                            out['trust'] = sweep_trust(cls, game, c, doc, logger)
         except BaseException as e:
             if isinstance(e, KeyboardInterrupt):
                 raise

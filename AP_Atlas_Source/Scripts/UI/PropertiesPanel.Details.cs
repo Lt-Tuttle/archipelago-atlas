@@ -614,6 +614,7 @@ namespace AP_Atlas.UI
                 : inLogic == true ? ("In logic", ThemeColors.MapColourForText(AP_Atlas.Core.Maps.MapPinState.InLogic))
                 : glitched ? ("Sequence break", ThemeColors.MapColourForText(AP_Atlas.Core.Maps.MapPinState.SequenceBreak))
                 : inLogic == false ? ("Out of logic", ThemeColors.MapColourForText(AP_Atlas.Core.Maps.MapPinState.OutOfLogic))
+                : owner?.IsLocationUnsure(t.LocationId) == true ? ("Logic unsure", ThemeColors.TextSubtle)
                 : ("Logic unknown", ThemeColors.TextSubtle);
             SetHeader("Location", name,
                 $"{Colored(game, ThemeColors.TextMuted)}  ·  {PlayerLink(view, ownerPlayer)}'s world" + (special ? "  " + Colored("◆ Special", Annotations.SpecialColor) : ""),
@@ -709,6 +710,11 @@ namespace AP_Atlas.UI
             else if (!owner.EngineRunning)
             {
                 AddHint("The logic engine isn't running for this slot.");
+            }
+            else if (owner.IsLocationUnsure(t.LocationId))
+            {
+                Row("In logic", Colored("Unsure for this seed", Muted));
+                AddHint("Atlas rebuilt this world with other seeds and they disagree about this check: the world doesn't keep the seed's choice in its slot data. The Logic Tracker's banner can show its logic anyway.");
             }
             else
             {
@@ -1193,6 +1199,7 @@ namespace AP_Atlas.UI
                 bool? logic = finderSlot?.IsLocationInLogic(h.LocationId);
                 Row("In logic", logic == true ? Colored("Yes", Good) : logic == false ? Colored("No", Bad)
                     : finderSlot?.LogicHidden == true || view.LogicHidden ? Colored("Hidden by race mode", Muted)
+                    : finderSlot?.IsLocationUnsure(h.LocationId) == true ? Colored("Unsure for this seed", Muted)
                     : Colored($"Unknown (connect {PlayerName(s, h.FindingPlayer)} here to see)", Muted));
             }
             PlainRow("As text", text);

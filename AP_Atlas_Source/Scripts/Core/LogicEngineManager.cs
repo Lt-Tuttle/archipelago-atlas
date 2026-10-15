@@ -206,12 +206,86 @@ public class LogicEngineManager
     /// </summary>
     public IReadOnlyList<string> LastEntranceKeys { get; private set; } = Array.Empty<string>();
 
+    /// <summary>The server's locations the rebuilt world doesn't have (from the last start): logic can't say anything about them.</summary>
+    public IReadOnlySet<long> LastMissingLocations { get; private set; } = new HashSet<long>();
+
+    /// <summary>
+    /// The locations whose logic the slot's check rebuilds see otherwise than its world, from the last answer (empty
+    /// until <see cref="CheckTrustAsync"/> has run, and when the world rebuilds the same every time).
+    /// </summary>
+    public IReadOnlySet<long> LastUnsure { get; private set; } = new HashSet<long>();
+
+    /// <summary>What the check rebuilds found (<see cref="CheckTrustAsync"/>).</summary>
+    /// <param name="Built">Whether the check could be made (false: the world couldn't be rebuilt again; Error says why).</param>
+    /// <param name="Same">The world came out the same, logic too: every choice of the seed is restored, nothing is unsure.</param>
+    /// <param name="Rebuilds">How many check rebuilds the engine keeps (0 when the world came out the same).</param>
+    /// <param name="Examples">The first things that differ between the rebuilds (options, the world's values, entrances).</param>
+    public sealed record TrustCheck(bool Built, bool Same, int Rebuilds, IReadOnlyList<string> Examples, string Error);
+
+    /// <summary>
+    /// Rebuilds the slot's world again with other seeds and compares (the bridge's 'check'): a world whose tracker support
+    /// restores every choice of the seed comes out the same; one that leaves a choice to chance doesn't, and from then on
+    /// each answer names the locations the rebuilds disagree about (<see cref="LastUnsure"/>). Null when the engine
+    /// couldn't answer (<see cref="LastQueryFailure"/>).
+    /// </summary>
+    public async Task<TrustCheck> CheckTrustAsync(IReadOnlyList<LogicItem> inventory, IEnumerable<long> missingLocations)
+    {
+        LastQueryFailure = null;
+        var seat = _seat;
+        if (seat is not { Running: true })
+        {
+            LastQueryFailure = "the logic engine isn't running";
+            return null;
+        }
+        try
+        {
+            var request = new JObject { ["action"] = "check", ["base"] = new JArray(inventory.Select(i => i.ToJson())) };
+            if (missingLocations != null) request["missing_locations"] = new JArray(missingLocations);
+            // Up to four more rebuilds of the world: as long as a few starts.
+            var answer = await seat.AskAsync(request, TimeSpan.FromMinutes(6)).ConfigureAwait(false);
+            var response = answer.Reply;
+            if (response == null)
+            {
+                LastQueryFailure = answer.Failure == AP_Atlas.Core.EngineSetup.EngineFailure.TimedOut ? "the logic engine stopped answering" : "the logic engine stopped";
+                _logger("CheckTrustAsync: " + LastQueryFailure + " (" + answer.Why + ").");
+                return null;
+            }
+            if (response["error"] != null && response["check"] == null)
+            {
+                LastQueryFailure = "the logic engine reported an error: " + response["error"];
+                _logger("CheckTrustAsync: bridge error: " + response["error"] + "\n" + response["trace"]);
+                return null;
+            }
+            if ((string)response["check"] != "built")
+                return new TrustCheck(false, false, 0, Array.Empty<string>(), response["error"]?.ToString() ?? "the world couldn't be rebuilt again");
+            ReadUnsure(response);
+            if (response["excluded"] is JArray excluded) LastExcludedLocations = new HashSet<long>(excluded.ToObject<List<long>>());
+            if (response["glitched"] is JArray glitched) LastGlitchedLocations = new HashSet<long>(glitched.ToObject<List<long>>());
+            var differs = response["differs"] as JObject;
+            var examples = (differs?["examples"] as JArray)?.Select(e => e.ToString()).ToList() ?? new List<string>();
+            return new TrustCheck(true, (bool?)differs?["same"] == true, (int?)response["rebuilds"] ?? 0, examples, null);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            LastQueryFailure = "the logic engine failed: " + ex.Message;
+            _logger("CheckTrustAsync Exception: " + ex.Message);
+            return null;
+        }
+    }
+
+    private void ReadUnsure(JObject response)
+    {
+        if (response["unsure"] is JArray unsure) LastUnsure = new HashSet<long>(unsure.ToObject<List<long>>() ?? new List<long>());
+    }
+
     public async Task<bool> StartEngineAsync(string game, string playerName, int slot, Dictionary<string, object> slotData, IEnumerable<long> allLocations = null, string yamlPath = null,
         string apworldOverride = null, string expectedChecksum = null, int? team = null, string seedName = null)
     {
         if (_seat is { Running: true }) return true;
         LastStartError = null;
         LastEntranceKeys = Array.Empty<string>();
+        LastMissingLocations = new HashSet<long>();
+        LastUnsure = new HashSet<long>();
         LastStartLoss = null;
         LastGoalReachable = null;
         LastApworldOverride = null;
@@ -291,6 +365,7 @@ public class LogicEngineManager
                 LastDataChecksum = response["data_checksum"]?.ToString();
                 LastWorldVersion = response["world_version"]?.ToString();
                 LastEntranceKeys = (response["entrance_keys"] as JArray)?.Select(key => (string)key).Where(key => !string.IsNullOrEmpty(key)).ToList() ?? new List<string>();
+                LastMissingLocations = new HashSet<long>((response["missing_locations"] as JArray)?.ToObject<List<long>>() ?? new List<long>());
                 var poolToken = response["item_pool"];
                 if (poolToken != null)
                 {
@@ -383,6 +458,7 @@ public class LogicEngineManager
             var startList = start ? response["start"].ToObject<List<long>>() : new List<long>();
             if (response["excluded"] is JArray excluded) LastExcludedLocations = new HashSet<long>(excluded.ToObject<List<long>>());
             if (response["glitched"] is JArray glitched) LastGlitchedLocations = new HashSet<long>(glitched.ToObject<List<long>>());
+            ReadUnsure(response);
             var goal = response["goal"];
             LastGoalReachable = goal?.Type == JTokenType.Boolean ? (bool)goal : null;
             return new LogicSteps(startList, opened);
@@ -437,6 +513,7 @@ public class LogicEngineManager
                 _logger("The world couldn't take some of the entrances found: " + string.Join("; ", errors.Select(e => (string)e)));
             if (response["excluded"] is JArray excluded) LastExcludedLocations = new HashSet<long>(excluded.ToObject<List<long>>());
             if (response["glitched"] is JArray glitched) LastGlitchedLocations = new HashSet<long>(glitched.ToObject<List<long>>());
+            ReadUnsure(response);
             var goal = response["goal"];
             LastGoalReachable = goal?.Type == JTokenType.Boolean ? (bool)goal : null;
             return reachable.ToObject<List<long>>() ?? new List<long>();

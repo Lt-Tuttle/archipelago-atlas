@@ -206,6 +206,8 @@ public partial class MainTrackerWindow
             LogicBannerAsync);
         await ScenarioAsync("Found entrances: a world that learns the entrances found in the game from the room's data storage (as Universal Tracker's own client does) has the slot ask the server about its key and read it at connect; each value is passed to the engine and what it opens is a step of its own; a new engine hears them again; Atlas never writes the key",
             FoundEntrancesAsync);
+        await ScenarioAsync("Logic you can trust: once a slot's logic starts, the engine rebuilds its world with other seeds; the checks the rebuilds disagree about, and those the rebuilt world lacks, aren't called in or out of logic but listed under Checklist with a banner saying why; Show logic anyway (remembered per slot) shows them, and List them as a checklist puts them back; Check this game on the Games page and Add a slot say up front that some checks will be unsure; a world the engine can't rebuild lists every check left as a checklist under its notice",
+            LogicYouCanTrustAsync);
         await ScenarioAsync("Solo test: Test this game… on a game's page runs the whole chain against the fake engine (the apworld already there, a pack installed, a YAML from the engine, a seed generated again without the game's patch output when the first try wants a ROM, a server on this PC, the AtlasTest slot connected with the YAML, logic and the pack scored) and writes a scrubbed report with a JSON twin; the owner's notes land in it once; Stop ends the server and removes the test multiworld; a generation that fails outright ends the chain with the report saying so",
             SoloTestAsync);
         await ScenarioAsync("Solo test questions: a question the test asks (trusting the apworld's project) opens on the test's own window, so a click on that window can't bury it; Cancel ends the test at once even while the question waits; closing the window then answers the question \"no\", and a permission question whose window goes is a \"no\" that isn't remembered",
@@ -1639,6 +1641,88 @@ public partial class MainTrackerWindow
         }
         finally
         {
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+            DeleteProfile(profile);
+        }
+    }
+
+    private async Task LogicYouCanTrustAsync()
+    {
+        // The rebuilds disagree about the Tower Top, and the rebuilt world lacks the Gem Vault.
+        var engine = StartFakeEngine(UiTestPython(), fake =>
+        {
+            fake.Unsure.Add(2002);
+            fake.RebuildLacks.Add(2003);
+        });
+        await using var server = LogicWorldServer();
+        var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Tester");
+        _profiles.Add(profile);
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        try
+        {
+            await OnConnectSlotPressedAsync("Tester", profile);
+            var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
+            host.ShowTool(AP_Atlas.UI.Tool.LogicTracker);
+            await UiTestWaitForAsync(() => slot.LogicSettled && slot.Model.Logic.Trust != null ? slot : null, "the slot's logic to be checked");
+            UiTestExpect(engine.Requests("check").Count == 1, $"the engine was asked to check the world {engine.Requests("check").Count} times, not once");
+            UiTestExpect(slot.Model.Logic.Trust is { Built: true, Same: false }, $"the check says {slot.Model.Logic.Trust}");
+            UiTestExpect(slot.Model.Logic.Unsure.SetEquals(new long[] { 2002, 2003 }), $"unsure: {string.Join(", ", slot.Model.Logic.Unsure)}");
+            // Neither in nor out of logic: listed under Checklist, with the banner saying why.
+            UiTestExpect(slot.IsLocationInLogic(2000) == true && slot.IsLocationInLogic(2001) == false && slot.IsLocationInLogic(2002) == null && slot.IsLocationInLogic(2003) == null,
+                $"the unsure checks are called in or out of logic: {string.Join(", ", new long[] { 2000, 2001, 2002, 2003 }.Select(id => $"{id}={slot.IsLocationInLogic(id)?.ToString() ?? "null"}"))}" +
+                $" (hidden {slot.LogicHidden}, running {slot.EngineRunning}, shown anyway {slot.Model.ShowUnsureLogic}, unsure shown [{string.Join(", ", slot.Model.UnsureShown)}])");
+            UiTestExpect(slot.IsLocationUnsure(2002) && !slot.IsLocationUnsure(2001), "Properties wouldn't call the Tower Top unsure");
+            await ExpectTreeAsync(slot, "with logic unsure about two checks", "── Base Logic (Starting Reachable) ──", "Cave Chest",
+                "── Checklist: logic unsure for this seed (2) ──", "Tower Top", "Gem Vault");
+            UiTestExpect(slot.UnsureBannerText?.Contains("unsure about 2 checks") == true, $"the banner says \"{slot.UnsureBannerText}\"");
+
+            // The Sword and the Shield: the door comes into logic; the tower stays unsure.
+            await server.BroadcastAsync(FakeArchipelagoServer.ReceivedItems(0, new long[] { 1000, 1001 }, flags: 1));
+            await UiTestWaitForAsync(() => slot.LogicSettled && slot.IsLocationInLogic(2001) == true ? slot : null, "the Sword to open the door");
+            UiTestExpect(slot.IsLocationInLogic(2002) == null && slot.ActiveLogicCount == 2, $"the tower's logic is {slot.IsLocationInLogic(2002)}; {slot.ActiveLogicCount} in logic");
+
+            // Show logic anyway: the tower shows as the rebuild sees it, remembered for the slot; then back to the checklist.
+            slot.PressUnsureBanner();
+            await UiTestWaitForAsync(() => slot.IsLocationInLogic(2002) == true ? slot : null, "Show logic anyway to show the tower's logic");
+            UiTestExpect(DataManager.LoadSettings().ShowUnsureLogic.Contains(slot.AnnotationKey) || _appSettings.ShowUnsureLogic.Contains(slot.AnnotationKey),
+                "Show logic anyway wasn't remembered for the slot");
+            await ExpectTreeAsync(slot, "with unsure logic shown", "── Base Logic (Starting Reachable) ──", "Cave Chest",
+                "── Unlocked by: Sword (1 checks) ──", "Locked Door", "── Unlocked by: Shield (1 checks) ──", "Tower Top");
+            UiTestExpect(slot.UnsureBannerText?.StartsWith("Showing logic for 2 checks") == true, $"the banner says \"{slot.UnsureBannerText}\"");
+            slot.PressUnsureBanner();
+            await UiTestWaitForAsync(() => slot.IsLocationInLogic(2002) == null ? slot : null, "List them as a checklist to hide the tower's logic again");
+
+            // Check this game (the Games page's check of one game) says up front that some checks will be unsure, and so
+            // does Add a slot's line about the game.
+            var checkBefore = AtlasEngine.State.LastCheck;
+            AtlasEngine.State.LastCheck = new EngineCheckResult { Games = new List<string> { "Test Game" }, TrackerLoads = true };
+            try
+            {
+                var install = AtlasEngine.Resolve(_appSettings);
+                await GameSweep.RunAsync(install, _ => { }, System.Threading.CancellationToken.None, new[] { "Test Game" });
+                UiTestExpect((bool?)engine.ComponentRequests("AtlasGameSweep").LastOrDefault()?["trust"] == true, "Check this game didn't ask whether a slot's logic is the seed's");
+                var trust = GameSweep.LastFor(install, "Test Game")?.Trust;
+                UiTestExpect(trust is { LogicDiffers: true } && trust.Summary.Contains("unsure for every seed"), $"the check says: {trust?.Summary ?? "nothing"}");
+                UiTestExpect(SlotGameStatus("Test Game").Text.Contains("unsure for every seed"), $"Add a slot says: {SlotGameStatus("Test Game").Text}");
+            }
+            finally
+            {
+                AtlasEngine.State.LastCheck = checkBefore;
+            }
+
+            // A world the engine can't rebuild: every check left is listed as a checklist under the notice.
+            engine.StartError = ("generation_failed", "None of the YAMLs tried could rebuild this world.");
+            engine.Apply();
+            slot.RetryLogicEngine();
+            await UiTestWaitForAsync(() => slot.EngineProblem?.Code == "generation_failed" ? slot : null, "the rebuild to fail");
+            await ExpectTreeAsync(slot, "with logic not running", "── Checklist: logic isn't running (4) ──",
+                "Cave Chest", "Locked Door", "Tower Top", "Gem Vault");
+        }
+        finally
+        {
+            _appSettings.ShowUnsureLogic.Clear();
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
             DeleteProfile(profile);
         }

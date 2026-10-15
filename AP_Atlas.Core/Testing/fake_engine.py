@@ -89,7 +89,8 @@ def start(req, rules):
         check = {'expected': 0, 'got': len(got), 'missing': 0, 'extra': 0, 'match': None}
     yaml = {'source': 'not_needed', 'apworld_override': None}
     yaml.update(check)
-    reply = {'status': 'ready', 'item_pool': rules['pool'], 'yaml': yaml, 'versions': versions(), 'entrance_keys': entrance_keys(req, rules)}
+    reply = {'status': 'ready', 'item_pool': rules['pool'], 'yaml': yaml, 'versions': versions(), 'entrance_keys': entrance_keys(req, rules),
+             'missing_locations': rules.get('rebuild_lacks') or []}
     if rules.get('data_checksum'):
         reply['data_checksum'] = rules['data_checksum']
     return reply
@@ -131,7 +132,15 @@ def steps(req, slot, rules):
     if rules.get('short_steps') and opened:
         opened = opened[:-1]  # a broken answer: one item's step missing
     reply.update({'steps': opened, 'excluded': final['excluded'], 'glitched': final['glitched'], 'goal': final['goal']})
+    reply.update(unsure(slot, rules))
     return reply
+
+
+def unsure(slot, rules):
+    # Once the slot's check rebuilds are built: the rules' unsure locations still missing, as the bridge names them.
+    if not slot.get('checked'):
+        return {}
+    return {'unsure': sorted(loc for loc in rules.get('unsure') or [] if loc in slot['missing'])}
 
 
 def explain(req, items, rules):
@@ -208,13 +217,13 @@ def serve(*args):
             reply = start(req, rules)
             if reply.get('status') == 'ready':
                 slots[key] = {'missing': set(req.get('all_locations') or [loc['id'] for loc in rules['locations']]), 'items': None,
-                              'keys': reply['entrance_keys'], 'found': set()}
+                              'keys': reply['entrance_keys'], 'found': set(), 'checked': False}
             else:
                 slots.pop(key, None)
         elif action == 'drop':
             slots.pop(key, None)
             reply = {'dropped': True}
-        elif action in ('update', 'steps', 'explain', 'entrances') and key not in slots:
+        elif action in ('update', 'steps', 'explain', 'entrances', 'check') and key not in slots:
             reply = {'error': 'The logic engine has not been started for a slot yet.'}
         elif action == 'update':
             slot = slots[key]
@@ -237,6 +246,21 @@ def serve(*args):
             slot['items'] = list(req.get('base') or [])
             reply = update(slot['items'], slot['missing'], rules, slot['found'])
             reply.update(applied=applied, errors=errors)
+            reply.update(unsure(slot, rules))
+        elif action == 'check':
+            # The trust check: the world rebuilt again; it differs when the rules name unsure locations.
+            slot = slots[key]
+            if rules.get('check_error'):
+                reply = {'check': 'failed', 'error': rules['check_error']}
+            else:
+                if req.get('missing_locations') is not None:
+                    slot['missing'] = set(req['missing_locations'])
+                slot['checked'] = True
+                same = not rules.get('unsure')
+                reply = update(list(req.get('base') or []), slot['missing'], rules, slot['found'])
+                reply.update({'check': 'built', 'rebuilds': 0 if same else 3,
+                              'differs': {'same': same, 'examples': [] if same else ['song_list']}})
+                reply.update(unsure(slot, rules))
         elif action == 'steps':
             reply = steps(req, slots[key], rules)
         elif action == 'explain':
@@ -352,4 +376,21 @@ def checksum(*args):
     send(out)
 
 
-components += [Component('AtlasYamlTemplate', yaml_template), Component('AtlasGenerate', generate), Component('AtlasHost', host), Component('AtlasSeedTest', seed_test), Component('AtlasChecksum', checksum)]
+def game_sweep(*args):
+    # As the bridge's AtlasGameSweep: a line per game asked for, then done. With "trust", whether a slot's logic is the
+    # seed's: the same unless the rules name unsure locations.
+    line = sys.stdin.readline()
+    req = json.loads(line) if line else {}
+    note({'component': 'AtlasGameSweep', 'request': req})
+    rules = read_rules()
+    for game in req.get('games') or []:
+        out = {'game': game, 'ok': True, 'locations': len(rules.get('locations') or []), 'in_logic': 1, 'seconds': 0.01}
+        if req.get('trust'):
+            unsure = rules.get('unsure') or []
+            out['trust'] = {'same': not unsure, 'logic_differs': bool(unsure), 'examples': ['song_list'] if unsure else [], 'rebuilds': 3 if unsure else 0}
+        send(out)
+    send({'done': True})
+
+
+components += [Component('AtlasYamlTemplate', yaml_template), Component('AtlasGenerate', generate), Component('AtlasHost', host), Component('AtlasSeedTest', seed_test), Component('AtlasChecksum', checksum),
+               Component('AtlasGameSweep', game_sweep)]

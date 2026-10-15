@@ -225,6 +225,7 @@ namespace AP_Atlas.UI
             if (_checkedLocs.Contains(id)) return "checked";
             string excluded = Excluded(id) ? ", excluded" : "";
             if (LogicHidden) return (_hintedLocs.Contains(id) ? "hinted" : "open") + excluded;
+            if (_unsureLocs.Contains(id)) return (_hintedLocs.Contains(id) ? "hinted, logic unsure" : "logic unsure") + excluded;
             bool r = _reachableLocs.Contains(id), h = _hintedLocs.Contains(id);
             return (h && r ? "hinted, in logic" : h ? "hinted, out of logic" : r ? "in logic" : "out of logic") + excluded;
         }
@@ -240,6 +241,8 @@ namespace AP_Atlas.UI
         private HashSet<long> _checkedLocs = new HashSet<long>();
         private IReadOnlySet<long> _hintedLocs = new HashSet<long>();
         private IReadOnlySet<long> _glitchedLocs = new HashSet<long>();
+        // Locations logic is unsure about for this seed (SlotModel.UnsureShown): drawn as logic unknown, counted apart.
+        private IReadOnlySet<long> _unsureLocs = new HashSet<long>();
 
         private VBoxContainer _mapListContainer;
         private OptionButton _sortDropdown;
@@ -605,9 +608,10 @@ namespace AP_Atlas.UI
             RefreshMapListCounters();
         }
         public void UpdateLogicColors(System.Collections.Generic.IReadOnlySet<long> reachableLocs, System.Collections.ObjectModel.ReadOnlyCollection<long> checkedLocs, System.Collections.Generic.IReadOnlySet<long> hintedLocs,
-            System.Collections.Generic.IReadOnlySet<long> glitchedLocs = null)
+            System.Collections.Generic.IReadOnlySet<long> glitchedLocs = null, System.Collections.Generic.IReadOnlySet<long> unsureLocs = null)
         {
             if (reachableLocs != null) _reachableLocs = reachableLocs;
+            if (unsureLocs != null) _unsureLocs = unsureLocs;
             if (glitchedLocs != null) _glitchedLocs = glitchedLocs;
             if (checkedLocs != null)
             {
@@ -825,6 +829,7 @@ namespace AP_Atlas.UI
             public int HintedReachable = 0;
             public int HintedInaccessible = 0;
             public int Glitched = 0;
+            public int Unsure = 0;
             public int Checked = 0;
             public int TotalSort => Reachable + HintedReachable;
         }
@@ -905,9 +910,15 @@ namespace AP_Atlas.UI
                 int hintedInaccessibleChecks = 0;
                 int glitchedChecks = 0;
                 int inaccessibleChecks = 0;
+                int unsureChecks = 0;
                 foreach (long id in ids)
                 {
                     if (_checkedLocs.Contains(id)) continue;
+                    if (!LogicHidden && _unsureLocs.Contains(id))
+                    {
+                        unsureChecks++;
+                        continue;
+                    }
                     bool isR = _reachableLocs.Contains(id);
                     bool isH = _hintedLocs.Contains(id);
                     if (isH && isR) hintedReachableChecks++;
@@ -916,7 +927,7 @@ namespace AP_Atlas.UI
                     else if (_glitchedLocs.Contains(id)) glitchedChecks++;
                     else inaccessibleChecks++;
                 }
-                bool isAllChecked = reachableChecks == 0 && hintedReachableChecks == 0 && hintedInaccessibleChecks == 0 && glitchedChecks == 0 && inaccessibleChecks == 0;
+                bool isAllChecked = reachableChecks == 0 && hintedReachableChecks == 0 && hintedInaccessibleChecks == 0 && glitchedChecks == 0 && inaccessibleChecks == 0 && unsureChecks == 0;
                 var refs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 if (!string.IsNullOrEmpty(loc.MapRef)) refs.Add(loc.MapRef);
                 if (loc.MapLocations != null)
@@ -938,6 +949,7 @@ namespace AP_Atlas.UI
                             stat.Reachable += reachableChecks;
                             stat.Glitched += glitchedChecks;
                             stat.Inaccessible += inaccessibleChecks;
+                            stat.Unsure += unsureChecks;
                         }
                     }
                 }
@@ -980,6 +992,7 @@ namespace AP_Atlas.UI
                                 AddPill(stat.HintedInaccessible, ThemeColors.HintedOutOfLogic, "hinted, out of logic");
                                 AddPill(stat.Glitched, ThemeColors.MapColour(MapPinState.SequenceBreak), "sequence break");
                                 AddPill(stat.Inaccessible, ThemeColors.MapColour(MapPinState.OutOfLogic), "out of logic");
+                                AddPill(stat.Unsure, ThemeColors.MapColour(MapPinState.LogicUnknown), "logic unsure for this seed");
                             }
                         }
                     }
@@ -1263,7 +1276,7 @@ namespace AP_Atlas.UI
             unplaced.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
             UnplacedNames = unplaced.Select(u => u.Name).ToList();
             // How many of them are in logic, so the map rows' counts and the slot's add up (26 in logic, 1 on the maps).
-            UnplacedInLogic = LogicHidden ? 0 : unplaced.Count(u => _reachableLocs.Contains(u.Id));
+            UnplacedInLogic = LogicHidden ? 0 : unplaced.Count(u => _reachableLocs.Contains(u.Id) && !_unsureLocs.Contains(u.Id));
             bool any = unplaced.Count > 0;
             string count = unplaced.Count.ToString();
             _unplacedHeader.Visible = any;
@@ -1301,7 +1314,7 @@ namespace AP_Atlas.UI
         }
 
         private MapPinState StateFor(long id) =>
-            LogicHidden || _logic != LogicShown.Running ? MapPinState.LogicUnknown
+            LogicHidden || _logic != LogicShown.Running || _unsureLocs.Contains(id) ? MapPinState.LogicUnknown
             : _hintedLocs.Contains(id) ? (_reachableLocs.Contains(id) ? MapPinState.HintedInLogic : MapPinState.HintedOutOfLogic)
             : _reachableLocs.Contains(id) ? MapPinState.InLogic
             : _glitchedLocs.Contains(id) ? MapPinState.SequenceBreak : MapPinState.OutOfLogic;
@@ -1429,14 +1442,19 @@ namespace AP_Atlas.UI
                 if (excludedMode == ModeHide) return PinLook.Hidden;
                 return new PinLook(false, ThemeColors.TextSubtle, null, true, excludedOpen == 1 ? "\nExcluded" : $"\nExcluded ({excludedOpen} checks)");
             }
+            // Checks logic is unsure about for this seed are left out of the pin's logic; a pin of only those is unknown.
+            int unsure = LogicHidden ? 0 : counted.Count(_unsureLocs.Contains);
+            if (unsure > 0) counted = counted.Where(id => !_unsureLocs.Contains(id)).ToList();
             int reachable = counted.Count(_reachableLocs.Contains);
             int glitched = counted.Count(id => !_reachableLocs.Contains(id) && _glitchedLocs.Contains(id));
             bool anyHinted = counted.Any(_hintedLocs.Contains);
-            var state = MapPinLogic.StateOf(counted.Count, reachable, glitched, !LogicHidden, anyHinted);
+            var state = counted.Count == 0 ? MapPinState.LogicUnknown : MapPinLogic.StateOf(counted.Count, reachable, glitched, !LogicHidden, anyHinted);
             // A pin with some checks in logic is drawn half in logic, half out; a hinted pin has its own colours.
             bool split = MapPinLogic.IsSplit(state);
             string stateText = state != MapPinState.LogicUnknown ? MapPinLogic.Title(state)
+                : unsure > 0 ? "Logic unsure for this seed"
                 : _logic == LogicShown.Hidden ? "Open" : "Open (logic isn't running)";
+            if (unsure > 0 && counted.Count > 0) stateText += $" ({unsure} more, logic unsure)";
             if (split) stateText += $": {reachable} of {counted.Count}";
             string note = "\n" + stateText + (excludedOpen > 0 ? $"\n{excludedOpen} excluded" : "");
             return new PinLook(false, ThemeColors.MapColour(split ? MapPinState.InLogic : state), split ? ThemeColors.MapColour(MapPinState.OutOfLogic) : null, false, note);

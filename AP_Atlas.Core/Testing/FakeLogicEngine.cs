@@ -132,6 +132,12 @@ internal sealed class FakeLogicEngine
     /// <summary>Locations behind an entrance (by its name): in logic only once the room says it was found.</summary>
     public Dictionary<long, string> BehindEntrance { get; } = new();
 
+    /// <summary>Locations the world's check rebuilds disagree about (the trust check): unsure once checked. Empty: the world rebuilds the same.</summary>
+    public List<long> Unsure { get; } = new();
+
+    /// <summary>The server's locations the rebuilt world lacks (reported when a slot starts).</summary>
+    public List<long> RebuildLacks { get; } = new();
+
     /// <summary>Writes the rules. The engine reads them for every request, so changes apply to the next one.</summary>
     public void Apply()
     {
@@ -153,6 +159,8 @@ internal sealed class FakeLogicEngine
             ["flood"] = new JObject { ["stdout"] = FloodAnswers, ["stderr"] = FloodErrors },
             ["solo"] = new JObject { ["host_port"] = HostPort, ["generate_error"] = GenerateError, ["generate_seconds"] = GenerateSeconds },
             ["entrance_key"] = EntranceKey,
+            ["unsure"] = new JArray(Unsure),
+            ["rebuild_lacks"] = new JArray(RebuildLacks),
             ["behind_entrance"] = new JObject(BehindEntrance.Select(entry => new JProperty(entry.Key.ToString(System.Globalization.CultureInfo.InvariantCulture), entry.Value)))
         };
         // Replaced whole, so the engine never reads half a file. It may be reading the old one this moment: then retry.

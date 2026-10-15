@@ -21,14 +21,36 @@ namespace AP_Atlas.Core.EngineSetup
         [JsonProperty("world_version")] public string WorldVersion { get; set; }
         [JsonProperty("error")] public string Error { get; set; }
         [JsonProperty("seconds")] public double Seconds { get; set; }
+        /// <summary>Whether a slot of this game gets the seed's logic (one game's check only; null otherwise).</summary>
+        [JsonProperty("trust")] public GameTrust Trust { get; set; }
 
         /// <summary>Plain wording: what this test shows about the game.</summary>
         [JsonIgnore]
         public string Summary =>
-            TrackerDisabled ? "its author disabled the Universal Tracker for it"
+            (TrackerDisabled ? "its author disabled the Universal Tracker for it"
             : Ok ? $"rebuilds and computes logic ({Locations} locations with default options)"
             : "not testable with default options" + (Error != null ? $" ({Error})" : Yamlless ? " (it rebuilds from a seed's server data)" : "") +
-              "; verifying against a real seed tests it properly";
+              "; verifying against a real seed tests it properly") + (Trust?.Summary is { } trust ? ". " + trust : "");
+    }
+
+    /// <summary>
+    /// What the check found about a game's logic for a slot: its world rebuilt from the slot data it writes, then again
+    /// with other seeds (the bridge's sweep_trust). The same: a slot's logic is the seed's. Otherwise the checks the
+    /// rebuilds disagree about in play are listed as a checklist.
+    /// </summary>
+    public class GameTrust
+    {
+        [JsonProperty("same")] public bool Same { get; set; }
+        [JsonProperty("logic_differs")] public bool LogicDiffers { get; set; }
+        [JsonProperty("examples")] public List<string> Examples { get; set; } = new();
+        [JsonProperty("error")] public string Error { get; set; }
+
+        [JsonIgnore]
+        public string Summary =>
+            Error != null ? $"Whether a slot's logic is the seed's couldn't be checked: {Error}"
+            : Same ? "Logic: rebuilt from a seed's data, the world comes out the same, so a slot's logic is the seed's"
+            : LogicDiffers ? $"Logic: some checks will be unsure for every seed (the world doesn't keep {string.Join(", ", Examples.Take(3))} in its slot data); they're listed as a checklist"
+            : $"Logic: rebuilt from a seed's data, the world differs in details ({string.Join(", ", Examples.Take(3))}) that logic didn't use so far; any check its rebuilds disagree about in play is listed as a checklist";
     }
 
     public class GameSweepRecord
@@ -78,7 +100,8 @@ namespace AP_Atlas.Core.EngineSetup
                 var remaining = new List<string>(games);
                 for (int attempt = 0; attempt < 5 && remaining.Count > 0; attempt++)
                 {
-                    string request = JsonConvert.SerializeObject(new { games = remaining });
+                    // One game's check also says whether a slot's logic is the seed's (a few more rebuilds of the world).
+                    string request = JsonConvert.SerializeObject(new { games = remaining, trust = only != null });
                     await AtlasEngine.RunComponentAsync(install, "AtlasGameSweep", request, line =>
                     {
                         string t = line.Trim();

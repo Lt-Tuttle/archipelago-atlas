@@ -42,6 +42,16 @@ public partial class SlotTrackerControl : MarginContainer
         _bkLabel = new Label { Visible = false, AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill };
         _bkLabel.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Warning);
         vbox.AddChild(_bkLabel);
+        // Logic Atlas is unsure about for this seed: said above the list, with the choice to see it anyway.
+        _unsureBanner = new HBoxContainer { Visible = false };
+        _unsureBanner.AddThemeConstantOverride("separation", 10);
+        _unsureText = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        _unsureText.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Warning);
+        _unsureBanner.AddChild(_unsureText);
+        _unsureButton = new Button();
+        _unsureButton.Pressed += () => Model.ShowUnsureLogic = !Model.ShowUnsureLogic;
+        _unsureBanner.AddChild(_unsureButton);
+        vbox.AddChild(_unsureBanner);
         _engineStatusLabel = new Label { Text = "Logic not running", SizeFlagsHorizontal = SizeFlags.ExpandFill, HorizontalAlignment = HorizontalAlignment.Right };
         toolbar.AddChild(_engineStatusLabel);
 
@@ -92,7 +102,8 @@ public partial class SlotTrackerControl : MarginContainer
             {
                 long locId = meta.AsInt64();
                 // "Unlocked By" column inspects the unlocking item; anything else the location.
-                if (column == 2 && selected.GetText(2) != "Starting Logic") Inspect(ItemTargetByName(selected.GetText(2)));
+                if (column == 2 && selected.GetText(2) is { Length: > 0 } item && item != "Starting Logic" && item != AP_Atlas.Core.LogicStep.EntrancesName)
+                    Inspect(ItemTargetByName(item));
                 else Inspect(LocationTarget(locId));
             }
             else if (meta.VariantType == Variant.Type.String) Inspect(ItemTargetByName(meta.AsString()));
@@ -114,6 +125,61 @@ public partial class SlotTrackerControl : MarginContainer
 
     private VBoxContainer _logicNotice;
     private Label _logicNoticeText;
+    private HBoxContainer _unsureBanner;
+    private Label _unsureText;
+    private Button _unsureButton;
+    private bool _logicChecklistShown;
+
+    /// <summary>What the Logic Tracker says about logic it's unsure of (null while it says nothing), for the UI test.</summary>
+    public string UnsureBannerText => _unsureBanner?.Visible == true ? _unsureText.Text : null;
+
+    /// <summary>Presses the unsure banner's button (Show logic anyway / List them as a checklist), for the UI test.</summary>
+    public void PressUnsureBanner() => _unsureButton?.EmitSignal(BaseButton.SignalName.Pressed);
+
+    /// <summary>
+    /// The checks listed under Checklist: those logic is unsure about for this seed while it runs, or every check left
+    /// while it can't run (a lasting problem: the world can't be rebuilt, isn't installed, …). Its title says which.
+    /// </summary>
+    private List<long> ChecklistRows(out string title)
+    {
+        title = "";
+        if (Session == null || LogicHidden) return new List<long>();
+        if (Model.Logic.Running)
+        {
+            var unsure = Model.UnsureOpen();
+            title = $"Checklist: logic unsure for this seed ({unsure.Count})";
+            return unsure;
+        }
+        if (!LastingProblem) return new List<long>();
+        var done = new HashSet<long>(Session.Locations.AllLocationsChecked);
+        var open = Session.Locations.AllLocations.Where(l => !done.Contains(l) && !Model.IsExcluded(l)).ToList();
+        title = $"Checklist: logic isn't running ({open.Count})";
+        return open;
+    }
+
+    /// <summary>A problem that keeps logic from running until something changes (not a restart or an engine update under way).</summary>
+    private bool LastingProblem => !Model.Logic.Running && EngineProblem is { } problem && problem.Code is not ("restarting" or "paused");
+
+    private void UpdateUnsureBanner()
+    {
+        if (_unsureBanner == null) return;
+        int unsure = Model.Logic.Running && !LogicHidden ? Model.Logic.Unsure.Count : 0;
+        _unsureBanner.Visible = unsure > 0;
+        if (unsure == 0) return;
+        if (Model.ShowUnsureLogic)
+        {
+            _unsureText.Text = $"Showing logic for {unsure} checks Atlas is unsure about: it may be wrong for this seed.";
+            _unsureButton.Text = "List them as a checklist";
+            _unsureButton.TooltipText = "List the checks logic is unsure about under Checklist, without saying whether they're in logic";
+        }
+        else
+        {
+            _unsureText.Text = $"Logic is unsure about {unsure} checks of this seed: this world doesn't keep all of its seed's choices in its slot data, " +
+                               "so Atlas can't tell whether they're in logic. They're listed under Checklist.";
+            _unsureButton.Text = "Show logic anyway";
+            _unsureButton.TooltipText = "Show what Atlas's rebuild of the world says about them (it may be wrong for this seed); remembered for this slot";
+        }
+    }
     private HBoxContainer _logicNoticeActions;
     private Button _logicFlaggedOnly;
 
@@ -185,9 +251,14 @@ public partial class SlotTrackerControl : MarginContainer
         }
         if (_progressionTracker != null) _progressionTracker.Banner = bk ? BkText : null;
 
+        UpdateUnsureBanner();
         var steps = Model.Logic.Steps;
+        var checklist = ChecklistRows(out string checklistTitle);
+        bool hasChecklist = checklist.Count > 0;
+        // The checklist sits after the steps and changes with them: a list with one is drawn whole.
         bool full = forceFull || _logicTree.GetRoot() == null || _logicRenderedRun != Model.Logic.Run || _logicRenderedSteps > steps.Count ||
-                    (_logicPlaceholder != null && steps.Count > 0);
+                    (_logicPlaceholder != null && (steps.Count > 0 || hasChecklist)) || hasChecklist || _logicChecklistShown;
+        _logicChecklistShown = hasChecklist;
         if (full)
         {
             _logicRenderedRun = Model.Logic.Run;
@@ -202,7 +273,7 @@ public partial class SlotTrackerControl : MarginContainer
         }
         var root = _logicTree.GetRoot();
 
-        if (steps.Count == 0)
+        if (steps.Count == 0 && !hasChecklist)
         {
             _logicPlaceholder ??= _logicTree.CreateItem(root);
             _logicPlaceholder.SetText(1, LogicEmptyState("No reachable checks found yet."));
@@ -251,6 +322,33 @@ public partial class SlotTrackerControl : MarginContainer
                 _logicRows[locId] = row;
                 ApplyLogicRowMarker(row, locId);
                 _logicOrderCount++;
+            }
+        }
+
+        if (hasChecklist)
+        {
+            var divider = _logicTree.CreateItem(root);
+            divider.SetText(0, "● Checklist");
+            divider.SetText(1, $"── {checklistTitle} ──");
+            for (int c = 0; c < 3; c++)
+            {
+                divider.SetCustomBgColor(c, dividerBg);
+                divider.SetCustomColor(c, AP_Atlas.Core.ThemeColors.Warning);
+                divider.SetSelectable(c, false);
+            }
+            int n = 0;
+            foreach (long locId in checklist)
+            {
+                var row = _logicTree.CreateItem(root);
+                row.SetText(0, "–");
+                row.SetText(1, Session.Locations.GetLocationNameFromId(locId) ?? "Unknown Check");
+                row.SetText(2, "");
+                row.SetMetadata(0, locId);
+                var rowBg = (n++ % 2 == 0) ? AP_Atlas.Core.ThemeColors.RowEven : AP_Atlas.Core.ThemeColors.RowOdd;
+                for (int c = 0; c < 3; c++) row.SetCustomBgColor(c, rowBg);
+                ColorLogicRow(row, false);
+                _logicRows[locId] = row;
+                ApplyLogicRowMarker(row, locId);
             }
         }
 

@@ -620,8 +620,10 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         {
             string version = AP_Atlas.Core.EngineSetup.ApworldSources.InstalledCopies(install, game).Select(c => AP_Atlas.Core.EngineSetup.ApworldSources.KnownSourceOf(c.Sha256).Tag).FirstOrDefault(t => t != null);
             bool fromFile = AP_Atlas.Core.EngineSetup.ApworldSources.GamesWithApworldFiles(install).Contains(game);
-            return new AP_Atlas.UI.GameStatus(version != null ? Tr("Its apworld is in the Atlas Engine ({0}), so its logic is ready.").Replace("{0}", version)
-                : fromFile ? Tr("Its apworld is in the Atlas Engine, so its logic is ready.") : Tr("It ships with Archipelago, so the Atlas Engine has it and its logic is ready."));
+            // What the game's check found about whether a slot's logic is the seed's, when the Games page checked it.
+            string trust = AP_Atlas.Core.EngineSetup.GameSweep.LastFor(install, game)?.Trust is { Error: null } checkedTrust ? " " + checkedTrust.Summary + "." : "";
+            return new AP_Atlas.UI.GameStatus((version != null ? Tr("Its apworld is in the Atlas Engine ({0}), so its logic is ready.").Replace("{0}", version)
+                : fromFile ? Tr("Its apworld is in the Atlas Engine, so its logic is ready.") : Tr("It ships with Archipelago, so the Atlas Engine has it and its logic is ready.")) + trust);
         }
         bool known = AP_Atlas.Core.EngineSetup.ApworldSources.Find(game)?.Repo != null || (_appSettings.ExtraApworldRepos?.ContainsKey(game) ?? false);
         if (known && _gamesPage != null)

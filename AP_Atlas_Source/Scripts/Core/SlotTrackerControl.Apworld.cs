@@ -103,7 +103,10 @@ public partial class SlotTrackerControl : MarginContainer
             _mapTracker.Logic = LogicHidden ? AP_Atlas.UI.MapTrackerControl.LogicShown.Hidden
                 : !Model.Logic.Running ? AP_Atlas.UI.MapTrackerControl.LogicShown.NotRunning
                 : AP_Atlas.UI.MapTrackerControl.LogicShown.Running;
-        if (_logicTree != null) _logicTree.Visible = !LogicHidden && !problem;
+        // A lasting problem lists every check left as a checklist under its notice; a passing one (a restart) shows the notice alone.
+        if (_logicTree != null) _logicTree.Visible = !LogicHidden && (!problem || LastingProblem);
+        if (_logicNotice != null) _logicNotice.SizeFlagsVertical = problem && LastingProblem ? SizeFlags.ShrinkBegin : SizeFlags.ExpandFill;
+        if (problem && LastingProblem) RenderLogicTree();
         // Key Items repeats the empty state only when it changes (this runs on every logic change; a burst brings many).
         string emptyState = _progressionTracker != null && _progressionTracker.ShowingEmptyState ? LogicEmptyState("") : null;
         if (emptyState != null && emptyState != _shownEmptyState) _progressionTracker.RefreshMarkers();
@@ -311,7 +314,8 @@ public partial class SlotTrackerControl : MarginContainer
         using var __perf = AP_Atlas.Core.PerfMonitor.Measure($"[{_slotName}] Map colors, hints and listeners");
         if (_mapTracker != null && Session != null)
         {
-            _mapTracker.UpdateLogicColors(Model.Logic.Reachable, Session.Locations.AllLocationsChecked, Model.HintedLocations, Model.Logic.Engine?.LastGlitchedLocations);
+            _mapTracker.UpdateLogicColors(Model.Logic.Reachable, Session.Locations.AllLocationsChecked, Model.HintedLocations, Model.Logic.Engine?.LastGlitchedLocations,
+                Model.UnsureShown);
         }
         _hintTracker?.Refresh();
         StateChanged?.Invoke();

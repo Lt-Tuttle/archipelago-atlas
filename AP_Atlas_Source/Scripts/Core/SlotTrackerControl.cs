@@ -301,6 +301,9 @@ public partial class SlotTrackerControl : MarginContainer
     /// <summary>Whether this slot's logic engine considers the location reachable; null while the engine isn't running or logic is hidden.</summary>
     public bool? IsLocationInLogic(long locationId) => Model.IsLocationInLogic(locationId);
 
+    /// <summary>Whether logic is unsure about the location for this seed (shown as a checklist item; SlotModel.UnsureShown).</summary>
+    public bool IsLocationUnsure(long locationId) => Model.UnsureShown.Contains(locationId);
+
     // =====================================================================
     // Properties panel support
     // =====================================================================

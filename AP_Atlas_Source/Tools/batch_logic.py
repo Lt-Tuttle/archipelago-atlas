@@ -78,7 +78,7 @@ def main():
 
     def score(game, entry, started):
         yaml_paths = {'1': entry['yaml_path']} if entry.get('yaml_path') else {}
-        answer, err = run_engine(python, args.core, lab, 'AtlasSeedTest', {'seed': entry.get('multidata'), 'yaml_paths': yaml_paths}, OTHER_TIMEOUT)
+        answer, err = run_engine(python, args.core, lab, 'AtlasSeedTest', {'seed': entry.get('multidata'), 'yaml_paths': yaml_paths, 'check': True}, OTHER_TIMEOUT)
         if not answer or not answer.get('players'):
             entry.update(step='score', error=(answer or {}).get('error') or err, finished=True)
             print('   score failed:', str(entry['error'])[:160], flush=True)
@@ -91,9 +91,11 @@ def main():
                      late_examples=[x for s in steps for x in s.get('late', [])][:8], early_examples=[x for s in steps for x in s.get('early', [])][:8],
                      seconds=round(time.time() - started, 1), finished=True)
         # For judging a difference: how the slot's world was rebuilt (and whether it matched the seed's), and where it first differs.
+        # With the second rebuild: exact once the locations Atlas calls unsure are set apart; exact_all without that.
+        entry.update(unsure=p.get('unsure'), exact_all=p.get('exact_all'), check=p.get('check'), rebuilds=p.get('rebuilds'), differs=p.get('differs'))
         entry.update(rebuild=p.get('rebuild'), first_difference=next((s for s in steps if s.get('late_count') or s.get('early_count')), None),
                      sphere_counts=[[s.get('expected'), s.get('reachable'), s.get('late_count'), s.get('early_count')] for s in steps])
-        print(f"   {'exact' if entry['exact'] else 'differs'}: {entry['locations']} locations, {entry['spheres']} spheres, late {entry['late']}, early {entry['early']} ({entry['seconds']} s)", flush=True)
+        print(f"   {'exact' if entry['exact'] else 'differs'}: {entry['locations']} locations, {entry['spheres']} spheres, late {entry['late']}, early {entry['early']}, unsure {entry.get('unsure')} ({entry['seconds']} s)", flush=True)
         save()
         return True
 

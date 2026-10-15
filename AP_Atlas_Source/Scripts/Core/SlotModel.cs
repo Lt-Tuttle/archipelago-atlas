@@ -94,9 +94,12 @@ namespace AP_Atlas.Core
 
         /// <param name="settings">Atlas's settings (which engine logic runs on, the slot's linked YAML).</param>
         /// <param name="log">The slot's debug log.</param>
+        private readonly AppSettings _settings;
+
         public SlotModel(ConnectedSlot connected, AppSettings settings, Action<string> log)
         {
             _log = log;
+            _settings = settings;
             _connected = connected;
             Slot = connected.Slot;
             Session = connected.Session;
@@ -273,11 +276,45 @@ namespace AP_Atlas.Core
         public int TotalLocationsCount => Session.Locations.AllLocations.Count;
         public int CheckedLocationsCount => Session.Locations.AllLocationsChecked.Count;
 
-        /// <summary>Whether logic reaches the location; null while logic isn't running or race mode hides it.</summary>
-        public bool? IsLocationInLogic(long location) => !Logic.Running || LogicHidden ? null : Logic.Reachable.Contains(location);
+        /// <summary>
+        /// Whether logic reaches the location; null while logic isn't running, race mode hides it, or logic is unsure about
+        /// it (<see cref="UnsureShown"/>).
+        /// </summary>
+        public bool? IsLocationInLogic(long location) => !Logic.Running || LogicHidden || UnsureShown.Contains(location) ? null : Logic.Reachable.Contains(location);
 
-        /// <summary>Whether logic has reached the location (false while race mode hides logic).</summary>
-        public bool IsLocationReachable(long location) => !LogicHidden && Logic.Reachable.Contains(location);
+        /// <summary>Whether logic has reached the location (false while race mode hides logic, or logic is unsure about it).</summary>
+        public bool IsLocationReachable(long location) => !LogicHidden && !UnsureShown.Contains(location) && Logic.Reachable.Contains(location);
+
+        /// <summary>Whether the user chose to see this slot's unsure logic anyway (remembered per slot).</summary>
+        public bool ShowUnsureLogic
+        {
+            get => _settings.ShowUnsureLogic.Contains(AnnotationKey);
+            set
+            {
+                if (value == ShowUnsureLogic) return;
+                if (value) _settings.ShowUnsureLogic.Add(AnnotationKey);
+                else _settings.ShowUnsureLogic.Remove(AnnotationKey);
+                DataManager.SaveSettingsSoon(_settings);
+                Report(SlotChange.Logic);
+            }
+        }
+
+        /// <summary>
+        /// The locations shown as a checklist rather than in or out of logic: what logic is unsure about (SlotLogic.Unsure),
+        /// unless the user chose to see it anyway. Empty while logic is hidden or not running.
+        /// </summary>
+        public IReadOnlySet<long> UnsureShown => !Logic.Running || LogicHidden || ShowUnsureLogic ? NoLocations : Logic.Unsure;
+
+        private static readonly IReadOnlySet<long> NoLocations = new HashSet<long>();
+
+        /// <summary>The unsure locations still to check (not done, not excluded), in the server's order.</summary>
+        public List<long> UnsureOpen()
+        {
+            var unsure = UnsureShown;
+            if (unsure.Count == 0) return new List<long>();
+            var done = new HashSet<long>(Session.Locations.AllLocationsChecked);
+            return Session.Locations.AllLocations.Where(l => unsure.Contains(l) && !done.Contains(l) && !IsExcluded(l)).ToList();
+        }
 
         /// <summary>Whether the location is reachable only with glitches (false while race mode hides logic).</summary>
         public bool IsGlitchedLocation(long location) => !LogicHidden && Logic.IsGlitched(location);
@@ -291,8 +328,9 @@ namespace AP_Atlas.Core
                 // Polled every 0.5 s by the sidebar; AllLocationsChecked is a list, so hash it once per call.
                 var checkedLocations = new HashSet<long>(Session.Locations.AllLocationsChecked);
                 int count = 0;
+                var unsure = UnsureShown;
                 foreach (long location in Logic.Reachable)
-                    if (!checkedLocations.Contains(location) && !IsExcluded(location)) count++;
+                    if (!checkedLocations.Contains(location) && !IsExcluded(location) && !unsure.Contains(location)) count++;
                 return count;
             }
         }
@@ -301,11 +339,16 @@ namespace AP_Atlas.Core
         /// BK ("burger king", as players say it): logic runs and is shown, checks remain, and none of them is in logic.
         /// Items from other players open the next ones.
         /// </summary>
-        public bool Bk => Logic.Running && !LogicHidden && CheckedLocationsCount < TotalLocationsCount && ActiveLogicCount == 0;
+        public bool Bk => Logic.Running && !LogicHidden && CheckedLocationsCount < TotalLocationsCount && ActiveLogicCount == 0 && UnsureOpen().Count == 0;
 
         /// <summary>The checks of a logic step that aren't excluded (by the seed or by you).</summary>
-        public List<long> ShownLocations(IReadOnlyList<long>? locations) =>
-            locations == null ? new List<long>() : locations.Where(location => !IsExcluded(location)).ToList();
+        public List<long> ShownLocations(IReadOnlyList<long>? locations)
+        {
+            if (locations == null) return new List<long>();
+            // Unsure ones go to the checklist, not to the step that seemed to open them.
+            var unsure = UnsureShown;
+            return locations.Where(location => !IsExcluded(location) && !unsure.Contains(location)).ToList();
+        }
 
         /// <summary>When logic first reached a location: step number (0 = open from the start), overall order and the item that opened it.</summary>
         public (int Step, int Order, string ItemName)? UnlockStepOf(long locationId)

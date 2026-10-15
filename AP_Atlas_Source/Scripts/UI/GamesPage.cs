@@ -409,7 +409,7 @@ namespace AP_Atlas.UI
                     apworldButtons.Add(Kit.Button(_tr("Choose a file…"), _tr("Install an .apworld file you have."), () => InstallFile(game)));
                 if (entry.Section != Section.Official && install!.Mode == EngineMode.Portable && InstallFolderKnown)
                     apworldButtons.Add(Kit.Button(_tr("Copy from my install…"), _tr("Looks in the Archipelago install you chose (its custom_worlds and lib/worlds folders, nothing else) for this game's apworld and copies it into the Atlas Engine."), () => CopyFromInstall(game)));
-                apworldButtons.Add(Kit.Button(_tr("Check this game"), _tr("Rebuilds the game with default options and computes its starting logic."), () =>
+                apworldButtons.Add(Kit.Button(_tr("Check this game"), _tr("Rebuilds the game with default options and computes its starting logic, then rebuilds it from the data a seed of it carries, a few times with other seeds, to see whether a slot's logic will be the seed's."), () =>
                 {
                     void Check() => Run(_tr("Checking {0}…").Replace("{0}", game), (log, ct) => GameSweep.RunAsync(install!, log, ct, new[] { game }), _ => CheckSummary(install!, game));
                     // A game that ships with Archipelago needs its world: from the kept zip, else downloaded once (asked here).
