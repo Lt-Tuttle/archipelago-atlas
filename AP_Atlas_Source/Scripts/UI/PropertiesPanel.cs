@@ -372,6 +372,10 @@ namespace AP_Atlas.UI
             return b;
         }
 
+        /// <summary>The quick action named so, or null (for the UI test).</summary>
+        internal Button ActionButton(string text) =>
+            _content?.FindChildren("*", nameof(Button), true, false).OfType<Button>().FirstOrDefault(b => IsInstanceValid(b) && !b.IsQueuedForDeletion() && b.Text == text);
+
         private void EndActions()
         {
             if (_actionBar != null && _actionBar.GetChildCount() == 0) _actionBar.QueueFree();

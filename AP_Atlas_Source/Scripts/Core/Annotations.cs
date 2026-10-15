@@ -39,6 +39,9 @@ namespace AP_Atlas.Core
 
         /// <summary>"profileId|slotName" → signature of the YAML exclusion list last offered, so it's offered once.</summary>
         public Dictionary<string, string> YamlExclusionsOffered { get; set; } = new();
+
+        /// <summary>"profileId|slotName" → the checks you hid because logic wrongly calls them in logic (until you unhide them).</summary>
+        public Dictionary<string, HashSet<long>> HiddenChecks { get; set; } = new();
     }
 
     /// <summary>The file format for sharing one game's special list.</summary>
@@ -164,6 +167,45 @@ namespace AP_Atlas.Core
 
         public static IReadOnlyDictionary<long, bool> ExclusionOverridesFor(string slotKey) =>
             slotKey != null && Data.ExclusionOverrides.TryGetValue(slotKey, out var map) ? map : new Dictionary<long, bool>();
+
+        // =====================================================================
+        // Hidden checks (per slot): logic calls them in logic, and the user says it's wrong
+        // =====================================================================
+
+        private static readonly HashSet<long> NoHiddenChecks = new HashSet<long>();
+
+        /// <summary>Whether you hid this check (it leaves the Logic Tracker, the map and the in-logic counts; logic itself is untouched).</summary>
+        public static bool IsHidden(string slotKey, long locationId) =>
+            slotKey != null && Data.HiddenChecks.TryGetValue(slotKey, out var set) && set.Contains(locationId);
+
+        /// <summary>The checks you hid for a slot.</summary>
+        public static IReadOnlySet<long> HiddenFor(string slotKey) =>
+            slotKey != null && Data.HiddenChecks.TryGetValue(slotKey, out var set) ? set : NoHiddenChecks;
+
+        /// <summary>Hides checks, or shows them again; returns the ones that changed (one save and one Changed event, none when nothing did).</summary>
+        public static List<long> SetHidden(string slotKey, IEnumerable<long> locationIds, bool hidden)
+        {
+            var changed = new List<long>();
+            if (slotKey == null) return changed;
+            if (!Data.HiddenChecks.TryGetValue(slotKey, out var set)) set = new HashSet<long>();
+            foreach (long id in locationIds)
+                if (hidden ? set.Add(id) : set.Remove(id)) changed.Add(id);
+            if (set.Count > 0) Data.HiddenChecks[slotKey] = set;
+            else Data.HiddenChecks.Remove(slotKey);
+            if (changed.Count > 0) SaveAndNotify();
+            return changed;
+        }
+
+        /// <summary>Shows every check you hid for a slot again; returns them (nothing saved when there were none).</summary>
+        public static List<long> ClearHidden(string slotKey)
+        {
+            if (slotKey == null || !Data.HiddenChecks.Remove(slotKey, out var set)) return new List<long>();
+            SaveAndNotify();
+            return set.OrderBy(id => id).ToList();
+        }
+
+        /// <summary>Forgets what was read, so the next use reads annotations.json again as Atlas does at start (self-test only).</summary>
+        internal static void ForgetLoadedForTests() => _data = null;
 
         /// <summary>True the first time a slot sees this YAML exclusion list (and records it as seen).</summary>
         public static bool FirstOfferOfYamlExclusions(string slotKey, string signature)
@@ -361,6 +403,8 @@ namespace AP_Atlas.Core
                         data.Games ??= new();
                         data.ExclusionOverrides ??= new();
                         data.YamlExclusionsOffered ??= new();
+                        data.HiddenChecks ??= new();
+                        foreach (string slot in data.HiddenChecks.Where(kv => kv.Value == null).Select(kv => kv.Key).ToList()) data.HiddenChecks.Remove(slot);
                         data.FlagLabels ??= new List<string>(DefaultFlagLabels);
                         // Case-insensitive game names, so "Dark Souls III" and "Dark Souls Iii" from different sources match.
                         data.Games = new Dictionary<string, Dictionary<string, SpecialEntry>>(data.Games, StringComparer.OrdinalIgnoreCase);

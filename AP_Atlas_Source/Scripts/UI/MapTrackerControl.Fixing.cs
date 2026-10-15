@@ -68,15 +68,40 @@ namespace AP_Atlas.UI
             return items;
         }
 
-        /// <summary>A pin's menu: move it, which check each section shows, not a check, remove it, the Doctor.</summary>
-        public List<FixItem> PinItems(PopTrackerLocation pin, float x, float y)
+        /// <summary>
+        /// Hide or unhide each open check (logic wrongly calls it in logic; the slot keeps it out of its lists and counts until
+        /// unhidden), and all of them at once when there are several; empty when there's nothing to hide.
+        /// </summary>
+        private List<FixItem> HideItems(IReadOnlyList<long> ids)
         {
             var items = new List<FixItem>();
+            if (HideChecks is not { } hide || _session == null) return items;
+            var open = ids.Where(id => !_checkedLocs.Contains(id)).Distinct().ToList();
+            foreach (long id in open)
+            {
+                string name = "\"" + (_session.Locations.GetLocationNameFromId(id) ?? id.ToString(System.Globalization.CultureInfo.InvariantCulture)) + "\"";
+                long locationId = id;
+                bool hidden = HiddenByYou(id);
+                // "Logic is wrong about it" only for a check logic calls in logic; any open check can be hidden.
+                bool inLogic = !LogicHidden && _reachableLocs.Contains(id) && !_unsureLocs.Contains(id);
+                string label = hidden ? Translate("Unhide {0}") : inLogic ? Translate("Hide {0} (logic is wrong about it)") : Translate("Hide {0}");
+                items.Add(new FixItem(label.Replace("{0}", name), () => hide(new[] { locationId }, !hidden)));
+            }
+            var shown = open.Where(id => !HiddenByYou(id)).ToList();
+            if (shown.Count > 1) items.Add(new FixItem(Translate("Hide all {0} open checks here").Replace("{0}", shown.Count.ToString()), () => hide(shown, true)));
+            if (items.Count > 0) items.Add(PackFixMenus.Separator);
+            return items;
+        }
+
+        /// <summary>A pin's menu: hide its checks, move it, which check each section shows, not a check, remove it, the Doctor.</summary>
+        public List<FixItem> PinItems(PopTrackerLocation pin, float x, float y)
+        {
+            var items = new List<FixItem> { new FixItem(pin.Name, null) };
+            items.AddRange(HideItems(GetLocationIds(pin)));
             var fix = Fixing;
             if (fix == null) { items.Add(new FixItem(Translate("No map pack to fix"), null)); return items; }
             string mapId = _currentMapId;
             bool added = pin.FullPath.StartsWith("atlas/", StringComparison.Ordinal);
-            items.Add(new FixItem(pin.Name, null));
             items.Add(new FixItem(Translate("Move this pin"), () => StartMoving(pin, added)));
             var sections = pin.Sections != null && pin.Sections.Count > 0 ? pin.Sections.ToList() : new List<PopTrackerSection> { null! };
             if (!added)
@@ -97,15 +122,14 @@ namespace AP_Atlas.UI
             return items;
         }
 
-        /// <summary>A "Not on the map" row's menu: place it on this map.</summary>
+        /// <summary>A "Not on the map" row's menu: hide it, place it on this map.</summary>
         public List<FixItem> UnplacedItems(long id, string name)
         {
-            if (Fixing == null || string.IsNullOrEmpty(_currentMapId)) return new List<FixItem> { new FixItem(Translate("No map pack to fix"), null) };
-            return new List<FixItem>
-            {
-                new FixItem(name, null),
-                new FixItem(Translate("Place it on this map…"), () => StartPlacing(id, name)),
-            };
+            var items = new List<FixItem> { new FixItem(name, null) };
+            items.AddRange(HideItems(new[] { id }));
+            if (Fixing == null || string.IsNullOrEmpty(_currentMapId)) items.Add(new FixItem(Translate("No map pack to fix"), null));
+            else items.Add(new FixItem(Translate("Place it on this map…"), () => StartPlacing(id, name)));
+            return items;
         }
 
         private void UseMapPicture(PackFixContext fix, string mapId, string shown, string path) =>

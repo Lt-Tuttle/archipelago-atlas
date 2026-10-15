@@ -220,6 +220,8 @@ public partial class MainTrackerWindow
             GameWorldsOnDemandAsync);
         await ScenarioAsync("BK: with logic running, checks left and none of them in logic, the Logic Tracker and Key Items say so with the count done, and the slot card says BK; an item that opens a check ends it",
             BkAsync);
+        await ScenarioAsync("Hidden checks: a check logic wrongly calls in logic is hidden from the Logic Tracker's row menu (a right click), a map pin's menu, a Not on the map row's menu or Properties; it leaves the list, the map and the in-logic counts (logic itself unchanged) until unhidden, with Undo on the card; Show hidden lists it greyed and Show hidden checks dims its pin (both remembered); hiding the last check in logic makes the slot BK, and the slot's Unhide all (asked first) shows them all again",
+            HiddenChecksAsync);
         await ScenarioAsync("Shared engines: a multiworld's slots share its engines; when one slot's request brings an engine down, a slot sharing it (even one still starting) starts again in 2 s, and only the slot whose request it was counts the failure",
             SharedEnginesAsync);
         await ScenarioAsync("Cheese Tracker: its suggestion for a connected slot follows the slot's logic (unblocked, then go mode), says nothing while race mode hides logic, and changes nothing by itself",
@@ -5559,6 +5561,139 @@ public partial class MainTrackerWindow
         }
     }
 
+    private async Task HiddenChecksAsync()
+    {
+        StartFakeEngine(UiTestPython());
+        string zip = System.IO.Path.Combine(AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory(), "uitest_hidden_pack.zip");
+        FakeMapPack.Write(zip, "UI test hidden pack", "Test Game", locationsJson:
+            """[{"name":"Cave","sections":[{"name":"Cave Chest"}],"map_locations":[{"map":"World","x":10,"y":10}]},""" +
+            """{"name":"Door","sections":[{"name":"Locked Door"}],"map_locations":[{"map":"World","x":200,"y":10}]},""" +
+            """{"name":"Tower","sections":[{"name":"Tower Top"}],"map_locations":[{"map":"World","x":400,"y":10}]}]""");
+        await using var server = LogicWorldServer();
+        var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Tester");
+        _profiles.Add(profile);
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        bool logicShowHidden = _appSettings.LogicShowHidden, mapShowHidden = _appSettings.MapShowHidden;
+        _appSettings.LogicShowHidden = false;
+        _appSettings.MapShowHidden = false;
+        string key = "";
+        try
+        {
+            await OnConnectSlotPressedAsync("Tester", profile);
+            var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
+            key = slot.AnnotationKey;
+            host.ShowTool(AP_Atlas.UI.Tool.LogicTracker);
+            // The Sword opens the door: the chest and the door are in logic.
+            await UiTestWaitForAsync(() => slot.LogicSettled ? slot : null, "the slot's logic to start");
+            await server.BroadcastAsync(FakeArchipelagoServer.ReceivedItems(0, new long[] { 1000 }, flags: 1));
+            await UiTestWaitForAsync(() => slot.LogicSettled && slot.ActiveLogicCount == 2 && slot.LogicRowShown(2001) ? slot : null, "the door to come into logic");
+            await UiTestWaitForAsync(() => slot.IsOnMap(2001) ? slot : null, "the slot's map pack to place the door");
+            void Run(List<AP_Atlas.UI.FixItem> items, string startsWith)
+            {
+                var item = items.FirstOrDefault(i => i.Label.StartsWith(startsWith, StringComparison.Ordinal));
+                UiTestExpect(item?.Run != null, $"the menu has no \"{startsWith}\": {string.Join(" | ", items.Select(i => i.Label))}");
+                item!.Run!();
+            }
+
+            // 1. The Logic Tracker: a right click on a check's row opens its menu; Hide takes the row out of the list and the
+            //    count while logic still calls it in logic, and the card's Undo brings it back.
+            slot.LogicRow(2001)!.Select(1);
+            slot.LogicTree.EmitSignal(Tree.SignalName.ItemMouseSelected, Vector2.Zero, (long)MouseButton.Right);
+            var menu = await UiTestWaitForAsync(() => GetTree().Root.FindChildren("*", nameof(PopupMenu), true, false).OfType<PopupMenu>()
+                .FirstOrDefault(m => IsInstanceValid(m) && m.HasMeta("fix_menu") && m.Visible), "the row's menu on a right click");
+            menu.Hide();
+            var rowItems = slot.LogicRowItems(2001);
+            UiTestExpect(rowItems.Any(i => i.Label == "Exclude") && rowItems.Any(i => i.Label == "Flag" && i.Submenu?.Count == 5) && rowItems.Any(i => i.Label == "Show on map")
+                && rowItems.Any(i => i.Label == "Copy name"), "the row's menu lacks Exclude, Flag ▸, Show on map or Copy name: " + string.Join(" | ", rowItems.Select(i => i.Label)));
+            Run(rowItems, "Hide");
+            await UiTestWaitForAsync(() => !slot.LogicRowShown(2001) && slot.ActiveLogicCount == 1 ? slot : null, "the hidden door to leave the list and the count");
+            UiTestExpect(slot.IsLocationInLogic(2001) == true && AP_Atlas.Core.Annotations.IsHidden(key, 2001), "hiding the door changed its logic, or wasn't kept");
+            UiTestExpect(slot.ShowHiddenText == "Show hidden (1)", $"the Show hidden button says \"{slot.ShowHiddenText}\"");
+            var card = await UiTestWaitForAsync(() => _alerts.Cards.FirstOrDefault(c => c.FindChildren("*", nameof(Label), true, false).OfType<Label>().Any(l => l.Text.Contains("Hid \"Locked Door\""))),
+                "the card saying the door was hidden");
+            _alerts.ActionButtonOf(card)!.EmitSignal(BaseButton.SignalName.Pressed);
+            await UiTestWaitForAsync(() => slot.LogicRowShown(2001) && slot.ActiveLogicCount == 2 && slot.ShowHiddenText == null ? slot : null, "the card's Undo to bring the door back");
+
+            // Show hidden lists a hidden check greyed (remembered), and it still doesn't count; finding it turns Show hidden on.
+            slot.SetChecksHidden(new long[] { 2001 }, true);
+            await UiTestWaitForAsync(() => !slot.LogicRowShown(2001) ? slot : null, "the door hidden again");
+            slot.ShowHiddenLogic(true);
+            UiTestExpect(slot.LogicRowShown(2001) && slot.LogicRowGreyed(2001) && _appSettings.LogicShowHidden && slot.ActiveLogicCount == 1,
+                $"Show hidden: listed {slot.LogicRowShown(2001)}, greyed {slot.LogicRowGreyed(2001)}, remembered {_appSettings.LogicShowHidden}, {slot.ActiveLogicCount} in logic");
+            slot.ShowHiddenLogic(false);
+            slot.RevealLogicRow(2001);
+            UiTestExpect(slot.LogicRowShown(2001) && _appSettings.LogicShowHidden && slot.SelectedLogicRow == "Locked Door", "finding a hidden check in the Logic Tracker didn't show its row");
+            slot.ShowHiddenLogic(false);
+
+            // 2. The map: the door's pin goes and its check leaves the counts; Show hidden checks dims it and says why
+            //    (remembered); the pin's menu unhides and hides each of its checks.
+            host.ShowTool(AP_Atlas.UI.Tool.MapTracker);
+            var map = slot.MapTracker;
+            AP_Atlas.UI.MapPinButton? Pin(string name) => map.FindChildren("*", "", true, false).OfType<AP_Atlas.UI.MapPinButton>()
+                .FirstOrDefault(p => IsInstanceValid(p) && !p.IsQueuedForDeletion() && p.TooltipText.StartsWith(name + "\n", StringComparison.Ordinal));
+            await UiTestWaitForAsync(() => Pin("Cave") != null && Pin("Tower") != null && Pin("Door") == null ? map : null, "the map without the hidden door's pin");
+            UiTestExpect(map.LocationState(2001).Contains("hidden by you"), $"the door's state on the map is \"{map.LocationState(2001)}\"");
+            map.ShowHiddenBox.ButtonPressed = true;
+            var dimmed = await UiTestWaitForAsync(() => Pin("Door") is { } p && p.Modulate.A < 1f ? p : null, "the hidden door's pin, dimmed with Show hidden checks");
+            UiTestExpect(dimmed.TooltipText.Contains("Hidden by you") && _appSettings.MapShowHidden, $"the dimmed pin says \"{dimmed.TooltipText}\" (remembered: {_appSettings.MapShowHidden})");
+            map.ShowHiddenBox.ButtonPressed = false;
+            await UiTestWaitForAsync(() => Pin("Door") == null ? map : null, "the hidden door's pin to go again");
+            var door = slot.EffectivePack.Locations.First(l => l.Name == "Door");
+            Run(map.PinItems(door, 200, 10), "Unhide \"Locked Door\"");
+            await UiTestWaitForAsync(() => !AP_Atlas.Core.Annotations.IsHidden(key, 2001) && Pin("Door") != null && slot.ActiveLogicCount == 2 ? map : null, "the pin's menu to unhide the door");
+            Run(map.PinItems(door, 200, 10), "Hide \"Locked Door\"");
+            await UiTestWaitForAsync(() => AP_Atlas.Core.Annotations.IsHidden(key, 2001) && Pin("Door") == null && slot.ActiveLogicCount == 1 ? map : null, "the pin's menu to hide the door");
+            // A check no pin shows: its row's menu hides it too, and it leaves Not on the map.
+            UiTestExpect(map.UnplacedNames.Contains("Gem Vault"), "the vault isn't under Not on the map: " + string.Join(", ", map.UnplacedNames));
+            UiTestExpect(map.PinItems(door, 200, 10).Any(i => i.Label == "Unhide \"Locked Door\""), "the hidden door's pin menu doesn't offer Unhide");
+            UiTestExpect(map.UnplacedItems(2003, "Gem Vault").Any(i => i.Label == "Hide \"Gem Vault\""), "a check out of logic isn't offered a plain Hide");
+            Run(map.UnplacedItems(2003, "Gem Vault"), "Hide \"Gem Vault\"");
+            await UiTestWaitForAsync(() => !map.UnplacedNames.Contains("Gem Vault") ? map : null, "the hidden vault to leave Not on the map");
+            // Show on map on the hidden door turns Show hidden checks on, so its pin is there to see.
+            UiTestExpect(slot.RevealOnMap(2001), "Show on map didn't find the hidden door");
+            await UiTestWaitForAsync(() => Pin("Door") is { } p && p.Modulate.A < 1f && _appSettings.MapShowHidden ? p : null, "Show on map to draw the hidden door's pin");
+            map.ShowHiddenBox.ButtonPressed = false;
+            await UiTestWaitForAsync(() => Pin("Door") == null ? map : null, "the hidden door's pin to go again");
+
+            // 3. Properties: a hidden check says so, Unhide and Hide switch it; the slot counts what's hidden.
+            AP_Atlas.Core.Inspector.Inspect(slot.LocationTarget(2001));
+            var unhide = await UiTestWaitForAsync(() => _propertiesPanel.ActionButton("Unhide"), "Properties' Unhide on the hidden door");
+            UiTestExpect(ShowsText(_propertiesPanel, "logic still calls it in logic"), "Properties doesn't say the door is hidden");
+            unhide.EmitSignal(BaseButton.SignalName.Pressed);
+            var hide = await UiTestWaitForAsync(() => !AP_Atlas.Core.Annotations.IsHidden(key, 2001) ? _propertiesPanel.ActionButton("Hide") : null, "Properties' Unhide, then its Hide");
+            hide.EmitSignal(BaseButton.SignalName.Pressed);
+            await UiTestWaitForAsync(() => AP_Atlas.Core.Annotations.IsHidden(key, 2001) ? slot : null, "Properties' Hide");
+
+            // 4. BK: the chest is done and the only check left in logic is hidden, so nothing is; the banner says what's hidden.
+            host.ShowTool(AP_Atlas.UI.Tool.LogicTracker);
+            await server.BroadcastAsync(FakeArchipelagoServer.LocationsChecked(2000));
+            await UiTestWaitForAsync(() => slot.Bk && slot.BkShown ? slot : null, "hiding the last check in logic to make the slot BK");
+            UiTestExpect(slot.BkText.Contains("(1 hidden by you)"), $"the BK banner says \"{slot.BkText}\" (the door in logic is hidden; the vault is out of logic)");
+
+            // The slot's Unhide all, asked first, shows every hidden check again.
+            AP_Atlas.Core.Inspector.Inspect(AP_Atlas.Core.InspectTarget.ForSlot(profile.Id, "Tester"));
+            var unhideAll = await UiTestWaitForAsync(() => _propertiesPanel.ActionButton("Unhide all…"), "the slot's Unhide all in Properties");
+            UiTestExpect(ShowsText(_propertiesPanel, "Hidden by you"), "the slot's Properties doesn't count what's hidden");
+            unhideAll.EmitSignal(BaseButton.SignalName.Pressed);
+            var confirm = await UiTestWaitForAsync(() => GetTree().Root.FindChildren("*", nameof(ConfirmationDialog), true, false).OfType<ConfirmationDialog>()
+                .FirstOrDefault(d => IsInstanceValid(d) && d.Visible && d.Title == "Unhide all"), "Unhide all to ask first");
+            confirm.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
+            await UiTestWaitForAsync(() => AP_Atlas.Core.Annotations.HiddenFor(key).Count == 0 && !slot.Bk && slot.ActiveLogicCount == 1 ? slot : null, "Unhide all to bring the door back into logic");
+        }
+        finally
+        {
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+            if (key.Length > 0) AP_Atlas.Core.Annotations.ClearHidden(key);
+            DeleteProfile(profile);
+            _appSettings.LogicShowHidden = logicShowHidden;
+            _appSettings.MapShowHidden = mapShowHidden;
+            AP_Atlas.Core.SafeFile.Delete(zip);
+            AtlasEngine.TestPython = null;
+        }
+    }
+
     private async Task SharedEnginesAsync()
     {
         var engine = StartFakeEngine(UiTestPython());
@@ -5662,6 +5797,13 @@ public partial class MainTrackerWindow
             UiTestExpect(view?.Row?.Id == 21, "the slot wasn't matched to its row on Cheese Tracker");
             UiTestExpect(view!.Advice is { Status: "unblocked", Reason: "1 check in logic", Ready: false }, $"the suggestion with one check in logic was {Describe(view.Advice)}");
 
+            // The chest hidden (logic is wrong about it, the user says): nothing is in logic, as the row already says.
+            slot.SetChecksHidden(new long[] { 2000 }, true);
+            await UiTestWaitForAsync(() => _cheese.SlotView(profile.Id, "Tester")?.Advice is { InSync: true, Reason: "Nothing in logic" } a ? a : null,
+                "the suggestion with the only check in logic hidden to say nothing is in logic, as the row does");
+            slot.SetChecksHidden(new long[] { 2000 }, false);
+            await UiTestWaitForAsync(() => _cheese.SlotView(profile.Id, "Tester")?.Advice is { Status: "unblocked" } a ? a : null, "the suggestion with the chest shown again");
+
             // Race mode hiding logic: no suggestion at all.
             AP_Atlas.Core.RaceRules.SetMode(AP_Atlas.Core.RaceModeSetting.AlwaysOn);
             AP_Atlas.Core.RaceRules.SetHideAllLogic(true);
@@ -5683,6 +5825,7 @@ public partial class MainTrackerWindow
         {
             AP_Atlas.Core.RaceRules.SetHideAllLogic(false);
             AP_Atlas.Core.RaceRules.SetMode(AP_Atlas.Core.RaceModeSetting.FollowServer);
+            AP_Atlas.Core.Annotations.ClearHidden(AP_Atlas.Core.Annotations.SlotKey(profile.Id, "Tester"));
             DeleteProfile(profile);
             _appSettings.CheeseInstanceUrl = siteBefore;
             CheeseClient.Spacing = spacingBefore;

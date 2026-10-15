@@ -44,6 +44,22 @@ public partial class SlotTrackerControl : MarginContainer
             ApplyLogicVisibility();
         };
         toolbar.AddChild(_logicShowChecked);
+        // Checks the user hid (logic is wrong about them) are out of the list; this lists them, greyed (remembered).
+        _logicShowHidden = new Button
+        {
+            ToggleMode = true,
+            Text = "Show hidden",
+            Visible = false,
+            ButtonPressed = _appSettings.LogicShowHidden,
+            TooltipText = "Also list the checks you hid because logic is wrong about them (greyed; they still don't count). Right-click one to unhide it."
+        };
+        _logicShowHidden.Toggled += on =>
+        {
+            _appSettings.LogicShowHidden = on;
+            DataManager.SaveSettingsSoon(_appSettings);
+            ApplyLogicVisibility();
+        };
+        toolbar.AddChild(_logicShowHidden);
         _goModeLabel = new Label { Text = "GO MODE: your goal is in logic", Visible = false, TooltipText = "Everything the goal needs is reachable with what this slot has now" };
         _goModeLabel.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Success);
         toolbar.AddChild(_goModeLabel);
@@ -117,6 +133,14 @@ public partial class SlotTrackerControl : MarginContainer
             }
             else if (meta.VariantType == Variant.Type.String) Inspect(ItemTargetByName(meta.AsString()));
         });
+        // A right click on a check's row opens its menu (hide it, exclude it, flag it, find it on the map).
+        _logicTree.AllowRmbSelect = true;
+        _logicTree.ItemMouseSelected += (position, button) =>
+        {
+            if (button != (long)MouseButton.Right || _logicTree.GetSelected() is not { } selected) return;
+            var meta = selected.GetMetadata(0);
+            if (meta.VariantType == Variant.Type.Int) AP_Atlas.UI.PackFixMenus.Show(this, LogicRowItems(meta.AsInt64()));
+        };
         vbox.AddChild(_logicTree);
         _logicTree.CreateItem();
 
@@ -155,14 +179,17 @@ public partial class SlotTrackerControl : MarginContainer
         if (Session == null || LogicHidden) return new List<long>();
         if (Model.Logic.Running)
         {
-            var unsure = Model.UnsureOpen();
-            title = $"Checklist: logic unsure for this seed ({unsure.Count})";
+            // Hidden ones are drawn too (Show hidden lists them); the title counts those shown by default.
+            var unsure = Model.UnsureOpen(includeHidden: true);
+            var hidden = Model.HiddenChecks;
+            title = $"Checklist: logic unsure for this seed ({unsure.Count(id => !hidden.Contains(id))})";
             return unsure;
         }
         if (!LastingProblem) return new List<long>();
         var done = new HashSet<long>(Session.Locations.AllLocationsChecked);
         var open = Session.Locations.AllLocations.Where(l => !done.Contains(l) && !Model.IsExcluded(l)).ToList();
-        title = $"Checklist: logic isn't running ({open.Count})";
+        var hiddenChecks = Model.HiddenChecks;
+        title = $"Checklist: logic isn't running ({open.Count(id => !hiddenChecks.Contains(id))})";
         return open;
     }
 
@@ -190,7 +217,7 @@ public partial class SlotTrackerControl : MarginContainer
         }
     }
     private HBoxContainer _logicNoticeActions;
-    private Button _logicFlaggedOnly, _logicShowChecked;
+    private Button _logicFlaggedOnly, _logicShowChecked, _logicShowHidden;
     // Rows the user flagged, noted or marked special (for the "flagged only" filter), kept as their markers are drawn.
     private readonly HashSet<long> _logicMarkedRows = new HashSet<long>();
 
@@ -201,6 +228,101 @@ public partial class SlotTrackerControl : MarginContainer
     public void ShowCheckedLogic(bool on)
     {
         if (_logicShowChecked != null) _logicShowChecked.ButtonPressed = on;
+    }
+
+    /// <summary>Turns the Logic Tracker's Show hidden on or off, as its button does (for the UI test).</summary>
+    public void ShowHiddenLogic(bool on)
+    {
+        if (_logicShowHidden != null) _logicShowHidden.ButtonPressed = on;
+    }
+
+    /// <summary>What the Show hidden button says, or null while it isn't shown (for the UI test).</summary>
+    internal string ShowHiddenText => _logicShowHidden?.Visible == true ? _logicShowHidden.Text : null;
+
+    /// <summary>The Logic Tracker's list and a check's row in it (for the UI test).</summary>
+    internal Tree LogicTree => _logicTree;
+    internal TreeItem LogicRow(long locationId) => _logicRows.GetValueOrDefault(locationId);
+
+    /// <summary>Whether a check's row is listed, and whether it's greyed (for the UI test).</summary>
+    internal bool LogicRowShown(long locationId) => _logicRows.TryGetValue(locationId, out var row) && row.Visible;
+    internal bool LogicRowGreyed(long locationId) => _logicRows.TryGetValue(locationId, out var row) && row.GetCustomColor(1) == AP_Atlas.Core.ThemeColors.TextSubtle;
+
+    /// <summary>Shows a tool of the window (set by the window): the Logic Tracker's menu finds a check on the map with it.</summary>
+    public Action<AP_Atlas.UI.Tool> OpenTool { get; set; }
+
+    /// <summary>Whether you hid this check (logic wrongly calls it in logic).</summary>
+    public bool IsHiddenCheck(long locationId) => Model.IsHidden(locationId);
+
+    /// <summary>How many checks you hid for this slot, and how many of them are still to do.</summary>
+    public int HiddenCount => Model.HiddenChecks.Count;
+    public int HiddenOpenCount => Model.HiddenOpenCount;
+    public int HiddenInLogicCount => Model.HiddenInLogicCount;
+
+    /// <summary>
+    /// Hides checks logic wrongly calls in logic, or shows them again: hidden, they leave the Logic Tracker, the map and the
+    /// in-logic counts (the slot card, BK, Properties, Cheese Tracker) until unhidden; logic itself is untouched. A card says
+    /// so with Undo.
+    /// </summary>
+    public void SetChecksHidden(IReadOnlyCollection<long> locationIds, bool hide)
+    {
+        string key = AnnotationKey;
+        var changed = AP_Atlas.Core.Annotations.SetHidden(key, locationIds, hide);
+        if (changed.Count == 0) return;
+        string what = changed.Count == 1 ? $"\"{Session?.Locations.GetLocationNameFromId(changed[0]) ?? changed[0].ToString()}\"" : $"{changed.Count} checks";
+        string text = hide
+            ? $"Hid {what}: left out of the Logic Tracker, the map and the in-logic counts until you unhide it (logic is unchanged; Show hidden lists it)."
+            : $"{what} shows again.";
+        ShowActionToast?.Invoke(text, AP_Atlas.Core.ThemeColors.Success, "Undo", () => AP_Atlas.Core.Annotations.SetHidden(key, changed, !hide));
+    }
+
+    /// <summary>Shows every check you hid for this slot again (a card says so with Undo).</summary>
+    public void UnhideAll()
+    {
+        string key = AnnotationKey;
+        var changed = AP_Atlas.Core.Annotations.ClearHidden(key);
+        if (changed.Count == 0) return;
+        // Done ones are cleared too, but only the open ones show again.
+        var done = Session == null ? new HashSet<long>() : new HashSet<long>(Session.Locations.AllLocationsChecked);
+        int shown = changed.Count(id => !done.Contains(id));
+        ShowActionToast?.Invoke(shown == 1 ? "The check you hid shows again." : $"The {shown} checks you hid show again.",
+            AP_Atlas.Core.ThemeColors.Success, "Undo", () => AP_Atlas.Core.Annotations.SetHidden(key, changed, true));
+    }
+
+    /// <summary>A check's menu in the Logic Tracker (right-click): hide or unhide it, exclude or include it, flag it, find it on the map, copy its name.</summary>
+    public List<AP_Atlas.UI.FixItem> LogicRowItems(long locationId)
+    {
+        var items = new List<AP_Atlas.UI.FixItem>();
+        if (Session == null) return items;
+        string name = Session.Locations.GetLocationNameFromId(locationId) ?? "Unknown Check";
+        string key = AnnotationKey;
+        items.Add(new AP_Atlas.UI.FixItem(name, null));
+        if (!Session.Locations.AllLocationsChecked.Contains(locationId))
+            items.Add(Model.IsHidden(locationId)
+                ? new AP_Atlas.UI.FixItem("Unhide", () => SetChecksHidden(new[] { locationId }, false))
+                : new AP_Atlas.UI.FixItem("Hide (logic is wrong about it)", () => SetChecksHidden(new[] { locationId }, true)));
+        // Exclusions only diverge from the seed: switching back returns to its default.
+        bool bySeed = IsExcludedBySeed(locationId);
+        items.Add(IsExcluded(locationId)
+            ? new AP_Atlas.UI.FixItem("Include", () => AP_Atlas.Core.Annotations.SetExclusionOverride(key, locationId, bySeed ? false : null))
+            : new AP_Atlas.UI.FixItem("Exclude", () => AP_Atlas.Core.Annotations.SetExclusionOverride(key, locationId, bySeed ? null : true)));
+        string entity = AP_Atlas.Core.Annotations.LocationKey(locationId);
+        int flag = AP_Atlas.Core.Annotations.GetFlag(key, entity);
+        var flags = new List<AP_Atlas.UI.FixItem>();
+        for (int f = 1; f <= AP_Atlas.Core.Annotations.FlagColors.Length; f++)
+        {
+            int chosen = f;
+            flags.Add(new AP_Atlas.UI.FixItem((f == flag ? "✓ " : "") + AP_Atlas.Core.Annotations.FlagLabel(f), () => AP_Atlas.Core.Annotations.SetFlag(key, entity, chosen)));
+        }
+        if (flag > 0) flags.Add(new AP_Atlas.UI.FixItem("No flag", () => AP_Atlas.Core.Annotations.SetFlag(key, entity, 0)));
+        items.Add(new AP_Atlas.UI.FixItem("Flag", null, flags));
+        if (IsOnMap(locationId))
+            items.Add(new AP_Atlas.UI.FixItem("Show on map", () =>
+            {
+                OpenTool?.Invoke(AP_Atlas.UI.Tool.MapTracker);
+                RevealOnMap(locationId);
+            }));
+        items.Add(new AP_Atlas.UI.FixItem("Copy name", () => DisplayServer.ClipboardSet(name)));
+        return items;
     }
 
     /// <summary>Flag/special/note marker on a Logic Tracker row.</summary>
@@ -222,18 +344,38 @@ public partial class SlotTrackerControl : MarginContainer
     }
 
     /// <summary>
-    /// Which rows show: the checks left (and the done ones with Show checked), only marked ones under "flagged only".
-    /// A step's count says how many of its checks show, and a step with none goes.
+    /// Which rows show: the checks left (and the done ones with Show checked, the ones you hid with Show hidden, both
+    /// greyed), only marked ones under "flagged only". A step's count says how many of its checks show, and a step with none goes.
     /// </summary>
     private void ApplyLogicVisibility()
     {
         if (_logicTree == null || Session == null) return;
         bool flaggedOnly = _logicFlaggedOnly?.ButtonPressed == true;
         bool showChecked = _appSettings.LogicShowChecked;
+        bool showHidden = _appSettings.LogicShowHidden;
+        var hidden = Model.HiddenChecks;
+        int hiddenRows = 0;
         foreach (var (locId, row) in _logicRows)
         {
-            bool visible = (showChecked || !_logicRowsShownChecked.Contains(locId)) && (!flaggedOnly || _logicMarkedRows.Contains(locId));
+            bool done = _logicRowsShownChecked.Contains(locId);
+            bool hiddenRow = !done && hidden.Contains(locId);
+            if (hiddenRow) hiddenRows++;
+            if (hiddenRow != _logicRowsShownHidden.Contains(locId))
+            {
+                ColorLogicRow(row, done || hiddenRow);
+                row.SetTooltipText(1, hiddenRow ? "Hidden by you: logic calls it in logic, you said it's wrong. Right-click to unhide it." : "");
+                if (hiddenRow) _logicRowsShownHidden.Add(locId);
+                else _logicRowsShownHidden.Remove(locId);
+            }
+            bool visible = (showChecked || !done) && (showHidden || !hiddenRow) && (!flaggedOnly || _logicMarkedRows.Contains(locId));
             if (row.Visible != visible) row.Visible = visible;
+        }
+        if (_logicShowHidden != null)
+        {
+            // Beside Show checked, which race mode and a logic problem take away.
+            _logicShowHidden.Visible = hiddenRows > 0 && !LogicHidden && _logicShowChecked?.Visible != false;
+            string text = $"Show hidden ({hiddenRows})";
+            if (_logicShowHidden.Text != text) _logicShowHidden.Text = text;
         }
         TreeItem divider = null;
         int shown = 0;
@@ -272,6 +414,8 @@ public partial class SlotTrackerControl : MarginContainer
     private TreeItem _logicPlaceholder;
     private readonly Dictionary<long, TreeItem> _logicRows = new Dictionary<long, TreeItem>();
     private readonly HashSet<long> _logicRowsShownChecked = new HashSet<long>();
+    // Rows drawn greyed as hidden by you (to recolour only those that change).
+    private readonly HashSet<long> _logicRowsShownHidden = new HashSet<long>();
 
     private AP_Atlas.UI.ViewRefresh _logicRefresh;
     private bool _logicFullPending;
@@ -311,6 +455,7 @@ public partial class SlotTrackerControl : MarginContainer
             _logicTree.CreateItem();
             _logicRows.Clear();
             _logicRowsShownChecked.Clear();
+            _logicRowsShownHidden.Clear();
             _logicMarkedRows.Clear();
             _logicPlaceholder = null;
             _logicRenderedSteps = 0;
@@ -321,6 +466,7 @@ public partial class SlotTrackerControl : MarginContainer
 
         if (steps.Count == 0 && !hasChecklist)
         {
+            if (_logicShowHidden != null) _logicShowHidden.Visible = false;
             _logicPlaceholder ??= _logicTree.CreateItem(root);
             _logicPlaceholder.SetText(1, LogicEmptyState("No reachable checks found yet."));
             _logicPlaceholder.SetCustomColor(1, AP_Atlas.Core.ThemeColors.TextSubtle);
@@ -404,6 +550,7 @@ public partial class SlotTrackerControl : MarginContainer
             bool isChecked = checkedLocs.Contains(kv.Key);
             if (isChecked == _logicRowsShownChecked.Contains(kv.Key)) continue;
             ColorLogicRow(kv.Value, isChecked);
+            if (_logicRowsShownHidden.Remove(kv.Key)) kv.Value.SetTooltipText(1, ""); // recoloured: whether it's hidden is drawn again below
             if (isChecked) _logicRowsShownChecked.Add(kv.Key);
             else _logicRowsShownChecked.Remove(kv.Key);
         }

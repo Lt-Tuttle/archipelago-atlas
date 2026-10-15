@@ -93,6 +93,10 @@ public class AppSettings
     public Dictionary<string, bool> MapFollowGame { get; set; } = new Dictionary<string, bool>();
     /// <summary>Whether the Logic Tracker also lists the checks already done (greyed); off: only the checks left.</summary>
     public bool LogicShowChecked { get; set; }
+    /// <summary>Whether the Logic Tracker also lists the checks you hid (greyed); they never count as in logic.</summary>
+    public bool LogicShowHidden { get; set; }
+    /// <summary>Whether the Map Tracker shows the checks you hid as dimmed pins (off: a pin of only hidden checks goes).</summary>
+    public bool MapShowHidden { get; set; }
     /// <summary>The text client's filters turned off (ChatLines' keys: chat, hints, system, progression, useful, filler, traps), shared by every slot.</summary>
     public HashSet<string> ChatFiltersOff { get; set; } = new HashSet<string>();
     /// <summary>Slot keys ("profileId|slotName") whose unsure logic is shown anyway (SlotLogic.Unsure; absent: shown as a checklist).</summary>

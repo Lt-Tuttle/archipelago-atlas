@@ -32,6 +32,12 @@ namespace AP_Atlas.UI
         /// <summary>Whether a location is excluded (by the seed's options or by the user). Set by the owner.</summary>
         public Func<long, bool> IsExcluded { get; set; }
 
+        /// <summary>Whether the user hid a check because logic wrongly calls it in logic. Set by the owner.</summary>
+        public Func<long, bool> IsHidden { get; set; }
+
+        /// <summary>Hides checks (true) or shows them again (false), as the slot does it (with Undo). Set by the owner.</summary>
+        public Action<IReadOnlyCollection<long>, bool> HideChecks { get; set; }
+
         /// <summary>Raised when the map display options change, so every slot's map redraws with them.</summary>
         public static event Action DisplayOptionsChanged;
 
@@ -106,9 +112,11 @@ namespace AP_Atlas.UI
 
         private bool Excluded(long id) => IsExcluded?.Invoke(id) == true;
 
-        /// <summary>The checks of a pin that count: excluded ones drop out unless the user shows them.</summary>
+        private bool HiddenByYou(long id) => IsHidden?.Invoke(id) == true;
+
+        /// <summary>The checks of a pin that count: excluded ones drop out unless the user shows them; open ones the user hid always do.</summary>
         private List<long> CountedIds(List<long> ids) =>
-            _appSettings.MapExcludedMode == ModeShow || IsExcluded == null ? ids : ids.Where(id => !Excluded(id)).ToList();
+            ids.Where(id => (_appSettings.MapExcludedMode == ModeShow || !Excluded(id)) && (_checkedLocs.Contains(id) || !HiddenByYou(id))).ToList();
 
         public LoadedPack Pack => _pack;
 
@@ -159,6 +167,7 @@ namespace AP_Atlas.UI
         {
             if (_pack == null || !_locIdToMap.TryGetValue(locationId, out var mapId)) return false;
             if (!string.Equals(mapId, _currentMapId, StringComparison.OrdinalIgnoreCase)) SwitchMap(mapId);
+            if (HiddenByYou(locationId) && !_checkedLocs.Contains(locationId) && !_appSettings.MapShowHidden && _showHiddenBox != null) _showHiddenBox.ButtonPressed = true;
             foreach (var pin in PinsOnMap(mapId))
             {
                 if (!GetLocationIds(pin.Loc).Contains(locationId)) continue;
@@ -223,7 +232,7 @@ namespace AP_Atlas.UI
         public string LocationState(long id)
         {
             if (_checkedLocs.Contains(id)) return "checked";
-            string excluded = Excluded(id) ? ", excluded" : "";
+            string excluded = (Excluded(id) ? ", excluded" : "") + (HiddenByYou(id) ? ", hidden by you" : "");
             if (LogicHidden) return (_hintedLocs.Contains(id) ? "hinted" : "open") + excluded;
             if (_unsureLocs.Contains(id)) return (_hintedLocs.Contains(id) ? "hinted, logic unsure" : "logic unsure") + excluded;
             bool r = _reachableLocs.Contains(id), h = _hintedLocs.Contains(id);
@@ -368,6 +377,10 @@ namespace AP_Atlas.UI
         private OptionButton _excludedModeDropdown;
         private OptionButton _notInSeedDropdown;
         private CheckBox _hideCheckedBox;
+        private CheckBox _showHiddenBox;
+
+        /// <summary>The Display panel's "Show hidden checks" box (for tests).</summary>
+        public CheckBox ShowHiddenBox => _showHiddenBox;
         private bool _syncingDisplay;
         private static int _displayVersion;
         private int _shownDisplayVersion;
@@ -481,6 +494,18 @@ namespace AP_Atlas.UI
                 DisplayChanged();
             };
             panel.AddChild(_hideCheckedBox);
+            _showHiddenBox = new CheckBox
+            {
+                Text = Translate("Show hidden checks"),
+                TooltipText = Translate("Show the checks you hid (logic was wrong about them) as dimmed pins; they stay out of the counts.\nRight-click a pin to hide or unhide its checks.")
+            };
+            _showHiddenBox.Toggled += on =>
+            {
+                if (_syncingDisplay) return;
+                _appSettings.MapShowHidden = on;
+                DisplayChanged();
+            };
+            panel.AddChild(_showHiddenBox);
             SyncDisplayControls();
 
             BuildLegend();
@@ -546,7 +571,7 @@ namespace AP_Atlas.UI
             foreach (var (color, text) in entries)
                 Add(new StyleBoxFlat { BgColor = color, BorderColor = ThemeColors.MapPinBorder, BorderWidthTop = 1, BorderWidthBottom = 1, BorderWidthLeft = 1, BorderWidthRight = 1 }, text,
                     text == MapPinLogic.Title(MapPinState.Mixed) ? ThemeColors.MapColour(MapPinState.OutOfLogic) : null);
-            var dim = new Label { Text = "Dimmed: excluded, or not in your seed", SizeFlagsVertical = SizeFlags.ShrinkCenter };
+            var dim = new Label { Text = _appSettings.MapShowHidden ? Translate("Dimmed: excluded, hidden by you, or not in your seed") : "Dimmed: excluded, or not in your seed", SizeFlagsVertical = SizeFlags.ShrinkCenter };
             dim.SetMeta("font_size_ratio", 0.85f);
             dim.AddThemeColorOverride("font_color", ThemeColors.TextSubtle);
             flow.AddChild(dim);
@@ -561,6 +586,7 @@ namespace AP_Atlas.UI
             _excludedModeDropdown.Selected = Math.Clamp(_appSettings.MapExcludedMode, 0, 2);
             _notInSeedDropdown.Selected = Math.Clamp(_appSettings.MapNotInSeedMode, 0, 2);
             _hideCheckedBox.ButtonPressed = _appSettings.MapHideChecked;
+            _showHiddenBox.ButtonPressed = _appSettings.MapShowHidden;
             _syncingDisplay = false;
         }
 
@@ -1271,12 +1297,12 @@ namespace AP_Atlas.UI
             var unplaced = new List<(long Id, string Name)>();
             if (_pack != null && _session != null && _pack.Maps.Count > 0)
                 foreach (long id in _session.Locations.AllMissingLocations)
-                    if (!_locIdToMap.ContainsKey(id) && !Excluded(id))
+                    if (!_locIdToMap.ContainsKey(id) && !Excluded(id) && (_appSettings.MapShowHidden || !HiddenByYou(id)))
                         unplaced.Add((id, _session.Locations.GetLocationNameFromId(id) ?? id.ToString(System.Globalization.CultureInfo.InvariantCulture)));
             unplaced.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
             UnplacedNames = unplaced.Select(u => u.Name).ToList();
             // How many of them are in logic, so the map rows' counts and the slot's add up (26 in logic, 1 on the maps).
-            UnplacedInLogic = LogicHidden ? 0 : unplaced.Count(u => _reachableLocs.Contains(u.Id) && !_unsureLocs.Contains(u.Id));
+            UnplacedInLogic = LogicHidden ? 0 : unplaced.Count(u => _reachableLocs.Contains(u.Id) && !_unsureLocs.Contains(u.Id) && !HiddenByYou(u.Id));
             bool any = unplaced.Count > 0;
             string count = unplaced.Count.ToString();
             _unplacedHeader.Visible = any;
@@ -1299,8 +1325,9 @@ namespace AP_Atlas.UI
                 button.Alignment = HorizontalAlignment.Left;
                 button.SizeFlagsHorizontal = SizeFlags.ExpandFill;
                 button.ClipText = true; // the name ends with "…" rather than widening the list
-                button.AddThemeColorOverride("font_color", ThemeColors.MapColourForText(look.SplitRight != null ? MapPinState.InLogic : StateFor(id)));
+                button.AddThemeColorOverride("font_color", look.Dim ? ThemeColors.TextSubtle : ThemeColors.MapColourForText(look.SplitRight != null ? MapPinState.InLogic : StateFor(id)));
                 button.SetMeta("unplaced_row", name);
+                if (look.Dim) button.Modulate = new Color(1f, 1f, 1f, DimAlpha);
                 button.GuiInput += ev =>
                 {
                     if (ev is InputEventMouseButton { Pressed: false, ButtonIndex: MouseButton.Right })
@@ -1433,9 +1460,15 @@ namespace AP_Atlas.UI
             int excludedOpen = open.Count(Excluded);
             // Excluded checks don't color the pin unless they're shown like any other check.
             var counted = excludedMode == ModeShow ? open : open.Where(id => !Excluded(id)).ToList();
+            // Checks the user hid (logic is wrong about them) never colour a pin; a pin of only those goes, or is dimmed with Show hidden checks.
+            int hiddenOpen = counted.Count(HiddenByYou);
+            if (hiddenOpen > 0) counted = counted.Where(id => !HiddenByYou(id)).ToList();
             if (open.Count == 0)
                 return _appSettings.MapHideChecked ? PinLook.Hidden
                     : new PinLook(false, ThemeColors.MapColour(MapPinState.Checked), null, false, "\n" + MapPinLogic.Title(MapPinState.Checked));
+            if (counted.Count == 0 && hiddenOpen > 0 && (excludedOpen == 0 || excludedMode == ModeHide))
+                return !_appSettings.MapShowHidden ? PinLook.Hidden
+                    : new PinLook(false, ThemeColors.TextSubtle, null, true, "\n" + (hiddenOpen == 1 ? Translate("Hidden by you") : Translate("Hidden by you ({0} checks)").Replace("{0}", hiddenOpen.ToString())));
             if (counted.Count == 0)
             {
                 // Everything left here is excluded.
@@ -1456,7 +1489,7 @@ namespace AP_Atlas.UI
                 : _logic == LogicShown.Hidden ? "Open" : "Open (logic isn't running)";
             if (unsure > 0 && counted.Count > 0) stateText += $" ({unsure} more, logic unsure)";
             if (split) stateText += $": {reachable} of {counted.Count}";
-            string note = "\n" + stateText + (excludedOpen > 0 ? $"\n{excludedOpen} excluded" : "");
+            string note = "\n" + stateText + (excludedOpen > 0 ? $"\n{excludedOpen} excluded" : "") + (hiddenOpen > 0 ? "\n" + Translate("{0} hidden by you").Replace("{0}", hiddenOpen.ToString()) : "");
             return new PinLook(false, ThemeColors.MapColour(split ? MapPinState.InLogic : state), split ? ThemeColors.MapColour(MapPinState.OutOfLogic) : null, false, note);
         }
 

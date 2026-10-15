@@ -72,6 +72,7 @@ namespace AP_Atlas.Core
             Test("Settings survive damage and null collections", SettingsSurviveDamage);
             Test("Profiles survive damage and null lists", ProfilesSurviveDamage);
             Test("Annotations exclusions round-trip", AnnotationsRoundTrip);
+            Test("Hidden checks: kept per slot, read back, an older file repaired", HiddenChecksRoundTrip);
             Test("YAML reader: block lists, quotes, comments, unquoted colons", YamlBlockLists);
             Test("YAML reader: weighted games, flow lists, several players", YamlDocuments);
             Test("Engine: a missing engine reports why instead of starting", EngineReportsMissing);
@@ -315,6 +316,40 @@ namespace AP_Atlas.Core
             Expect(Annotations.GetExclusionOverride(key, 103) == false, "an inclusion wasn't kept");
             Annotations.ClearExclusionOverrides(key);
             Expect(Annotations.GetExclusionOverride(key, 101) == null, "reset didn't clear");
+        }
+
+        private static void HiddenChecksRoundTrip()
+        {
+            string key = Annotations.SlotKey("selftest", "Hidden");
+            int changes = 0;
+            void Count() => changes++;
+            Annotations.Changed += Count;
+            try
+            {
+                var changed = Annotations.SetHidden(key, new long[] { 201, 202 }, true);
+                Expect(changed.SequenceEqual(new long[] { 201, 202 }) && changes == 1, $"hiding two checks changed {string.Join(",", changed)} with {changes} event(s)");
+                Expect(Annotations.SetHidden(key, new long[] { 201 }, true).Count == 0 && changes == 1, "hiding a hidden check again counted as a change");
+                Expect(Annotations.IsHidden(key, 201) && !Annotations.IsHidden(key, 203) && !Annotations.IsHidden(Annotations.SlotKey("selftest", "Other"), 201),
+                    "a hidden check isn't kept for its slot alone");
+                // Kept on disk: read again as Atlas does at start.
+                Annotations.ForgetLoadedForTests();
+                Expect(Annotations.HiddenFor(key).SetEquals(new long[] { 201, 202 }), "the hidden checks weren't read back: " + string.Join(",", Annotations.HiddenFor(key)));
+                changed = Annotations.SetHidden(key, new long[] { 202, 203 }, false);
+                Expect(changed.SequenceEqual(new long[] { 202 }) && changes == 2, $"unhiding changed {string.Join(",", changed)} with {changes} event(s)");
+                changed = Annotations.ClearHidden(key);
+                Expect(changed.SequenceEqual(new long[] { 201 }) && Annotations.HiddenFor(key).Count == 0 && changes == 3, "Unhide all didn't show them all again");
+                Expect(Annotations.ClearHidden(key).Count == 0 && changes == 3, "clearing nothing counted as a change");
+                // A file from before (or edited by hand) with a slot's list null, or no lists at all, reads as nothing hidden.
+                File.WriteAllText(Path.Combine(DataManager.GetDataDirectory(), "annotations.json"), "{\"HiddenChecks\": {\"" + key + "\": null}, \"Slots\": null}");
+                Annotations.ForgetLoadedForTests();
+                Expect(Annotations.HiddenFor(key).Count == 0 && !Annotations.IsHidden(key, 201), "a null list wasn't repaired");
+                Expect(Annotations.SetHidden(key, new long[] { 204 }, true).Count == 1, "a check couldn't be hidden after the repair");
+                Annotations.ClearHidden(key);
+            }
+            finally
+            {
+                Annotations.Changed -= Count;
+            }
         }
 
         // =====================================================================

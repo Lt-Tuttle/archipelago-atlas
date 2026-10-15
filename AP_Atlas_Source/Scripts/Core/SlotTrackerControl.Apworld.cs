@@ -113,6 +113,7 @@ public partial class SlotTrackerControl : MarginContainer
         _shownEmptyState = emptyState;
         if (_logicFlaggedOnly != null) _logicFlaggedOnly.Visible = !LogicHidden && !problem;
         if (_logicShowChecked != null) _logicShowChecked.Visible = !LogicHidden && !problem;
+        if (_logicShowHidden != null && (LogicHidden || problem)) _logicShowHidden.Visible = false;
         if (_logicNotice == null) return;
         _logicNotice.Visible = LogicHidden || problem;
         foreach (Node n in _logicNoticeActions.GetChildren()) n.QueueFree();

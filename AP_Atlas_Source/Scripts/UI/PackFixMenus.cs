@@ -42,8 +42,8 @@ namespace AP_Atlas.UI
         }
     }
 
-    /// <summary>One line of a fix menu: a label and what it does (no action: a heading or a hint, shown greyed).</summary>
-    public sealed record FixItem(string Label, Action? Run);
+    /// <summary>One line of a fix menu: a label and what it does (no action: a heading or a hint, shown greyed), or a submenu.</summary>
+    public sealed record FixItem(string Label, Action? Run, IReadOnlyList<FixItem>? Submenu = null);
 
     /// <summary>The fix menus' shared pieces: the popup itself, and choosing a picture file.</summary>
     public static class PackFixMenus
@@ -51,23 +51,37 @@ namespace AP_Atlas.UI
         /// <summary>Shows a fix menu at the mouse (frees itself when closed).</summary>
         public static PopupMenu Show(Control owner, IReadOnlyList<FixItem> items)
         {
-            var menu = new PopupMenu();
+            var menu = Build(items);
             menu.SetMeta("fix_menu", true);
+            menu.PopupHide += () => menu.QueueFree();
+            owner.AddChild(menu);
+            menu.Position = (Vector2I)owner.GetGlobalMousePosition();
+            menu.Popup();
+            return menu;
+        }
+
+        /// <summary>A menu of the lines, a submenu for each line that has one (freed with the menu).</summary>
+        private static PopupMenu Build(IReadOnlyList<FixItem> items)
+        {
+            var menu = new PopupMenu();
             var actions = new Dictionary<long, Action>();
             for (int i = 0; i < items.Count; i++)
             {
                 var item = items[i];
                 if (item.Label.Length == 0) { menu.AddSeparator(); continue; }
+                if (item.Submenu is { Count: > 0 } lines)
+                {
+                    var submenu = Build(lines);
+                    menu.AddChild(submenu);
+                    menu.AddSubmenuNodeItem(item.Label, submenu, i);
+                    continue;
+                }
                 menu.AddItem(item.Label, i);
                 int index = menu.GetItemIndex(i);
                 if (item.Run == null) menu.SetItemDisabled(index, true);
                 else actions[i] = item.Run;
             }
             menu.IdPressed += id => { if (actions.TryGetValue(id, out var run)) run(); };
-            menu.PopupHide += () => menu.QueueFree();
-            owner.AddChild(menu);
-            menu.Position = (Vector2I)owner.GetGlobalMousePosition();
-            menu.Popup();
             return menu;
         }
 

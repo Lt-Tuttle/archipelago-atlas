@@ -46,8 +46,15 @@ public partial class SlotTrackerControl : MarginContainer
     public bool Bk => Model.Bk;
 
     /// <summary>The BK banner's text.</summary>
-    public string BkText =>
-        $"BK: {Model.CheckedLocationsCount} of {Model.TotalLocationsCount} checks done; nothing is in logic right now. Items from other players open the next ones.";
+    public string BkText
+    {
+        get
+        {
+            int hidden = Model.HiddenInLogicCount;
+            return $"BK: {Model.CheckedLocationsCount} of {Model.TotalLocationsCount} checks done; nothing is in logic right now{(hidden > 0 ? $" ({hidden} hidden by you)" : "")}. " +
+                   "Items from other players open the next ones.";
+        }
+    }
 
     /// <summary>Whether the Logic Tracker shows its BK banner (for tests).</summary>
     public bool BkShown => _bkLabel != null && _bkLabel.Visible;
@@ -177,6 +184,8 @@ public partial class SlotTrackerControl : MarginContainer
         _mapTracker.VariantPicked += SetPackVariant;
         _progressionTracker.VariantPicked += SetPackVariant;
         _mapTracker.IsExcluded = IsExcluded;
+        _mapTracker.IsHidden = Model.IsHidden;
+        _mapTracker.HideChecks = SetChecksHidden;
         _mapTracker.MarkerLookup = id =>
         {
             var a = AP_Atlas.Core.Annotations.Get(AnnotationKey, AP_Atlas.Core.Annotations.LocationKey(id));
@@ -247,6 +256,7 @@ public partial class SlotTrackerControl : MarginContainer
         AP_Atlas.UI.Ui.Defer(this, OfferYamlExclusions);
         _specialSignature = string.Join("|", AP_Atlas.Core.Annotations.SpecialItemNames(Game).OrderBy(n => n));
         _exclusionSignature = ExclusionSignature();
+        _hiddenSignature = HiddenSignature();
 
         AP_Atlas.Core.ThemeColors.AccentChanged += OnAccentChanged;
         // The model hears the session (items, checks, hints, messages) and runs logic, and reports here once per frame.
@@ -423,9 +433,12 @@ public partial class SlotTrackerControl : MarginContainer
 
     private string _specialSignature = "";
     private string _exclusionSignature = "";
+    private string _hiddenSignature = "";
 
     private string ExclusionSignature() =>
         string.Join(",", AP_Atlas.Core.Annotations.ExclusionOverridesFor(AnnotationKey).OrderBy(kv => kv.Key).Select(kv => kv.Key + (kv.Value ? "x" : "i")));
+
+    private string HiddenSignature() => string.Join(",", Model.HiddenChecks.OrderBy(id => id));
 
     /// <summary>Re-applies flag/note/special markers everywhere after the user changed one.</summary>
     private void OnAnnotationsChanged()
@@ -437,6 +450,15 @@ public partial class SlotTrackerControl : MarginContainer
             // An exclusion was switched: redraw the logic list and map counts without the excluded checks.
             _exclusionSignature = exclusions;
             RenderLogicTree(forceFull: true);
+            RaiseStateChanged();
+        }
+        string hidden = HiddenSignature();
+        if (hidden != _hiddenSignature)
+        {
+            // A check was hidden or shown again: the in-logic counts, BK and the map (its pins and counters, through
+            // RaiseStateChanged) follow; the rows follow below.
+            _hiddenSignature = hidden;
+            RenderLogicTree();
             RaiseStateChanged();
         }
         ApplyAllLogicMarkers();
@@ -473,6 +495,7 @@ public partial class SlotTrackerControl : MarginContainer
             // for a done one (each button saves its setting and shows the rows again).
             if (_logicFlaggedOnly?.ButtonPressed == true && !_logicMarkedRows.Contains(locationId)) _logicFlaggedOnly.ButtonPressed = false;
             if (_logicRowsShownChecked.Contains(locationId) && _logicShowChecked != null && !_logicShowChecked.ButtonPressed) _logicShowChecked.ButtonPressed = true;
+            if (_logicRowsShownHidden.Contains(locationId) && _logicShowHidden != null && !_logicShowHidden.ButtonPressed) _logicShowHidden.ButtonPressed = true;
         }
         row.Select(1);
         _logicTree.ScrollToItem(row, true);

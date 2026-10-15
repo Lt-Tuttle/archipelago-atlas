@@ -284,6 +284,9 @@ namespace AP_Atlas.UI
             int myExclusions = Annotations.ExclusionOverridesFor(slot.AnnotationKey).Count;
             if (myExclusions > 0)
                 AddAction("Reset exclusions…", $"Forget the {myExclusions} location(s) you excluded or included, and use the seed's exclusions only", () => ConfirmResetExclusions(slot, myExclusions));
+            int hiddenChecks = slot.HiddenOpenCount;
+            if (hiddenChecks > 0)
+                AddAction("Unhide all…", $"List the {hiddenChecks} check(s) you hid in the Logic Tracker and on the map again, and count them", () => ConfirmUnhideAll(slot, hiddenChecks));
             EndActions();
 
             Section("Overview");
@@ -309,6 +312,9 @@ namespace AP_Atlas.UI
             else if (slot.EngineRunning)
             {
                 Row("In logic now", Colored(slot.ActiveLogicCount.ToString(), slot.ActiveLogicCount > 0 ? Good : Muted));
+                int hiddenInLogic = slot.HiddenInLogicCount;
+                if (hiddenInLogic > 0)
+                    Row("Hidden by you", Colored(hiddenInLogic.ToString(), Muted), "Checks in logic you hid because logic is wrong about them: left out of the count above, the Logic Tracker and the map until you unhide them");
                 if (slot.GoalInLogic is bool goal)
                     Row("Goal", goal ? Colored("In logic now: go mode!", Good) : Colored("Not yet in logic", Muted), "Whether the goal can be completed with what the slot has now");
                 var checkedSet = new HashSet<long>(s.Locations.AllLocationsChecked);
@@ -352,7 +358,7 @@ namespace AP_Atlas.UI
             var openInMine = slot.CurrentHints.Where(h => !h.Found && h.FindingPlayer == me).ToList();
             Row("Open hints for you", Link(openForMe.Count.ToString(), () => Go(slot, Tool.Hints)));
             Row("Open hints in your world", Link(openInMine.Count.ToString(), () => Go(slot, Tool.Hints)));
-            int inLogicForMe = openInMine.Count(h => slot.IsLocationReachable(h.LocationId));
+            int inLogicForMe = openInMine.Count(h => slot.IsLocationReachable(h.LocationId) && !slot.IsHiddenCheck(h.LocationId));
             if (openInMine.Count > 0 && !slot.LogicHidden) PlainRow("…of those in logic", inLogicForMe.ToString(), inLogicForMe > 0 ? Good : Muted);
 
             BuildSpecialProgress(slot);
@@ -650,6 +656,14 @@ namespace AP_Atlas.UI
                 else
                     AddAction("Exclude", bySeed ? "Back to the seed's default (excluded)" : "Leave this check out of logic counts, the Logic Tracker and the map (only in Atlas; the server isn't told)",
                         () => Annotations.SetExclusionOverride(ownerKey, locId, bySeed ? null : true));
+                if (isChecked == false)
+                {
+                    if (owner.IsHiddenCheck(locId))
+                        AddAction("Unhide", "List this check in the Logic Tracker and on the map again, and count it", () => owner.SetChecksHidden(new[] { locId }, false));
+                    else
+                        AddAction("Hide", "Logic calls this check in logic but it isn't: leave it out of the Logic Tracker, the map and the in-logic counts until you unhide it (logic itself is unchanged)",
+                            () => owner.SetChecksHidden(new[] { locId }, true));
+                }
             }
             if (owner != null && owner != _host.SelectedSlot) AddAction($"Switch to {owner.SlotName}", "Select this location's slot", () => _host.SelectSlot(owner));
             EndActions();
@@ -666,6 +680,8 @@ namespace AP_Atlas.UI
                 case "you": Row("Excluded", Colored("Yes, by you (left out of logic counts, the Logic Tracker and the map; the server isn't told)", Muted)); break;
                 case "included by you": Row("Excluded", Colored("No: the seed excludes it, but you included it", ThemeColors.TextMuted)); break;
             }
+            if (isChecked != true && owner?.IsHiddenCheck(t.LocationId) == true)
+                Row("Hidden", Colored("Yes, by you: left out of the Logic Tracker, the map and the in-logic counts" + (inLogic == true ? " (logic still calls it in logic)" : ""), Muted));
             if (hint != null) Row("Hinted", LinkTo(StatusText(hint.Status, hint.Found), HintT(view, hint), StatusColor(hint.Status, hint.Found)));
             var specialEntry = Annotations.GetSpecial(game, Annotations.SpecialLocationKey(name));
             if (specialEntry != null) Row("◆ Special", Colored(string.IsNullOrWhiteSpace(specialEntry.Note) ? "Marked special for " + game : specialEntry.Note, Annotations.SpecialColor));
@@ -1243,7 +1259,7 @@ namespace AP_Atlas.UI
 
             SetHeader("Map pin", pin.Name, $"on {LinkTo(mapName ?? "?", InspectTarget.ForMap(view.ProfileId, view.SlotName, t.MapId))}",
                 ids.Count == 0 ? Muted : done == ids.Count ? Muted : view.LogicHidden ? ThemeColors.LogicHidden
-                : ids.Any(id => !checkedSet.Contains(id) && view.IsLocationReachable(id)) ? Good : Bad,
+                : ids.Any(id => !checkedSet.Contains(id) && !view.IsHiddenCheck(id) && view.IsLocationReachable(id)) ? Good : Bad,
                 ids.Count == 0 ? "Not in this world" : $"{done} / {ids.Count} checked");
 
             BeginActions();
@@ -1302,6 +1318,7 @@ namespace AP_Atlas.UI
                 foreach (var id in ids)
                 {
                     if (checkedSet.Contains(id)) { done++; continue; }
+                    if (view.IsHiddenCheck(id)) continue; // hidden by you: out of the map's counts, as on the map
                     open++;
                     if (view.IsLocationReachable(id)) { inLogic++; reach++; } else outLogic++;
                     if (view.IsLocationHinted(id)) hinted++;
@@ -1677,6 +1694,9 @@ namespace AP_Atlas.UI
             GetTree().Root.AddChild(dialog);
             dialog.PopupCentered(new Vector2I(900, 600));
         }
+
+        private void ConfirmUnhideAll(SlotTrackerControl slot, int count) =>
+            Dialogs.Confirm(this, "Unhide all", $"List the {count} check(s) you hid for {slot.SlotName} in the Logic Tracker and on the map again, and count them?", "Unhide all", slot.UnhideAll);
 
         private void ConfirmResetExclusions(SlotTrackerControl slot, int count)
         {

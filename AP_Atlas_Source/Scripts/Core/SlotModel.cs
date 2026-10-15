@@ -307,19 +307,54 @@ namespace AP_Atlas.Core
 
         private static readonly IReadOnlySet<long> NoLocations = new HashSet<long>();
 
-        /// <summary>The unsure locations still to check (not done, not excluded), in the server's order.</summary>
-        public List<long> UnsureOpen()
+        /// <summary>The unsure locations still to check (not done, not excluded, not hidden by you unless asked), in the server's order.</summary>
+        public List<long> UnsureOpen(bool includeHidden = false)
         {
             var unsure = UnsureShown;
             if (unsure.Count == 0) return new List<long>();
             var done = new HashSet<long>(Session.Locations.AllLocationsChecked);
-            return Session.Locations.AllLocations.Where(l => unsure.Contains(l) && !done.Contains(l) && !IsExcluded(l)).ToList();
+            var hidden = includeHidden ? NoLocations : HiddenChecks;
+            return Session.Locations.AllLocations.Where(l => unsure.Contains(l) && !done.Contains(l) && !IsExcluded(l) && !hidden.Contains(l)).ToList();
+        }
+
+        /// <summary>
+        /// Whether you hid this check because logic wrongly calls it in logic: it leaves the Logic Tracker, the map and the
+        /// in-logic counts until you unhide it. Logic itself is untouched.
+        /// </summary>
+        public bool IsHidden(long location) => Annotations.IsHidden(AnnotationKey, location);
+
+        /// <summary>The checks you hid for this slot.</summary>
+        public IReadOnlySet<long> HiddenChecks => Annotations.HiddenFor(AnnotationKey);
+
+        /// <summary>How many of the checks you hid are still to do.</summary>
+        public int HiddenOpenCount
+        {
+            get
+            {
+                var hidden = HiddenChecks;
+                if (hidden.Count == 0) return 0;
+                var done = new HashSet<long>(Session.Locations.AllLocationsChecked);
+                return hidden.Count(id => !done.Contains(id));
+            }
+        }
+
+        /// <summary>How many checks logic calls in logic now that you hid: what <see cref="ActiveLogicCount"/> leaves out for them.</summary>
+        public int HiddenInLogicCount
+        {
+            get
+            {
+                var hidden = HiddenChecks;
+                if (LogicHidden || hidden.Count == 0) return 0;
+                var done = new HashSet<long>(Session.Locations.AllLocationsChecked);
+                var unsure = UnsureShown;
+                return hidden.Count(id => Logic.Reachable.Contains(id) && !done.Contains(id) && !IsExcluded(id) && !unsure.Contains(id));
+            }
         }
 
         /// <summary>Whether the location is reachable only with glitches (false while race mode hides logic).</summary>
         public bool IsGlitchedLocation(long location) => !LogicHidden && Logic.IsGlitched(location);
 
-        /// <summary>Checks in logic that aren't done or excluded (0 while race mode hides logic).</summary>
+        /// <summary>Checks in logic that aren't done, excluded or hidden by you (0 while race mode hides logic).</summary>
         public int ActiveLogicCount
         {
             get
@@ -329,8 +364,9 @@ namespace AP_Atlas.Core
                 var checkedLocations = new HashSet<long>(Session.Locations.AllLocationsChecked);
                 int count = 0;
                 var unsure = UnsureShown;
+                var hidden = HiddenChecks;
                 foreach (long location in Logic.Reachable)
-                    if (!checkedLocations.Contains(location) && !IsExcluded(location) && !unsure.Contains(location)) count++;
+                    if (!checkedLocations.Contains(location) && !IsExcluded(location) && !unsure.Contains(location) && !hidden.Contains(location)) count++;
                 return count;
             }
         }
