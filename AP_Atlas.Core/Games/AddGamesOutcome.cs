@@ -41,13 +41,21 @@ public sealed class AddGameResult
     public string? GuideRepo { get; set; }
     /// <summary>Why the guide's pack wasn't the one installed, for the summary's "Find it on GitHub…".</summary>
     public AddPackNote PackNote { get; set; }
+    /// <summary>Its logic ships with Archipelago (an official game's world): its version is Archipelago's.</summary>
+    public bool LogicShips { get; set; }
+    /// <summary>Its apworld's version is the one its map pack was measured on (Atlas's list said so), not just the newest.</summary>
+    public bool LogicFitsPack { get; set; }
     /// <summary>Nothing failed, was stopped or was left unfinished.</summary>
     public bool Ok => Fine(Logic) && Fine(Map);
     private static bool Fine(AddStep step) => step.Outcome is not (AddStepOutcome.Failed or AddStepOutcome.Cancelled or AddStepOutcome.Pending);
 }
 
-/// <summary>A pack a batch installed, once the Pack Doctor settled on it: the fixes Atlas made by itself in it, and the rows left for the user (the map's Notices).</summary>
-public sealed record PackToLook(string Game, string PackKey, string PackName, string File, int Fixed, int Left);
+/// <summary>
+/// A pack a batch installed, once the Pack Doctor settled on it: the fixes Atlas made by itself in it, and how many of the
+/// game's checks have a pin (Placed of Total; 0 of 0 when the game's names weren't known). Round 13 dropped "left": it counted
+/// one row per unlinked pin section (Dark Souls II: 1593) and wasn't what the map's Notices show.
+/// </summary>
+public sealed record PackToLook(string Game, string PackKey, string PackName, string File, int Fixed, int Placed, int Total);
 
 /// <summary>What an Add games batch did, for the summary card: a row per game, the packs to look at, and how GitHub was used.</summary>
 public sealed class AddGamesOutcome

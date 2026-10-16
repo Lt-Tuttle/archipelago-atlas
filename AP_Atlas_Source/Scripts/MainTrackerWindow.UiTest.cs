@@ -231,11 +231,11 @@ public partial class MainTrackerWindow
             AddGamesInstallerAsync);
         await ScenarioAsync("Install games, the guide's own pack: a community game Atlas's list has no pack for keeps GitHub's requests for the project its setup guide names, the one confirm allows GitHub lookups until Atlas closes, and once its logic is in the guide's project's release is installed and made the game's pack (round 12: FireRed's tracker); the requests kept for a guide that names nothing are handed back to a later game's guide",
             AddGamesGuidePackAsync);
-        await ScenarioAsync("Install games screen: Add a slot's Logic line offers Install this game…, which opens Install games over it with the game ticked; the empty map leads with Get a map pack for a game Atlas's list has a pack for; Home's Install games… lists every game, the games of your multiworlds first and ticked where they need something, each row in plain words with its download, a game with nothing to add not tickable, typed words narrowing the list and the totals below; Add opens ONE confirm naming every project, what it trusts and Don't ask again, with nothing downloaded until Download and install; Back keeps the ticks; the run ends in a summary per game, the project trusted and the downloads always allowed by the tick; the Games overview's Install games… shows an added game as ready; Cancel during a batch stops it with nothing downloaded, and Try those again ticks what's left",
+        await ScenarioAsync("Install games screen: Add a slot's Logic line offers Install this game…, which opens Install games over it with the game ticked; the empty map leads with Get a map pack for a game Atlas's list has a pack for; Home's Install games… lists every game, the games of your multiworlds first and ticked where they need something, each row in plain words with its download, a game with nothing to add not tickable, typed words narrowing the list and the totals below; Add opens ONE confirm, a line per game, its projects and what it trusts behind From N projects and Don't ask again, with nothing downloaded until Install; Back keeps the ticks; the run shows moving dots while a step runs without bar movement, and ends in a summary of a line per game with one number per item (a map that fits poorly offers the version that fits), the project trusted and the downloads always allowed by the tick; the Games overview's Install games… shows an added game as ready; Cancel during a batch stops it with nothing downloaded, and Try those again ticks what's left",
             AddGamesScreenAsync);
-        await ScenarioAsync("Setup window, adding games: with the engine ready the window has no engine page; Next on Your multiworld and slots saves the multiworld and connects both slots, so Atlas learns their two games from the room, and meanwhile their Logic banners say the setup window adds the game with nothing to press; Install games on the page comes with both games first and ticked, its buttons the window's own (Install 2 games…, the one confirm with its Back beside Next and the window's Back and Skip aside, Download and install, the bar with the list on the left locked, the summary with what Atlas fixed in each pack); nothing opens on top of the window; the slots' logic starts by itself once their games are in; Ready says you're set up",
+        await ScenarioAsync("Setup window, adding games: with the engine ready the window has no engine page; Next on Your multiworld and slots saves the multiworld and connects both slots, so Atlas learns their two games from the room, and meanwhile their Logic banners say the setup window adds the game with nothing to press; Install games on the page comes with both games first and ticked, its buttons the window's own (Install 2 games…, the one confirm with its Back beside Next and the window's Back and Skip aside, Install, the bar with the list on the left locked, the summary with what Atlas fixed in each pack; every word fits the page); nothing opens on top of the window; the slots' logic starts by itself once their games are in; Ready says you're set up",
             SetupAddGamesAsync);
-        await ScenarioAsync("Atlas fixes packs by itself: a pack's first check links its exact match and its confident one (85%+) as Atlas's own fixes, leaves the 60% one on the map's Notices, and one card says what it fixed and what's left, with Review fixes; the Changes tab beside Notices lists both as Atlas's and a check hidden on the map, each with Undo (and Show on map); Review fixes' Undo takes one back and declines it, so neither the next check nor a new Atlas's pass makes it again and no card follows; Undo all takes the rest, and the Doctor's Undo brings it back; the map's one tip shows until Got it, for good",
+        await ScenarioAsync("Atlas fixes packs by itself: a pack's first check links its exact match and its confident one (85%+) as Atlas's own fixes, leaves the 60% one on the map's Notices, and one card says what it fixed, with Review fixes; the Changes tab beside Notices lists both as Atlas's and a check hidden on the map, each with Undo (and Show on map); Review fixes' Undo takes one back and declines it, so neither the next check nor a new Atlas's pass makes it again and no card follows; Undo all takes the rest, and the Doctor's Undo brings it back; the map's one tip shows until Got it, for good",
             PackAutoFixAsync);
         await ScenarioAsync("BK: with logic running, checks left and none of them in logic, the Logic Tracker and Key Items say so with the count done, and the slot card says BK; an item that opens a check ends it",
             BkAsync);
@@ -1409,7 +1409,7 @@ public partial class MainTrackerWindow
             UiTestExpect(plan.DownloadBytes == 8000 && plan.DiskBytes == 11000 && plan.UnknownSizes == 0 && plan.GitHubRequests == 0
                 && plan.ProjectsToTrust.SequenceEqual(new[] { "github.com/planner/plan-test" }) && plan.PackProjects.SequenceEqual(new[] { "github.com/mapper/plain" }),
                 $"the plan's totals are wrong: {plan.DownloadBytes} down, {plan.DiskBytes} on disk, {plan.UnknownSizes} unknown");
-            UiTestExpect(AP_Atlas.Core.Games.AddGamesPlan.Words(row) == "logic and map" && row.RepickPackAfterLogic, "the game's row doesn't say what adding it gets");
+            UiTestExpect(AP_Atlas.Core.Games.AddGamesPlan.Words(row) == "logic + map" && row.RepickPackAfterLogic, "the game's row doesn't say what adding it gets");
             UiTestExpect(site.Requests.SequenceEqual(new[] { "/list.json" }), "planning asked GitHub: " + string.Join(", ", site.Requests));
             // The list's versions carry their sizes into what Atlas reads of a project (here: GitHub lists no release).
             var versions = await ApworldSources.VersionsAsync(ApworldSources.Find(game), System.Threading.CancellationToken.None);
@@ -1483,8 +1483,10 @@ public partial class MainTrackerWindow
             Games = new List<ApworldSource>
             {
                 new ApworldSource { Game = alpha, Apworld = "add_alpha", Repo = "owner/add-alpha",
-                    Versions = { new ApworldVersion { Version = "1.2.0", Url = site.Site + "/dl/add_alpha.apworld", Sha256 = Sha(alphaApworld), Size = alphaApworld.Length } },
-                    Packs = { new IndexPack { Repo = "packs/alpha-poptracker", Release = "v1.0", Asset = "alpha_pack.zip", Sha256 = Sha(alphaPack), Fit = 100, Checks = "2 of 2" } } },
+                    Versions = { new ApworldVersion { Version = "1.2.0", Url = site.Site + "/dl/add_alpha.apworld", Sha256 = Sha(alphaApworld), Size = alphaApworld.Length },
+                                 new ApworldVersion { Version = "1.3.0", Url = site.Site + "/dl/add_alpha_newer.apworld", Sha256 = new string('0', 64), Size = alphaApworld.Length } },
+                    // The pack lab measured Alpha's pack on 1.2.0: that version is installed, not the newest full release (round 13).
+                    Packs = { new IndexPack { Repo = "packs/alpha-poptracker", Release = "v1.0", Asset = "alpha_pack.zip", Sha256 = Sha(alphaPack), Fit = 100, Checks = "2 of 2", ApworldVersion = "1.2.0" } } },
                 new ApworldSource { Game = beta, Official = true,
                     Packs = { new IndexPack { Repo = "packs/beta-other", Release = "v2", Asset = "beta_other.zip", Sha256 = Sha(otherPack), Fit = 90 },
                               new IndexPack { Repo = "packs/beta-poptracker", Release = "v1", Asset = "beta_pack.zip", Sha256 = Sha(betaPack), Fit = 60 } } },
@@ -1553,8 +1555,9 @@ public partial class MainTrackerWindow
                 && plan.GitHubRequests == AP_Atlas.Core.Games.AddGamesPlan.LivePackRequests && plan.Games.Single(g => g.Game == gamma).GuideLookupReserved
                 && plan.ProjectsToTrust.SequenceEqual(new[] { "127.0.0.1" })
                 && plan.Games.Single(g => g.Game == beta).Items.Single(i => i.Kind == AP_Atlas.Core.Games.AddItemKind.Pack).Repo == "packs/beta-other"
-                && plan.Games.Single(g => g.Game == beta).RepickPackAfterLogic,
-                "the plan isn't the list's best fit for Beta with Archipelago's release once and the fake site to trust");
+                && plan.Games.Single(g => g.Game == beta).RepickPackAfterLogic
+                && plan.Games.Single(g => g.Game == alpha).Items.Single(i => i.Kind == AP_Atlas.Core.Games.AddItemKind.Apworld) is { Version: "1.2.0", FitsPack: true },
+                "the plan isn't the list's best fit for Beta with Archipelago's release once and the fake site to trust, or Alpha's version isn't the one its pack was measured on");
             AtlasEngine.PartsChanged += OnParts;
             AP_Atlas.Core.PopTracker.PackDoctorService.AutoFixed += OnFixed;
             AP_Atlas.Core.PopTracker.PackDoctorService.ReviewSuggested += OnReview;
@@ -1594,7 +1597,9 @@ public partial class MainTrackerWindow
             var rowC = o.For(gamma);
             UiTestExpect(!o.Cancelled && Is(rowA.Logic, AP_Atlas.Core.Games.AddStepOutcome.Done) && rowA.Logic.Detail == "1.2.0" && Is(rowA.Map, AP_Atlas.Core.Games.AddStepOutcome.Done)
                 && !rowA.PackFromGuide && rowA.PackRepo == "packs/alpha-poptracker"
-                && Is(rowB.Logic, AP_Atlas.Core.Games.AddStepOutcome.Done) && Is(rowB.Map, AP_Atlas.Core.Games.AddStepOutcome.Done) && rowB.PackFromGuide
+                && rowA.LogicFitsPack && !rowA.LogicShips
+                && Is(rowB.Logic, AP_Atlas.Core.Games.AddStepOutcome.Done) && rowB.Logic.Detail == AtlasEngine.ArchipelagoVersion && rowB.LogicShips
+                && Is(rowB.Map, AP_Atlas.Core.Games.AddStepOutcome.Done) && rowB.PackFromGuide
                 && rowB.PackRepo == "packs/beta-poptracker" && rowB.GuideRepo == "packs/beta-poptracker"
                 && Is(rowC.Logic, AP_Atlas.Core.Games.AddStepOutcome.Failed) && rowC.Logic.Detail == "its project no longer offers that file" && Is(rowC.Map, AP_Atlas.Core.Games.AddStepOutcome.Unavailable)
                 && o.Failures.Select(f => f.Game).SequenceEqual(new[] { gamma }),
@@ -1604,14 +1609,16 @@ public partial class MainTrackerWindow
             lookKey = look?.PackKey;
             var alphaFixes = look == null ? null : AP_Atlas.Core.PopTracker.PackFixes.Get(look.PackKey);
             UiTestExpect(look != null && look.Fixed >= 1 && alphaFixes!.Links.Any(l => l.Subject == "link:Cave|Chest" && l.ApLocationId == 2000 && l.Source == "automatic")
-                && look.Fixed == alphaFixes.Links.Count(l => l.Source == "automatic") + alphaFixes.Tiles.Count(t => t.Source == "automatic"),
-                $"Alpha's pack isn't listed with what Atlas fixed by itself: {look?.Fixed} fixed, {look?.Left} left");
+                && look.Fixed == alphaFixes.Links.Count(l => l.Source == "automatic") + alphaFixes.Tiles.Count(t => t.Source == "automatic")
+                && look.Total > 0 && look.Placed >= 1 && look.Placed <= look.Total && o.PacksToLook.Any(p => p.Game == beta),
+                $"Alpha's pack isn't listed with what Atlas fixed by itself and its pinned checks: {look?.Fixed} fixed, {look?.Placed}/{look?.Total} pinned; {o.PacksToLook.Count} pack(s)");
             UiTestExpect(ApworldSources.IsApproved(_appSettings, site.Site + "/dl/add_alpha.apworld") && AP_Atlas.Core.Permissions.IsAllowed(_appSettings, AP_Atlas.Core.Permissions.EngineSetup)
                 && !AP_Atlas.Core.Permissions.IsAlwaysAllowed(_appSettings, AP_Atlas.Core.Permissions.EngineSetup),
                 "the project wasn't trusted, or the engine's downloads weren't allowed for this session only");
             var fractions = statuses.Select(s => s.Fraction).ToList();
             UiTestExpect(fractions.Zip(fractions.Skip(1), (x, y) => y >= x).All(up => up) && statuses[^1].Fraction == 1f && statuses[^1].Text == "Done."
-                && new[] { "Game 1 of 3: ", "Game 2 of 3: ", "Game 3 of 3: " }.All(p => statuses.Any(s => s.Text.StartsWith(p, StringComparison.Ordinal))),
+                && new[] { "Game 1 of 3: ", "Game 2 of 3: ", "Game 3 of 3: " }.All(p => statuses.Any(s => s.Text.StartsWith(p, StringComparison.Ordinal)))
+                && statuses.Any(s => s.Text.EndsWith("map pack (1 of 2)…", StringComparison.Ordinal)) && statuses.Any(s => s.Text.EndsWith("map pack (2 of 2)…", StringComparison.Ordinal)),
                 $"the progress: {string.Join(" | ", statuses.Select(s => $"{s.Fraction:0.00} {s.Text}"))}");
             UiTestExpect(AtlasEngine.LastCheck(AtlasEngine.Current)?.Games is { } loaded && loaded.Contains(alpha) && loaded.Contains(beta), "the engine's check doesn't list the added games");
             // Wren's logic restarted once for the whole batch (one notice of the changed parts), and only once.
@@ -1772,12 +1779,17 @@ public partial class MainTrackerWindow
             Source = "ui-test",
             Games = new List<ApworldSource>
             {
+                // The list has the guide's project only as a copy no download fetches (round 13: Ship of Harkinian): read from GitHub all the same.
                 new ApworldSource { Game = delta, Apworld = "add_delta", Repo = "owner/add-delta",
-                    Versions = { new ApworldVersion { Version = "1.0.0", Url = site.Site + "/dl/add_delta.apworld", Sha256 = Sha(apworld), Size = apworld.Length } } },
+                    Versions = { new ApworldVersion { Version = "1.0.0", Url = site.Site + "/dl/add_delta.apworld", Sha256 = Sha(apworld), Size = apworld.Length } },
+                    Packs = { new IndexPack { Repo = "packs/delta-tracker", Release = "v1", Asset = "(from the beta's packs folder)", Sha256 = Sha(pack), Fit = 100, Checks = "1 of 1", Size = pack.Length } } },
                 new ApworldSource { Game = echo, Apworld = "add_echo", Repo = "owner/add-echo",
                     Versions = { new ApworldVersion { Version = "1.0.0", Url = site.Site + "/dl/add_echo.apworld", Sha256 = Sha(echoWorld), Size = echoWorld.Length } } },
+                // Foxtrot's list has a pack measured on its 1.0.0 (the plan installs that version for it), but once its logic is in,
+                // its guide's project is what's installed: the summary mustn't claim the version is the one its pack was measured on.
                 new ApworldSource { Game = foxtrot, Apworld = "add_foxtrot", Repo = "owner/add-foxtrot",
-                    Versions = { new ApworldVersion { Version = "1.0.0", Url = site.Site + "/dl/add_foxtrot.apworld", Sha256 = Sha(foxWorld), Size = foxWorld.Length } } }
+                    Versions = { new ApworldVersion { Version = "1.0.0", Url = site.Site + "/dl/add_foxtrot.apworld", Sha256 = Sha(foxWorld), Size = foxWorld.Length } },
+                    Packs = { new IndexPack { Repo = "packs/foxtrot-listed", Release = "v1", Asset = "foxtrot_listed.zip", Sha256 = new string('f', 64), Fit = 100, Checks = "1 of 1", Size = foxPack.Length, ApworldVersion = "1.0.0" } } }
             }
         };
         string worlds = AtlasEngine.UserWorldsDir;
@@ -1797,7 +1809,7 @@ public partial class MainTrackerWindow
             var plan = _gamesPage.PlanAdding(new[] { delta });
             var g = plan.Games.Single();
             UiTestExpect(g.GuideLookupReserved && g.Row == AP_Atlas.Core.Games.AddRow.LogicMapFromGuide && plan.NeedsGitHubLookups && plan.GitHubRequests == AP_Atlas.Core.Games.AddGamesPlan.LivePackRequests
-                && (AP_Atlas.Core.Games.AddGamesWords.Confirm(plan, false, null, 0, t => t).GitHub ?? "").Contains(delta),
+                && AP_Atlas.Core.Games.AddGamesWords.Confirm(plan, false, null, 0, t => t) is { GitHub: not null } w && w.ProjectsTooltip.Contains(delta),
                 $"the plan doesn't keep the guide's requests or the confirm doesn't say so: {g.Row}, {plan.GitHubRequests} request(s)");
             // Run as if the rest of GitHub's budget were spent elsewhere: only the requests the plan kept pay for the guide's project.
             var run = await AddGamesAsync(plan with { GitHubRequests = AP_Atlas.Core.Games.AddGamesPlan.GitHubBudget }, new AddGamesConsent(false, true), null, System.Threading.CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(120));
@@ -1818,15 +1830,17 @@ public partial class MainTrackerWindow
                 GitHubRequests = AP_Atlas.Core.Games.AddGamesPlan.GitHubBudget,
                 Games = second.Games.Select(x => x.Game == foxtrot ? x with { GuideLookupReserved = false, Row = AP_Atlas.Core.Games.AddRow.LogicNoMapKnown } : x).ToList()
             };
-            UiTestExpect(handBack.Games.Count == 2 && handBack.Games[0].Game == echo && handBack.Games[0].GuideLookupReserved && !handBack.Games[1].GuideLookupReserved,
+            UiTestExpect(handBack.Games.Count == 2 && handBack.Games[0].Game == echo && handBack.Games[0].GuideLookupReserved && !handBack.Games[1].GuideLookupReserved
+                && handBack.Games[1].Items.Single(i => i.Kind == AP_Atlas.Core.Games.AddItemKind.Apworld).FitsPack,
                 $"the second plan isn't Echo with its guide's requests kept, then Foxtrot: {string.Join(", ", handBack.Games.Select(x => $"{x.Game} {x.Row}"))}");
             var run2 = await AddGamesAsync(handBack, new AddGamesConsent(false, true), null, System.Threading.CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(120));
             var echoRow = run2.Outcome.For(echo);
             foxRow = run2.Outcome.For(foxtrot);
             if (foxRow.PackFile != null && AP_Atlas.Core.PopTracker.PopTrackerPackLoader.InspectZipPack(foxRow.PackFile) is { } foxInstalled) foxKey = AP_Atlas.Core.PopTracker.PackFixes.KeyFor(foxInstalled);
             UiTestExpect(echoRow.Logic.Outcome == AP_Atlas.Core.Games.AddStepOutcome.Done && echoRow.Map.Outcome == AP_Atlas.Core.Games.AddStepOutcome.Unavailable
-                && foxRow.Map.Outcome == AP_Atlas.Core.Games.AddStepOutcome.Done && foxRow.PackRepo == "packs/foxtrot-tracker",
-                $"the requests Echo's guide didn't use weren't handed back to Foxtrot's: {echoRow.Map} / {foxRow.Map}");
+                && foxRow.Map.Outcome == AP_Atlas.Core.Games.AddStepOutcome.Done && foxRow.PackRepo == "packs/foxtrot-tracker"
+                && foxRow.Logic.Outcome == AP_Atlas.Core.Games.AddStepOutcome.Done && !foxRow.LogicFitsPack,
+                $"the requests Echo's guide didn't use weren't handed back to Foxtrot's, or its logic claims the guide's pack was measured on it: {echoRow.Map} / {foxRow.Map} / {foxRow.LogicFitsPack}");
         }
         finally
         {
@@ -1999,9 +2013,9 @@ public partial class MainTrackerWindow
                 $"every game of the multiworld that needs something isn't ticked (or one with nothing to add is): {string.Join(", ", panel.Ticked)}");
             OnlyTicked(panel, alpha);
             UiTestExpect(panel.Ticked.SequenceEqual(new[] { alpha }) && panel.Table.ShownRows.TakeWhile(r => r.Pinned).Any(r => r.Key == alpha)
-                && panel.RowWords(alpha) == "logic and map" && panel.RowSize(alpha) == "under 0.1 MB",
+                && panel.RowWords(alpha) == "logic + map" && panel.RowSize(alpha) == "under 0.1 MB",
                 $"the game of the multiworld isn't first and ticked with its words: {panel.RowWords(alpha)} / {panel.RowSize(alpha)}");
-            UiTestExpect(panel.RowTickable(beta) && panel.RowWords(beta) == "logic, then the map pack its setup guide names, if it names one" && !panel.RowTickable(nowhere) && panel.RowWords(nowhere).StartsWith("nothing to add", StringComparison.Ordinal),
+            UiTestExpect(panel.RowTickable(beta) && panel.RowWords(beta) == "logic + the guide's map" && !panel.RowTickable(nowhere) && panel.RowWords(nowhere) == "nothing (logic unknown)",
                 $"the rows' words: {panel.RowWords(beta)} | {panel.RowWords(nowhere)}");
             panel.Tick(nowhere, true);
             UiTestExpect(!panel.IsTicked(nowhere), "a game with nothing to add was ticked");
@@ -2014,7 +2028,10 @@ public partial class MainTrackerWindow
                 $"a re-read didn't tick the game that became addable, or ticked one the user unticked: {string.Join(", ", panel.Ticked)}");
             panel.Tick(gamma, false);
             await UiTestWaitForAsync(() => panel.FactsPending == 0 ? panel : null, "the rows read again", 20);
-            UiTestExpect(panel.TotalsText == "1 game: under 0.1 MB to download, under 0.1 MB on this PC." && dialog.GetOkButton().Text == "Install 1 game…" && !dialog.GetOkButton().Disabled,
+            await UiTestWaitAsync(0.1); // the rows' layout
+            UiTestColumnFits(panel.Table, 2, "the list's Installs column");
+            UiTestColumnFits(panel.Table, 3, "the list's Download column");
+            UiTestExpect(panel.TotalsText == "1 game · under 0.1 MB to download · under 0.1 MB on this PC" && dialog.GetOkButton().Text == "Install 1 game…" && !dialog.GetOkButton().Disabled,
                 $"the totals read \"{panel.TotalsText}\" and the button \"{dialog.GetOkButton().Text}\"");
             panel.Table.SearchBox.Text = "nowhere";
             panel.Table.SearchBox.EmitSignal(LineEdit.SignalName.TextChanged, "nowhere");
@@ -2026,32 +2043,56 @@ public partial class MainTrackerWindow
             // The one confirm: every project named, what it trusts, Don't ask again; nothing downloaded yet. Back keeps the ticks.
             dialog.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
             UiTestExpect(panel.CurrentStage == AP_Atlas.UI.AddGamesPanel.Stage.Confirm && panel.ConfirmText.Contains("127.0.0.1") && panel.ConfirmText.Contains("github.com/packs/screen-alpha")
-                && panel.ConfirmText.Contains("only continue if you trust these projects") && panel.ConfirmText.Contains("Pressing Download and install trusts 127.0.0.1")
+                && panel.ConfirmText.Contains("Installing trusts the new one, 127.0.0.1") && panel.ConfirmText.StartsWith("Install 1 game · under 0.1 MB", StringComparison.Ordinal)
+                && panel.ConfirmLines().SequenceEqual(new[] { alpha + " · logic + map · under 0.1 MB" }) && dialog.GetOkButton().Text == "Install"
                 && panel.DontAskAgain is { Visible: true, ButtonPressed: false } && site.Requests.Count == 0 && dialog.SecondaryButton.Text == "Back",
-                $"the confirm reads: {panel.ConfirmText}");
+                $"the confirm reads: {panel.ConfirmText}; its lines: {string.Join(" | ", panel.ConfirmLines())}");
             await UiTestDialogSizedAsync(dialog, "the Add games confirm");
+            UiTestTextFits(dialog, "the Add games confirm");
             dialog.SecondaryButton.EmitSignal(BaseButton.SignalName.Pressed);
             UiTestExpect(panel.CurrentStage == AP_Atlas.UI.AddGamesPanel.Stage.Pick && panel.IsTicked(alpha), "Back didn't return to the list with the ticks");
             dialog.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
             UiTestExpect(panel.ConfirmedPlan!.Games.Select(g => g.Game).SequenceEqual(new[] { alpha }), "the confirm's plan isn't the ticked game");
             panel.DontAskAgain!.ButtonPressed = true;
+            // The dots, per step the batch reports: on while a step runs without bar movement, off while a download moves the bar.
+            var dotsSeen = new List<(bool Moves, float Fraction, bool Busy)>();
+            panel.StatusChanged += s => dotsSeen.Add((s.BarMoves, s.Fraction, panel.BusyRunning));
             dialog.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
-            UiTestExpect(panel.CurrentStage == AP_Atlas.UI.AddGamesPanel.Stage.Running && dialog.GetOkButton().Text == "Cancel" && !dialog.Exclusive, "the run doesn't show one bar with Cancel, Atlas usable");
+            UiTestExpect(panel.CurrentStage == AP_Atlas.UI.AddGamesPanel.Stage.Running && dialog.GetOkButton().Text == "Cancel" && !dialog.Exclusive
+                && panel.BusyRunning && dialog.GetOkButton().TooltipText.Length > 0, "the run doesn't show one bar with Cancel (what it keeps in its tooltip) and the dots, Atlas usable");
             // Closed while it runs (the window's ×), it hides and the batch goes on; it comes back with the summary.
             dialog.Hide();
             dialog.EmitSignal(AcceptDialog.SignalName.Canceled);
             UiTestExpect(!dialog.IsQueuedForDeletion() && Showing() == dialog && panel.CurrentStage == AP_Atlas.UI.AddGamesPanel.Stage.Running, "closing Add games while it runs stopped it or freed it");
             run = await UiTestWaitForAsync(() => panel.CurrentStage == AP_Atlas.UI.AddGamesPanel.Stage.Summary ? panel.Result : null, "the summary", 120);
             UiTestExpect(dialog.Visible && !run.Outcome.Cancelled, "the batch closed out of sight was stopped, or didn't come back with its summary");
+            UiTestExpect(dotsSeen.Where(d => d.Fraction < 1f).All(d => d.Busy == !d.Moves) && dotsSeen.Any(d => !d.Moves && d.Fraction < 1f),
+                $"the dots didn't follow the steps: {string.Join(", ", dotsSeen.Select(d => $"{d.Fraction:0.00}{(d.Moves ? " moving" : "")}: {(d.Busy ? "dots" : "none")}"))}");
+            await UiTestDialogSizedAsync(dialog, "the Add games summary");
+            UiTestTextFits(dialog, "the Add games summary");
             var lines = panel.SummaryLines();
-            UiTestExpect(run.Outcome.For(alpha).Logic.Outcome == AP_Atlas.Core.Games.AddStepOutcome.Done && lines.Contains("Logic: version 1.2.0 added.")
-                && lines.Contains("Map: github.com/packs/screen-alpha v1.") && lines[0].StartsWith("Done: ", StringComparison.Ordinal), $"the summary: {string.Join(" | ", lines)}");
-            UiTestExpect(lines.Contains(AP_Atlas.UI.MapTrackerControl.FixTipText), "the summary doesn't end with the tip once a map came in");
+            var alphaRow = run.Outcome.For(alpha);
+            var alphaLook = run.Outcome.PacksToLook.FirstOrDefault(p => p.Game == alpha);
+            UiTestExpect(alphaRow.Logic.Outcome == AP_Atlas.Core.Games.AddStepOutcome.Done && lines.Contains("logic 1.2.0")
+                && lines.Contains(AP_Atlas.Core.Games.AddGamesWords.MapChip(alphaRow, alphaLook, t => t).Text) && (panel.ChipTooltip(alpha, "map") ?? "").Contains("github.com/packs/screen-alpha v1")
+                && lines[0] == "1 game installed", $"the summary: {string.Join(" | ", lines)}");
+            UiTestExpect(lines.Contains(AP_Atlas.Core.Games.AddGamesWords.Tip) && !panel.BusyRunning && !panel.BusyAnimating, "the summary doesn't end with the tip once a map came in, or the dots still run");
             UiTestExpect(AP_Atlas.Core.Permissions.IsAlwaysAllowed(_appSettings, AP_Atlas.Core.Permissions.EngineSetup) && ApworldSources.IsApproved(_appSettings, site.Site + "/dl/add_screen_alpha.apworld")
                 && !site.Requests.Any(r => r.StartsWith("/repos/", StringComparison.Ordinal)), "the tick didn't keep the downloads allowed, the project wasn't trusted, or GitHub's API was asked");
-            // Per pack the batch installed, one line of what Atlas fixed by itself and what's left; nothing to answer: Done.
-            UiTestExpect(run.Outcome.PacksToLook.All(p => lines.Contains(AP_Atlas.Core.PopTracker.AutoFixWords.Summary(p.PackName, p.Game, p.Fixed, p.Left, t => t))) && dialog.GetOkButton().Text == "Done",
-                $"the summary's pack lines, or its button ({dialog.GetOkButton().Text}): {string.Join(" | ", lines)}");
+            // Per pack the batch installed, what Atlas fixed by itself (with Review); nothing to answer: Done.
+            UiTestExpect(run.Outcome.PacksToLook.Where(p => p.Fixed > 0).All(p => lines.Contains(AP_Atlas.Core.Games.AddGamesWords.FixedChip(p, t => t)!.Text)) && dialog.GetOkButton().Text == "Done",
+                $"the summary's fixes, or its button ({dialog.GetOkButton().Text}): {string.Join(" | ", lines)}");
+            // The dots: they step on screen while running, and stop for good when the work ends (Atlas idles again).
+            var dots = new AP_Atlas.UI.BusyDots("Working");
+            AddChild(dots);
+            dots.Running = true;
+            await UiTestWaitAsync(0.6);
+            UiTestExpect(dots.Animating && dots.Ticks >= 1, $"the dots didn't step: {dots.Ticks}");
+            dots.Running = false;
+            int stepped = dots.Ticks;
+            await UiTestWaitAsync(0.5);
+            UiTestExpect(!dots.Animating && dots.Ticks == stepped && !dots.Running && dots.Visible, "the dots kept stepping after the work ended, or gave up their place");
+            dots.QueueFree();
             dialog.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed); // Done
             await UiTestWaitForAsync(() => Showing() == null ? this : null, "Done to close Add games");
 
@@ -2073,16 +2114,73 @@ public partial class MainTrackerWindow
             dialog.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
             var stopped = await UiTestWaitForAsync(() => panel.CurrentStage == AP_Atlas.UI.AddGamesPanel.Stage.Summary ? panel.Result : null, "the stopped batch's summary", 60);
             UiTestExpect(stopped.Outcome.Cancelled && stopped.Outcome.For(beta).Logic.Outcome == AP_Atlas.Core.Games.AddStepOutcome.Cancelled && site.Requests.Count == requestsBefore
-                && panel.SummaryLines()[0].StartsWith("Stopped.", StringComparison.Ordinal) && dialog.SecondaryButton.Visible && dialog.SecondaryButton.Text == "Try those again",
+                && panel.SummaryLines()[0].StartsWith("Stopped", StringComparison.Ordinal) && dialog.SecondaryButton.Visible && dialog.SecondaryButton.Text == "Try those again",
                 $"Cancel didn't stop the batch with nothing downloaded: {string.Join(" | ", panel.SummaryLines())}");
             dialog.SecondaryButton.EmitSignal(BaseButton.SignalName.Pressed);
             UiTestExpect(panel.CurrentStage == AP_Atlas.UI.AddGamesPanel.Stage.Pick && panel.IsTicked(beta), "Try those again didn't tick what's left");
             UiTestExpect(panel.Table.CountLabel.Text.EndsWith(" games", StringComparison.Ordinal), $"the list counts \"{panel.Table.CountLabel.Text}\"");
-            // A made-up summary (nothing read or changed): a line per pack, Review fixes where Atlas fixed something, and Done; or the
-            // game asked for meanwhile, which goes back to the list with it ticked.
+            // A made-up summary (nothing read or changed): a line per game, Review where Atlas fixed something, the way to the
+            // version that fits beside a map that pins under three quarters of its checks, Find one… where there's no map, and
+            // Done; or the game asked for meanwhile, which goes back to the list with it ticked.
             panel.ShowSummaryForTests(VisualCheckSummarySample());
-            int reviewButtons = panel.FindChildren("*", nameof(Button), true, false).OfType<Button>().Count(b => b.HasMeta("review_fixes"));
-            UiTestExpect(dialog.GetOkButton().Text == "Done" && reviewButtons == 1, $"the made-up summary: {dialog.GetOkButton().Text}, {reviewButtons} Review fixes");
+            var made = panel.FindChildren("*", nameof(Button), true, false).OfType<Button>().ToList();
+            int reviewButtons = made.Count(b => b.HasMeta("review_fixes"));
+            var madeLines = panel.SummaryLines();
+            UiTestExpect(dialog.GetOkButton().Text == "Done" && reviewButtons == 2
+                && made.Where(b => b.HasMeta("find_version")).Select(b => b.GetMeta("find_version").AsString()).SequenceEqual(new[] { "Example Saga" })
+                && made.Where(b => b.HasMeta("find_pack")).Select(b => b.GetMeta("find_pack").AsString()).SequenceEqual(new[] { "Demo Odyssey" })
+                && panel.ChipState("Example Saga", "map") == "Warn" && panel.ChipState("Sample Quest", "map") == "Ok" && panel.ChipState("Demo Odyssey", "map") == "Skipped"
+                && madeLines.SequenceEqual(new[] { "4 games installed", "logic 2.1.0", "map 1129/1150", "12 fixes", "logic 0.9.3", "map 31/1288", "35 fixes", "logic 0.6.7", "map 420/420", "logic 1.0.0", "no map", AP_Atlas.Core.Games.AddGamesWords.Tip })
+                && (panel.ChipTooltip("Model Kingdom", "logic") ?? "") == "Ships with Archipelago 0.6.7.",
+                $"the made-up summary: {dialog.GetOkButton().Text}, {reviewButtons} Review; {string.Join(" | ", madeLines)}");
+            await UiTestDialogSizedAsync(dialog, "the made-up summary");
+            UiTestTextFits(dialog, "the made-up summary");
+            // Its button finds the version the map fits (the Games page's "Which version works with my map pack?" for the game),
+            // and the dots, on a panel of the test's own: on while a step runs without the bar moving, off while it moves.
+            string? askedVersion = null;
+            var real = AddGamesPanelHooks();
+            var probe = new AP_Atlas.UI.AddGamesPanel(new AP_Atlas.UI.AddGamesPanel.Hooks
+            {
+                Tr = real.Tr,
+                Settings = real.Settings,
+                Source = () => AP_Atlas.UI.AddGamesSource.Empty,
+                RunAsync = real.RunAsync,
+                OpenEngineSetup = () => { },
+                FindPack = _ => { },
+                FindVersion = g => askedVersion = g,
+                InstallPack = (_, _) => { },
+                StartPack = _ => { },
+                FreeBytes = () => null
+            });
+            try
+            {
+                AddChild(probe);
+                probe.ShowSummaryForTests(VisualCheckSummarySample());
+                probe.FindChildren("*", nameof(Button), true, false).OfType<Button>().FirstOrDefault(b => b.HasMeta("find_version"))?.EmitSignal(BaseButton.SignalName.Pressed);
+                UiTestExpect(askedVersion == "Example Saga", $"Find the version that fits asked for {askedVersion ?? "nothing"}");
+                var shipped = new AP_Atlas.Core.Games.AddGamesOutcome(new[] { ("Model Kingdom", true, true) });
+                shipped.For("Model Kingdom").Logic = AP_Atlas.Core.Games.AddStep.Done("0.6.7");
+                shipped.For("Model Kingdom").LogicShips = true;
+                shipped.For("Model Kingdom").Map = AP_Atlas.Core.Games.AddStep.Done("github.com/model/kingdom-map v3");
+                shipped.PacksToLook.Add(new AP_Atlas.Core.Games.PackToLook("Model Kingdom", "model kingdom map", "Model Kingdom map", "Model Kingdom map.zip", 0, 300, 420));
+                probe.ShowSummaryForTests(new GameAdderRun(shipped));
+                UiTestExpect(probe.ChipState("Model Kingdom", "map") == "Warn" && !probe.FindChildren("*", nameof(Button), true, false).OfType<Button>().Any(b => b.HasMeta("find_version"))
+                    && !(probe.ChipTooltip("Model Kingdom", "map") ?? "").Contains("Find the version that fits"),
+                    "a game that ships with Archipelago offers a version of its own that fits its pack");
+                probe.ShowRunningForTests(2, new AP_Atlas.Core.Games.AddGamesStatus("Game 1 of 2: Downloading Sample Quest's logic…", 0.1f), holdStill: false);
+                bool atStep = probe.BusyRunning;
+                probe.StatusForTests(new AP_Atlas.Core.Games.AddGamesStatus("Game 1 of 2: Downloading Sample Quest's logic…", 0.2f, BarMoves: true));
+                bool whileMoving = probe.BusyRunning;
+                probe.StatusForTests(new AP_Atlas.Core.Games.AddGamesStatus("Adding to the Atlas Engine and checking it…", 0.3f));
+                bool nextStep = probe.BusyRunning;
+                await UiTestWaitAsync(0.5);
+                bool animating = probe.BusyAnimating;
+                probe.ShowSummaryForTests(VisualCheckSummarySample());
+                await UiTestWaitAsync(0.3);
+                UiTestExpect(atStep && !whileMoving && nextStep && animating && !probe.BusyRunning && !probe.BusyAnimating,
+                    $"the dots: at a step {atStep}, while the bar moves {whileMoving}, at the next step {nextStep} (stepping {animating}); after, {probe.BusyRunning}/{probe.BusyAnimating}");
+            }
+            finally { probe.QueueFree(); }
             panel.Preselect(beta);
             UiTestExpect(dialog.GetOkButton().Text == "Install " + beta + "…", $"a game asked for on the summary isn't offered: {dialog.GetOkButton().Text}");
             dialog.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
@@ -2172,9 +2270,10 @@ public partial class MainTrackerWindow
                 && file.Links.Any(l => l.Subject == "link:Cave|Chest" && l.ApLocationId == 2001 && l.Source == "automatic")
                 && !file.Links.Any(l => l.Subject == "link:Tower|Peak") && file.Ignored.Count == 0,
                 $"Atlas's pass: {string.Join(", ", file.Links.Select(l => $"{l.Subject}→{l.ApLocationName} ({l.Source})"))}; {file.Ignored.Count} ignored");
-            UiTestExpect(note.Fixed == 2 && note.Left >= 1 && notes.Count == 1, $"the card: {note.Fixed} fixed, {note.Left} left, {notes.Count} card(s)");
-            UiTestExpect(_alertLog.Entries.Any(e => e.Message.StartsWith("Atlas fixed 2 things in UI test handoff pack by itself.", StringComparison.Ordinal) && e.Message.Contains("left for you on the map's Notices")),
-                "no card on the feed says what Atlas fixed");
+            UiTestExpect(note.Fixed == 2 && notes.Count == 1, $"the card: {note.Fixed} fixed, {notes.Count} card(s)");
+            UiTestExpect(_alertLog.Entries.Any(e => e.Message.StartsWith("Atlas fixed 2 things in UI test handoff pack by itself.", StringComparison.Ordinal))
+                && !_alertLog.Entries.Any(e => e.Message.Contains("left for you on the map's Notices")),
+                "no card on the feed says what Atlas fixed, or one still counts what's left");
             await UiTestWaitForAsync(() => slot.MapTracker.AttentionRows().Any(r => r.Key == "loc:unmatched:Tower|Peak") ? slot : null, "the 60% pin on the Notices");
             UiTestExpect(!slot.MapTracker.AttentionRows().Any(r => r.Key is "loc:unmatched:Cave|Chest" or "loc:unmatched:Shrine|Bell!"), "a fixed pin is still on the Notices");
             // Changes: both fixes marked as Atlas's, and a check hidden on the map; each with Undo.
@@ -3222,12 +3321,16 @@ public partial class MainTrackerWindow
             var panel = await UiTestWaitForAsync(() => wizard.AddGamesPanelShown is { FactsPending: 0 } p ? p : null, "Add games on the page", 20);
             UiTestOnlyTicked(panel, alpha, beta);
             await UiTestWaitAsync(0.1);
+            UiTestColumnFits(panel.Table, 2, "the setup window's Installs column");
             UiTestExpect(panel.IsTicked(alpha) && panel.IsTicked(beta) && !panel.EngineLeadShown && wizard.NextButton.Text == "Install 2 games…" && !wizard.NextButton.Disabled,
                 $"Add games on the page: ticked {string.Join(", ", panel.Ticked)}, lead {panel.EngineLeadShown}, Next \"{wizard.NextButton.Text}\" disabled {wizard.NextButton.Disabled}");
             UiTestNothingOnTopOfSetup(rootWindowsBefore, "on Add games");
             // The one confirm: its Back beside Next, the window's Back and Skip aside, nothing downloaded; Back keeps the ticks.
             await wizard.NextForTestsAsync();
-            UiTestExpect(panel.CurrentStage == AP_Atlas.UI.AddGamesPanel.Stage.Confirm && wizard.NextButton.Text == "Download and install" && wizard.SecondaryButton is { Visible: true, Text: "Back" }
+            await UiTestWaitAsync(0.15); // the confirm's layout
+            UiTestTextFits(panel, "the setup window's confirm");
+            UiTestExpect(panel.GetCombinedMinimumSize().X <= 621, $"the setup window's confirm needs {panel.GetCombinedMinimumSize().X:0} of its 620-wide page");
+            UiTestExpect(panel.CurrentStage == AP_Atlas.UI.AddGamesPanel.Stage.Confirm && wizard.NextButton.Text == "Install" && wizard.SecondaryButton is { Visible: true, Text: "Back" }
                 && !wizard.BackButton.Visible && !wizard.SkipButton.Visible && site.Requests.Count == 0 && wizard.CurrentPageId == AP_Atlas.UI.SetupSteps.Games.Id,
                 $"the confirm's footer: Next \"{wizard.NextButton.Text}\", second \"{wizard.SecondaryButton.Text}\" {wizard.SecondaryButton.Visible}, Back {wizard.BackButton.Visible}, Skip {wizard.SkipButton.Visible}, requests {site.Requests.Count}");
             UiTestNothingOnTopOfSetup(rootWindowsBefore, "on the confirm");
@@ -3238,13 +3341,13 @@ public partial class MainTrackerWindow
             // The games' logic starts once they're in.
             engine.StartError = null;
             engine.Apply();
-            // Download and install: the bar with Cancel on Next, the list on the left locked while it runs.
+            // Install: the bar with Cancel on Next (what stopping keeps in its tooltip), the list on the left locked while it runs.
             string? footerWhileRunning = null;
             bool railLocked = false;
             panel.StatusChanged += _ =>
             {
                 if (footerWhileRunning != null || wizard.Busy || !IsInstanceValid(wizard)) return;
-                footerWhileRunning = wizard.NextButton.Text;
+                footerWhileRunning = wizard.NextButton.Text + (wizard.NextButton.TooltipText.Length > 0 ? "" : " (no tooltip)");
                 railLocked = wizard.RailButtonOf("welcome").Disabled;
             };
             await wizard.NextForTestsAsync();
@@ -3253,7 +3356,10 @@ public partial class MainTrackerWindow
             UiTestExpect(footerWhileRunning == "Cancel" && railLocked && !wizard.RailButtonOf("welcome").Disabled,
                 $"while it ran, Next said \"{footerWhileRunning}\" and the list was locked {railLocked}; after, locked {wizard.RailButtonOf("welcome").Disabled}");
             UiTestExpect(!run.Outcome.Cancelled && run.Outcome.For(alpha).Logic.Outcome == AP_Atlas.Core.Games.AddStepOutcome.Done && run.Outcome.For(beta).Logic.Outcome == AP_Atlas.Core.Games.AddStepOutcome.Done
-                && lines.Contains("Logic: version 1.2.0 added."), $"the summary: {string.Join(" | ", lines)}");
+                && lines.Contains("logic 1.2.0"), $"the summary: {string.Join(" | ", lines)}");
+            await UiTestWaitAsync(0.15); // the summary's layout
+            UiTestTextFits(panel, "the setup window's summary");
+            UiTestExpect(panel.GetCombinedMinimumSize().X <= 621, $"the setup window's summary needs {panel.GetCombinedMinimumSize().X:0} of its 620-wide page");
             UiTestNothingOnTopOfSetup(rootWindowsBefore, "on the summary");
             // The summary says per pack what Atlas fixed by itself; nothing asks and nothing opened on the window: Next goes on.
             UiTestExpect(run.Outcome.PacksToLook.Count > 0 && wizard.NextButton.Text == "Next" && !wizard.NextButton.Disabled,
@@ -3420,7 +3526,7 @@ public partial class MainTrackerWindow
             // With its project known, the card offers to add the game: its logic (from the project's newest release; its size is
             // read from GitHub then), then the map pack its setup guide names, read once its logic is in. The versions live under
             // the closed Advanced fold.
-            UiTestExpect(engineReady ? page.GameCardShown.Standing == AP_Atlas.Core.Games.GameStanding.Add && page.GameCardShown.Line.Contains("logic, then the map pack its setup guide names, if it names one")
+            UiTestExpect(engineReady ? page.GameCardShown.Standing == AP_Atlas.Core.Games.GameStanding.Add && page.GameCardShown.Line.Contains("then the map pack its setup guide names, if it names one")
                     && page.GameCardShown.Line.Contains("size not listed") && PageButton("add_game") != null
                 : page.GameCardShown.Standing == AP_Atlas.Core.Games.GameStanding.EngineFirst, $"with its project known the card shows {page.GameCardShown}");
             var advanced = AP_Atlas.UI.Kit.SectionBody(page, "games:advanced");
@@ -4665,6 +4771,29 @@ public partial class MainTrackerWindow
         {
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
             if (_profiles.Contains(profile)) DeleteProfile(profile);
+        }
+    }
+
+    /// <summary>Every shown row's text in a column fits its width (round 13: "Installing it gets" was cut off). Call after the rows' layout (a short wait).</summary>
+    private void UiTestColumnFits(AP_Atlas.UI.AtlasTable table, int column, string what)
+    {
+        var font = table.Tree.GetThemeFont("font");
+        int size = table.Tree.GetThemeFontSize("font_size"), width = table.Tree.GetColumnWidth(column);
+        foreach (var row in table.ShownRows)
+        {
+            float text = font.GetStringSize(row.Cells[column].Text, HorizontalAlignment.Left, -1, size).X;
+            UiTestExpect(text + 16 <= width, $"{what}: \"{row.Cells[column].Text}\" needs {text + 16:0} of {width}");
+        }
+    }
+
+    /// <summary>No label in a window is cut (round 13): an unwrapped label is as wide as its text, unless it trims with its whole text in a tooltip. Call after layout.</summary>
+    private void UiTestTextFits(Node root, string what)
+    {
+        foreach (var label in root.FindChildren("*", nameof(Label), true, false).OfType<Label>().Where(l => l.IsVisibleInTree() && l.AutowrapMode == TextServer.AutowrapMode.Off && l.Text.Length > 0))
+        {
+            float needed = label.GetThemeFont("font").GetStringSize(label.Text, HorizontalAlignment.Left, -1, label.GetThemeFontSize("font_size")).X;
+            bool trimmedWithTip = label.TextOverrunBehavior != TextServer.OverrunBehavior.NoTrimming && (label.TooltipText.Length > 0 || (label.GetParent() as Control)?.TooltipText.Length > 0);
+            UiTestExpect(needed <= label.Size.X + 1 || trimmedWithTip, $"{what}: \"{label.Text}\" needs {needed:0} but has {label.Size.X:0}");
         }
     }
 
@@ -6193,7 +6322,7 @@ public partial class MainTrackerWindow
                 $"GitHub was searched {github.Requests.Count(r => r.StartsWith("/search/"))} times for one game, or without its forks: {github.Requests.FirstOrDefault(r => r.StartsWith("/search/"))}");
             var installButtons = results.FindChildren("*", nameof(Button), true, false).OfType<Button>().Where(b => b.HasMeta("candidate_repo")).ToList();
             UiTestExpect(installButtons.Select(b => b.GetMeta("candidate_repo").AsString()).SequenceEqual(new[] { "fork/test-game-poptracker", "packs/test-game-poptracker" })
-                && results.FindChildren("*", nameof(Label), true, false).OfType<Label>().Any(l => l.HasMeta("recommended_pack") && l.Text == "Recommended by the game's setup guide"),
+                && results.FindChildren("*", nameof(Label), true, false).OfType<Label>().Any(l => l.HasMeta("recommended_pack") && l.Text == "Guide's pick"),
                 $"the guide's project isn't first and marked: {string.Join(", ", installButtons.Select(b => b.GetMeta("candidate_repo").AsString()))}");
             installButtons[1].EmitSignal(BaseButton.SignalName.Pressed);
             var question = await UiTestWaitForAsync(() => _packManagerPanel.GetChildren().OfType<ConfirmationDialog>().FirstOrDefault(d => d.Title == "Install a map pack"), "the question before the download", 20);

@@ -44,6 +44,19 @@ public static class IndexPackNotes
         return said;
     }
 
+    /// <summary>The notes as a word or two each, in the same order (the pack search's rows; the sentences go in the row's tooltip).</summary>
+    public static List<string> Labels(IEnumerable<string>? notes, string? forGame = null, string? namedGame = null)
+    {
+        var codes = new HashSet<string>(notes ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+        var said = new List<string>();
+        if (!string.IsNullOrWhiteSpace(namedGame)) said.Add($"Manifest says {namedGame}");
+        if (codes.Contains(OtherGame)) said.Add(string.IsNullOrWhiteSpace(forGame) ? "Another game's" : $"For {forGame}");
+        if (codes.Contains(OtherVersion)) said.Add("Another version");
+        if (codes.Contains(ScriptsStop)) said.Add("Scripts stop");
+        if (codes.Contains(NoPictures)) said.Add("Some maps lack pictures");
+        return said;
+    }
+
     /// <summary>
     /// Whether a pack so noted waits behind the others when Atlas picks a pack by itself: one made for another version or
     /// another game, or whose scripts stop. It's still offered, and still taken when nothing else fits.

@@ -9,7 +9,6 @@ using System.Threading.Tasks;
 using AP_Atlas.Core;
 using AP_Atlas.Core.EngineSetup;
 using AP_Atlas.Core.Games;
-using AP_Atlas.Core.PopTracker;
 using Godot;
 
 namespace AP_Atlas.UI
@@ -26,12 +25,14 @@ namespace AP_Atlas.UI
 
     /// <summary>
     /// The one Add games screen (the owner's "adding games, simply"): every game Atlas knows with a check box, the games of
-    /// your multiworlds first and ticked where they need something, each row saying in plain words what adding it gets and
-    /// its download, a search, and the totals of download and disk. Then ONE confirm naming every project the downloads
-    /// come from, what pressing it trusts, and the tick "Don't ask again for Atlas's downloads"; then one bar while
-    /// <see cref="GameAdder"/> runs (Cancel stops after the step it's on); then a summary per game, with what to do where
-    /// something's missing, per pack what Atlas fixed by itself, with Review fixes, and the tip about fixing on the
-    /// map. It leads with the Atlas Engine while that isn't set up. A control, so the setup window holds it on a page;
+    /// your multiworlds first and ticked where they need something, each row saying in a few words what installing it gets
+    /// and its download, a search, and the totals of download and disk. Then ONE confirm: a line per game, "From N projects"
+    /// (the projects and what installing trusts in its tooltip) and the tick "Don't ask again for Atlas's downloads"; then
+    /// moving dots, the step and one bar while <see cref="GameAdder"/> runs (Cancel stops after the step it's on); then a
+    /// summary, a line per game with one number per item (its logic's version, its map's pinned checks, what Atlas fixed, with
+    /// Review) and the way on where something's missing or the map fits poorly, and the tip about fixing on the map. Few
+    /// words everywhere (round 13, "don't be wordy"), details in tooltips. It leads with the Atlas Engine while that isn't
+    /// set up. A control, so the setup window holds it on a page;
     /// <see cref="AddGamesDialog"/> pops it everywhere else. Its host shows its two actions and presses them. Main thread.
     /// </summary>
     public sealed partial class AddGamesPanel : VBoxContainer
@@ -48,13 +49,15 @@ namespace AP_Atlas.UI
             public required Action OpenEngineSetup { get; init; }
             /// <summary>Shows a game's page and searches GitHub for its packs (one search, when pressed).</summary>
             public required Action<string> FindPack { get; init; }
+            /// <summary>Shows a game's page and measures its map pack against the game's newest releases ("Which version works with my map pack?", asked first).</summary>
+            public required Action<string> FindVersion { get; init; }
             /// <summary>Installs a project's pack for a game, asking first (the guide's project Atlas's list lacks).</summary>
             public required Action<string, string> InstallPack { get; init; }
             /// <summary>Start a pack for a game (its names come from a connected slot).</summary>
             public required Action<string> StartPack { get; init; }
             /// <summary>Free bytes where Atlas keeps its data (null: unknown).</summary>
             public required Func<long?> FreeBytes { get; init; }
-            /// <summary>Shows what Atlas fixed by itself in a pack (its key, its zip), each fix undoable (null: no Review fixes button).</summary>
+            /// <summary>Shows what Atlas fixed by itself in a pack (its key, its zip), each fix undoable (null: no Review button).</summary>
             public Action<string, string>? ReviewFixes { get; init; }
             /// <summary>A batch ended (the window's pages read again).</summary>
             public Action<GameAdderRun>? BatchEnded { get; init; }
@@ -65,6 +68,10 @@ namespace AP_Atlas.UI
         /// <summary>The most one frame spends reading games' facts; the rest wait for the next frame.</summary>
         private const long FrameBudgetMs = 6;
         private const int GetsCell = 2, SizeCell = 3;
+        /// <summary>The most the summary's list stands before it scrolls.</summary>
+        private const int SummaryMostHeight = 420;
+        private bool Narrow => _width < 720;
+        private int NameWidth => Narrow ? 170 : 220;
 
         private readonly Hooks _hooks;
         private readonly Func<string, string> _tr;
@@ -74,6 +81,7 @@ namespace AP_Atlas.UI
         private Label _note = null!, _totals = null!, _runningTitle = null!, _status = null!;
         private AtlasTable _table = null!;
         private ProgressBar _bar = null!;
+        private BusyDots _busy = null!;
         private CheckBox? _dontAsk;
         private AddGamesSource _source = AddGamesSource.Empty;
         private readonly Dictionary<string, AddGameFacts> _facts = new(StringComparer.OrdinalIgnoreCase);
@@ -110,7 +118,7 @@ namespace AP_Atlas.UI
         /// <summary>Each line the batch reports, as it comes (main thread; for tests).</summary>
         public event Action<AddGamesStatus>? StatusChanged;
 
-        public AddGamesPanel(Hooks hooks, string? preselect = null, int width = 720)
+        public AddGamesPanel(Hooks hooks, string? preselect = null, int width = 860)
         {
             _hooks = hooks;
             _tr = hooks.Tr;
@@ -153,7 +161,7 @@ namespace AP_Atlas.UI
                 1 => _tr("Install 1 game…"),
                 int n => _tr("Install {0} games…").Replace("{0}", n.ToString(CultureInfo.InvariantCulture))
             },
-            Stage.Confirm => _tr("Download and install"),
+            Stage.Confirm => _tr("Install"),
             Stage.Running => _cancelling ? _tr("Stopping…") : _tr("Cancel"),
             _ => _preselect != null ? _tr("Install {0}…").Replace("{0}", _preselect) : _tr("Done")
         };
@@ -177,6 +185,10 @@ namespace AP_Atlas.UI
             Stage.Summary when Result?.Outcome.Games.Any(g => !g.Ok) == true => _tr("Try those again"),
             _ => null
         };
+
+        /// <summary>The primary action's tooltip, or null: while running, what Cancel keeps (round 13: no paragraph under the bar).</summary>
+        public string? PrimaryTooltip => CurrentStage == Stage.Running && !_cancelling
+            ? _tr("Stops after the step it's on: nothing half-done is kept, and what's done stays. Atlas stays usable meanwhile.") : null;
 
         /// <summary>How many games the ticks add (0: nothing to add, and a host may move on).</summary>
         public int AddingCount => AddGamesWords.Adding(_tickedPlan);
@@ -236,11 +248,11 @@ namespace AP_Atlas.UI
         {
             _engineLead = Card(_pick, ThemeColors.Warning, out var lead);
             _engineLead.SetMeta("add_games_engine_lead", true);
-            lead.AddChild(Wrap(Kit.Text(_tr("Games' logic runs in the Atlas Engine, which isn't set up yet. Set it up first: what you tick stays ticked, and Install follows once it's ready."))));
+            lead.AddChild(Wrap(Kit.Text(_tr("Games' logic runs in the Atlas Engine: set it up first. Your ticks stay."))));
             var setUp = Kit.Button(_tr("Set up the Atlas Engine…"), _tr("Sets up the logic engine in Atlas's own folder (asked first)."), _hooks.OpenEngineSetup);
             setUp.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
             lead.AddChild(setUp);
-            _pick.AddChild(Wrap(Kit.Muted(_tr("Tick the games you play: Atlas installs each one's logic and a map pack, with one question first. The games of your multiworlds come first (marked), ticked where they need something; a game with nothing to install is greyed."))));
+            _pick.AddChild(Wrap(Kit.Muted(_tr("Tick the games you play; yours come first."))));
             _note = Wrap(Kit.Text("", ThemeColors.Warning));
             _note.Visible = false;
             _pick.AddChild(_note);
@@ -255,14 +267,13 @@ namespace AP_Atlas.UI
             _table.SearchBox.AccessibilityName = _tr("Search games");
             _table.ColumnsMenu.Visible = false;
             _table.ExportMenu.Visible = false;
-            // Hosted on a narrower page (the setup window), the game and its words give way (clipped) before the download does.
-            bool narrow = _width < 720;
+            // A few words a cell (AddGamesPlan.Words), the sentence in its tooltip; a narrower host (the setup window) gives the game's name way first.
             _table.SetColumns(new[]
             {
                 new AtlasTable.Column { Id = "tick", Title = "", MinWidth = 34, Ratio = 0, Sortable = false },
-                new AtlasTable.Column { Id = "game", Title = _tr("Game"), MinWidth = narrow ? 140 : 180, Ratio = 3 },
-                new AtlasTable.Column { Id = "gets", Title = _tr("Installing it gets"), MinWidth = narrow ? 150 : 220, Ratio = 4 },
-                new AtlasTable.Column { Id = "size", Title = _tr("Download"), MinWidth = 110, Ratio = 0, Align = HorizontalAlignment.Right }
+                new AtlasTable.Column { Id = "game", Title = _tr("Game"), MinWidth = Narrow ? 140 : 200, Ratio = 3 },
+                new AtlasTable.Column { Id = "gets", Title = _tr("Installs"), MinWidth = Narrow ? 190 : 230, Ratio = 3 },
+                new AtlasTable.Column { Id = "size", Title = _tr("Download"), MinWidth = 170, Ratio = 0, Align = HorizontalAlignment.Right }
             }, "game");
             // A check box per row with something to add (the versions table's way); a game with nothing to add has none.
             _table.Customize = (item, row) =>
@@ -377,11 +388,13 @@ namespace AP_Atlas.UI
             var shown = _ticked.Contains(game) ? _tickedPlan.Games.FirstOrDefault(g => string.Equals(g.Game, game, StringComparison.OrdinalIgnoreCase)) ?? alone : alone;
             bool tickable = alone.Items.Count > 0;
             row.Dim = !tickable;
-            row.Cells[GetsCell] = new AtlasTable.Cell(_tr(AddGamesPlan.Words(shown)), tickable ? null : ThemeColors.TextSubtle);
+            string explain = _tr(AddGamesPlan.Explain(shown)) + (AddGamesWords.VersionWhy(shown, _tr) is { } why ? "\n" + why : "");
+            row.Cells[GetsCell] = new AtlasTable.Cell(_tr(AddGamesPlan.Words(shown)), tickable ? null : ThemeColors.TextSubtle, explain);
             bool release = shown.Items.Any(i => i.Kind == AddItemKind.World) && !_source.Context.WorldsZipPresent;
-            row.Cells[SizeCell] = new AtlasTable.Cell(AddGamesWords.Download(shown.DownloadBytes, shown.UnknownSizes, _tr), ThemeColors.TextMuted,
-                release ? _tr("Besides Archipelago's release ({0}), downloaded once for every game that ships with it.").Replace("{0}", AddGamesWords.Megabytes(_source.Context.WorldsZipBytes, _tr)) : null,
-                shown.DownloadBytes);
+            var tips = new List<string>();
+            if (release) tips.Add(_tr("Besides Archipelago's release ({0}), downloaded once for every game that ships with it.").Replace("{0}", AddGamesWords.Megabytes(_source.Context.WorldsZipBytes, _tr)));
+            if (shown.UnknownSizes > 0) tips.Add(shown.UnknownSizes == 1 ? _tr("1 file doesn't list its size.") : _tr("{0} files don't list their size.").Replace("{0}", shown.UnknownSizes.ToString(CultureInfo.InvariantCulture)));
+            row.Cells[SizeCell] = new AtlasTable.Cell(AddGamesWords.Download(shown.DownloadBytes, shown.UnknownSizes, _tr), ThemeColors.TextMuted, tips.Count > 0 ? string.Join(" ", tips) : null, shown.DownloadBytes);
         }
 
         private void SetTicked(string game, bool on)
@@ -416,7 +429,7 @@ namespace AP_Atlas.UI
             _preselect = null; // applied once: a later read (an engine change) keeps the user's own ticks
             if (!_facts.ContainsKey(row.Key)) Read(row.Key);
             if (Tickable(row.Key)) _ticked.Add(row.Key);
-            else Note(_tr("{0}: {1}.").Replace("{1}", _tr(AddGamesPlan.Words(_alone[row.Key]))).Replace("{0}", row.Key));
+            else Note(_tr("{0}: {1}").Replace("{1}", _tr(AddGamesPlan.Explain(_alone[row.Key]))).Replace("{0}", row.Key));
             _table.SetRows(_rows);
             _table.Select(row.Key, scrollTo: true);
             RefreshTotals();
@@ -440,15 +453,39 @@ namespace AP_Atlas.UI
                 Start(); // the engine went: the list leads with it again
                 return;
             }
+            BuildConfirm(plan, Permissions.IsAllowed(_hooks.Settings, Permissions.GitHubLookups), _hooks.FreeBytes());
+            GoTo(Stage.Confirm);
+        }
+
+        /// <summary>
+        /// The one confirm (round 13, "don't be wordy"; the owner's layout): "Install N games · size", a line per game (its name,
+        /// what it gets, its download; where each part comes from in its tooltip), "From N projects (i)" (the projects, what each
+        /// is for and what installing trusts in its tooltip), GitHub's lookups when asked, the tick, and the room line when
+        /// there isn't room.
+        /// </summary>
+        private void BuildConfirm(AddPlan plan, bool gitHubAllowed, long? free)
+        {
             _plan = plan;
             Clear(_confirm);
-            var words = AddGamesWords.Confirm(plan, Permissions.IsAllowed(_hooks.Settings, Permissions.GitHubLookups), _hooks.FreeBytes(), AtlasEngine.FreeSpaceFloorBytes, _tr);
+            var words = AddGamesWords.Confirm(plan, gitHubAllowed, free, AtlasEngine.FreeSpaceFloorBytes, _tr);
             Card(_confirm, ThemeColors.AccentTint, out var box).SetMeta("add_games_confirm", true);
-            box.AddChild(Kit.Heading(words.Title, 1.15f));
-            box.AddChild(Wrap(Kit.Text(words.Lead)));
-            foreach (string line in words.Sources) box.AddChild(Wrap(Kit.Muted("•  " + line)));
-            if (words.GitHub != null) box.AddChild(Wrap(Kit.Muted("•  " + words.GitHub)));
-            box.AddChild(Wrap(Kit.Text(words.Trust)));
+            var title = Kit.Heading(words.Title, 1.15f);
+            title.TooltipText = words.TitleTooltip;
+            title.MouseFilter = MouseFilterEnum.Pass;
+            box.AddChild(title);
+            var games = new VBoxContainer();
+            games.AddThemeConstantOverride("separation", 4);
+            foreach (var game in words.Games) games.AddChild(ConfirmLine(game));
+            box.AddChild(games);
+            var projects = new HBoxContainer { MouseFilter = MouseFilterEnum.Pass, TooltipText = words.ProjectsTooltip };
+            projects.AddThemeConstantOverride("separation", 6);
+            projects.SetMeta("add_games_projects", true);
+            var projectsText = Kit.Text(words.Projects);
+            projectsText.AutowrapMode = TextServer.AutowrapMode.Off;
+            projects.AddChild(projectsText);
+            projects.AddChild(Icon("info", ThemeColors.TextMuted));
+            box.AddChild(projects);
+            if (words.GitHub != null) box.AddChild(IconLine("globe", ThemeColors.TextMuted, Kit.Muted(words.GitHub), null));
             _dontAsk = new CheckBox
             {
                 Text = _tr("Don't ask again for Atlas's downloads"),
@@ -458,9 +495,28 @@ namespace AP_Atlas.UI
             _dontAsk.SetMeta("add_games_dont_ask", true);
             box.AddChild(_dontAsk);
             _confirmOk = words.Room == null;
-            if (words.Room != null) box.AddChild(Wrap(Kit.Text(words.Room, ThemeColors.Error)));
-            ConfirmText = string.Join("\n", new[] { words.Title, words.Lead }.Concat(words.Sources).Append(words.GitHub ?? "").Append(words.Trust).Append(words.Room ?? "").Where(s => s.Length > 0));
-            GoTo(Stage.Confirm);
+            if (words.Room != null) box.AddChild(CardLine(Kit.Text(words.Room, ThemeColors.Error)));
+            ConfirmText = words.AllText;
+        }
+
+        /// <summary>A game's line of the confirm: its name, what it gets and its download, each cut with "…" if long (the tooltip has them whole, and the details).</summary>
+        private Control ConfirmLine(AddConfirmGame game)
+        {
+            var line = new HBoxContainer { MouseFilter = MouseFilterEnum.Pass, TooltipText = game.Game + " · " + game.Gets + " · " + game.Size + "\n" + game.Tooltip };
+            line.AddThemeConstantOverride("separation", 12);
+            line.SetMeta("add_games_game_line", game.Game);
+            line.AddChild(OneLine(Kit.Text(game.Game), expand: true));
+            var gets = OneLine(Kit.Muted(game.Gets), expand: false);
+            gets.CustomMinimumSize = new Vector2(Narrow ? 200 : 230, 0);
+            line.AddChild(gets);
+            // The size is never cut (its width a floor, so the lines line up): the game's name gives way instead.
+            var size = Kit.Muted(game.Size);
+            size.AutowrapMode = TextServer.AutowrapMode.Off;
+            size.SizeFlagsHorizontal = SizeFlags.ShrinkEnd;
+            size.CustomMinimumSize = new Vector2(Narrow ? 130 : 170, 0);
+            size.HorizontalAlignment = HorizontalAlignment.Right;
+            line.AddChild(size);
+            return line;
         }
 
         // ---- The run ----
@@ -469,11 +525,18 @@ namespace AP_Atlas.UI
         {
             _runningTitle = Kit.Heading("", 1.15f);
             _running.AddChild(_runningTitle);
-            _status = Wrap(Kit.Text(""));
-            _running.AddChild(_status);
+            // The step in a few words, with dots that move while a step runs with no bar movement of its own (the engine's
+            // check, the packs' checks), so it never looks frozen (round 13). What Cancel keeps is its tooltip (PrimaryTooltip).
+            var line = new HBoxContainer();
+            line.AddThemeConstantOverride("separation", 8);
+            _busy = new BusyDots(_tr("Working"));
+            line.AddChild(_busy);
+            _status = Kit.Text("");
+            _status.CustomMinimumSize = new Vector2(_width - 60, 0);
+            line.AddChild(_status);
+            _running.AddChild(line);
             _bar = new ProgressBar { MaxValue = 1, Step = 0.001, ShowPercentage = true, CustomMinimumSize = new Vector2(0, 18) };
             _running.AddChild(_bar);
-            _running.AddChild(Wrap(Kit.Muted(_tr("Atlas stays usable meanwhile. Cancel stops after the step it's on: nothing half-done is kept, and what's done stays."))));
         }
 
         private void Run()
@@ -483,13 +546,15 @@ namespace AP_Atlas.UI
             var consent = new AddGamesConsent(_dontAsk is { Visible: true, ButtonPressed: true }, plan.NeedsGitHubLookups);
             _cts = new CancellationTokenSource();
             _cancelling = false;
-            int games = AddGamesWords.Adding(plan);
-            _runningTitle.Text = games == 1 ? _tr("Installing 1 game") : _tr("Installing {0} games").Replace("{0}", games.ToString(CultureInfo.InvariantCulture));
+            _runningTitle.Text = RunningTitle(AddGamesWords.Adding(plan));
             _status.Text = _tr("Starting…");
             _bar.Value = 0;
             GoTo(Stage.Running);
+            _busy.Running = true;
             Async.Fire(RunAsync(plan, consent, _cts.Token), "adding games");
         }
+
+        private string RunningTitle(int games) => games == 1 ? _tr("Installing 1 game") : _tr("Installing {0} games").Replace("{0}", games.ToString(CultureInfo.InvariantCulture));
 
         private async Task RunAsync(AddPlan plan, AddGamesConsent consent, CancellationToken ct)
         {
@@ -510,10 +575,15 @@ namespace AP_Atlas.UI
 
         private void OnStatus(AddGamesStatus status)
         {
+            if (IsInstanceValid(this))
+            {
+                if (!_cancelling || status.Fraction >= 1f) _status.Text = status.Text;
+                _bar.Value = status.Fraction;
+                // The dots stand for work the bar doesn't show: a step begins (or says where it is) with them; a download's
+                // bar moving within its step stops them (round 13).
+                _busy.Running = CurrentStage == Stage.Running && !status.BarMoves && status.Fraction < 1f;
+            }
             StatusChanged?.Invoke(status);
-            if (!IsInstanceValid(this)) return;
-            if (!_cancelling || status.Fraction >= 1f) _status.Text = status.Text;
-            _bar.Value = status.Fraction;
         }
 
         // ---- The summary ----
@@ -522,83 +592,160 @@ namespace AP_Atlas.UI
         {
             Clear(_summary);
             var o = run.Outcome;
-            _summary.AddChild(Kit.Heading(o.Cancelled ? _tr("Stopped") : _tr("Games installed"), 1.15f));
-            var headline = Wrap(Kit.Text(AddGamesWords.Headline(o, _tr)));
-            headline.SetMeta("add_games_headline", true);
-            _summary.AddChild(headline);
+            var heading = Kit.Heading(AddGamesWords.Heading(o, _tr), 1.15f);
+            heading.SetMeta("add_games_headline", true);
+            if (AddGamesWords.HeadingTooltip(o, _tr) is { } why)
+            {
+                heading.TooltipText = why;
+                heading.MouseFilter = MouseFilterEnum.Pass;
+            }
+            _summary.AddChild(heading);
             if (!string.IsNullOrWhiteSpace(o.EngineProblem))
                 _summary.AddChild(Wrap(Kit.Text(_tr("The Atlas Engine's health check said: {0}").Replace("{0}", o.EngineProblem), ThemeColors.Warning)));
-            // Everything else scrolls as one (a row per game, the Pack Doctor's question, the tip): its labels can't make the dialog tall.
-            int height = 72 * Math.Max(1, o.Games.Count) + 36 * o.PacksToLook.Count + (o.MapsAdded > 0 ? 48 : 0);
-            var scroll = new ScrollContainer { HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled, SizeFlagsVertical = SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, Math.Min(420, height)) };
+            // A line per game (round 13), then the tip. The list is as tall as its lines once laid out (measured next frame;
+            // WindowFit re-sizes the dialog when the content's minimum changes), up to the most; only past that does it scroll.
             var list = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            list.AddThemeConstantOverride("separation", 10);
+            list.AddThemeConstantOverride("separation", 8);
+            var scroll = new ScrollContainer
+            {
+                HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
+                SizeFlagsVertical = SizeFlags.ExpandFill,
+                CustomMinimumSize = new Vector2(0, Math.Min(SummaryMostHeight, 40 * Math.Max(1, o.Games.Count) + 40))
+            };
             scroll.AddChild(list);
             _summary.AddChild(scroll);
-            foreach (var game in o.Games) list.AddChild(ResultRow(game));
-            // Per pack it installed: what Atlas fixed by itself (Review fixes lists each, with Undo) and what's left on the map's Notices.
-            foreach (var look in o.PacksToLook) list.AddChild(FixedRow(look));
-            // The closing tip, once a map came in (after the Pack Doctor's question, so it reads after the fixes).
+            foreach (var game in o.Games)
+                list.AddChild(ResultRow(game, o.PacksToLook.FirstOrDefault(p => string.Equals(p.Game, game.Game, StringComparison.OrdinalIgnoreCase))));
             if (o.MapsAdded > 0)
             {
-                var tip = Line(_tr(MapTrackerControl.FixTipText), false);
+                var tipText = Kit.Muted(_tr(AddGamesWords.Tip));
+                tipText.SetMeta("add_games_line", true);
+                var tip = IconLine("lightbulb", ThemeColors.TextMuted, tipText, _tr(MapTrackerControl.FixTipText));
                 tip.SetMeta("add_games_tip", true);
                 list.AddChild(tip);
             }
+            Ui.NextFrame(this, () => { if (IsInstanceValid(scroll)) scroll.CustomMinimumSize = new Vector2(0, Math.Min(SummaryMostHeight, list.GetCombinedMinimumSize().Y)); }, "sizing the Install games summary");
         }
 
-        private Control FixedRow(PackToLook look)
+        /// <summary>
+        /// A game's line (the owner's "✓ logic 0.6.0-a2 · ✓ map 1250/1288 · ✓ 35 fixes [Review]"): its name, then one item each
+        /// for its logic, its map (the game's checks with a pin) and what Atlas fixed, one number each, the details in their
+        /// tooltips; the way on beside the item it's for: Review, Find the version that fits… (a map under three quarters
+        /// pinned), Find one… (no map), and the guide's own project when that wasn't installed.
+        /// </summary>
+        private Control ResultRow(AddGameResult r, PackToLook? look)
         {
             var row = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            row.AddThemeConstantOverride("separation", 8);
-            row.SetMeta("add_games_fixed", look.PackKey);
-            var line = Line(AutoFixWords.Summary(look.PackName, look.Game, look.Fixed, look.Left, _tr), false);
-            line.CustomMinimumSize = new Vector2(Math.Max(200, _width - 200), 0);
-            line.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-            row.AddChild(line);
-            if (look.Fixed > 0 && _hooks.ReviewFixes is { } review)
+            row.AddThemeConstantOverride("separation", 12);
+            row.SetMeta("add_games_result", r.Game);
+            // The name whole, at least NameWidth so short names line up; a long one widens the row and the items wrap.
+            var name = Kit.Text(r.Game);
+            name.AutowrapMode = TextServer.AutowrapMode.Off;
+            name.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
+            name.CustomMinimumSize = new Vector2(NameWidth, 0);
+            row.AddChild(name);
+            var items = new HFlowContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            items.AddThemeConstantOverride("h_separation", 16);
+            items.AddThemeConstantOverride("v_separation", 4);
+            string game = r.Game;
+            // A game that ships with Archipelago has no versions of its own to switch to (round 13's review).
+            bool official = r.LogicShips || AtlasEngine.Worlds.FolderFor(game) != null;
+            items.AddChild(Item(AddGamesWords.LogicChip(r, _tr), "logic"));
+            var map = Item(AddGamesWords.MapChip(r, look, _tr, official), "map");
+            if (look != null && !official && r.Map.Outcome == AddStepOutcome.Done && AddGamesWords.PoorFit(look))
             {
-                string key = look.PackKey, file = look.File;
-                var button = Kit.Button(_tr("Review fixes"), _tr("What Atlas changed in this pack, each with Undo, and Undo all."), () => review(key, file), small: true);
-                button.SetMeta("review_fixes", key);
-                button.SizeFlagsVertical = SizeFlags.ShrinkBegin;
-                row.AddChild(button);
+                var fits = Kit.Button(_tr("Find the version that fits…"), _tr("Measures this map pack against the game's newest releases on its page (asked first), so you can switch to the one it fits."),
+                    () => _hooks.FindVersion(game), small: true);
+                fits.SetMeta("find_version", game);
+                map.AddChild(fits);
             }
+            else if (r.Map.Outcome is AddStepOutcome.Unavailable or AddStepOutcome.Failed)
+            {
+                var find = Kit.Button(_tr("Find one…"), _tr("One search of GitHub for this game's PopTracker packs, on its page; you choose what to install."), () => _hooks.FindPack(game), small: true);
+                find.SetMeta("find_pack", game);
+                map.AddChild(find);
+            }
+            items.AddChild(map);
+            // The guide's own project, an item of its own so it can wrap to its own line (the setup window's page is narrow).
+            if (r.GuideRepo is { } repo && r.PackNote != AddPackNote.None)
+            {
+                var guide = Kit.Button(_tr("Install github.com/{0}…").Replace("{0}", repo), AddGamesWords.GuideTip(r, _tr), () => _hooks.InstallPack(game, repo), small: true);
+                guide.SetMeta("install_guide_pack", game);
+                items.AddChild(guide);
+            }
+            if (AddGamesWords.FixedChip(look, _tr) is { } fixedChip)
+            {
+                var fixedItem = Item(fixedChip, "fixed");
+                if (_hooks.ReviewFixes is { } review)
+                {
+                    string key = look!.PackKey, file = look.File;
+                    var button = Kit.Button(_tr("Review"), _tr("What Atlas changed in this pack, each with Undo, and Undo all."), () => review(key, file), flat: true, small: true);
+                    button.SetMeta("review_fixes", key);
+                    fixedItem.AddChild(button);
+                }
+                items.AddChild(fixedItem);
+            }
+            row.AddChild(items);
             return row;
         }
 
-        private Control ResultRow(AddGameResult r)
+        /// <summary>An item of a game's line: its state's icon (a tick, a dot to look at, a cross, a dash), its few words, the details as its tooltip.</summary>
+        private HBoxContainer Item(AddChip chip, string kind)
         {
-            var box = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            box.AddThemeConstantOverride("separation", 2);
-            box.SetMeta("add_games_result", r.Game);
-            var name = Kit.Text(r.Game);
-            name.SetMeta("font_size_ratio", 1.05f);
-            box.AddChild(name);
-            box.AddChild(Line(AddGamesWords.LogicLine(r, _tr), Bad(r.Logic)));
-            box.AddChild(Line(AddGamesWords.MapLine(r, _tr), Bad(r.Map)));
-            if (AddGamesWords.GuideLine(r, _tr) is { } guide) box.AddChild(Line(guide, false));
-            var buttons = new HFlowContainer();
-            buttons.AddThemeConstantOverride("h_separation", 8);
-            string game = r.Game;
-            if (r.GuideRepo is { } repo && r.PackNote != AddPackNote.None)
-                buttons.AddChild(Kit.Button(_tr("Install github.com/{0}…").Replace("{0}", repo), _tr("The pack the game's setup guide names: Atlas shows what would be downloaded first."), () => _hooks.InstallPack(game, repo), small: true));
-            if (r.Map.Outcome is AddStepOutcome.Unavailable or AddStepOutcome.Failed)
+            var (icon, color, state) = chip.State switch
             {
-                buttons.AddChild(Kit.Button(_tr("Find one on GitHub…"), _tr("One search of GitHub for this game's PopTracker packs, on its page; you choose what to install."), () => _hooks.FindPack(game), small: true));
-                buttons.AddChild(Kit.Button(_tr("Start a pack…"), _tr("Atlas makes one from the game's own names (a slot of it connected once gives them)."), () => _hooks.StartPack(game), flat: true, small: true));
-            }
-            if (buttons.GetChildCount() > 0) box.AddChild(buttons);
-            return box;
+                AddChipState.Ok => ("circle-check", ThemeColors.Success, _tr("done")),
+                AddChipState.Already => ("circle-check", ThemeColors.TextMuted, _tr("there already")),
+                AddChipState.Warn => ("circle-dot", ThemeColors.Warning, _tr("worth a look")),
+                AddChipState.Bad => ("circle-x", ThemeColors.Error, _tr("failed")),
+                _ => ("circle-minus", ThemeColors.TextMuted, _tr("not done"))
+            };
+            var item = new HBoxContainer { MouseFilter = MouseFilterEnum.Pass, TooltipText = chip.Tooltip ?? "", AccessibilityName = chip.Text + ", " + state };
+            item.AddThemeConstantOverride("separation", 4);
+            item.SetMeta("add_games_chip", kind);
+            item.SetMeta("add_games_state", chip.State.ToString());
+            item.AddChild(Icon(icon, color));
+            var text = Kit.Text(chip.Text, chip.State is AddChipState.Already or AddChipState.Skipped ? ThemeColors.TextMuted : ThemeColors.Text);
+            text.AutowrapMode = TextServer.AutowrapMode.Off;
+            text.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
+            text.SetMeta("add_games_line", true);
+            item.AddChild(text);
+            return item;
         }
 
-        private static bool Bad(AddStep step) => step.Outcome is AddStepOutcome.Failed or AddStepOutcome.Cancelled;
-
-        private Label Line(string text, bool bad)
+        private static TextureRect Icon(string name, Color color) => new()
         {
-            var label = bad ? Kit.Text(text, ThemeColors.Warning) : Kit.Muted(text);
+            Texture = LucideTextures.Get(name, color, 0.75f),
+            StretchMode = TextureRect.StretchModeEnum.KeepCentered,
+            MouseFilter = MouseFilterEnum.Ignore,
+            CustomMinimumSize = new Vector2(20, 0)
+        };
+
+        /// <summary>A label kept to one line, cut with "…" where it doesn't fit (its line's tooltip has it whole).</summary>
+        private static Label OneLine(Label label, bool expand)
+        {
+            label.AutowrapMode = TextServer.AutowrapMode.Off;
+            label.ClipText = true;
+            label.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
+            label.SizeFlagsHorizontal = expand ? SizeFlags.ExpandFill : SizeFlags.ShrinkBegin;
+            return label;
+        }
+
+        /// <summary>An icon and a line of text (wrapping at the panel's width), with a tooltip for the details.</summary>
+        private HBoxContainer IconLine(string icon, Color color, Label label, string? tooltip)
+        {
+            var line = new HBoxContainer { MouseFilter = MouseFilterEnum.Pass, TooltipText = tooltip ?? "" };
+            line.AddThemeConstantOverride("separation", 8);
+            line.AddChild(Icon(icon, color));
+            label.CustomMinimumSize = new Vector2(_width - 80, 0);
+            line.AddChild(label);
+            return line;
+        }
+
+        /// <summary>A line inside a card, wrapped at the card's inner width (a card's margins and border take about 30).</summary>
+        private Label CardLine(Label label)
+        {
             label.CustomMinimumSize = new Vector2(_width - 40, 0);
-            label.SetMeta("add_games_line", true);
             return label;
         }
 
@@ -616,6 +763,7 @@ namespace AP_Atlas.UI
         private void GoTo(Stage stage)
         {
             CurrentStage = stage;
+            if (stage != Stage.Running) _busy.Running = false; // the dots stop with the run: nothing animates once nothing runs
             _pick.Visible = stage == Stage.Pick;
             _confirm.Visible = stage == Stage.Confirm;
             _running.Visible = stage == Stage.Running;
@@ -694,6 +842,25 @@ namespace AP_Atlas.UI
         public AddPlan? ConfirmedPlan => _plan;
         public string StatusText => _status.Text;
         public double ProgressValue => _bar.Value;
+        public bool BusyRunning => _busy.Running;
+        public bool BusyAnimating => _busy.Animating;
+        /// <summary>A summary item's tooltip ("logic", "map", "fixed") for a game, or null.</summary>
+        public string? ChipTooltip(string game, string kind) => SummaryItem(game, kind)?.TooltipText;
+        /// <summary>A summary item's state ("Ok", "Warn", …) for a game, or null.</summary>
+        public string? ChipState(string game, string kind) => SummaryItem(game, kind)?.GetMeta("add_games_state").AsString();
+        private HBoxContainer? SummaryItem(string game, string kind) =>
+            _summary.FindChildren("*", nameof(HBoxContainer), true, false).OfType<HBoxContainer>()
+                .FirstOrDefault(c => c.HasMeta("add_games_chip") && c.GetMeta("add_games_chip").AsString() == kind && ResultOf(c) == game);
+        private static string? ResultOf(Node node)
+        {
+            for (var n = node.GetParent(); n != null; n = n.GetParent())
+                if (n.HasMeta("add_games_result")) return n.GetMeta("add_games_result").AsString();
+            return null;
+        }
+        /// <summary>The confirm's line per game, as shown ("name · gets · size").</summary>
+        public List<string> ConfirmLines() =>
+            _confirm.FindChildren("*", nameof(HBoxContainer), true, false).OfType<HBoxContainer>().Where(c => c.HasMeta("add_games_game_line"))
+                .Select(c => string.Join(" · ", c.GetChildren().OfType<Label>().Select(l => l.Text))).ToList();
         public GameAdderRun? Result { get; private set; }
         public List<string> SummaryLines() =>
             _summary.FindChildren("*", nameof(Label), true, false).OfType<Label>().Where(l => l.HasMeta("add_games_line") || l.HasMeta("add_games_headline")).Select(l => l.Text).ToList();
@@ -704,5 +871,24 @@ namespace AP_Atlas.UI
             BuildSummary(run);
             GoTo(Stage.Summary);
         }
+
+        /// <summary>The confirm for a made-up plan (the visual check's picture): GitHub's lookups not yet allowed, the disk's room unknown; nothing runs.</summary>
+        internal void ShowConfirmForTests(AddPlan plan)
+        {
+            BuildConfirm(plan, gitHubAllowed: false, free: null);
+            GoTo(Stage.Confirm);
+        }
+
+        /// <summary>The running stage at a made-up step (the visual check's picture, the dots' check): nothing runs; <paramref name="holdStill"/> holds the dots still for a stable picture.</summary>
+        internal void ShowRunningForTests(int games, AddGamesStatus status, bool holdStill = true)
+        {
+            _runningTitle.Text = RunningTitle(games);
+            GoTo(Stage.Running);
+            OnStatus(status);
+            if (holdStill) _busy.HoldStill();
+        }
+
+        /// <summary>A made-up step's line, as a batch reports it (the dots' check).</summary>
+        internal void StatusForTests(AddGamesStatus status) => OnStatus(status);
     }
 }

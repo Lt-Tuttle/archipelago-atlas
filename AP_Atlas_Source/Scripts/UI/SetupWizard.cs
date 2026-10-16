@@ -917,7 +917,7 @@ namespace AP_Atlas.UI
 
         private Control BuildAddGames()
         {
-            var box = PageBox("Install games", "Your slots' games come first, ticked. Atlas installs each one's logic and a map pack after one question naming everything it downloads; nothing is downloaded before it.");
+            var box = PageBox("Install games", "Each game's logic and a map pack; nothing downloads before you confirm.");
             _addGamesNote = Wrapped("", muted: true);
             _addGamesNote.Visible = false;
             box.AddChild(_addGamesNote);
@@ -958,6 +958,7 @@ namespace AP_Atlas.UI
                 BatchEnded = window.BatchEnded,
                 OpenEngineSetup = ShowEngineStep,
                 FindPack = game => OutOfTheWay(() => window.FindPack(game)),
+                FindVersion = game => OutOfTheWay(() => window.FindVersion(game)),
                 InstallPack = (game, repo) => OutOfTheWay(() => window.InstallPack(game, repo)),
                 StartPack = game => OutOfTheWay(() => window.StartPack(game)),
                 // Review fixes in the summary opens over the main window, with this one out of the way (nothing opens on top of it).
@@ -977,7 +978,7 @@ namespace AP_Atlas.UI
         private static bool AddGamesMovesOn(AddGamesPanel panel) =>
             (panel.CurrentStage == AddGamesPanel.Stage.Pick && panel.AddingCount == 0) || panel.CurrentStage == AddGamesPanel.Stage.Summary;
 
-        /// <summary>Next on Add games: the screen's own action (Add…, Download and install, Cancel), or on to Ready.</summary>
+        /// <summary>Next on Add games: the screen's own action (Install N games…, Install, Cancel), or on to Ready.</summary>
         private Task<bool> AddGamesNextAsync()
         {
             var panel = _addGames;
@@ -1003,6 +1004,7 @@ namespace AP_Atlas.UI
             bool moveOn = panel == null || AddGamesMovesOn(panel);
             if (!_busy) _next.Text = moveOn ? _tr("Next") : panel!.PrimaryText;
             _next.Disabled = _busy || (!moveOn && !panel!.PrimaryEnabled);
+            _next.TooltipText = moveOn ? "" : panel!.PrimaryTooltip ?? "";
             _back.Visible = stage == AddGamesPanel.Stage.Pick || (stage == AddGamesPanel.Stage.Summary && moveOn);
             _skip.Visible = stage == AddGamesPanel.Stage.Pick;
             _back.Disabled = _skip.Disabled = _busy;

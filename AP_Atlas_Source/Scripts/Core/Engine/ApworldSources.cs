@@ -72,6 +72,12 @@ namespace AP_Atlas.Core.EngineSetup
         /// <summary>The game the pack's manifest names, when the pack is listed under the game its ids are for.</summary>
         [JsonProperty("named_game")] public string NamedGame { get; set; }
 
+        /// <summary>
+        /// The game's apworld version the lab measured the pack on (its name tables' apworld), or null when the list doesn't
+        /// say: Install games installs that version for the pack (round 13: Dark Souls II's pack fits 0.6.0-alpha.2, not 0.5.5).
+        /// </summary>
+        [JsonProperty("apworld_version", NullValueHandling = NullValueHandling.Ignore)] public string ApworldVersion { get; set; }
+
         /// <summary>Fields a newer list has that this Atlas doesn't know: kept, so nothing is lost when the list is saved.</summary>
         [JsonExtensionData] public IDictionary<string, JToken> Unknown { get; set; }
     }
@@ -920,7 +926,7 @@ namespace AP_Atlas.Core.EngineSetup
 
         /// <summary>The game list's packs for a game as the add plan weighs them (one mapping for the plan and the installer).</summary>
         public static List<AP_Atlas.Core.Games.IndexPackFacts> PackFactsFor(string game) =>
-            PacksFor(game).Select(p => new AP_Atlas.Core.Games.IndexPackFacts(p.Repo ?? "", p.Release ?? "", p.Asset ?? "", p.Sha256, p.Size, p.Fit, p.Notes ?? new List<string>())).ToList();
+            PacksFor(game).Select(p => new AP_Atlas.Core.Games.IndexPackFacts(p.Repo ?? "", p.Release ?? "", p.Asset ?? "", p.Sha256, p.Size, p.Fit, p.Notes ?? new List<string>(), p.ApworldVersion)).ToList();
 
         /// <summary>Downloads one version into the cache (kept for reuse), verified against its published SHA-256 when there is one.</summary>
         public static async Task<string> DownloadAsync(string game, string apworldName, ApworldVersion version, Action<string> log, CancellationToken ct)

@@ -25,7 +25,7 @@ public sealed class AddGamesPlanTests
         var plan = Plan(Community("Game A", V("1.2.0", 300), V("1.10.0", 500), V("1.9.9", 400)) with { Packs = [P("x/low", 60), P("y/high", 95, size: 2000)] });
         var game = Assert.Single(plan.Games);
         Assert.Equal(AddRow.LogicAndMap, game.Row);
-        Assert.Equal("logic and map", AddGamesPlan.Words(game));
+        Assert.Equal("logic + map", AddGamesPlan.Words(game));
         var apworld = Assert.Single(game.Items, i => i.Kind == AddItemKind.Apworld);
         Assert.Equal("1.10.0", apworld.Version);
         Assert.Equal(Sha + "1.10.0", apworld.Sha256);
@@ -136,7 +136,8 @@ public sealed class AddGamesPlanTests
         Assert.True(plan.NeedsArchipelagoRelease);
         Assert.Equal(22_424_521, plan.ArchipelagoReleaseBytes);
         Assert.Equal(AddRow.MapLogicShips, plan.Games[0].Row);
-        Assert.Equal("map (its logic ships with Archipelago)", AddGamesPlan.Words(plan.Games[0]));
+        Assert.Equal("logic + map", AddGamesPlan.Words(plan.Games[0]));
+        Assert.Contains("ships with Archipelago", AddGamesPlan.Explain(plan.Games[0]));
         Assert.Equal(AddRow.LogicMapFromGuide, plan.Games[1].Row); // no pack listed: its guide's project is read once its world is in
         Assert.True(plan.Games[1].GuideLookupReserved);
         // Each folder is unpacked once, though both games need the shared one; the release stays kept on disk.
@@ -339,11 +340,72 @@ public sealed class AddGamesPlanTests
         Assert.Equal(AddRow.LogicMapFromGuide, g.Row);
         Assert.Equal(AddGamesPlan.LivePackRequests, plan.GitHubRequests);
         Assert.True(plan.NeedsGitHubLookups);
-        Assert.Equal("logic, then the map pack its setup guide names, if it names one", AddGamesPlan.Words(g));
-        Assert.Contains("the setup guide of Game A", AddGamesWords.Confirm(plan, gitHubAllowed: false, null, 0, t => t).GitHub);
+        Assert.Equal("logic + the guide's map", AddGamesPlan.Words(g));
+        var w = AddGamesWords.Confirm(plan, gitHubAllowed: false, null, 0, t => t);
+        Assert.NotNull(w.GitHub);
+        Assert.Contains("The project Game A's setup guide names: map", w.ProjectsTooltip);
         Assert.False(Plan(game with { Packs = [P("a/pack", 90)] }).Games[0].GuideLookupReserved);
         Assert.False(Plan(game with { PackInstalled = true }).Games[0].GuideLookupReserved);
         Assert.False(Plan(game with { GuideRead = true }).Games[0].GuideLookupReserved);
+    }
+
+    [Fact]
+    public void A_guide_project_whose_listed_pack_cant_be_downloaded_is_read_from_GitHub()
+    {
+        // Round 13's Ship of Harkinian: the list's only copy of the guide's project is one the pack lab took from elsewhere.
+        var copy = P("guide/tracker", 100, asset: "(from the beta's packs folder)");
+        var pick = AddGamesPlan.ChoosePack([copy], ["guide/tracker"], AddGamesPlan.LivePackRequests)!;
+        Assert.Equal(("guide/tracker", PackReason.GuideProject), (pick.Repo, pick.Reason));
+        Assert.Null(pick.Listed);
+        Assert.Equal("guide/tracker", AddGamesPlan.GuideUnlistedRepo([copy], ["guide/tracker"]));
+        Assert.Equal(AddPackNote.GuideNotListedNoLookup, AddGamesPlan.GuideNote([copy], ["guide/tracker"], null, false));
+        // A downloadable listed pack that doesn't fit still isn't tried again from GitHub.
+        Assert.Null(AddGamesPlan.ChoosePack([P("guide/tracker", 20)], ["guide/tracker"], 20));
+        Assert.Null(AddGamesPlan.GuideUnlistedRepo([P("guide/tracker", 20)], ["guide/tracker"]));
+        var plan = Plan(new AddGameFacts { Game = "Game A", LogicInstalled = true, GuideRead = true, GuideRepos = ["guide/tracker"], Packs = [copy] });
+        var item = Assert.Single(plan.Items);
+        Assert.True(item.Live);
+        Assert.Equal(PackReason.GuideProject, item.Reason);
+        Assert.Equal(AddRow.Map, plan.Games[0].Row);
+        Assert.Equal(AddGamesPlan.LivePackRequests, plan.GitHubRequests);
+    }
+
+    [Fact]
+    public void Every_rows_words_are_short_and_its_tooltip_says_it_in_full()
+    {
+        var apworld = new AddItem { Kind = AddItemKind.Apworld, Game = "G", Version = "1.0.0" };
+        foreach (var row in Enum.GetValues<AddRow>())
+            foreach (var items in new[] { Array.Empty<AddItem>(), new[] { apworld } })
+            {
+                var game = new GamePlan("G", row, items);
+                Assert.InRange(AddGamesPlan.Words(game).Length, 1, 28);
+                Assert.EndsWith(".", AddGamesPlan.Explain(game));
+            }
+    }
+
+    [Fact]
+    public void The_logic_version_is_the_one_the_games_map_pack_was_measured_on()
+    {
+        // A made-up list: the pack lab measured the pack on a pre-release (round 13's Dark Souls II: 0.6.0-alpha.2, not 0.5.5).
+        static IndexPackFacts Measured(string repo, int fit, string? on) => new(repo, "v1", "pack.zip", "bb" + repo, 1000, fit, [], on);
+        var game = Community("Game A", V("0.5.5", 100), V("0.6.0-alpha.2", 200));
+        AddItem Logic(AddGameFacts facts) => Assert.Single(Plan(facts).Items, i => i.Kind == AddItemKind.Apworld);
+        var fits = Logic(game with { Packs = [Measured("p/pack", 97, "0.6.0-alpha.2")] });
+        Assert.Equal(("0.6.0-alpha.2", true, 200L), (fits.Version, fits.FitsPack, fits.Size));
+        // Without the field (an older list) or a pack, the newest full release, as before.
+        Assert.Equal(("0.5.5", false), (Logic(game with { Packs = [P("p/pack", 97)] }).Version, Logic(game with { Packs = [P("p/pack", 97)] }).FitsPack));
+        Assert.Equal("0.5.5", Logic(game).Version);
+        // A measured version the list has no download of, or whose link Atlas doesn't take: the newest full release.
+        Assert.Equal("0.5.5", Logic(game with { Packs = [Measured("p/pack", 97, "0.7.0")] }).Version);
+        var http = Community("Game A", V("0.5.5", 100), new IndexVersionFacts("0.6.0-alpha.2", "http://example.com/game.apworld", null, 1)) with { Packs = [Measured("p/pack", 97, "0.6.0-alpha.2")] };
+        Assert.Equal("0.5.5", Logic(http).Version);
+        // The version follows the pack the plan takes: the best fit's, or the guide's when the list has it.
+        var two = game with { Packs = [Measured("p/best", 99, "0.5.5"), Measured("p/other", 80, "0.6.0-alpha.2")] };
+        Assert.Equal(("0.5.5", true), (Logic(two).Version, Logic(two).FitsPack));
+        Assert.Equal("0.6.0-alpha.2", Logic(two with { GuideRead = true, GuideRepos = ["p/other"] }).Version);
+        // The label is compared as the Games page says it ("v0.6.0-alpha.2" is 0.6.0-alpha.2); a pack installed already picks nothing.
+        Assert.Equal("0.6.0-alpha.2", Logic(game with { Packs = [Measured("p/pack", 97, "v0.6.0-alpha.2")] }).Version);
+        Assert.Equal("0.5.5", Logic(game with { PackInstalled = true, Packs = [Measured("p/pack", 97, "0.6.0-alpha.2")] }).Version);
     }
 
     [Fact]

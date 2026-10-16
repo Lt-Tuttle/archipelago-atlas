@@ -307,6 +307,9 @@ namespace AP_Atlas.UI
         /// <summary>Presses "Which version works with my map pack?" (for tests: the question is asked as the button asks it).</summary>
         internal void LookInsideForTests(string game) => LookInside(game);
 
+        /// <summary>"Which version works with my map pack?" for a game, from elsewhere (Install games' summary, a map that fits poorly): asked first, as the button asks.</summary>
+        internal void FindVersionThatFits(string game) => LookInside(game);
+
         /// <summary>
         /// Installs the release Atlas picks: the newest the installed map pack fits, else the newest whose own guide names a
         /// map tracker (a pre-release too), else the newest full release; with <paramref name="look"/> it first looks inside

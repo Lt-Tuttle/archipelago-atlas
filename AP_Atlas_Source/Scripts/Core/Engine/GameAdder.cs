@@ -28,7 +28,7 @@ namespace AP_Atlas.Core.EngineSetup
     /// <summary>The confirm's answer: its tick "Don't ask again for Atlas's downloads", and whether it named GitHub's release lists (the plan needed them).</summary>
     public sealed record AddGamesConsent(bool AlwaysAllowDownloads, bool AllowGitHubLookups);
 
-    /// <summary>What a batch did: a row per game, and per pack it installed what Atlas fixed by itself and what's left (Outcome.PacksToLook).</summary>
+    /// <summary>What a batch did: a row per game, and per pack it installed what Atlas fixed by itself and how many of the game's checks have a pin (Outcome.PacksToLook).</summary>
     public sealed record GameAdderRun(AddGamesOutcome Outcome);
 
     /// <summary>
@@ -37,7 +37,7 @@ namespace AP_Atlas.Core.EngineSetup
     /// (no GitHub listing read); adds them all to the engine with the official games' worlds and ONE health check (one logic
     /// restart per connected slot); reads the added games' names; installs each game's map pack quietly (the one its setup
     /// guide names when Atlas's list has it, else the plan's); then waits for the Pack Doctor's checks (whose first pass makes
-    /// the confident fixes) and notes per pack what was fixed and what's left. One bar, Cancel between steps, a result per game. It never throws. One batch
+    /// the confident fixes) and notes per pack what was fixed and how many of the game's checks have a pin. One bar, Cancel between steps, a result per game. It never throws. One batch
     /// at a time. Main thread: the map pack service's installs touch the window; downloads and the engine run on workers.
     /// </summary>
     public sealed class GameAdder
@@ -59,6 +59,8 @@ namespace AP_Atlas.Core.EngineSetup
         private string T(string text) => _hooks.Tr(text);
 
         private static void Log(string line) => Logger.LogInfo("[Add games] " + line);
+
+        private static string N(int n) => n.ToString(CultureInfo.InvariantCulture);
 
         public async Task<GameAdderRun> RunAsync(AddPlan plan, AddGamesConsent consent, Action<AddGamesStatus>? progress, CancellationToken ct)
         {
@@ -148,7 +150,7 @@ namespace AP_Atlas.Core.EngineSetup
                 b.Ct.ThrowIfCancellationRequested();
                 var row = b.Outcome.For(g.Game);
                 if (problem != null) { row.Logic = AddStep.Failed(problem); continue; }
-                b.Enter(AddGamesProgress.ApworldPart(i), T("Getting {0}'s apworld…").Replace("{0}", g.Game));
+                b.Enter(AddGamesProgress.ApworldPart(i), T("Downloading {0}'s logic…").Replace("{0}", g.Game));
                 ApworldVersion? version = item.Live ? await NewestReleaseAsync(b, g.Game, item)
                     : new ApworldVersion { Version = item.Version, Url = item.Url, Sha256 = item.Sha256, Origin = "index" };
                 if (version == null)
@@ -200,8 +202,8 @@ namespace AP_Atlas.Core.EngineSetup
             b.Ct.ThrowIfCancellationRequested();
             bool zip = !AtlasEngine.WorldsZipPresent && worldGames.Any(g => AtlasEngine.WorldsToUnpack(install, g).Count > 0);
             b.Enter(AddGamesProgress.EnginePart, zip
-                ? T("Downloading Archipelago's game worlds ({0}, once), then adding the games to the Atlas Engine and checking them…").Replace("{0}", AtlasEngine.WorldsZipSize)
-                : T("Adding the games to the Atlas Engine and checking them (a few seconds)…"));
+                ? T("Downloading Archipelago's worlds ({0}), then adding to the Atlas Engine…").Replace("{0}", AtlasEngine.WorldsZipSize)
+                : T("Adding to the Atlas Engine and checking it…"));
             var done = await Task.Run(() => AtlasEngine.InstallApworldsAsync(install, files.Select(f => (f.Game, f.File)).ToList(), worldGames, AtlasEngine.MayDownloadWorlds, Log, b.Ct));
             if (done.Check != null && !done.Check.Passed) b.Outcome.EngineProblem = done.Check.Problem;
             foreach (var (game, file, label) in files)
@@ -214,11 +216,14 @@ namespace AP_Atlas.Core.EngineSetup
             foreach (string game in worldGames)
             {
                 bool missing = done.WorldsMissing.Contains(game, StringComparer.OrdinalIgnoreCase);
-                b.Outcome.For(game).Logic = missing
+                var row = b.Outcome.For(game);
+                row.LogicShips = true;
+                // Its world comes from Archipelago's pinned release, so that's its version (round 13: Dark Souls III read "Logic: added.").
+                row.Logic = missing
                     ? (done.Cancelled ? AddStep.Cancelled : AddStep.Failed(T("Archipelago's release couldn't be downloaded or its world unpacked (the log says why); try again later")))
                     : done.Check?.Error != null ? AddStep.Failed(T("the engine's health check failed: {0}").Replace("{0}", done.Check.Problem))
                     : done.Check != null && !done.Check.Games.Contains(game, StringComparer.OrdinalIgnoreCase) ? AddStep.Failed(T("its world is unpacked, but it doesn't load in the engine"))
-                    : AddStep.Done(null);
+                    : AddStep.Done(AtlasEngine.ArchipelagoVersion);
             }
             if (done.Cancelled) b.Ct.ThrowIfCancellationRequested();
         }
@@ -228,7 +233,7 @@ namespace AP_Atlas.Core.EngineSetup
             var games = b.Plan.Games.Where(g => g.WantsPack && b.Outcome.For(g.Game).Logic.Outcome == AddStepOutcome.Done).Select(g => g.Game).ToList();
             if (games.Count == 0) return;
             b.Ct.ThrowIfCancellationRequested();
-            b.Enter(AddGamesProgress.NamesPart, T("Reading the added games' names for their map packs…"));
+            b.Enter(AddGamesProgress.NamesPart, T("Reading the games' checks…"));
             try { await PackDoctorService.RefreshLocalNamesAsync(games); }
             catch (Exception ex) when (ex is not OperationCanceledException) { Logger.LogWarning("[Add games] The added games' names couldn't be read: " + ex.Message); }
         }
@@ -256,8 +261,10 @@ namespace AP_Atlas.Core.EngineSetup
                 row.PackNote = AddGamesPlan.GuideNote(listed, guide, pick, lookups);
                 if (pick == null)
                 {
+                    // Why, in the log (round 13: Ship of Harkinian's listed pack was a copy no download fetches).
+                    Log($"{g.Game}: no map pack picked ({(listed.Count == 0 ? "the list has none" : $"{listed.Count} listed, none usable")}; its setup guide names {(guide.Count == 0 ? "none" : string.Join(", ", guide))}).");
                     row.Map = AddStep.Unavailable(g.Row == AddRow.MapWaits ? T("its map pack waits for GitHub's hourly limit: add it again in an hour")
-                        : row.PackNote != AddPackNote.None ? T("the one its setup guide names wasn't installed (below)")
+                        : row.PackNote != AddPackNote.None ? T("the one its setup guide names wasn't tried")
                         : T("no map pack is known for it yet"));
                     spare += plannedCost; // its planned (or kept) requests weren't spent: a later game's guide may use them
                     continue;
@@ -267,7 +274,7 @@ namespace AP_Atlas.Core.EngineSetup
                 var from = pick;
                 if (pick.Listed == null)
                 {
-                    b.Enter(AddGamesProgress.PackPart(i), T("Looking for {0}'s map pack at github.com/{1}, which its setup guide names…").Replace("{0}", g.Game).Replace("{1}", pick.Repo));
+                    b.Enter(AddGamesProgress.PackPart(i), T("Looking up {0}'s map pack on GitHub…").Replace("{0}", g.Game));
                     b.Spend(pick.GitHubRequests);
                     var (ok, detail, found) = await _hooks.InstallProjectPackAsync(g.Game, pick.Repo, null);
                     if (ok && found != null) { file = found; row.Map = AddStep.Done(detail); }
@@ -281,10 +288,14 @@ namespace AP_Atlas.Core.EngineSetup
                 }
                 if (file == null && from?.Listed is { } pack)
                 {
-                    b.Enter(AddGamesProgress.PackPart(i), T("Installing {0}'s map pack from github.com/{1}…").Replace("{0}", g.Game).Replace("{1}", pack.Repo));
+                    b.Enter(AddGamesProgress.PackPart(i), T("Downloading {0}'s map pack…").Replace("{0}", g.Game));
                     (file, problem) = await InstallListedAsync(b, g.Game, pack);
                     if (file != null) row.Map = AddStep.Done("github.com/" + pack.Repo + (pack.CurrentFiles ? "" : " " + pack.Release));
                 }
+                // "The version its map pack was measured on" holds only for the pack installed: the guide's pick once the logic is
+                // in may be another (round 13's review); one that pins few of the game's checks then shows as a poor fit.
+                row.LogicFitsPack = row.Logic.Outcome == AddStepOutcome.Done && file != null
+                    && from?.Listed?.ApworldVersion is { Length: > 0 } measured && ApworldChoices.SameLabel(measured, row.Logic.Detail);
                 if (file != null)
                 {
                     row.PackFile = file;
@@ -328,17 +339,21 @@ namespace AP_Atlas.Core.EngineSetup
         private async Task GatherFixesAsync(Batch b, List<(string Game, string File)> packs)
         {
             if (packs.Count == 0) return;
-            b.Enter(AddGamesProgress.DoctorPart, T("Checking the map packs against their games and fixing what Atlas can…"));
-            foreach (var (game, file) in packs)
+            string Line(int i) => T("Checking {0}'s map pack ({1} of {2})…").Replace("{1}", N(i + 1)).Replace("{2}", N(packs.Count)).Replace("{0}", packs[i].Game);
+            b.Enter(AddGamesProgress.DoctorPart, Line(0));
+            for (int i = 0; i < packs.Count; i++)
             {
+                var (game, file) = packs[i];
                 b.Ct.ThrowIfCancellationRequested();
+                // The bar moves per pack and the line names it: the Doctor's wait is the batch's longest (round 13: 43 s for Dark Souls II).
+                if (i > 0) b.Say(Line(i), (float)i / packs.Count);
                 if (await LookAsync(game, file, b.Ct) is { } look) b.Outcome.PacksToLook.Add(look);
             }
         }
 
         /// <summary>
-        /// What Atlas fixed by itself in a pack and what's left for the user, once the Doctor has settled on it (its automatic pass
-        /// runs in the pack's first check); null when it can't be read or wasn't checked, or there's nothing to say. Main thread.
+        /// What Atlas fixed by itself in a pack and how many of the game's checks have a pin, once the Doctor has settled on it (its
+        /// automatic pass runs in the pack's first check); null only when it can't be read or wasn't checked. Main thread.
         /// </summary>
         internal static async Task<PackToLook?> LookAsync(string game, string file, CancellationToken ct)
         {
@@ -355,8 +370,9 @@ namespace AP_Atlas.Core.EngineSetup
             if (report == null) return null;
             var fixes = PackFixes.Get(key);
             int made = fixes.Tiles.Count(t => t.Source == "automatic") + fixes.Links.Count(l => l.Source == "automatic");
-            int left = report.NeedsReview.Count();
-            return made == 0 && left == 0 ? null : new PackToLook(game, key, original.Manifest?.Name ?? Path.GetFileNameWithoutExtension(file), file, made, left);
+            string name = original.Manifest?.Name ?? Path.GetFileNameWithoutExtension(file);
+            Log($"{name} ({game}): {report.ApLocationsPlaced} of {report.ApLocationsTotal} checks have a pin; Atlas fixed {made}.");
+            return new PackToLook(game, key, name, file, made, report.ApLocationsPlaced, report.ApLocationsTotal);
         }
 
         /// <summary>
@@ -416,6 +432,15 @@ namespace AP_Atlas.Core.EngineSetup
                 _progress?.Invoke(new AddGamesStatus(_doing, step.Fraction));
             }
 
+            /// <summary>The running part moved on by itself (main thread): its line, and the bar at <paramref name="part"/> of the part's share.</summary>
+            public void Say(string text, float part)
+            {
+                Interlocked.Increment(ref _part);
+                _doing = text;
+                Log(_doing);
+                _progress?.Invoke(new AddGamesStatus(_doing, Bar.Within(part)));
+            }
+
             /// <summary>A download in the running part moved (any thread): the bar follows, every quarter megabyte.</summary>
             public void Within(long done, long total)
             {
@@ -425,7 +450,7 @@ namespace AP_Atlas.Core.EngineSetup
                 int part = Volatile.Read(ref _part);
                 AP_Atlas.UI.Ui.Defer(null, () =>
                 {
-                    if (!Finished && part == Volatile.Read(ref _part)) _progress?.Invoke(new AddGamesStatus(_doing, Bar.Within((float)done / total)));
+                    if (!Finished && part == Volatile.Read(ref _part)) _progress?.Invoke(AddGamesStatus.Download(_doing, Bar.Within((float)done / total), done, total));
                 }, "showing the Add games progress");
             }
         }

@@ -5,8 +5,18 @@ using System.Linq;
 
 namespace AP_Atlas.Core.Games;
 
-/// <summary>Where an Add games batch is, for its panel: one line ("Game 3 of 6: …") and one bar (0 to 1).</summary>
-public sealed record AddGamesStatus(string Text, float Fraction);
+/// <summary>
+/// Where an Add games batch is, for its panel: one line ("Game 3 of 6: …") and one bar (0 to 1); <paramref name="BarMoves"/>
+/// when the bar moved within the step (a download's progress), so no busy dots are needed beside it.
+/// </summary>
+public sealed record AddGamesStatus(string Text, float Fraction, bool BarMoves = false)
+{
+    /// <summary>
+    /// A download's progress within its step: the bar moves (no dots) until its last byte; the report of the last byte brings
+    /// the dots back for the check and install that follow (round 13's review: a 50 MB pack's install looked frozen).
+    /// </summary>
+    public static AddGamesStatus Download(string text, float fraction, long done, long total) => new(text, fraction, BarMoves: done < total);
+}
 
 /// <summary>
 /// One bar for a whole Add games batch. Its parts are known from the plan before anything starts: each game's apworld
@@ -27,7 +37,8 @@ public sealed class AddGamesProgress
     public static string ApworldPart(int index) => "apworld:" + index.ToString(CultureInfo.InvariantCulture);
     public static string PackPart(int index) => "pack:" + index.ToString(CultureInfo.InvariantCulture);
 
-    public const float EngineWeight = 8f, NamesWeight = 2f, DoctorWeightPerPack = 1f;
+    /// <summary>The engine's step weighs about what an 8 MB download takes; a pack's check about 4 MB (it reads every pin against the game's names, and moves the bar per pack).</summary>
+    public const float EngineWeight = 8f, NamesWeight = 2f, DoctorWeightPerPack = 4f;
 
     private readonly List<(string Id, int Game, float Weight)> _parts = new();
     private readonly int _games;

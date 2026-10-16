@@ -38,7 +38,7 @@ namespace AP_Atlas.UI
             var dialog = new AddGamesDialog(hooks, game);
             Showing = dialog;
             parent.AddChild(dialog);
-            WindowFit.Pop(dialog, 780, 760);
+            WindowFit.Pop(dialog, 900, 760); // wide enough that its lines' words fit (round 13); inside the main window's smallest, 980
             return dialog;
         }
 
@@ -103,6 +103,7 @@ namespace AP_Atlas.UI
             if (!IsInstanceValid(this)) return;
             OkButtonText = Panel.PrimaryText;
             GetOkButton().Disabled = !Panel.PrimaryEnabled;
+            GetOkButton().TooltipText = Panel.PrimaryTooltip ?? "";
             SecondaryButton.Text = Panel.SecondaryText ?? "";
             SecondaryButton.Visible = Panel.SecondaryText != null;
             WindowFit.RequestShrink(this);

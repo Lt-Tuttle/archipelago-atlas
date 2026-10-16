@@ -23,6 +23,16 @@ public sealed class IndexPackNotesTests
     }
 
     [Fact]
+    public void Each_note_is_also_a_word_or_two()
+    {
+        Assert.Equal(new[] { "Another version", "Scripts stop", "Some maps lack pictures" }, IndexPackNotes.Labels(new[] { "no_pictures", "other_version", "scripts_stop" }));
+        Assert.Equal(new[] { "Another game's" }, IndexPackNotes.Labels(new[] { "other_game" }));
+        Assert.Equal(new[] { "For X" }, IndexPackNotes.Labels(new[] { "other_game" }, forGame: "X"));
+        Assert.Equal(new[] { "Manifest says Celeste" }, IndexPackNotes.Labels(null, namedGame: "Celeste"));
+        Assert.Empty(IndexPackNotes.Labels(new[] { "something_newer" }));
+    }
+
+    [Fact]
     public void Codes_this_Atlas_does_not_know_are_left_out()
     {
         Assert.Empty(IndexPackNotes.Sentences(new[] { "something_newer" }));

@@ -2,7 +2,7 @@ using AP_Atlas.Core.Games;
 
 namespace AP_Atlas.Core.Tests;
 
-/// <summary>Add games' words: sizes, the totals, the one confirm and the summary's lines.</summary>
+/// <summary>Install games' words, few per element: sizes, the totals, the one confirm (a line per game) and the summary's items per game.</summary>
 public sealed class AddGamesWordsTests
 {
     private const long Mb = 1024 * 1024;
@@ -16,15 +16,15 @@ public sealed class AddGamesWordsTests
     };
 
     [Fact]
-    public void Sizes_are_said_in_megabytes_with_what_isn_t_listed()
+    public void Sizes_are_said_in_megabytes_with_how_many_are_unlisted()
     {
         Assert.Equal("", AddGamesWords.Megabytes(0, Tr));
         Assert.Equal("under 0.1 MB", AddGamesWords.Megabytes(1000, Tr));
         Assert.Equal("about 3.4 MB", AddGamesWords.Megabytes((long)(3.4 * Mb), Tr));
         Assert.Equal("about 48 MB", AddGamesWords.Megabytes(48 * Mb, Tr));
         Assert.Equal("about 13 MB", AddGamesWords.Megabytes((long)(12.6 * Mb), Tr));
-        Assert.Equal("about 48 MB, besides 2 files whose size isn't listed", AddGamesWords.Download(48 * Mb, 2, Tr));
-        Assert.Equal("about 48 MB, besides 1 file whose size isn't listed", AddGamesWords.Download(48 * Mb, 1, Tr));
+        Assert.Equal("about 48 MB + 2 unlisted", AddGamesWords.Download(48 * Mb, 2, Tr));
+        Assert.Equal("about 48 MB + 1 unlisted", AddGamesWords.Download(48 * Mb, 1, Tr));
         Assert.Equal("size not listed", AddGamesWords.Download(0, 1, Tr));
         Assert.Equal("3 sizes not listed", AddGamesWords.Download(0, 3, Tr));
     }
@@ -33,36 +33,48 @@ public sealed class AddGamesWordsTests
     public void The_totals_count_the_games_that_add_something()
     {
         var plan = AddGamesPlan.Make(new[] { Community("alpha", 3 * Mb, 2 * Mb) }, new AddContext());
-        Assert.Equal("1 game: about 5 MB to download, about 8 MB on this PC.", AddGamesWords.Totals(plan, Tr));
-        Assert.Equal("Tick the games to add: the totals show here.", AddGamesWords.Totals(AddGamesPlan.Make(Array.Empty<AddGameFacts>(), new AddContext()), Tr));
+        Assert.Equal("1 game · about 5 MB to download · about 8 MB on this PC", AddGamesWords.Totals(plan, Tr));
+        Assert.Equal("Tick the games to install.", AddGamesWords.Totals(AddGamesPlan.Make(Array.Empty<AddGameFacts>(), new AddContext()), Tr));
     }
 
     [Fact]
-    public void The_confirm_names_every_project_and_what_pressing_it_trusts()
+    public void The_confirm_is_a_line_per_game_and_its_projects_with_what_installing_trusts_in_a_tooltip()
     {
-        var plan = AddGamesPlan.Make(new[] { Community("alpha", 3 * Mb, 2 * Mb) }, new AddContext());
+        var plan = AddGamesPlan.Make(new[] { Community("alpha", 3 * Mb, 2 * Mb), Community("beta", 1 * Mb, -1) with { GuideRead = true } }, new AddContext());
         var w = AddGamesWords.Confirm(plan, gitHubAllowed: true, freeBytes: null, floorBytes: 700 * Mb, Tr);
-        Assert.Equal("Install 1 game", w.Title);
-        Assert.Equal("Atlas downloads about 5 MB and uses about 8 MB on this PC.", w.Lead);
-        Assert.Contains("The games' logic (apworlds) from github.com/owner/alpha.", w.Sources);
-        Assert.Contains("Map packs from github.com/packs/alpha.", w.Sources);
-        Assert.Contains("Pressing Download and install trusts github.com/owner/alpha;", w.Trust);
+        Assert.Equal("Install 2 games · about 6 MB", w.Title);
+        Assert.Equal("about 6 MB to download, about 10 MB on this PC.", w.TitleTooltip);
+        // One line per game: its name, what it gets, its size; where each part comes from in its tooltip.
+        Assert.Equal(new[] { ("alpha", "logic + map", "about 5 MB"), ("beta", "logic (no map known)", "about 1 MB") }, w.Games.Select(g => (g.Game, g.Gets, g.Size)));
+        Assert.Equal("Its logic and a map pack.\nLogic 1.0.0: its newest full release.\nLogic from github.com/owner/alpha.\nMap pack from github.com/packs/alpha.", w.Games[0].Tooltip);
+        Assert.Equal("From 3 projects", w.Projects);
+        Assert.Equal("github.com/owner/alpha: logic · alpha\ngithub.com/owner/beta: logic · beta\ngithub.com/packs/alpha: map · alpha\n\n"
+            + "Apworlds and map packs run code. Installing trusts the new ones, github.com/owner/alpha, github.com/owner/beta; Settings → Privacy & permissions takes one back.", w.ProjectsTooltip);
         Assert.Null(w.GitHub);
         Assert.Null(w.Room);
         var trusted = AddGamesPlan.Make(new[] { Community("alpha", 3 * Mb, 2 * Mb) }, new AddContext { TrustedProjects = new[] { "github.com/owner/alpha" } });
-        Assert.DoesNotContain("Pressing Download and install trusts", AddGamesWords.Confirm(trusted, true, null, 700 * Mb, Tr).Trust);
+        var t = AddGamesWords.Confirm(trusted, true, null, 700 * Mb, Tr);
+        Assert.Equal("From 2 projects", t.Projects);
+        Assert.EndsWith("\n\nApworlds and map packs run code. Install only from projects you trust.", t.ProjectsTooltip);
+        var one = AddGamesPlan.Make(new[] { Community("gamma", 3 * Mb, -1) with { GuideRead = true } }, new AddContext());
+        var o = AddGamesWords.Confirm(one, true, null, 700 * Mb, Tr);
+        Assert.Equal(("Install 1 game · about 3 MB", "From 1 project"), (o.Title, o.Projects));
+        Assert.EndsWith("Apworlds run code. Installing trusts the new one, github.com/owner/gamma; Settings → Privacy & permissions takes it back.", o.ProjectsTooltip);
     }
 
     [Fact]
-    public void GitHub_is_asked_only_for_a_release_list_and_a_full_disk_stops_the_confirm()
+    public void GitHub_lookups_are_one_line_when_asked_and_a_full_disk_stops_the_confirm()
     {
         var live = AddGamesPlan.Make(new[] { new AddGameFacts { Game = "mine", LiveProject = "me/mine" } }, new AddContext());
-        Assert.Equal("First Atlas reads the releases of github.com/me/mine on GitHub (at most 4 requests); pressing Download and install allows that until Atlas closes. It also reads the map pack project that the setup guide of mine names, once the logic is in.",
-            AddGamesWords.Confirm(live, gitHubAllowed: false, null, 700 * Mb, Tr).GitHub);
+        var w = AddGamesWords.Confirm(live, gitHubAllowed: false, null, 700 * Mb, Tr);
+        Assert.Equal("Also allows up to 4 GitHub lookups until Atlas closes.", w.GitHub);
+        Assert.Equal(("mine", "logic + the guide's map", "size not listed"), (w.Games[0].Game, w.Games[0].Gets, w.Games[0].Size));
+        Assert.Contains("Logic from github.com/me/mine: its newest release is read on GitHub first.", w.Games[0].Tooltip);
+        Assert.Contains("Its setup guide's map pack project is read on GitHub once its logic is in.", w.Games[0].Tooltip);
+        Assert.Contains("The project mine's setup guide names: map", w.ProjectsTooltip);
         Assert.Null(AddGamesWords.Confirm(live, gitHubAllowed: true, null, 700 * Mb, Tr).GitHub);
         var plan = AddGamesPlan.Make(new[] { Community("alpha", 3 * Mb, 2 * Mb) }, new AddContext());
-        Assert.Equal("There isn't room: these games take about 8 MB on this PC, and Atlas keeps about 700 MB free for its engine. Free some space or tick fewer games.",
-            AddGamesWords.Confirm(plan, true, freeBytes: 704 * Mb, floorBytes: 700 * Mb, Tr).Room);
+        Assert.Equal("Not enough room: these games need about 8 MB, and Atlas keeps about 700 MB free.", AddGamesWords.Confirm(plan, true, freeBytes: 704 * Mb, floorBytes: 700 * Mb, Tr).Room);
     }
 
     [Fact]
@@ -70,65 +82,120 @@ public sealed class AddGamesWordsTests
     {
         var facts = new AddGameFacts { Game = "Zelda", Official = true, WorldsToUnpack = new[] { new WorldFolderFacts("alttp", 5 * Mb, true) } };
         var w = AddGamesWords.Confirm(AddGamesPlan.Make(new[] { facts }, new AddContext { WorldsZipBytes = 22 * Mb }), true, null, 700 * Mb, Tr);
-        Assert.Contains("Archipelago's own release (about 22 MB, once) for the games that ship with it.", w.Sources);
-        Assert.Contains("Some of their worlds (alttp) need packages of their own, installed from PyPI; their size isn't listed.", w.Sources);
-        // No pack listed: the one its setup guide names comes from GitHub, so it isn't all Archipelago's release.
-        Assert.Contains("A map pack from the project that the setup guide of Zelda names, read on GitHub once the logic is in.", w.Sources);
-        Assert.Equal("Map packs' scripts run inside Atlas's sandbox: only continue if you trust these projects.", w.Trust);
-        Assert.NotEqual("Everything comes from Archipelago's own release, checked against its published SHA-256.", w.Trust);
+        Assert.Equal("Install 1 game · about 22 MB", w.Title);
+        Assert.Equal("in Archipelago's release", w.Games[0].Size); // its world downloads nothing of its own
+        Assert.Contains("Logic from Archipelago's release (about 22 MB, once for every game that ships with it; checked by its SHA-256).", w.Games[0].Tooltip);
+        Assert.Contains("Packages from PyPI for alttp; their size isn't listed.", w.Games[0].Tooltip);
+        Assert.StartsWith("Archipelago's release: logic · Zelda\nPyPI: packages · alttp\nThe project Zelda's setup guide names: map\n\nMap packs run scripts. Install only from projects you trust.", w.ProjectsTooltip);
         var installed = AddGamesWords.Confirm(AddGamesPlan.Make(new[] { facts with { PackInstalled = true } }, new AddContext { WorldsZipBytes = 22 * Mb }), true, null, 700 * Mb, Tr);
-        Assert.Equal("Everything comes from Archipelago's own release, checked against its published SHA-256.", installed.Trust);
+        Assert.Equal("in Archipelago's release", installed.Games[0].Size);
+        Assert.EndsWith("\n\nAll from Archipelago's release (checked by its SHA-256) and PyPI.", installed.ProjectsTooltip);
+        // With a pack of its own, the line names the release too, so the lines add up to the title.
+        var packed = facts with { Packs = new[] { new IndexPackFacts("packs/zelda", "v1", "zelda.zip", "bb", 3 * Mb, 90, Array.Empty<string>()) } };
+        Assert.Equal("about 3 MB + Archipelago's release", AddGamesWords.Confirm(AddGamesPlan.Make(new[] { packed }, new AddContext { WorldsZipBytes = 22 * Mb }), true, null, 700 * Mb, Tr).Games[0].Size);
+        var plain = facts with { PackInstalled = true, WorldsToUnpack = new[] { new WorldFolderFacts("alttp", 5 * Mb, false) } };
+        Assert.EndsWith("\n\nAll from Archipelago's release, checked by its SHA-256.", AddGamesWords.Confirm(AddGamesPlan.Make(new[] { plain }, new AddContext { WorldsZipBytes = 22 * Mb }), true, null, 700 * Mb, Tr).ProjectsTooltip);
     }
 
     [Fact]
-    public void A_release_Atlas_keeps_and_a_pack_alone_are_said_too()
+    public void A_kept_release_downloads_nothing_and_the_heading_counts_the_games_installed()
     {
-        var shipped = AddGamesPlan.Make(new[] { new AddGameFacts { Game = "Zelda", Official = true, WorldsToUnpack = new[] { new WorldFolderFacts("alttp", 5 * Mb, false) } } },
+        var shipped = AddGamesPlan.Make(new[] { new AddGameFacts { Game = "Zelda", Official = true, PackInstalled = true, WorldsToUnpack = new[] { new WorldFolderFacts("alttp", 5 * Mb, false) } } },
             new AddContext { WorldsZipPresent = true, WorldsZipBytes = 22 * Mb });
         var w = AddGamesWords.Confirm(shipped, true, null, 700 * Mb, Tr);
-        Assert.Equal("Nothing needs downloading; Atlas uses about 5 MB on this PC.", w.Lead);
-        Assert.Contains("The games that ship with Archipelago are unpacked from its release, which Atlas has already.", w.Sources);
+        Assert.Equal(("Install 1 game · nothing to download", "nothing to download, about 5 MB on this PC.", "–"), (w.Title, w.TitleTooltip, w.Games[0].Size));
+        Assert.Contains("Logic from Archipelago's release, which Atlas has already.", w.Games[0].Tooltip);
         var packOnly = AddGamesPlan.Make(new[] { new AddGameFacts { Game = "beta", LogicInstalled = true, Packs = new[] { new IndexPackFacts("packs/beta", "v1", "beta.zip", "bb", 2 * Mb, 90, Array.Empty<string>()) } } }, new AddContext());
-        Assert.StartsWith("Map packs' scripts run inside Atlas's sandbox", AddGamesWords.Confirm(packOnly, true, null, 700 * Mb, Tr).Trust);
+        Assert.EndsWith("Map packs run scripts. Install only from projects you trust.", AddGamesWords.Confirm(packOnly, true, null, 700 * Mb, Tr).ProjectsTooltip);
         var logicOnly = new AddGamesOutcome(new[] { ("a", true, false) });
         logicOnly.For("a").Logic = AddStep.Done(null);
-        Assert.Equal("Done: logic added for 1 of 1.", AddGamesWords.Headline(logicOnly, Tr));
-        Assert.Equal("Logic: added.", AddGamesWords.LogicLine(logicOnly.For("a"), Tr));
-        Assert.Equal("Map: a map pack is installed already.", AddGamesWords.MapLine(logicOnly.For("a"), Tr));
-        var mapOnly = new AddGamesOutcome(new[] { ("b", false, true) });
-        mapOnly.For("b").Map = AddStep.Done(null);
-        Assert.Equal("Done: map packs added for 1 of 1.", AddGamesWords.Headline(mapOnly, Tr));
-        Assert.Equal("Map: installed.", AddGamesWords.MapLine(mapOnly.For("b"), Tr));
-        Assert.Equal("Done: nothing needed adding.", AddGamesWords.Headline(new AddGamesOutcome(new[] { ("c", false, false) }), Tr));
-        mapOnly.For("b").GuideRepo = "x/y";
-        mapOnly.For("b").PackNote = AddPackNote.GuideNotListedBudgetSpent;
-        Assert.Equal("Its setup guide names github.com/x/y; this add's share of GitHub's hourly limit was spent before Atlas could try it.", AddGamesWords.GuideLine(mapOnly.For("b"), Tr));
-        mapOnly.For("b").PackNote = AddPackNote.None;
-        Assert.Null(AddGamesWords.GuideLine(mapOnly.For("b"), Tr));
+        Assert.Equal("1 game installed", AddGamesWords.Heading(logicOnly, Tr));
+        Assert.Null(AddGamesWords.HeadingTooltip(logicOnly, Tr));
+        Assert.Equal(new AddChip(AddChipState.Ok, "logic", null), AddGamesWords.LogicChip(logicOnly.For("a"), Tr));
+        Assert.Equal(new AddChip(AddChipState.Already, "map", "A map pack is installed already."), AddGamesWords.MapChip(logicOnly.For("a"), null, Tr));
+        Assert.Equal("0 of 1 games installed", AddGamesWords.Heading(new AddGamesOutcome(new[] { ("c", false, false) }), Tr));
     }
 
     [Fact]
-    public void The_summary_says_per_game_what_was_added_and_why_not()
+    public void A_games_line_is_one_number_per_item_with_the_details_in_tooltips()
     {
-        var o = new AddGamesOutcome(new[] { ("alpha", true, true), ("beta", true, true), ("gamma", false, true) });
-        o.For("alpha").Logic = AddStep.Done("1.2.0");
-        o.For("alpha").Map = AddStep.Done("github.com/packs/alpha v1");
-        o.For("alpha").PackFromGuide = true;
-        o.For("beta").Logic = AddStep.Failed("its project no longer offers that file");
-        o.For("beta").Map = AddStep.Unavailable("no map pack is known for it yet");
-        o.For("gamma").Map = AddStep.Done("github.com/packs/gamma v2");
-        Assert.Equal("Done: logic added for 1 of 2, map packs for 2 of 3. One needs a look below.", AddGamesWords.Headline(o, Tr));
-        Assert.Equal("Logic: version 1.2.0 added.", AddGamesWords.LogicLine(o.For("alpha"), Tr));
-        Assert.Equal("Map: github.com/packs/alpha v1, the one its setup guide names.", AddGamesWords.MapLine(o.For("alpha"), Tr));
-        Assert.Equal("Logic: not added: its project no longer offers that file.", AddGamesWords.LogicLine(o.For("beta"), Tr));
-        Assert.Equal("Map: no map pack is known for it yet.", AddGamesWords.MapLine(o.For("beta"), Tr));
-        Assert.Equal("Logic: already in the Atlas Engine.", AddGamesWords.LogicLine(o.For("gamma"), Tr));
-        o.For("beta").Logic = AddStep.Failed("The Atlas Engine isn't set up yet.");
-        Assert.Equal("Logic: not added: The Atlas Engine isn't set up yet.", AddGamesWords.LogicLine(o.For("beta"), Tr)); // one full stop
-        o.For("beta").GuideRepo = "x/y";
-        o.For("beta").PackNote = AddPackNote.GuideNotListedNoLookup;
-        Assert.Equal("Its setup guide names github.com/x/y, which Atlas's game list doesn't have.", AddGamesWords.GuideLine(o.For("beta"), Tr));
+        var o = new AddGamesOutcome(new[] { ("alpha", true, true), ("beta", true, true), ("gamma", false, true), ("delta", true, true) });
+        var alpha = o.For("alpha");
+        alpha.Logic = AddStep.Done("1.2.0");
+        alpha.LogicFitsPack = true;
+        alpha.Map = AddStep.Done("github.com/packs/alpha v1");
+        alpha.PackFromGuide = true;
+        var look = new PackToLook("alpha", "k", "Alpha pack", "f", 35, 1129, 1150);
+        Assert.Equal(new AddChip(AddChipState.Ok, "logic 1.2.0", "Version 1.2.0: the one its map pack was measured on."), AddGamesWords.LogicChip(alpha, Tr));
+        Assert.Equal(new AddChip(AddChipState.Ok, "map 1129/1150", "From github.com/packs/alpha v1, the one its setup guide names.\n1129 of the game's 1150 checks have a pin."), AddGamesWords.MapChip(alpha, look, Tr));
+        Assert.Equal(new AddChip(AddChipState.Ok, "35 fixes", "Atlas fixed 35 things in Alpha pack by itself; Review lists each, with Undo."), AddGamesWords.FixedChip(look, Tr));
+        Assert.Equal("1 fix", AddGamesWords.FixedChip(look with { Fixed = 1 }, Tr)!.Text);
+        Assert.False(AddGamesWords.PoorFit(look));
+        // A pack that pins under three quarters of the game's checks fits poorly: the map is flagged, its tooltip says why.
+        var poor = look with { Placed = 31, Total = 1288, Fixed = 0 };
+        var map = AddGamesWords.MapChip(alpha, poor, Tr);
+        Assert.Equal((AddChipState.Warn, "map 31/1288"), (map.State, map.Text));
+        Assert.Contains("the pack likely fits another version of the game", map.Tooltip);
+        Assert.True(AddGamesWords.PoorFit(poor));
+        Assert.True(AddGamesWords.PoorFit(look with { Placed = 862, Total = 1150 }));
+        Assert.False(AddGamesWords.PoorFit(look with { Placed = 863, Total = 1150 }));
+        Assert.False(AddGamesWords.PoorFit(look with { Placed = 0, Total = 0 }));
+        Assert.Null(AddGamesWords.FixedChip(poor, Tr));
+        // An official game's logic says Archipelago's version.
+        var beta = o.For("beta");
+        beta.Logic = AddStep.Done("0.6.7");
+        beta.LogicShips = true;
+        beta.Map = AddStep.Unavailable("no map pack is known for it yet");
+        Assert.Equal(new AddChip(AddChipState.Ok, "logic 0.6.7", "Ships with Archipelago 0.6.7."), AddGamesWords.LogicChip(beta, Tr));
+        // An official game's poor fit: flagged, but no version of the game to find (its logic is Archipelago's world).
+        var shipped = new AddGamesOutcome(new[] { ("civ", true, true) }).For("civ");
+        shipped.Logic = AddStep.Done("0.6.7");
+        shipped.LogicShips = true;
+        shipped.Map = AddStep.Done("github.com/p/civ v1");
+        var shippedMap = AddGamesWords.MapChip(shipped, poor, Tr);
+        Assert.Equal(AddChipState.Warn, shippedMap.State);
+        Assert.Contains("another Archipelago version", shippedMap.Tooltip);
+        Assert.DoesNotContain("Find the version that fits", shippedMap.Tooltip);
+        Assert.DoesNotContain("Find the version that fits", AddGamesWords.MapChip(alpha, poor, Tr, official: true).Tooltip);
+        Assert.Equal(new AddChip(AddChipState.Skipped, "no map", "No map pack is known for it yet."), AddGamesWords.MapChip(beta, null, Tr));
+        var gamma = o.For("gamma");
+        gamma.Map = AddStep.Failed("the download stopped");
+        Assert.Equal(new AddChip(AddChipState.Already, "logic", "Already in the Atlas Engine."), AddGamesWords.LogicChip(gamma, Tr));
+        Assert.Equal(new AddChip(AddChipState.Bad, "map", "The download stopped."), AddGamesWords.MapChip(gamma, null, Tr));
+        var delta = o.For("delta");
+        delta.Logic = AddStep.Failed("The Atlas Engine isn't set up yet.");
+        Assert.Equal(new AddChip(AddChipState.Bad, "logic", "The Atlas Engine isn't set up yet."), AddGamesWords.LogicChip(delta, Tr)); // one full stop
+        delta.GuideRepo = "x/y";
+        delta.PackNote = AddPackNote.GuideNotListedNoLookup;
+        Assert.StartsWith("Its setup guide names github.com/x/y, which Atlas's game list doesn't have", AddGamesWords.GuideTip(delta, Tr));
+        delta.PackNote = AddPackNote.None;
+        Assert.Null(AddGamesWords.GuideTip(delta, Tr));
+        // alpha and beta are in (an unknown map isn't a failure); gamma's map and delta's logic failed.
+        Assert.Equal("2 of 4 games installed", AddGamesWords.Heading(o, Tr));
         o.Cancelled = true;
-        Assert.Equal("Stopped. Before it stopped, Atlas added logic for 1 and map packs for 2; nothing half-done was kept.", AddGamesWords.Headline(o, Tr));
+        Assert.Equal("Stopped · 2 of 4 games installed", AddGamesWords.Heading(o, Tr));
+        Assert.Equal("Nothing half-done was kept; what was done stays.", AddGamesWords.HeadingTooltip(o, Tr));
+    }
+
+    [Fact]
+    public void A_rows_tooltip_says_why_its_logic_version_was_picked()
+    {
+        var measured = new AddGameFacts
+        {
+            Game = "Saga",
+            Versions = new[]
+            {
+                new IndexVersionFacts("0.5.5", "https://github.com/o/saga/releases/download/v0.5.5/saga.apworld", "a", 10),
+                new IndexVersionFacts("0.6.0-alpha.2", "https://github.com/o/saga/releases/download/v0.6.0-alpha.2/saga.apworld", "b", 10)
+            },
+            Packs = new[] { new IndexPackFacts("p/saga", "v1", "saga.zip", "c", 10, 97, Array.Empty<string>(), "0.6.0-alpha.2") }
+        };
+        var game = AddGamesPlan.Make(new[] { measured }, new AddContext()).Games[0];
+        Assert.Equal("Logic 0.6.0-alpha.2: the version its map pack was measured on.", AddGamesWords.VersionWhy(game, Tr));
+        var newest = AddGamesPlan.Make(new[] { measured with { Packs = Array.Empty<IndexPackFacts>() } }, new AddContext()).Games[0];
+        Assert.Equal("Logic 0.5.5: its newest full release.", AddGamesWords.VersionWhy(newest, Tr));
+        var onlyPre = AddGamesPlan.Make(new[] { measured with { Packs = Array.Empty<IndexPackFacts>(), Versions = measured.Versions.Skip(1).ToList() } }, new AddContext()).Games[0];
+        Assert.Equal("Logic 0.6.0-alpha.2: its newest release (a pre-release; there's no full one).", AddGamesWords.VersionWhy(onlyPre, Tr));
+        Assert.Null(AddGamesWords.VersionWhy(AddGamesPlan.Make(new[] { new AddGameFacts { Game = "Z", LogicInstalled = true, Packs = measured.Packs } }, new AddContext()).Games[0], Tr));
     }
 }

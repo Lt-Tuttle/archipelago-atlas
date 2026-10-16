@@ -10,9 +10,10 @@ public sealed record IndexVersionFacts(string Version, string Url, string? Sha25
 
 /// <summary>
 /// A map pack in Atlas's game list as the add plan weighs it: its project, release and file (or "zipball": the project's
-/// current files), its SHA-256 and size as the pack lab downloaded it (0 when unknown), its fit and the lab's notes.
+/// current files), its SHA-256 and size as the pack lab downloaded it (0 when unknown), its fit and the lab's notes, and the
+/// game's apworld version the lab measured it on (null when the list doesn't say: an older list, or an unmeasured pack).
 /// </summary>
-public sealed record IndexPackFacts(string Repo, string Release, string Asset, string? Sha256, long Size, int? Fit, IReadOnlyList<string> Notes)
+public sealed record IndexPackFacts(string Repo, string Release, string Asset, string? Sha256, long Size, int? Fit, IReadOnlyList<string> Notes, string? ApworldVersion = null)
 {
     /// <summary>The project's current files (it has no release with a pack): fetched through GitHub's API, never the same bytes twice for certain.</summary>
     public bool CurrentFiles => string.Equals(Asset, AddGamesPlan.Zipball, StringComparison.OrdinalIgnoreCase);
@@ -122,6 +123,9 @@ public sealed record AddItem
     /// <summary>GitHub's release list is read first (the size is known only then).</summary>
     public bool Live { get; init; }
 
+    /// <summary>An apworld whose version is the one the game's map pack was measured on (picked over the newest full release).</summary>
+    public bool FitsPack { get; init; }
+
     /// <summary>Requests against GitHub's anonymous hourly limit (at most).</summary>
     public int GitHubRequests { get; init; }
 
@@ -229,8 +233,8 @@ public sealed record AddPlan
 
 /// <summary>
 /// What adding games installs, worked out before anything is downloaded, from what Atlas knows offline (its game list
-/// records every file's size, the worlds index every world's): per game a community game's apworld (the newest release
-/// in the list), an official game's world folders, and one map pack (the one the game's guide names when the list has it,
+/// records every file's size, the worlds index every world's): per game a community game's apworld (the version its map
+/// pack was measured on, else the newest full release in the list), an official game's world folders, and one map pack (the one the game's guide names when the list has it,
 /// else the list's best fit that doesn't wait behind); Archipelago's release once; the sizes, the unknowns, the projects
 /// to trust, and GitHub's requests kept under a budget. Nothing here reads a file or the network.
 /// </summary>
@@ -303,8 +307,22 @@ public static class AddGamesPlan
     }
 
     /// <summary>
+    /// The apworld version a game gets: the one its map pack was measured on (Atlas's list records it per pack, a pre-release
+    /// too: round 13, Dark Souls II's listed pack fits 0.6.0-alpha.2, not the newest full release 0.5.5), when the plan takes
+    /// that pack and the list has that version to download; else the newest full release (<see cref="Newest"/>). Null for none.
+    /// </summary>
+    public static (IndexVersionFacts Version, bool FitsPack)? PickVersion(AddGameFacts facts, int gitHubRequestsLeft)
+    {
+        if (!facts.PackInstalled && ChoosePack(facts.Packs, facts.GuideRepos, gitHubRequestsLeft)?.Listed?.ApworldVersion is { Length: > 0 } measured
+            && facts.Versions.FirstOrDefault(v => IsDownloadable(v.Url) && ApworldChoices.SameLabel(v.Version, measured)) is { } fits)
+            return (fits, true);
+        return Newest(facts.Versions) is { } newest ? (newest, false) : null;
+    }
+
+    /// <summary>
     /// The pack for a game: the first project its setup guide names that the list has a usable pack of; a guide project the
-    /// list doesn't have at all is tried from GitHub when the requests allow; else the list's best: those whose notes make
+    /// list has no downloadable pack of (none at all, or only a copy the pack lab took from elsewhere: round 13's Ship of
+    /// Harkinian) is tried from GitHub when the requests allow; else the list's best: those whose notes make
     /// them wait behind last, then the best fit (a project's current files a little behind a release), then the list's order.
     /// A pack the lab measured under half linked isn't taken (<see cref="PackProjectPick.CloseEnough"/>), nor one that
     /// needs more of GitHub than <paramref name="gitHubRequestsLeft"/>; a guide's project is read from GitHub only when
@@ -319,8 +337,9 @@ public static class AddGamesPlan
         foreach (string repo in guideRepos)
         {
             if (usable.FirstOrDefault(p => SameRepo(p.Repo, repo)) is { } listed) return new PackPick(listed.Repo, listed, PackReason.Guide);
-            // The list has the project but its pack didn't fit (or can't be fetched now): not tried again from GitHub.
-            if (packs.Any(p => SameRepo(p.Repo, repo))) continue;
+            // The list has the project's pack, one download fetches it, but it didn't fit (or can't be fetched now): not tried
+            // again from GitHub. A listed copy no download fetches counts as none: the project is read from GitHub.
+            if (packs.Any(p => SameRepo(p.Repo, repo) && p.Downloadable)) continue;
             if (mayReadProjects && IsRepo(repo) && gitHubRequestsLeft >= LivePackRequests) return new PackPick(repo, null, PackReason.GuideProject);
         }
         return usable.Count > 0 ? new PackPick(usable[0].Repo, usable[0], PackReason.BestFit) : null;
@@ -334,9 +353,9 @@ public static class AddGamesPlan
         return !unlisted ? AddPackNote.None : mayReadProjects ? AddPackNote.GuideNotListedBudgetSpent : AddPackNote.GuideNotListedNoLookup;
     }
 
-    /// <summary>The first project the guide names that Atlas's list lacks (null for none).</summary>
+    /// <summary>The first project the guide names that Atlas's list has no downloadable pack of (null for none).</summary>
     public static string? GuideUnlistedRepo(IReadOnlyList<IndexPackFacts> packs, IReadOnlyList<string> guideRepos) =>
-        guideRepos.FirstOrDefault(r => IsRepo(r) && !packs.Any(p => SameRepo(p.Repo, r)));
+        guideRepos.FirstOrDefault(r => IsRepo(r) && !packs.Any(p => SameRepo(p.Repo, r) && p.Downloadable));
 
     private static bool Usable(IndexPackFacts pack) => pack.Fit == null || pack.Fit >= PackProjectPick.CloseEnough * 100;
 
@@ -369,8 +388,9 @@ public static class AddGamesPlan
                     // Its logic ships with Archipelago: an engine not set up yet can't say which folders, but where it comes from is known.
                     else if (!context.EngineReady) logicKnown = true;
                 }
-                else if (Newest(facts.Versions) is { } newest)
+                else if (PickVersion(facts, left) is { } picked)
                 {
+                    var (newest, fitsPack) = picked;
                     long size = Math.Max(0, newest.Size);
                     items.Add(new AddItem
                     {
@@ -381,7 +401,8 @@ public static class AddGamesPlan
                         Url = newest.Url,
                         Sha256 = string.IsNullOrWhiteSpace(newest.Sha256) ? null : newest.Sha256,
                         Size = size,
-                        Disk = 2 * size
+                        Disk = 2 * size,
+                        FitsPack = fitsPack
                     });
                     logicKnown = true;
                 }
@@ -479,21 +500,39 @@ public static class AddGamesPlan
         };
     }
 
-    /// <summary>A game's row in plain words (English; the window translates it).</summary>
+    /// <summary>A game's row in a few words (round 13, "don't be wordy"; English, the window translates it): the list's cell and the confirm's line, at most 28 characters.</summary>
     public static string Words(GamePlan game) => game.Row switch
     {
         AddRow.Ready => "ready",
-        AddRow.LogicAndMap => "logic and map",
-        AddRow.Logic => "logic (its map pack is installed)",
-        AddRow.LogicNoMapKnown => "logic (no map pack is known yet)",
-        AddRow.LogicMapFromGuide => "logic, then the map pack its setup guide names, if it names one",
-        AddRow.Map => "map (its logic is installed)",
-        AddRow.MapLogicShips => "map (its logic ships with Archipelago)",
-        AddRow.NoMapKnown => "ready, but no map pack is known yet",
-        AddRow.MapOnly => "map (Atlas doesn't know where its logic comes from yet)",
-        AddRow.NothingKnown => "nothing to add: Atlas doesn't know where its logic comes from yet",
-        AddRow.MapWaits => game.LogicComing ? "logic (its map pack waits for GitHub's hourly limit)" : "its map pack waits for GitHub's hourly limit",
-        AddRow.Waits => "waits for GitHub's hourly limit",
+        AddRow.LogicAndMap => "logic + map",
+        AddRow.Logic => "logic",
+        AddRow.LogicNoMapKnown => "logic (no map known)",
+        AddRow.LogicMapFromGuide => "logic + the guide's map",
+        AddRow.Map => "map",
+        AddRow.MapLogicShips => game.LogicComing ? "logic + map" : "map",
+        AddRow.NoMapKnown => "ready, no map known",
+        AddRow.MapOnly => "map (logic unknown)",
+        AddRow.NothingKnown => "nothing (logic unknown)",
+        AddRow.MapWaits => game.LogicComing ? "logic; map waits for GitHub" : "map waits for GitHub",
+        AddRow.Waits => "waits for GitHub",
+        _ => ""
+    };
+
+    /// <summary>A game's row said in full (English; the window translates it): the row's tooltip, a game card's line, a note.</summary>
+    public static string Explain(GamePlan game) => game.Row switch
+    {
+        AddRow.Ready => "Its logic and a map pack are installed.",
+        AddRow.LogicAndMap => "Its logic and a map pack.",
+        AddRow.Logic => "Its logic; its map pack is installed already.",
+        AddRow.LogicNoMapKnown => "Its logic. Atlas's game list knows no map pack for it yet.",
+        AddRow.LogicMapFromGuide => "Its logic, then the map pack its setup guide names, if it names one.",
+        AddRow.Map => "A map pack; its logic is installed already.",
+        AddRow.MapLogicShips => game.LogicComing ? "Its logic (it ships with Archipelago) and a map pack." : "A map pack; its logic ships with Archipelago.",
+        AddRow.NoMapKnown => "Its logic is installed; no map pack is known for it yet.",
+        AddRow.MapOnly => "A map pack. Atlas doesn't know where its logic comes from yet: add its project on the Games page.",
+        AddRow.NothingKnown => "Nothing yet: Atlas doesn't know where its logic comes from. Add its project on the Games page.",
+        AddRow.MapWaits => game.LogicComing ? "Its logic; its map pack waits for GitHub's hourly limit (install it again in an hour)." : "Its map pack waits for GitHub's hourly limit: install it again in an hour.",
+        AddRow.Waits => "It waits for GitHub's hourly limit: install it again in an hour.",
         _ => ""
     };
 }

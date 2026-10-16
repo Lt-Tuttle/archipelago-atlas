@@ -8,10 +8,14 @@ Usage: python Tools/build_game_index.py --corpus <folder> [--baseline <packs bas
   --manifest  the corpus manifest (default: Tests/corpus_manifest.json)
   --baseline  a packs baseline the corpus check recorded with every game's names (pack fit per game)
   --findings  the corpus check's findings (ATLAS_SELFTEST_PACKS_FINDINGS) for the packs' notes
+  --old       the list to build on (default: the bundled list; a test passes a made-up one)
   --out       where to write (default: the bundled list, Scripts/Core/Engine/Data/apworld_sources.json)
 A developer tool, run by hand after a lab round; nothing in Atlas runs it.
 
-Each pack carries what the lab measured: "fit" and "checks" (its pins linked to the game's checks, refreshed every build), "size" (bytes, as the lab downloaded it),
+Each pack carries what the lab measured: "fit" and "checks" (its pins linked to the game's checks, refreshed every build),
+"apworld_version" (the list's own label of the apworld file whose names it was measured on, found by that file's SHA-256 in
+the load report; none when the list has no version with that SHA-256; Install games installs that version for the pack),
+"size" (bytes, as the lab downloaded it),
 "notes" (short codes Atlas turns into sentences: other_version, other_game, scripts_stop, no_pictures). A pack whose mapping
 holds another game's ids is filed twice: under its manifest's game with "other_game" and "for_game", and under the game its
 ids are for with "named_game" (unmeasured there).
@@ -87,6 +91,24 @@ def asset_url(repo, tag, asset):
 
 def loose(text):
     return re.sub(r'0+(\d)', r'\1', ''.join(c.lower() for c in text or '' if c.isalnum()))
+
+
+def downloadable_asset(asset):
+    """A release's zip or a project's current files: what one download fetches (IndexPackFacts.Downloadable's rule)."""
+    asset = (asset or '').lower()
+    return asset == 'zipball' or asset.endswith('.zip')
+
+
+def measured_files(report):
+    """Each game's apworld its names were read from, by its SHA-256 (lowercase game: lowercase SHA-256), from the load
+    report. The list's own label for that file is looked up once the versions are merged (a label made up again here could
+    differ in form, "1.5-beta" for the list's "1.5.0-beta", and match no version)."""
+    files = {}
+    for game, info in (report.get('apworlds') or {}).items():
+        sha = str((info or {}).get('sha256') or '').lower()
+        if sha:
+            files[game.lower()] = sha
+    return files
 
 
 def corpus_sizes(corpus, manifest):
@@ -197,15 +219,17 @@ def main():
     ap.add_argument('--baseline')
     ap.add_argument('--findings')
     ap.add_argument('--out', default=os.path.join(DATA, 'apworld_sources.json'))
+    ap.add_argument('--old', default=os.path.join(DATA, 'apworld_sources.json'))
     args = ap.parse_args()
 
-    with open(os.path.join(DATA, 'apworld_sources.json'), encoding='utf-8-sig') as f:
+    with open(args.old, encoding='utf-8-sig') as f:
         old = json.load(f)
     with open(args.manifest, encoding='utf-8-sig') as f:
         manifest = json.load(f)
     report_path = os.path.join(args.corpus, 'names', '_load_report.json')
     report = json.load(open(report_path, encoding='utf-8-sig')) if os.path.exists(report_path) else {}
     loaded_games = {g.lower() for g in (report.get('games') or {})}
+    measured_on = measured_files(report)
     baseline = json.load(open(args.baseline, encoding='utf-8-sig')) if args.baseline else {}
     findings = json.load(open(args.findings, encoding='utf-8-sig')) if args.findings else []
     findings_by_pack = {}
@@ -275,11 +299,17 @@ def main():
                 packs = games[key].setdefault('packs', [])
                 pack = {'repo': repo, 'release': item.get('release') or '', 'asset': item.get('asset') or '', 'sha256': item.get('sha256')}
                 pack.update(extra)
-                if not any(p.get('sha256') == pack['sha256'] for p in packs):
+                same = next((p for p in packs if p.get('sha256') == pack['sha256']), None)
+                if same is None:
                     packs.append(pack)
+                elif not downloadable_asset(same.get('asset')) and downloadable_asset(pack['asset']):
+                    # The same file listed twice (the lab took one copy from elsewhere): the record one download fetches wins.
+                    same.update(repo=pack['repo'], release=pack['release'], asset=pack['asset'])
                 return True
 
             measured = {'fit': round(100.0 * fit[0] / fit[1]), 'checks': f'{fit[0]} of {fit[1]}'} if fit else {}
+            if fit and measured_on.get(pack_game.lower()):
+                measured['apworld_sha256'] = measured_on[pack_game.lower()]  # named by the list's label below
             if for_game == pack_game:
                 file_under(pack_game, dict(measured, **({'notes': notes} if notes else {})))
             else:
@@ -288,6 +318,13 @@ def main():
                 file_under(pack_game, dict(measured, notes=notes + ['other_game'], for_game=for_game))
                 if file_under(for_game, dict({'named_game': pack_game}, **({'notes': notes} if notes else {}))):
                     filed_elsewhere += 1
+    # The version a pack was measured on, as the list itself labels that file (by SHA-256): exactly what Install games finds.
+    for entry in games.values():
+        for p in entry.get('packs', []):
+            sha = p.pop('apworld_sha256', None)
+            label = next((v.get('version') for v in entry.get('versions', []) if sha and (v.get('sha256') or '').lower() == sha), None)
+            if label:
+                p['apworld_version'] = label
     # Sizes by SHA-256 (the file's identity): every listing of the same file gets it, including old-list versions.
     sizes = corpus_sizes(args.corpus, manifest)
     for entry in games.values():
@@ -308,9 +345,11 @@ def main():
     loads = sum(1 for g in out['games'] if g.get('loads_with'))
     noted = sum(1 for g in out['games'] for p in g.get('packs', []) if p.get('notes'))
     sized = sum(1 for g in out['games'] for v in g.get('versions', []) + g.get('packs', []) if v.get('size'))
+    on_version = sum(1 for g in out['games'] for p in g.get('packs', []) if p.get('apworld_version'))
     listed = sum(len(g.get('versions', [])) + len(g.get('packs', [])) for g in out['games'])
     print(f'wrote {args.out}: {len(out["games"])} games ({added_games} new), {with_packs} with packs, {loads} known to load with Archipelago {ARCHIPELAGO}; '
-          f'{noted} packs with notes, {filed_elsewhere} filed under the game they are for; {sized} of {listed} versions and packs with their size')
+          f'{noted} packs with notes, {filed_elsewhere} filed under the game they are for; {sized} of {listed} versions and packs with their size; '
+          f'{on_version} packs say the apworld version they were measured on')
 
 
 if __name__ == '__main__':

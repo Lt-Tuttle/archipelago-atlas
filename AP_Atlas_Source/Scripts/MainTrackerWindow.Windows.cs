@@ -20,7 +20,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     /// <summary>The Pack Doctor fixed things in a pack by itself: one card says what, with Review fixes (each undoable, and Undo all).</summary>
     private void OnPackAutoFixed(AP_Atlas.Core.PopTracker.PackDoctorService.AutoFixNote note)
     {
-        string message = AP_Atlas.Core.PopTracker.AutoFixWords.Card(note.PackName, note.Fixed, note.Left, text => Tr(text));
+        string message = AP_Atlas.Core.PopTracker.AutoFixWords.Card(note.PackName, note.Fixed, text => Tr(text));
         LogToSystem(message, "green");
         ShowToast(message, AP_Atlas.Core.ThemeColors.Success, Tr("Review fixes"), () => ReviewFixes(note.Key, note.File));
     }
@@ -177,6 +177,16 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
     {
         ShowGamePage(game);
         _packManagerPanel.SearchForGame(game);
+    }
+
+    /// <summary>
+    /// Shows the game's page and measures its map pack against the game's newest releases ("Which version works with my map
+    /// pack?", asked first): Install games' way on when a pack pins under three quarters of the game's checks.
+    /// </summary>
+    private void FindVersionThatFits(string game)
+    {
+        ShowGamePage(game);
+        _gamesPage?.FindVersionThatFits(game);
     }
 
     /// <summary>Shows the game a pack is for on the Games page, or All map packs when it's for none Atlas lists.</summary>

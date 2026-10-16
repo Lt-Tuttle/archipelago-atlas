@@ -23,6 +23,7 @@ public partial class MainTrackerWindow
         RunAsync = AddGamesAsync,
         OpenEngineSetup = OpenEngineSetup,
         FindPack = FindMapPack,
+        FindVersion = FindVersionThatFits,
         InstallPack = (game, repo) => AP_Atlas.Core.Async.Fire(_packManagerPanel.InstallPackFromRepoAsync(game, repo, confirm: true), $"installing {repo}'s pack for {game}"),
         StartPack = game => StartPack(game, null),
         FreeBytes = () => AtlasEngine.FreeBytes(DataManager.GetDataDirectory()),

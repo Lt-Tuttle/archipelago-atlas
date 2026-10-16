@@ -131,8 +131,8 @@ namespace AP_Atlas.Core.PopTracker
                 }
                 else if (_toAnnounce.Remove(key, out int fixedCount))
                 {
-                    // The check the pass's edit queued: the card says what was fixed and what's left.
-                    var note = new AutoFixNote(key, original.Manifest?.Name ?? key, original.SourcePath, fixedCount, report.NeedsReview.Count());
+                    // The check the pass's edit queued: the card says what was fixed.
+                    var note = new AutoFixNote(key, original.Manifest?.Name ?? key, original.SourcePath, fixedCount);
                     Prompt(key, () => AutoFixed?.Invoke(note));
                 }
                 return report;
@@ -311,8 +311,8 @@ namespace AP_Atlas.Core.PopTracker
             return result;
         }
 
-        /// <summary>What Atlas's automatic pass fixed in a pack, said once the check after it is in: its key, name and zip, the fixes made, the rows left.</summary>
-        public sealed record AutoFixNote(string Key, string PackName, string File, int Fixed, int Left);
+        /// <summary>What Atlas's automatic pass fixed in a pack, said once the check after it is in: its key, name and zip, and the fixes made.</summary>
+        public sealed record AutoFixNote(string Key, string PackName, string File, int Fixed);
 
         /// <summary>Atlas fixed things in a pack by itself: the host shows one card with Review fixes. Raised through the prompt hold (Add games says it in its summary).</summary>
         public static event Action<AutoFixNote> AutoFixed;

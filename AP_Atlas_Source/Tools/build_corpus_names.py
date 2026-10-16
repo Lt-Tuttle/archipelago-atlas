@@ -4,13 +4,16 @@ A developer tool. It makes an engine data folder of the lab's own (never the use
 from Archipelago's release zip, every community apworld the corpus holds, Atlas's bridge; then it asks the engine which
 games load (atlas_run.py --atlas-games) and the AtlasNames component for their names, and writes one file per game in
 GameNames' shape (<corpus>\names\<Game> (local install).json), plus names\_load_report.json saying which worlds didn't
-load and why. Nothing downloaded; nothing the corpus holds is run except as Archipelago loads a world.
+load and why, and which apworld file (by its SHA-256) each community game's names came from: the version the packs are
+measured on (build_game_index.py records it per pack). Nothing downloaded; nothing the corpus holds is run except as
+Archipelago loads a world.
 
 Usage:
   python Tools/build_corpus_names.py --corpus "...\Pack Corpus" --lab "...\Pack Corpus\lab"
       [--core Builds\engine-core] [--archipelago-zip Builds\engine-data\engine\downloads\Archipelago-0.6.7.zip] [--skip-unpack]
 """
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -120,8 +123,16 @@ def main():
             json.dump({'Game': game, 'Source': 'local install', 'Fetched': now, 'Version': table.get('version', ''),
                        'Items': table.get('items', {}), 'Locations': table.get('locations', {})}, f)
         written += 1
+    # Each community game's apworld as the engine loaded it (the module's .apworld in the lab's worlds folder; the last copy of
+    # a module wins), by its SHA-256: the corpus manifest says which release that is.
+    apworlds = {}
+    for game, module in games.items():
+        path = os.path.join(worlds, f'{module}.apworld') if module else ''
+        if game in tables and path and os.path.isfile(path):
+            with open(path, 'rb') as src:
+                apworlds[game] = {'module': module, 'sha256': hashlib.sha256(src.read()).hexdigest()}
     with open(os.path.join(names_dir, '_load_report.json'), 'w', encoding='utf-8') as f:
-        json.dump({'written': written, 'games': games, 'failed': failed, 'errors': errors, 'names_error': answer.get('error')}, f, indent=1)
+        json.dump({'written': written, 'games': games, 'failed': failed, 'errors': errors, 'names_error': answer.get('error'), 'apworlds': apworlds}, f, indent=1)
     print(f'wrote {written} name tables; load report in {names_dir}', flush=True)
     for name, why in errors.items():
         print('  failed:', name, '-', (why.get('error') or '')[:140], flush=True)

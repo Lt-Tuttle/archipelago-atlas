@@ -755,25 +755,21 @@ namespace AP_Atlas.Core
 
         private void ShowPackCandidates(List<(string Game, List<PackCandidate> Candidates, string Problem)> results, int wanted)
         {
-            var dialog = _candidatesDialog = new AcceptDialog { Title = "Map packs on GitHub", OkButtonText = "Close", MinSize = new Vector2I(760, 520) };
-            var scroll = new ScrollContainer { CustomMinimumSize = new Vector2(720, 460), HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
+            var dialog = _candidatesDialog = new AcceptDialog { Title = "Map packs on GitHub", OkButtonText = "Close" };
+            var scroll = new ScrollContainer { CustomMinimumSize = new Vector2(740, 420), HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
             var box = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            box.AddThemeConstantOverride("separation", 10);
+            box.AddThemeConstantOverride("separation", 8);
             scroll.AddChild(box);
             dialog.AddChild(scroll);
-            box.AddChild(new Label
-            {
-                Text = "GitHub's search results. Nothing is installed until you choose a pack. Packs are made by the community: check who made it before installing.",
-                AutowrapMode = TextServer.AutowrapMode.WordSmart,
-                CustomMinimumSize = new Vector2(680, 0)
-            });
+            // A row per project, a few words each (round 13, "don't be wordy"): a badge, the project, its stars and date, what the
+            // pack lab found; its description and the lab's sentences in its tooltip.
             foreach (var (game, candidates, problem) in results)
             {
-                var heading = new Label { Text = game };
+                var header = new HBoxContainer();
+                header.AddThemeConstantOverride("separation", 12);
+                var heading = new Label { Text = game, SizeFlagsHorizontal = SizeFlags.ExpandFill };
                 heading.AddThemeColorOverride("font_color", ThemeColors.AccentText(ThemeColors.Surface));
-                box.AddChild(heading);
-                if (problem != null) box.AddChild(Muted($"GitHub couldn't be searched: {problem}"));
-                else if (candidates.Count == 0) box.AddChild(Muted("No map packs found on GitHub. Packs are often shared in the game's Archipelago Discord thread; install one from its zip with Install pack (zip)… under All map packs, at the foot of the Games list."));
+                header.AddChild(heading);
                 if (candidates.Count > 0)
                 {
                     string pickGame = game;
@@ -782,68 +778,82 @@ namespace AP_Atlas.Core
                     {
                         Text = "Install the one that fits",
                         TooltipText = "Atlas tries these projects' newest releases against the game's names (the guide's project first, then by stars) and installs the first that fits; the rest are deleted",
-                        SizeFlagsHorizontal = SizeFlags.ShrinkBegin
+                        SizeFlagsHorizontal = SizeFlags.ShrinkEnd
                     };
                     pick.SetMeta("pick_pack", game);
                     pick.Pressed += () => PickForGame(pickGame, found);
-                    box.AddChild(pick);
+                    header.AddChild(pick);
                 }
-                foreach (var c in candidates)
-                {
-                    var row = new HBoxContainer();
-                    row.AddThemeConstantOverride("separation", 8);
-                    string updated = c.Updated.HasValue ? $" · updated {c.Updated.Value.ToLocalTime():yyyy-MM-dd}" : "";
-                    string fork = c.Fork ? " · a fork" : "";
-                    var info = new Label
-                    {
-                        Text = $"{c.Repo}  ★{c.Stars}{updated}{fork}" + (string.IsNullOrWhiteSpace(c.Description) ? "" : "\n" + c.Description),
-                        AutowrapMode = TextServer.AutowrapMode.WordSmart,
-                        SizeFlagsHorizontal = SizeFlags.ExpandFill
-                    };
-                    // The game's own guide names it, or Atlas's game list measured it: said above the project, in the accent, so it's the first thing read.
-                    string note = c.Recommended ? "Recommended by the game's setup guide"
-                        : c.IndexFit is int fit ? $"In Atlas's game list: fits {fit}% of the game's checks" + (string.IsNullOrEmpty(c.IndexChecks) ? "" : $" ({c.IndexChecks})")
-                        : c.IndexListed || c.IndexChecks != null || c.IndexFit != null ? "In Atlas's game list" : null;
-                    if (note != null)
-                    {
-                        var column = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-                        column.AddThemeConstantOverride("separation", 2);
-                        var recommended = new Label { Text = note };
-                        if (c.Recommended) recommended.SetMeta("recommended_pack", c.Repo);
-                        else recommended.SetMeta("listed_pack", c.Repo);
-                        recommended.AddThemeColorOverride("font_color", ThemeColors.AccentText(ThemeColors.Surface));
-                        column.AddChild(recommended);
-                        // What the pack lab found about it (another version, another game, scripts that stop), before the project.
-                        foreach (string sentence in c.NoteSentences())
-                        {
-                            var lab = new Label { Text = sentence, AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill };
-                            lab.SetMeta("pack_note", c.Repo);
-                            lab.AddThemeColorOverride("font_color", ThemeColors.Warning);
-                            column.AddChild(lab);
-                        }
-                        column.AddChild(info);
-                        row.AddChild(column);
-                    }
-                    else row.AddChild(info);
-                    string repo = c.Repo, g = game, page = c.HtmlUrl;
-                    var install = new Button { Text = "Install…", TooltipText = "See what would be downloaded, then confirm" };
-                    install.SetMeta("candidate_repo", repo);
-                    install.Pressed += () => InstallFromRepo(g, repo);
-                    row.AddChild(install);
-                    if (page != null)
-                    {
-                        var view = new Button { Text = "Open ↗", TooltipText = "Open the project on GitHub in your browser" };
-                        view.Pressed += () => AP_Atlas.Core.ExternalLinks.OpenWeb(page);
-                        row.AddChild(view);
-                    }
-                    box.AddChild(row);
-                }
+                box.AddChild(header);
+                if (problem != null) box.AddChild(Muted($"GitHub couldn't be searched: {problem}"));
+                else if (candidates.Count == 0) box.AddChild(Muted("None found on GitHub. A pack shared on Discord installs with Install pack (zip)… under All map packs."));
+                foreach (var c in candidates) box.AddChild(CandidateRow(game, c));
             }
-            if (results.Count < wanted) box.AddChild(Muted("GitHub's search limit was reached before every game was searched. Search again in a minute for the rest."));
+            if (results.Count < wanted) box.AddChild(Muted("GitHub's search limit was reached: search again in a minute for the rest."));
+            box.AddChild(Muted("Community packs: nothing is installed until you choose one."));
             dialog.Confirmed += () => dialog.QueueFree();
             dialog.Canceled += () => dialog.QueueFree();
             AddChild(dialog);
-            dialog.PopupCentered();
+            AP_Atlas.UI.WindowFit.Pop(dialog, 780, 560);
+        }
+
+        /// <summary>One project of the results: its badge (Guide's pick, Fits N%), name, stars and date, the lab's findings in a word or two, Install… and Open ↗.</summary>
+        private Control CandidateRow(string game, PackCandidate c)
+        {
+            var row = new HBoxContainer { MouseFilter = MouseFilterEnum.Pass };
+            row.AddThemeConstantOverride("separation", 10);
+            var tip = new List<string> { c.Repo };
+            if (!string.IsNullOrWhiteSpace(c.Description)) tip.Add(c.Description);
+            if (c.Recommended) tip.Add("The game's own setup guide links this project as its tracker.");
+            if (c.IndexFit is int measured) tip.Add($"Atlas's game list: it fits {measured}% of the game's checks" + (string.IsNullOrEmpty(c.IndexChecks) ? "." : $" ({c.IndexChecks})."));
+            tip.AddRange(c.NoteSentences());
+            row.TooltipText = string.Join("\n", tip);
+            string badge = c.Recommended ? "Guide's pick" : c.IndexFit is int fit ? $"Fits {fit}%" : c.IndexListed || c.IndexChecks != null ? "Listed" : "";
+            var mark = new Label { Text = badge, CustomMinimumSize = new Vector2(104, 0) };
+            if (badge.Length > 0) mark.SetMeta(c.Recommended ? "recommended_pack" : "listed_pack", c.Repo);
+            mark.AddThemeColorOverride("font_color", ThemeColors.AccentText(ThemeColors.Surface));
+            row.AddChild(mark);
+            var column = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            column.AddThemeConstantOverride("separation", 0);
+            column.AddChild(new Label { Text = c.Repo, ClipText = true, TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis, SizeFlagsHorizontal = SizeFlags.ExpandFill });
+            var facts = new List<string> { $"★{c.Stars}" };
+            if (c.Updated.HasValue) facts.Add($"{c.Updated.Value.ToLocalTime():yyyy-MM-dd}");
+            if (c.Fork) facts.Add("fork");
+            var line = new HBoxContainer();
+            line.AddThemeConstantOverride("separation", 10);
+            var info = AP_Atlas.UI.Kit.Subtle(string.Join(" · ", facts));
+            info.AutowrapMode = TextServer.AutowrapMode.Off;
+            info.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
+            line.AddChild(info);
+            var labels = AP_Atlas.Core.Games.IndexPackNotes.Labels(c.IndexNotes, c.IndexForGame, c.IndexNamedGame);
+            if (labels.Count > 0)
+            {
+                var lab = new Label { Text = string.Join(" · ", labels) };
+                lab.SetMeta("pack_note", c.Repo);
+                lab.AddThemeColorOverride("font_color", ThemeColors.Warning);
+                line.AddChild(lab);
+            }
+            column.AddChild(line);
+            row.AddChild(column);
+            string repo = c.Repo, page = c.HtmlUrl;
+            var install = new Button { Text = "Install…", TooltipText = "See what would be downloaded, then confirm" };
+            install.SetMeta("candidate_repo", repo);
+            install.Pressed += () => InstallFromRepo(game, repo);
+            row.AddChild(install);
+            if (page != null)
+            {
+                var view = new Button { Text = "Open ↗", TooltipText = "Open the project on GitHub in your browser" };
+                view.Pressed += () => AP_Atlas.Core.ExternalLinks.OpenWeb(page);
+                row.AddChild(view);
+            }
+            return row;
+        }
+
+        /// <summary>The results dialog for made-up results (the visual check's picture); nothing is asked of GitHub.</summary>
+        internal AcceptDialog ShowPackCandidatesForTests(List<(string Game, List<PackCandidate> Candidates, string Problem)> results)
+        {
+            ShowPackCandidates(results, results.Count);
+            return _candidatesDialog;
         }
 
         private static Label Muted(string text)

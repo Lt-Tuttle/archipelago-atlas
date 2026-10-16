@@ -50,7 +50,7 @@ namespace AP_Atlas.UI
             {
                 GameStanding.EngineFirst => (_tr("Set up the Atlas Engine first"),
                     _tr("Atlas runs a game's logic in its engine.") + (part.Items.Count > 0 ? " " + _tr("Once it's set up, Install this game gets {0}.").Replace("{0}", words) : "")),
-                GameStanding.Add => (_tr("Install this game"), _tr("Installing it gets {0}.").Replace("{0}", words) + " " + DownloadLine(plan)),
+                GameStanding.Add => (_tr("Install this game"), _tr(AddGamesPlan.Explain(part)) + " " + DownloadLine(plan)),
                 GameStanding.Ready => (_tr("Ready to play"), logic + " " + _tr("Map pack: {0}.").Replace("{0}", ChosenPack(game)?.Name ?? "")),
                 GameStanding.ReadyNoMap => (_tr("Ready to play, without a map"), logic + " " + NoMapLine(game)),
                 _ => (_tr("Atlas can't install this game yet"),

@@ -13,9 +13,9 @@ Development toward the first public beta, 0.1.0.
 - **Install games…** at the top of the Games list, always; and an **Installed** group under "In your multiworlds" (games whose logic Atlas installed or whose map pack is installed, even partly).
 - **Add games** (the owner's "adding games, simply"): one screen adds the games you play.
   - **The list.** Every game Atlas knows, with a check box. The games of your multiworlds come first, ticked where they need something, and each row says what adding it gets and its download. Under the list: the total download and what it takes on this PC, saying how many files don't list their size.
-  - **One question** names every project the downloads come from (pressing Download and install trusts them) and offers **Don't ask again for Atlas's downloads**.
+  - **One question** names every project the downloads come from (pressing Install trusts them) and offers **Don't ask again for Atlas's downloads**.
   - **One bar** while Atlas installs; Atlas stays usable, and Cancel stops after the step it's on.
-  - **A summary per game,** with Find one on GitHub… and Start a pack… where no map pack is known, and Try those again.
+  - **A summary per game,** with Find one… where no map pack is known, and Try those again.
   - **One question about the packs the Pack Doctor wants looked at:** a preview of every change for all of them, one click to link the confident matches and set the rest aside (Undo per pack), and the few things only you can decide each a Review button away. Later changes nothing.
   - **Where it opens:** Home (beside New… and Paste a room link…, and beside Add a multiworld… on a first start), the Games overview, a game's page, the Map Tracker's empty state (**Get a map pack for <game>…** when Atlas's game list knows one), Add a slot (**Add this game…**, in place of Install the newest apworld…) and the Logic Tracker's banner (**Add this game…** when the game's logic is missing), each with the game ticked. When the Atlas Engine isn't set up, it says so first.
   - **The first map Atlas shows** says how to fix a pin or tile where you see it (Got it puts the tip away for good).
@@ -200,6 +200,9 @@ Development toward the first public beta, 0.1.0.
   - The UI test checks that every command is in a menu with its key shown, that the keys and a rebind work at once, and that the menu bar never runs a stale key itself.
 
 ### Changed
+- **Install games without walls of text** (round 13, the owner's rule "don't be wordy"): the list says a few words per game ("logic + map", "logic + the guide's map") with the sentence in the cell's tooltip, in a wider dialog so nothing is cut; the confirm is "Install N games · size", a line per game and "From N projects" (the projects and what installing trusts in its tooltip), and the tick; the summary is a line per game with one number per item (logic 1.2.0, map 1129/1150, 35 fixes with Review), the details in tooltips. Map packs on GitHub: a badge per project (Guide's pick, Fits 97%) and one line of facts; the description and the pack lab's notes in the tooltip.
+- **Install games installs the apworld version a game's map pack was measured on** (Atlas's game list records it per pack, a pre-release too), else the newest full release; the row's tooltip says which and why. A map that pins under three quarters of the game's checks is flagged in the summary, with **Find the version that fits…**.
+- **Dots that move while Atlas works**, beside the step in Install games and in engine runs, while a step runs without the bar moving (the engine's check, the map packs' checks); the bar also moves per pack while the packs are checked.
 - Add games is now **Install games** (a game's page: Install this game…; the list's foot: Add a game by its project link…).
 - Game names match across spellings (accents, "/", "&" or "and", Roman numerals): a pack whose manifest says "Pokémon FireRed and LeafGreen" is FireRed and LeafGreen's.
 - Install games keeps GitHub's requests for the pack a game's setup guide names when Atlas's list has none, so the one question covers it.
@@ -340,6 +343,8 @@ Development toward the first public beta, 0.1.0.
   - An image you choose for a Pack Doctor fix is checked the same way before it's copied.
 
 ### Fixed
+- Install games found no map pack for Ship of Harkinian while Find a map pack… found the one its setup guide names: Atlas's list had that project only as a copy it can't download. Such a copy now counts as none, and the guide's project is read on GitHub; the game list's build keeps the downloadable record when one file is listed twice.
+- Install games' summary said "Logic: added." with no version for a game that ships with Archipelago (it says Archipelago's version now), and "1593 are left for you on the map's Notices" for Dark Souls II, one per unlinked pin section; it now says how many of the game's checks have a pin. The pack card's count of what's left is gone too, for the same reason.
 - Save on the Multiworlds page left the SLOTS list showing the old names; a connected slot can no longer be renamed under its connection.
 - A pack installed for a game whose name it spells another way showed under "Matching no game Atlas lists" and couldn't load for the game's slots.
 - Undoing the Pack Doctor's automatic links let its next check make them again.

@@ -11,7 +11,8 @@ namespace AP_Atlas.UI
 {
     /// <summary>
     /// One run of an Atlas Engine operation as the user sees it (the setup, a repair, a health check): the step it's on in
-    /// plain words, one bar for the whole run that never goes down, and the outcome (Ready, or why it stopped). The short
+    /// plain words, one bar for the whole run that never goes down with dots beside it that move while a step runs with no bar
+    /// movement of its own (round 13: a long check never looks frozen), and the outcome (Ready, or why it stopped). The short
     /// setup panel, the setup window's rail and the Atlas Engine page each show one of these. pip's and Python's own lines
     /// never show here; they go to <see cref="Log"/> (and <see cref="LineLogged"/>), for the Atlas Engine page's log.
     /// </summary>
@@ -21,6 +22,9 @@ namespace AP_Atlas.UI
         private readonly Label _step = new();
         private readonly ProgressBar _progress = new() { MaxValue = 1, Step = 0.001, ShowPercentage = true, CustomMinimumSize = new Vector2(0, 18) };
         private readonly Label _outcome = new();
+        private readonly HBoxContainer _progressRow = new();
+        private readonly BusyDots _busy;
+        private readonly ProgressDots _dots = new(); // the raw high-water fraction, not the bar's rounded value
         private readonly List<string> _log = new();
         private CancellationTokenSource? _cts;
 
@@ -30,6 +34,8 @@ namespace AP_Atlas.UI
         public double ProgressValue => _progress.Value;
         /// <summary>The outcome line (Ready, or why it stopped), empty while running (for tests).</summary>
         public string OutcomeText => _outcome.Text;
+        /// <summary>Whether the busy dots run (for tests).</summary>
+        public bool BusyRunning => _busy.Running;
         public bool Running { get; private set; }
         /// <summary>Whether the last run finished (false before any run, while one runs, or after a failed one).</summary>
         public bool Succeeded { get; private set; }
@@ -52,8 +58,14 @@ namespace AP_Atlas.UI
             _step.AutowrapMode = TextServer.AutowrapMode.WordSmart;
             _step.CustomMinimumSize = new Vector2(wrapWidth, 0);
             AddChild(_step);
-            _progress.Visible = false;
-            AddChild(_progress);
+            // The bar, and the dots beside it. The row hides as a whole, so an idle panel keeps no gap.
+            _busy = new BusyDots(tr("Working"));
+            _progressRow.AddThemeConstantOverride("separation", 8);
+            _progress.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+            _progressRow.AddChild(_progress);
+            _progressRow.AddChild(_busy);
+            _progressRow.Visible = false;
+            AddChild(_progressRow);
             _outcome.AutowrapMode = TextServer.AutowrapMode.WordSmart;
             _outcome.CustomMinimumSize = new Vector2(wrapWidth, 0);
             _outcome.Visible = false;
@@ -92,7 +104,9 @@ namespace AP_Atlas.UI
             var ct = _cts.Token;
             _outcome.Visible = false;
             _progress.Value = 0;
-            _progress.Visible = true;
+            _dots.Reset();
+            _progressRow.Visible = true;
+            _busy.Running = true;
             _step.Text = _tr("Starting…");
             _step.AddThemeColorOverride("font_color", ThemeColors.Text);
             RunChanged?.Invoke(true);
@@ -100,6 +114,8 @@ namespace AP_Atlas.UI
             void OnProgress(AtlasEngine.SetupProgress p) => Ui.Defer(this, () =>
             {
                 if (p.Text != null) _step.Text = p.Steps > 0 ? _tr("Step {0} of {1}: {2}").Replace("{0}", p.Step.ToString()).Replace("{1}", p.Steps.ToString()).Replace("{2}", p.Text) : p.Text;
+                // A step begins with the dots; the bar moving within it (a download) stops them.
+                if (Running) _busy.Running = _dots.Step(p.Text, p.Fraction);
                 if (p.Fraction >= 0) _progress.Value = Math.Max(_progress.Value, p.Fraction);
             });
             AtlasEngine.SetupProgressed += OnProgress;
@@ -108,7 +124,11 @@ namespace AP_Atlas.UI
                 lock (_log) _log.Add(line);
                 Ui.Defer(this, () => LineLogged?.Invoke(line));
             }
-            void progress(float f) => Ui.Defer(this, () => { if (f >= 0) _progress.Value = Math.Max(_progress.Value, f); });
+            void progress(float f) => Ui.Defer(this, () =>
+            {
+                if (Running) _busy.Running = _dots.Bar(f);
+                if (f >= 0) _progress.Value = Math.Max(_progress.Value, f);
+            });
             Async.Fire(Task.Run(async () =>
             {
                 bool ok;
@@ -122,7 +142,8 @@ namespace AP_Atlas.UI
                 {
                     Running = false;
                     Succeeded = ok;
-                    _progress.Visible = false;
+                    _progressRow.Visible = false;
+                    _busy.Running = false;
                     if (ok)
                     {
                         _step.Text = _tr("Ready.");

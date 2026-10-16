@@ -102,13 +102,27 @@ public partial class MainTrackerWindow
         OpenAddGames();
         await VisualCheckWaitForAsync(() => AP_Atlas.UI.AddGamesDialog.Showing?.Panel.FactsPending == 0, 15);
         await VisualCheckPictureAsync("add_games");
-        // Its summary for a made-up batch (three games; Atlas fixed one pack by itself and left another's rows to the user); nothing is read, downloaded or changed.
+        // Its confirm for a made-up plan (two apworlds, an official game, a guide's pack), a step of a made-up run with the dots
+        // (held still: a moving dot would differ from run to run), and the summary of a made-up batch; nothing is read, downloaded or changed.
+        AP_Atlas.UI.AddGamesDialog.Showing?.Panel.ShowConfirmForTests(VisualCheckConfirmSample());
+        await VisualCheckWaitAsync(0.6);
+        await VisualCheckPictureAsync("add_games_confirm");
+        AP_Atlas.UI.AddGamesDialog.Showing?.Panel.ShowRunningForTests(3, new AP_Atlas.Core.Games.AddGamesStatus("Game 2 of 3: Downloading Example Saga's logic…", 0.38f));
+        await VisualCheckWaitAsync(0.6);
+        await VisualCheckPictureAsync("add_games_running");
         AP_Atlas.UI.AddGamesDialog.Showing?.Panel.ShowSummaryForTests(VisualCheckSummarySample());
         await VisualCheckWaitAsync(0.6);
         await VisualCheckPictureAsync("add_games_summary");
         AP_Atlas.UI.AddGamesDialog.Showing?.QueueFree();
         await VisualCheckWaitAsync(0.3);
         await VisualCheckWindowAsync("review_fixes", () => AP_Atlas.UI.ReviewFixesDialog.Show(this, Tr("What Atlas fixed in Sample Quest map"), VisualCheckReviewSample, _ => { }, _ => { }));
+        // Map packs on GitHub for made-up results, from the Games page where the search shows it (nothing is asked of GitHub).
+        host.ShowTool(AP_Atlas.UI.Tool.Games);
+        AcceptDialog? candidates = null;
+        await VisualCheckWindowAsync("map_packs_github", () => candidates = _packManagerPanel.ShowPackCandidatesForTests(VisualCheckCandidatesSample()));
+        candidates?.QueueFree(); // it's the pack panel's child, not the window's
+        host.ShowTool(AP_Atlas.UI.Tool.Connections);
+        await VisualCheckWaitAsync(0.3);
 
         // The Atlas Engine page with its Advanced part open (which engine, its parts, the log); nothing goes online.
         ShowEnginePage(System.Array.Empty<string>());
@@ -179,21 +193,62 @@ public partial class MainTrackerWindow
         for (double waited = 0; waited < seconds && !done(); waited += 0.1) await VisualCheckWaitAsync(0.1);
     }
 
-    /// <summary>A made-up batch for the summary's picture: a game with the guide's pack, one from the list's best fit, one with no pack known.</summary>
+    /// <summary>
+    /// A made-up batch for the summary's picture: a game with the guide's pack, one whose pack pins few of its checks (another
+    /// version's), an official game (Archipelago's version), one with no pack known.
+    /// </summary>
     private static AP_Atlas.Core.EngineSetup.GameAdderRun VisualCheckSummarySample()
     {
-        var o = new AP_Atlas.Core.Games.AddGamesOutcome(new[] { ("Sample Quest", true, true), ("Example Saga", true, true), ("Demo Odyssey", true, true) });
+        var o = new AP_Atlas.Core.Games.AddGamesOutcome(new[] { ("Sample Quest", true, true), ("Example Saga", true, true), ("Model Kingdom", true, true), ("Demo Odyssey", true, true) });
         o.For("Sample Quest").Logic = AP_Atlas.Core.Games.AddStep.Done("2.1.0");
         o.For("Sample Quest").Map = AP_Atlas.Core.Games.AddStep.Done("github.com/sample/quest-tracker v2.0");
         o.For("Sample Quest").PackFromGuide = true;
         o.For("Example Saga").Logic = AP_Atlas.Core.Games.AddStep.Done("0.9.3");
         o.For("Example Saga").Map = AP_Atlas.Core.Games.AddStep.Done("github.com/example/saga-map v1.4");
+        o.For("Model Kingdom").Logic = AP_Atlas.Core.Games.AddStep.Done("0.6.7");
+        o.For("Model Kingdom").LogicShips = true;
+        o.For("Model Kingdom").Map = AP_Atlas.Core.Games.AddStep.Done("github.com/model/kingdom-map v3");
         o.For("Demo Odyssey").Logic = AP_Atlas.Core.Games.AddStep.Done("1.0.0");
         o.For("Demo Odyssey").Map = AP_Atlas.Core.Games.AddStep.Unavailable("no map pack is known for it yet");
-        o.PacksToLook.Add(new AP_Atlas.Core.Games.PackToLook("Sample Quest", "sample quest map", "Sample Quest map", "Sample Quest map.zip", 12, 3));
-        o.PacksToLook.Add(new AP_Atlas.Core.Games.PackToLook("Example Saga", "example saga tracker", "Example Saga tracker", "Example Saga tracker.zip", 0, 2));
+        o.PacksToLook.Add(new AP_Atlas.Core.Games.PackToLook("Sample Quest", "sample quest map", "Sample Quest map", "Sample Quest map.zip", 12, 1129, 1150));
+        o.PacksToLook.Add(new AP_Atlas.Core.Games.PackToLook("Example Saga", "example saga tracker", "Example Saga tracker", "Example Saga tracker.zip", 35, 31, 1288));
+        o.PacksToLook.Add(new AP_Atlas.Core.Games.PackToLook("Model Kingdom", "model kingdom map", "Model Kingdom map", "Model Kingdom map.zip", 0, 420, 420));
         return new AP_Atlas.Core.EngineSetup.GameAdderRun(o);
     }
+
+    /// <summary>A made-up plan for the confirm's picture: a community game with its pack, one whose guide's pack is read once its logic is in, an official game.</summary>
+    private static AP_Atlas.Core.Games.AddPlan VisualCheckConfirmSample() => AP_Atlas.Core.Games.AddGamesPlan.Make(new[]
+    {
+        new AP_Atlas.Core.Games.AddGameFacts
+        {
+            Game = "Sample Quest",
+            Versions = new[] { new AP_Atlas.Core.Games.IndexVersionFacts("2.1.0", "https://github.com/sample/quest-apworld/releases/download/v2.1.0/sample_quest.apworld", "aa", 380_000) },
+            Packs = new[] { new AP_Atlas.Core.Games.IndexPackFacts("sample/quest-tracker", "v1.4", "tracker.zip", "bb", 2_100_000, 97, System.Array.Empty<string>()) }
+        },
+        new AP_Atlas.Core.Games.AddGameFacts
+        {
+            Game = "Example Saga",
+            Versions = new[] { new AP_Atlas.Core.Games.IndexVersionFacts("0.9.3", "https://github.com/example/saga-apworld/releases/download/v0.9.3/example_saga.apworld", "cc", 1_250_000) }
+        },
+        new AP_Atlas.Core.Games.AddGameFacts
+        {
+            Game = "Demo Odyssey",
+            Official = true,
+            WorldsToUnpack = new[] { new AP_Atlas.Core.Games.WorldFolderFacts("demo_odyssey", 2_400_000, false) },
+            Packs = new[] { new AP_Atlas.Core.Games.IndexPackFacts("demo/odyssey-map", "v2", "odyssey.zip", "dd", 900_000, 92, System.Array.Empty<string>()) }
+        }
+    }, new AP_Atlas.Core.Games.AddContext { WorldsZipBytes = 22_424_521 });
+
+    /// <summary>Made-up search results for the picture of Map packs on GitHub: the guide's pick, a measured one, a fork for another version.</summary>
+    private static List<(string Game, List<AP_Atlas.Core.MapPackManagerControl.PackCandidate> Candidates, string? Problem)> VisualCheckCandidatesSample() => new()
+    {
+        ("Sample Quest", new List<AP_Atlas.Core.MapPackManagerControl.PackCandidate>
+        {
+            new() { Repo = "sample/quest-tracker", Description = "PopTracker pack for Sample Quest", Stars = 42, Updated = new System.DateTime(2026, 9, 30), Recommended = true },
+            new() { Repo = "fan/quest-map", Description = "Maps and items", Stars = 17, Updated = new System.DateTime(2026, 8, 12), IndexFit = 97, IndexChecks = "1116 of 1150", IndexListed = true },
+            new() { Repo = "fork/quest-map", Description = "A fork for the old apworld", Stars = 2, Updated = new System.DateTime(2025, 12, 1), Fork = true, IndexFit = 31, IndexListed = true, IndexNotes = { "other_version" } }
+        }, null)
+    };
 
     /// <summary>Three made-up fixes Atlas made by itself, for the picture of Review fixes.</summary>
     private static IReadOnlyList<AP_Atlas.Core.PopTracker.PackChange> VisualCheckReviewSample() => new[]

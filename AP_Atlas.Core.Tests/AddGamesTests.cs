@@ -21,8 +21,16 @@ public sealed class AddGamesTests
         }
         Assert.Equal(0f, seen[0]);
         Assert.Equal(seen.OrderBy(f => f), seen);
-        Assert.Equal(40f / 41f, seen[^1], 3); // apworld 2, engine 8+22, names 2, packs 4+1, doctor 2: halfway into the Doctor's share
+        Assert.Equal(43f / 47f, seen[^1], 3); // apworld 2, engine 8+22, names 2, packs 4+1, doctor 2×4: halfway into the Doctor's share
         Assert.Equal(1f, bar.Complete());
+    }
+
+    [Fact]
+    public void A_download_moves_the_bar_until_its_last_byte_and_then_the_dots_come_back()
+    {
+        Assert.True(AddGamesStatus.Download("Downloading X's map pack…", 0.4f, 10, 50).BarMoves);
+        Assert.False(AddGamesStatus.Download("Downloading X's map pack…", 0.5f, 50, 50).BarMoves); // the check and install that follow
+        Assert.False(new AddGamesStatus("a step", 0.1f).BarMoves);
     }
 
     [Fact]
@@ -40,7 +48,7 @@ public sealed class AddGamesTests
     {
         var bar = AddGamesProgress.For(new[] { new AddGamesProgress.GameWork(true, 9 * Mb, true, 0) }, engine: false, worldsDownloadBytes: 0);
         Assert.Equal(3, bar.Parts); // no engine: no engine part, no names part
-        Assert.Equal(9f / 11f, bar.Enter(AddGamesProgress.PackPart(0)).Fraction, 3);
+        Assert.Equal(9f / 14f, bar.Enter(AddGamesProgress.PackPart(0)).Fraction, 3);
     }
 
     [Fact]
