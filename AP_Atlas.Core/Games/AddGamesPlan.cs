@@ -146,6 +146,7 @@ public enum AddRow
     LogicAndMap,
     Logic,
     LogicNoMapKnown,
+    LogicMapFromGuide,
     Map,
     MapLogicShips,
     NoMapKnown,
@@ -158,8 +159,17 @@ public enum AddRow
 /// <summary>One game's part of the add.</summary>
 public sealed record GamePlan(string Game, AddRow Row, IReadOnlyList<AddItem> Items)
 {
-    /// <summary>The pack is picked again after the logic is in (the game's guide can be read then; Atlas's list only, no GitHub read).</summary>
+    /// <summary>
+    /// The pack is picked again after the logic is in (the game's guide can be read then): its pack from Atlas's list, else, when
+    /// <see cref="GuideLookupReserved"/>, the project the guide names, read from GitHub.
+    /// </summary>
     public bool RepickPackAfterLogic { get; init; }
+
+    /// <summary>
+    /// GitHub's requests for the project the game's guide may name are kept in the plan (Atlas's list has no pack for it, and the
+    /// guide can be read only once the logic is in), so the one confirm covers them (round 12: FireRed's tracker isn't in the list).
+    /// </summary>
+    public bool GuideLookupReserved { get; init; }
 
     /// <summary>No map pack for the game is installed: adding it looks for one (the plan's pick, or one picked again after the logic is in).</summary>
     public bool WantsPack { get; init; }
@@ -320,9 +330,13 @@ public static class AddGamesPlan
     public static AddPackNote GuideNote(IReadOnlyList<IndexPackFacts> packs, IReadOnlyList<string> guideRepos, PackPick? pick, bool mayReadProjects)
     {
         if (pick?.Reason is PackReason.Guide or PackReason.GuideProject) return AddPackNote.None;
-        bool unlisted = guideRepos.Any(r => IsRepo(r) && !packs.Any(p => SameRepo(p.Repo, r)));
+        bool unlisted = GuideUnlistedRepo(packs, guideRepos) != null;
         return !unlisted ? AddPackNote.None : mayReadProjects ? AddPackNote.GuideNotListedBudgetSpent : AddPackNote.GuideNotListedNoLookup;
     }
+
+    /// <summary>The first project the guide names that Atlas's list lacks (null for none).</summary>
+    public static string? GuideUnlistedRepo(IReadOnlyList<IndexPackFacts> packs, IReadOnlyList<string> guideRepos) =>
+        guideRepos.FirstOrDefault(r => IsRepo(r) && !packs.Any(p => SameRepo(p.Repo, r)));
 
     private static bool Usable(IndexPackFacts pack) => pack.Fit == null || pack.Fit >= PackProjectPick.CloseEnough * 100;
 
@@ -335,6 +349,7 @@ public static class AddGamesPlan
     {
         int left = GitHubBudget;
         var plans = new List<GamePlan>();
+        var guideCandidates = new List<int>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var facts in games)
         {
@@ -400,7 +415,17 @@ public static class AddGamesPlan
                 : logicComing ? (packComing ? (facts.Official ? AddRow.MapLogicShips : AddRow.LogicAndMap) : facts.PackInstalled ? AddRow.Logic : AddRow.LogicNoMapKnown)
                 : packComing ? (facts.Official ? AddRow.MapLogicShips : AddRow.Map)
                 : facts.PackInstalled ? AddRow.Ready : AddRow.NoMapKnown;
-            plans.Add(new GamePlan(facts.Game, row, items) { RepickPackAfterLogic = logicComing && !facts.GuideRead && !facts.PackInstalled, WantsPack = !facts.PackInstalled });
+            bool repick = logicComing && !facts.GuideRead && !facts.PackInstalled;
+            plans.Add(new GamePlan(facts.Game, row, items) { RepickPackAfterLogic = repick, WantsPack = !facts.PackInstalled });
+            if (repick && row == AddRow.LogicNoMapKnown) guideCandidates.Add(plans.Count - 1);
+        }
+        // The requests for the project a guide may name come last: a listed pack or a release list the plan is sure of never
+        // waits behind a guess (round 12: FireRed's tracker isn't in the list; its guide is read once its logic is in).
+        foreach (int i in guideCandidates)
+        {
+            if (left < LivePackRequests) break;
+            left -= LivePackRequests;
+            plans[i] = plans[i] with { Row = AddRow.LogicMapFromGuide, GuideLookupReserved = true };
         }
 
         var all = plans.SelectMany(p => p.Items).ToList();
@@ -420,7 +445,7 @@ public static class AddGamesPlan
             DiskBytes = disk,
             UnknownSizes = all.Count(i => i.SizeUnknown) + (release && releaseBytes == 0 ? 1 : 0),
             GitHubRequests = GitHubBudget - left,
-            NeedsGitHubLookups = all.Any(i => i.Live),
+            NeedsGitHubLookups = all.Any(i => i.Live) || plans.Any(p => p.GuideLookupReserved),
             ApworldProjects = apworldProjects,
             ProjectsToTrust = apworldProjects.Where(p => !trusted.Contains(p)).ToList(),
             PackProjects = all.Where(i => i.Kind == AddItemKind.Pack).Select(i => "github.com/" + i.Repo).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
@@ -461,6 +486,7 @@ public static class AddGamesPlan
         AddRow.LogicAndMap => "logic and map",
         AddRow.Logic => "logic (its map pack is installed)",
         AddRow.LogicNoMapKnown => "logic (no map pack is known yet)",
+        AddRow.LogicMapFromGuide => "logic, then the map pack its setup guide names, if it names one",
         AddRow.Map => "map (its logic is installed)",
         AddRow.MapLogicShips => "map (its logic ships with Archipelago)",
         AddRow.NoMapKnown => "ready, but no map pack is known yet",

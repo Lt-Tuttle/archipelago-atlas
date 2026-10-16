@@ -134,7 +134,7 @@ public class AppSettings
     /// <summary>When a seed was made with another apworld version and logic doesn't match it, try up to three known versions from trusted projects and use the seed's (SeedVersionRule).</summary>
     public bool AutoFixApworldVersions { get; set; } = true;
 
-    /// <summary>The Pack Doctor links a pack's exact name matches (tiles and pins) by itself on the pack's first check.</summary>
+    /// <summary>Atlas makes a map pack's confident fixes (exact or 85%+, no clash) by itself on its first check per version.</summary>
     public bool PackDoctorAutoLink { get; set; } = true;
 
     /// <summary>Optional URL of a newer apworld source list (Atlas's format). Empty: the bundled list and GitHub releases.</summary>

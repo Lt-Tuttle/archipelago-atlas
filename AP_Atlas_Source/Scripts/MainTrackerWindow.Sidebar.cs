@@ -258,6 +258,13 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                     // The card outlives the state it was built in: check now.
                     var current = ProfileById(capturedProfileId);
                     if (current == null || _connectingSlots.Contains(SlotKey(capturedProfileId, capturedSlotName))) return;
+                    // A card for a name the multiworld no longer has never connects as it: it says why and the list catches up.
+                    if (!current.Slots.Contains(capturedSlotName))
+                    {
+                        ShowToast(Tr("{0} isn't a slot of {1} any more: the SLOTS list now shows its slots as they are.").Replace("{1}", current.Name).Replace("{0}", capturedSlotName), AP_Atlas.Core.ThemeColors.Warning);
+                        UpdateSidebar();
+                        return;
+                    }
                     var live = ActiveSlotNodes().OfType<SlotTrackerControl>().FirstOrDefault(s => s.ProfileId == capturedProfileId && s.SlotName == capturedSlotName);
                     if (live?.Session?.Socket.Connected == true) return;
                     OnConnectSlotPressed(capturedSlotName, current);

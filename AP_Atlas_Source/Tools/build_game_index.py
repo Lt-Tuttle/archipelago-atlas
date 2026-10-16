@@ -26,6 +26,7 @@ import json
 import os
 import re
 import sys
+import unicodedata
 import zipfile
 from datetime import date
 
@@ -38,6 +39,27 @@ ARCHIPELAGO = '0.6.7'
 # A pack is for another game when this share of its mapping's ids are that game's and few are its own.
 FOR_GAME_SHARE = 0.9
 OWN_GAME_SHARE = 0.1
+ROMAN_WORDS = {'ii': '2', 'iii': '3', 'iv': '4', 'v': '5', 'vi': '6', 'vii': '7', 'viii': '8'}
+
+
+def game_key(name):
+    """GameNameRule.Key (AP_Atlas.Core/Games/GameNameRule.cs), the same rule: accents, case and punctuation don't count, '&', '/',
+    '+' and the word 'and' are left out, Roman numerals II to VIII are their numbers, words kept apart."""
+    words, word = [], []
+    for c in unicodedata.normalize('NFKD', name or ''):
+        cat = unicodedata.category(c)
+        if cat == 'Mn':
+            continue
+        if cat[0] == 'L' or cat == 'Nd':
+            word.append(c.lower())
+            continue
+        if word:
+            words.append(''.join(word))
+            word = []
+    if word:
+        words.append(''.join(word))
+    return ' '.join(ROMAN_WORDS.get(w, w) for w in words if w != 'and')
+
 FOR_GAME_MIN_IDS = 20
 # Another version of the apworld: this share of the mapping's ids aren't the game's, and the pack fits less than this.
 OTHER_VERSION_SHARE = 0.5
@@ -191,8 +213,9 @@ def main():
         findings_by_pack.setdefault(str(row.get('pack', '')).lower(), []).append(row)
     names = load_names(args.corpus)
     with open(os.path.join(DATA, 'archipelago_worlds.json'), encoding='utf-8-sig') as f:
-        official = {g.lower() for info in json.load(f).get('worlds', {}).values() for g in info.get('games', [])}
-    official |= {g.lower() for g in names}
+        official_names = [g for info in json.load(f).get('worlds', {}).values() for g in info.get('games', [])]
+    official_names += [g for g in names]
+    official = {g.lower() for g in official_names}
 
     # Pack fit per pack file, from the corpus check (pin sections linked, of all), by the file's name.
     fit_by_file = {}
@@ -236,6 +259,15 @@ def main():
 
             def file_under(game_name, extra):
                 key = game_name.lower()
+                if key not in games and key not in official:
+                    # Another spelling of a listed game (an accent, '&' for 'and'): filed under it when only one reads that way
+                    # (an official game lives in `official` until it's first filed).
+                    same = {k for k in set(games) | set(official)
+                            if game_key(games[k]['game'] if k in games else k) == game_key(game_name)}
+                    if len(same) == 1:
+                        key = same.pop()
+                        if key in official and key not in games:
+                            game_name = next((g for g in official_names if g.lower() == key), game_name)
                 if key not in games:
                     if key not in official:
                         return False

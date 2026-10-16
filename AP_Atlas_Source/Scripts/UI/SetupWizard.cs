@@ -21,8 +21,8 @@ namespace AP_Atlas.UI
     /// right, with Back, Skip this step and Next: Welcome; The Atlas Engine (only while a downloaded engine isn't set up);
     /// Your multiworld and slots, whose Next saves the multiworld and connects the slots so Atlas learns their games from the
     /// room; Add games (the <see cref="AddGamesPanel"/> on the page, its two actions the footer's); and Ready. Nothing opens
-    /// on top of it: a permission is a row on the page, adding games asks its one question on the page, and the one thing
-    /// that opens on it is the Pack Doctor's preview of every change (Fix them now…). A button that leads elsewhere puts the
+    /// on top of it: a permission is a row on the page, and adding games asks its one question on the page (its summary's
+    /// Review fixes leads elsewhere like any such button). A button that leads elsewhere puts the
     /// window out of the way; Help → Set up Atlas… or Home's Resume brings it back as it was. Resume opens it at the first
     /// step not done or skipped. Not exclusive: Atlas stays usable, and closing it keeps whatever runs (the engine's setup;
     /// an Add games batch, after which the window comes back with its summary).
@@ -52,8 +52,6 @@ namespace AP_Atlas.UI
             // Add games.
             /// <summary>What the Add games screen needs from the window (its AddGamesPanelHooks); the page puts its own ways out in place of those that open something.</summary>
             public required Func<AddGamesPanel.Hooks> AddGames { get; init; }
-            /// <summary>Opens the Pack Doctor on a pack's zip at a tab (a summary's Review…).</summary>
-            public required Action<string, string?> OpenPackDoctor { get; init; }
             // Ready.
             /// <summary>Shows a section of the Settings page ("appearance", "tools", "updates").</summary>
             public required Action<string> ShowSettings { get; init; }
@@ -177,7 +175,7 @@ namespace AP_Atlas.UI
             _back = Kit.Button(_tr("Back"), _tr("The page before; what you typed stays."), () => { if (!_busy) Go(_current - 1); }, flat: true);
             footer.AddChild(_back);
             footer.AddChild(new Control { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill });
-            // Add games' second action (Back to its list on the confirm, Later, Try those again), beside the window's own.
+            // Add games' second action (Back to its list on the confirm, Try those again), beside the window's own.
             _secondary = Kit.Button("", null, () => { if (!_busy) _addGames?.PressSecondary(); }, flat: true);
             _secondary.Name = "SecondaryAction";
             _secondary.Visible = false;
@@ -540,7 +538,7 @@ namespace AP_Atlas.UI
             }
             if (_engineRun.Running)
             {
-                _engineState.Text = _tr("The setup is running: its progress shows on the left, and you can go on to the next pages meanwhile. Add games' Add and the Ready page wait for it.");
+                _engineState.Text = _tr("The setup is running: its progress shows on the left, and you can go on to the next pages meanwhile. Install games' Install and the Ready page wait for it.");
                 _engineState.AddThemeColorOverride("font_color", ThemeColors.Text);
                 _engineConsentHost.Visible = false;
                 _engineButtons.Visible = true;
@@ -903,7 +901,7 @@ namespace AP_Atlas.UI
                 _wakeRoom.Visible = true;
                 return false;
             }
-            Say(_multiworldProblem, _tr("{0} didn't connect (the status bar says why: the room may be asleep, or the address wrong). Next tries again; Skip this step goes on, and Add games then lists every game for you to tick.").Replace("{0}", string.Join(", ", failed)));
+            Say(_multiworldProblem, _tr("{0} didn't connect (the status bar says why: the room may be asleep, or the address wrong). Next tries again; Skip this step goes on, and Install games then lists every game for you to tick.").Replace("{0}", string.Join(", ", failed)));
             return false;
         }
 
@@ -919,7 +917,7 @@ namespace AP_Atlas.UI
 
         private Control BuildAddGames()
         {
-            var box = PageBox("Add games", "Your slots' games come first, ticked. Atlas adds each one's logic and a map pack after one question naming everything it downloads; nothing is downloaded before it.");
+            var box = PageBox("Install games", "Your slots' games come first, ticked. Atlas installs each one's logic and a map pack after one question naming everything it downloads; nothing is downloaded before it.");
             _addGamesNote = Wrapped("", muted: true);
             _addGamesNote.Visible = false;
             box.AddChild(_addGamesNote);
@@ -941,7 +939,7 @@ namespace AP_Atlas.UI
             }
             else if (_addGames.CurrentStage == AddGamesPanel.Stage.Pick) _addGames.Start(); // a game a slot named since is ticked, once
             _addGamesNote.Text = _notConnected.Count == 0 ? ""
-                : _tr("{0} didn't connect, so Atlas doesn't know its game yet: tick it below, or connect it later and use Add games… on Home.").Replace("{0}", string.Join(", ", _notConnected));
+                : _tr("{0} didn't connect, so Atlas doesn't know its game yet: tick it below, or connect it later and use Install games… on Home.").Replace("{0}", string.Join(", ", _notConnected));
             _addGamesNote.Visible = _notConnected.Count > 0;
             WindowFit.RequestShrink(this);
         }
@@ -962,8 +960,8 @@ namespace AP_Atlas.UI
                 FindPack = game => OutOfTheWay(() => window.FindPack(game)),
                 InstallPack = (game, repo) => OutOfTheWay(() => window.InstallPack(game, repo)),
                 StartPack = game => OutOfTheWay(() => window.StartPack(game)),
-                // The Pack Doctor's "fix them now?" in the summary: its preview of every change opens on this window; Review… opens the Doctor with this window out of the way.
-                OfferFixes = (box, run) => box.AddChild(new PackFixHandoff(run.Fixes, (zip, tab) => OutOfTheWay(() => _hooks.OpenPackDoctor(zip, tab)))),
+                // Review fixes in the summary opens over the main window, with this one out of the way (nothing opens on top of it).
+                ReviewFixes = window.ReviewFixes is { } review ? (key, file) => OutOfTheWay(() => review(key, file)) : null,
             };
         }
 
@@ -975,11 +973,11 @@ namespace AP_Atlas.UI
             else OutOfTheWay(() => _hooks.ShowEnginePage(Array.Empty<string>()));
         }
 
-        /// <summary>Next moves on once there's nothing to add, or the summary's question is answered.</summary>
+        /// <summary>Next moves on once there's nothing to add, or the summary shows.</summary>
         private static bool AddGamesMovesOn(AddGamesPanel panel) =>
-            (panel.CurrentStage == AddGamesPanel.Stage.Pick && panel.AddingCount == 0) || (panel.CurrentStage == AddGamesPanel.Stage.Summary && !panel.Asking);
+            (panel.CurrentStage == AddGamesPanel.Stage.Pick && panel.AddingCount == 0) || panel.CurrentStage == AddGamesPanel.Stage.Summary;
 
-        /// <summary>Next on Add games: the screen's own action (Add…, Download and install, Cancel, Fix them now…), or on to Ready.</summary>
+        /// <summary>Next on Add games: the screen's own action (Add…, Download and install, Cancel), or on to Ready.</summary>
         private Task<bool> AddGamesNextAsync()
         {
             var panel = _addGames;
@@ -995,7 +993,7 @@ namespace AP_Atlas.UI
 
         /// <summary>
         /// The footer on Add games: Next carries the screen's action and the button beside it its second one (Back on the
-        /// confirm, Later, Try those again); the window's Back and Skip show on the list, and Back on an answered summary.
+        /// confirm, Try those again); the window's Back and Skip show on the list, and Back on the summary.
         /// The list on the left is locked while a batch runs.
         /// </summary>
         private void SyncAddGamesButtons()
@@ -1077,8 +1075,8 @@ namespace AP_Atlas.UI
                 Line(_tr("✓ Slots: {0}").Replace("{0}", string.Join(", ", profile.Slots)) + (games.Count > 0 ? "  ·  " + string.Join(", ", games) : ""), ThemeColors.Success);
                 bool gamesReady = _hooks.Steps.Done(SetupSteps.Games);
                 Line(gamesReady ? _tr("✓ Every game your slots play is ready.")
-                    : _hooks.Steps.Skipped(SetupSteps.Games) ? _tr("… Adding games was skipped: Add games… on Home or the Games page adds them whenever you like.")
-                    : _tr("… Not every game of your slots is ready: Add games (Home, or the Games page) finishes them."),
+                    : _hooks.Steps.Skipped(SetupSteps.Games) ? _tr("… Installing games was skipped: Install games… on Home or the Games page installs them whenever you like.")
+                    : _tr("… Not every game of your slots is ready: Install games (Home, or the Games page) finishes them."),
                     gamesReady ? ThemeColors.Success : ThemeColors.Text);
             }
             RefreshNext();
@@ -1104,7 +1102,7 @@ namespace AP_Atlas.UI
         internal MultiworldProfile? ShownProfile => Profile;
         internal IReadOnlyList<string> RoomPlayers => _roomPlayers;
         internal Task NextForTestsAsync() => NextAsync();
-        /// <summary>Add games' second action beside Next (Back on its confirm, Later, Try those again).</summary>
+        /// <summary>Add games' second action beside Next (Back on its confirm, Try those again).</summary>
         internal Button SecondaryButton => _secondary;
         internal IReadOnlyList<string> PageIdsShown => _pages.Select(p => p.Id).ToList();
         internal AddGamesPanel? AddGamesPanelShown => _addGames;

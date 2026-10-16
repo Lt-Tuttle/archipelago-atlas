@@ -60,14 +60,23 @@ namespace AP_Atlas.UI
         public bool NoticesShown => _noticesShown;
 
         /// <summary>Shows the Notices, or the maps.</summary>
-        public void ShowNotices(bool show)
+        public void ShowNotices(bool show) => ShowPane(show ? Pane.Notices : Pane.Maps);
+
+        private enum Pane { Maps, Notices, Changes }
+
+        /// <summary>Maps | Notices | Changes: one pane in sight, its tab pressed.</summary>
+        private void ShowPane(Pane pane)
         {
-            _noticesShown = show;
-            if (_mapsPane != null) _mapsPane.Visible = !show;
-            if (_noticesPane != null) _noticesPane.Visible = show;
-            if (_mapsTab != null) _mapsTab.SetPressedNoSignal(!show);
-            if (_noticesTab != null) _noticesTab.SetPressedNoSignal(show);
-            if (show) RenderNotices();
+            _noticesShown = pane == Pane.Notices;
+            _changesShown = pane == Pane.Changes;
+            if (_mapsPane != null) _mapsPane.Visible = pane == Pane.Maps;
+            if (_noticesPane != null) _noticesPane.Visible = _noticesShown;
+            if (_changesPane != null) _changesPane.Visible = _changesShown;
+            if (_mapsTab != null) _mapsTab.SetPressedNoSignal(pane == Pane.Maps);
+            if (_noticesTab != null) _noticesTab.SetPressedNoSignal(_noticesShown);
+            if (_changesTab != null) _changesTab.SetPressedNoSignal(_changesShown);
+            if (_noticesShown) RenderNotices();
+            if (_changesShown) RenderChanges();
         }
 
         /// <summary>Does one of a notice's actions (for tests: what pressing its button does).</summary>
@@ -94,7 +103,7 @@ namespace AP_Atlas.UI
             PackFixMenus.Show(this, FixProblemItems());
         }
 
-        /// <summary>The Maps | Notices switch above the explorer's list, and the Notices pane (added by the caller after it).</summary>
+        /// <summary>The Maps | Notices | Changes switch above the explorer's list, and the Notices and Changes panes (added by the caller after it).</summary>
         private Control BuildNoticeTabs(Control mapsPane)
         {
             _mapsPane = mapsPane;
@@ -114,8 +123,13 @@ namespace AP_Atlas.UI
             _noticesTab.ToggleMode = true;
             _noticesTab.ButtonGroup = group;
             _noticesTab.SetMeta("notices_tab", true);
+            _changesTab = Kit.Button(Translate("Changes"), Translate("Everything changed on this slot's map: checks you hid, and fixes to its map pack, yours and Atlas's. Each has Undo, and Show on map where it has a place there."), ShowChanges, small: true);
+            _changesTab.ToggleMode = true;
+            _changesTab.ButtonGroup = group;
+            _changesTab.SetMeta("changes_tab", true);
             tabs.AddChild(_mapsTab);
             tabs.AddChild(_noticesTab);
+            tabs.AddChild(_changesTab);
             _noticesPane = new ScrollContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill, HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled, Visible = false };
             var paneMargin = new MarginContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
             paneMargin.AddThemeConstantOverride("margin_left", 10);
@@ -126,7 +140,9 @@ namespace AP_Atlas.UI
             _noticesBox.AddThemeConstantOverride("separation", 8);
             paneMargin.AddChild(_noticesBox);
             _noticesPane.AddChild(paneMargin);
+            BuildChangesPane();
             UpdateNoticesTab();
+            UpdateChangesTab();
             return margin;
         }
 

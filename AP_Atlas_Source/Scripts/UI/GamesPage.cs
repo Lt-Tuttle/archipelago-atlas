@@ -65,8 +65,8 @@ namespace AP_Atlas.UI
             Yours
         }
 
-        /// <summary>A game the page lists: its group, whether the engine has it, its project and guide, and whether a slot of the user's plays it (listed first).</summary>
-        public sealed record GameEntry(string Game, Section Section, bool InEngine, string? Repo, string? Guide, bool Played = false);
+        /// <summary>A game the page lists: its group, whether the engine has it, its project and guide, and whether a slot of the user's plays it (listed first), and whether its logic is here (for the Installed group).</summary>
+        public sealed record GameEntry(string Game, Section Section, bool InEngine, string? Repo, string? Guide, bool Played = false, bool LogicHere = false);
 
         private readonly GamesHooks _hooks;
         private readonly Func<string, string> _tr;
@@ -104,6 +104,9 @@ namespace AP_Atlas.UI
         /// <summary>The list's group headers as shown, in order (for tests).</summary>
         public List<string> ShownSections { get; private set; } = new();
 
+        /// <summary>Each shown game's group header (for tests).</summary>
+        public Dictionary<string, string> ShownSectionOf { get; private set; } = new(StringComparer.OrdinalIgnoreCase);
+
         /// <summary>The overview's box for another list's URL (read when Update game list is pressed).</summary>
         private LineEdit? _urlBox;
 
@@ -139,6 +142,11 @@ namespace AP_Atlas.UI
 
             _explorer = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
             _explorer.AddThemeConstantOverride("separation", 6);
+            // Always at the top (the owner's round 12): the one way to install games, as Home's button opens it.
+            var installGames = Kit.Button(_tr("Install games…"), _tr("Tick the games you play: Atlas installs each one's logic and a map pack, after one question naming everything it downloads."), () => _hooks.AddGames(null), small: true);
+            installGames.ThemeTypeVariation = Kit.PrimaryButton;
+            installGames.SetMeta("add_games_button", true);
+            _explorer.AddChild(installGames);
             _search = new LineEdit { PlaceholderText = _tr("Search games"), ClearButtonEnabled = true, AccessibilityName = _tr("Search games") };
             _search.TextChanged += _ => FillList();
             _explorer.AddChild(_search);
@@ -162,7 +170,7 @@ namespace AP_Atlas.UI
                 else if (item.GetMetadata(0).VariantType == Variant.Type.Int) ShowAllPacks();
             };
             _explorer.AddChild(_list);
-            _explorer.AddChild(Kit.Button(_tr("Add a game's project…"), _tr("Paste the GitHub link of a game's apworld project: Atlas lists the game under Added by you and can install it."), AddProject, small: true));
+            _explorer.AddChild(Kit.Button(_tr("Add a game by its project link…"), _tr("Paste the GitHub link of a game's apworld project: Atlas lists the game under Added by you and can install it."), AddProject, small: true));
 
             var statusRow = new HBoxContainer();
             statusRow.AddThemeConstantOverride("separation", 8);
@@ -245,7 +253,12 @@ namespace AP_Atlas.UI
             var played = PlayedGames();
             foreach (string game in played.Keys)
                 if (!games.ContainsKey(game)) games[game] = new GameEntry(game, Section.Yours, inEngine.Contains(game), null, null);
-            return games.Values.Select(g => g with { Played = played.ContainsKey(g.Game) }).ToList();
+            // Its logic here, for the Installed group: an official game's world unpacked by Atlas (shipping with an engine isn't
+            // installing it), else what the engine's last check loaded (an apworld).
+            bool LogicHere(GameEntry g) => g.Section == Section.Official
+                ? AtlasEngine.Worlds.FolderFor(g.Game) is { } folder && Directory.Exists(Path.Combine(AtlasEngine.UserWorldsDir, folder))
+                : g.InEngine;
+            return games.Values.Select(g => g with { Played = played.ContainsKey(g.Game), LogicHere = LogicHere(g) }).ToList();
         }
 
         private static string? HttpsOrNull(string? url) => url != null && url.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ? url : null;
@@ -276,8 +289,6 @@ namespace AP_Atlas.UI
             return played;
         }
 
-        private bool IsReady(GameEntry entry) => entry.InEngine && PacksFor(entry.Game).Count > 0;
-
         private bool _filling;
 
         private void FillList()
@@ -299,20 +310,30 @@ namespace AP_Atlas.UI
             var root = _list.CreateItem();
             string[] words = _search.Text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             var played = PlayedGames();
-            IEnumerable<GameEntry> shown = _games.Where(g => words.All(w => g.Game.Contains(w, StringComparison.OrdinalIgnoreCase)));
-            shown = _sort.Selected switch
+            var matching = _games.Where(g => words.All(w => g.Game.Contains(w, StringComparison.OrdinalIgnoreCase))).ToList();
+            // Each shown game's packs read once per fill (the pack names are matched by GameNameRule).
+            var withPacks = new HashSet<string>(matching.Where(g => PacksFor(g.Game).Count > 0).Select(g => g.Game), StringComparer.OrdinalIgnoreCase);
+            bool Ready(GameEntry g) => g.InEngine && withPacks.Contains(g.Game);
+            bool Installed(GameEntry g) => !g.Played && (g.LogicHere || withPacks.Contains(g.Game));
+            IEnumerable<GameEntry> shown = _sort.Selected switch
             {
-                1 => shown.OrderByDescending(IsReady).ThenByDescending(g => g.InEngine).ThenBy(g => g.Game, StringComparer.OrdinalIgnoreCase),
-                2 => shown.OrderByDescending(g => played.TryGetValue(g.Game, out var when) ? when : DateTime.MinValue).ThenBy(g => g.Game, StringComparer.OrdinalIgnoreCase),
-                _ => shown.OrderBy(g => g.Game, StringComparer.OrdinalIgnoreCase)
+                1 => matching.OrderByDescending(Ready).ThenByDescending(g => g.InEngine).ThenBy(g => g.Game, StringComparer.OrdinalIgnoreCase),
+                2 => matching.OrderByDescending(g => played.TryGetValue(g.Game, out var when) ? when : DateTime.MinValue).ThenBy(g => g.Game, StringComparer.OrdinalIgnoreCase),
+                _ => matching.OrderBy(g => g.Game, StringComparer.OrdinalIgnoreCase)
             };
             var list = shown.ToList();
             ShownGames = new List<string>();
             ShownSections = new List<string>();
-            // The games of the user's own slots come first, each listed once; the rest in their groups.
-            var groups = new List<(string Title, List<GameEntry> Games)> { (_tr("In your multiworlds"), list.Where(g => g.Played).ToList()) };
+            ShownSectionOf = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            // The games of the user's own slots first, then the ones installed (logic or a map pack, even partly), then the rest
+            // in their groups; each game listed once.
+            var groups = new List<(string Title, List<GameEntry> Games)>
+            {
+                (_tr("In your multiworlds"), list.Where(g => g.Played).ToList()),
+                (_tr("Installed"), list.Where(Installed).ToList())
+            };
             foreach (var section in new[] { Section.Official, Section.Community, Section.Yours })
-                groups.Add((SectionTitle(section), list.Where(g => g.Section == section && !g.Played).ToList()));
+                groups.Add((SectionTitle(section), list.Where(g => g.Section == section && !g.Played && !Installed(g)).ToList()));
             foreach (var (title, inSection) in groups)
             {
                 if (inSection.Count == 0) continue;
@@ -325,14 +346,16 @@ namespace AP_Atlas.UI
                 foreach (var game in inSection)
                 {
                     var row = _list.CreateItem(header);
+                    bool ready = Ready(game);
                     // A mark per state, told apart by shape as well as colour: ready (a check), in the engine (a dot), not yet (a ring).
                     row.SetText(0, game.Game);
-                    row.SetIcon(0, AP_Atlas.UI.LucideTextures.Get(IsReady(game) ? "circle-check" : game.InEngine ? "circle-dot" : "circle",
-                        IsReady(game) ? ThemeColors.Success : game.InEngine ? ThemeColors.TextMuted : ThemeColors.TextSubtle, 0.7f));
-                    row.SetTooltipText(0, IsReady(game) ? _tr("In the engine, with a map pack") : game.InEngine ? _tr("In the engine") : _tr("Not in the engine yet"));
+                    row.SetIcon(0, AP_Atlas.UI.LucideTextures.Get(ready ? "circle-check" : game.InEngine ? "circle-dot" : "circle",
+                        ready ? ThemeColors.Success : game.InEngine ? ThemeColors.TextMuted : ThemeColors.TextSubtle, 0.7f));
+                    row.SetTooltipText(0, ready ? _tr("In the engine, with a map pack") : game.InEngine ? _tr("In the engine") : _tr("Not in the engine yet"));
                     row.SetMetadata(0, game.Game);
                     if (game.Game == _selected) row.Select(0);
                     ShownGames.Add(game.Game);
+                    ShownSectionOf[game.Game] = header.GetText(0);
                 }
             }
             AddAllPacksEntry(root);
@@ -354,12 +377,7 @@ namespace AP_Atlas.UI
             Clear(_detail);
             _detail.AddChild(Kit.Heading(_tr("Games"), 1.4f));
             int official = _games.Count(g => g.Section == Section.Official), community = _games.Count(g => g.Section == Section.Community), yours = _games.Count(g => g.Section == Section.Yours);
-            _detail.AddChild(Wrapped(Kit.Text(_tr("Add games… adds the games you play in one go: tick them, and Atlas installs each one's logic in the Atlas Engine and a map pack, after one question. A game's page, on the left, has the rest."))));
-            var addGames = Kit.Button(_tr("Add games…"), _tr("Every game Atlas knows with a check box, the games of your multiworlds ticked where they need something; Atlas says what it downloads and from where before anything starts."), () => _hooks.AddGames(null));
-            addGames.ThemeTypeVariation = Kit.PrimaryButton;
-            addGames.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
-            addGames.SetMeta("add_games_button", true);
-            _detail.AddChild(addGames);
+            _detail.AddChild(Wrapped(Kit.Text(_tr("Install games…, at the top of the list, installs the games you play in one go: tick them, and Atlas installs each one's logic in the Atlas Engine and a map pack, after one question. A game's page, on the left, has the rest."))));
             _detail.AddChild(Wrapped(Kit.Muted(_tr("{0} official games (they ship with Archipelago), {1} from the community index, {2} added by you.")
                 .Replace("{0}", official.ToString()).Replace("{1}", community.ToString()).Replace("{2}", yours.ToString()))));
             var install = AtlasEngine.Current;
@@ -1294,7 +1312,7 @@ namespace AP_Atlas.UI
 
         private void AddProject()
         {
-            Dialogs.Prompt(this, _tr("Add a game's project"),
+            Dialogs.Prompt(this, _tr("Add a game by its project link"),
                 _tr("Paste the GitHub link of a project that publishes a game's .apworld (its repository or releases page). Atlas reads its release list, finds the game, and trusts the project for it."),
                 "", "https://github.com/owner/project/releases", _tr("Add"), link =>
                 {

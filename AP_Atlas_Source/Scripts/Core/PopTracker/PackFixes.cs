@@ -21,7 +21,7 @@ namespace AP_Atlas.Core.PopTracker
         /// <summary>The author's version of the subject when the fix was made (see PackFixes.AuthorStamp).</summary>
         public string AuthorStamp { get; set; } = "";
         public DateTime Made { get; set; } = DateTime.Now;
-        /// <summary>"automatic" when the Doctor made the fix itself (an exact name match); null for the user's own.</summary>
+        /// <summary>"automatic" when Atlas made the fix by itself (its automatic pass), "suggested" for Fix what Atlas can, "example" for a rule from the user's examples; null for the user's own.</summary>
         public string Source { get; set; }
         /// <summary>For an automatic fix: why the Doctor was sure ("the only 'Firelink Armor' in FS"); null when the names match.</summary>
         public string Reason { get; set; }
@@ -110,6 +110,13 @@ namespace AP_Atlas.Core.PopTracker
 
         /// <summary>Pack version whose exact name matches the Doctor linked by itself (once per version).</summary>
         public string AutoLinkedVersion { get; set; } = "";
+
+        /// <summary>
+        /// Subjects ("link:Cave|Chest", "tile:hookshot") whose fix Atlas made by itself and the user took back (Review fixes, the
+        /// map's Changes, the Doctor's Undo or Reset): its automatic pass leaves them to the user, this pack version and later
+        /// ones. Reset everything clears it.
+        /// </summary>
+        public List<string> Declined { get; set; } = new List<string>();
 
         public List<TileFix> Tiles { get; set; } = new List<TileFix>();
         public List<AddedTile> AddedTiles { get; set; } = new List<AddedTile>();
@@ -221,10 +228,55 @@ namespace AP_Atlas.Core.PopTracker
             if (!_undo.TryGetValue(packKey, out var stack) || stack.Count == 0) return false;
             var (json, _) = stack.Pop();
             var restored = JsonConvert.DeserializeObject<PackFixFile>(json) ?? new PackFixFile { PackKey = packKey };
+            // What the user undoes stays undone (the owner, 2026-10-16). Atlas's own fixes (its automatic pass's, Fix what Atlas
+            // can's) this Undo takes away are declined, here and in every older step an Undo may restore next; and the pass's
+            // record and what was declined are history no Undo rolls back (an older step's record would let the pass make them again).
+            var current = Get(packKey);
+            var dropped = AtlasSubjects(current).Where(s => !HasFix(restored, s)).ToList();
+            CarryHistory(restored, current, dropped);
+            if (dropped.Count > 0)
+            {
+                var older = stack.ToArray(); // newest first
+                stack.Clear();
+                for (int i = older.Length - 1; i >= 0; i--)
+                {
+                    var snapshot = JsonConvert.DeserializeObject<PackFixFile>(older[i].Json);
+                    if (snapshot == null)
+                    {
+                        stack.Push(older[i]);
+                        continue;
+                    }
+                    CarryHistory(snapshot, restored, dropped);
+                    stack.Push((JsonConvert.SerializeObject(snapshot), older[i].Description));
+                }
+            }
             _files[packKey] = restored;
             Save(restored);
             Changed?.Invoke(packKey);
             return true;
+        }
+
+        // The subjects of Atlas's own fixes (its automatic pass's and Fix what Atlas can's).
+        private static IEnumerable<string> AtlasSubjects(PackFixFile f) =>
+            f.Tiles.Where(t => t.Automatic).Select(t => t.Subject).Concat(f.Links.Where(l => l.Automatic).Select(l => l.Subject)).Distinct(StringComparer.Ordinal);
+
+        private static bool HasFix(PackFixFile f, string subject) => f.Tiles.Any(t => t.Subject == subject) || f.Links.Any(l => l.Subject == subject);
+
+        /// <summary>
+        /// Brings an older state of a pack's fixes up to date with what no Undo rolls back: the automatic pass's record, the
+        /// subjects declined since (unless the older state holds a fix for one: undoing the step that declined it brings it
+        /// back), and <paramref name="declining"/>, whose fixes by Atlas are taken out of it.
+        /// </summary>
+        private static void CarryHistory(PackFixFile older, PackFixFile now, IReadOnlyCollection<string> declining)
+        {
+            older.AutoLinkedVersion = now.AutoLinkedVersion;
+            foreach (string s in declining)
+            {
+                older.Tiles.RemoveAll(t => t.Subject == s && t.Automatic);
+                older.Links.RemoveAll(l => l.Subject == s && l.Automatic);
+            }
+            foreach (string s in now.Declined.Concat(declining))
+                if (!older.Declined.Contains(s) && !HasFix(older, s)) older.Declined.Add(s);
         }
 
         /// <summary>Removes fixes: one subject, a category ("tiles", "grids", "links", "pins", "maps"), or everything (null).</summary>
@@ -232,13 +284,65 @@ namespace AP_Atlas.Core.PopTracker
         {
             Edit(packKey, subject != null ? $"Reset {subject}" : category != null ? $"Reset all {category}" : "Reset all fixes", f =>
             {
-                bool Match(PackFixBase x) => subject == null || x.Subject == subject;
-                if (category is null or "tiles") { f.Tiles.RemoveAll(Match); f.AddedTiles.RemoveAll(Match); }
-                if (category is null or "grids") f.Grids.RemoveAll(Match);
-                if (category is null or "links") f.Links.RemoveAll(Match);
-                if (category is null or "pins") { f.Pins.RemoveAll(Match); f.AddedPins.RemoveAll(Match); }
-                if (category is null or "maps") f.MapImages.RemoveAll(Match);
-                if (category == null && subject == null) f.Ignored.Clear();
+                Remove(f, category, subject);
+                // Everything reset: as on the pack's first day, what was declined too.
+                if (category == null && subject == null)
+                {
+                    f.Ignored.Clear();
+                    f.Declined.Clear();
+                }
+            });
+        }
+
+        /// <summary>
+        /// Takes fixes out of a fix file, inside an edit: one subject, a kind, or everything (both null). Atlas's own fixes (its
+        /// automatic pass's or Fix what Atlas can's) taken out by subject or kind are declined (PackFixFile.Declined): the pass
+        /// leaves them to the user.
+        /// </summary>
+        public static void Remove(PackFixFile f, string category, string subject)
+        {
+            bool Match(PackFixBase x) => subject == null || x.Subject == subject;
+            if (category != null || subject != null)
+            {
+                var atlas = (category is null or "tiles" ? f.Tiles.Where(t => t.Automatic && Match(t)).Select(t => t.Subject) : Enumerable.Empty<string>())
+                    .Concat(category is null or "links" ? f.Links.Where(l => l.Automatic && Match(l)).Select(l => l.Subject) : Enumerable.Empty<string>()).ToList();
+                foreach (string s in atlas) if (!f.Declined.Contains(s)) f.Declined.Add(s);
+            }
+            if (category is null or "tiles") { f.Tiles.RemoveAll(Match); f.AddedTiles.RemoveAll(Match); }
+            if (category is null or "grids") f.Grids.RemoveAll(Match);
+            if (category is null or "links") f.Links.RemoveAll(Match);
+            if (category is null or "pins") { f.Pins.RemoveAll(Match); f.AddedPins.RemoveAll(Match); }
+            if (category is null or "maps") f.MapImages.RemoveAll(Match);
+        }
+
+        /// <summary>
+        /// Takes fixes back by subject in one undoable step (the Pack Doctor's "Undo this fix"): a tile's or a link's, through
+        /// <see cref="Remove"/>, so one Atlas made is declined and the user's own isn't.
+        /// </summary>
+        public static void UndoFixes(string packKey, IReadOnlyCollection<string> subjects, string description)
+        {
+            if (subjects.Count == 0) return;
+            Edit(packKey, description, f =>
+            {
+                foreach (string s in subjects)
+                    Remove(f, s.StartsWith("tile:", StringComparison.Ordinal) ? "tiles" : "links", s);
+            });
+        }
+
+        /// <summary>
+        /// Takes back fixes Atlas made by itself and declines them (Review fixes' Undo all), in one undoable step; a subject with no
+        /// fix is declined all the same.
+        /// </summary>
+        public static void Decline(string packKey, IReadOnlyCollection<string> subjects, string description)
+        {
+            if (subjects.Count == 0) return;
+            Edit(packKey, description, f =>
+            {
+                foreach (string subject in subjects)
+                {
+                    Remove(f, subject.StartsWith("tile:", StringComparison.Ordinal) ? "tiles" : "links", subject);
+                    if (!f.Declined.Contains(subject)) f.Declined.Add(subject);
+                }
             });
         }
 
@@ -342,7 +446,8 @@ namespace AP_Atlas.Core.PopTracker
             {
                 foreach (var fix in list.ToList())
                 {
-                    if (string.IsNullOrEmpty(fix.AuthorStamp) || AuthorStamp(original, fix.Subject) == fix.AuthorStamp) continue;
+                    // Atlas's own fixes aren't the user's: its pass takes back what the author changed (ForgetStaleGuesses), quietly.
+                    if (fix.Automatic || string.IsNullOrEmpty(fix.AuthorStamp) || AuthorStamp(original, fix.Subject) == fix.AuthorStamp) continue;
                     list.Remove(fix);
                     file.Superseded.Add(new SupersededFix { Kind = kind, Subject = fix.Subject, FixJson = JsonConvert.SerializeObject(fix), PackVersion = version });
                     notes.Add(describe(fix));

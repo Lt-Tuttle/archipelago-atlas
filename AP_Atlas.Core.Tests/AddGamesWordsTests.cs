@@ -42,7 +42,7 @@ public sealed class AddGamesWordsTests
     {
         var plan = AddGamesPlan.Make(new[] { Community("alpha", 3 * Mb, 2 * Mb) }, new AddContext());
         var w = AddGamesWords.Confirm(plan, gitHubAllowed: true, freeBytes: null, floorBytes: 700 * Mb, Tr);
-        Assert.Equal("Add 1 game", w.Title);
+        Assert.Equal("Install 1 game", w.Title);
         Assert.Equal("Atlas downloads about 5 MB and uses about 8 MB on this PC.", w.Lead);
         Assert.Contains("The games' logic (apworlds) from github.com/owner/alpha.", w.Sources);
         Assert.Contains("Map packs from github.com/packs/alpha.", w.Sources);
@@ -57,7 +57,7 @@ public sealed class AddGamesWordsTests
     public void GitHub_is_asked_only_for_a_release_list_and_a_full_disk_stops_the_confirm()
     {
         var live = AddGamesPlan.Make(new[] { new AddGameFacts { Game = "mine", LiveProject = "me/mine" } }, new AddContext());
-        Assert.Equal("First Atlas reads the releases of github.com/me/mine on GitHub (at most 1 request); pressing Download and install allows that until Atlas closes.",
+        Assert.Equal("First Atlas reads the releases of github.com/me/mine on GitHub (at most 4 requests); pressing Download and install allows that until Atlas closes. It also reads the map pack project that the setup guide of mine names, once the logic is in.",
             AddGamesWords.Confirm(live, gitHubAllowed: false, null, 700 * Mb, Tr).GitHub);
         Assert.Null(AddGamesWords.Confirm(live, gitHubAllowed: true, null, 700 * Mb, Tr).GitHub);
         var plan = AddGamesPlan.Make(new[] { Community("alpha", 3 * Mb, 2 * Mb) }, new AddContext());
@@ -72,7 +72,12 @@ public sealed class AddGamesWordsTests
         var w = AddGamesWords.Confirm(AddGamesPlan.Make(new[] { facts }, new AddContext { WorldsZipBytes = 22 * Mb }), true, null, 700 * Mb, Tr);
         Assert.Contains("Archipelago's own release (about 22 MB, once) for the games that ship with it.", w.Sources);
         Assert.Contains("Some of their worlds (alttp) need packages of their own, installed from PyPI; their size isn't listed.", w.Sources);
-        Assert.Equal("Everything comes from Archipelago's own release, checked against its published SHA-256.", w.Trust);
+        // No pack listed: the one its setup guide names comes from GitHub, so it isn't all Archipelago's release.
+        Assert.Contains("A map pack from the project that the setup guide of Zelda names, read on GitHub once the logic is in.", w.Sources);
+        Assert.Equal("Map packs' scripts run inside Atlas's sandbox: only continue if you trust these projects.", w.Trust);
+        Assert.NotEqual("Everything comes from Archipelago's own release, checked against its published SHA-256.", w.Trust);
+        var installed = AddGamesWords.Confirm(AddGamesPlan.Make(new[] { facts with { PackInstalled = true } }, new AddContext { WorldsZipBytes = 22 * Mb }), true, null, 700 * Mb, Tr);
+        Assert.Equal("Everything comes from Archipelago's own release, checked against its published SHA-256.", installed.Trust);
     }
 
     [Fact]

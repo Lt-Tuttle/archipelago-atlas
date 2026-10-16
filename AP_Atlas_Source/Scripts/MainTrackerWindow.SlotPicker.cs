@@ -27,16 +27,18 @@ public partial class MainTrackerWindow
     {
         if (_slotPicker == null) return;
         var slots = ActiveSlotNodes().OfType<SlotTrackerControl>().ToList();
-        if (slots.Count != _pickerSlots.Count || slots.Where((slot, i) => _pickerSlots[i] != slot).Any())
+        // Rebuilt when the live slots change, or their labels (a multiworld renamed and saved).
+        var labels = slots.Select(slot =>
+        {
+            string multiworld = _profiles.FirstOrDefault(p => p.Id == slot.ProfileId)?.Name ?? "";
+            return multiworld.Length > 0 ? $"{slot.SlotName}  ·  {multiworld}" : slot.SlotName;
+        }).ToList();
+        if (slots.Count != _pickerSlots.Count || slots.Where((slot, i) => _pickerSlots[i] != slot).Any() || labels.Where((label, i) => _slotPicker.GetItemText(i) != label).Any())
         {
             _pickerSlots.Clear();
             _pickerSlots.AddRange(slots);
             _slotPicker.Clear();
-            foreach (var slot in slots)
-            {
-                string multiworld = _profiles.FirstOrDefault(p => p.Id == slot.ProfileId)?.Name ?? "";
-                _slotPicker.AddItem(multiworld.Length > 0 ? $"{slot.SlotName}  ·  {multiworld}" : slot.SlotName);
-            }
+            foreach (string label in labels) _slotPicker.AddItem(label);
         }
         int selected = _currentSelectedSlot == null ? -1 : _pickerSlots.IndexOf(_currentSelectedSlot);
         if (_slotPicker.Selected != selected) _slotPicker.Select(selected);

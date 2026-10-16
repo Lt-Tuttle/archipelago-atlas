@@ -349,6 +349,13 @@ namespace AP_Atlas.Core.EngineSetup
                             await Task.Delay(250, ct);
                         }
                         var doctor = original != null ? await PackDoctorService.CheckAsync(original, prompt: false) : null;
+                        // Atlas's own fixes (that check makes them on the pack's first) are scored as the user sees them: the check they queued is waited for.
+                        if (original != null)
+                        {
+                            string doctorKey = PackFixes.KeyFor(original);
+                            await PackDoctorService.WhenIdleAsync(doctorKey, TimeSpan.FromSeconds(120), ct);
+                            if (PackDoctorService.Reports.TryGetValue(doctorKey, out var settled) && settled != null) doctor = settled;
+                        }
                         if (doctor != null)
                         {
                             pins = new SoloPins(doctor.ApLocationsTotal, doctor.ApLocationsPlaced, doctor.SectionsTotal, doctor.SectionsLinked, Math.Max(0, doctor.SectionsTotal - doctor.SectionsLinked),

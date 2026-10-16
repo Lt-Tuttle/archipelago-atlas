@@ -208,7 +208,7 @@ namespace AP_Atlas.UI
             var roomButton = Kit.Button(_tr("Paste a room link…"), _tr("A new multiworld from the room link the host shared: Atlas fills in the server and the players from the room's status page, with your permission."), () => _hooks.AddFromRoomLink(), small: true);
             roomButton.Name = "RoomLinkMultiworld";
             multiworldsHeader.AddChild(roomButton);
-            _addGamesButton = Kit.Button(_tr("Add games…"), _tr("Tick the games you play: Atlas adds their logic and a map pack each, with one question first (the games of your multiworlds come ticked)."), () => _hooks.AddGames(), small: true);
+            _addGamesButton = Kit.Button(_tr("Install games…"), _tr("Tick the games you play: Atlas installs their logic and a map pack each, with one question first (the games of your multiworlds come ticked)."), () => _hooks.AddGames(), small: true);
             _addGamesButton.Name = "AddGames";
             multiworldsHeader.AddChild(_addGamesButton);
             multiworldsBox.AddChild(multiworldsHeader);
@@ -352,7 +352,7 @@ namespace AP_Atlas.UI
             "cheese-tracker" => "Your async multiworld's shared tracker, kept up to date from Atlas's logic.",
             "sphere-tracker" => "The host's spheretracker.de room: the multiworld, sphere by sphere.",
             "connections" => "Your servers, passwords and slots.",
-            "games" => "Every game Atlas knows: Add games… adds the ones you play (their logic and a map pack) in one go; each game's page has the rest.",
+            "games" => "Every game Atlas knows: Install games… installs the ones you play (their logic and a map pack) in one go; each game's page has the rest.",
             "engine" => "The logic engine: whether logic can run, your slots' worlds, set up and repair.",
             "settings" => "Every setting, searchable; every key, yours to change.",
             _ => ""
@@ -502,7 +502,7 @@ namespace AP_Atlas.UI
                 }
                 _addMultiworldButton = Kit.Button(_tr("Add a multiworld…"), _tr("Straight to the Multiworlds page, for a multiworld typed by hand."), () => _hooks.AddMultiworld());
                 buttons.AddChild(_addMultiworldButton);
-                _addGamesFirstButton = Kit.Button(_tr("Add games…"), _tr("Tick the games you play: Atlas adds their logic and a map pack each, with one question first."), () => _hooks.AddGames(), flat: true);
+                _addGamesFirstButton = Kit.Button(_tr("Install games…"), _tr("Tick the games you play: Atlas installs their logic and a map pack each, with one question first."), () => _hooks.AddGames(), flat: true);
                 _addGamesFirstButton.Name = "AddGamesFirst";
                 buttons.AddChild(_addGamesFirstButton);
                 block.AddChild(buttons);

@@ -86,6 +86,9 @@ namespace AP_Atlas.Core.PopTracker
                 f.Tiles.Add(t);
             }
             t.Made = DateTime.Now;
+            // Whoever changes it now owns it: Atlas's own fix becomes the user's (PackBulk.Apply sets its own source after).
+            t.Source = null;
+            t.Reason = null;
             return t;
         }
 

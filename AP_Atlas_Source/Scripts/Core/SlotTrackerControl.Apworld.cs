@@ -270,7 +270,7 @@ public partial class SlotTrackerControl : MarginContainer
                 // The engine runs; this game's logic is what's missing. Add games installs it (the game ticked) when Atlas knows
                 // where it comes from; else the game's page, where its project is added.
                 if (AP_Atlas.Core.EngineSetup.ApworldSources.LogicSourceKnown(_appSettings, Game))
-                    AddButton(Tr("Add this game…"), Tr("Opens Add games with this game ticked: Atlas says what it downloads, installs its logic (and a map pack), and logic starts again by itself"), () => AddGames?.Invoke(Game));
+                    AddButton(Tr("Install this game…"), Tr("Opens Install games with this game ticked: Atlas says what it downloads, installs its logic (and a map pack), and logic starts again by itself"), () => AddGames?.Invoke(Game));
                 else
                     AddButton("Open the Games page", "Add the game's project on its page, then add the game", () => OpenGamesPageFor?.Invoke(Game));
                 AddButton("Try again", "Start the logic engine again", RetryLogicEngine);
@@ -303,7 +303,7 @@ public partial class SlotTrackerControl : MarginContainer
                 return "Logic needs the Atlas Engine.\n" + e.Message + "\nAtlas can download everything it needs (about 50 MB, no installer).";
             case "world_missing":
                 return AP_Atlas.Core.EngineSetup.ApworldSources.LogicSourceKnown(_appSettings, Game)
-                    ? $"{Game} isn't in the logic engine yet.\nAdd this game: Atlas installs its logic (and a map pack), and logic starts again by itself."
+                    ? $"{Game} isn't in the logic engine yet.\nInstall this game: Atlas installs its logic (and a map pack), and logic starts again by itself."
                     : $"{Game} isn't in the logic engine yet, and Atlas doesn't know where its apworld comes from.\nAdd its project on the Games page.";
             case "world_download":
                 return $"{Game}'s logic needs its world.\n{e.Message}";

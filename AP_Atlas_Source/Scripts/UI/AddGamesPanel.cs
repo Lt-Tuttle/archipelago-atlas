@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using AP_Atlas.Core;
 using AP_Atlas.Core.EngineSetup;
 using AP_Atlas.Core.Games;
+using AP_Atlas.Core.PopTracker;
 using Godot;
 
 namespace AP_Atlas.UI
@@ -29,7 +30,7 @@ namespace AP_Atlas.UI
     /// its download, a search, and the totals of download and disk. Then ONE confirm naming every project the downloads
     /// come from, what pressing it trusts, and the tick "Don't ask again for Atlas's downloads"; then one bar while
     /// <see cref="GameAdder"/> runs (Cancel stops after the step it's on); then a summary per game, with what to do where
-    /// something's missing, the Pack Doctor's "fix them now?" (<see cref="Hooks.OfferFixes"/>) and the tip about fixing on the
+    /// something's missing, per pack what Atlas fixed by itself, with Review fixes, and the tip about fixing on the
     /// map. It leads with the Atlas Engine while that isn't set up. A control, so the setup window holds it on a page;
     /// <see cref="AddGamesDialog"/> pops it everywhere else. Its host shows its two actions and presses them. Main thread.
     /// </summary>
@@ -53,8 +54,8 @@ namespace AP_Atlas.UI
             public required Action<string> StartPack { get; init; }
             /// <summary>Free bytes where Atlas keeps its data (null: unknown).</summary>
             public required Func<long?> FreeBytes { get; init; }
-            /// <summary>The Pack Doctor's "fix them now?" for the packs a batch found things in, built into the summary (null: a line says where they wait).</summary>
-            public Action<VBoxContainer, GameAdderRun>? OfferFixes { get; init; }
+            /// <summary>Shows what Atlas fixed by itself in a pack (its key, its zip), each fix undoable (null: no Review fixes button).</summary>
+            public Action<string, string>? ReviewFixes { get; init; }
             /// <summary>A batch ended (the window's pages read again).</summary>
             public Action<GameAdderRun>? BatchEnded { get; init; }
         }
@@ -88,8 +89,6 @@ namespace AP_Atlas.UI
         // The games of your multiworlds already offered a tick: one that becomes addable later (the engine set up from here)
         // is ticked then, once; one the user unticked stays unticked.
         private readonly HashSet<string> _preTicked = new(StringComparer.OrdinalIgnoreCase);
-        // The summary's "fix them now?" while it asks: the host's two buttons carry its Fix them now… and Later.
-        private PackFixHandoff? _handoff;
         private int _generation;
         private CancellationTokenSource? _cts;
 
@@ -150,13 +149,13 @@ namespace AP_Atlas.UI
         {
             Stage.Pick => AddGamesWords.Adding(_tickedPlan) switch
             {
-                0 => _tr("Add games…"),
-                1 => _tr("Add 1 game…"),
-                int n => _tr("Add {0} games…").Replace("{0}", n.ToString(CultureInfo.InvariantCulture))
+                0 => _tr("Install games…"),
+                1 => _tr("Install 1 game…"),
+                int n => _tr("Install {0} games…").Replace("{0}", n.ToString(CultureInfo.InvariantCulture))
             },
             Stage.Confirm => _tr("Download and install"),
             Stage.Running => _cancelling ? _tr("Stopping…") : _tr("Cancel"),
-            _ => HandoffAsks ? _tr("Fix them now…") : _preselect != null ? _tr("Add {0}…").Replace("{0}", _preselect) : _tr("Done")
+            _ => _preselect != null ? _tr("Install {0}…").Replace("{0}", _preselect) : _tr("Done")
         };
 
         public bool PrimaryEnabled => CurrentStage switch
@@ -168,23 +167,19 @@ namespace AP_Atlas.UI
         };
 
         /// <summary>
-        /// The second action, or null for none: Cancel on the list, Back on the confirm; on the summary, Later while the Pack
-        /// Doctor's question asks, then Try those again when games weren't done.
+        /// The second action, or null for none: Cancel on the list, Back on the confirm; on the summary, Try those again when
+        /// games weren't done.
         /// </summary>
         public string? SecondaryText => CurrentStage switch
         {
             Stage.Pick => _tr("Cancel"),
             Stage.Confirm => _tr("Back"),
-            Stage.Summary when HandoffAsks => _tr("Later"),
             Stage.Summary when Result?.Outcome.Games.Any(g => !g.Ok) == true => _tr("Try those again"),
             _ => null
         };
 
         /// <summary>How many games the ticks add (0: nothing to add, and a host may move on).</summary>
         public int AddingCount => AddGamesWords.Adding(_tickedPlan);
-
-        /// <summary>Whether the summary's Pack Doctor question still asks (its Fix them now… and Later are the host's actions).</summary>
-        public bool Asking => HandoffAsks;
 
         public void PressPrimary()
         {
@@ -194,7 +189,6 @@ namespace AP_Atlas.UI
                 case Stage.Pick: GoConfirm(); break;
                 case Stage.Confirm: Run(); break;
                 case Stage.Running: Cancel(); break;
-                case Stage.Summary when HandoffAsks: _handoff!.PressFixThemNow(); break;
                 case Stage.Summary when _preselect != null:
                     // A game asked for while this batch ran: the list again, with it ticked.
                     _ticked.Clear();
@@ -214,7 +208,6 @@ namespace AP_Atlas.UI
                     GoTo(Stage.Pick);
                     ApplyPreselect(); // a game asked for while the confirm showed
                     break;
-                case Stage.Summary when HandoffAsks: _handoff!.PressLater(); break;
                 case Stage.Summary when SecondaryText != null: TryAgain(); break;
             }
         }
@@ -237,20 +230,17 @@ namespace AP_Atlas.UI
             RaiseActions(); // on the summary, its button offers the game
         }
 
-        /// <summary>Whether the summary's Pack Doctor question still asks (its Fix them now… and Later are the host's buttons).</summary>
-        private bool HandoffAsks => CurrentStage == Stage.Summary && _handoff != null && IsInstanceValid(_handoff) && _handoff.CanFix;
-
         // ---- The list ----
 
         private void BuildPick()
         {
             _engineLead = Card(_pick, ThemeColors.Warning, out var lead);
             _engineLead.SetMeta("add_games_engine_lead", true);
-            lead.AddChild(Wrap(Kit.Text(_tr("Games' logic runs in the Atlas Engine, which isn't set up yet. Set it up first: what you tick stays ticked, and Add follows once it's ready."))));
+            lead.AddChild(Wrap(Kit.Text(_tr("Games' logic runs in the Atlas Engine, which isn't set up yet. Set it up first: what you tick stays ticked, and Install follows once it's ready."))));
             var setUp = Kit.Button(_tr("Set up the Atlas Engine…"), _tr("Sets up the logic engine in Atlas's own folder (asked first)."), _hooks.OpenEngineSetup);
             setUp.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
             lead.AddChild(setUp);
-            _pick.AddChild(Wrap(Kit.Muted(_tr("Tick the games you play: Atlas adds each one's logic and a map pack, with one question first. The games of your multiworlds come first (marked), ticked where they need something; a game with nothing to add is greyed."))));
+            _pick.AddChild(Wrap(Kit.Muted(_tr("Tick the games you play: Atlas installs each one's logic and a map pack, with one question first. The games of your multiworlds come first (marked), ticked where they need something; a game with nothing to install is greyed."))));
             _note = Wrap(Kit.Text("", ThemeColors.Warning));
             _note.Visible = false;
             _pick.AddChild(_note);
@@ -271,7 +261,7 @@ namespace AP_Atlas.UI
             {
                 new AtlasTable.Column { Id = "tick", Title = "", MinWidth = 34, Ratio = 0, Sortable = false },
                 new AtlasTable.Column { Id = "game", Title = _tr("Game"), MinWidth = narrow ? 140 : 180, Ratio = 3 },
-                new AtlasTable.Column { Id = "gets", Title = _tr("Adding it gets"), MinWidth = narrow ? 150 : 220, Ratio = 4 },
+                new AtlasTable.Column { Id = "gets", Title = _tr("Installing it gets"), MinWidth = narrow ? 150 : 220, Ratio = 4 },
                 new AtlasTable.Column { Id = "size", Title = _tr("Download"), MinWidth = 110, Ratio = 0, Align = HorizontalAlignment.Right }
             }, "game");
             // A check box per row with something to add (the versions table's way); a game with nothing to add has none.
@@ -282,7 +272,7 @@ namespace AP_Atlas.UI
                 item.SetCellMode(0, TreeItem.TreeCellMode.Check);
                 item.SetEditable(0, true);
                 item.SetChecked(0, _ticked.Contains(row.Key));
-                item.SetTooltipText(0, _tr("Tick to add it"));
+                item.SetTooltipText(0, _tr("Tick to install it"));
             };
             _table.Tree.ItemEdited += () =>
             {
@@ -420,7 +410,7 @@ namespace AP_Atlas.UI
             if (_preselect == null) return;
             if (!_rowOf.TryGetValue(_preselect, out var row))
             {
-                Note(_tr("Atlas doesn't list {0} yet: add its project on the Games page (Add a game's project…).").Replace("{0}", _preselect));
+                Note(_tr("Atlas doesn't list {0} yet: add its project on the Games page (Add a game by its project link…).").Replace("{0}", _preselect));
                 return;
             }
             _preselect = null; // applied once: a later read (an engine change) keeps the user's own ticks
@@ -494,7 +484,7 @@ namespace AP_Atlas.UI
             _cts = new CancellationTokenSource();
             _cancelling = false;
             int games = AddGamesWords.Adding(plan);
-            _runningTitle.Text = games == 1 ? _tr("Adding 1 game") : _tr("Adding {0} games").Replace("{0}", games.ToString(CultureInfo.InvariantCulture));
+            _runningTitle.Text = games == 1 ? _tr("Installing 1 game") : _tr("Installing {0} games").Replace("{0}", games.ToString(CultureInfo.InvariantCulture));
             _status.Text = _tr("Starting…");
             _bar.Value = 0;
             GoTo(Stage.Running);
@@ -531,48 +521,50 @@ namespace AP_Atlas.UI
         private void BuildSummary(GameAdderRun run)
         {
             Clear(_summary);
-            _handoff = null;
             var o = run.Outcome;
-            _summary.AddChild(Kit.Heading(o.Cancelled ? _tr("Stopped") : _tr("Games added"), 1.15f));
+            _summary.AddChild(Kit.Heading(o.Cancelled ? _tr("Stopped") : _tr("Games installed"), 1.15f));
             var headline = Wrap(Kit.Text(AddGamesWords.Headline(o, _tr)));
             headline.SetMeta("add_games_headline", true);
             _summary.AddChild(headline);
             if (!string.IsNullOrWhiteSpace(o.EngineProblem))
                 _summary.AddChild(Wrap(Kit.Text(_tr("The Atlas Engine's health check said: {0}").Replace("{0}", o.EngineProblem), ThemeColors.Warning)));
             // Everything else scrolls as one (a row per game, the Pack Doctor's question, the tip): its labels can't make the dialog tall.
-            int height = 72 * Math.Max(1, o.Games.Count) + (run.Fixes.Count > 0 ? 120 + 36 * run.Fixes.Count : 0) + (o.MapsAdded > 0 ? 48 : 0);
+            int height = 72 * Math.Max(1, o.Games.Count) + 36 * o.PacksToLook.Count + (o.MapsAdded > 0 ? 48 : 0);
             var scroll = new ScrollContainer { HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled, SizeFlagsVertical = SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, Math.Min(420, height)) };
             var list = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
             list.AddThemeConstantOverride("separation", 10);
             scroll.AddChild(list);
             _summary.AddChild(scroll);
             foreach (var game in o.Games) list.AddChild(ResultRow(game));
-            if (run.Fixes.Count > 0)
-            {
-                var handoff = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-                handoff.SetMeta("add_games_handoff", true);
-                list.AddChild(handoff);
-                if (_hooks.OfferFixes != null)
-                {
-                    _hooks.OfferFixes(handoff, run);
-                    // Its question is answered with the host's buttons: they're always in sight, the scrolled list isn't.
-                    _handoff = handoff.GetChildren().OfType<PackFixHandoff>().FirstOrDefault();
-                    if (_handoff != null)
-                    {
-                        _handoff.HideOwnButtons();
-                        _handoff.StateChanged += RaiseActions;
-                    }
-                }
-                else handoff.AddChild(Line(run.Fixes.Count == 1 ? _tr("Atlas found things to look at in 1 map pack: its row under Map packs on its game's page has Review and Fix.")
-                    : _tr("Atlas found things to look at in {0} map packs: each one's row under Map packs on its game's page has Review and Fix.").Replace("{0}", run.Fixes.Count.ToString(CultureInfo.InvariantCulture)), false));
-            }
+            // Per pack it installed: what Atlas fixed by itself (Review fixes lists each, with Undo) and what's left on the map's Notices.
+            foreach (var look in o.PacksToLook) list.AddChild(FixedRow(look));
             // The closing tip, once a map came in (after the Pack Doctor's question, so it reads after the fixes).
             if (o.MapsAdded > 0)
             {
-                var tip = Line(_tr(PackFixHandoff.FixTip), false);
+                var tip = Line(_tr(MapTrackerControl.FixTipText), false);
                 tip.SetMeta("add_games_tip", true);
                 list.AddChild(tip);
             }
+        }
+
+        private Control FixedRow(PackToLook look)
+        {
+            var row = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            row.AddThemeConstantOverride("separation", 8);
+            row.SetMeta("add_games_fixed", look.PackKey);
+            var line = Line(AutoFixWords.Summary(look.PackName, look.Game, look.Fixed, look.Left, _tr), false);
+            line.CustomMinimumSize = new Vector2(Math.Max(200, _width - 200), 0);
+            line.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+            row.AddChild(line);
+            if (look.Fixed > 0 && _hooks.ReviewFixes is { } review)
+            {
+                string key = look.PackKey, file = look.File;
+                var button = Kit.Button(_tr("Review fixes"), _tr("What Atlas changed in this pack, each with Undo, and Undo all."), () => review(key, file), small: true);
+                button.SetMeta("review_fixes", key);
+                button.SizeFlagsVertical = SizeFlags.ShrinkBegin;
+                row.AddChild(button);
+            }
+            return row;
         }
 
         private Control ResultRow(AddGameResult r)

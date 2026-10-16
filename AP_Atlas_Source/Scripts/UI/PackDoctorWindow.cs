@@ -611,8 +611,9 @@ namespace AP_Atlas.UI
             if (f.Actions.HasFlag(FindingActions.ResetFixes) && f.RelatedSubjects.Count > 0)
             {
                 var subjects = f.RelatedSubjects.ToList();
-                actions.AddChild(Kit.Button($"Undo these {subjects.Count} links", "Remove these links; the Doctor will suggest a match for each again", () =>
-                    PackFixes.Edit(_key, $"Undo {subjects.Count} links", file => file.Links.RemoveAll(l => subjects.Contains(l.Subject)))));
+                // Through PackFixes.Remove: a tile's fix goes too, and one Atlas made is declined (what the user undoes stays undone).
+                actions.AddChild(Kit.Button(subjects.Count == 1 ? "Undo this fix" : $"Undo these {subjects.Count} links", "Remove these links; the Doctor will suggest a match for each again", () =>
+                    PackFixes.UndoFixes(_key, subjects, $"Undo {subjects.Count} links")));
             }
             if (f.Actions.HasFlag(FindingActions.RestoreFix))
             {
@@ -689,7 +690,7 @@ namespace AP_Atlas.UI
                     t.ApItemId != null ? $"tracks {t.ApItemName}" : null,
                     t.Hidden ? "hidden" : null,
                     t.ImageFile != null ? "custom image" : null
-                }.Where(x => x != null)) + (t.Automatic ? " (automatic: the names match)" : ""));
+                }.Where(x => x != null)) + (t.Automatic ? " (Atlas's: " + (PackChangeWords.WhyAtlas(t.Reason, t.Source) ?? "the names match") + ")" : ""));
             Group("Added tiles", "tiles", f.AddedTiles, t => $"Added tile for {t.ApItemName}");
             Group("Grids", "grids", f.Grids, g => $"Grid {g.Subject.Substring(5)}: " + string.Join(", ", new[]
             {
@@ -697,7 +698,7 @@ namespace AP_Atlas.UI
                 g.ItemSize != null ? $"tile size {g.ItemSize}" : null,
                 g.Rows != null ? "reordered" : null
             }.Where(x => x != null)));
-            Group("Location links", "links", f.Links, l => $"{l.PinPath} / {(string.IsNullOrEmpty(l.SectionName) ? "(pin)" : l.SectionName)} → {(l.ApLocationId == null ? "nothing" : l.ApLocationName)}" + (l.Automatic ? " (automatic: the names match)" : ""));
+            Group("Location links", "links", f.Links, l => $"{l.PinPath} / {(string.IsNullOrEmpty(l.SectionName) ? "(pin)" : l.SectionName)} → {(l.ApLocationId == null ? "nothing" : l.ApLocationName)}" + (l.Automatic ? " (Atlas's: " + (PackChangeWords.WhyAtlas(l.Reason, l.Source) ?? "the names match") + ")" : ""));
             Group("Pins", "pins", f.Pins, p => p.Removed ? $"Removed pin {p.PinPath}" : $"Moved pin {p.PinPath} on {p.MapId}");
             Group("Added pins", "pins", f.AddedPins, p => $"Added pin '{p.Name}' on {p.MapId} ({p.ApLocationIds.Count} location{(p.ApLocationIds.Count == 1 ? "" : "s")})");
             Group("Map images", "maps", f.MapImages, m => $"Map '{m.MapId}' uses {m.ImageFile}");

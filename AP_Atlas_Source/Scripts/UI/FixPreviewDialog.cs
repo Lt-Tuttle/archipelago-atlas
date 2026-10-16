@@ -12,7 +12,6 @@ namespace AP_Atlas.UI
     /// What a bulk fix will change, before it changes anything (the owner, 2026-10-13: every bulk action previews first):
     /// one line of counts, then the rows by what happens to them (linked, set aside, skipped because they clash, replacing
     /// a link of the user's), and Apply / Cancel. Apply carries out the same <see cref="BulkPlan"/> the dialog shows.
-    /// <see cref="ShowAll"/> shows several packs' plans as one preview with one Apply (Add games' "Fix them now").
     /// </summary>
     public partial class FixPreviewDialog : ConfirmationDialog
     {
@@ -22,7 +21,7 @@ namespace AP_Atlas.UI
         /// <summary>The plan shown.</summary>
         public BulkPlan Plan { get; }
 
-        /// <summary>Every plan the dialog shows (one for a pack's own preview; each pack's for Add games' "Fix them now").</summary>
+        /// <summary>Every plan the dialog shows (one: the pack's).</summary>
         public IReadOnlyList<BulkPlan> Plans { get; }
 
         private readonly Action _apply;
@@ -52,41 +51,6 @@ namespace AP_Atlas.UI
             var (dialog, list) = Build(new[] { plan }, title, plan.Summary(), plan.Reason, apply);
             AddRows(list, plan, report);
             Open(parent, dialog);
-        }
-
-        /// <summary>
-        /// One preview for several packs' plans (Add games' "Fix them now"): the total, then each pack's name, its line and its
-        /// rows; one Apply carries out every plan shown. Plans that change nothing are left out; when none changes anything,
-        /// <paramref name="nothing"/> says so instead (no dialog).
-        /// </summary>
-        public static void ShowAll(Node parent, string title, IReadOnlyList<(string Name, BulkPlan Plan, DoctorReport Report)> packs, Action apply, Action<string>? nothing = null)
-        {
-            var changing = packs.Where(p => !p.Plan.Nothing).ToList();
-            if (changing.Count == 0)
-            {
-                nothing?.Invoke(Kit.Translate("Nothing to change."));
-                return;
-            }
-            var (dialog, list) = Build(changing.Select(p => p.Plan).ToList(), title, Total(changing), null, apply);
-            foreach (var (name, plan, report) in changing)
-            {
-                var heading = Kit.Text(name, ThemeColors.Heading);
-                heading.SetMeta("fix_preview_pack", name);
-                list.AddChild(heading);
-                list.AddChild(Kit.Subtle(plan.Summary()));
-                AddRows(list, plan, report);
-            }
-            Open(parent, dialog);
-        }
-
-        private static string Total(IReadOnlyList<(string Name, BulkPlan Plan, DoctorReport Report)> packs)
-        {
-            static string N(int n) => n.ToString(System.Globalization.CultureInfo.CurrentCulture);
-            string line = packs.Count == 1
-                ? Kit.Translate("1 map pack: links {1}, sets {2} aside, skips {3} that clash. One step: Undo in the Pack Doctor reverses it.")
-                : Kit.Translate("{0} map packs: links {1}, sets {2} aside, skips {3} that clash. One step per pack: Undo in the Pack Doctor reverses each.");
-            return line.Replace("{0}", N(packs.Count)).Replace("{1}", N(packs.Sum(p => p.Plan.Link.Count)))
-                .Replace("{2}", N(packs.Sum(p => p.Plan.SetAside.Count))).Replace("{3}", N(packs.Sum(p => p.Plan.Skipped.Count)));
         }
 
         private static (FixPreviewDialog Dialog, VBoxContainer List) Build(IReadOnlyList<BulkPlan> plans, string title, string summaryText, string? reason, Action apply)

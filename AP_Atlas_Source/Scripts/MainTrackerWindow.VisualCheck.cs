@@ -102,14 +102,13 @@ public partial class MainTrackerWindow
         OpenAddGames();
         await VisualCheckWaitForAsync(() => AP_Atlas.UI.AddGamesDialog.Showing?.Panel.FactsPending == 0, 15);
         await VisualCheckPictureAsync("add_games");
-        // Its summary for a made-up batch (three games, two packs the Pack Doctor wants looked at), and the one preview of every change; nothing is read, downloaded or changed.
-        var (fixOffers, fixPreviews) = VisualCheckHandoffSample();
-        AP_Atlas.UI.AddGamesDialog.Showing?.Panel.ShowSummaryForTests(VisualCheckSummarySample(fixOffers));
+        // Its summary for a made-up batch (three games; Atlas fixed one pack by itself and left another's rows to the user); nothing is read, downloaded or changed.
+        AP_Atlas.UI.AddGamesDialog.Showing?.Panel.ShowSummaryForTests(VisualCheckSummarySample());
         await VisualCheckWaitAsync(0.6);
         await VisualCheckPictureAsync("add_games_summary");
         AP_Atlas.UI.AddGamesDialog.Showing?.QueueFree();
         await VisualCheckWaitAsync(0.3);
-        await VisualCheckWindowAsync("fix_preview_all", () => AP_Atlas.UI.FixPreviewDialog.ShowAll(this, Tr("Fix them now: 2 map packs"), fixPreviews, () => { }));
+        await VisualCheckWindowAsync("review_fixes", () => AP_Atlas.UI.ReviewFixesDialog.Show(this, Tr("What Atlas fixed in Sample Quest map"), VisualCheckReviewSample, _ => { }, _ => { }));
 
         // The Atlas Engine page with its Advanced part open (which engine, its parts, the log); nothing goes online.
         ShowEnginePage(System.Array.Empty<string>());
@@ -180,37 +179,8 @@ public partial class MainTrackerWindow
         for (double waited = 0; waited < seconds && !done(); waited += 0.1) await VisualCheckWaitAsync(0.1);
     }
 
-    /// <summary>Two made-up packs for the pictures of Add games' question and its preview: links, a row set aside, a clash.</summary>
-    private static (List<AP_Atlas.Core.EngineSetup.PackFixOffer>, List<(string Name, AP_Atlas.Core.PopTracker.BulkPlan Plan, AP_Atlas.Core.PopTracker.DoctorReport Report)>) VisualCheckHandoffSample()
-    {
-        static AP_Atlas.Core.PopTracker.Finding Row(string pin, string section, string best, double score) => new()
-        {
-            Key = "loc:unmatched:" + pin + "|" + section,
-            Subject = "link:" + pin + "|" + section,
-            Severity = AP_Atlas.Core.PopTracker.FindingSeverity.Warning,
-            Actions = AP_Atlas.Core.PopTracker.FindingActions.LinkLocation,
-            Suggestions = { new AP_Atlas.Core.PopTracker.Suggestion { Label = best, Id = 1, Score = score } }
-        };
-        var report = new AP_Atlas.Core.PopTracker.DoctorReport();
-        var first = new AP_Atlas.Core.PopTracker.BulkPlan { Source = "suggested" };
-        var cave = Row("Cave", "Chest", "Cave Chest Room", 0.88);
-        first.Link.Add((cave, cave.Suggestions[0]));
-        first.SetAside.Add(Row("Tower", "Peak", "Tower Top", 0.58));
-        var second = new AP_Atlas.Core.PopTracker.BulkPlan { Source = "suggested" };
-        var bell = Row("Shrine", "Bell", "Shrine Bell", 0.93);
-        second.Link.Add((bell, bell.Suggestions[0]));
-        second.Skipped.Add((Row("Shrine", "Rope", "Shrine Bell", 0.86), "Shrine Bell is Bell's match too"));
-        AP_Atlas.Core.Games.PackToLook Look(string g, string n, AP_Atlas.Core.PopTracker.BulkPlan p, int needs) => new(g, n.ToLowerInvariant(), n, n + ".zip", needs, p.Summary());
-        var offers = new List<AP_Atlas.Core.EngineSetup.PackFixOffer>
-        {
-            new(Look("Sample Quest", "Sample Quest map", first, 3), null!, report, first),
-            new(Look("Example Saga", "Example Saga tracker", second, 2), null!, report, second)
-        };
-        return (offers, offers.Select(o => (o.Look.PackName, o.Plan, o.Report)).ToList());
-    }
-
     /// <summary>A made-up batch for the summary's picture: a game with the guide's pack, one from the list's best fit, one with no pack known.</summary>
-    private static AP_Atlas.Core.EngineSetup.GameAdderRun VisualCheckSummarySample(List<AP_Atlas.Core.EngineSetup.PackFixOffer> offers)
+    private static AP_Atlas.Core.EngineSetup.GameAdderRun VisualCheckSummarySample()
     {
         var o = new AP_Atlas.Core.Games.AddGamesOutcome(new[] { ("Sample Quest", true, true), ("Example Saga", true, true), ("Demo Odyssey", true, true) });
         o.For("Sample Quest").Logic = AP_Atlas.Core.Games.AddStep.Done("2.1.0");
@@ -220,8 +190,18 @@ public partial class MainTrackerWindow
         o.For("Example Saga").Map = AP_Atlas.Core.Games.AddStep.Done("github.com/example/saga-map v1.4");
         o.For("Demo Odyssey").Logic = AP_Atlas.Core.Games.AddStep.Done("1.0.0");
         o.For("Demo Odyssey").Map = AP_Atlas.Core.Games.AddStep.Unavailable("no map pack is known for it yet");
-        return new AP_Atlas.Core.EngineSetup.GameAdderRun(o, offers);
+        o.PacksToLook.Add(new AP_Atlas.Core.Games.PackToLook("Sample Quest", "sample quest map", "Sample Quest map", "Sample Quest map.zip", 12, 3));
+        o.PacksToLook.Add(new AP_Atlas.Core.Games.PackToLook("Example Saga", "example saga tracker", "Example Saga tracker", "Example Saga tracker.zip", 0, 2));
+        return new AP_Atlas.Core.EngineSetup.GameAdderRun(o);
     }
+
+    /// <summary>Three made-up fixes Atlas made by itself, for the picture of Review fixes.</summary>
+    private static IReadOnlyList<AP_Atlas.Core.PopTracker.PackChange> VisualCheckReviewSample() => new[]
+    {
+        new AP_Atlas.Core.PopTracker.PackChange("links", "link:Cave|Chest", "Cave / Chest shows Cave Chest Room", "automatic", "its name matches 88%", new System.DateTime(2026, 10, 16, 9, 2, 0), null),
+        new AP_Atlas.Core.PopTracker.PackChange("links", "link:Shrine|Bell", "Shrine / Bell shows Shrine Bell", "automatic", null, new System.DateTime(2026, 10, 16, 9, 1, 0), null),
+        new AP_Atlas.Core.PopTracker.PackChange("tiles", "tile:hookshot", "Tile Hookshot: shows Hookshot", "automatic", "the only 'Hookshot' in the game", new System.DateTime(2026, 10, 16, 9, 0, 0), null)
+    };
 
     private async Task VisualCheckPictureAsync(string name)
     {

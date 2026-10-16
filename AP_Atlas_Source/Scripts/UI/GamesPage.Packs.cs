@@ -184,7 +184,7 @@ namespace AP_Atlas.UI
         {
             if (packs.Count == 0)
             {
-                body.AddChild(Wrapped(Kit.Muted(_tr("No map pack for this game is installed. The card above finds one (Add this game, or Find a map pack…); All map packs, at the foot of the list, installs a zip you have."))));
+                body.AddChild(Wrapped(Kit.Muted(_tr("No map pack for this game is installed. The card above finds one (Install this game, or Find a map pack…); All map packs, at the foot of the list, installs a zip you have."))));
                 return;
             }
             if (_hooks.Packs is { } service) service.BuildPackRows(body, packs.Select(p => p.Path).ToList(), showGame: false);

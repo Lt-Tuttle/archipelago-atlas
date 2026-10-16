@@ -110,7 +110,7 @@ namespace AP_Atlas.Core.PopTracker
                         tile.ApItemId = s.Id;
                         tile.ApItemName = s.Label;
                         tile.Source = plan.Source;
-                        tile.Reason = plan.Reason;
+                        tile.Reason = plan.Reason ?? (plan.Source == "suggested" ? PackChangeWords.SuggestedReason(s.Score) : null);
                     }
                     else
                     {
@@ -124,7 +124,7 @@ namespace AP_Atlas.Core.PopTracker
                             ApLocationId = s.Id,
                             ApLocationName = s.Label,
                             Source = plan.Source,
-                            Reason = plan.Reason,
+                            Reason = plan.Reason ?? (plan.Source == "suggested" ? PackChangeWords.SuggestedReason(s.Score) : null),
                             AuthorStamp = PackFixes.AuthorStamp(original, f.Subject)
                         });
                     }

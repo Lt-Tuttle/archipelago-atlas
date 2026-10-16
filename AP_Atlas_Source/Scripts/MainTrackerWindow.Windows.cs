@@ -17,14 +17,16 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         string path = report.Pack.SourcePath;
         ShowToast(message, AP_Atlas.Core.ThemeColors.Warning, "Review", () => OpenPackDoctor(path));
     }
-    /// <summary>A pack new to this version has things Atlas can fix: one card, "Fix now" does it and says what it did.</summary>
-    private void OnPackFixSuggested(string packKey, int fixable, string packName)
+    /// <summary>The Pack Doctor fixed things in a pack by itself: one card says what, with Review fixes (each undoable, and Undo all).</summary>
+    private void OnPackAutoFixed(AP_Atlas.Core.PopTracker.PackDoctorService.AutoFixNote note)
     {
-        string message = Tr("{0} has {1} pin or tile match(es) to decide. Fix now links the confident ones and sets the rest aside (one step, undoable in the Pack Doctor).")
-            .Replace("{0}", packName).Replace("{1}", fixable.ToString());
-        LogToSystem(message, "orange");
-        ShowToast(message, AP_Atlas.Core.ThemeColors.Warning, Tr("Fix now"), () => FixWhatAtlasCan(packKey));
+        string message = AP_Atlas.Core.PopTracker.AutoFixWords.Card(note.PackName, note.Fixed, note.Left, text => Tr(text));
+        LogToSystem(message, "green");
+        ShowToast(message, AP_Atlas.Core.ThemeColors.Success, Tr("Review fixes"), () => ReviewFixes(note.Key, note.File));
     }
+
+    /// <summary>Review fixes: what Atlas fixed by itself in a pack, each with Undo, and Undo all.</summary>
+    internal void ReviewFixes(string packKey, string zipPath) => AP_Atlas.UI.ReviewFixesDialog.Open(this, packKey, zipPath);
 
     /// <summary>
     /// "Fix what Atlas can" for a pack, from the card, the Notices, a pack row or the Doctor: what it will change first (the

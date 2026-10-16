@@ -64,7 +64,6 @@ public partial class MainTrackerWindow
         ConnectSlotAsync = ConnectForSetupAsync,
         QuietLogicFor = SetSetupQuiet,
         AddGames = AddGamesPanelHooks,
-        OpenPackDoctor = (zip, tab) => OpenPackDoctor(zip, tab),
         ShowSettings = section => ShowSettings(section),
     };
 

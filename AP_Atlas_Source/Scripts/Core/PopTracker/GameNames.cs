@@ -132,8 +132,8 @@ namespace AP_Atlas.Core.PopTracker
         }
 
         /// <summary>
-        /// The Archipelago game a pack is for, by the same loose matching the pack loader uses ("Dark Souls 2" ↔
-        /// "Dark Souls II"), among games with stored names or known to the local install. Null if none matches.
+        /// The Archipelago game a pack is for, by Atlas's one rule for game names (GameNameRule.ResolvePack: exact text first, an
+        /// ambiguous match is none), among games with stored names or known to the local install. Null if none matches.
         /// </summary>
         public static string ResolveGame(PopTrackerManifest manifest)
         {
@@ -141,13 +141,7 @@ namespace AP_Atlas.Core.PopTracker
             EnsureDiskLoaded();
             var candidates = _server.Keys.Concat(_local.Keys).Concat(KnownGames).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             foreach (var name in new[] { manifest.GameName, manifest.Name })
-            {
-                if (string.IsNullOrEmpty(name)) continue;
-                var exact = candidates.FirstOrDefault(g => string.Equals(g, name, StringComparison.OrdinalIgnoreCase));
-                if (exact != null) return exact;
-                var loose = candidates.FirstOrDefault(g => PopTrackerPackLoader.IsGameNameMatch(name, g));
-                if (loose != null) return loose;
-            }
+                if (AP_Atlas.Core.Games.GameNameRule.ResolvePack(name, candidates) is { } game) return game;
             return null;
         }
 

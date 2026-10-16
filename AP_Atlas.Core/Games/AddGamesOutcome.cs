@@ -46,8 +46,8 @@ public sealed class AddGameResult
     private static bool Fine(AddStep step) => step.Outcome is not (AddStepOutcome.Failed or AddStepOutcome.Cancelled or AddStepOutcome.Pending);
 }
 
-/// <summary>A pack whose Doctor report wants a look after a batch, with "Fix them now"'s preview line (PackBulk's Summary).</summary>
-public sealed record PackToLook(string Game, string PackKey, string PackName, string File, int NeedsReview, string Preview);
+/// <summary>A pack a batch installed, once the Pack Doctor settled on it: the fixes Atlas made by itself in it, and the rows left for the user (the map's Notices).</summary>
+public sealed record PackToLook(string Game, string PackKey, string PackName, string File, int Fixed, int Left);
 
 /// <summary>What an Add games batch did, for the summary card: a row per game, the packs to look at, and how GitHub was used.</summary>
 public sealed class AddGamesOutcome

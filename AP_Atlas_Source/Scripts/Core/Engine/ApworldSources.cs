@@ -261,11 +261,38 @@ namespace AP_Atlas.Core.EngineSetup
             return bundled ?? new ApworldSourceList { Format = Format, Games = new() };
         }
 
-        /// <summary>The source for a game (by its Archipelago game name), or null if no source is known.</summary>
-        public static ApworldSource Find(string game) =>
-            string.IsNullOrEmpty(game) ? null :
-            List.Games.FirstOrDefault(g => string.Equals(g.Game, game, StringComparison.OrdinalIgnoreCase))
-            ?? List.Games.FirstOrDefault(g => string.Equals(g.DisplayName, game, StringComparison.OrdinalIgnoreCase));
+        /// <summary>
+        /// The source for a game (by its Archipelago game name), or null if no source is known. Another spelling of a listed game
+        /// (an accent, "&amp;" for "and": GameNameRule) finds it when only one listed game reads that way; display names match exactly.
+        /// </summary>
+        public static ApworldSource Find(string game)
+        {
+            if (string.IsNullOrEmpty(game)) return null;
+            var list = List;
+            return list.Games.FirstOrDefault(g => string.Equals(g.Game, game, StringComparison.OrdinalIgnoreCase))
+                ?? list.Games.FirstOrDefault(g => string.Equals(g.DisplayName, game, StringComparison.OrdinalIgnoreCase))
+                ?? (KeyIndex(list).TryGetValue(AP_Atlas.Core.Games.GameNameRule.Key(game), out var one) ? one : null);
+        }
+
+        // Each listed game by its compared name, for one list (read from any thread; built once per list). A name two games share is left out.
+        private sealed record KeyIndexOf(ApworldSourceList List, Dictionary<string, ApworldSource> ByKey);
+        private static KeyIndexOf _keyIndex;
+
+        private static Dictionary<string, ApworldSource> KeyIndex(ApworldSourceList list)
+        {
+            var known = _keyIndex;
+            if (known != null && ReferenceEquals(known.List, list)) return known.ByKey;
+            var byKey = new Dictionary<string, ApworldSource>(StringComparer.Ordinal);
+            var shared = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var g in list.Games.Where(g => !string.IsNullOrWhiteSpace(g.Game)))
+            {
+                string key = AP_Atlas.Core.Games.GameNameRule.Key(g.Game);
+                if (key.Length == 0 || shared.Contains(key)) continue;
+                if (!byKey.TryAdd(key, g)) { byKey.Remove(key); shared.Add(key); }
+            }
+            _keyIndex = new KeyIndexOf(list, byKey);
+            return byKey;
+        }
 
         /// <summary>Uses this list as the game list (for tests: a game's releases at a fake site); null goes back to the bundled one.</summary>
         internal static void UseListForTests(ApworldSourceList list) => _list = list;

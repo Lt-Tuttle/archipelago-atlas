@@ -18,7 +18,7 @@ namespace AP_Atlas.UI
         public static readonly Step Engine = new("engine", "The Atlas Engine");
         /// <summary>The multiworld and the user's slots in it: one page, whose Next connects the slots.</summary>
         public static readonly Step Multiworld = new("multiworld", "Your multiworld and slots");
-        public static readonly Step Games = new("games", "Add games");
+        public static readonly Step Games = new("games", "Install games");
 
         /// <summary>The steps in the setup window's order.</summary>
         public static readonly IReadOnlyList<Step> All = new[] { Engine, Multiworld, Games };

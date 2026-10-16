@@ -206,6 +206,21 @@ namespace AP_Atlas.UI
             return false;
         }
 
+        /// <summary>Switches to a map and centres a pin on it (by its full path), pulsing its checks; a pin no longer there (removed) shows its map. False when the pack has no such map.</summary>
+        public bool RevealPin(string mapId, string pinPath)
+        {
+            if (_pack == null || string.IsNullOrEmpty(mapId) || !_pack.Maps.ContainsKey(mapId)) return false;
+            if (!string.Equals(mapId, _currentMapId, StringComparison.OrdinalIgnoreCase)) SwitchMap(mapId);
+            foreach (var pin in PinsOnMap(mapId))
+            {
+                if (pin.Loc.FullPath != pinPath) continue;
+                _canvas.CenterOn(new Vector2(pin.X, pin.Y));
+                RenderLocations(new HashSet<long>(GetLocationIds(pin.Loc)));
+                return true;
+            }
+            return true;
+        }
+
         /// <summary>Pack locations (pins) that cover an AP location id, with every map each appears on.</summary>
         public List<(PopTrackerLocation Pin, PopTrackerSection Section, List<string> Maps)> PinsFor(long locationId)
         {
@@ -339,6 +354,7 @@ namespace AP_Atlas.UI
             leftVBox.AddChild(BuildNoticeTabs(listScroll));
             leftVBox.AddChild(listScroll);
             leftVBox.AddChild(_noticesPane);
+            leftVBox.AddChild(_changesPane);
             var listMargin = new MarginContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
             listScroll.AddChild(listMargin);
             var listBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
@@ -379,7 +395,7 @@ namespace AP_Atlas.UI
             _emptySubLabel = new Label { Text = EmptySubText(), HorizontalAlignment = Godot.HorizontalAlignment.Center };
             _emptySubLabel.AddThemeColorOverride("font_color", ThemeColors.TextSubtle);
             emptyVBox.AddChild(_emptySubLabel);
-            _addGameButton = Kit.Button(Translate("Get a map pack…"), Translate("Opens Add games with this game ticked: Atlas says what it downloads and from where, then installs the map pack its game list knows (and the game's logic, if that's missing)."), () => AddGameRequested?.Invoke());
+            _addGameButton = Kit.Button(Translate("Get a map pack…"), Translate("Opens Install games with this game ticked: Atlas says what it downloads and from where, then installs the map pack its game list knows (and the game's logic, if that's missing)."), () => AddGameRequested?.Invoke());
             _addGameButton.ThemeTypeVariation = Kit.PrimaryButton;
             _addGameButton.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
             _addGameButton.Visible = _packListed;
@@ -739,6 +755,7 @@ namespace AP_Atlas.UI
                 RenderLocations();
             }
             ShowFixTipOnce();
+            RefreshChanges(); // the pack's fixes as they are now (the slot loads the pack again after every fix)
         }
 
         /// <summary>The slot's pack was removed or replaced: nothing of it is shown, and the empty state says why.</summary>
@@ -763,6 +780,7 @@ namespace AP_Atlas.UI
             RefreshMapList();
             if (_canvasPanel != null) _canvasPanel.Visible = false;
             if (_emptyStateContainer != null) _emptyStateContainer.Visible = true;
+            RefreshChanges(); // the hidden checks alone
         }
 
         private bool _followAvailable;

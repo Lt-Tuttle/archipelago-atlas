@@ -44,7 +44,7 @@ namespace AP_Atlas.UI
 
         private AddGamesDialog(AddGamesPanel.Hooks hooks, string? game)
         {
-            Title = hooks.Tr("Add games");
+            Title = hooks.Tr("Install games");
             DialogHideOnOk = false;
             Exclusive = false;
             Unresizable = false;

@@ -26,8 +26,8 @@ public partial class MainTrackerWindow
         InstallPack = (game, repo) => AP_Atlas.Core.Async.Fire(_packManagerPanel.InstallPackFromRepoAsync(game, repo, confirm: true), $"installing {repo}'s pack for {game}"),
         StartPack = game => StartPack(game, null),
         FreeBytes = () => AtlasEngine.FreeBytes(DataManager.GetDataDirectory()),
-        // The Pack Doctor's one question for the packs the batch installed (decision 9): a preview of every change, then the fixes.
-        OfferFixes = (box, run) => box.AddChild(new AP_Atlas.UI.PackFixHandoff(run.Fixes, (zip, tab) => OpenPackDoctor(zip, tab))),
+        // What Atlas fixed by itself in a pack the batch installed: each fix with Undo, and Undo all.
+        ReviewFixes = ReviewFixes,
         BatchEnded = _ =>
         {
             _homePage?.Refresh();

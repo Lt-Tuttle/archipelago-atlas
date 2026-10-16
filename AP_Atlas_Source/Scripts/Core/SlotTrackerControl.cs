@@ -190,6 +190,11 @@ public partial class SlotTrackerControl : MarginContainer
         _mapTracker.IsExcluded = IsExcluded;
         _mapTracker.IsHidden = Model.IsHidden;
         _mapTracker.HideChecks = SetChecksHidden;
+        // The Changes tab lists the checks hidden for this slot, by name.
+        _mapTracker.HiddenList = () => Model.HiddenChecks
+            .Select(id => (id, Session?.Locations.GetLocationNameFromId(id) ?? id.ToString(System.Globalization.CultureInfo.InvariantCulture)))
+            .OrderBy(x => x.Item2, StringComparer.OrdinalIgnoreCase).ToList();
+        _mapTracker.RefreshChanges(); // the tab's count for checks already hidden (a slot with no pack never loads one to refresh it)
         _mapTracker.MarkerLookup = id =>
         {
             var a = AP_Atlas.Core.Annotations.Get(AnnotationKey, AP_Atlas.Core.Annotations.LocationKey(id));
@@ -465,6 +470,7 @@ public partial class SlotTrackerControl : MarginContainer
             _hiddenSignature = hidden;
             RenderLogicTree();
             RaiseStateChanged();
+            _mapTracker?.RefreshChanges(); // the Changes tab lists the hidden checks
         }
         ApplyAllLogicMarkers();
 

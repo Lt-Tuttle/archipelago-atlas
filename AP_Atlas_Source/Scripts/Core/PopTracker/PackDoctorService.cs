@@ -11,7 +11,7 @@ namespace AP_Atlas.Core.PopTracker
     /// <summary>
     /// Runs the Pack Doctor in the background when a pack is installed, updated or first used, gathers name
     /// tables (local install, and the server's from connected slots), applies "author wins" after updates, and
-    /// tells the user when something needs a decision. Main thread only (work runs on the thread pool).
+    /// makes the confident fixes by itself (once per pack version) and says so with one card. Main thread only (work runs on the thread pool).
     /// </summary>
     public static class PackDoctorService
     {
@@ -65,8 +65,7 @@ namespace AP_Atlas.Core.PopTracker
         }
 
         /// <summary>
-        /// Checks a pack in the background. With prompt, suggests a review when the pack is new or changed since
-        /// it was last reviewed and something needs a decision.
+        /// Checks a pack in the background. With prompt, says once what Atlas fixed by itself (a card with Review fixes) when its automatic pass in this check fixed something.
         /// </summary>
         public static async Task<DoctorReport> CheckAsync(LoadedPack original, bool prompt = true, bool refreshLocalNames = false)
         {
@@ -116,23 +115,25 @@ namespace AP_Atlas.Core.PopTracker
                     ReviewSuggested?.Invoke(key, $"{original.Manifest?.Name} updated: {authorNotes.Count} of your fixes were replaced by the author's changes.");
 
                 var fixes = PackFixes.Get(key);
-                string version = original.Manifest?.GetActualVersion() ?? "";
-                // Once per pack version: exact name matches are linked by the Doctor itself (undoable; the edit queues a
-                // check with them in, which then lists what's left).
+                // Once per pack version (and Atlas's linking rules): the confident fixes, made by Atlas itself (the owner, 2026-10-16:
+                // "just automatically apply the fixes"); each undoable, and what's undone stays undone. The edit queues a check with
+                // them in, which lists what's left on the map's Notices and says, once, what was fixed.
                 if (_settings?.PackDoctorAutoLink != false && fixes.AutoLinkedVersion != AutoLinkStamp(original) && names != null)
                 {
+                    var before = AtlasMade(PackFixes.Get(key));
                     int forgotten = ForgetStaleGuesses(key, original);
                     if (forgotten > 0) Logger.LogInfo($"Pack Doctor took back {forgotten} of its own links in '{original.Manifest?.Name}' that its improved rules read differently; they link again where they can.");
-                    int linked = AutoLinkExact(key, original, report);
-                    if (linked > 0) Logger.LogInfo($"Pack Doctor linked {linked} exact name match{(linked == 1 ? "" : "es")} in '{original.Manifest?.Name}' by itself (Undo in the Doctor reverses them).");
+                    int made = AutoFix(key, original, report);
+                    // Announced: only what wasn't there before the pass (a pass that remakes what it took back says nothing).
+                    int fresh = made == 0 ? 0 : AtlasMade(PackFixes.Get(key)).Count(kv => !before.TryGetValue(kv.Key, out var id) || id != kv.Value);
+                    if (made > 0) Logger.LogInfo($"Atlas fixed {made} thing{(made == 1 ? "" : "s")} in '{original.Manifest?.Name}' by itself (Review fixes, the map's Changes or the Doctor's Undo takes any back).");
+                    if (prompt && fresh > 0) _toAnnounce[key] = fresh;
                 }
-                int needs = report.NeedsReview.Count();
-                bool newOrChanged = fixes.ReviewedVersion != version;
-                if (prompt && newOrChanged && needs > 0 && !_postponed.Contains(PostponedKey(key, version)))
+                else if (_toAnnounce.Remove(key, out int fixedCount))
                 {
-                    int fixable = report.Findings.Count(f => !f.Ignored && (f.Actions.HasFlag(FindingActions.LinkItem) || f.Actions.HasFlag(FindingActions.LinkLocation)));
-                    string name = original.Manifest?.Name ?? key, review = $"Pack Doctor: {original.Manifest?.Name} has {needs} thing{(needs == 1 ? "" : "s")} to review.";
-                    Prompt(key, fixable > 0 ? () => FixSuggested?.Invoke(key, fixable, name) : () => ReviewSuggested?.Invoke(key, review));
+                    // The check the pass's edit queued: the card says what was fixed and what's left.
+                    var note = new AutoFixNote(key, original.Manifest?.Name ?? key, original.SourcePath, fixedCount, report.NeedsReview.Count());
+                    Prompt(key, () => AutoFixed?.Invoke(note));
                 }
                 return report;
             }
@@ -182,29 +183,41 @@ namespace AP_Atlas.Core.PopTracker
         public static string AutoLinkStamp(LoadedPack original) => (original?.Manifest?.GetActualVersion() ?? "") + " / Atlas " + AtlasVersion.Display + " / rules " + LinkRules;
 
         /// <summary>
-        /// Links every recommendation whose best match is exact and clashes with nothing (<see cref="PackDoctor.ExactMatches"/>)
-        /// as fixes marked automatic, in one undoable step, and records the pass for the pack's version. Main thread.
-        /// Returns how many it linked.
+        /// The fixes Atlas makes by itself: every recommendation whose best match is exact or the only one of its kind
+        /// (<see cref="PackDoctor.ExactMatches"/>, which scores it as sure) or scores 85% or more, and clashes with no other
+        /// recommendation (Fix what Atlas can's rule, <see cref="PackBulk.ConfidentLinks"/>); never a row the user took back
+        /// (<see cref="PackFixFile.Declined"/>) nor one holding a fix of the user's own.
         /// </summary>
-        public static int AutoLinkExact(string key, LoadedPack original, DoctorReport report)
+        public static List<(Finding Finding, Suggestion Pick)> AutoFixLinks(DoctorReport report, PackFixFile fixes)
         {
-            string version = AutoLinkStamp(original);
-            var exact = PackDoctor.ExactMatches(report);
-            if (exact.Count == 0)
+            PackDoctor.ExactMatches(report); // first: a pin that's the only one of its kind is marked sure (score 1, with why)
+            bool Yours(string subject) => fixes.Tiles.Any(t => t.Subject == subject && t.Source == null) || fixes.Links.Any(l => l.Subject == subject && l.Source == null);
+            // Clashes are worked out over every confident row (Fix what Atlas can's rule) before the rows taken back are left out,
+            // so a declined row never hands its match to a weaker rival.
+            return PackBulk.ConfidentLinks(report).Where(x => !fixes.Declined.Contains(x.Finding.Subject) && !Yours(x.Finding.Subject)).ToList();
+        }
+
+        /// <summary>
+        /// Atlas's automatic pass over a pack (once per <see cref="AutoLinkStamp"/>): <see cref="AutoFixLinks"/> made as fixes
+        /// marked "automatic", with why Atlas was sure, in one undoable step. The pass is recorded first, outside the step, so an
+        /// Undo keeps the record (and declines what it made: PackFixes.Undo) instead of making the same fixes again. Main thread.
+        /// Returns how many it made.
+        /// </summary>
+        public static int AutoFix(string key, LoadedPack original, DoctorReport report)
+        {
+            PackFixes.SetAutoLinkedVersion(key, AutoLinkStamp(original));
+            var links = AutoFixLinks(report, PackFixes.Get(key));
+            if (links.Count == 0) return 0;
+            PackFixes.Edit(key, $"{AutoFixStep} {links.Count} thing{(links.Count == 1 ? "" : "s")} by itself", file =>
             {
-                PackFixes.SetAutoLinkedVersion(key, version);
-                return 0;
-            }
-            PackFixes.Edit(key, $"Link {exact.Count} exact name match{(exact.Count == 1 ? "" : "es")} automatically", file =>
-            {
-                foreach (var f in exact)
+                foreach (var (f, s) in links)
                 {
-                    var s = f.Suggestions[0];
                     string subject = f.Subject.Substring(f.Subject.IndexOf(':') + 1);
+                    string why = s.Reason ?? (s.Score < 0.999 ? "its name matches " + ((int)Math.Round(s.Score * 100)).ToString(System.Globalization.CultureInfo.InvariantCulture) + "%" : null);
                     if (f.Actions.HasFlag(FindingActions.LinkItem))
                     {
                         file.Tiles.RemoveAll(t => t.Subject == f.Subject);
-                        file.Tiles.Add(new TileFix { Subject = f.Subject, Code = subject, ApItemId = s.Id, ApItemName = s.Label, Source = "automatic", Reason = s.Reason, AuthorStamp = PackFixes.AuthorStamp(original, f.Subject) });
+                        file.Tiles.Add(new TileFix { Subject = f.Subject, Code = subject, ApItemId = s.Id, ApItemName = s.Label, Source = "automatic", Reason = why, AuthorStamp = PackFixes.AuthorStamp(original, f.Subject) });
                     }
                     else
                     {
@@ -218,15 +231,20 @@ namespace AP_Atlas.Core.PopTracker
                             ApLocationId = s.Id,
                             ApLocationName = s.Label,
                             Source = "automatic",
-                            Reason = s.Reason,
+                            Reason = why,
                             AuthorStamp = PackFixes.AuthorStamp(original, f.Subject)
                         });
                     }
                 }
-                file.AutoLinkedVersion = version;
             });
-            return exact.Count;
+            return links.Count;
         }
+
+        // Atlas's own fixes by subject → what each names (a pass that only remakes what it took back says nothing).
+        private static Dictionary<string, long?> AtlasMade(PackFixFile f) =>
+            f.Tiles.Where(t => t.Source == "automatic").Select(t => (t.Subject, t.ApItemId))
+                .Concat(f.Links.Where(l => l.Source == "automatic").Select(l => (l.Subject, l.ApLocationId)))
+                .GroupBy(x => x.Subject).ToDictionary(g => g.Key, g => g.First().Item2, StringComparer.Ordinal);
 
         /// <summary>
         /// Atlas's own links (made by its automatic pass or by "Fix what Atlas can") that its improved rules read
@@ -293,19 +311,25 @@ namespace AP_Atlas.Core.PopTracker
             return result;
         }
 
-        /// <summary>
-        /// A pack new to this version has things Atlas can fix (prompted once per version, instead of <see cref="ReviewSuggested"/>):
-        /// the pack's key, how many, and its name.
-        /// </summary>
-        public static event Action<string, int, string> FixSuggested;
+        /// <summary>What Atlas's automatic pass fixed in a pack, said once the check after it is in: its key, name and zip, the fixes made, the rows left.</summary>
+        public sealed record AutoFixNote(string Key, string PackName, string File, int Fixed, int Left);
 
-        // Prompts held while Add games runs: its summary asks one question for every pack it installed. Main thread.
+        /// <summary>Atlas fixed things in a pack by itself: the host shows one card with Review fixes. Raised through the prompt hold (Add games says it in its summary).</summary>
+        public static event Action<AutoFixNote> AutoFixed;
+
+        /// <summary>The automatic pass's undo step starts with this: an Undo of that step declines what it made (PackFixes.Undo).</summary>
+        public const string AutoFixStep = "Atlas fixed";
+
+        // Packs whose pass fixed something in a prompted check: said by the check its edit queued (pack key → fixes made). Main thread.
+        private static readonly Dictionary<string, int> _toAnnounce = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        // Cards held while Add games runs: its summary says what was fixed in every pack it installed. Main thread.
         private static int _promptHolds;
         private static readonly List<(string Key, Action Raise)> _heldPrompts = new List<(string, Action)>();
 
         /// <summary>
-        /// Holds the Doctor's prompts (the "Fix now" and "to review" cards) until the hold is released: Add games gathers its
-        /// packs' reports into one question, and a pack a connected slot loads meanwhile doesn't ask on its own. Main thread.
+        /// Holds the Doctor's cards (what Atlas fixed by itself, and "to review") until the hold is released: Add games says in
+        /// its summary what was fixed in each pack it installed, and a pack a connected slot loads meanwhile doesn't speak on its own. Main thread.
         /// </summary>
         public static PromptHold HoldPrompts()
         {
@@ -339,22 +363,6 @@ namespace AP_Atlas.Core.PopTracker
             _heldPrompts.Add((key, raise));
         }
 
-        // Pack versions Add games' summary asks about this session (answered or not): their own "Fix now" card waits for
-        // Atlas's next start, so Later isn't followed by the same question when a slot opens the pack. Another version of the
-        // pack (an update later in the session) asks as usual. Main thread.
-        private static readonly HashSet<string> _postponed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        /// <summary>Holds back these packs' prompts until Atlas starts again (Add games asks about them itself). Main thread.</summary>
-        public static void PostponePrompts(IEnumerable<(string Key, string Version)> packs)
-        {
-            foreach (var (key, version) in packs) _postponed.Add(PostponedKey(key, version));
-        }
-
-        private static string PostponedKey(string packKey, string version) => packKey + "\n" + (version ?? "");
-
-        /// <summary>Whether a pack's prompt waits for Atlas's next start (for tests).</summary>
-        internal static bool Postponed(string packKey, string version) => _postponed.Contains(PostponedKey(packKey, version));
-
         /// <summary>As at Atlas's start: no hold on the prompts and none held (for tests that mustn't depend on the ones before). Returns the holds there were.</summary>
         internal static int ResetPromptHoldsForTests()
         {
@@ -363,9 +371,6 @@ namespace AP_Atlas.Core.PopTracker
             _heldPrompts.Clear();
             return holds;
         }
-
-        /// <summary>As at Atlas's next start (for tests).</summary>
-        internal static void ForgetPostponedForTests() => _postponed.Clear();
 
         /// <summary>Waits until no check of the pack runs or is queued (at most <paramref name="most"/>): its report is then the last word. Main thread.</summary>
         public static async Task WhenIdleAsync(string packKey, TimeSpan most, CancellationToken ct = default)

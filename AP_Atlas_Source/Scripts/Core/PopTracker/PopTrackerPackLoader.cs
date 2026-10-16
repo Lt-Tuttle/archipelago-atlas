@@ -1075,33 +1075,8 @@ namespace AP_Atlas.Core.PopTracker
                 logDebug?.Invoke($"[PopTracker] Read the {string.Join(" and ", pack.MappingsBuiltByScripts)} mapping as the pack's scripts build it ({pack.LocationMappingById.Count + pack.LocationCodesById.Count} location ids, {pack.ItemMapping.Count} item ids).");
         }
 
-        public static bool IsGameNameMatch(string manifestName, string targetName)
-        {
-            if (string.IsNullOrEmpty(manifestName) || string.IsNullOrEmpty(targetName)) return false;
-            if (string.Equals(manifestName, targetName, StringComparison.OrdinalIgnoreCase)) return true;
-
-            string m = NormalizeName(manifestName);
-            string t = NormalizeName(targetName);
-
-            if (string.Equals(m, t, StringComparison.OrdinalIgnoreCase)) return true;
-
-            if (m.Contains(":") && m.Substring(m.IndexOf(":") + 1).Trim().Equals(t, StringComparison.OrdinalIgnoreCase)) return true;
-            if (t.Contains(":") && t.Substring(t.IndexOf(":") + 1).Trim().Equals(m, StringComparison.OrdinalIgnoreCase)) return true;
-
-            return false;
-        }
-
-        private static string NormalizeName(string name)
-        {
-            string roman = name;
-            roman = Regex.Replace(roman, @"\bVIII\b", "8", RegexOptions.IgnoreCase);
-            roman = Regex.Replace(roman, @"\bVII\b", "7", RegexOptions.IgnoreCase);
-            roman = Regex.Replace(roman, @"\bVI\b", "6", RegexOptions.IgnoreCase);
-            roman = Regex.Replace(roman, @"\bIV\b", "4", RegexOptions.IgnoreCase);
-            roman = Regex.Replace(roman, @"\bV\b", "5", RegexOptions.IgnoreCase);
-            roman = Regex.Replace(roman, @"\bIII\b", "3", RegexOptions.IgnoreCase);
-            roman = Regex.Replace(roman, @"\bII\b", "2", RegexOptions.IgnoreCase);
-            return roman;
-        }
+        /// <summary>A pack's name (its manifest's game or title) names the game, by Atlas's one rule for game names (GameNameRule).</summary>
+        public static bool IsGameNameMatch(string manifestName, string targetName) =>
+            AP_Atlas.Core.Games.GameNameRule.PackIsFor(manifestName, targetName);
     }
 }

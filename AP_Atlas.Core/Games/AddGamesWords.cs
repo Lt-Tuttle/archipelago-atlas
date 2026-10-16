@@ -59,11 +59,12 @@ public static class AddGamesWords
     public static AddGamesConfirmWords Confirm(AddPlan plan, bool gitHubAllowed, long? freeBytes, long floorBytes, Func<string, string> tr)
     {
         int games = Adding(plan);
-        string title = games == 1 ? tr("Add 1 game") : tr("Add {0} games").Replace("{0}", N(games));
+        string title = games == 1 ? tr("Install 1 game") : tr("Install {0} games").Replace("{0}", N(games));
         string down = Download(plan.DownloadBytes, plan.UnknownSizes, tr), disk = Megabytes(plan.DiskBytes, tr);
         string lead = down.Length == 0
             ? tr("Nothing needs downloading; Atlas uses {0} on this PC.").Replace("{0}", disk.Length > 0 ? disk : tr("next to nothing"))
             : tr("Atlas downloads {0} and uses {1} on this PC.").Replace("{1}", disk.Length > 0 ? disk : down).Replace("{0}", down);
+        var guided = plan.Games.Where(g => g.GuideLookupReserved).Select(g => g.Game).ToList();
         var sources = new List<string>();
         if (plan.ApworldProjects.Count > 0) sources.Add(tr("The games' logic (apworlds) from {0}.").Replace("{0}", string.Join(", ", plan.ApworldProjects)));
         if (plan.NeedsArchipelagoRelease)
@@ -74,13 +75,21 @@ public static class AddGamesWords
         if (plan.WorldsWithPackages.Count > 0)
             sources.Add(tr("Some of their worlds ({0}) need packages of their own, installed from PyPI; their size isn't listed.").Replace("{0}", string.Join(", ", plan.WorldsWithPackages)));
         if (plan.PackProjects.Count > 0) sources.Add(tr("Map packs from {0}.").Replace("{0}", string.Join(", ", plan.PackProjects)));
+        // With GitHub's lookups allowed there's no GitHub line below: the pack a guide names is said here.
+        if (guided.Count > 0 && gitHubAllowed)
+            sources.Add(tr("A map pack from the project that the setup guide of {0} names, read on GitHub once the logic is in.").Replace("{0}", string.Join(", ", guided)));
         string? gitHub = null;
         var live = plan.Items.Where(i => i.Live && i.Project != null).Select(i => i.Project!).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        if (live.Count > 0 && !gitHubAllowed)
-            gitHub = tr("First Atlas reads the releases of {0} on GitHub ({1}); pressing Download and install allows that until Atlas closes.")
-                .Replace("{1}", plan.GitHubRequests == 1 ? tr("at most 1 request") : tr("at most {0} requests").Replace("{0}", N(plan.GitHubRequests)))
-                .Replace("{0}", string.Join(", ", live));
-        bool apworlds = plan.ApworldProjects.Count > 0, packs = plan.PackProjects.Count > 0;
+        if ((live.Count > 0 || guided.Count > 0) && !gitHubAllowed)
+        {
+            string requests = plan.GitHubRequests == 1 ? tr("at most 1 request") : tr("at most {0} requests").Replace("{0}", N(plan.GitHubRequests));
+            gitHub = live.Count > 0
+                ? tr("First Atlas reads the releases of {0} on GitHub ({1}); pressing Download and install allows that until Atlas closes.").Replace("{1}", requests).Replace("{0}", string.Join(", ", live))
+                : tr("Once the logic is in, Atlas reads on GitHub the map pack project that the setup guide of {0} names ({1}); pressing Download and install allows that until Atlas closes.").Replace("{1}", requests).Replace("{0}", string.Join(", ", guided));
+            if (live.Count > 0 && guided.Count > 0)
+                gitHub += " " + tr("It also reads the map pack project that the setup guide of {0} names, once the logic is in.").Replace("{0}", string.Join(", ", guided));
+        }
+        bool apworlds = plan.ApworldProjects.Count > 0, packs = plan.PackProjects.Count > 0 || guided.Count > 0;
         string trust = apworlds && packs ? tr("Apworlds are programs that run inside Atlas's logic engine, and map packs' scripts run inside Atlas's sandbox: only continue if you trust these projects.")
             : apworlds ? tr("Apworlds are programs that run inside Atlas's logic engine: only continue if you trust these projects.")
             : packs ? tr("Map packs' scripts run inside Atlas's sandbox: only continue if you trust these projects.")

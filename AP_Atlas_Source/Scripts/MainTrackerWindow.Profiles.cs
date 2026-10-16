@@ -34,17 +34,26 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         profile.RoomLink = baseline.RoomLink;
         profile.ServerUrl = baseline.ServerUrl;
         profile.Password = baseline.Password;
+        // A slot connected (or connecting) meanwhile keeps its name: its connection, card and logic are the server's slot of that name.
+        var current = profile.Slots.ToList();
         profile.Slots.Clear();
         profile.Slots.AddRange(baseline.Slots);
+        for (int i = 0; i < current.Count; i++)
+        {
+            if (!IsSlotInUse(profile.Id, current[i]) || profile.Slots.Contains(current[i])) continue;
+            if (i < profile.Slots.Count && !IsSlotInUse(profile.Id, profile.Slots[i]) && !current.Contains(profile.Slots[i])) profile.Slots[i] = current[i];
+            else profile.Slots.Add(current[i]);
+        }
         // A renamed slot's stats go back under its old name; stats a connection added meanwhile stay.
         foreach (var (name, stats) in baseline.Stats)
             if (!profile.SavedStats.ContainsKey(name)) profile.SavedStats[name] = stats;
         foreach (string name in profile.SavedStats.Keys.ToList())
-            if (!baseline.Stats.ContainsKey(name) && baseline.Stats.ContainsValue(profile.SavedStats[name])) profile.SavedStats.Remove(name);
+            if (!baseline.Stats.ContainsKey(name) && baseline.Stats.ContainsValue(profile.SavedStats[name]) && !profile.Slots.Contains(name)) profile.SavedStats.Remove(name);
         _dirty = false;
         _saveButton.RemoveThemeColorOverride("font_color");
         FillEditor(profile);
         RefreshProfileList();
+        UpdateSidebar(); // a slot deleted before Don't save (its card went at once) comes back
     }
 
     /// <summary>Save: every edit to disk, and the link boxes checked and linked.</summary>
@@ -133,6 +142,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         _editBaseline = SnapshotEdits(_selectedProfile);
         _saveButton.RemoveThemeColorOverride("font_color");
         RefreshProfileList();
+        // The SLOTS list and the slot picker follow what was saved (a renamed multiworld or slot, slots from a YAML or a room link).
+        UpdateSidebar();
         if (announce) LogToSystem($"Profile '{_selectedProfile.Name}' saved.", "green");
     }
 
@@ -153,11 +164,26 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             ShowToast(Tr("This multiworld already has a slot named {0}.").Replace("{0}", text), AP_Atlas.Core.ThemeColors.Warning);
             return;
         }
+        // A connected, connecting or reconnecting slot keeps its name: its connection, card and logic are the server's slot of that name.
+        if (IsSlotInUse(_selectedProfile.Id, old))
+        {
+            lineEdit.Text = old;
+            ShowToast(Tr("{0} is connected: disconnect it first to rename it.").Replace("{0}", old), AP_Atlas.Core.ThemeColors.Warning);
+            return;
+        }
         _selectedProfile.Slots[index] = text;
         if (_selectedProfile.SavedStats.Remove(old, out var stats) && !_selectedProfile.SavedStats.ContainsKey(text)) _selectedProfile.SavedStats[text] = stats;
         row.SetMeta("slot_name", text);
         MarkDirty();
         RefreshProfileListStyles();
+        UpdateSidebar(); // its SLOTS card follows the name, so it never connects a name the multiworld no longer has
+    }
+
+    /// <summary>A slot connected, connecting or reconnecting: its name is the server's slot's (a rename or Don't save leaves it).</summary>
+    private bool IsSlotInUse(string profileId, string slot)
+    {
+        var id = new AP_Atlas.Core.Connections.SlotId(profileId, slot);
+        return _connectingSlots.Contains(SlotKey(profileId, slot)) || (_sessions != null && (_sessions.IsLoggedIn(id) || _sessions.IsReconnecting(id)));
     }
 
     private static bool IsDefaultSlotName(string name) => AP_Atlas.UI.SetupSteps.IsPlaceholderSlot(name);
@@ -624,7 +650,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             bool official = AP_Atlas.Core.EngineSetup.AtlasEngine.Worlds.FolderFor(game) != null;
             return new AP_Atlas.UI.GameStatus(official ? Tr("It ships with Archipelago; its world isn't in the Atlas Engine yet, so its logic can't run.")
                     : Tr("Its apworld isn't in the Atlas Engine yet, so its logic can't run."),
-                Tr("Add this game…"), () => OpenAddGames(game, OpenAddSlotDialog()));
+                Tr("Install this game…"), () => OpenAddGames(game, OpenAddSlotDialog()));
         }
         return new AP_Atlas.UI.GameStatus(Tr("Its apworld isn't in the Atlas Engine yet, and no project is known for it: add one on the Games page."));
     }

@@ -420,7 +420,12 @@ namespace AP_Atlas.UI
         {
             if (!_triageOn) return false;
             if (key == Key.Escape) { LeaveTriage(); return true; }
-            if (ctrl && key == Key.Z) { TriageUndo(); return true; }
+            if (ctrl && key == Key.Z)
+            {
+                if (_triageHistory.Count == 0) return false; // nothing decided here: nothing of Atlas's own is undone
+                TriageUndo();
+                return true;
+            }
             var f = CurrentTriage();
             if (f == null) return false;
             int digit = key is >= Key.Key1 and <= Key.Key9 ? (int)(key - Key.Key1) : key is >= Key.Kp1 and <= Key.Kp9 ? (int)(key - Key.Kp1) : -1;
@@ -494,8 +499,10 @@ namespace AP_Atlas.UI
 
         private void TriageUndo()
         {
+            // Only the review's own decisions: an Undo past them would take back (and decline) Atlas's whole pass.
+            if (_triageHistory.Count == 0) return;
             if (!PackFixes.Undo(_key)) return;
-            if (_triageHistory.Count > 0) _triageActed.Remove(_triageHistory.Pop());
+            _triageActed.Remove(_triageHistory.Pop());
             SetStatus("Undone.");
             RenderCurrentTab();
         }

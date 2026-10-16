@@ -13,13 +13,16 @@ namespace AP_Atlas.UI
         private PanelContainer? _tipBar;
         private Label? _tipNote;
 
+        /// <summary>The tip (it also ends Add games' summary once a map came in).</summary>
+        public const string FixTipText = "If a pin or tile is wrong while you play, right-click it and choose a fix; Undo is one click. The Map Tracker's Notices tab lists what Atlas noticed, and Changes what was changed.";
+
         /// <summary>The tip shown on the map, or null when none shows (for tests).</summary>
         public string? FixTipShown => _tipBar is { Visible: true } && _tipNote != null ? _tipNote.Text : null;
 
         private void ShowFixTipOnce()
         {
             if (_tipBar == null || _tipNote == null) return;
-            _tipNote.Text = Translate(PackFixHandoff.FixTip);
+            _tipNote.Text = Translate(FixTipText);
             _tipBar.Visible = !_appSettings.FixTipDismissed;
         }
 

@@ -1517,7 +1517,7 @@ namespace AP_Atlas.Core
                     "the exact matches aren't deku_shield and twin alone (twin_ clashes with twin): " + string.Join(", ", exact.Select(f => f.Key)));
 
                 // Linked by the Doctor itself: the fixes are marked automatic, the pass is recorded for the version.
-                int linked = PopTracker.PackDoctorService.AutoLinkExact(key, pack, first);
+                int linked = PopTracker.PackDoctorService.AutoFix(key, pack, first);
                 var fixes = PopTracker.PackFixes.Get(key);
                 Expect(linked == 2 && fixes.Tiles.Count == 2 && fixes.Tiles.All(t => t.Automatic && t.ApItemId != null) && fixes.AutoLinkedVersion == PopTracker.PackDoctorService.AutoLinkStamp(pack),
                     $"the automatic pass linked {linked} ({fixes.Tiles.Count} tile fixes, version '{fixes.AutoLinkedVersion}')");
@@ -1535,6 +1535,13 @@ namespace AP_Atlas.Core
                 Expect(PopTracker.PackFixes.Undo(key) && PopTracker.PackFixes.Get(key).Tiles.Count == 0, "Undo didn't take the automatic links back");
                 var third = await Task.Run(() => PopTracker.PackDoctor.Analyze(PopTracker.PackDoctor.Prepare(pack, names)));
                 Expect(third.Findings.Any(f => f.Key == "tile:unknown:deku_shield"), "after Undo, the code isn't reported again");
+                // The undone fixes are declined and the pass's record outlived the Undo: a pass run again (the check the Undo queues, or
+                // a new Atlas's stamp) leaves them to the user.
+                var undone = PopTracker.PackFixes.Get(key);
+                Expect(undone.AutoLinkedVersion == PopTracker.PackDoctorService.AutoLinkStamp(pack) && undone.Declined.OrderBy(s => s, StringComparer.Ordinal).SequenceEqual(new[] { "tile:deku_shield", "tile:twin" }),
+                    $"Undo took the pass's record back or didn't decline its fixes (record '{undone.AutoLinkedVersion}', declined {string.Join(", ", undone.Declined)})");
+                PopTracker.PackFixes.SetAutoLinkedVersion(key, "");
+                Expect(PopTracker.PackDoctorService.AutoFix(key, pack, third) == 0 && PopTracker.PackFixes.Get(key).Tiles.Count == 0, "the pass made a declined fix again");
 
                 // A fix that links a tile to an item the game doesn't have any more is reported, with the tile still linkable.
                 PopTracker.PackFixes.Edit(key, "self-test: a stale fix", f => f.Tiles.Add(new PopTracker.TileFix { Subject = "tile:known", Code = "known", ApItemId = 999, ApItemName = "Gone Item" }));
@@ -1544,6 +1551,109 @@ namespace AP_Atlas.Core
             }
             finally
             {
+                PopTracker.PackFixes.Reset(key);
+            }
+        }
+
+        /// <summary>
+        /// What the user undoes stays undone, through every Undo: the pass's record and its declines outlive an Undo of an older
+        /// step, and an older step's copy of Atlas's fixes isn't brought back.
+        /// </summary>
+        private static async Task PackDoctorUndoKeepsWhatWasUndone()
+        {
+            var pack = new PopTracker.LoadedPack
+            {
+                Manifest = new PopTracker.PopTrackerManifest { Name = "Self-test undo pack", GameName = "Self-test Undo Game", Version = "1.0" },
+                SourcePath = Scratch("selftest_undo_pack.zip")
+            };
+            pack.ItemsByCode["known"] = new PopTracker.PopTrackerItem { Name = "Known Item", CodesRaw = "known" };
+            pack.ItemGridGroups.Add(new PopTracker.PackItemGrid { LayoutKey = "tracker_default", Rows = new List<List<string>> { new List<string> { "deku_shield", "known", "twin" } } });
+            var names = new PopTracker.GameNameTable { Game = "Self-test Undo Game", Source = "server" };
+            names.Items["Deku Shield"] = 5;
+            names.Items["Known Item"] = 6;
+            names.Items["Twin"] = 7;
+            string key = PopTracker.PackFixes.KeyFor(pack);
+            PopTracker.PackFixes.Reset(key);
+            try
+            {
+                var report = await Task.Run(() => PopTracker.PackDoctor.Analyze(PopTracker.PackDoctor.Prepare(pack, names)));
+                string stamp = PopTracker.PackDoctorService.AutoLinkStamp(pack);
+                bool Undone(PopTracker.PackFixFile f) => !f.Tiles.Any(t => t.Automatic) && f.AutoLinkedVersion == stamp
+                    && f.Declined.Contains("tile:deku_shield") && f.Declined.Contains("tile:twin");
+
+                // 1. A fix of the user's, then Atlas's pass (a pack update's); Undo, Undo: the user's fix and Atlas's both gone.
+                PopTracker.PackFixes.Edit(key, "self-test: the user's own fix", f => f.Tiles.Add(new PopTracker.TileFix { Subject = "tile:known", Code = "known", Hidden = true }));
+                int made = PopTracker.PackDoctorService.AutoFix(key, pack, report);
+                Expect(made == 2, $"the pass made {made} fixes, not 2");
+                // The Doctor's "Undo this fix" on Atlas's tile: gone and declined; on the user's own: gone, not declined.
+                PopTracker.PackFixes.UndoFixes(key, new[] { "tile:deku_shield", "tile:known" }, "self-test: the Doctor's Undo this fix");
+                var undoneHere = PopTracker.PackFixes.Get(key);
+                Expect(!undoneHere.Tiles.Any(t => t.Subject is "tile:deku_shield" or "tile:known") && undoneHere.Declined.Contains("tile:deku_shield") && !undoneHere.Declined.Contains("tile:known"),
+                    $"the Doctor's Undo this fix didn't take the fixes back, or declined the wrong one: declined {string.Join(", ", undoneHere.Declined)}");
+                Expect(PopTracker.PackFixes.Undo(key), "the Doctor's Undo this fix wasn't one undoable step");
+                Expect(PopTracker.PackFixes.Undo(key) && PopTracker.PackFixes.Undo(key), "the two Undos didn't run");
+                var after = PopTracker.PackFixes.Get(key);
+                Expect(after.Tiles.Count == 0 && Undone(after),
+                    $"undoing the user's step after the pass's brought back an older record or forgot the declines (record '{after.AutoLinkedVersion}', declined {string.Join(", ", after.Declined)}, {after.Tiles.Count} tile fixes)");
+                // The check the Undo queues: its pass is recorded as run, and would make nothing anyway.
+                Expect(PopTracker.PackDoctorService.AutoFixLinks(report, after).Count == 0, "the pass would make an undone fix again");
+
+                // 2. Atlas's stale guess taken back (ForgetStaleGuesses' own step), then its pass; Undo, Undo: the old guess isn't back.
+                PopTracker.PackFixes.Reset(key);
+                PopTracker.PackFixes.Edit(key, "self-test: Atlas's guess from an older pack", f => f.Tiles.Add(new PopTracker.TileFix
+                {
+                    Subject = "tile:deku_shield",
+                    Code = "deku_shield",
+                    ApItemId = 5,
+                    ApItemName = "Deku Shield",
+                    Source = "automatic",
+                    AuthorStamp = "an older pack's"
+                }));
+                PopTracker.PackFixes.SetAutoLinkedVersion(key, "");
+                int forgotten = PopTracker.PackDoctorService.ForgetStaleGuesses(key, pack);
+                made = PopTracker.PackDoctorService.AutoFix(key, pack, report);
+                Expect(forgotten == 1 && made == 2, $"the stale guess wasn't taken back ({forgotten}) or the pass made {made}");
+                Expect(PopTracker.PackFixes.Undo(key) && PopTracker.PackFixes.Undo(key), "the two Undos didn't run");
+                after = PopTracker.PackFixes.Get(key);
+                Expect(Undone(after), $"undoing the step that took back Atlas's stale guess, after the pass's, brought the guess back or forgot the declines (record '{after.AutoLinkedVersion}', declined {string.Join(", ", after.Declined)}, tiles {string.Join(", ", after.Tiles.Select(t => t.Subject + " " + t.Source))})");
+            }
+            finally
+            {
+                PopTracker.PackFixes.Reset(key);
+            }
+        }
+
+        /// <summary>A pack update sets aside the user's fixes the author changed, never Atlas's own (its pass takes those back quietly).</summary>
+        private static void PackUpdatesSetAsideOnlyYourFixes()
+        {
+            var pack = new PopTracker.LoadedPack
+            {
+                Manifest = new PopTracker.PopTrackerManifest { Name = "Self-test update pack", GameName = "Self-test Update Game", Version = "1.0" },
+                SourcePath = Scratch("selftest_update_pack.zip")
+            };
+            pack.Locations.Add(new PopTracker.PopTrackerLocation { Name = "Cave", FullPath = "Cave", Sections = { new PopTracker.PopTrackerSection { Name = "Chest" } } });
+            pack.Locations.Add(new PopTracker.PopTrackerLocation { Name = "Far", FullPath = "Far", Sections = { new PopTracker.PopTrackerSection { Name = "Lantern" } } });
+            string key = PopTracker.PackFixes.KeyFor(pack);
+            PopTracker.PackFixes.Reset(key);
+            try
+            {
+                PopTracker.PackFixes.Edit(key, "self-test: fixes made on 1.0", f =>
+                {
+                    f.PackVersion = "1.0";
+                    f.Links.Add(new PopTracker.LocationLinkFix { Subject = "link:Cave|Chest", PinPath = "Cave", SectionName = "Chest", ApLocationId = 1, ApLocationName = "Cave Chest Room", Source = "automatic", AuthorStamp = PopTracker.PackFixes.AuthorStamp(pack, "link:Cave|Chest") });
+                    f.Links.Add(new PopTracker.LocationLinkFix { Subject = "link:Far|Lantern", PinPath = "Far", SectionName = "Lantern", ApLocationId = 2, ApLocationName = "Far Lantern Box", AuthorStamp = PopTracker.PackFixes.AuthorStamp(pack, "link:Far|Lantern") });
+                });
+                // 1.1 changes both pins.
+                pack.Manifest.Version = "1.1";
+                foreach (var pin in pack.Locations) pin.Sections.Add(new PopTracker.PopTrackerSection { Name = "Extra" });
+                var notes = PopTracker.PackFixes.ResolveAuthorChanges(pack);
+                var file = PopTracker.PackFixes.Get(key);
+                Expect(notes.Count == 1 && file.Superseded.Select(s => s.Subject).SequenceEqual(new[] { "link:Far|Lantern" }) && file.Links.Any(l => l.Subject == "link:Cave|Chest" && l.Automatic),
+                    $"the update set aside Atlas's own fix as the user's, or missed the user's: {notes.Count} note(s), set aside {string.Join(", ", file.Superseded.Select(s => s.Subject))}");
+            }
+            finally
+            {
+                PopTracker.PackFixes.Edit(key, "self-test: clean up", f => f.Superseded.Clear());
                 PopTracker.PackFixes.Reset(key);
             }
         }

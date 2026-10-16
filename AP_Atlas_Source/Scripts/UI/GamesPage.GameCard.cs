@@ -49,11 +49,11 @@ namespace AP_Atlas.UI
             (_cardHeading, _cardLine) = standing switch
             {
                 GameStanding.EngineFirst => (_tr("Set up the Atlas Engine first"),
-                    _tr("Atlas runs a game's logic in its engine.") + (part.Items.Count > 0 ? " " + _tr("Once it's set up, Add this game gets {0}.").Replace("{0}", words) : "")),
-                GameStanding.Add => (_tr("Add this game"), _tr("Adding it gets {0}.").Replace("{0}", words) + " " + DownloadLine(plan)),
+                    _tr("Atlas runs a game's logic in its engine.") + (part.Items.Count > 0 ? " " + _tr("Once it's set up, Install this game gets {0}.").Replace("{0}", words) : "")),
+                GameStanding.Add => (_tr("Install this game"), _tr("Installing it gets {0}.").Replace("{0}", words) + " " + DownloadLine(plan)),
                 GameStanding.Ready => (_tr("Ready to play"), logic + " " + _tr("Map pack: {0}.").Replace("{0}", ChosenPack(game)?.Name ?? "")),
                 GameStanding.ReadyNoMap => (_tr("Ready to play, without a map"), logic + " " + NoMapLine(game)),
-                _ => (_tr("Atlas can't add this game yet"),
+                _ => (_tr("Atlas can't install this game yet"),
                     _tr("Atlas doesn't know where its logic comes from: Add a project… takes the GitHub link of the project that publishes its apworld, and Choose a file… installs an .apworld you have."))
             };
             box.AddChild(Kit.Heading(_cardHeading, 1.15f));
@@ -85,7 +85,7 @@ namespace AP_Atlas.UI
                     actions.AddChild(Kit.Button(_tr("Set up the Atlas Engine…"), null, _hooks.OpenEngineSetup));
                     break;
                 case GameStanding.Add:
-                    var add = Kit.Button(_tr("Add this game…"), _tr("Shows what adding it downloads and from where, asks once, then installs its logic and its map pack."),
+                    var add = Kit.Button(_tr("Install this game…"), _tr("Shows what installing it downloads and from where, asks once, then installs its logic and its map pack."),
                         () => _hooks.AddGames(game), enabled: !GameAdder.Busy);
                     add.SetMeta("add_game", game);
                     actions.AddChild(add);

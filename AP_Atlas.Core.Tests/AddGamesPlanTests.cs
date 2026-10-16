@@ -137,7 +137,8 @@ public sealed class AddGamesPlanTests
         Assert.Equal(22_424_521, plan.ArchipelagoReleaseBytes);
         Assert.Equal(AddRow.MapLogicShips, plan.Games[0].Row);
         Assert.Equal("map (its logic ships with Archipelago)", AddGamesPlan.Words(plan.Games[0]));
-        Assert.Equal(AddRow.LogicNoMapKnown, plan.Games[1].Row);
+        Assert.Equal(AddRow.LogicMapFromGuide, plan.Games[1].Row); // no pack listed: its guide's project is read once its world is in
+        Assert.True(plan.Games[1].GuideLookupReserved);
         // Each folder is unpacked once, though both games need the shared one; the release stays kept on disk.
         Assert.Equal(22_424_521 + 100, plan.DownloadBytes);
         Assert.Equal(22_424_521 + 100 + 10 + 20 + 5, plan.DiskBytes);
@@ -191,7 +192,7 @@ public sealed class AddGamesPlanTests
         Assert.True(plan.NeedsGitHubLookups);
         Assert.Equal(1, plan.UnknownSizes);
         Assert.Equal(new[] { "github.com/me/my-apworld" }, plan.ProjectsToTrust);
-        Assert.Equal(AddGamesPlan.LiveListingRequests, plan.GitHubRequests);
+        Assert.Equal(AddGamesPlan.LiveListingRequests + AddGamesPlan.LivePackRequests, plan.GitHubRequests); // and its guide's project, kept
     }
 
     [Fact]
@@ -328,4 +329,29 @@ public sealed class AddGamesPlanTests
     [Fact]
     public void Every_game_says_whether_it_wants_a_map_pack() =>
         Assert.Equal(new[] { true, false }, Plan(Community("A", V("1.0.0", 1)), Community("B", V("1.0.0", 1)) with { PackInstalled = true }).Games.Select(g => g.WantsPack));
+    [Fact]
+    public void A_game_whose_pack_only_its_guide_can_name_keeps_GitHubs_requests_and_the_confirm_says_so()
+    {
+        var game = Community("Game A", V("1.0.0", 10)); // nothing listed; its guide is read once its logic is in
+        var plan = Plan(game);
+        var g = plan.Games[0];
+        Assert.True(g.RepickPackAfterLogic && g.GuideLookupReserved);
+        Assert.Equal(AddRow.LogicMapFromGuide, g.Row);
+        Assert.Equal(AddGamesPlan.LivePackRequests, plan.GitHubRequests);
+        Assert.True(plan.NeedsGitHubLookups);
+        Assert.Equal("logic, then the map pack its setup guide names, if it names one", AddGamesPlan.Words(g));
+        Assert.Contains("the setup guide of Game A", AddGamesWords.Confirm(plan, gitHubAllowed: false, null, 0, t => t).GitHub);
+        Assert.False(Plan(game with { Packs = [P("a/pack", 90)] }).Games[0].GuideLookupReserved);
+        Assert.False(Plan(game with { PackInstalled = true }).Games[0].GuideLookupReserved);
+        Assert.False(Plan(game with { GuideRead = true }).Games[0].GuideLookupReserved);
+    }
+
+    [Fact]
+    public void Requests_kept_for_guides_never_go_over_GitHubs_budget()
+    {
+        var plan = Plan(Enumerable.Range(0, 10).Select(n => Community($"Game {n}", V("1.0.0", 10))).ToArray());
+        Assert.True(plan.GitHubRequests <= AddGamesPlan.GitHubBudget);
+        Assert.Equal(AddGamesPlan.GitHubBudget / AddGamesPlan.LivePackRequests, plan.Games.Count(g => g.GuideLookupReserved));
+        Assert.All(plan.Games.Where(g => !g.GuideLookupReserved), g => Assert.Equal(AddRow.LogicNoMapKnown, g.Row));
+    }
 }

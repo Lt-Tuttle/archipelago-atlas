@@ -213,8 +213,8 @@ public partial class MainTrackerWindow
             });
 
         page.AddSection("tools", "Tools");
-        page.AddToggle("tools", "pack-doctor-auto-link", "Pack Doctor: link exact name matches by itself",
-            "On a map pack's first check, a tile or pin whose name matches an Archipelago item or location exactly (ignoring case and punctuation) is linked for you, as a fix marked automatic that Undo or Your fixes can reverse. Off: every match waits for you on the Recommended tab.",
+        page.AddToggle("tools", "pack-doctor-auto-link", "Pack Doctor: make the confident fixes by itself",
+            "When a map pack is installed, updated or first used, a tile or pin whose best match is confident (85% or more, or the same name once case and punctuation are ignored) and that no other row wants is linked for you; a card says what was fixed, with Review fixes (each undoable, and Undo all). What you undo stays undone. Off: every match waits for you on the map's Notices and the Doctor's Recommended tab.",
             () => _appSettings.PackDoctorAutoLink, on =>
             {
                 _appSettings.PackDoctorAutoLink = on;

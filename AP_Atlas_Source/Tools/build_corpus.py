@@ -16,6 +16,8 @@ Scripts/Core/Engine/Data/apworld_sources.json):
             form), the first query with results; for each project found (at most 6), its newest release with a .zip
             (the rule of ReleasesWithPacks), else the project's current files (zipball).
   apworlds: the index's project's newest release with an .apworld, else the index's newest version by its URL.
+  guide:    the projects the game's own setup guide (in its apworld: docs/setup_en.md, then its game page) links as its
+            tracker that the searches didn't find, fetched as a search's are (at most 6).
 Searches are paced at GitHub's authenticated search limit (30 a minute); a game searched before is skipped (state.json
 in the corpus folder), and a file whose SHA-256 the manifest already has isn't downloaded again.
 """
@@ -130,6 +132,54 @@ def search_packs(game, module=None):
         for i in (answer or {}).get('items') or []:
             found.setdefault(i['full_name'], {'repo': i['full_name'], 'stars': i.get('stargazers_count', 0), 'fork': bool(i.get('fork')), 'pushed': i.get('pushed_at')})
     return sorted(found.values(), key=lambda p: (-p['stars'], p['repo']))
+
+
+GUIDE_INLINE = re.compile(r'\[([^\]]*)\]\(\s*(https?://[^\s)]+)\s*\)', re.I)
+GUIDE_REFERENCE = re.compile(r'^\s*\[([^\]]+)\]:\s*(https?://\S+)', re.I | re.M)
+GUIDE_BARE = re.compile(r'https?://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', re.I)
+
+
+def repo_of(url):
+    # GuideLinks.RepoOf: "owner/name" from a GitHub address, any deeper path dropped.
+    m = re.match(r'^https?://(?:www\.)?github\.com/([^/\s]+)/([^/\s#?]+)', (url or '').strip().rstrip('.,)'), re.I)
+    if not m:
+        return None
+    name = m.group(2)[:-4] if m.group(2).lower().endswith('.git') else m.group(2)
+    return m.group(1) + '/' + name
+
+
+def guide_tracker_projects(markdown):
+    # GuideLinks.TrackerProjects (AP_Atlas.Core/GuideLinks.cs): the projects a setup guide links as a tracker, in order, once each.
+    found, seen = [], set()
+
+    def consider(text, url):
+        repo = repo_of(url)
+        if not repo or repo.lower() in seen:
+            return
+        itself = repo.lower().endswith(('/poptracker', '/poptracker-pack', '/archipelago'))
+        if ('tracker' in (text or '').lower() or 'tracker' in repo.lower()) and not itself:
+            seen.add(repo.lower())
+            found.append(repo)
+    for m in GUIDE_INLINE.finditer(markdown or ''):
+        consider(m.group(1), m.group(2))
+    for m in GUIDE_REFERENCE.finditer(markdown or ''):
+        consider(m.group(1), m.group(2))
+    for m in GUIDE_BARE.finditer(markdown or ''):
+        consider('', m.group(0))
+    return found
+
+
+def guide_of(apworld_path):
+    # The apworld's own setup guide (<world>/docs/setup_en.md), then its game page (<world>/docs/en_*.md), as
+    # ApworldSources.GuideTrackerProjects reads them; '' when there's none.
+    try:
+        with zipfile.ZipFile(apworld_path) as zf:
+            docs = [n for n in zf.namelist() if '/docs/' in n.lower() and n.lower().endswith('.md')]
+            setup = sorted((n for n in docs if n.lower().endswith('/docs/setup_en.md')), key=lambda n: n.count('/'))
+            pages = sorted((n for n in docs if os.path.basename(n).lower().startswith('en_')), key=lambda n: (n.count('/'), n))
+            return '\n'.join(zf.read(n).decode('utf-8', 'replace') for n in setup[:1] + pages)
+    except (OSError, zipfile.BadZipFile):
+        return ''
 
 
 def releases_of(repo):
@@ -271,6 +321,40 @@ def main():
         games = games[:args.limit]
     log(f'== {len(games)} games, corpus {corpus}')
 
+    def fetch_pack(game, repo, fork):
+        # A project's newest release with a .zip (the rule of ReleasesWithPacks), else its current files. True when the project
+        # is taken (fetched now, or already in the corpus); False for a fork without a release of its own.
+        releases = [r for r in releases_of(repo) if not r.get('draft')]
+        with_zip = [(r, first_asset(r, '.zip')) for r in releases]
+        with_zip = [(r, a) for r, a in with_zip if a]
+        # A fork without a release of its own is a copy of its original (the originals come first, by stars).
+        if not with_zip and fork:
+            log('  fork without a release, skipped:', repo)
+            return False
+        if with_zip:
+            release, asset = with_zip[0]
+            tag = release.get('tag_name') or ''
+            dest = os.path.join(packs_dir, safe_name(repo.replace('/', '_') + '_' + tag) + '.zip')
+            if os.path.exists(dest) and os.path.relpath(dest, corpus).replace('\\', '/') in by_file:
+                log('  have', os.path.basename(dest))
+                return True
+            if download_asset(repo, tag, asset['name'], dest) and is_zip(dest):
+                record('pack', game, repo, tag, asset['name'], dest)
+                log('  pack', os.path.basename(dest), f"{os.path.getsize(dest) // 1024} KB")
+            elif os.path.exists(dest):
+                os.remove(dest)
+        else:
+            dest = os.path.join(packs_dir, safe_name(repo.replace('/', '_')) + '_current.zip')
+            if os.path.exists(dest) and os.path.relpath(dest, corpus).replace('\\', '/') in by_file:
+                log('  have', os.path.basename(dest))
+                return True
+            if download_zipball(repo, dest) and is_zip(dest):
+                record('pack', game, repo, 'current files', 'zipball', dest)
+                log('  pack (current files)', os.path.basename(dest), f"{os.path.getsize(dest) // 1024} KB")
+            elif os.path.exists(dest):
+                os.remove(dest)
+        return True
+
     for n, g in enumerate(games, 1):
         game = g['game']
         log(f'[{n}/{len(games)}] {game}')
@@ -283,37 +367,8 @@ def main():
             for p in projects:
                 if taken >= MOST_PROJECTS:
                     break
-                repo = p['repo']
-                releases = [r for r in releases_of(repo) if not r.get('draft')]
-                with_zip = [(r, first_asset(r, '.zip')) for r in releases]
-                with_zip = [(r, a) for r, a in with_zip if a]
-                # A fork without a release of its own is a copy of its original (the originals come first, by stars).
-                if not with_zip and p.get('fork'):
-                    log('  fork without a release, skipped:', repo)
-                    continue
-                taken += 1
-                if with_zip:
-                    release, asset = with_zip[0]
-                    tag = release.get('tag_name') or ''
-                    dest = os.path.join(packs_dir, safe_name(repo.replace('/', '_') + '_' + tag) + '.zip')
-                    if os.path.exists(dest) and os.path.relpath(dest, corpus).replace('\\', '/') in by_file:
-                        log('  have', os.path.basename(dest))
-                        continue
-                    if download_asset(repo, tag, asset['name'], dest) and is_zip(dest):
-                        record('pack', game, repo, tag, asset['name'], dest)
-                        log('  pack', os.path.basename(dest), f"{os.path.getsize(dest) // 1024} KB")
-                    elif os.path.exists(dest):
-                        os.remove(dest)
-                else:
-                    dest = os.path.join(packs_dir, safe_name(repo.replace('/', '_')) + '_current.zip')
-                    if os.path.exists(dest) and os.path.relpath(dest, corpus).replace('\\', '/') in by_file:
-                        log('  have', os.path.basename(dest))
-                        continue
-                    if download_zipball(repo, dest) and is_zip(dest):
-                        record('pack', game, repo, 'current files', 'zipball', dest)
-                        log('  pack (current files)', os.path.basename(dest), f"{os.path.getsize(dest) // 1024} KB")
-                    elif os.path.exists(dest):
-                        os.remove(dest)
+                if fetch_pack(game, p['repo'], p.get('fork')):
+                    taken += 1
             save()
         if args.only != 'packs' and not g['official'] and 'apworld' not in done:
             repo = g.get('repo')
@@ -350,6 +405,22 @@ def main():
                 elif os.path.exists(dest):
                     os.remove(dest)
             done['apworld'] = {'date': date.today().isoformat(), 'got': got}
+            save()
+        # The projects the game's own setup guide names as its tracker: a search can miss them (Pokemon FireRed and LeafGreen's
+        # guide names vyneras/pokemon-frlg-tracker, which no search found). Fetched like a search's, once per game.
+        # After the game's apworld step (an official game has none): a packs-only run doesn't settle it before the guide is in.
+        if args.only != 'apworlds' and 'guide' not in done and (g['official'] or 'apworld' in done):
+            # The projects in the corpus (a search may list a project it didn't fetch: the guide's word fetches it).
+            searched = {(f.get('repo') or '').lower() for f in files if f.get('kind') == 'pack'}
+            guides = [os.path.join(corpus, f['file']) for f in files if f.get('kind') == 'apworld' and (f.get('game') or '').lower() == key]
+            named = []
+            for path in guides:
+                for repo in guide_tracker_projects(guide_of(path)):
+                    if repo.lower() not in searched and repo not in named:
+                        named.append(repo)
+            for repo in named[:MOST_PROJECTS]:
+                fetch_pack(game, repo, False)
+            done['guide'] = {'date': date.today().isoformat(), 'projects': named}
             save()
     save()
     log(f'== done: {len(files)} files in the manifest')

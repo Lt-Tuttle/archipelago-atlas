@@ -220,8 +220,8 @@ namespace AP_Atlas.Core.PopTracker
                     Key = "auto:" + t.Subject,
                     Category = "Key Items",
                     Severity = FindingSeverity.AutoFixed,
-                    Title = $"Linked tile '{t.Code}' to {t.ApItemName} " + (t.Source == "suggested" ? "(the closest name, taken by Fix what Atlas can)" : "(" + (string.IsNullOrEmpty(t.Reason) ? "the names match" : t.Reason) + ")"),
-                    Detail = "Made by the Doctor on the pack's first check. Reset it under Your fixes if it's wrong.",
+                    Title = $"Linked tile '{t.Code}' to {t.ApItemName} " + "(" + (PackChangeWords.WhyAtlas(t.Reason, t.Source) ?? "the names match") + ")",
+                    Detail = "Made by Atlas by itself when it checked the pack. If it's wrong, Undo it on the map's Changes tab or in Review fixes: Atlas then leaves it to you.",
                     Subject = t.Subject,
                     Actions = FindingActions.ResetFixes,
                     RelatedSubjects = { t.Subject }
@@ -232,8 +232,8 @@ namespace AP_Atlas.Core.PopTracker
                     Key = "auto:" + l.Subject,
                     Category = "Locations",
                     Severity = FindingSeverity.AutoFixed,
-                    Title = $"Linked '{(string.IsNullOrEmpty(l.SectionName) ? l.PinPath : l.SectionName)}' to {l.ApLocationName} " + (l.Source == "suggested" ? "(the closest name, taken by Fix what Atlas can)" : "(" + (string.IsNullOrEmpty(l.Reason) ? "the names match" : l.Reason) + ")"),
-                    Detail = "Made by the Doctor on the pack's first check. Reset it under Your fixes if it's wrong.",
+                    Title = $"Linked '{(string.IsNullOrEmpty(l.SectionName) ? l.PinPath : l.SectionName)}' to {l.ApLocationName} " + "(" + (PackChangeWords.WhyAtlas(l.Reason, l.Source) ?? "the names match") + ")",
+                    Detail = "Made by Atlas by itself when it checked the pack. If it's wrong, Undo it on the map's Changes tab or in Review fixes: Atlas then leaves it to you.",
                     Subject = l.Subject,
                     Actions = FindingActions.ResetFixes,
                     RelatedSubjects = { l.Subject }

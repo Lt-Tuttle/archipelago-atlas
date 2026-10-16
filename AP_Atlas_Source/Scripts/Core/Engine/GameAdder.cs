@@ -28,19 +28,16 @@ namespace AP_Atlas.Core.EngineSetup
     /// <summary>The confirm's answer: its tick "Don't ask again for Atlas's downloads", and whether it named GitHub's release lists (the plan needed them).</summary>
     public sealed record AddGamesConsent(bool AlwaysAllowDownloads, bool AllowGitHubLookups);
 
-    /// <summary>A pack the Doctor found things in, with the plan "Fix them now" carries out exactly as its preview says.</summary>
-    public sealed record PackFixOffer(PackToLook Look, LoadedPack Original, DoctorReport Report, BulkPlan Plan);
-
-    /// <summary>What a batch did: a row per game (for the summary) and the packs to offer fixing.</summary>
-    public sealed record GameAdderRun(AddGamesOutcome Outcome, IReadOnlyList<PackFixOffer> Fixes);
+    /// <summary>What a batch did: a row per game, and per pack it installed what Atlas fixed by itself and what's left (Outcome.PacksToLook).</summary>
+    public sealed record GameAdderRun(AddGamesOutcome Outcome);
 
     /// <summary>
     /// Adds the games of an Add games plan once its one confirm is pressed. It trusts the plan's apworld projects and allows
     /// the engine's downloads; downloads each community game's apworld by the address and SHA-256 Atlas's game list names
     /// (no GitHub listing read); adds them all to the engine with the official games' worlds and ONE health check (one logic
     /// restart per connected slot); reads the added games' names; installs each game's map pack quietly (the one its setup
-    /// guide names when Atlas's list has it, else the plan's); then waits for the Pack Doctor's checks and gathers the packs
-    /// it wants looked at, with their previews. One bar, Cancel between steps, a result per game. It never throws. One batch
+    /// guide names when Atlas's list has it, else the plan's); then waits for the Pack Doctor's checks (whose first pass makes
+    /// the confident fixes) and notes per pack what was fixed and what's left. One bar, Cancel between steps, a result per game. It never throws. One batch
     /// at a time. Main thread: the map pack service's installs touch the window; downloads and the engine run on workers.
     /// </summary>
     public sealed class GameAdder
@@ -66,11 +63,10 @@ namespace AP_Atlas.Core.EngineSetup
         public async Task<GameAdderRun> RunAsync(AddPlan plan, AddGamesConsent consent, Action<AddGamesStatus>? progress, CancellationToken ct)
         {
             var outcome = new AddGamesOutcome(plan.Games.Select(g => (g.Game, g.LogicComing, g.WantsPack)));
-            var offers = new List<PackFixOffer>();
             if (Interlocked.Exchange(ref _running, 1) != 0)
             {
-                outcome.Finish(AddStep.Failed(T("another Add games is running; try again once it's done")));
-                return new GameAdderRun(outcome, offers);
+                outcome.Finish(AddStep.Failed(T("another Install games is running; try again once it's done")));
+                return new GameAdderRun(outcome);
             }
             // A game Atlas can't place says why: the engine first when it isn't ready (an official game's world waits for it).
             string? notReady = plan.EngineReady ? null : AtlasEngine.Current is { } engineNow && AtlasEngine.ProblemWith(engineNow) is { } why ? T(why) : T("The Atlas Engine isn't set up yet.");
@@ -98,7 +94,7 @@ namespace AP_Atlas.Core.EngineSetup
                     await AddToEngineAsync(b, install, engineProblem, files);
                     await ReadNamesAsync(b);
                     var packs = await InstallPacksAsync(b, install);
-                    await GatherDoctorReportsAsync(b, packs, offers);
+                    await GatherFixesAsync(b, packs);
                     outcome.Finish(AddStep.Failed(T("it wasn't done (the log says why)")));
                 }
             }
@@ -117,14 +113,13 @@ namespace AP_Atlas.Core.EngineSetup
             {
                 b.Finished = true;
                 outcome.GitHubRequests = b.GitHubRequests;
-                // The packs its summary asks about: their own "Fix now" card waits for Atlas's next start, answered or not.
-                PackDoctorService.PostponePrompts(offers.Select(o => (o.Look.PackKey, o.Original.Manifest?.GetActualVersion() ?? "")));
-                hold.Release(offers.Select(o => o.Look.PackKey).ToList());
+                // The packs its summary speaks of: their own "Atlas fixed" cards are dropped (the summary says it, with Review fixes).
+                hold.Release(outcome.PacksToLook.Select(p => p.PackKey).ToList());
                 Volatile.Write(ref _running, 0);
             }
             progress?.Invoke(new AddGamesStatus(outcome.Cancelled ? T("Stopped.") : T("Done."), bar.Complete()));
-            Log($"Ended: logic for {outcome.LogicAdded}, maps for {outcome.MapsAdded}, {outcome.Failures.Count()} with a problem, {outcome.PacksToLook.Count} pack(s) to look at, {outcome.GitHubRequests} GitHub request(s).");
-            return new GameAdderRun(outcome, offers);
+            Log($"Ended: logic for {outcome.LogicAdded}, maps for {outcome.MapsAdded}, {outcome.Failures.Count()} with a problem, {outcome.PacksToLook.Sum(p => p.Fixed)} fix(es) by Atlas in {outcome.PacksToLook.Count} pack(s), {outcome.GitHubRequests} GitHub request(s).");
+            return new GameAdderRun(outcome);
         }
 
         private static AddGamesProgress.GameWork Work(GamePlan g) => new(
@@ -250,16 +245,21 @@ namespace AP_Atlas.Core.EngineSetup
                 if (!g.WantsPack || g.Row == AddRow.Waits) continue;
                 b.Ct.ThrowIfCancellationRequested();
                 var row = b.Outcome.For(g.Game);
-                int plannedCost = g.Items.FirstOrDefault(x => x.Kind == AddItemKind.Pack)?.GitHubRequests ?? 0;
+                // The plan's pick's requests, or the ones it kept for the project the guide may name.
+                int plannedCost = g.Items.FirstOrDefault(x => x.Kind == AddItemKind.Pack)?.GitHubRequests ?? (g.GuideLookupReserved ? AddGamesPlan.LivePackRequests : 0);
                 var listed = ApworldSources.PackFactsFor(g.Game);
                 var guide = GuideRepos(install, g.Game);
                 // Picked again now that the game's logic (and so its setup guide) is in: the guide's pack when the list has it.
                 var pick = AddGamesPlan.ChoosePack(listed, guide, spare + plannedCost, lookups);
-                row.GuideRepo = guide.FirstOrDefault();
+                // The project the summary names: the guide's first one Atlas's list lacks, when that's what wasn't installed.
+                row.GuideRepo = AddGamesPlan.GuideUnlistedRepo(listed, guide) ?? guide.FirstOrDefault();
                 row.PackNote = AddGamesPlan.GuideNote(listed, guide, pick, lookups);
                 if (pick == null)
                 {
-                    row.Map = AddStep.Unavailable(g.Row == AddRow.MapWaits ? T("its map pack waits for GitHub's hourly limit: add it again in an hour") : T("no map pack is known for it yet"));
+                    row.Map = AddStep.Unavailable(g.Row == AddRow.MapWaits ? T("its map pack waits for GitHub's hourly limit: add it again in an hour")
+                        : row.PackNote != AddPackNote.None ? T("the one its setup guide names wasn't installed (below)")
+                        : T("no map pack is known for it yet"));
+                    spare += plannedCost; // its planned (or kept) requests weren't spent: a later game's guide may use them
                     continue;
                 }
                 spare += plannedCost - pick.GitHubRequests;
@@ -325,24 +325,22 @@ namespace AP_Atlas.Core.EngineSetup
             }
         }
 
-        private async Task GatherDoctorReportsAsync(Batch b, List<(string Game, string File)> packs, List<PackFixOffer> offers)
+        private async Task GatherFixesAsync(Batch b, List<(string Game, string File)> packs)
         {
             if (packs.Count == 0) return;
-            b.Enter(AddGamesProgress.DoctorPart, T("Checking the map packs against their games…"));
+            b.Enter(AddGamesProgress.DoctorPart, T("Checking the map packs against their games and fixing what Atlas can…"));
             foreach (var (game, file) in packs)
             {
                 b.Ct.ThrowIfCancellationRequested();
-                if (await OfferAsync(game, file, b.Ct) is not { } offer) continue;
-                b.Outcome.PacksToLook.Add(offer.Look);
-                offers.Add(offer);
+                if (await LookAsync(game, file, b.Ct) is { } look) b.Outcome.PacksToLook.Add(look);
             }
         }
 
         /// <summary>
-        /// A pack's offer for "fix them now?" once the Doctor has settled on it: null when it can't be read or wasn't checked, or
-        /// when nothing needs deciding in a version not reviewed yet (as the Doctor's own prompt decides). Main thread.
+        /// What Atlas fixed by itself in a pack and what's left for the user, once the Doctor has settled on it (its automatic pass
+        /// runs in the pack's first check); null when it can't be read or wasn't checked, or there's nothing to say. Main thread.
         /// </summary>
-        internal static async Task<PackFixOffer?> OfferAsync(string game, string file, CancellationToken ct)
+        internal static async Task<PackToLook?> LookAsync(string game, string file, CancellationToken ct)
         {
             LoadedPack? original;
             try { original = PopTrackerPackLoader.InspectZipPack(file); }
@@ -356,11 +354,9 @@ namespace AP_Atlas.Core.EngineSetup
             var report = await SettledReportAsync(original, key, ct);
             if (report == null) return null;
             var fixes = PackFixes.Get(key);
-            int needs = report.NeedsReview.Count();
-            if (needs == 0 || fixes.ReviewedVersion == (original.Manifest?.GetActualVersion() ?? "")) return null;
-            var plan = PackBulk.Suggested(report, fixes);
-            var look = new PackToLook(game, key, original.Manifest?.Name ?? Path.GetFileNameWithoutExtension(file), file, needs, plan.Summary());
-            return new PackFixOffer(look, original, report, plan);
+            int made = fixes.Tiles.Count(t => t.Source == "automatic") + fixes.Links.Count(l => l.Source == "automatic");
+            int left = report.NeedsReview.Count();
+            return made == 0 && left == 0 ? null : new PackToLook(game, key, original.Manifest?.Name ?? Path.GetFileNameWithoutExtension(file), file, made, left);
         }
 
         /// <summary>
