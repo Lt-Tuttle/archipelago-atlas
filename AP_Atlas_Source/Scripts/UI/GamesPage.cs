@@ -1063,12 +1063,6 @@ namespace AP_Atlas.UI
 
         private Node DialogParent => _dialogParent != null && IsInstanceValid(_dialogParent) && _dialogParent.IsInsideTree() ? _dialogParent : this;
 
-        /// <summary>
-        /// Installs the release Atlas picks from what it knows (<see cref="InstallBestAsync"/>, without looking inside more
-        /// releases) and says whether it happened (the permission and trust questions asked as always; a refusal is false).
-        /// </summary>
-        internal async Task<bool> InstallNewestAsync(string game, Node? dialogParent = null) => (await InstallBestAsync(game, dialogParent, look: false)).Ok;
-
         /// <summary>The install's answer; then the page's own buttons ask on the page again (unless another install asked meanwhile).</summary>
         private async Task<bool> AnsweredAsync(Task<bool> answer, Node? askedFrom)
         {

@@ -228,6 +228,12 @@ public partial class SlotTrackerControl : MarginContainer
             return;
         }
         if (!problem) return;
+        // The setup window adds this game next (its Add games page): the banner says so, with nothing to press meanwhile.
+        if (SetupQuietText() is { } quiet)
+        {
+            _logicNoticeText.Text = quiet;
+            return;
+        }
         _logicNoticeText.Text = EngineProblemText(EngineProblem);
         // A start that failed on a seed made with another version: say so, and what Atlas is doing about it.
         if (SeedVersionNote is { } versionNote)
@@ -284,7 +290,7 @@ public partial class SlotTrackerControl : MarginContainer
     {
         if (LogicHidden) return "Logic is hidden by race mode.";
         if (Model.Logic.Running) return whileRunning;
-        if (EngineProblem != null) return EngineProblemText(EngineProblem).Replace("\n", " ");
+        if (EngineProblem != null) return (SetupQuietText() ?? EngineProblemText(EngineProblem)).Replace("\n", " ");
         if (Model.Logic.Booting) return "Starting the logic engine…";
         return "Waiting for the logic engine…";
     }
@@ -362,6 +368,21 @@ public partial class SlotTrackerControl : MarginContainer
 
     /// <summary>Opens Add games with a game ticked (set by MainTrackerWindow): the banner's way to a game's missing logic, and the empty map's to its pack.</summary>
     public Action<string> AddGames { get; set; }
+
+    /// <summary>Whether the setup window adds this slot's game next (set by MainTrackerWindow): the Logic banner then stays quiet about it.</summary>
+    public Func<bool> SetupAddsGames { get; set; }
+
+    /// <summary>What the banner and the empty logic views say while the setup window is about to add this slot's missing game; else null.</summary>
+    private string SetupQuietText() =>
+        // Only a game the window can add: one whose logic source Atlas knows (else the banner's way out is the Games page).
+        (EngineProblem?.Code == "world_download"
+         || EngineProblem?.Code == "world_missing" && AP_Atlas.Core.EngineSetup.ApworldSources.LogicSourceKnown(_appSettings, Game))
+        && SetupAddsGames?.Invoke() == true
+            ? Tr("The setup window adds {0} next; logic starts by itself once it's in.").Replace("{0}", Game)
+            : null;
+
+    /// <summary>Shows the Logic banner again (the setup window stopped or started keeping it quiet).</summary>
+    public void RefreshLogicNotice() => SyncLogicViews();
 
     /// <summary>The logic banner's buttons, by text (for tests).</summary>
     internal List<string> LogicNoticeButtons() =>

@@ -400,6 +400,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         slotTracker.OpenTool = tool => ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(tool);
         slotTracker.OpenGamesPageFor = ShowGamePage;
         slotTracker.AddGames = game => OpenAddGames(game);
+        slotTracker.SetupAddsGames = () => _setupQuietProfile == profile.Id;
         slotTracker.FindMapPack = FindMapPack;
         slotTracker.StartPack = StartPack;
         slotTracker.OpenPackDoctor = (zip, tab) => OpenPackDoctor(zip, tab);

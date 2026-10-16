@@ -1,10 +1,9 @@
 #nullable enable
-using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Godot;
 
-/// <summary>The setup window (Set up Atlas): its hooks into the window, and when it opens by itself.</summary>
+/// <summary>The setup window (Set up Atlas): its hooks into the window, the steps Home's line counts, and what the window does for it (connecting its slots, keeping their Logic banners quiet while it adds their games).</summary>
 public partial class MainTrackerWindow
 {
     private AP_Atlas.UI.SetupSteps? _setupSteps;
@@ -14,14 +13,8 @@ public partial class MainTrackerWindow
     {
         EngineReady = () => AP_Atlas.Core.EngineSetup.AtlasEngine.Current.CanLaunch,
         Profiles = () => _profiles,
-        AnyPackInstalled = AnyMapPackInstalled,
+        SlotGamesReady = SlotGamesReady,
         PagesDone = () => _appSettings.SetupPagesDone,
-        MarkPageDone = id =>
-        {
-            if (_appSettings.SetupPagesDone.Contains(id)) return;
-            _appSettings.SetupPagesDone.Add(id);
-            DataManager.SaveSettingsSoon(_appSettings);
-        },
         IsSkipped = id => _appSettings.SkippedHomeSteps.Contains(id),
         SetSkipped = (id, skipped) =>
         {
@@ -33,85 +26,80 @@ public partial class MainTrackerWindow
         },
     });
 
-    /// <summary>Help → Set up Atlas…, Home's Resume and the first start: the setup window, at the first step left (resume) or from its Welcome page.</summary>
+    private ulong _slotGamesReadyFrame = ulong.MaxValue;
+    private bool _slotGamesReady;
+
+    /// <summary>
+    /// Whether every game the user's slots play is ready: its logic in the engine, its map pack installed or none known
+    /// (Add games' "ready" rows). False while no slot's game is known. Read at most once a frame (Home and the setup
+    /// window's list ask several times; each read goes over the packs, the games and their guides).
+    /// </summary>
+    private bool SlotGamesReady()
+    {
+        ulong frame = Godot.Engine.GetProcessFrames();
+        if (frame == _slotGamesReadyFrame) return _slotGamesReady;
+        _slotGamesReadyFrame = frame;
+        var games = _profiles.SelectMany(p => p.Slots.Where(s => !AP_Atlas.UI.SetupSteps.IsPlaceholderSlot(s))
+                .Select(s => p.SavedStats.TryGetValue(s, out var stats) ? stats.GameName : null))
+            .Where(g => !string.IsNullOrWhiteSpace(g)).Select(g => g!).Distinct(System.StringComparer.OrdinalIgnoreCase).ToList();
+        _slotGamesReady = games.Count > 0 && _gamesPage != null && IsInstanceValid(_gamesPage)
+            && _gamesPage.PlanAdding(games).Games.All(g => g.Row is AP_Atlas.Core.Games.AddRow.Ready or AP_Atlas.Core.Games.AddRow.NoMapKnown);
+        return _slotGamesReady;
+    }
+
+    /// <summary>Help → Set up Atlas…, Home's welcome card and Resume: the setup window, at the first step left (resume) or from its Welcome page.</summary>
     internal AP_Atlas.UI.SetupWizard OpenSetupWizard(bool resume) => AP_Atlas.UI.SetupWizard.Open(this, SetupHooks(), resume);
 
-    private AP_Atlas.UI.SetupWizard.Hooks SetupHooks()
+    private AP_Atlas.UI.SetupWizard.Hooks SetupHooks() => new AP_Atlas.UI.SetupWizard.Hooks
     {
-        var host = (AP_Atlas.UI.IPropertiesHost)this;
-        return new AP_Atlas.UI.SetupWizard.Hooks
-        {
-            Tr = text => Tr(text),
-            Settings = _appSettings,
-            Steps = SetupSteps,
-            ApplyTheme = ApplyTheme,
-            ApplyColourBlindSafe = ApplyColourBlindSafe,
-            SetZoom = SetZoom,
-            ZoomSteps = ZoomSteps,
-            EngineReady = () => AP_Atlas.Core.EngineSetup.AtlasEngine.Current.CanLaunch,
-            ShowEnginePage = lines => ShowEnginePage(lines),
-            Profiles = () => _profiles,
-            SelectedProfile = () => _selectedProfile,
-            SaveMultiworld = SaveSetupMultiworld,
-            PickYaml = PickYamlFor,
-            KeepYaml = KeepYamlForSlots,
-            KnownGames = () => _gamesPage?.GameNames() ?? new List<string>(),
-            GameStatus = SlotGameStatus,
-            ApworldInstalled = game =>
-            {
-                var install = AP_Atlas.Core.EngineSetup.AtlasEngine.Current;
-                return install != null && install.CanLaunch && (AP_Atlas.Core.EngineSetup.AtlasEngine.LastCheck(install)?.Games.Contains(game, System.StringComparer.OrdinalIgnoreCase) ?? false);
-            },
-            KnownProject = game => AP_Atlas.Core.EngineSetup.ApworldSources.Find(game)?.Repo
-                ?? (_appSettings.ExtraApworldRepos != null && _appSettings.ExtraApworldRepos.TryGetValue(game, out var repos) ? repos.FirstOrDefault() : null),
-            InstallApworldAsync = (game, parent) => _gamesPage != null ? _gamesPage.InstallNewestAsync(game, parent) : Task.FromResult(false),
-            PackInstalledFor = game => AP_Atlas.Core.EngineSetup.SoloTestRunner.InstalledPackFor(game) != null,
-            RecommendedPack = game => AP_Atlas.Core.MapPackManagerControl.GuideRecommendations(game).Select(r => r.Repo).FirstOrDefault(),
-            SearchPacksAsync = async game =>
-            {
-                var (candidates, problem) = await AP_Atlas.Core.MapPackManagerControl.SearchPacksAsync(game);
-                return (candidates.Select(c => new AP_Atlas.UI.SetupPackCandidate(c.Repo, c.Description ?? "", c.Stars, c.Fork, c.Recommended, c.IndexFit, c.NoteSentences())).ToList(), problem);
-            },
-            InstallPackAsync = async (game, repo, say) =>
-            {
-                var (ok, detail, file) = await _packManagerPanel.InstallFittingReleaseAsync(game, repo, say);
-                return (ok, detail, file);
-            },
-            PickPackAsync = async (game, say) =>
-            {
-                var (ok, detail, file, _) = await _packManagerPanel.InstallBestPackAsync(game, say);
-                return (ok, detail, file);
-            },
-            PreferPack = (game, file) =>
-            {
-                _appSettings.PreferredPacks[game] = file;
-                DataManager.SaveSettingsSoon(_appSettings);
-            },
-            LinkCheese = LinkCheeseFromEditor,
-            LinkSphere = (parent, profile, text) => AP_Atlas.Core.Async.Fire(LinkSphereFromEditorAsync(parent, profile, text), "linking the sphere tracker"),
-            DailyUpdateChecks = on =>
-            {
-                if (on) AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.UpdateChecks, null, true);
-                _appSettings.UpdateCheckDaily = on;
-                _appSettings.UpdateOffered = true; // the one-time card needn't ask what this page just did
-                DataManager.SaveSettings(_appSettings);
-                _settingsPage?.RefreshRows();
-            },
-            CrashReportsAlways = always =>
-            {
-                if (always != AP_Atlas.Core.Permissions.IsAlwaysAllowed(_appSettings, AP_Atlas.Core.Permissions.CrashReports))
-                    AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.CrashReports, null, always);
-                _settingsPage?.RefreshRows();
-            },
-            IsSlotLive = IsSlotLive,
-            ConnectSlot = (profile, slot) => OnConnectSlotPressed(slot, profile),
-        };
+        Tr = text => Tr(text),
+        Settings = _appSettings,
+        Steps = SetupSteps,
+        EngineReady = () => AP_Atlas.Core.EngineSetup.AtlasEngine.Current.CanLaunch,
+        ShowEnginePage = lines => ShowEnginePage(lines),
+        Profiles = () => _profiles,
+        SelectedProfile = () => _selectedProfile,
+        SaveMultiworld = SaveSetupMultiworld,
+        IsSlotLive = IsSlotLive,
+        ConnectSlotAsync = ConnectForSetupAsync,
+        QuietLogicFor = SetSetupQuiet,
+        AddGames = AddGamesPanelHooks,
+        OpenPackDoctor = (zip, tab) => OpenPackDoctor(zip, tab),
+        ShowSettings = section => ShowSettings(section),
+    };
+
+    /// <summary>
+    /// The setup window's connect: as the Multiworlds page's Connect, waiting for the slot's view (its game is then the
+    /// room's, in the multiworld's saved stats) or its failure (said on the status bar and as a card); whether it connected.
+    /// </summary>
+    private async Task<bool> ConnectForSetupAsync(MultiworldProfile profile, string slot)
+    {
+        if (IsSlotLive(profile.Id, slot)) return true;
+        await OnConnectSlotPressedAsync(slot, profile);
+        // ShowConnectResult runs a moment later (deferred): until then the slot is still connecting.
+        var wait = AP_Atlas.Core.Deadline.In(System.TimeSpan.FromSeconds(5));
+        while (_connectingSlots.Contains(SlotKey(profile.Id, slot)) && !wait.Passed && !_shuttingDown)
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+        _homePage?.Refresh();
+        return IsSlotLive(profile.Id, slot);
+    }
+
+    /// <summary>The multiworld whose slots' Logic banners stay quiet about a missing game: the setup window adds it next (null: none).</summary>
+    private string? _setupQuietProfile;
+
+    private void SetSetupQuiet(string? profileId)
+    {
+        if (_setupQuietProfile == profileId) return;
+        _setupQuietProfile = profileId;
+        if (_shuttingDown) return; // the slots are going with the window
+        foreach (var slot in ActiveSlotNodes().OfType<SlotTrackerControl>().Where(GodotObject.IsInstanceValid)) slot.RefreshLogicNotice();
     }
 
     /// <summary>
     /// The setup window's multiworld: a new one, or the existing one the draft names, with its name, room link, server and
-    /// password, its slots (added to an existing one's; Atlas's placeholder slot gives way), each slot's game noted and
-    /// its YAML tied to it; saved, listed and selected on the Multiworlds page.
+    /// password and its slots (added to an existing one's; Atlas's placeholder slot gives way), less the slots the window
+    /// added earlier and the user took back (disconnected first, as the Multiworlds page removes a slot); saved, listed and
+    /// selected on the Multiworlds page. Each slot's game comes from the room when it connects.
     /// </summary>
     internal MultiworldProfile SaveSetupMultiworld(AP_Atlas.UI.SetupMultiworldDraft draft)
     {
@@ -122,20 +110,18 @@ public partial class MainTrackerWindow
         profile.RoomLink = draft.RoomLink ?? "";
         profile.ServerUrl = (draft.Server ?? "").Trim();
         profile.Password = draft.Password ?? "";
+        foreach (string gone in draft.Drop.Where(profile.Slots.Contains).ToList())
+        {
+            DisconnectSlot(profile.Id, gone);
+            profile.ActiveSlots.Remove(gone);
+            profile.Slots.Remove(gone);
+            profile.SavedStats.Remove(gone);
+        }
         if (profile.Slots.All(AP_Atlas.UI.SetupSteps.IsPlaceholderSlot)) profile.Slots.Clear();
         foreach (string slot in draft.Slots.Select(s => s.Trim()).Where(s => s.Length > 0).Distinct())
-        {
             if (!profile.Slots.Contains(slot)) profile.Slots.Add(slot);
-            if (draft.GameBySlot.TryGetValue(slot, out var game) && !string.IsNullOrWhiteSpace(game))
-            {
-                if (!profile.SavedStats.TryGetValue(slot, out var stats)) profile.SavedStats[slot] = stats = new SlotStats();
-                if (string.IsNullOrWhiteSpace(stats.GameName)) stats.GameName = game;
-            }
-            if (draft.YamlBySlot.TryGetValue(slot, out var yaml) && !string.IsNullOrEmpty(yaml)) _appSettings.SlotYamlPaths[AP_Atlas.Core.Annotations.SlotKey(profile.Id, slot)] = yaml;
-        }
         if (isNew) _profiles.Add(profile);
         DataManager.SaveProfiles(_profiles);
-        DataManager.SaveSettings(_appSettings);
         RefreshProfileList();
         SelectProfile(profile);
         UpdateSidebar();

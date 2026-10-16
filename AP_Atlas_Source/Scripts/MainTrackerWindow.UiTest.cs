@@ -127,7 +127,7 @@ public partial class MainTrackerWindow
             KeyboardShortcutsAsync);
         await ScenarioAsync("Privacy & permissions: a section of the Settings page lists every permission Atlas can ask for with its state (asks each time, allowed until Atlas closes, always allowed, not until Atlas restarts) and every trusted apworld source; a kept answer and a trusted source can be taken back, which is saved; the section is found by its words",
             PrivacyAsync);
-        await ScenarioAsync("Home: Ctrl+1 shows it on its own; every tool has a button with a line and every link is https; a first start shows the Set up Atlas block (its button opens the setup window on Home, Add a multiworld… the Multiworlds page) and the setup line counts nothing done; a tip shows and Next tip goes around; a multiworld is listed with its line and one click connects its slot, its row says so and Open shows it on its page; New… makes a multiworld (its slots typed, no YAML) in a dialog on Home; Add games… sits beside New… and Paste a room link…, and beside Add a multiworld… on a first start, opening over Home; Paste a room link… readies the room link box; the columns fit the page; with every step settled the line says so",
+        await ScenarioAsync("Home: Ctrl+1 shows it on its own; every tool has a button with a line and every link is https; a first start shows the Set up Atlas block (its button opens the setup window on Home, Add a multiworld… the Multiworlds page) and the setup line counts nothing done; a tip shows and Next tip goes around; a multiworld is listed with its line and one click connects its slot (its game learnt from the room), its row says so and Open shows it on its page; New… makes a multiworld (its slots typed, no YAML) in a dialog on Home; Add games… sits beside New… and Paste a room link…, and beside Add a multiworld… on a first start, opening over Home; Paste a room link… readies the room link box; the columns fit the page; with every step settled the line says so",
             HomeAsync);
         await ScenarioAsync("Games page: the Games tool lists every game in its group (community games from the index, the games your multiworlds play as added by you), with the games of your own slots first (from their saved stats and their linked YAMLs, each once), typed words narrow the list, a game's page opens on one card saying where it stands (Atlas can't add it yet, the engine first without one, Add this game once its project is known, Doctor… once a pack arrives) with its map packs, files and Advanced (the versions) in closed folds and no YAML anywhere; the game's folders are inside Atlas's data folder; once GitHub may be asked, the page lists every version of every project (the game's own, and one of the same name found by one search), newest first with pre-releases marked and the newest full release named, and downloads nothing without a press; the game's page still has no YAML; the release-files dialog fits the window with a check box per file; a Discord home is named on its link",
             GamesPageAsync);
@@ -151,7 +151,7 @@ public partial class MainTrackerWindow
             DataFolderAsync);
         await ScenarioAsync("Engine setup panel: the short setup asks the engine permission first and starts nothing until it's answered; the panel says the step it's on in plain words (never pip's lines) with one bar for the whole setup that never goes down, says why a run stopped with Try again and Show details, Try again runs it again, Show details shows the Atlas Engine page with the run's log, and Don't allow starts nothing",
             EngineSetupPanelAsync);
-        await ScenarioAsync("Setup window: Resume opens at the first step left and Welcome can stop it opening by itself; the Look page applies the theme as chosen; the engine's permission is a row on the page, Allow once starts the run whose progress shows in the rail while the window moves on; a room link brings the status read's row and Next reads the room once (the server and the players to tick), Back keeps the values; the slots page saves the multiworld with its slot and game; the games page lists the game and installs a pack found on GitHub from the page; Skip skips the trackers; the reports page keeps its switches as the permissions; Finish connects the slot; nothing opens on top of the window; Home's line counts what was done and Resume opens at the step left, as does Help → Set up Atlas…",
+        await ScenarioAsync("Setup window: Resume opens at the first step left; the pages are Welcome, The Atlas Engine (run from source without one), Your multiworld and slots, Add games and Ready, with no Look, Trackers, Reports, YAML or game box; the engine's permission is a row on the page, Allow once starts the run whose progress shows in the rail while the window moves on; a room link brings the status read's row, and once allowed the room is read once (the server and the players to tick); cleared, its players go; Next saves the multiworld with its slot, selects it and connects the slot, whose game comes from the room; Back keeps the slot once and Next again updates the same multiworld; Add games is on the page with the slot's game first and ticked, its Add waiting for the engine and its engine lead leading to the engine's page; Skip goes on; Ready says what's left with Finish and three links to Settings, a link putting the window out of the way until Resume; Finish keeps the slot connected; nothing opens on top of the window; Home's line counts what was done and Resume opens at the step left, as does Help → Set up Atlas…",
             SetupWizardAsync);
         await ScenarioAsync("Engine page slots: the Atlas Engine page's Your slots offers a YAML only when it would help (a linked one shows Change YAML and Unlink; unlinked, nothing); shown plainly, its Advanced part stays folded, Show details opens it; Copy log says so in the status line; the seed test shows only in developer mode",
             EnginePageSlotsAsync);
@@ -231,6 +231,8 @@ public partial class MainTrackerWindow
             AddGamesInstallerAsync);
         await ScenarioAsync("Add games screen: Add a slot's Logic line offers Add this game…, which opens Add games over it with the game ticked; the empty map leads with Get a map pack for a game Atlas's list has a pack for; Home's Add games… lists every game, the games of your multiworlds first and ticked where they need something, each row in plain words with its download, a game with nothing to add not tickable, typed words narrowing the list and the totals below; Add opens ONE confirm naming every project, what it trusts and Don't ask again, with nothing downloaded until Download and install; Back keeps the ticks; the run ends in a summary per game, the project trusted and the downloads always allowed by the tick; the Games overview's Add games… shows an added game as ready; Cancel during a batch stops it with nothing downloaded, and Try those again ticks what's left",
             AddGamesScreenAsync);
+        await ScenarioAsync("Setup window, adding games: with the engine ready the window has no engine page; Next on Your multiworld and slots saves the multiworld and connects both slots, so Atlas learns their two games from the room, and meanwhile their Logic banners say the setup window adds the game with nothing to press; Add games on the page comes with both games first and ticked, its buttons the window's own (Add 2 games…, the one confirm with its Back beside Next and the window's Back and Skip aside, Download and install, the bar with the list on the left locked, the summary with the packs' question as Fix them now… and Later); nothing opens on top of the window; the slots' logic starts by itself once their games are in; Ready says you're set up",
+            SetupAddGamesAsync);
         await ScenarioAsync("Add games' fix them now: the Doctor links a pack's exact match by itself and the question leaves it out; one question names the pack with its line of what changes; Fix them now… previews every change and changes nothing before Apply; Apply links the confident match, sets the 60% one aside, marks the pack reviewed so no Fix now card follows, and says what it did and what's left with Review N…, which opens the Doctor's guide; Undo takes back exactly that step and keeps the answer; Later changes nothing, no card follows this session, the pack row keeps Fix and the card comes back at the next start; the map's one tip shows until Got it, for good",
             PackFixHandoffAsync);
         await ScenarioAsync("BK: with logic running, checks left and none of them in logic, the Logic Tracker and Key Items say so with the count done, and the slot card says BK; an item that opens a check ends it",
@@ -2662,13 +2664,14 @@ public partial class MainTrackerWindow
         FakeMapPack.Write(zip, "Home test pack", "Test Game");
         try
         {
-            // A multiworld with a server and a named slot, and a pack: their steps count as done when Home shows again, the
-            // setup line names the first step left, and the multiworld is listed with its line and a Connect button.
+            // A multiworld with a server and a named slot counts as done when Home shows again; a pack alone doesn't make the
+            // games step done (a slot's game must be known, from its first connect, and ready). The setup line names the first
+            // step left, and the multiworld is listed with its line and a Connect button.
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
             host.ShowTool(AP_Atlas.UI.Tool.Home);
-            UiTestExpect(steps.Done(AP_Atlas.UI.SetupSteps.Multiworld) && steps.Done(AP_Atlas.UI.SetupSteps.Slots) && steps.Done(AP_Atlas.UI.SetupSteps.Games) && !steps.Done(AP_Atlas.UI.SetupSteps.Trackers),
+            UiTestExpect(steps.Done(AP_Atlas.UI.SetupSteps.Multiworld) && !steps.Done(AP_Atlas.UI.SetupSteps.Games),
                 $"after a multiworld and a pack, the steps done are {string.Join(", ", AP_Atlas.UI.SetupSteps.All.Where(steps.Done).Select(s => s.Id))}");
-            UiTestExpect(home.SetupLine.Contains("Next: Look"), $"the setup line doesn't name the first step left: \"{home.SetupLine}\"");
+            UiTestExpect(home.SetupLine.Contains("Next: " + steps.Next!.Title + "."), $"the setup line doesn't name the first step left: \"{home.SetupLine}\"");
             UiTestExpect(home.RecentProfileIds.SequenceEqual(new[] { profile.Id }) && !home.ConnectButtonOf(profile.Id).Disabled && home.SetUpButton == null, "the new multiworld isn't listed with a Connect button");
             string line = home.RowLineOf(profile.Id);
             UiTestExpect(line.Contains(server.Url.ToString()) && line.Contains("Slots: 1"), $"the multiworld's line reads \"{line}\"");
@@ -2678,6 +2681,7 @@ public partial class MainTrackerWindow
             await UiTestWaitForAsync(() => home.ConnectButtonOf(profile.Id).Disabled ? home : null, "the row to say the slot is connected");
             UiTestExpect(home.ConnectButtonOf(profile.Id).Text == "Connected" && home.FindChildren("*", nameof(Label), true, false).OfType<Label>().Any(l => l.Text == "1 connected"),
                 "a connected multiworld's row still offers to connect, or lacks its chip");
+            UiTestExpect(profile.SavedStats.TryGetValue("Tester", out var learnt) && learnt.GameName == "Test Game", "the slot's game wasn't learnt from the room at connect");
             // Open shows that multiworld on the Multiworlds page.
             home.OpenButtonOf(profile.Id).EmitSignal(BaseButton.SignalName.Pressed);
             UiTestExpect(ShownContent() == _connectionPanel && _selectedProfile == profile, "Open didn't show the multiworld on its page");
@@ -2723,8 +2727,7 @@ public partial class MainTrackerWindow
                 {
                     EngineReady = () => true,
                     Profiles = () => new[] { added },
-                    AnyPackInstalled = () => true,
-                    PagesDone = () => new[] { AP_Atlas.UI.SetupSteps.Look.Id, AP_Atlas.UI.SetupSteps.Trackers.Id, AP_Atlas.UI.SetupSteps.Reports.Id },
+                    SlotGamesReady = () => true,
                 }),
             });
             AddChild(done);
@@ -2746,13 +2749,9 @@ public partial class MainTrackerWindow
     {
         var host = (AP_Atlas.UI.IPropertiesHost)this;
         const string roomId = "AbCdEfGhIjKlMnOpQrStUw"; // a base64 UUID, as archipelago.gg names rooms
-        string themeBefore = _appSettings.Theme;
-        bool dailyBefore = _appSettings.UpdateCheckDaily, offeredBefore = _appSettings.UpdateOffered;
         var pagesBefore = _appSettings.SetupPagesDone.ToList();
         var skippedBefore = _appSettings.SkippedHomeSteps.ToList();
-        string packs = AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory();
-        string fromGitHub = System.IO.Path.Combine(packs, "uitest_github_pack.zip"), packSource = System.IO.Path.Combine(DataManager.GetDataDirectory(), "uitest_wizard_pack_source.zip");
-        // The fakes: the engine's setup, the room's status page, GitHub (a pack's search and its releases) and the room's server.
+        // The fakes: the engine's setup, the room's status page and the room's server.
         int runs = 0;
         AtlasEngine.TestSetUp = async (log, progress, ct) =>
         {
@@ -2772,66 +2771,54 @@ public partial class MainTrackerWindow
             ? (200, """{"tracker": "x", "players": [["Lantern", "Bob"]], "last_port": 40123, "last_activity": "Sun, 06 Nov 1994 08:49:37 GMT", "timeout": 7200, "downloads": []}""")
             : (404, "");
         string roomLink = site.Site + "/room/" + roomId;
-        await using var github = new FakeWebSite();
-        FakeMapPack.Write(packSource, "UI test GitHub pack", "Test Game");
-        byte[] packBytes = await System.IO.File.ReadAllBytesAsync(packSource);
-        AP_Atlas.Core.SafeFile.Delete(packSource);
-        github.Answer = (path, _) =>
-        {
-            static byte[] Json(string s) => System.Text.Encoding.UTF8.GetBytes(s);
-            if (path.StartsWith("/search/repositories"))
-                return new FakeWebSite.FullAnswer(200, Json("{\"items\":[{\"full_name\":\"packs/test-game-poptracker\",\"description\":\"A PopTracker pack for Test Game\",\"html_url\":\"https://github.com/packs/test-game-poptracker\",\"stargazers_count\":3}]}"), "application/json");
-            if (path.StartsWith("/repos/packs/test-game-poptracker/releases?"))
-                return new FakeWebSite.FullAnswer(200, Json($"[{{\"tag_name\":\"v1\",\"name\":\"v1\",\"body\":\"\",\"assets\":[{{\"name\":\"uitest_github_pack.zip\",\"browser_download_url\":\"{github.Site}/dl/uitest_github_pack.zip\",\"size\":{packBytes.Length}}}]}}]"), "application/json");
-            if (path == "/dl/uitest_github_pack.zip") return new FakeWebSite.FullAnswer(200, packBytes, "application/zip");
-            return new FakeWebSite.FullAnswer(404, Array.Empty<byte>());
-        };
-        AP_Atlas.Core.GitHubApi.TestSite = github.Site;
-        AP_Atlas.Core.GitHubApi.ResetForTests();
         AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.EngineSetup, null, false);
         AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.RoomStatusReads, null, false);
-        AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.UpdateChecks, null, false);
-        AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.CrashReports, null, false);
         AP_Atlas.Core.Permissions.ResetSessionForTests();
         _appSettings.SetupPagesDone.Clear();
         _appSettings.SkippedHomeSteps.Clear();
         AP_Atlas.UI.SetupWizard? Wizard() => GetChildren().OfType<AP_Atlas.UI.SetupWizard>().FirstOrDefault(w => !w.IsQueuedForDeletion());
+        List<string> ReadyLines(AP_Atlas.UI.SetupWizard w) => w.PageOf("ready").FindChildren("*", nameof(Label), true, false).OfType<Label>().Where(l => l.Visible && !l.IsQueuedForDeletion()).Select(l => l.Text).ToList();
         // Nothing opens on top of the setup window: no other window of the main window's, and none of the root's beyond those there now.
         var rootWindowsBefore = GetTree().Root.GetChildren().OfType<Window>().ToList();
-        void NothingOnTop(string when)
-        {
-            var others = GetChildren().OfType<Window>().Where(w => w is not AP_Atlas.UI.SetupWizard && w.Visible && !w.IsQueuedForDeletion()).Select(w => w.Name.ToString()).ToList();
-            others.AddRange(GetTree().Root.GetChildren().OfType<Window>().Except(rootWindowsBefore).Where(w => w.Visible).Select(w => w.Name.ToString()));
-            UiTestExpect(others.Count == 0, $"something opened on top of the setup window {when}: {string.Join(", ", others)}");
-        }
         try
         {
+            // Atlas's game list knows the slot's game, so Add games can tick it (nothing downloads: the engine isn't set up).
+            ApworldSources.UseListForTests(new ApworldSourceList
+            {
+                Format = "atlas-apworld-sources/1",
+                Built = "9999-12-31",
+                Source = "ui-test",
+                Games = new List<ApworldSource>
+                {
+                    new ApworldSource { Game = "Test Game", Apworld = "test_game", Repo = "owner/test-game",
+                        Versions = { new ApworldVersion { Version = "1.0.0", Url = site.Site + "/dl/test_game.apworld", Sha256 = new string('0', 64), Size = 1000 } } }
+                }
+            });
             host.ShowTool(AP_Atlas.UI.Tool.Home);
-            var wizard = OpenSetupWizard(resume: true);
+            // Untouched while no multiworld has a server and a named slot (an earlier scenario's leftover would make it begun).
+            var leftovers = _profiles.Where(p => !string.IsNullOrWhiteSpace(p.ServerUrl) && p.Slots.Any(s => !AP_Atlas.UI.SetupSteps.IsPlaceholderSlot(s))).Select(p => p.Name).ToList();
+            UiTestExpect(SetupSteps.Untouched == (leftovers.Count == 0 && !SetupSteps.Done(AP_Atlas.UI.SetupSteps.Games)),
+                $"the setup counts as untouched {SetupSteps.Untouched} with multiworlds set up: {string.Join(", ", leftovers)}");
+            // Another multiworld, for the page's choice: its slot mustn't follow a change of choice.
+            var other = new MultiworldProfile { Name = "Wizard Other", ServerUrl = "localhost:2" };
+            other.Slots.Clear();
+            other.Slots.Add("Alice");
+            _profiles.Add(other);
+            // The Welcome page: no Back or Skip, Start leads on; the pages are Welcome, the engine's (run from source without one),
+            // Your multiworld and slots, Add games and Ready.
+            var wizard = OpenSetupWizard(resume: false);
             await UiTestWaitAsync(0.3);
-            // Resume while nothing is set up begins on the Welcome page: no Back or Skip there, and Start leads on.
             UiTestExpect(wizard.CurrentPageId == "welcome" && !wizard.Exclusive && !wizard.BackButton.Visible && !wizard.SkipButton.Visible && wizard.NextButton.Text == "Start",
-                $"Resume on a fresh folder opened on {wizard.CurrentPageId}, or the Welcome page has Back or Skip, or the window is exclusive");
+                $"the setup window opened on {wizard.CurrentPageId}, or the Welcome page has Back or Skip, or the window is exclusive");
+            UiTestExpect(wizard.PageIdsShown.SequenceEqual(new[] { "welcome", AP_Atlas.UI.SetupSteps.Engine.Id, AP_Atlas.UI.SetupSteps.Multiworld.Id, AP_Atlas.UI.SetupSteps.Games.Id, "ready" }),
+                $"the setup window's pages: {string.Join(", ", wizard.PageIdsShown)}");
             await wizard.NextForTestsAsync();
-            // Look: the theme applies as chosen; Next marks the page done.
-            UiTestExpect(wizard.CurrentPageId == AP_Atlas.UI.SetupSteps.Look.Id && wizard.SkipButton.Visible, "Start didn't lead to Look");
-            var theme = (OptionButton)wizard.FindChild("ThemeChoice", true, false);
-            int light = Array.FindIndex(AP_Atlas.Core.ThemeColors.ThemeChoices, c => c.Key == "light");
-            theme.Selected = light;
-            theme.EmitSignal(OptionButton.SignalName.ItemSelected, light);
-            UiTestExpect(_appSettings.Theme == "light" && !AP_Atlas.Core.ThemeColors.Current.IsDark, "the theme choice didn't apply at once");
-            int back = Array.FindIndex(AP_Atlas.Core.ThemeColors.ThemeChoices, c => c.Key == themeBefore);
-            theme.Selected = back;
-            theme.EmitSignal(OptionButton.SignalName.ItemSelected, back);
-            UiTestExpect(_appSettings.Theme == themeBefore, "the theme didn't go back");
-            await wizard.NextForTestsAsync();
-            UiTestExpect(SetupSteps.Done(AP_Atlas.UI.SetupSteps.Look) && _appSettings.SetupPagesDone.Contains(AP_Atlas.UI.SetupSteps.Look.Id), "passing the Look page didn't mark it done");
             // The engine: the permission is a row on the page; Allow once starts the run, whose progress shows in the rail, and the window moves on.
-            UiTestExpect(wizard.CurrentPageId == AP_Atlas.UI.SetupSteps.Engine.Id, "Next didn't lead to the engine page");
+            UiTestExpect(wizard.CurrentPageId == AP_Atlas.UI.SetupSteps.Engine.Id, "Start didn't lead to the engine page");
             var enginePage = wizard.PageOf(AP_Atlas.UI.SetupSteps.Engine.Id);
             var consent = enginePage.FindChildren("*", nameof(PanelContainer), true, false).OfType<PanelContainer>().FirstOrDefault(p => p.HasMeta("consent") && p.GetMeta("consent").AsString() == AP_Atlas.Core.Permissions.EngineSetup.Id);
             UiTestExpect(consent != null && consent.Visible && runs == 0, "the engine page doesn't ask the permission on the page before starting");
-            NothingOnTop("on the engine page");
+            UiTestNothingOnTopOfSetup(rootWindowsBefore, "on the engine page");
             ((Button)consent!.FindChild("AllowOnce", true, false)).EmitSignal(BaseButton.SignalName.Pressed);
             await UiTestWaitAsync(1.0);
             UiTestExpect(wizard.EngineRun.Visible && (wizard.EngineRun.Running || wizard.EngineRun.Succeeded),
@@ -2842,80 +2829,123 @@ public partial class MainTrackerWindow
             UiTestExpect(wizard.CurrentPageId == AP_Atlas.UI.SetupSteps.Multiworld.Id, "the window didn't move on while the engine installs");
             await UiTestWaitForAsync(() => !wizard.EngineRun.Running && wizard.EngineRun.Succeeded ? wizard : null, "the pretend setup to finish");
             UiTestExpect(runs == 1 && wizard.EngineRun.OutcomeText.Contains("is set up"), $"the run ended with \"{wizard.EngineRun.OutcomeText}\" after {runs} run(s)");
-            // The multiworld: a room link brings the status read's row; allowed, Next reads the room (the server and the players).
+            // Your multiworld and slots: no YAML and no game box; each slot's game comes from the room.
+            var multiworldPage = wizard.PageOf(AP_Atlas.UI.SetupSteps.Multiworld.Id);
+            UiTestExpect(multiworldPage.FindChild("AddYamlButton", true, false) == null && !multiworldPage.FindChildren("*", nameof(Button), true, false).OfType<Button>().Any(b => b.Text.Contains("YAML"))
+                && !multiworldPage.FindChildren("*", nameof(LineEdit), true, false).OfType<LineEdit>().Any(e => e.PlaceholderText.StartsWith("Game", StringComparison.Ordinal)),
+                "the multiworld page still offers a YAML or a game box");
+            // Choosing another multiworld fills in its slot; choosing New again takes it away (nothing of the other is saved).
+            var slotsBox = (VBoxContainer)wizard.FindChild("SlotsBox", true, false);
+            List<string> Rows() => slotsBox.GetChildren().OfType<HBoxContainer>().Where(r => !r.IsQueuedForDeletion()).Select(r => r.GetChild<LineEdit>(0).Text).ToList();
+            var which = (OptionButton)wizard.FindChild("WhichMultiworld", true, false);
+            int otherIndex = Enumerable.Range(0, which.ItemCount).First(i => which.GetItemText(i) == "Wizard Other");
+            which.Selected = otherIndex;
+            which.EmitSignal(OptionButton.SignalName.ItemSelected, otherIndex);
+            UiTestExpect(Rows().Contains("Alice") && ((LineEdit)wizard.FindChild("NameBox", true, false)).Text == "Wizard Other", $"choosing another multiworld shows the rows [{string.Join(", ", Rows())}]");
+            which.Selected = 0;
+            which.EmitSignal(OptionButton.SignalName.ItemSelected, 0);
+            UiTestExpect(!Rows().Contains("Alice") && Rows().Count == 1 && ((LineEdit)wizard.FindChild("NameBox", true, false)).Text == "",
+                $"choosing New again kept the other multiworld's rows [{string.Join(", ", Rows())}]");
+            // A room link brings the status read's row; allowed, the room is read once at once (the server and the players to tick).
             ((LineEdit)wizard.FindChild("NameBox", true, false)).Text = "Wizard MW";
             var roomBox = (LineEdit)wizard.FindChild("RoomLinkBox", true, false);
             roomBox.Text = roomLink;
             roomBox.EmitSignal(LineEdit.SignalName.TextChanged, roomLink);
-            var multiworldPage = wizard.PageOf(AP_Atlas.UI.SetupSteps.Multiworld.Id);
             var roomConsent = multiworldPage.FindChildren("*", nameof(PanelContainer), true, false).OfType<PanelContainer>().FirstOrDefault(p => p.HasMeta("consent") && p.GetMeta("consent").AsString() == AP_Atlas.Core.Permissions.RoomStatusReads.Id);
-            UiTestExpect(roomConsent != null && roomConsent.Visible, $"a room link didn't bring the status read's row: parsed {AP_Atlas.Core.Rooms.RoomLinks.Parse(roomLink, out var parseError) != null} ({parseError}), allowed {AP_Atlas.Core.Permissions.IsAllowed(_appSettings, AP_Atlas.Core.Permissions.RoomStatusReads)}, row {(roomConsent == null ? "none" : roomConsent.Visible.ToString())}, host visible {roomConsent?.GetParent<Control>().Visible}");
+            UiTestExpect(roomConsent != null && roomConsent.Visible && site.Requests.Count == 0, $"a room link didn't bring the status read's row (or read before it was allowed): parsed {AP_Atlas.Core.Rooms.RoomLinks.Parse(roomLink, out var parseError) != null} ({parseError}), allowed {AP_Atlas.Core.Permissions.IsAllowed(_appSettings, AP_Atlas.Core.Permissions.RoomStatusReads)}, row {(roomConsent == null ? "none" : roomConsent.Visible.ToString())}, host visible {roomConsent?.GetParent<Control>().Visible}, requests {site.Requests.Count}");
             ((Button)roomConsent!.FindChild("AllowOnce", true, false)).EmitSignal(BaseButton.SignalName.Pressed);
             UiTestExpect(!roomConsent.IsVisibleInTree() || !roomConsent.FindChildren("*", nameof(Button), true, false).OfType<Button>().First(b => b.Name == "AllowOnce").IsVisibleInTree(), "the answered row still asks");
-            await wizard.NextForTestsAsync();
-            UiTestExpect(wizard.CurrentPageId == AP_Atlas.UI.SetupSteps.Slots.Id && site.Requests.Count == 1 && site.Requests[0] == "/api/room_status/" + roomId, $"Next didn't read the room once ({string.Join(", ", site.Requests)})");
-            UiTestExpect(((LineEdit)wizard.FindChild("ServerBox", true, false)).Text == "127.0.0.1:40123" && wizard.RoomPlayers.SequenceEqual(new[] { "Lantern", "Bob" }), "the room's server and players weren't taken");
+            await UiTestWaitForAsync(() => wizard.RoomPlayers.Count == 2 ? wizard : null, "the room's players once its read was allowed");
+            UiTestExpect(site.Requests.Count == 1 && site.Requests[0] == "/api/room_status/" + roomId && ((LineEdit)wizard.FindChild("ServerBox", true, false)).Text == "127.0.0.1:40123"
+                && wizard.RoomPlayers.SequenceEqual(new[] { "Lantern", "Bob" }), $"the room wasn't read once for its server and players ({string.Join(", ", site.Requests)})");
             var playersBox = (VBoxContainer)wizard.FindChild("PlayersBox", true, false);
-            UiTestExpect(playersBox.GetChildren().OfType<CheckBox>().Select(c => c.Text).SequenceEqual(new[] { "Lantern", "Bob" }), "the slots page doesn't list the room's players to tick");
-            // Back keeps what was typed; the room link cleared and the test server typed, Next reads nothing and keeps the typed server.
-            wizard.BackButton.EmitSignal(BaseButton.SignalName.Pressed);
-            UiTestExpect(wizard.CurrentPageId == AP_Atlas.UI.SetupSteps.Multiworld.Id && ((LineEdit)wizard.FindChild("NameBox", true, false)).Text == "Wizard MW", "Back lost the name");
+            UiTestExpect(playersBox.GetChildren().OfType<CheckBox>().Select(c => c.Text).SequenceEqual(new[] { "Lantern", "Bob" }), "the page doesn't list the room's players to tick");
+            // The link cleared, its players go and nothing is read again; the test server typed, and the slot typed by its name.
             roomBox.Text = "";
             roomBox.EmitSignal(LineEdit.SignalName.TextChanged, "");
+            UiTestExpect(wizard.RoomPlayers.Count == 0 && !playersBox.GetChildren().OfType<CheckBox>().Any(c => !c.IsQueuedForDeletion()) && site.Requests.Count == 1, "clearing the link didn't take the players, or read again");
+            // A room whose status can't be read (gone, or its site down): the server typed by hand stands in for it.
+            string goneLink = site.Site + "/room/ZzYyXxWwVvUuTtSsRrQqPw"; // a whole id: 22 characters, its last one's spare bits clear
+            roomBox.Text = goneLink;
+            roomBox.EmitSignal(LineEdit.SignalName.TextChanged, goneLink);
+            await UiTestWaitForAsync(() => site.Requests.Count == 2 ? wizard : null, "the gone room's read");
+            await UiTestWaitAsync(0.2);
             ((LineEdit)wizard.FindChild("ServerBox", true, false)).Text = server.Url.ToString();
+            var row = await UiTestWaitForAsync(() => slotsBox.GetChildren().OfType<HBoxContainer>().FirstOrDefault(r => !r.IsQueuedForDeletion()), "a slot row to type into");
+            UiTestExpect(row.GetChildren().OfType<LineEdit>().Count() == 1, "a slot row still has a game box");
+            // A slot typed wrong: Next saves the multiworld, the login is refused, and the page says so.
+            row.GetChild<LineEdit>(0).Text = "Lanter";
+            UiTestNothingOnTopOfSetup(rootWindowsBefore, "on the multiworld page");
             await wizard.NextForTestsAsync();
-            UiTestExpect(wizard.CurrentPageId == AP_Atlas.UI.SetupSteps.Slots.Id && site.Requests.Count == 1 && wizard.RoomPlayers.Count == 0, "without a room link, Next still read the room");
-            // The slots: one typed with its game; Next saves the multiworld (its server, slot and game) and selects it.
-            var slotsBox = (VBoxContainer)wizard.FindChild("SlotsBox", true, false);
-            await UiTestWaitForAsync(() => slotsBox.GetChildren().OfType<HBoxContainer>().Any() ? slotsBox : null, "a slot row to type into");
-            var row = slotsBox.GetChildren().OfType<HBoxContainer>().First();
+            UiTestExpect(wizard.CurrentPageId == AP_Atlas.UI.SetupSteps.Multiworld.Id && _profiles.Count(p => p.Name == "Wizard MW") == 1
+                && wizard.PageOf(AP_Atlas.UI.SetupSteps.Multiworld.Id).FindChildren("*", nameof(Label), true, false).OfType<Label>().Any(l => l.Visible && l.Text.StartsWith("Lanter didn't connect", StringComparison.Ordinal)),
+                $"a refused slot: page {wizard.CurrentPageId}, {_profiles.Count(p => p.Name == "Wizard MW")} multiworld(s) saved, or the page doesn't say why");
+            // Corrected, Next again updates the same multiworld (the wrong slot goes) and connects the slot: its game comes from the room.
             row.GetChild<LineEdit>(0).Text = "Lantern";
-            row.GetChild<LineEdit>(1).Text = "Test Game";
-            NothingOnTop("on the slots page");
             await wizard.NextForTestsAsync();
             var saved = wizard.SavedProfile;
             UiTestExpect(wizard.CurrentPageId == AP_Atlas.UI.SetupSteps.Games.Id && saved != null && saved.Name == "Wizard MW" && saved.ServerUrl == server.Url.ToString() && saved.Slots.SequenceEqual(new[] { "Lantern" })
-                && saved.SavedStats.TryGetValue("Lantern", out var stats) && stats.GameName == "Test Game" && _profiles.Contains(saved) && _selectedProfile == saved && DataManager.LoadProfiles().Any(p => p.Id == saved.Id),
-                $"the multiworld wasn't saved from the slots page: {saved?.Name} {saved?.ServerUrl} [{string.Join(", ", saved?.Slots ?? new List<string>())}]");
-            UiTestExpect(SetupSteps.Done(AP_Atlas.UI.SetupSteps.Multiworld) && SetupSteps.Done(AP_Atlas.UI.SetupSteps.Slots), "the multiworld and slots steps don't count as done");
-            // Games and map packs: the game's card says the engine isn't set up (no apworld tick without one); Search GitHub lists
-            // the pack with Install, which installs the release that fits, on the page.
-            var gamesPage = wizard.PageOf(AP_Atlas.UI.SetupSteps.Games.Id);
-            UiTestExpect(gamesPage.FindChildren("*", nameof(Label), true, false).OfType<Label>().Any(l => l.Text == "Test Game") && !gamesPage.FindChildren("*", nameof(CheckBox), true, false).OfType<CheckBox>().Any(c => c.HasMeta("apworld_tick")),
-                "the games page doesn't list the slot's game, or offers an apworld install without an engine");
-            var search = gamesPage.FindChildren("*", nameof(Button), true, false).OfType<Button>().First(b => b.Text == "Search GitHub for a pack…");
-            search.EmitSignal(BaseButton.SignalName.Pressed);
-            var packRow = await UiTestWaitForAsync(() => gamesPage.FindChildren("*", nameof(HBoxContainer), true, false).OfType<HBoxContainer>().FirstOrDefault(r => r.HasMeta("pack_row")), "the pack found on GitHub");
-            UiTestExpect(github.Requests.Count(r => r.StartsWith("/search/")) == 1 && packRow.GetMeta("pack_row").AsString() == "packs/test-game-poptracker", "GitHub wasn't searched once for the game's packs");
-            NothingOnTop("after the pack search");
-            packRow.GetChildren().OfType<Button>().First().EmitSignal(BaseButton.SignalName.Pressed);
-            await UiTestWaitForAsync(() => System.IO.File.Exists(fromGitHub) ? wizard : null, "the pack to be installed from the page", 30);
-            // The file lands a moment before the install answers and the pack is made the game's own.
-            await UiTestWaitForAsync(() => _appSettings.PreferredPacks.TryGetValue("Test Game", out var preferred) && preferred == "uitest_github_pack.zip" ? wizard : null, "the installed pack to be the game's preferred one");
-            NothingOnTop("after the pack install");
+                && _profiles.Count(p => p.Name == "Wizard MW") == 1 && !saved.SavedStats.ContainsKey("Lanter")
+                && _profiles.Contains(saved) && _selectedProfile == saved && DataManager.LoadProfiles().Any(p => p.Id == saved.Id),
+                $"Next didn't save the multiworld and move on: page {wizard.CurrentPageId}, {saved?.Name} {saved?.ServerUrl} [{string.Join(", ", saved?.Slots ?? new List<string>())}]");
+            UiTestExpect(SlotView(saved!.Id, "Lantern") != null && saved.SavedStats.TryGetValue("Lantern", out var stats) && stats.GameName == "Test Game", "Next didn't connect the slot, or its game didn't come from the room");
+            UiTestExpect(SetupSteps.Done(AP_Atlas.UI.SetupSteps.Multiworld) && !SetupSteps.Done(AP_Atlas.UI.SetupSteps.Games), "after Next, the multiworld step isn't done, or a game without its logic counts as ready");
+            // Back keeps what was typed (the slot once); Next again updates the same multiworld.
+            wizard.BackButton.EmitSignal(BaseButton.SignalName.Pressed);
+            UiTestExpect(wizard.CurrentPageId == AP_Atlas.UI.SetupSteps.Multiworld.Id && ((LineEdit)wizard.FindChild("NameBox", true, false)).Text == "Wizard MW"
+                && slotsBox.GetChildren().OfType<HBoxContainer>().Where(r => !r.IsQueuedForDeletion()).Select(r => r.GetChild<LineEdit>(0).Text).Count(t => t == "Lantern") == 1,
+                $"Back lost the name, or the slot shows {slotsBox.GetChildren().OfType<HBoxContainer>().Count(r => !r.IsQueuedForDeletion() && r.GetChild<LineEdit>(0).Text == "Lantern")} times");
             await wizard.NextForTestsAsync();
-            UiTestExpect(wizard.CurrentPageId == AP_Atlas.UI.SetupSteps.Trackers.Id && SetupSteps.Done(AP_Atlas.UI.SetupSteps.Games), "Next didn't pass the games page");
-            // Trackers: skipped. Reports and updates: both switches on; Next keeps them as the permissions, and the one-time card won't ask again.
+            UiTestExpect(wizard.CurrentPageId == AP_Atlas.UI.SetupSteps.Games.Id && _profiles.Count(p => p.Name == "Wizard MW") == 1 && wizard.SavedProfile == saved,
+                $"Next again made another multiworld ({_profiles.Count(p => p.Name == "Wizard MW")}) or didn't move on ({wizard.CurrentPageId})");
+            // Add games, on the page: the slot's game first and ticked; Add waits for the engine, whose lead leads to the engine's page here.
+            var panel = await UiTestWaitForAsync(() => wizard.AddGamesPanelShown is { FactsPending: 0 } p ? p : null, "Add games on the page", 20);
+            UiTestOnlyTicked(panel, "Test Game");
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(wizard.IsAncestorOf(panel) && AP_Atlas.UI.AddGamesDialog.Showing == null && panel.IsTicked("Test Game")
+                && panel.Table.ShownRows.TakeWhile(r => r.Pinned).Any(r => r.Key == "Test Game") && panel.EngineLeadShown
+                && wizard.NextButton.Text == "Add 1 game…" && wizard.NextButton.Disabled && wizard.SkipButton.Visible && wizard.BackButton.Visible && !wizard.SecondaryButton.Visible,
+                $"Add games on the page: ticked {string.Join(", ", panel.Ticked)}, lead {panel.EngineLeadShown}, Next \"{wizard.NextButton.Text}\" disabled {wizard.NextButton.Disabled}, Skip {wizard.SkipButton.Visible}, Back {wizard.BackButton.Visible}, second {wizard.SecondaryButton.Visible}");
+            UiTestNothingOnTopOfSetup(rootWindowsBefore, "on Add games");
+            // On the page, the list's columns fit what shows of it: nothing is cut at the right edge.
+            var tree = panel.Table.Tree;
+            float columnsWide = Enumerable.Range(0, tree.Columns).Sum(i => (float)tree.GetColumnWidth(i));
+            ScrollContainer? pageScroll = null;
+            for (Node? n = panel.GetParent(); n != null && n != wizard; n = n.GetParent())
+                if (n is ScrollContainer s) { pageScroll = s; break; }
+            UiTestExpect(pageScroll != null && columnsWide <= tree.Size.X + 0.5f && tree.GetGlobalRect().End.X <= pageScroll.GetGlobalRect().End.X + 0.5f,
+                $"the list is wider than the page: columns {columnsWide}, list {tree.Size.X} ending at {tree.GetGlobalRect().End.X}, page ending at {pageScroll?.GetGlobalRect().End.X}");
+            panel.FindChildren("*", nameof(Button), true, false).OfType<Button>().First(b => b.Text == "Set up the Atlas Engine…").EmitSignal(BaseButton.SignalName.Pressed);
+            UiTestExpect(wizard.CurrentPageId == AP_Atlas.UI.SetupSteps.Engine.Id && wizard.Visible, "the engine lead didn't lead to the engine's page here");
+            wizard.RailButtonOf(AP_Atlas.UI.SetupSteps.Games.Id).EmitSignal(BaseButton.SignalName.Pressed);
+            UiTestExpect(wizard.CurrentPageId == AP_Atlas.UI.SetupSteps.Games.Id && panel.IsTicked("Test Game"), "the list on the left didn't lead back with the tick kept");
+            // Nothing ticked, Next goes on and settles the step as skipped (it isn't done); Back, then Skip this step, does the same.
+            UiTestOnlyTicked(panel);
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(wizard.NextButton.Text == "Next" && !wizard.NextButton.Disabled, $"with nothing ticked, Next says \"{wizard.NextButton.Text}\" (disabled {wizard.NextButton.Disabled})");
+            await wizard.NextForTestsAsync();
+            UiTestExpect(wizard.CurrentPageId == "ready" && SetupSteps.Skipped(AP_Atlas.UI.SetupSteps.Games) && !SetupSteps.Done(AP_Atlas.UI.SetupSteps.Games),
+                $"Next with nothing to add: page {wizard.CurrentPageId}, the games step skipped {SetupSteps.Skipped(AP_Atlas.UI.SetupSteps.Games)}");
+            wizard.BackButton.EmitSignal(BaseButton.SignalName.Pressed);
+            UiTestExpect(wizard.CurrentPageId == AP_Atlas.UI.SetupSteps.Games.Id && wizard.SkipButton.Visible, $"Back from Ready led to {wizard.CurrentPageId}");
             wizard.SkipButton.EmitSignal(BaseButton.SignalName.Pressed);
-            UiTestExpect(wizard.CurrentPageId == AP_Atlas.UI.SetupSteps.Reports.Id && SetupSteps.Skipped(AP_Atlas.UI.SetupSteps.Trackers) && _appSettings.SkippedHomeSteps.Contains(AP_Atlas.UI.SetupSteps.Trackers.Id), "Skip this step didn't skip the trackers");
-            ((CheckButton)wizard.FindChild("DailyChecksSwitch", true, false)).ButtonPressed = true;
-            ((CheckButton)wizard.FindChild("CrashReportsSwitch", true, false)).ButtonPressed = true;
+            UiTestExpect(wizard.CurrentPageId == "ready" && SetupSteps.Skipped(AP_Atlas.UI.SetupSteps.Games), "Skip didn't go on from Add games");
+            // Ready: what's left, Finish, and three links to Settings; a link puts the window out of the way until Resume.
+            UiTestExpect(ReadyLines(wizard).Any(l => l.StartsWith("Not everything is set up yet:", StringComparison.Ordinal) && l.Contains("Right-click a pin or tile to fix it."))
+                && !ReadyLines(wizard).Any(l => l.StartsWith("You're set up.", StringComparison.Ordinal)) && ReadyLines(wizard).Any(l => l.StartsWith("✗ The Atlas Engine isn't set up", StringComparison.Ordinal))
+                && wizard.NextButton.Text == "Finish" && !wizard.NextButton.Disabled
+                && new[] { "LookLink", "TrackersLink", "ReportsLink" }.All(n => wizard.FindChild(n, true, false) is Button), $"Ready says: {string.Join(" | ", ReadyLines(wizard))}");
+            UiTestNothingOnTopOfSetup(rootWindowsBefore, "on the Ready page");
+            ((Button)wizard.FindChild("ReportsLink", true, false)).EmitSignal(BaseButton.SignalName.Pressed);
+            UiTestExpect(ShownContent() == _settingsPage && !wizard.Visible && IsInstanceValid(wizard) && !wizard.IsQueuedForDeletion(), "a Ready link didn't show Settings with the window out of the way");
+            UiTestExpect(OpenSetupWizard(resume: true) == wizard && wizard.Visible && wizard.CurrentPageId == "ready", "Resume didn't bring the window back as it was");
             await wizard.NextForTestsAsync();
-            UiTestExpect(wizard.CurrentPageId == "ready" && _appSettings.UpdateCheckDaily && _appSettings.UpdateOffered && AP_Atlas.Core.Permissions.IsAlwaysAllowed(_appSettings, AP_Atlas.Core.Permissions.UpdateChecks)
-                && AP_Atlas.Core.Permissions.IsAlwaysAllowed(_appSettings, AP_Atlas.Core.Permissions.CrashReports) && SetupSteps.Done(AP_Atlas.UI.SetupSteps.Reports),
-                "the reports page's switches weren't kept as the permissions");
-            // Ready: the slot's Connect now is ticked (the multiworld has a server); Finish connects it and closes the window.
-            var connectBox = (VBoxContainer)wizard.FindChild("ConnectBox", true, false);
-            var lanternCheck = connectBox.GetChildren().OfType<CheckBox>().First(c => c.HasMeta("connect_slot") && c.GetMeta("connect_slot").AsString() == "Lantern");
-            UiTestExpect(lanternCheck.ButtonPressed && !lanternCheck.Disabled && wizard.NextButton.Text == "Finish" && !wizard.NextButton.Disabled, "the Ready page isn't ready to connect the slot");
-            NothingOnTop("on the Ready page");
-            await wizard.NextForTestsAsync();
-            await UiTestWaitForAsync(() => SlotView(saved!.Id, "Lantern"), "the slot's view after Finish");
             await UiTestWaitForAsync(() => !IsInstanceValid(wizard) || wizard.IsQueuedForDeletion() ? this : null, "Finish to close the window");
+            UiTestExpect(SlotView(saved.Id, "Lantern") != null, "Finish disconnected the slot");
             // Home's setup line counts what was done and names the step left (the engine: the pretend setup leaves no engine); Resume opens there.
             host.ShowTool(AP_Atlas.UI.Tool.Home);
             var home = _homePage!;
-            UiTestExpect(home.SetupLine == $"Setup {SetupSteps.Total - 1} of {SetupSteps.Total} done. Next: The Atlas Engine." && home.ResumeButton.Visible, $"Home's setup line reads \"{home.SetupLine}\"");
+            UiTestExpect(home.SetupLine == "Setup 2 of 3 done. Next: The Atlas Engine." && home.ResumeButton.Visible, $"Home's setup line reads \"{home.SetupLine}\"");
             home.ResumeButton.EmitSignal(BaseButton.SignalName.Pressed);
             var resumed = await UiTestWaitForAsync(Wizard, "the setup window from Resume");
             UiTestExpect(resumed.CurrentPageId == AP_Atlas.UI.SetupSteps.Engine.Id, $"Resume opened on {resumed.CurrentPageId}, not the engine");
@@ -2928,16 +2958,15 @@ public partial class MainTrackerWindow
             UiTestExpect(resumed.RailButtonOf("welcome").TooltipText == "Done", $"Welcome's tick: \"{resumed.RailButtonOf("welcome").TooltipText}\"");
             resumed.EmitSignal(Window.SignalName.CloseRequested);
             await UiTestWaitAsync(0.2);
-            // Everything settled (the engine skipped), Resume opens on Ready in a new window that never saw Your slots: it
-            // is about the multiworld selected on the Multiworlds page, or else the one played most recently.
+            // Everything settled (the engine skipped), Resume opens on Ready in a new window that never saw the multiworld page:
+            // it is about the multiworld selected on the Multiworlds page, or else the one played most recently.
             SetupSteps.SetSkipped(AP_Atlas.UI.SetupSteps.Engine, true);
             var selectedBefore = _selectedProfile;
             _selectedProfile = saved;
             var ready = OpenSetupWizard(resume: true);
             await UiTestWaitAsync(0.2);
-            List<string> ReadyLines() => ready.PageOf("ready").FindChildren("*", nameof(Label), true, false).OfType<Label>().Where(l => l.Visible && !l.IsQueuedForDeletion()).Select(l => l.Text).ToList();
-            UiTestExpect(ready.CurrentPageId == "ready" && ready.ShownProfile == saved && ReadyLines().Any(l => l.StartsWith("✓ Wizard MW:", StringComparison.Ordinal))
-                && !ReadyLines().Any(l => l.Contains("No multiworld yet", StringComparison.Ordinal)), $"Ready after Resume says: {string.Join(" | ", ReadyLines())}");
+            UiTestExpect(ready.CurrentPageId == "ready" && ready.ShownProfile == saved && ReadyLines(ready).Any(l => l.StartsWith("✓ Wizard MW:", StringComparison.Ordinal))
+                && !ReadyLines(ready).Any(l => l.Contains("No multiworld yet", StringComparison.Ordinal)), $"Ready after Resume says: {string.Join(" | ", ReadyLines(ready))}");
             ready.EmitSignal(Window.SignalName.CloseRequested);
             await UiTestWaitAsync(0.2);
             _selectedProfile = null;
@@ -2946,7 +2975,7 @@ public partial class MainTrackerWindow
             _profiles.Add(newer);
             ready = OpenSetupWizard(resume: true);
             await UiTestWaitAsync(0.2);
-            UiTestExpect(ready.ShownProfile == newer && ReadyLines().Any(l => l.StartsWith("✓ Newer MW:", StringComparison.Ordinal)), $"with nothing selected, Ready isn't about the newest multiworld: {string.Join(" | ", ReadyLines())}");
+            UiTestExpect(ready.ShownProfile == newer && ReadyLines(ready).Any(l => l.StartsWith("✓ Newer MW:", StringComparison.Ordinal)), $"with nothing selected, Ready isn't about the newest multiworld: {string.Join(" | ", ReadyLines(ready))}");
             ready.EmitSignal(Window.SignalName.CloseRequested);
             await UiTestWaitAsync(0.2);
             _selectedProfile = selectedBefore;
@@ -2954,23 +2983,260 @@ public partial class MainTrackerWindow
         finally
         {
             AtlasEngine.TestSetUp = null;
-            AP_Atlas.Core.GitHubApi.TestSite = null;
+            ApworldSources.UseListForTests(null);
+            AP_Atlas.UI.FixPreviewDialog.Showing?.QueueFree();
             foreach (var w in GetChildren().OfType<AP_Atlas.UI.SetupWizard>()) w.QueueFree();
-            if (_appSettings.Theme != themeBefore) ApplyTheme(themeBefore);
-            AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.UpdateChecks, null, false);
-            AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.CrashReports, null, false);
             AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.EngineSetup, null, false);
+            AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.RoomStatusReads, null, false);
             AP_Atlas.Core.Permissions.ResetSessionForTests();
-            _appSettings.UpdateCheckDaily = dailyBefore;
-            _appSettings.UpdateOffered = offeredBefore;
             _appSettings.SetupPagesDone = pagesBefore;
             _appSettings.SkippedHomeSteps = skippedBefore;
-            _appSettings.PreferredPacks.Remove("Test Game");
             DataManager.SaveSettings(_appSettings);
-            _settingsPage?.RefreshRows();
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
-            foreach (var p in _profiles.Where(p => p.Name is "Wizard MW" or "Newer MW").ToList()) DeleteProfile(p);
-            AP_Atlas.Core.SafeFile.Delete(fromGitHub);
+            foreach (var p in _profiles.Where(p => p.Name is "Wizard MW" or "Newer MW" or "Wizard Other").ToList()) DeleteProfile(p);
+        }
+    }
+
+    /// <summary>Fails when a window other than the setup window shows: one of the main window's own, or one of the root's beyond those given.</summary>
+    private void UiTestNothingOnTopOfSetup(IReadOnlyList<Window> rootWindowsBefore, string when)
+    {
+        var others = GetChildren().OfType<Window>().Where(w => w is not AP_Atlas.UI.SetupWizard && w.Visible && !w.IsQueuedForDeletion()).Select(w => w.Name.ToString()).ToList();
+        others.AddRange(GetTree().Root.GetChildren().OfType<Window>().Except(rootWindowsBefore).Where(w => w.Visible).Select(w => w.Name.ToString()));
+        UiTestExpect(others.Count == 0, $"something opened on top of the setup window {when}: {string.Join(", ", others)}");
+    }
+
+    /// <summary>Only the scenario's games stay ticked: a game a leftover multiworld plays is unticked.</summary>
+    private static void UiTestOnlyTicked(AP_Atlas.UI.AddGamesPanel panel, params string[] keep)
+    {
+        foreach (string g in panel.Ticked.ToList()) if (!keep.Contains(g)) panel.Tick(g, false);
+    }
+
+    private async Task SetupAddGamesAsync()
+    {
+        // The installed apworlds' data checksum: the room's, so the slots' logic runs once their games are in.
+        const string checksum = "5e7a5e7a5e7a5e7a5e7a5e7a5e7a5e7a5e7a5e7a";
+        const string alpha = "Setup Alpha", beta = "Setup Beta";
+        var engine = StartFakeEngine(UiTestPython(), fake =>
+        {
+            fake.CheckWorldsDir = AtlasEngine.UserWorldsDir;
+            fake.DataChecksum = checksum;
+            fake.StartError = ("world_missing", "The game isn't installed in the logic engine.");
+        });
+        static byte[] Zip(params (string Name, string Text)[] files)
+        {
+            using var memory = new System.IO.MemoryStream();
+            using (var archive = new System.IO.Compression.ZipArchive(memory, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+                foreach (var (name, text) in files)
+                {
+                    using var writer = new System.IO.StreamWriter(archive.CreateEntry(name).Open());
+                    writer.Write(text);
+                }
+            return memory.ToArray();
+        }
+        static string Sha(byte[] bytes) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant();
+        string data = DataManager.GetDataDirectory();
+        string scratch = System.IO.Path.Combine(data, "uitest_setup_add");
+        System.IO.Directory.CreateDirectory(scratch);
+        byte[] alphaApworld = Zip(("setup_alpha/archipelago.json", "{\"game\": \"" + alpha + "\", \"world_version\": \"1.2.0\"}"), ("setup_alpha/__init__.py", "# " + alpha + "\n"));
+        byte[] betaApworld = Zip(("setup_beta/archipelago.json", "{\"game\": \"" + beta + "\"}"), ("setup_beta/__init__.py", "# " + beta + "\n"));
+        string alphaZip = System.IO.Path.Combine(scratch, "alpha.zip");
+        FakeMapPack.Write(alphaZip, "UI test setup pack", alpha);
+        byte[] alphaPack = await System.IO.File.ReadAllBytesAsync(alphaZip);
+        await using var site = new FakeWebSite();
+        site.Answer = (path, _) => path switch
+        {
+            "/dl/setup_alpha.apworld" => new FakeWebSite.FullAnswer(200, alphaApworld, "application/octet-stream"),
+            "/dl/setup_beta.apworld" => new FakeWebSite.FullAnswer(200, betaApworld, "application/octet-stream"),
+            "/gh/packs/setup-alpha/releases/download/v1/setup_alpha.zip" => new FakeWebSite.FullAnswer(200, alphaPack, "application/zip"),
+            _ => new FakeWebSite.FullAnswer(404, Array.Empty<byte>())
+        };
+        var list = new ApworldSourceList
+        {
+            Format = "atlas-apworld-sources/1",
+            Built = "9999-12-31",
+            Source = "ui-test",
+            Games = new List<ApworldSource>
+            {
+                new ApworldSource { Game = alpha, Apworld = "setup_alpha", Repo = "owner/setup-alpha",
+                    Versions = { new ApworldVersion { Version = "1.2.0", Url = site.Site + "/dl/setup_alpha.apworld", Sha256 = Sha(alphaApworld), Size = alphaApworld.Length } },
+                    Packs = { new IndexPack { Repo = "packs/setup-alpha", Release = "v1", Asset = "setup_alpha.zip", Sha256 = Sha(alphaPack), Size = alphaPack.Length, Fit = 100 } } },
+                new ApworldSource { Game = beta, Apworld = "setup_beta", Repo = "owner/setup-beta",
+                    Versions = { new ApworldVersion { Version = "0.3.0", Url = site.Site + "/dl/setup_beta.apworld", Sha256 = Sha(betaApworld), Size = betaApworld.Length } } }
+            }
+        };
+        // No official game is added: nothing may reach Archipelago's real release (the index lists one world, as an index
+        // must, for a game no multiworld plays).
+        var noWorlds = WorldsIndex.Parse(new JObject
+        {
+            ["archipelago"] = AtlasEngine.ArchipelagoVersion,
+            ["zip_sha256"] = new string('0', 64),
+            ["zip_root"] = "X/",
+            ["zip_bytes"] = 1,
+            ["core_worlds"] = new JArray(),
+            ["worlds"] = new JObject { ["setup_shipped"] = new JObject { ["games"] = new JArray("Setup Shipped"), ["needs"] = new JArray(), ["requirements"] = false, ["bytes"] = 1 } }
+        }.ToString());
+        string worlds = AtlasEngine.UserWorldsDir, packs = AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory();
+        var checkBefore = AtlasEngine.State.LastCheck;
+        // The room: two slots (no "Tester" in their names: the crash report scenario checks its log for that word), each its own game.
+        await using var server = new FakeArchipelagoServer();
+        server.SlotName = "Wren";
+        server.Slots.Add("Kite");
+        server.SlotGames["Wren"] = alpha;
+        server.SlotGames["Kite"] = beta;
+        // Its locations are near matches of the pack's own names, not the same: the batch's summary asks to fix the pack.
+        foreach (string game in new[] { alpha, beta })
+            server.Games[game] = new FakeGame(checksum,
+                new Dictionary<string, long> { ["Sword"] = 1000, ["Shield"] = 1001, ["Rupee"] = 1002, ["Gem"] = 1099 },
+                new Dictionary<string, long> { ["Cave Chest Room"] = 2000, ["Far Lantern Box"] = 2001, ["Tower Top"] = 2002, ["Gem Vault"] = 2003 });
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        var rootWindowsBefore = GetTree().Root.GetChildren().OfType<Window>().ToList();
+        GameAdderRun? run = null;
+        try
+        {
+            ApworldSources.UseListForTests(list);
+            AtlasEngine.TestWorlds = (noWorlds, site.Site + "/dl/none.zip", new string('0', 64));
+            GameAdder.TestGitHubSite = site.Site + "/gh";
+            AP_Atlas.Core.GitHubApi.TestSite = site.Site;
+            AP_Atlas.Core.GitHubApi.ResetForTests();
+            AP_Atlas.Core.Permissions.ResetSessionForTests();
+            AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.EngineSetup, null, false);
+            AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.GitHubLookups, null, false);
+            _appSettings.ApprovedApworldSources.Remove("127.0.0.1"); // the confirm names it as a project to trust
+            host.ShowTool(AP_Atlas.UI.Tool.Home);
+
+            // With the engine ready, the window has no engine page.
+            var wizard = OpenSetupWizard(resume: false);
+            await UiTestWaitAsync(0.3);
+            UiTestExpect(wizard.PageIdsShown.SequenceEqual(new[] { "welcome", AP_Atlas.UI.SetupSteps.Multiworld.Id, AP_Atlas.UI.SetupSteps.Games.Id, "ready" }),
+                $"with the engine ready, the setup window's pages are {string.Join(", ", wizard.PageIdsShown)}");
+            await wizard.NextForTestsAsync();
+            UiTestExpect(wizard.CurrentPageId == AP_Atlas.UI.SetupSteps.Multiworld.Id, $"Start led to {wizard.CurrentPageId}");
+            // Your multiworld and slots: the server and two slots typed; Next saves the multiworld and connects both.
+            ((LineEdit)wizard.FindChild("NameBox", true, false)).Text = "Setup Add MW";
+            ((LineEdit)wizard.FindChild("ServerBox", true, false)).Text = server.Url.ToString();
+            var slotsBox = (VBoxContainer)wizard.FindChild("SlotsBox", true, false);
+            var first = await UiTestWaitForAsync(() => slotsBox.GetChildren().OfType<HBoxContainer>().FirstOrDefault(r => !r.IsQueuedForDeletion()), "a slot row to type into");
+            first.GetChild<LineEdit>(0).Text = "Wren";
+            ((Button)wizard.FindChild("AddSlotRow", true, false)).EmitSignal(BaseButton.SignalName.Pressed);
+            slotsBox.GetChildren().OfType<HBoxContainer>().Last(r => !r.IsQueuedForDeletion()).GetChild<LineEdit>(0).Text = "Kite";
+            await wizard.NextForTestsAsync();
+            var profile = wizard.SavedProfile;
+            UiTestExpect(wizard.CurrentPageId == AP_Atlas.UI.SetupSteps.Games.Id && profile != null && profile.Slots.SequenceEqual(new[] { "Wren", "Kite" }),
+                $"Next didn't save both slots and move on: page {wizard.CurrentPageId}, slots [{string.Join(", ", profile?.Slots ?? new List<string>())}]");
+            var wren = SlotView(profile!.Id, "Wren");
+            var kite = SlotView(profile.Id, "Kite");
+            UiTestExpect(wren != null && kite != null && profile.SavedStats.TryGetValue("Wren", out var wrenStats) && wrenStats.GameName == alpha
+                && profile.SavedStats.TryGetValue("Kite", out var kiteStats) && kiteStats.GameName == beta,
+                "Next didn't connect both slots, or their games didn't come from the room");
+            // Their Logic banners say the setup window adds the game, with nothing to press.
+            foreach (var slot in new[] { wren!, kite! })
+            {
+                await UiTestWaitForAsync(() => slot.EngineProblem?.Code == "world_missing" ? slot : null, $"{slot.SlotName}'s logic to find its game missing", 20);
+                UiTestExpect(slot.LogicNoticeShown?.Contains("The setup window adds") == true && slot.LogicNoticeButtons().Count == 0 && slot.LogicEmptyState("").Contains("The setup window adds"),
+                    $"{slot.SlotName}'s Logic banner during the setup says \"{slot.LogicNoticeShown}\" with [{string.Join(", ", slot.LogicNoticeButtons())}]; the empty view \"{slot.LogicEmptyState("")}\"");
+            }
+            // Add games on the page: both games first and ticked, Add 2 games… enabled (the engine is ready), nothing on top.
+            var panel = await UiTestWaitForAsync(() => wizard.AddGamesPanelShown is { FactsPending: 0 } p ? p : null, "Add games on the page", 20);
+            UiTestOnlyTicked(panel, alpha, beta);
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(panel.IsTicked(alpha) && panel.IsTicked(beta) && !panel.EngineLeadShown && wizard.NextButton.Text == "Add 2 games…" && !wizard.NextButton.Disabled,
+                $"Add games on the page: ticked {string.Join(", ", panel.Ticked)}, lead {panel.EngineLeadShown}, Next \"{wizard.NextButton.Text}\" disabled {wizard.NextButton.Disabled}");
+            UiTestNothingOnTopOfSetup(rootWindowsBefore, "on Add games");
+            // The one confirm: its Back beside Next, the window's Back and Skip aside, nothing downloaded; Back keeps the ticks.
+            await wizard.NextForTestsAsync();
+            UiTestExpect(panel.CurrentStage == AP_Atlas.UI.AddGamesPanel.Stage.Confirm && wizard.NextButton.Text == "Download and install" && wizard.SecondaryButton is { Visible: true, Text: "Back" }
+                && !wizard.BackButton.Visible && !wizard.SkipButton.Visible && site.Requests.Count == 0 && wizard.CurrentPageId == AP_Atlas.UI.SetupSteps.Games.Id,
+                $"the confirm's footer: Next \"{wizard.NextButton.Text}\", second \"{wizard.SecondaryButton.Text}\" {wizard.SecondaryButton.Visible}, Back {wizard.BackButton.Visible}, Skip {wizard.SkipButton.Visible}, requests {site.Requests.Count}");
+            UiTestNothingOnTopOfSetup(rootWindowsBefore, "on the confirm");
+            wizard.SecondaryButton.EmitSignal(BaseButton.SignalName.Pressed);
+            UiTestExpect(panel.CurrentStage == AP_Atlas.UI.AddGamesPanel.Stage.Pick && panel.IsTicked(alpha) && panel.IsTicked(beta) && wizard.BackButton.Visible, "the confirm's Back didn't return to the list with the ticks");
+            await wizard.NextForTestsAsync();
+            UiTestExpect(panel.CurrentStage == AP_Atlas.UI.AddGamesPanel.Stage.Confirm, "Next didn't show the confirm again");
+            // The games' logic starts once they're in.
+            engine.StartError = null;
+            engine.Apply();
+            // Download and install: the bar with Cancel on Next, the list on the left locked while it runs.
+            string? footerWhileRunning = null;
+            bool railLocked = false;
+            panel.StatusChanged += _ =>
+            {
+                if (footerWhileRunning != null || wizard.Busy || !IsInstanceValid(wizard)) return;
+                footerWhileRunning = wizard.NextButton.Text;
+                railLocked = wizard.RailButtonOf("welcome").Disabled;
+            };
+            await wizard.NextForTestsAsync();
+            run = await UiTestWaitForAsync(() => panel.CurrentStage == AP_Atlas.UI.AddGamesPanel.Stage.Summary ? panel.Result : null, "the summary", 120);
+            var lines = panel.SummaryLines();
+            UiTestExpect(footerWhileRunning == "Cancel" && railLocked && !wizard.RailButtonOf("welcome").Disabled,
+                $"while it ran, Next said \"{footerWhileRunning}\" and the list was locked {railLocked}; after, locked {wizard.RailButtonOf("welcome").Disabled}");
+            UiTestExpect(!run.Outcome.Cancelled && run.Outcome.For(alpha).Logic.Outcome == AP_Atlas.Core.Games.AddStepOutcome.Done && run.Outcome.For(beta).Logic.Outcome == AP_Atlas.Core.Games.AddStepOutcome.Done
+                && lines.Contains("Logic: version 1.2.0 added."), $"the summary: {string.Join(" | ", lines)}");
+            UiTestNothingOnTopOfSetup(rootWindowsBefore, "on the summary");
+            // The packs' question is the footer's (Fix them now… and Later); Fix them now… opens the preview of every change on
+            // the setup window itself; cancelled, Later answers it and Next goes on.
+            UiTestExpect(run.Fixes.Any(f => !f.Plan.Nothing) && wizard.NextButton.Text == "Fix them now…" && wizard.SecondaryButton is { Visible: true, Text: "Later" },
+                $"the packs' question isn't on the setup window's footer ({run.Fixes.Count} pack(s) to fix): \"{wizard.NextButton.Text}\" / \"{wizard.SecondaryButton.Text}\"");
+            await wizard.NextForTestsAsync(); // Fix them now…
+            var preview = await UiTestWaitForAsync(() => AP_Atlas.UI.FixPreviewDialog.Showing, "the preview of every change on the setup window");
+            UiTestExpect(wizard.IsAncestorOf(preview) && wizard.CurrentPageId == AP_Atlas.UI.SetupSteps.Games.Id, "the Pack Doctor's preview didn't open on the setup window");
+            UiTestNothingOnTopOfSetup(rootWindowsBefore, "with the packs' preview open");
+            preview.ChooseForTests(false);
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(wizard.NextButton.Text == "Fix them now…", $"cancelling the preview answered the question: Next says \"{wizard.NextButton.Text}\"");
+            wizard.SecondaryButton.EmitSignal(BaseButton.SignalName.Pressed); // Later
+            UiTestExpect(wizard.NextButton.Text == "Next" && !wizard.NextButton.Disabled, $"after the summary, Next says \"{wizard.NextButton.Text}\"");
+            // The slots' logic starts by itself once their games are in.
+            await UiTestWaitForAsync(() => wren!.EngineRunning && kite!.EngineRunning ? wren : null, "both slots' logic to start once their games are in", 30);
+            // Each slot's logic started twice as the games came in (the engine set up, then the new apworld): the first start,
+            // overtaken, wrote none of the results the running one reads.
+            UiTestExpect(wren!.Model.Logic.Engine.LastStartError == null && kite!.Model.Logic.Engine.LastStartError == null,
+                $"an overtaken start left its result: Wren \"{wren.Model.Logic.Engine.LastStartError?.Message}\", Kite \"{kite!.Model.Logic.Engine.LastStartError?.Message}\"");
+            // Ready: the games step is done (the games of this multiworld; another multiworld's game not ready would keep it open).
+            var otherGames = _profiles.Where(p => p != profile).SelectMany(p => p.Slots.Where(s => !AP_Atlas.UI.SetupSteps.IsPlaceholderSlot(s))
+                .Select(s => p.SavedStats.TryGetValue(s, out var st) ? st.GameName : null)).Where(g => !string.IsNullOrWhiteSpace(g)).ToList();
+            await wizard.NextForTestsAsync();
+            UiTestExpect(wizard.CurrentPageId == "ready", $"Next after the summary led to {wizard.CurrentPageId}");
+            var ownRows = _gamesPage!.PlanAdding(new[] { alpha, beta }).Games.Select(g => g.Row).ToList();
+            UiTestExpect(ownRows.All(r => r is AP_Atlas.Core.Games.AddRow.Ready or AP_Atlas.Core.Games.AddRow.NoMapKnown), $"the added games' rows: {string.Join(", ", ownRows)}");
+            if (otherGames.Count == 0)
+            {
+                UiTestExpect(SetupSteps.Done(AP_Atlas.UI.SetupSteps.Games) && SetupSteps.AllSettled, $"with every game ready, the steps settled are {string.Join(", ", AP_Atlas.UI.SetupSteps.All.Where(SetupSteps.Settled).Select(s => s.Id))}");
+                var readyLine = wizard.PageOf("ready").FindChildren("*", nameof(Label), true, false).OfType<Label>().FirstOrDefault(l => l.HasMeta("setup_ready_line"));
+                UiTestExpect(readyLine != null && readyLine.Text.StartsWith("You're set up.", StringComparison.Ordinal), $"the Ready page says \"{readyLine?.Text}\"");
+            }
+            else GD.Print($"UITEST INFO Setup window, adding games: other multiworlds play {string.Join(", ", otherGames)}, so the games step's done isn't checked");
+            await wizard.NextForTestsAsync();
+            await UiTestWaitForAsync(() => !IsInstanceValid(wizard) || wizard.IsQueuedForDeletion() ? this : null, "Finish to close the window");
+            UiTestExpect(_setupQuietProfile == null, "the Logic banners are still kept quiet after the window closed");
+        }
+        finally
+        {
+            foreach (var w in GetChildren().OfType<AP_Atlas.UI.SetupWizard>()) w.QueueFree();
+            AP_Atlas.UI.FixPreviewDialog.Showing?.QueueFree();
+            ApworldSources.UseListForTests(null);
+            AtlasEngine.TestWorlds = null;
+            GameAdder.TestGitHubSite = null;
+            AP_Atlas.Core.GitHubApi.TestSite = null;
+            AP_Atlas.Core.GitHubApi.ResetForTests();
+            AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.EngineSetup, null, false);
+            AP_Atlas.Core.Permissions.ResetSessionForTests();
+            AP_Atlas.Core.PopTracker.PackDoctorService.ForgetPostponedForTests();
+            AtlasEngine.State.LastCheck = checkBefore;
+            foreach (var fix in run?.Fixes ?? Array.Empty<PackFixOffer>()) AP_Atlas.Core.PopTracker.PackDoctorService.Reports.Remove(fix.Look.PackKey);
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+            foreach (var p in _profiles.Where(p => p.Name == "Setup Add MW").ToList()) DeleteProfile(p);
+            _appSettings.ApprovedApworldSources.Remove("127.0.0.1");
+            _appSettings.PreferredPacks.Remove(alpha);
+            DataManager.SaveSettings(_appSettings);
+            AP_Atlas.Core.SafeFile.Delete(System.IO.Path.Combine(worlds, "setup_alpha.apworld"));
+            AP_Atlas.Core.SafeFile.Delete(System.IO.Path.Combine(worlds, "setup_beta.apworld"));
+            AP_Atlas.Core.SafeFile.Delete(System.IO.Path.Combine(packs, "setup_alpha.zip"));
+            foreach (string game in new[] { alpha, beta })
+            {
+                string kept = AP_Atlas.Core.Games.GameFiles.ApworldsFolder(data, game);
+                if (System.IO.Directory.Exists(kept)) System.IO.Directory.Delete(kept, true);
+            }
+            if (System.IO.Directory.Exists(scratch)) System.IO.Directory.Delete(scratch, true);
             AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
         }
     }

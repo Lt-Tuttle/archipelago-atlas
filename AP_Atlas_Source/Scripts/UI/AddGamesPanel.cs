@@ -180,6 +180,12 @@ namespace AP_Atlas.UI
             _ => null
         };
 
+        /// <summary>How many games the ticks add (0: nothing to add, and a host may move on).</summary>
+        public int AddingCount => AddGamesWords.Adding(_tickedPlan);
+
+        /// <summary>Whether the summary's Pack Doctor question still asks (its Fix them now… and Later are the host's actions).</summary>
+        public bool Asking => HandoffAsks;
+
         public void PressPrimary()
         {
             if (!PrimaryEnabled) return;
@@ -259,11 +265,13 @@ namespace AP_Atlas.UI
             _table.SearchBox.AccessibilityName = _tr("Search games");
             _table.ColumnsMenu.Visible = false;
             _table.ExportMenu.Visible = false;
+            // Hosted on a narrower page (the setup window), the game and its words give way (clipped) before the download does.
+            bool narrow = _width < 720;
             _table.SetColumns(new[]
             {
                 new AtlasTable.Column { Id = "tick", Title = "", MinWidth = 34, Ratio = 0, Sortable = false },
-                new AtlasTable.Column { Id = "game", Title = _tr("Game"), MinWidth = 180, Ratio = 3 },
-                new AtlasTable.Column { Id = "gets", Title = _tr("Adding it gets"), MinWidth = 220, Ratio = 4 },
+                new AtlasTable.Column { Id = "game", Title = _tr("Game"), MinWidth = narrow ? 140 : 180, Ratio = 3 },
+                new AtlasTable.Column { Id = "gets", Title = _tr("Adding it gets"), MinWidth = narrow ? 150 : 220, Ratio = 4 },
                 new AtlasTable.Column { Id = "size", Title = _tr("Download"), MinWidth = 110, Ratio = 0, Align = HorizontalAlignment.Right }
             }, "game");
             // A check box per row with something to add (the versions table's way); a game with nothing to add has none.

@@ -162,7 +162,7 @@ namespace AP_Atlas.UI
             welcomeText.AutowrapMode = TextServer.AutowrapMode.WordSmart;
             welcomeText.SizeFlagsHorizontal = SizeFlags.ExpandFill;
             welcomeBox.AddChild(welcomeText);
-            var welcomeMore = Kit.Text(_tr("Setting it up takes a few pages: your multiworld and slots, the games' map packs, the trackers. Skip anything, come back any time; nothing goes online without asking."), AP_Atlas.Core.ThemeColors.TextMuted);
+            var welcomeMore = Kit.Text(_tr("Setting it up takes a few pages: your multiworld and slots, then the games you play, their logic and maps. Skip anything, come back any time; nothing goes online without asking."), AP_Atlas.Core.ThemeColors.TextMuted);
             welcomeMore.AutowrapMode = TextServer.AutowrapMode.WordSmart;
             welcomeMore.SizeFlagsHorizontal = SizeFlags.ExpandFill;
             welcomeBox.AddChild(welcomeMore);
@@ -366,7 +366,7 @@ namespace AP_Atlas.UI
         /// <summary>Redraws the wordmark for a new accent or theme.</summary>
         public void RefreshWordmark() => Wordmark.Refresh(_wordmark);
 
-        /// <summary>The setup card's line ("Setup 4 of 7 done. Next: …", or "You're set up.").</summary>
+        /// <summary>The setup card's line ("Setup 1 of 3 done. Next: …", or "You're set up.").</summary>
         public string SetupLine => _setupLine.Text;
 
         public Button ResumeButton => _resume;

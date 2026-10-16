@@ -122,6 +122,17 @@ public partial class MainTrackerWindow
         await VisualCheckWindowAsync("about", ShowAbout, 1.0);
         // The setup window on its Welcome page (Home's welcome card opens it there on a first start).
         await VisualCheckWindowAsync("setup_welcome", () => OpenSetupWizard(resume: false), 1.0);
+        // Its multiworld and slots page (no YAML, no game box), its Add games page (a fresh folder: the engine leads) and Ready with its links.
+        await VisualCheckWindowAsync("setup_multiworld", () => OpenSetupWizard(resume: false).ShowPageForTests(AP_Atlas.UI.SetupSteps.Multiworld.Id), 1.0);
+        var setupBefore = VisualCheckOpenWindows();
+        var setupGames = OpenSetupWizard(resume: false);
+        setupGames.ShowPageForTests(AP_Atlas.UI.SetupSteps.Games.Id);
+        await VisualCheckWaitForAsync(() => setupGames.AddGamesPanelShown?.FactsPending == 0, 15);
+        await VisualCheckWaitAsync(0.5);
+        await VisualCheckPictureAsync("setup_add_games");
+        foreach (var window in VisualCheckOpenWindows().Except(setupBefore)) window.QueueFree();
+        await VisualCheckWaitAsync(0.3);
+        await VisualCheckWindowAsync("setup_ready", () => OpenSetupWizard(resume: false).ShowPageForTests("ready"), 1.0);
         OpenPrivacy();
         await VisualCheckWaitAsync(0.5);
         await VisualCheckPictureAsync("privacy_empty");

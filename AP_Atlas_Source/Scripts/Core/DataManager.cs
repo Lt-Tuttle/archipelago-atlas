@@ -116,7 +116,7 @@ public class AppSettings
     public List<string> ExpandedPropertySections { get; set; } = new List<string>();
     /// <summary>The setup steps the user skipped (step ids: see SetupSteps); Home's line and the setup window count them as done.</summary>
     public List<string> SkippedHomeSteps { get; set; } = new List<string>();
-    /// <summary>The setup window's pages the user passed with Next (page ids), for the steps Atlas's state alone can't tell (the look, the reports page).</summary>
+    /// <summary>Pages an earlier setup window marked passed (page ids); read only, so a setup begun then isn't taken for untouched.</summary>
     public List<string> SetupPagesDone { get; set; } = new List<string>();
     /// <summary>Whether Home's welcome card was put away ("Look around first"); Home's setup line keeps Resume.</summary>
     public bool WelcomeDismissed { get; set; }

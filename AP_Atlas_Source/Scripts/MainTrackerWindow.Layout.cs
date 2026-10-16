@@ -746,7 +746,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         var buttonRow = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Begin };
         buttonRow.AddThemeConstantOverride("separation", 8);
         rightVbox.AddChild(buttonRow);
-        _addSlotButton = AP_Atlas.UI.Kit.Button(Tr("+ Add Slot"), Tr("Adds a slot: its name, its game, its YAML, whether its logic is ready in the Atlas Engine, and Connect now."), OnAddSlotPressed);
+        _addSlotButton = AP_Atlas.UI.Kit.Button(Tr("+ Add Slot"), Tr("Adds a slot: its name, its game, whether its logic is ready in the Atlas Engine, and Connect now."), OnAddSlotPressed);
         buttonRow.AddChild(_addSlotButton);
         _addYamlButton = AP_Atlas.UI.Kit.Button(Tr("Add YAML…"), Tr("Keeps a player YAML in Atlas's YAML folder and adds a slot for each player it names, with the YAML tied to that slot."), OnAddYamlPressed);
         buttonRow.AddChild(_addYamlButton);

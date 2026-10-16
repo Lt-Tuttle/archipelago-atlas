@@ -65,9 +65,14 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
     /// </summary>
     public Dictionary<string, JToken> DataStorage { get; } = new();
 
-    /// <summary>The slots that may log in (slot numbers follow this order), and the game they all play.</summary>
+    /// <summary>The slots that may log in (slot numbers follow this order), and the game they play (<see cref="SlotGames"/> gives a slot another).</summary>
     public List<string> Slots { get; } = new() { "Tester" };
     public string SlotGame { get; set; } = "Test Game";
+
+    /// <summary>A slot's own game in place of <see cref="SlotGame"/> (a room of several games), by slot name.</summary>
+    public Dictionary<string, string> SlotGames { get; } = new();
+
+    private string GameOf(string slot) => SlotGames.TryGetValue(slot, out var game) ? game : SlotGame;
 
     /// <summary>
     /// Slots on a team other than the first (teams count from 0), by name; every other slot is on team 0. Each team
@@ -508,7 +513,7 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
             ["team"] = TeamOf(name),
             ["slot"] = SlotNumber(name),
             ["tags"] = new JArray(tags),
-            ["data"] = new JArray(new JObject { ["text"] = $"{name} (Team #{TeamOf(name) + 1}) {verb} {SlotGame} has joined." })
+            ["data"] = new JArray(new JObject { ["text"] = $"{name} (Team #{TeamOf(name) + 1}) {verb} {GameOf(name)} has joined." })
         };
     }
 
@@ -886,11 +891,11 @@ internal sealed class FakeArchipelagoServer : IAsyncDisposable
         ["team"] = TeamOf(name),
         ["slot"] = SlotNumber(name),
         ["players"] = new JArray(Slots.Select(s => new JObject { ["team"] = TeamOf(s), ["slot"] = SlotNumber(s), ["alias"] = s, ["name"] = s, ["class"] = "NetworkPlayer" })),
-        ["missing_locations"] = new JArray(Games.TryGetValue(SlotGame, out var game) ? game.Locations.Values.Cast<object>().ToArray() : Array.Empty<object>()),
+        ["missing_locations"] = new JArray(Games.TryGetValue(GameOf(name), out var game) ? game.Locations.Values.Cast<object>().ToArray() : Array.Empty<object>()),
         ["checked_locations"] = new JArray(),
         ["slot_data"] = new JObject { ["slot_name"] = name },
         ["slot_info"] = new JObject(Slots.Where(s => TeamOf(s) == TeamOf(name)).Select(s => new JProperty(SlotNumber(s).ToString(),
-            new JObject { ["name"] = s, ["game"] = SlotGame, ["type"] = 1, ["group_members"] = new JArray(), ["class"] = "NetworkSlot" }))),
+            new JObject { ["name"] = s, ["game"] = GameOf(s), ["type"] = 1, ["group_members"] = new JArray(), ["class"] = "NetworkSlot" }))),
         ["hint_points"] = 0
     };
 

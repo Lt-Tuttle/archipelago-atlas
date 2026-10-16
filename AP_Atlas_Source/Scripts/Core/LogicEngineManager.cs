@@ -304,10 +304,12 @@ public class LogicEngineManager
 
         AP_Atlas.Core.EngineSetup.AtlasEngine.InstallBridge(_install, _logger);
 
+        AP_Atlas.Core.EngineSetup.EngineSeat started = null;
         try
         {
             var seat = EnginePools.For(_multiworld, _install).Join(_key ?? playerName);
             _seat = seat;
+            started = seat;
             _logger($"Starting logic in logic engine {seat.EngineNumber} ({_install.Describe()})...");
             // Only this seat's loss counts: one the slot has since left says nothing.
             seat.Lost += loss =>
@@ -335,6 +337,13 @@ public class LogicEngineManager
 
             // Loading every game and rebuilding the world can take a while on a slow disk or a big install.
             var answer = await seat.AskAsync(JObject.FromObject(initReq), TimeSpan.FromMinutes(3));
+            // Overtaken: the slot stopped or restarted while this start waited. Its answer belongs to no current run, so it
+            // writes none of the shared results (they're the newer start's) and never counts as started.
+            if (!ReferenceEquals(_seat, seat))
+            {
+                seat.Leave();
+                return false;
+            }
             var response = answer.Reply;
             if (response == null)
             {
@@ -346,7 +355,7 @@ public class LogicEngineManager
                 };
                 _logger("Logic Engine Start Failed: " + LastStartError.Message);
                 LastStartLoss = seat.Loss;
-                StopEngine();
+                StopEngine(seat);
                 return false;
             }
             LastVersions = response["versions"] as JObject;
@@ -364,7 +373,7 @@ public class LogicEngineManager
                     Details = response
                 };
                 _logger($"Logic Engine Start Failed ({LastStartError.Code}): {LastStartError.Message}");
-                StopEngine();
+                StopEngine(seat);
                 return false;
             }
 
@@ -384,14 +393,19 @@ public class LogicEngineManager
 
             LastStartError = new EngineStartError { Code = "error", Message = response["error"]?.ToString() ?? "The engine couldn't start this slot.", Details = response };
             _logger("Logic Engine Start Failed: " + response.ToString(Newtonsoft.Json.Formatting.None));
-            StopEngine();
+            StopEngine(seat);
             return false;
         }
         catch (Exception ex)
         {
+            if (started != null && !ReferenceEquals(_seat, started))
+            {
+                started.Leave(); // overtaken (see above): nothing of this start's is the slot's any more
+                return false;
+            }
             LastStartError = new EngineStartError { Code = "error", Message = ex.Message };
             _logger("Logic Engine Start Exception: " + ex.Message);
-            StopEngine();
+            StopEngine(started);
             return false;
         }
     }
@@ -657,6 +671,17 @@ public class LogicEngineManager
         var seat = _seat;
         _seat = null;
         seat?.Leave();
+    }
+
+    /// <summary>
+    /// A start that failed stops its engine, if that engine is still the slot's. A start overtaken by a newer one (the slot
+    /// restarted while this one waited, which stopped this one's engine then) leaves the newer start's engine alone: its
+    /// failure, arriving late, used to stop the engine the restart had just started, and the slot's logic never came.
+    /// </summary>
+    private void StopEngine(AP_Atlas.Core.EngineSetup.EngineSeat startedSeat)
+    {
+        if (startedSeat == null || ReferenceEquals(_seat, startedSeat)) StopEngine();
+        else startedSeat.Leave(); // left already when the restart stopped it (leaving twice does nothing)
     }
 
     /// <summary>Whether this engine can run logic (program files and the Universal Tracker are present).</summary>
