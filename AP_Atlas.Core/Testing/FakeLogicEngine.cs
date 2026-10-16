@@ -21,7 +21,8 @@ internal sealed record FakeLocation(long Id, string Name, params long[] Needs);
 /// the same requests (start a slot, what's in logic, why) from the rules set here instead of a real world. It can also
 /// misbehave on purpose: crash on an item, answer late, fail to load, start a process of its own, or send a log line, a
 /// stale answer and an answer-like line without an id first. It writes every request it gets to a journal, which the
-/// test reads. It touches nothing outside its folder (bar a process that sleeps until it's stopped) and never goes online.
+/// test reads. It writes nothing outside its folder (its health check reads the worlds folder a test names; bar a process
+/// that sleeps until it's stopped) and never goes online.
 /// Used by the unit tests and by Atlas's UI test (ATLAS_UITEST); Atlas itself never sets one up.
 /// </summary>
 internal sealed class FakeLogicEngine
@@ -82,6 +83,15 @@ internal sealed class FakeLogicEngine
     /// <summary>The world's data checksum, as the installed apworld reports it (null: none reported).</summary>
     public string? DataChecksum { get; set; }
 
+    /// <summary>The world's declared version, as the installed apworld reports it (null: none).</summary>
+    public string? WorldVersion { get; set; }
+
+    /// <summary>
+    /// Whether the rebuilt world matches the server's locations, whatever <see cref="Locations"/> say (null: they're
+    /// compared). A stand-in apworld given as the request's apworld_override decides for itself (its fake_world.json "match").
+    /// </summary>
+    public bool? RebuildMatch { get; set; }
+
     /// <summary>Starting a slot fails with this error code and message, as when its game isn't installed (null: it starts).</summary>
     public (string Code, string Message)? StartError { get; set; }
 
@@ -138,6 +148,15 @@ internal sealed class FakeLogicEngine
     /// <summary>The server's locations the rebuilt world lacks (reported when a slot starts).</summary>
     public List<long> RebuildLacks { get; } = new();
 
+    /// <summary>
+    /// The folder the health check (AtlasCheck) reads, or null for an engine without one (its check fails, as before). The
+    /// check lists the game of each apworld and world folder in it (its archipelago.json names it) and passes.
+    /// </summary>
+    public string? CheckWorldsDir { get; set; }
+
+    /// <summary>Worlds the health check reports as failed to load, by file or folder name without extension, with the error.</summary>
+    public Dictionary<string, string> CheckFailures { get; } = new();
+
     /// <summary>Writes the rules. The engine reads them for every request, so changes apply to the next one.</summary>
     public void Apply()
     {
@@ -149,6 +168,8 @@ internal sealed class FakeLogicEngine
             ["excluded"] = new JArray(Excluded),
             ["glitched"] = new JArray(Glitched),
             ["data_checksum"] = DataChecksum,
+            ["world_version"] = WorldVersion,
+            ["rebuild_match"] = RebuildMatch,
             ["start_error"] = StartError is { } error ? new JObject { ["code"] = error.Code, ["message"] = error.Message } : JValue.CreateNull(),
             ["crash"] = CrashOnItem is { } item ? new JObject { ["on_item"] = item, ["times"] = CrashTimes } : JValue.CreateNull(),
             ["delays"] = JObject.FromObject(Delays),
@@ -161,6 +182,7 @@ internal sealed class FakeLogicEngine
             ["entrance_key"] = EntranceKey,
             ["unsure"] = new JArray(Unsure),
             ["rebuild_lacks"] = new JArray(RebuildLacks),
+            ["check"] = CheckWorldsDir == null ? JValue.CreateNull() : new JObject { ["worlds_dir"] = CheckWorldsDir, ["failures"] = JObject.FromObject(CheckFailures) },
             ["behind_entrance"] = new JObject(BehindEntrance.Select(entry => new JProperty(entry.Key.ToString(System.Globalization.CultureInfo.InvariantCulture), entry.Value)))
         };
         // Replaced whole, so the engine never reads half a file. It may be reading the old one this moment: then retry.

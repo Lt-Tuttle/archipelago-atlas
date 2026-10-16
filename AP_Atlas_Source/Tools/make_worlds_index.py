@@ -106,6 +106,7 @@ def main():
             'archipelago': version,
             'zip_sha256': args.sha256.lower(),
             'zip_root': top,
+            'zip_bytes': os.path.getsize(args.zip),
             'core_worlds': sorted(CORE_WORLDS) + libraries,
             'worlds': {},
         }

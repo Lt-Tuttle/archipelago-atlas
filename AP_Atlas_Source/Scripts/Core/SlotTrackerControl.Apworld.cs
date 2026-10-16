@@ -24,14 +24,70 @@ public partial class SlotTrackerControl : MarginContainer
 
     /// <summary>Raised when this slot's accuracy warning or fix status changes (Properties shows it too).</summary>
     public event Action AccuracyChanged;
-    private string _apworldFixStatus;
     private readonly HashSet<string> _apworldFixAttempted = new HashSet<string>();
 
+    /// <summary>Where Atlas's own look for the seed's version stands (the connect-time rule's tries).</summary>
+    private enum SeedVersionSearch { NotTried, Trying, NoneMatched }
+
+    private SeedVersionSearch _seedVersionSearch;
+    // The seed (its data checksum) the search state is about: another seed starts afresh.
+    private string _seedVersionSearchFor;
+    private System.Threading.CancellationTokenSource _seedVersionTries;
+
     /// <summary>
-    /// Matches the slot's apworld to the version its seed was made with. When Atlas has that version (identified before,
-    /// or chosen for this slot), logic restarts on it at once, for this slot only. Otherwise nothing is downloaded by
-    /// itself: the slot says so (a card and the Logic Tracker's banner) and the version picker lists the game's releases
-    /// for the user to pick the host's version, or to let Atlas try them.
+    /// The connect-time version rule (SeedVersionRule): the newest installed version runs; only when the seed was made with
+    /// another version and logic doesn't work with it does Atlas look for the seed's version.
+    /// </summary>
+    public bool SeedVersionWanted => Model.Logic.SeedVersionWanted;
+
+    /// <summary>How far logic can be trusted as Atlas checks it (the one gate every view uses).</summary>
+    public AP_Atlas.Core.Games.LogicAccuracy LogicAccuracy => Model.Logic.Accuracy;
+
+    private bool TryingSeedVersions => _seedVersionSearch == SeedVersionSearch.Trying && _seedVersionSearchFor == ServerChecksumFor(Game);
+
+    /// <summary>What Atlas is doing about the seed's version, in plain words (null unless the rule fired).</summary>
+    public string SeedVersionNote
+    {
+        get
+        {
+            if (!SeedVersionWanted) return null;
+            var state = _seedVersionSearchFor == ServerChecksumFor(Game) ? _seedVersionSearch : SeedVersionSearch.NotTried;
+            return state switch
+            {
+                SeedVersionSearch.Trying => Tr("Atlas is trying the seed's version…"),
+                SeedVersionSearch.NoneMatched => Tr("None of the versions Atlas knows from projects you trust is the seed's: choose it."),
+                _ => Tr("Choose the seed's version to fix it.")
+            };
+        }
+    }
+
+    /// <summary>Stops a search for the seed's version still going (a new one, the user's choice, or the slot ending).</summary>
+    private void StopSeedVersionTries() => _seedVersionTries?.Cancel();
+
+    private void SetSeedVersionSearch(SeedVersionSearch state, string checksum)
+    {
+        _seedVersionSearch = state;
+        _seedVersionSearchFor = checksum;
+        SyncLogicViews();
+        StateChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// After a start, or a start that failed: when the rule fires and "Use each seed's apworld version automatically" is on,
+    /// Atlas looks for the seed's version, once per seed for this slot.
+    /// </summary>
+    private void CheckSeedVersion()
+    {
+        string checksum = ServerChecksumFor(Game);
+        if (!SeedVersionWanted || !_appSettings.AutoFixApworldVersions || checksum == null || _apworldFixAttempted.Contains(checksum)) return;
+        FixApworldVersion(interactive: false);
+    }
+
+    /// <summary>
+    /// Matches the slot's apworld to the version its seed was made with. When Atlas has that version (identified before, or
+    /// chosen for this slot), logic restarts on it at once, for this slot only. Asked by the user (interactive), the version
+    /// picker opens. Otherwise Atlas tries up to three versions it already knows from projects the user trusts, newest first,
+    /// asking GitHub nothing (TrySeedVersionsAsync); the picker is the way on when none is the seed's.
     /// </summary>
     public void FixApworldVersion(bool interactive)
     {
@@ -49,10 +105,53 @@ public partial class SlotTrackerControl : MarginContainer
             OpenApworldPicker();
             return;
         }
-        _apworldFixStatus = "\"Choose the version…\" lists the game's releases: pick the one the seed's host used, or let Atlas try them.";
-        SyncAccuracyBanner();
-        ShowActionToast?.Invoke($"{_slotName}: this seed was made with another version of the {game} apworld, so logic may be off.", AP_Atlas.Core.ThemeColors.Warning,
-            "Choose the version…", OpenApworldPicker);
+        AP_Atlas.Core.Async.Fire(TrySeedVersionsAsync(game, checksum), $"trying {game} versions for {_slotName}'s seed");
+    }
+
+    /// <summary>
+    /// The silent tries (ApworldSources.FindSeedVersionAsync): each downloaded and loaded in a throwaway engine process until
+    /// one's data is the seed's, which is used for this slot only. The banner says Atlas is trying meanwhile; a card says
+    /// which version was found, or that none was (the banner's "Choose the version…" opens the picker).
+    /// </summary>
+    private async System.Threading.Tasks.Task TrySeedVersionsAsync(string game, string checksum)
+    {
+        var install = Model.Logic.Engine?.Install;
+        if (install == null || !install.CanLaunch)
+        {
+            SetSeedVersionSearch(SeedVersionSearch.NoneMatched, checksum);
+            return;
+        }
+        // Read on the main thread (the settings change there); the rest runs off it.
+        var trusted = (_appSettings.ApprovedApworldSources ?? new List<string>()).ToList();
+        var added = _appSettings.ExtraApworldRepos != null && _appSettings.ExtraApworldRepos.TryGetValue(game, out var extra) ? extra.ToList() : new List<string>();
+        bool useCached = !Model.Logic.SeedApworldFailed(checksum);
+        string slot = _slotName;
+        StopSeedVersionTries();
+        var cts = _seedVersionTries = new System.Threading.CancellationTokenSource();
+        SetSeedVersionSearch(SeedVersionSearch.Trying, checksum);
+        (AP_Atlas.Core.EngineSetup.ApworldVersion Version, string File) found = (null, null);
+        try
+        {
+            // No ConfigureAwait(false): what follows touches the slot's views, on Godot's main thread.
+            found = await System.Threading.Tasks.Task.Run(() => AP_Atlas.Core.EngineSetup.ApworldSources.FindSeedVersionAsync(trusted, added, install, game, checksum, useCached,
+                line => AP_Atlas.Core.Logger.LogDebug($"[{slot}] {line}"), cts.Token), cts.Token);
+        }
+        catch (OperationCanceledException) { return; }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            AP_Atlas.Core.Logger.LogWarning($"[{slot}] Couldn't look for the {game} version this seed was made with: {ex.Message}");
+        }
+        if (!GodotObject.IsInstanceValid(this) || _ended || cts.IsCancellationRequested || ServerChecksumFor(game) != checksum) return;
+        if (found.File != null)
+        {
+            var v = found.Version;
+            string source = v?.Repo != null ? "github.com/" + v.Repo : v?.Url != null ? AP_Atlas.Core.EngineSetup.ApworldSources.SourceKey(v.Url) : Tr("Atlas's copy");
+            UseApworld(found.File, v?.Version ?? "?", source, matchesSeed: true, found: true);
+            return;
+        }
+        SetSeedVersionSearch(SeedVersionSearch.NoneMatched, checksum);
+        ShowActionToast?.Invoke(Tr("{slot}: this seed was made with another version of {game}, and logic doesn't match it. Atlas couldn't find that version among the ones it knows from projects you trust.")
+            .Replace("{slot}", _slotName).Replace("{game}", game), AP_Atlas.Core.ThemeColors.Warning, Tr("Choose the version…"), OpenApworldPicker);
     }
 
     /// <summary>The version picker for this slot's seed.</summary>
@@ -72,18 +171,24 @@ public partial class SlotTrackerControl : MarginContainer
     /// seed asks again; the multiworld's engine processes start afresh (one that loaded another version of the world can't
     /// load this one) and this slot's logic restarts on it. Nothing in the user's own Archipelago changes.
     /// </summary>
-    public void UseApworld(string file, string version, string source, bool matchesSeed)
+    public void UseApworld(string file, string version, string source, bool matchesSeed, bool found = false)
     {
         string game = Game, checksum = ServerChecksumFor(game);
         if (checksum == null) return;
+        // The user's choice (or what Atlas found) ends any search still going.
+        StopSeedVersionTries();
+        _seedVersionSearch = SeedVersionSearch.NotTried;
         _appSettings.SlotApworlds ??= new Dictionary<string, SlotApworldChoice>();
         _appSettings.SlotApworlds[AnnotationKey] = new SlotApworldChoice { Game = game, SeedChecksum = checksum, File = file, Version = version, Source = source, MatchesSeed = matchesSeed };
         DataManager.SaveSettings(_appSettings);
-        _apworldFixStatus = null;
         Model.Logic.RetrySeedApworld(checksum);
         EnginePools.Retire(ProfileId);
-        AP_Atlas.Core.Logger.LogInfo($"[{_slotName}] Using {game} {version} ({source}) for this seed{(matchesSeed ? ", the version it was made with" : ", chosen though its data differs from the seed's")}.");
-        ShowToast?.Invoke($"{_slotName}: using {game} {version}. Restarting logic…", matchesSeed ? AP_Atlas.Core.ThemeColors.Success : AP_Atlas.Core.ThemeColors.Warning);
+        AP_Atlas.Core.Logger.LogInfo($"[{_slotName}] Using {game} {version} ({source}) for this seed{(matchesSeed ? ", the version it was made with" : ", chosen though its data differs from the seed's")}{(found ? "; Atlas found it by itself" : "")}.");
+        ShowToast?.Invoke(found
+                ? Tr("{slot}: this seed was made with {game} {version}. Atlas found it and uses it for this slot (your Archipelago isn't changed). Restarting logic…")
+                    .Replace("{slot}", _slotName).Replace("{game}", game).Replace("{version}", version)
+                : $"{_slotName}: using {game} {version}. Restarting logic…",
+            matchesSeed ? AP_Atlas.Core.ThemeColors.Success : AP_Atlas.Core.ThemeColors.Warning);
         RetryLogicEngine();
         SyncAccuracyBanner();
     }
@@ -124,6 +229,9 @@ public partial class SlotTrackerControl : MarginContainer
         }
         if (!problem) return;
         _logicNoticeText.Text = EngineProblemText(EngineProblem);
+        // A start that failed on a seed made with another version: say so, and what Atlas is doing about it.
+        if (SeedVersionNote is { } versionNote)
+            _logicNoticeText.Text += "\n" + Tr("This seed was made with another version of {0}.").Replace("{0}", Game) + " " + versionNote;
         void AddButton(string text, string tip, Action action)
         {
             var b = new Button { Text = text, TooltipText = tip };
@@ -134,6 +242,9 @@ public partial class SlotTrackerControl : MarginContainer
         {
             case "yaml_needed":
             case "generation_failed":
+                if (SeedVersionWanted && !TryingSeedVersions)
+                    AddButton(Tr("Choose the version…"), Tr("Lists the game's releases: pick the one the seed's host used, choose their file, or let Atlas try them (for this slot only; your install isn't changed)"),
+                        () => FixApworldVersion(interactive: true));
                 AddButton("Link YAML…", "Choose this player's YAML; Atlas remembers it for this slot", PickYaml);
                 AddButton("Atlas Engine…", "Open the engine setup", () => OpenEngineSetup?.Invoke());
                 break;
@@ -229,7 +340,7 @@ public partial class SlotTrackerControl : MarginContainer
     /// </summary>
     public bool YamlWouldHelp =>
         EngineProblem?.Code is "yaml_needed" or "generation_failed"
-        || (!LogicHidden && LogicAccuracyWarning != null && ApworldMatchesSeed != false);
+        || (!LogicHidden && Model.Logic.Accuracy == AP_Atlas.Core.Games.LogicAccuracy.RebuildDiffers);
 
     public string InstalledWorldVersion => Model.Logic.Running ? Model.Logic.Engine.LastWorldVersion : null;
 
@@ -246,6 +357,12 @@ public partial class SlotTrackerControl : MarginContainer
     /// <summary>The logic banner's buttons, by text (for tests).</summary>
     internal List<string> LogicNoticeButtons() =>
         _logicNoticeActions == null ? new List<string>() : _logicNoticeActions.GetChildren().OfType<Button>().Where(b => !b.IsQueuedForDeletion()).Select(b => b.Text).ToList();
+
+    /// <summary>The Logic Tracker's accuracy banner as shown, or null while it's hidden (for tests).</summary>
+    internal string AccuracyBannerShown => _accuracyBanner != null && _accuracyBanner.Visible ? _accuracyText.Text : null;
+
+    /// <summary>Whether the accuracy banner offers "Choose the version…" (for tests).</summary>
+    internal bool ChooseVersionOffered => _accuracyFix != null && _accuracyFix.Visible;
 
     /// <summary>Presses one of the logic banner's buttons (for tests).</summary>
     internal void PressLogicNotice(string text) =>

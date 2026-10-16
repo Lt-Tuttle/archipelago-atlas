@@ -130,8 +130,8 @@ namespace AP_Atlas.Core.PopTracker
                 if (prompt && newOrChanged && needs > 0)
                 {
                     int fixable = report.Findings.Count(f => !f.Ignored && (f.Actions.HasFlag(FindingActions.LinkItem) || f.Actions.HasFlag(FindingActions.LinkLocation)));
-                    if (fixable > 0) FixSuggested?.Invoke(key, fixable, original.Manifest?.Name ?? key);
-                    else ReviewSuggested?.Invoke(key, $"Pack Doctor: {original.Manifest?.Name} has {needs} thing{(needs == 1 ? "" : "s")} to review.");
+                    string name = original.Manifest?.Name ?? key, review = $"Pack Doctor: {original.Manifest?.Name} has {needs} thing{(needs == 1 ? "" : "s")} to review.";
+                    Prompt(key, fixable > 0 ? () => FixSuggested?.Invoke(key, fixable, name) : () => ReviewSuggested?.Invoke(key, review));
                 }
                 return report;
             }
@@ -298,6 +298,45 @@ namespace AP_Atlas.Core.PopTracker
         /// </summary>
         public static event Action<string, int, string> FixSuggested;
 
+        // Prompts held while Add games runs: its summary asks one question for every pack it installed. Main thread.
+        private static int _promptHolds;
+        private static readonly List<(string Key, Action Raise)> _heldPrompts = new List<(string, Action)>();
+
+        /// <summary>
+        /// Holds the Doctor's prompts (the "Fix now" and "to review" cards) until the hold is released: Add games gathers its
+        /// packs' reports into one question, and a pack a connected slot loads meanwhile doesn't ask on its own. Main thread.
+        /// </summary>
+        public static PromptHold HoldPrompts()
+        {
+            _promptHolds++;
+            return new PromptHold();
+        }
+
+        /// <summary>A hold on the Doctor's prompts (<see cref="HoldPrompts"/>).</summary>
+        public sealed class PromptHold
+        {
+            private bool _released;
+
+            /// <summary>Ends the hold: the prompts held meanwhile are raised now (the latest per pack), but for the packs in <paramref name="answered"/>, which the holder asks about itself.</summary>
+            public void Release(IReadOnlyCollection<string> answered)
+            {
+                if (_released) return;
+                _released = true;
+                if (--_promptHolds > 0) return;
+                var held = _heldPrompts.ToList();
+                _heldPrompts.Clear();
+                foreach (var (key, raise) in held)
+                    if (!answered.Contains(key, StringComparer.OrdinalIgnoreCase)) raise();
+            }
+        }
+
+        private static void Prompt(string key, Action raise)
+        {
+            if (_promptHolds == 0) { raise(); return; }
+            _heldPrompts.RemoveAll(p => string.Equals(p.Key, key, StringComparison.OrdinalIgnoreCase));
+            _heldPrompts.Add((key, raise));
+        }
+
         /// <summary>Marks a pack's current version as reviewed (no more prompts until it changes).</summary>
         public static void MarkReviewed(LoadedPack original)
         {
@@ -305,6 +344,24 @@ namespace AP_Atlas.Core.PopTracker
             string version = original.Manifest?.GetActualVersion() ?? "";
             if (PackFixes.Get(key).ReviewedVersion == version) return;
             PackFixes.SetReviewedVersion(key, version);
+        }
+
+        /// <summary>
+        /// Fetches the names of games just added to the engine in one engine process for all of them (Add games): a table kept
+        /// from an older version is replaced, and a fetch tried earlier this session, before the game was in, doesn't block
+        /// it. The packs installed next are then measured against the version now in the engine. Main thread.
+        /// </summary>
+        public static async Task RefreshLocalNamesAsync(IReadOnlyCollection<string> games)
+        {
+            var wanted = games.Where(g => !string.IsNullOrEmpty(g)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (wanted.Count == 0 || _settings == null) return;
+            foreach (string game in wanted) _localFetchAttempted.Add(game);
+            var install = AP_Atlas.Core.EngineSetup.AtlasEngine.Resolve(_settings);
+            var engine = new LogicEngineManager(install, msg => Logger.LogInfo("[Pack Doctor] " + msg));
+            var result = await engine.FetchLocalNamesAsync(wanted);
+            if (result == null) return;
+            GameNames.SetKnownGames(result.Value.KnownGames.Concat(AP_Atlas.Core.EngineSetup.AtlasEngine.Worlds.Games).Distinct(StringComparer.OrdinalIgnoreCase).ToList());
+            foreach (var table in result.Value.Tables.Values) GameNames.Store(table);
         }
 
         /// <summary>Fetches the game's names from the local install if they aren't stored yet (or on request).</summary>

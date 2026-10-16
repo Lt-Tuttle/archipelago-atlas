@@ -184,7 +184,7 @@ public class LogicEngineManager
     /// <summary>Whether the seed's cached apworld was used in place of the installed one (used / matches / error), from the last start.</summary>
     public JObject LastApworldOverride { get; private set; }
 
-    /// <summary>The installed apworld's data checksum (compare with the server's for the seed), from the last start.</summary>
+    /// <summary>The data checksum of the apworld that ran (compare with the server's for the seed), from the last start, failed or not.</summary>
     public string LastDataChecksum { get; private set; }
 
     /// <summary>The installed apworld's declared version, if it declares one.</summary>
@@ -293,6 +293,8 @@ public class LogicEngineManager
         LastStartLoss = null;
         LastGoalReachable = null;
         LastApworldOverride = null;
+        LastDataChecksum = null; // never an earlier start's: the version rule compares it with the seed's
+        LastWorldVersion = null;
         string problem = AP_Atlas.Core.EngineSetup.AtlasEngine.ProblemWith(_install);
         if (problem != null)
         {
@@ -349,6 +351,9 @@ public class LogicEngineManager
             }
             LastVersions = response["versions"] as JObject;
             LastApworldOverride = (response["yaml"]?["apworld_override"] ?? response["apworld_override"]) as JObject;
+            // What the world is, on a start that failed too: the seed-version rule needs it either way.
+            LastDataChecksum = response["data_checksum"]?.ToString();
+            LastWorldVersion = response["world_version"]?.ToString();
 
             if (response["status"]?.ToString() == "error")
             {
@@ -366,8 +371,6 @@ public class LogicEngineManager
             if (response["status"]?.ToString() == "ready")
             {
                 LastYamlInfo = response["yaml"] as JObject;
-                LastDataChecksum = response["data_checksum"]?.ToString();
-                LastWorldVersion = response["world_version"]?.ToString();
                 LastEntranceKeys = (response["entrance_keys"] as JArray)?.Select(key => (string)key).Where(key => !string.IsNullOrEmpty(key)).ToList() ?? new List<string>();
                 LastMissingLocations = new HashSet<long>((response["missing_locations"] as JArray)?.ToObject<List<long>>() ?? new List<long>());
                 var poolToken = response["item_pool"];

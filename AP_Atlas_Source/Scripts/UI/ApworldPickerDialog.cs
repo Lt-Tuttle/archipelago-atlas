@@ -109,13 +109,14 @@ namespace AP_Atlas.UI
             QueueFree();
         }
 
-        private static string Short(string? checksum) => string.IsNullOrEmpty(checksum) ? "?" : checksum.Substring(0, Math.Min(8, checksum.Length));
 
         private void UpdateIntro()
         {
             string installed = _slot.InstalledWorldVersion is { Length: > 0 } v ? _tr(" (version {0})").Replace("{0}", v) : "";
-            _intro.Text = _tr("{slot} plays {game}. Its seed was made with a version of the apworld whose data is {seed}; the one in the engine{installed} differs, so logic may be off. Pick the version the seed's host used, or let Atlas try them. Only {slot}'s logic uses it; your own Archipelago isn't changed.")
-                .Replace("{slot}", _slot.SlotName).Replace("{game}", _game).Replace("{seed}", Short(_seed)).Replace("{installed}", installed);
+            string fit = _slot.SeedVersionWanted ? _tr("Logic doesn't match it with the one in the engine.")
+                : _tr("Logic matches the server's with the one in the engine, so the seed's own version is optional.");
+            _intro.Text = _tr("{slot} plays {game}. Its seed was made with another version of the apworld than the one in the engine{installed}. {fit} Pick the version the seed's host used, or let Atlas try them. Only {slot}'s logic uses it; your own Archipelago isn't changed.")
+                .Replace("{slot}", _slot.SlotName).Replace("{game}", _game).Replace("{installed}", installed).Replace("{fit}", fit);
         }
 
         private void SetBusy(string? status)
@@ -289,9 +290,9 @@ namespace AP_Atlas.UI
                 Choose(file, checksum!, version, source, true);
                 return;
             }
-            Dialogs.Confirm(this, _tr("Not the seed's data"),
-                _tr("{0} {1}'s data ({2}) differs from the seed's ({3}). Logic may be off with it. Use it anyway?")
-                    .Replace("{0}", _game).Replace("{1}", version).Replace("{2}", Short(checksum)).Replace("{3}", Short(_seed)),
+            Dialogs.Confirm(this, _tr("Not the seed's version"),
+                _tr("{0} {1} isn't the version this seed was made with (its data differs from the seed's). Logic may be off with it. Use it anyway?")
+                    .Replace("{0}", _game).Replace("{1}", version),
                 _tr("Use it anyway"), () => Choose(file, checksum!, version, source, false));
             Show(_choices.Where(c => c.Url != null).Select(c => new PublishedApworld(c.Version, c.Source, c.Url, c.Sha256)).ToList());
         }
@@ -330,16 +331,13 @@ namespace AP_Atlas.UI
             (ApworldVersion Version, string File) found;
             try
             {
-                found = await Task.Run(() => ApworldSources.FindMatchingAsync(_install, _game, _seed, _repos.Select(r => r.Repo), line =>
-                {
-                    AP_Atlas.Core.Logger.LogDebug(line);
-                    // One line per version tried ("  0.2.4 (owner/project): data 1a2b3c4d").
-                    if (line.StartsWith("  ", StringComparison.Ordinal) && line.Contains(':'))
+                found = await Task.Run(() => ApworldSources.FindMatchingAsync(_install, _game, _seed, _repos.Select(r => r.Repo), line => AP_Atlas.Core.Logger.LogDebug(line),
+                    cts.Token, Math.Max(1, listed), trying: label =>
                     {
+                        // Each version as it's tried, in words ("0.2.4 (owner/project)"); its data checksum stays in the log.
                         int n = Interlocked.Increment(ref tried);
-                        Ui.Defer(this, () => _status.Text = _tr("Trying {0} of {1}: {2}").Replace("{0}", n.ToString()).Replace("{1}", toTry.ToString()).Replace("{2}", line.Trim()));
-                    }
-                }, cts.Token, Math.Max(1, listed)));
+                        Ui.Defer(this, () => _status.Text = _tr("Trying {0} of {1}: {2}").Replace("{0}", n.ToString()).Replace("{1}", toTry.ToString()).Replace("{2}", label));
+                    }));
             }
             catch (OperationCanceledException) { return; }
             catch (Exception ex)

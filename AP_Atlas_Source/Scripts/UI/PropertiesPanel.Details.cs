@@ -171,7 +171,7 @@ namespace AP_Atlas.UI
         private void BuildAccuracy(SlotTrackerControl slot)
         {
             // Folded by default: its title says when something inside needs a look.
-            bool needsLook = !slot.LogicHidden && (slot.LogicAccuracyWarning != null || slot.ApworldMatchesSeed == false);
+            bool needsLook = !slot.LogicHidden && slot.LogicAccuracyWarning != null;
             Section(needsLook ? "Accuracy (needs a look)" : "Accuracy");
             Row("Checks, items, hints", Colored("From the server (exact)", Good), "Atlas shows these exactly as the server reports them");
             if (slot.LogicHidden) { Row("Logic", Colored("Hidden by race mode", Muted)); return; }
@@ -200,17 +200,20 @@ namespace AP_Atlas.UI
                     : Colored($"{info["missing"]} missing, {info["extra"]} extra: logic is approximate", Warn),
                     "The rebuilt world's locations compared with the list the server sent for this slot");
 
-            string serverChecksum = slot.ServerChecksumFor(slot.Game), localChecksum = slot.LogicEngine?.LastDataChecksum;
-            string Short(string c) => string.IsNullOrEmpty(c) ? "?" : c.Substring(0, Math.Min(8, c.Length));
+            string localChecksum = slot.LogicEngine?.LastDataChecksum;
             if (slot.ApworldMatchesSeed == true)
                 Row("Apworld vs seed", Colored(slot.UsingSeedApworld
-                        ? $"Same version: Atlas's copy of {slot.InstalledWorldVersion ?? "the seed's version"} (data {Short(localChecksum)})"
-                        : $"Same version (data {Short(localChecksum)})", Good),
+                        ? Tr("Same version: Atlas's copy of {0}").Replace("{0}", slot.InstalledWorldVersion ?? Tr("the seed's version"))
+                        : Tr("Same version"), Good),
                     slot.UsingSeedApworld ? "This slot runs on the apworld version its seed was made with, from Atlas's cache. Your Archipelago install isn't changed."
                         : "The installed apworld's data checksum equals the one the server reports for this seed");
             else if (slot.ApworldMatchesSeed == false)
-                Row("Apworld vs seed", Colored($"Different version (installed {Short(localChecksum)}, seed {Short(serverChecksum)})", Warn),
-                    "\"Choose the version…\" on the Logic Tracker's banner (or the game's page under Games) lists the game's releases; pick the seed's, and only this slot uses it (your install isn't changed)");
+                Row("Apworld vs seed", slot.SeedVersionWanted
+                        ? Colored(Tr("Another version than the seed's, and logic doesn't match it"), Warn)
+                        : Colored(Tr("Another version than the seed's; its checks match the server's, so logic runs on it"), Good),
+                    slot.SeedVersionWanted
+                        ? Tr("\"Choose the version…\" on the Logic Tracker's banner (or the game's page under Games) lists the game's releases; pick the seed's, and only this slot uses it (your install isn't changed)")
+                        : Tr("The installed apworld's data differs from the seed's, but the rebuilt world has exactly the server's locations, so Atlas runs logic on it"));
             else PlainRow("Apworld vs seed", "Not reported by the server or engine");
 
             var installedCopy = AP_Atlas.Core.EngineSetup.ApworldSources.InstalledCopies(slot.LogicEngine?.Install, slot.Game).FirstOrDefault();

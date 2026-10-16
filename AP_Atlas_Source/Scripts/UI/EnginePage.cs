@@ -347,7 +347,7 @@ namespace AP_Atlas.UI
 
         private string SlotsSignature() =>
             string.Join("|", _hooks.Slots().Where(IsInstanceValid)
-                .Select(s => $"{s.SlotName}:{s.EngineRunning}:{s.EngineBooting}:{s.EngineProblem?.Code}:{s.LinkedYamlSetting}:{s.EngineYamlInfo?["source"]}:{s.ApworldMatchesSeed}:{s.YamlWouldHelp}"));
+                .Select(s => $"{s.SlotName}:{s.EngineRunning}:{s.EngineBooting}:{s.EngineProblem?.Code}:{s.LinkedYamlSetting}:{s.EngineYamlInfo?["source"]}:{s.ApworldMatchesSeed}:{s.LogicAccuracy}:{s.SeedVersionNote}:{s.YamlWouldHelp}"));
 
         private void RefreshSlotsIfChanged()
         {
@@ -391,7 +391,7 @@ namespace AP_Atlas.UI
                         _tr("The player YAML used to generate this seed. Only needed when the server's data can't rebuild the world."), slot.PickYaml, enabled: !slot.EngineBooting));
                 if (slot.LinkedYamlSetting != null)
                     row.AddChild(Kit.Button(_tr("Unlink"), slot.LinkedYamlSetting, () => slot.LinkYaml(null), enabled: !slot.EngineBooting));
-                if (slot.ApworldMatchesSeed == false)
+                if (slot.SeedVersionWanted)
                     row.AddChild(Kit.Button(_tr("Use the seed's version…"), _tr("Find the apworld version this seed was made with and use it for this slot only (your install isn't changed)"),
                         () => slot.FixApworldVersion(interactive: true), enabled: !slot.EngineBooting));
                 row.AddChild(Kit.Button(_tr("Restart logic"), _tr("Start this slot's logic engine again"), slot.RetryLogicEngine, enabled: !slot.EngineBooting));
@@ -406,7 +406,9 @@ namespace AP_Atlas.UI
         private (string, Color, string) SlotState(SlotTrackerControl slot)
         {
             if (slot.EngineBooting) return ("…", Muted, _tr("Starting the logic engine…"));
-            if (slot.EngineProblem != null) return ("✖", Bad, slot.EngineProblem.Message);
+            if (slot.EngineProblem != null)
+                return ("✖", Bad, slot.EngineProblem.Message + (slot.SeedVersionNote is { } note
+                    ? " " + _tr("This seed was made with another version of {0}.").Replace("{0}", slot.Game) + " " + note : ""));
             if (!slot.EngineRunning) return ("○", Muted, _tr("Logic isn't running"));
             var info = slot.EngineYamlInfo;
             string? source = info?["source"]?.ToString();
@@ -420,15 +422,25 @@ namespace AP_Atlas.UI
                 _ => _tr("Running")
             };
             var match = info?["match"];
-            if (slot.ApworldMatchesSeed == false)
-                return ("▲", Warn, how + _tr(", but the installed {0} apworld{1} isn't the one this seed was made with (its data differs from the server's). Logic may be wrong: install the version the seed used.")
-                    .Replace("{0}", slot.Game).Replace("{1}", slot.InstalledWorldVersion != null ? _tr(" (version {0})").Replace("{0}", slot.InstalledWorldVersion) : ""));
+            if (slot.LogicAccuracy == AP_Atlas.Core.Games.LogicAccuracy.SeedVersion)
+                return ("▲", Warn, how + _tr(", but this seed was made with another version of {0} than the installed one{1}, and logic doesn't match it.")
+                    .Replace("{0}", slot.Game).Replace("{1}", slot.InstalledWorldVersion != null ? _tr(" (version {0})").Replace("{0}", slot.InstalledWorldVersion) : "")
+                    + " " + slot.SeedVersionNote);
             if (match?.Type == Newtonsoft.Json.Linq.JTokenType.Boolean && !(bool)match)
                 return ("▲", Warn, how + _tr(", but it differs from the server: {0} locations missing, {1} extra. Link the YAML used for the seed.")
                     .Replace("{0}", info?["missing"]?.ToString()).Replace("{1}", info?["extra"]?.ToString()));
             if (match?.Type == Newtonsoft.Json.Linq.JTokenType.Boolean)
-                return ("✔", Good, how + _tr("; all {0} locations match the server").Replace("{0}", info?["expected"]?.ToString()) + (slot.ApworldMatchesSeed == true ? _tr(", and the apworld's data matches the seed's.") : "."));
+                return ("✔", Good, how + _tr("; all {0} locations match the server").Replace("{0}", info?["expected"]?.ToString())
+                    + (slot.ApworldMatchesSeed == true ? _tr(", and the apworld's data matches the seed's.")
+                        : slot.ApworldMatchesSeed == false ? _tr(", so logic runs on the installed version though the seed was made with another.") : "."));
             return ("✔", Good, how);
+        }
+
+        /// <summary>A slot's line as the page shows it: its glyph and text (for tests).</summary>
+        internal (string Glyph, string Text) SlotStateForTests(SlotTrackerControl slot)
+        {
+            var (glyph, _, text) = SlotState(slot);
+            return (glyph, text);
         }
 
         // ---- Actions ----

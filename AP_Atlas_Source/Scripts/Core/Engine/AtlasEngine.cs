@@ -387,6 +387,9 @@ namespace AP_Atlas.Core.EngineSetup
         /// <summary>About how much the worlds' zip downloads, for the question.</summary>
         public const string WorldsZipSize = "about 22 MB";
 
+        /// <summary>The worlds' zip in bytes, from the worlds index (the UI test's own index too); 0 when it doesn't say.</summary>
+        public static long WorldsZipBytes => Worlds.ZipBytes;
+
         /// <summary>
         /// Unpacks the world folders these games need from Archipelago's release zip into the engine's user worlds folder,
         /// downloading the zip first (pinned address and SHA-256, once) when <paramref name="mayDownload"/>. A world that
@@ -924,17 +927,39 @@ namespace AP_Atlas.Core.EngineSetup
         private static readonly SemaphoreSlim SetupLock = new SemaphoreSlim(1, 1);
         private const long RequiredFreeBytes = 700L * 1024 * 1024;
 
+        /// <summary>The space the engine keeps free on its drive, in bytes (setup and Add games refuse below it).</summary>
+        public const long FreeSpaceFloorBytes = RequiredFreeBytes;
+
+        /// <summary>The free bytes on a folder's drive, or null when it can't be told (a network path).</summary>
+        public static long? FreeBytes(string dir)
+        {
+            try { return new DriveInfo(Path.GetPathRoot(Path.GetFullPath(dir))).AvailableFreeSpace; }
+            catch (Exception ex) when (ex is IOException or ArgumentException or UnauthorizedAccessException) { return null; }
+        }
+
         /// <summary>Asks the slots using an engine (by root folder) to pause their logic so its files can change. Any thread.</summary>
         public static event Action<string> PauseRequested;
 
         public static bool SetupRunning => SetupLock.CurrentCount == 0;
 
-        internal static async Task<T> ExclusiveAsync<T>(Func<Task<T>> body, CancellationToken ct)
+        // Holders of the lock that change the engine's files (not a look at apworld versions in throwaway processes).
+        private static int _engineChangers;
+
+        /// <summary>
+        /// The engine's files may be changing now: slots don't start (or count a lost engine) meanwhile. A holder of the lock
+        /// that only reads the engine (the connect-time version tries, the version picker's) holds others' changes back
+        /// without pausing anyone's logic.
+        /// </summary>
+        public static bool EngineChanging => Volatile.Read(ref _engineChangers) > 0;
+
+        internal static async Task<T> ExclusiveAsync<T>(Func<Task<T>> body, CancellationToken ct, bool changesEngine = true)
         {
             await SetupLock.WaitAsync(ct);
+            if (changesEngine) Interlocked.Increment(ref _engineChangers);
             try { return await body(); }
             finally
             {
+                if (changesEngine) Interlocked.Decrement(ref _engineChangers);
                 SetupLock.Release();
                 // After the release, so slots waiting on the engine see it free when they react. The parts that changed
                 // first: pools retire the processes that loaded the old ones, running slots restart on the new.
@@ -1866,6 +1891,89 @@ namespace AP_Atlas.Core.EngineSetup
                 catch (Exception ex) { log("Couldn't add the apworld: " + ex.Message); return false; }
                 finally { NotifyChanged(); }
             }, ct);
+
+        /// <summary>One apworld of <see cref="InstallApworldsAsync"/>: the file given, its game, and whether it loads (else why not).</summary>
+        public sealed record ApworldInstall(string Source, string Game, bool Loaded, string Problem);
+
+        /// <summary>What <see cref="InstallApworldsAsync"/> did: each apworld, the world games still missing their world, the one check (null: none ran), and whether it stopped before any file changed.</summary>
+        public sealed record ApworldsInstall(IReadOnlyList<ApworldInstall> Apworlds, IReadOnlyList<string> WorldsMissing, EngineCheckResult Check, bool Cancelled);
+
+        /// <summary>
+        /// Adds several games to the engine at once (Add games) under ONE hold of it: the worlds of the games that ship with
+        /// Archipelago are unpacked first (its release downloaded once, when <paramref name="mayDownloadWorlds"/>), then every
+        /// apworld is copied in (the engines using this one paused first when one replaces a game's apworld they may have
+        /// loaded), then ONE health check covers them all. The slots hear of every changed part once, when the hold ends:
+        /// each running slot of an added game restarts its logic once. Cancelling stops before the first apworld is copied;
+        /// once copying starts the check runs to its end, so the engine is never left unchecked. A file that can't be copied,
+        /// or a game that doesn't load, is a result with its reason; only a cancel while waiting for the engine throws.
+        /// </summary>
+        public static Task<ApworldsInstall> InstallApworldsAsync(EngineInstall install, IReadOnlyList<(string Game, string File)> apworlds, IReadOnlyList<string> worldGames,
+            bool mayDownloadWorlds, Action<string> log, CancellationToken ct) =>
+            ExclusiveAsync(async () =>
+            {
+                var results = new List<ApworldInstall>();
+                List<string> Missing() => worldGames.Where(g => WorldsToUnpack(install, g).Count > 0).ToList();
+                var wanted = Missing();
+                try
+                {
+                    if (wanted.Count > 0) await EnsureWorldsCoreAsync(install, wanted, mayDownloadWorlds, log, ct);
+                    ct.ThrowIfCancellationRequested();
+                }
+                catch (OperationCanceledException)
+                {
+                    log?.Invoke("Stopped before the games were added to the engine.");
+                    return new ApworldsInstall(results, Missing(), null, true);
+                }
+                var missing = Missing();
+                bool unpacked = wanted.Count > missing.Count;
+                var copied = new List<(string Game, string Source, string Target)>();
+                string worlds = install.WorldsDir;
+                if (worlds != null && MayWriteTo(install) && apworlds.Any(a => Replaces(install, worlds, a.Game, a.File)))
+                    await StopEnginesUsingAsync(install.Root, log ?? (_ => { }), CancellationToken.None);
+                // The copy alone (InstallApworldAsync is a whole install with its own check).
+                string CopyIn(string file) => InstallApworld(install, file, log);
+                foreach (var (game, file) in apworlds)
+                {
+                    try { copied.Add((game, file, CopyIn(file))); }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        log?.Invoke($"Couldn't add {Path.GetFileName(file)}: {ex.Message}");
+                        results.Add(new ApworldInstall(file, game, false, ex.Message));
+                    }
+                }
+                EngineCheckResult check = null;
+                if (copied.Count > 0 || unpacked)
+                {
+                    try { check = await RunCheckAsync(install, log, CancellationToken.None); }
+                    catch (Exception ex) when (ex is not OperationCanceledException) { log?.Invoke("The health check couldn't run: " + ex.Message); }
+                }
+                foreach (var (game, source, target) in copied) results.Add(Judge(check, game, source, target));
+                return new ApworldsInstall(results, missing, check, false);
+            }, ct);
+
+        /// <summary>Whether an apworld replaces one the engines may have loaded: a file of its name, or another for its game.</summary>
+        private static bool Replaces(EngineInstall install, string worlds, string game, string file)
+        {
+            if (File.Exists(Path.Combine(worlds, Path.GetFileName(file)))) return true;
+            string name = GameOfApworld(file) ?? game;
+            return name != null && ApworldSources.InstalledCopies(install, name).Count > 0;
+        }
+
+        /// <summary>
+        /// Whether an installed apworld's game loads, by the check's list of loaded games (the world types it registered); why
+        /// not from the check's failure details, which are keyed by the file's name without its extension.
+        /// </summary>
+        private static ApworldInstall Judge(EngineCheckResult check, string game, string source, string target)
+        {
+            string name = GameOfApworld(target) ?? game;
+            if (check == null) return new ApworldInstall(source, name, false, "the engine's health check didn't run");
+            if (check.Error != null) return new ApworldInstall(source, name, false, "the engine's health check failed: " + check.Problem);
+            if (name != null && check.Games.Contains(name, StringComparer.OrdinalIgnoreCase)) return new ApworldInstall(source, name, true, null);
+            string stem = Path.GetFileNameWithoutExtension(target);
+            string why = check.FailedDetails != null && check.FailedDetails.TryGetValue(stem, out var info)
+                ? (info.Error ?? (info.MissingModule != null ? "it needs the package " + info.MissingModule : null)) : null;
+            return new ApworldInstall(source, name, false, why ?? "it doesn't load in the engine");
+        }
 
         /// <summary>Copies an apworld into the engine. A file of the same name is moved to backups first.</summary>
         private static string InstallApworld(EngineInstall install, string sourceFile, Action<string> log)

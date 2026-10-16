@@ -129,7 +129,7 @@ public class AppSettings
     /// <summary>Reconnect a slot whose connection dropped (a few tries over about 30 minutes, then stop).</summary>
     public bool AutoReconnect { get; set; } = true;
 
-    /// <summary>When a seed was made with another apworld version, find and use that version automatically (from trusted sources only).</summary>
+    /// <summary>When a seed was made with another apworld version and logic doesn't match it, try up to three known versions from trusted projects and use the seed's (SeedVersionRule).</summary>
     public bool AutoFixApworldVersions { get; set; } = true;
 
     /// <summary>The Pack Doctor links a pack's exact name matches (tiles and pins) by itself on the pack's first check.</summary>

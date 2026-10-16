@@ -1133,11 +1133,17 @@ namespace AP_Atlas.UI
                     state = _tr("its seed was made with {0} ({1}), which Atlas has: use it").Replace("{0}", cached.Version ?? "?").Replace("{1}", cached.Source ?? "");
                     action = Kit.Button(_tr("Use it"), _tr("Restarts this slot's logic on the version its seed was made with."), () => slot.UseApworld(cached.File, cached.Version ?? "?", cached.Source ?? "", matchesSeed: true));
                 }
+                else if (!slot.SeedVersionWanted && !slot.EngineRunning)
+                    state = _tr("logic isn't running");
+                else if (!slot.SeedVersionWanted)
+                    // The connect-time rule: a different version whose rebuilt world matches the server's runs as it is.
+                    state = _tr("runs {0}, not the version its seed was made with; its checks match the server's, so logic runs on it")
+                        .Replace("{0}", slot.InstalledWorldVersion is { Length: > 0 } v ? v : _tr("the installed version"));
                 else
-                    state = _tr("its seed's data ({0}) isn't among the known versions: pick the host's version, or let Atlas try them").Replace("{0}", Short(checksum));
+                    state = _tr("its seed was made with another version, and logic doesn't match it. {0}").Replace("{0}", slot.SeedVersionNote ?? "");
             }
             else state = slot.EngineProblem != null ? _tr("logic isn't running") : _tr("the apworld's version isn't known yet");
-            var label = Kit.Text($"{slot.SlotName}: {state}", slot.ApworldMatchesSeed == false ? ThemeColors.Warning : (Color?)null);
+            var label = Kit.Text($"{slot.SlotName}: {state}", slot.SeedVersionWanted ? ThemeColors.Warning : (Color?)null);
             label.SizeFlagsHorizontal = SizeFlags.ExpandFill;
             label.AutowrapMode = TextServer.AutowrapMode.WordSmart;
             label.SetMeta("slot_line", true);
@@ -1149,7 +1155,6 @@ namespace AP_Atlas.UI
             return row;
         }
 
-        private static string Short(string? checksum) => string.IsNullOrEmpty(checksum) ? "?" : checksum.Substring(0, Math.Min(8, checksum.Length));
 
         private Control YamlRow(string game, YamlEntry yaml)
         {

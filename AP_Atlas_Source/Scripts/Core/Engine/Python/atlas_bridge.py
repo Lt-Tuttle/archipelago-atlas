@@ -436,7 +436,8 @@ def start_slot(req, logger):
         if getattr(c, 'tracker_disabled', False):
             return None, {'code': 'ut_disabled', 'message': "This game's author asked for the Universal Tracker not to be used with it."}
         if c.multiworld is None or c.player_id is None:
-            return None, {'code': 'generation_failed', 'message': getattr(c, 'gen_error', None) or 'The world could not be rebuilt from the slot data.'}
+            return None, {'code': 'generation_failed', 'message': getattr(c, 'gen_error', None) or 'The world could not be rebuilt from the slot data.',
+                          'apworld_override': override}
         info = {'source': 'not_needed', 'apworld_override': override, '_rebuild': None}
         info.update(verify(c, all_locations))
         return c, info
@@ -466,7 +467,7 @@ def start_slot(req, logger):
         code = 'generation_failed' if cands else 'yaml_needed'
         message = ('None of the YAMLs tried could rebuild this world.' if cands else
                    game + " needs this player's YAML: its slot data doesn't include the options.")
-        return None, {'code': code, 'message': message, 'attempts': attempts, 'notes': notes}
+        return None, {'code': code, 'message': message, 'attempts': attempts, 'notes': notes, 'apworld_override': override}
     info = {'source': best[2], 'file': best[3], 'options_from_slot_data': used, 'options_total': total,
             'attempts': attempts, 'notes': notes, 'apworld_override': override, '_rebuild': best[5]}
     info.update(best[4])
@@ -676,6 +677,12 @@ def handle_init(req, logger):
     if core is None:
         reply = {'status': 'error', 'game': req.get('game'), 'versions': versions()}
         reply.update(info)
+        # What the world that couldn't start is (its data checksum and version): a seed made with another version may
+        # want its own (Atlas's connect-time version rule). A missing world has none.
+        from worlds.AutoWorld import AutoWorldRegister
+        failed_cls = AutoWorldRegister.world_types.get(req.get('game'))
+        if failed_cls is not None:
+            reply.update(world_identity(failed_cls))
         return reply, None
     if all_locations:
         core.set_missing_locations(set(all_locations))

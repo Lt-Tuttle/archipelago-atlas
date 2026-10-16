@@ -859,7 +859,7 @@ namespace AP_Atlas.Core
         private static async Task GameListLabFacts()
         {
             const string sha = "00aa11bb22cc33dd44ee55ff66778899aabbccddeeff00112233445566778899";
-            string listJson = """{"format":"atlas-apworld-sources/1","built":"9999-12-31","source":"self-test","games":[{"game":"Self Test Listed","versions":[],"logic":{"result":"exact"},"packs":[{"repo":"someone/listed-pack","release":"v1","asset":"p.zip","sha256":"SHA","fit":42,"checks":"42 of 100","notes":["other_version"],"future_field":7}]}]}""".Replace("SHA", sha);
+            string listJson = """{"format":"atlas-apworld-sources/1","built":"9999-12-31","source":"self-test","games":[{"game":"Self Test Listed","versions":[{"version":"1.0.0","url":"https://github.com/someone/listed/releases/download/v1.0.0/listed.apworld","sha256":"cc","size":1234}],"logic":{"result":"exact"},"packs":[{"repo":"someone/listed-pack","release":"v1","asset":"p.zip","sha256":"SHA","size":4321,"fit":42,"checks":"42 of 100","notes":["other_version"],"future_field":7}]}]}""".Replace("SHA", sha);
             await using var site = new AP_Atlas.Core.Testing.FakeWebSite();
             site.Respond = path => path == "/list.json" ? (200, listJson) : (404, "");
             try
@@ -871,6 +871,9 @@ namespace AP_Atlas.Core
                 Expect(saved.Contains("logic", StringComparison.Ordinal) && saved.Contains("future_field", StringComparison.Ordinal), "the fetched list wasn't saved as fetched (an unknown field was dropped)");
                 Expect(game.Unknown?.ContainsKey("logic") == true && game.Packs[0].Unknown?.ContainsKey("future_field") == true,
                     "fields this Atlas doesn't know weren't kept on the list's classes");
+                // Sizes the pack lab recorded are read (not kept as unknown fields), for the add's totals.
+                Expect(game.Versions.Single().Size == 1234 && game.Packs[0].Size == 4321 && game.Packs[0].Unknown?.ContainsKey("size") != true,
+                    "the game list's sizes weren't read");
                 Expect(Newtonsoft.Json.JsonConvert.SerializeObject(game).Contains("logic", StringComparison.Ordinal), "a field this Atlas doesn't know is lost when the list is written again");
                 // The pack's notes, said in words; found by its SHA-256.
                 var pack = EngineSetup.ApworldSources.PacksFor("Self Test Listed").Single();

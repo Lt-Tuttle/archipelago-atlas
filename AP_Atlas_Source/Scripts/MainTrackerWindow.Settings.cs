@@ -94,7 +94,7 @@ public partial class MainTrackerWindow
                 DataManager.SaveSettings(_appSettings);
             });
         page.AddToggle("multiworld", "apworld-versions", "Use each seed's apworld version automatically",
-            "When a seed was made with another version of a game's apworld, Atlas finds that version and uses it for that slot. It asks before looking anything up on GitHub, downloads only from sources you've trusted, and never changes your Archipelago install.",
+            "When a seed was made with another version of a game's apworld and logic doesn't match it, Atlas tries up to three versions it already knows from projects you trust, newest first, and uses the seed's for that slot. It asks GitHub nothing to do it, and never changes your Archipelago install.",
             () => _appSettings.AutoFixApworldVersions, on =>
             {
                 _appSettings.AutoFixApworldVersions = on;

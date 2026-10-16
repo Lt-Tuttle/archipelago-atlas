@@ -204,6 +204,12 @@ public partial class MainTrackerWindow
             LogicFollowsTheSlotAsync);
         await ScenarioAsync("Logic banner: when the engine runs but the game's apworld is missing, the Logic Tracker's banner offers the Games page (not the engine setup), and pressing it shows the Games page on the game",
             LogicBannerAsync);
+        await ScenarioAsync("Seed versions, logic matches: a slot whose seed was made with another apworld version, but whose rebuilt world matches the server's, runs logic on the installed version with no warning anywhere, and Atlas looks for nothing",
+            SeedVersionDiffersButLogicMatchesAsync);
+        await ScenarioAsync("Seed versions, found: when the seed was made with another version and logic doesn't match it, Atlas tries the versions it knows from trusted projects, newest first, without asking GitHub (the banner says so meanwhile), uses the first whose data is the seed's for that slot, and a card says which",
+            SeedVersionFoundAsync);
+        await ScenarioAsync("Seed versions, not found: when a world that can't be rebuilt was made with another version, Atlas tries three known versions at most, then the Logic banner offers Choose the version…, which opens the picker with the versions tried",
+            SeedVersionNotFoundAsync);
         await ScenarioAsync("Found entrances: a world that learns the entrances found in the game from the room's data storage (as Universal Tracker's own client does) has the slot ask the server about its key and read it at connect; each value is passed to the engine and what it opens is a step of its own; a new engine hears them again; Atlas never writes the key",
             FoundEntrancesAsync);
         await ScenarioAsync("Logic you can trust: once a slot's logic starts, the engine rebuilds its world with other seeds; the checks the rebuilds disagree about, and those the rebuilt world lacks, aren't called in or out of logic but listed under Checklist with a banner saying why; Show logic anyway (remembered per slot) shows them, and List them as a checklist puts them back; the slot's check is kept for its game and apworld, and the game's page and Add a slot say it (Check this game, under Debug, says it up front too); a world the engine can't rebuild lists every check left as a checklist under its notice",
@@ -218,6 +224,10 @@ public partial class MainTrackerWindow
             ReleaseFactsAsync);
         await ScenarioAsync("Game worlds on demand: a game that ships with Archipelago is listed on the Games page; its slot's logic waits for its world and says so, nothing downloaded; \"Get the game's world…\" asks the engine's permission, then Archipelago's release is downloaded once (checked against its hash) and only that game's world and the world it imports are unpacked into the engine's user folder, recorded with Archipelago's version, and the slot's logic starts; an installed apworld for a game takes precedence; after an update to another Archipelago the unpacked worlds are removed",
             GameWorldsOnDemandAsync);
+        await ScenarioAsync("Adding games, the plan: a game list fetched with sizes plans a community game's newest release and the best pack that doesn't wait behind, with the download, the disk and the project to trust totalled and nothing asked of GitHub; the list's sizes reach the versions Atlas reads",
+            AddGamesPlanAsync);
+        await ScenarioAsync("Add games installer: a plan of a community game, a game that ships with Archipelago and one whose apworld can't be downloaded runs as one batch: the apworld comes by the address and SHA-256 Atlas's game list names with no GitHub listing read, the official world is unpacked from Archipelago's release downloaded once, ONE engine health check covers both and the slots hear of the changed parts once; each map pack is installed from the list (the game's setup guide's own when the list has it, over the best fit) and made the game's pack, with no card and no Pack Doctor prompt, even from a connected slot of the game, whose logic restarts once (a prompted check of the same pack does ask); the apworld's project is trusted and the engine's downloads allowed for the session (always, with the tick); a second press while it runs is refused; one bar that never goes down says Game N of 3; the result names each game's logic and map, the failure with its reason, and the pack the Doctor wants looked at with its preview; a cancelled run downloads and checks nothing",
+            AddGamesInstallerAsync);
         await ScenarioAsync("BK: with logic running, checks left and none of them in logic, the Logic Tracker and Key Items say so with the count done, and the slot card says BK; an item that opens a check ends it",
             BkAsync);
         await ScenarioAsync("Hidden checks: a check logic wrongly calls in logic is hidden from the Logic Tracker's row menu (a right click), a map pin's menu, a Not on the map row's menu or Properties; it leaves the list, the map and the in-logic counts (logic itself unchanged) until unhidden, with Undo on the card; Show hidden lists it greyed and Show hidden checks dims its pin (both remembered); hiding the last check in logic makes the slot BK, and the slot's Unhide all (asked first) shows them all again",
@@ -1360,6 +1370,328 @@ public partial class MainTrackerWindow
         }
     }
 
+    private async Task AddGamesPlanAsync()
+    {
+        // Atlas's game list for the test: a community game with two releases and two packs (the better fit made for another version), every size recorded.
+        const string game = "Plan Test Game";
+        string list = """{"format":"atlas-apworld-sources/1","built":"9999-12-31","source":"ui-test","games":[{"game":"Plan Test Game","apworld":"plan_test","repo":"planner/plan-test","versions":[{"version":"1.0.0","url":"https://github.com/planner/plan-test/releases/download/v1.0.0/plan_test.apworld","sha256":"aa","size":1000},{"version":"1.2.0","url":"https://github.com/planner/plan-test/releases/download/v1.2.0/plan_test.apworld","sha256":"bb","size":3000}],"packs":[{"repo":"mapper/noted","release":"v2","asset":"noted.zip","sha256":"cc","size":9000,"fit":99,"notes":["other_version"]},{"repo":"mapper/plain","release":"v1","asset":"plain.zip","sha256":"dd","size":5000,"fit":80}]}]}""";
+        await using var site = new AP_Atlas.Core.Testing.FakeWebSite();
+        site.Respond = path => path == "/list.json" ? (200, list) : (404, "");
+        // GitHub is the fake site too: nothing a test does may reach the real one.
+        AP_Atlas.Core.GitHubApi.TestSite = site.Site;
+        AP_Atlas.Core.GitHubApi.ResetForTests();
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        try
+        {
+            string said = await ApworldSources.RefreshAsync(site.Site + "/list.json", System.Threading.CancellationToken.None);
+            UiTestExpect(ApworldSources.Find(game)?.Versions.Sum(v => v.Size) == 4000 && ApworldSources.PacksFor(game).Sum(p => p.Size) == 14000, "the game list's sizes weren't read: " + said);
+            host.ShowTool(AP_Atlas.UI.Tool.Games);
+            _gamesPage!.Refresh();
+            var plan = _gamesPage.PlanAdding(new[] { game });
+            var row = plan.Games.Single();
+            UiTestExpect(row.Items.Single(i => i.Kind == AP_Atlas.Core.Games.AddItemKind.Apworld).Version == "1.2.0"
+                && row.Items.Single(i => i.Kind == AP_Atlas.Core.Games.AddItemKind.Pack).Repo == "mapper/plain",
+                "the plan didn't take the newest release and the pack that doesn't wait behind: " + string.Join(", ", row.Items.Select(i => i.Version ?? i.Repo)));
+            UiTestExpect(plan.DownloadBytes == 8000 && plan.DiskBytes == 11000 && plan.UnknownSizes == 0 && plan.GitHubRequests == 0
+                && plan.ProjectsToTrust.SequenceEqual(new[] { "github.com/planner/plan-test" }) && plan.PackProjects.SequenceEqual(new[] { "github.com/mapper/plain" }),
+                $"the plan's totals are wrong: {plan.DownloadBytes} down, {plan.DiskBytes} on disk, {plan.UnknownSizes} unknown");
+            UiTestExpect(AP_Atlas.Core.Games.AddGamesPlan.Words(row) == "logic and map" && row.RepickPackAfterLogic, "the game's row doesn't say what adding it gets");
+            UiTestExpect(site.Requests.SequenceEqual(new[] { "/list.json" }), "planning asked GitHub: " + string.Join(", ", site.Requests));
+            // The list's versions carry their sizes into what Atlas reads of a project (here: GitHub lists no release).
+            var versions = await ApworldSources.VersionsAsync(ApworldSources.Find(game), System.Threading.CancellationToken.None);
+            UiTestExpect(versions.Single(v => v.Version == "1.2.0").Size == 3000, "a listed version lost its size");
+        }
+        finally
+        {
+            ApworldSources.ForgetRefreshed();
+            AP_Atlas.Core.GitHubApi.TestSite = null;
+            AP_Atlas.Core.GitHubApi.ResetForTests();
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+        }
+    }
+
+    private async Task AddGamesInstallerAsync()
+    {
+        // The fake engine's health check reads the engine's worlds folder; its world's data is Alpha's (the room's below).
+        const string AlphaChecksum = "add0add0add0add0add0add0add0add0add0add0";
+        var engine = StartFakeEngine(UiTestPython(), fake =>
+        {
+            fake.CheckWorldsDir = AtlasEngine.UserWorldsDir;
+            fake.DataChecksum = AlphaChecksum;
+        });
+        const string alpha = "Add Alpha Game", beta = "Add Beta Game", gamma = "Add Gamma Game";
+        static byte[] Zip(params (string Name, string Text)[] files)
+        {
+            using var memory = new System.IO.MemoryStream();
+            using (var archive = new System.IO.Compression.ZipArchive(memory, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+                foreach (var (name, text) in files)
+                {
+                    using var writer = new System.IO.StreamWriter(archive.CreateEntry(name).Open());
+                    writer.Write(text);
+                }
+            return memory.ToArray();
+        }
+        static string Sha(byte[] bytes) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant();
+        static bool Is(AP_Atlas.Core.Games.AddStep step, AP_Atlas.Core.Games.AddStepOutcome outcome) => step.Outcome == outcome;
+        string data = DataManager.GetDataDirectory();
+        string scratch = System.IO.Path.Combine(data, "uitest_add_games");
+        System.IO.Directory.CreateDirectory(scratch);
+        // A community game's apworld; Archipelago's pretend release with an official game's world whose setup guide names its tracker.
+        byte[] alphaApworld = Zip(("add_alpha/archipelago.json", "{\"game\": \"" + alpha + "\", \"world_version\": \"1.2.0\"}"), ("add_alpha/__init__.py", "# " + alpha + "\n"));
+        byte[] release = Zip(("FakeArchipelago/Utils.py", "# core\n"), ("FakeArchipelago/worlds/add_beta/__init__.py", "# " + beta + "\n"),
+            ("FakeArchipelago/worlds/add_beta/archipelago.json", "{\"game\": \"" + beta + "\"}"),
+            ("FakeArchipelago/worlds/add_beta/docs/setup_en.md", "# Setup\n\n- [Map tracker](https://github.com/packs/beta-poptracker)\n"),
+            ("FakeArchipelago/worlds/add_beta/docs/en_" + beta + ".md", "# " + beta + "\n"));
+        // Alpha's pins are near matches of its names (as the Pack Doctor scenario's), so the Doctor has something to say.
+        string alphaZip = System.IO.Path.Combine(scratch, "alpha.zip"), betaZip = System.IO.Path.Combine(scratch, "beta.zip"), otherZip = System.IO.Path.Combine(scratch, "other.zip");
+        FakeMapPack.Write(alphaZip, "UI test alpha pack", alpha,
+            locationsJson: """[{"name":"Cave","sections":[{"name":"Chest"}],"map_locations":[{"map":"World","x":10,"y":10}]},""" +
+                           """{"name":"Far","sections":[{"name":"Lantern"}],"map_locations":[{"map":"World","x":500,"y":10}]}]""");
+        FakeMapPack.Write(betaZip, "UI test beta pack", beta);
+        FakeMapPack.Write(otherZip, "UI test other beta pack", beta);
+        byte[] alphaPack = await System.IO.File.ReadAllBytesAsync(alphaZip), betaPack = await System.IO.File.ReadAllBytesAsync(betaZip), otherPack = await System.IO.File.ReadAllBytesAsync(otherZip);
+        static async Task<string?> ShaOfAsync(string path) => System.IO.File.Exists(path) ? Sha(await System.IO.File.ReadAllBytesAsync(path)) : null;
+        await using var site = new FakeWebSite();
+        site.Answer = (path, _) => path switch
+        {
+            "/dl/add_alpha.apworld" => new FakeWebSite.FullAnswer(200, alphaApworld, "application/octet-stream"),
+            "/dl/archipelago.zip" => new FakeWebSite.FullAnswer(200, release, "application/zip"),
+            "/gh/packs/alpha-poptracker/releases/download/v1.0/alpha_pack.zip" => new FakeWebSite.FullAnswer(200, alphaPack, "application/zip"),
+            "/gh/packs/beta-poptracker/releases/download/v1/beta_pack.zip" => new FakeWebSite.FullAnswer(200, betaPack, "application/zip"),
+            "/gh/packs/beta-other/releases/download/v2/beta_other.zip" => new FakeWebSite.FullAnswer(200, otherPack, "application/zip"),
+            _ => new FakeWebSite.FullAnswer(404, Array.Empty<byte>())
+        };
+        var list = new ApworldSourceList
+        {
+            Format = "atlas-apworld-sources/1",
+            Built = "9999-12-31",
+            Source = "ui-test",
+            Games = new List<ApworldSource>
+            {
+                new ApworldSource { Game = alpha, Apworld = "add_alpha", Repo = "owner/add-alpha",
+                    Versions = { new ApworldVersion { Version = "1.2.0", Url = site.Site + "/dl/add_alpha.apworld", Sha256 = Sha(alphaApworld), Size = alphaApworld.Length } },
+                    Packs = { new IndexPack { Repo = "packs/alpha-poptracker", Release = "v1.0", Asset = "alpha_pack.zip", Sha256 = Sha(alphaPack), Fit = 100, Checks = "2 of 2" } } },
+                new ApworldSource { Game = beta, Official = true,
+                    Packs = { new IndexPack { Repo = "packs/beta-other", Release = "v2", Asset = "beta_other.zip", Sha256 = Sha(otherPack), Fit = 90 },
+                              new IndexPack { Repo = "packs/beta-poptracker", Release = "v1", Asset = "beta_pack.zip", Sha256 = Sha(betaPack), Fit = 60 } } },
+                new ApworldSource { Game = gamma, Apworld = "add_gamma", Repo = "owner/add-gamma",
+                    Versions = { new ApworldVersion { Version = "0.1.0", Url = site.Site + "/dl/add_gamma.apworld", Sha256 = new string('0', 64) } } }
+            }
+        };
+        var index = WorldsIndex.Parse(new JObject
+        {
+            ["archipelago"] = AtlasEngine.ArchipelagoVersion,
+            ["zip_sha256"] = Sha(release),
+            ["zip_root"] = "FakeArchipelago/",
+            ["zip_bytes"] = release.Length,
+            ["core_worlds"] = new JArray("generic"),
+            ["worlds"] = new JObject { ["add_beta"] = new JObject { ["games"] = new JArray(beta), ["needs"] = new JArray(), ["requirements"] = false, ["bytes"] = 10 } }
+        }.ToString());
+        string worlds = AtlasEngine.UserWorldsDir, packs = AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory();
+        string installedApworld = System.IO.Path.Combine(worlds, "add_alpha.apworld");
+        var checkBefore = AtlasEngine.State.LastCheck;
+        var parts = new List<IReadOnlyList<AtlasEngine.EngineChange>>();
+        void OnParts(IReadOnlyList<AtlasEngine.EngineChange> changes) { lock (parts) parts.Add(changes); }
+        int prompts = 0;
+        void OnFix(string key, int count, string name) => prompts++;
+        void OnReview(string key, string message) => prompts++;
+        // Wren, a slot of Alpha connected before the batch: the room's names give the Doctor its near matches, and its pack
+        // loads (a prompted check) while the batch runs.
+        await using var server = new FakeArchipelagoServer();
+        server.SlotName = "Wren";
+        server.SlotGame = alpha;
+        server.Games[alpha] = new FakeGame(AlphaChecksum,
+            new Dictionary<string, long> { ["Sword"] = 1000, ["Shield"] = 1001, ["Rupee"] = 1002, ["Gem"] = 1099 },
+            new Dictionary<string, long> { ["Cave Chest Room"] = 2000, ["Far Lantern Box"] = 2001, ["Tower Top"] = 2002, ["Gem Vault"] = 2003 });
+        var profile = new MultiworldProfile { Name = "UI test add games", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Wren");
+        _profiles.Add(profile);
+        int WrenInits() => engine.Requests("init").Count(r => (string?)r["player_name"] == "Wren");
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        string? lookKey = null;
+        try
+        {
+            ApworldSources.UseListForTests(list);
+            AtlasEngine.TestWorlds = (index, site.Site + "/dl/archipelago.zip", Sha(release));
+            GameAdder.TestGitHubSite = site.Site + "/gh";
+            // GitHub's API is the fake site too: nothing reaches the real one, and a listing read would show in its requests.
+            AP_Atlas.Core.GitHubApi.TestSite = site.Site;
+            AP_Atlas.Core.GitHubApi.ResetForTests();
+            AP_Atlas.Core.Permissions.ResetSessionForTests();
+            AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.EngineSetup, null, false);
+            AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.GitHubLookups, null, false);
+            foreach (string leftover in new[] { "alpha_pack.zip", "beta_pack.zip", "beta_other.zip" }) AP_Atlas.Core.SafeFile.Delete(System.IO.Path.Combine(packs, leftover));
+            AP_Atlas.Core.SafeFile.Delete(AtlasEngine.WorldsZipPath);
+            await OnConnectSlotPressedAsync("Wren", profile);
+            var wren = await UiTestWaitForAsync(() => SlotView(profile.Id, "Wren"), "Wren's view");
+            await UiTestWaitForAsync(() => wren.LogicSettled ? wren : null, "Wren's logic to start");
+            // The packs folder read once: from now on the rescan checks a new pack, with a prompt unless its install was quiet.
+            _packManagerPanel.Rescan();
+            await UiTestWaitForAsync(() => !_packManagerPanel.Scanning ? this : null, "the packs folder to be read");
+            var newestCard = _alertLog.Entries.FirstOrDefault();
+            // The plan, as the Games page collects it: Alpha's newest release and best pack, Beta's world from Archipelago's
+            // release (its guide can't be read yet, so its pack is picked again once the world is in), the fake site to trust.
+            host.ShowTool(AP_Atlas.UI.Tool.Games);
+            _gamesPage!.Refresh();
+            var plan = _gamesPage.PlanAdding(new[] { alpha, beta, gamma });
+            UiTestExpect(plan.NeedsArchipelagoRelease && plan.ArchipelagoReleaseBytes == release.Length && plan.GitHubRequests == 0
+                && plan.ProjectsToTrust.SequenceEqual(new[] { "127.0.0.1" })
+                && plan.Games.Single(g => g.Game == beta).Items.Single(i => i.Kind == AP_Atlas.Core.Games.AddItemKind.Pack).Repo == "packs/beta-other"
+                && plan.Games.Single(g => g.Game == beta).RepickPackAfterLogic,
+                "the plan isn't the list's best fit for Beta with Archipelago's release once and the fake site to trust");
+            AtlasEngine.PartsChanged += OnParts;
+            AP_Atlas.Core.PopTracker.PackDoctorService.FixSuggested += OnFix;
+            AP_Atlas.Core.PopTracker.PackDoctorService.ReviewSuggested += OnReview;
+            int checksBefore = engine.ComponentRequests("AtlasCheck").Count, initsBefore = WrenInits();
+            var statuses = new List<AP_Atlas.Core.Games.AddGamesStatus>();
+            var running = AddGamesAsync(plan, new AddGamesConsent(false, false), statuses.Add, System.Threading.CancellationToken.None);
+            // One batch at a time: a second press while it runs changes nothing and says why.
+            var refused = await AddGamesAsync(plan, new AddGamesConsent(false, false), null, System.Threading.CancellationToken.None);
+            UiTestExpect(refused.Outcome.Games.All(g => Is(g.Logic, AP_Atlas.Core.Games.AddStepOutcome.Failed) && (g.Logic.Detail ?? "").Contains("another Add games")),
+                "a second batch ran while the first was running");
+            var run = await running.WaitAsync(TimeSpan.FromSeconds(120));
+            var o = run.Outcome;
+            UiTestExpect(engine.ComponentRequests("AtlasCheck").Count - checksBefore == 1, $"{engine.ComponentRequests("AtlasCheck").Count - checksBefore} engine health checks ran instead of one for the batch");
+            lock (parts) UiTestExpect(parts.Count == 1 && parts[0].Any(p => p.Kind == "apworld" && p.Game == alpha) && parts[0].Any(p => p.Kind == "world" && p.Game == beta),
+                $"the slots weren't told the engine's changed parts once: {parts.Count} notice(s)");
+            UiTestExpect(await ShaOfAsync(installedApworld) == Sha(alphaApworld)
+                && System.IO.File.Exists(System.IO.Path.Combine(worlds, "add_beta", "__init__.py"))
+                && await ShaOfAsync(System.IO.Path.Combine(packs, "alpha_pack.zip")) == Sha(alphaPack)
+                && await ShaOfAsync(System.IO.Path.Combine(packs, "beta_pack.zip")) == Sha(betaPack)
+                && !System.IO.File.Exists(System.IO.Path.Combine(packs, "beta_other.zip")),
+                "the apworld, the official world or the packs aren't in place");
+            UiTestExpect(_appSettings.PreferredPacks.TryGetValue(alpha, out var alphaPreferred) && alphaPreferred == "alpha_pack.zip"
+                && _appSettings.PreferredPacks.TryGetValue(beta, out var betaPreferred) && betaPreferred == "beta_pack.zip", "the installed packs weren't made their games' packs");
+            var asked = site.Requests;
+            UiTestExpect(asked.Count(r => r == "/dl/add_alpha.apworld") == 1 && asked.Count(r => r == "/dl/archipelago.zip") == 1
+                && asked.Count(r => r == "/gh/packs/alpha-poptracker/releases/download/v1.0/alpha_pack.zip") == 1
+                && asked.Count(r => r == "/gh/packs/beta-poptracker/releases/download/v1/beta_pack.zip") == 1 && !asked.Any(r => r.Contains("beta_other")),
+                $"the downloads weren't each file once by its listed address: {string.Join(", ", asked)}");
+            UiTestExpect(!asked.Any(r => r.StartsWith("/repos/", StringComparison.Ordinal) || r.StartsWith("/search/", StringComparison.Ordinal)) && o.GitHubRequests == 0,
+                $"the batch asked GitHub's API: {string.Join(", ", asked)}");
+            var cards = _alertLog.Entries.TakeWhile(e => !ReferenceEquals(e, newestCard)).Select(e => e.Message).ToList();
+            UiTestExpect(prompts == 0 && !cards.Any(m => m.Contains("Installed UI test") || m.Contains("pin or tile match") || m.Contains("Pack Doctor")) && AP_Atlas.UI.FixPreviewDialog.Showing == null,
+                $"a pack's card or a Pack Doctor prompt came during the batch: {prompts} prompt(s); {string.Join(" | ", cards)}");
+            // The result rows.
+            var rowA = o.For(alpha);
+            var rowB = o.For(beta);
+            var rowC = o.For(gamma);
+            UiTestExpect(!o.Cancelled && Is(rowA.Logic, AP_Atlas.Core.Games.AddStepOutcome.Done) && rowA.Logic.Detail == "1.2.0" && Is(rowA.Map, AP_Atlas.Core.Games.AddStepOutcome.Done)
+                && !rowA.PackFromGuide && rowA.PackRepo == "packs/alpha-poptracker"
+                && Is(rowB.Logic, AP_Atlas.Core.Games.AddStepOutcome.Done) && Is(rowB.Map, AP_Atlas.Core.Games.AddStepOutcome.Done) && rowB.PackFromGuide
+                && rowB.PackRepo == "packs/beta-poptracker" && rowB.GuideRepo == "packs/beta-poptracker"
+                && Is(rowC.Logic, AP_Atlas.Core.Games.AddStepOutcome.Failed) && rowC.Logic.Detail == "its project no longer offers that file" && Is(rowC.Map, AP_Atlas.Core.Games.AddStepOutcome.Unavailable)
+                && o.Failures.Select(f => f.Game).SequenceEqual(new[] { gamma }),
+                $"the result rows: {string.Join(" | ", o.Games.Select(g => $"{g.Game}: {g.Logic} / {g.Map}"))}");
+            // The pack the Doctor wants looked at, with the preview "Fix them now" carries out; the batch marked nothing reviewed.
+            var look = o.PacksToLook.FirstOrDefault(p => p.Game == alpha);
+            lookKey = look?.PackKey;
+            var offer = run.Fixes.FirstOrDefault(f => f.Look == look);
+            UiTestExpect(look != null && look.NeedsReview > 0 && look.Preview.EndsWith("Undo reverses all of it.", StringComparison.Ordinal) && offer != null
+                && offer.Plan.Link.Count + offer.Plan.SetAside.Count >= 2
+                && AP_Atlas.Core.PopTracker.PackFixes.Get(look.PackKey).ReviewedVersion != offer.Original.Manifest?.GetActualVersion(),
+                $"Alpha's pack isn't offered for fixing with its preview: {look?.Preview}");
+            UiTestExpect(ApworldSources.IsApproved(_appSettings, site.Site + "/dl/add_alpha.apworld") && AP_Atlas.Core.Permissions.IsAllowed(_appSettings, AP_Atlas.Core.Permissions.EngineSetup)
+                && !AP_Atlas.Core.Permissions.IsAlwaysAllowed(_appSettings, AP_Atlas.Core.Permissions.EngineSetup),
+                "the project wasn't trusted, or the engine's downloads weren't allowed for this session only");
+            var fractions = statuses.Select(s => s.Fraction).ToList();
+            UiTestExpect(fractions.Zip(fractions.Skip(1), (x, y) => y >= x).All(up => up) && statuses[^1].Fraction == 1f && statuses[^1].Text == "Done."
+                && new[] { "Game 1 of 3: ", "Game 2 of 3: ", "Game 3 of 3: " }.All(p => statuses.Any(s => s.Text.StartsWith(p, StringComparison.Ordinal))),
+                $"the progress: {string.Join(" | ", statuses.Select(s => $"{s.Fraction:0.00} {s.Text}"))}");
+            UiTestExpect(AtlasEngine.LastCheck(AtlasEngine.Current)?.Games is { } loaded && loaded.Contains(alpha) && loaded.Contains(beta), "the engine's check doesn't list the added games");
+            // Wren's logic restarted once for the whole batch (one notice of the changed parts), and only once.
+            await UiTestWaitForAsync(() => wren.LogicSettled && WrenInits() == initsBefore + 1 ? wren : null, "Wren's logic to restart once", 30);
+            await UiTestWaitAsync(1.0);
+            UiTestExpect(WrenInits() == initsBefore + 1, $"Wren's logic started {WrenInits() - initsBefore} times for the batch, not once");
+            // The control, under holds of the test's own: the same pack checked with a prompt does ask, so the batch's hold is
+            // what kept it back; a hold released for a pack its holder asks about itself raises nothing, and one released
+            // for none raises the prompt it held.
+            await UiTestWaitForAsync(() => !AP_Atlas.Core.PopTracker.PackDoctorService.IsChecking(look!.PackKey) && !AP_Atlas.Core.PopTracker.PackDoctorService.IsBusy(look.PackKey) ? this : null, "the Doctor to be idle");
+            var answered = AP_Atlas.Core.PopTracker.PackDoctorService.HoldPrompts();
+            await AP_Atlas.Core.PopTracker.PackDoctorService.CheckAsync(offer!.Original, prompt: true);
+            answered.Release(new[] { look!.PackKey });
+            UiTestExpect(prompts == 0, $"a held prompt for a pack its holder asks about itself was raised: {prompts} prompt(s)");
+            var held = AP_Atlas.Core.PopTracker.PackDoctorService.HoldPrompts();
+            await AP_Atlas.Core.PopTracker.PackDoctorService.CheckAsync(offer.Original, prompt: true);
+            UiTestExpect(prompts == 0, $"a prompt came while held: {prompts} prompt(s)");
+            held.Release(Array.Empty<string>());
+            UiTestExpect(prompts >= 1, $"a prompted check of the pack asked {prompts} time(s) once its hold ended, so the test proves nothing");
+            // A cancelled run downloads, checks, trusts and allows nothing: what the first run granted is taken back first.
+            int requestsBefore = site.Requests.Count;
+            _appSettings.ApprovedApworldSources.Remove("127.0.0.1");
+            AP_Atlas.Core.Permissions.ResetSessionForTests();
+            using (var cts = new System.Threading.CancellationTokenSource())
+            {
+                await cts.CancelAsync();
+                var stopped = await AddGamesAsync(plan, new AddGamesConsent(false, false), null, cts.Token);
+                UiTestExpect(stopped.Outcome.Cancelled && stopped.Outcome.Games.All(g => g.Logic.Outcome is AP_Atlas.Core.Games.AddStepOutcome.Cancelled or AP_Atlas.Core.Games.AddStepOutcome.NotNeeded
+                        && g.Map.Outcome is AP_Atlas.Core.Games.AddStepOutcome.Cancelled or AP_Atlas.Core.Games.AddStepOutcome.NotNeeded)
+                    && site.Requests.Count == requestsBefore && engine.ComponentRequests("AtlasCheck").Count - checksBefore == 1
+                    && !ApworldSources.IsApproved(_appSettings, site.Site + "/dl/add_alpha.apworld")
+                    && !AP_Atlas.Core.Permissions.IsAllowed(_appSettings, AP_Atlas.Core.Permissions.EngineSetup),
+                    "a cancelled run did something, or trusted the project or allowed the engine's downloads");
+            }
+            // Cancel pressed while the batch runs (as its first game's apworld is fetched): it stops there, the engine
+            // unchanged (no check, no logic restart) and no partial download left behind.
+            int initsNow = WrenInits();
+            using (var cts = new System.Threading.CancellationTokenSource())
+            {
+                var midway = await AddGamesAsync(plan, new AddGamesConsent(false, false), status =>
+                {
+                    if (status.Text.StartsWith("Game 1 of 3: ", StringComparison.Ordinal)) cts.Cancel();
+                }, cts.Token);
+                await UiTestWaitAsync(0.5);
+                string alphaFolder = AP_Atlas.Core.Games.GameFiles.ApworldsFolder(data, alpha);
+                UiTestExpect(midway.Outcome.Cancelled && midway.Outcome.For(alpha).Logic.Outcome == AP_Atlas.Core.Games.AddStepOutcome.Cancelled
+                    && midway.Outcome.For(beta).Logic.Outcome == AP_Atlas.Core.Games.AddStepOutcome.Cancelled
+                    && engine.ComponentRequests("AtlasCheck").Count - checksBefore == 1 && WrenInits() == initsNow
+                    && System.IO.Directory.GetFiles(packs, "*.part").Length == 0
+                    && (!System.IO.Directory.Exists(alphaFolder) || System.IO.Directory.GetFiles(alphaFolder, "*.part", System.IO.SearchOption.AllDirectories).Length == 0),
+                    $"a cancel during the batch didn't stop it there: {string.Join(" | ", midway.Outcome.Games.Select(g => $"{g.Game}: {g.Logic} / {g.Map}"))}");
+            }
+            // The tick "Don't ask again for Atlas's downloads": always allowed; an empty plan checks nothing.
+            await AddGamesAsync(new AP_Atlas.Core.Games.AddPlan { Games = Array.Empty<AP_Atlas.Core.Games.GamePlan>() }, new AddGamesConsent(true, false), null, System.Threading.CancellationToken.None);
+            UiTestExpect(AP_Atlas.Core.Permissions.IsAlwaysAllowed(_appSettings, AP_Atlas.Core.Permissions.EngineSetup) && engine.ComponentRequests("AtlasCheck").Count - checksBefore == 1,
+                "the tick didn't keep the engine's downloads allowed, or an empty plan ran a check");
+        }
+        finally
+        {
+            AtlasEngine.PartsChanged -= OnParts;
+            AP_Atlas.Core.PopTracker.PackDoctorService.FixSuggested -= OnFix;
+            AP_Atlas.Core.PopTracker.PackDoctorService.ReviewSuggested -= OnReview;
+            ApworldSources.UseListForTests(null);
+            AtlasEngine.TestWorlds = null;
+            GameAdder.TestGitHubSite = null;
+            AP_Atlas.Core.GitHubApi.TestSite = null;
+            AP_Atlas.Core.GitHubApi.ResetForTests();
+            AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.EngineSetup, null, false);
+            AP_Atlas.Core.Permissions.ResetSessionForTests();
+            // Restored in memory only (the state is saved by the engine's own steps): engine.json keeps the fake check, which
+            // is the test data folder's.
+            AtlasEngine.State.LastCheck = checkBefore;
+            if (lookKey != null) AP_Atlas.Core.PopTracker.PackDoctorService.Reports.Remove(lookKey);
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+            if (_profiles.Contains(profile)) DeleteProfile(profile);
+            foreach (string source in new[] { "github.com/owner/add-alpha", "github.com/owner/add-gamma", "127.0.0.1" }) _appSettings.ApprovedApworldSources.Remove(source);
+            _appSettings.PreferredPacks.Remove(alpha);
+            _appSettings.PreferredPacks.Remove(beta);
+            DataManager.SaveSettings(_appSettings);
+            AP_Atlas.Core.SafeFile.Delete(installedApworld);
+            if (System.IO.Directory.Exists(System.IO.Path.Combine(worlds, "add_beta"))) System.IO.Directory.Delete(System.IO.Path.Combine(worlds, "add_beta"), true);
+            AP_Atlas.Core.SafeFile.Delete(System.IO.Path.Combine(worlds, ".atlas_worlds.json"));
+            AP_Atlas.Core.SafeFile.Delete(AtlasEngine.WorldsZipPath);
+            foreach (string file in new[] { "alpha_pack.zip", "beta_pack.zip", "beta_other.zip" }) AP_Atlas.Core.SafeFile.Delete(System.IO.Path.Combine(packs, file));
+            foreach (string game in new[] { alpha, gamma })
+            {
+                string kept = AP_Atlas.Core.Games.GameFiles.ApworldsFolder(data, game);
+                if (System.IO.Directory.Exists(kept)) System.IO.Directory.Delete(kept, true);
+            }
+            if (System.IO.Directory.Exists(scratch)) System.IO.Directory.Delete(scratch, true);
+            AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
+        }
+    }
+
     private async Task GameWorldsOnDemandAsync()
     {
         var engine = StartFakeEngine(UiTestPython());
@@ -1387,6 +1719,7 @@ public partial class MainTrackerWindow
             ["archipelago"] = AtlasEngine.ArchipelagoVersion,
             ["zip_sha256"] = sha,
             ["zip_root"] = "FakeArchipelago/",
+            ["zip_bytes"] = release.Length,
             ["core_worlds"] = new JArray("generic"),
             ["worlds"] = new JObject
             {
@@ -1424,6 +1757,12 @@ public partial class MainTrackerWindow
             host.ShowTool(AP_Atlas.UI.Tool.Games);
             _gamesPage!.Refresh();
             UiTestExpect(_gamesPage.Games.Any(g => g.Game == game && g.Section == AP_Atlas.UI.GamesPage.Section.Official && g.InEngine), "the Games page doesn't list a game that ships with Archipelago");
+            // Adding the two games plans their worlds unpacked (each folder once) from Archipelago's release, downloaded once at its listed size; nothing is fetched to plan.
+            var adding = _gamesPage.PlanAdding(new[] { game, other });
+            UiTestExpect(adding.NeedsArchipelagoRelease && adding.ArchipelagoReleaseBytes == release.Length && adding.DownloadBytes == release.Length && adding.DiskBytes == release.Length + 20
+                && adding.Games[0].Items.Single().Folders.Select(f => f.Folder).SequenceEqual(new[] { "on_demand", "shared_lib" })
+                && adding.Games[0].Row == AP_Atlas.Core.Games.AddRow.LogicNoMapKnown && site.Requests.Count == 0,
+                $"the add plan for a game that ships with Archipelago is wrong: {adding.DownloadBytes} down, {adding.DiskBytes} on disk");
             // The slot's logic can't start without the release: its banner says so and offers to get it; nothing went online.
             await OnConnectSlotPressedAsync("Unpacker", profile);
             var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Unpacker"), "the slot's view");
@@ -1440,6 +1779,8 @@ public partial class MainTrackerWindow
                 && System.IO.Directory.Exists(System.IO.Path.Combine(worlds, "shared_lib")) && !System.IO.Directory.Exists(System.IO.Path.Combine(worlds, "other_demand")) && !System.IO.File.Exists(System.IO.Path.Combine(worlds, "Utils.py")),
                 "the release wasn't downloaded once with only the game's worlds unpacked");
             UiTestExpect(AtlasEngine.WorldsZipPresent && AtlasEngine.WorldsToUnpack(install, game).Count == 0, "the release isn't kept, or the game still wants unpacking");
+            var afterwards = _gamesPage!.PlanAdding(new[] { game });
+            UiTestExpect(!afterwards.Items.Any() && !afterwards.NeedsArchipelagoRelease && afterwards.Games[0].Row == AP_Atlas.Core.Games.AddRow.NoMapKnown, "a game whose world is unpacked still plans something");
             lock (parts) UiTestExpect(parts.Any(p => p.Kind == "world" && p.Game == game), "the engines weren't told a game's world arrived");
             var record = AP_Atlas.Core.SafeFile.ReadJson(System.IO.Path.Combine(worlds, ".atlas_worlds.json"), () => new UnpackedWorlds());
             UiTestExpect(record?.Archipelago == AtlasEngine.ArchipelagoVersion && record.Folders.OrderBy(f => f).SequenceEqual(new[] { "on_demand", "shared_lib" }), "the unpacked worlds weren't recorded with Archipelago's version");
@@ -5433,14 +5774,217 @@ public partial class MainTrackerWindow
         return engine;
     }
 
-    /// <summary>A fake server whose room has the fake engine's world (one slot, "Tester").</summary>
-    private static FakeArchipelagoServer LogicWorldServer()
+    /// <summary>A fake server whose room has the fake engine's world (one slot, "Tester"), under the given data checksum.</summary>
+    private static FakeArchipelagoServer LogicWorldServer(string checksum = LogicWorldChecksum)
     {
         var server = new FakeArchipelagoServer();
-        server.Games["Test Game"] = new FakeGame(LogicWorldChecksum,
+        server.Games["Test Game"] = new FakeGame(checksum,
             new Dictionary<string, long> { ["Sword"] = 1000, ["Shield"] = 1001, ["Rupee"] = 1002, ["Gem"] = 1099 },
             new Dictionary<string, long> { ["Cave Chest"] = 2000, ["Locked Door"] = 2001, ["Tower Top"] = 2002, ["Gem Vault"] = 2003 });
         return server;
+    }
+
+    // The installed apworld's data in the seed-version scenarios: another version than the seeds'.
+    private const string InstalledVersionChecksum = "0afe0afe0afe0afe0afe0afe0afe0afe0afe0afe";
+
+    /// <summary>A stand-in apworld for the fake engine (fake_world.json): its data checksum and version, and whether its rebuilt world matches the server's.</summary>
+    private static byte[] StandInApworld(string version, string checksum, bool match)
+    {
+        using var memory = new System.IO.MemoryStream();
+        using (var archive = new System.IO.Compression.ZipArchive(memory, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+        {
+            void Text(string name, string text)
+            {
+                using var writer = new System.IO.StreamWriter(archive.CreateEntry(name).Open());
+                writer.Write(text);
+            }
+            Text("test_game/archipelago.json", "{\"game\": \"Test Game\", \"world_version\": \"" + version + "\"}");
+            Text("test_game/fake_world.json", new JObject { ["game"] = "Test Game", ["data_checksum"] = checksum, ["world_version"] = version, ["match"] = match }.ToString());
+        }
+        return memory.ToArray();
+    }
+
+    /// <summary>
+    /// A seed-version scenario: the fake engine (its installed world another version than the seed's), the slot "Quill"
+    /// connected to a room of the logic world under <paramref name="seed"/> (each scenario its own, so no version Atlas
+    /// identified or tried in another counts), and Atlas's game list knowing Test Game's releases at a fake site from
+    /// owner/seed-versions, a project the user trusts. Another project the user added but doesn't trust lists the seed's
+    /// version too, read earlier this session: it must never be downloaded. Every download waits for the gate.
+    /// </summary>
+    private async Task WithSeedVersionsAsync(string seed, Action<FakeLogicEngine> setup, (string Version, string Checksum, bool Match)[] releases,
+        Func<SlotTrackerControl, FakeLogicEngine, AP_Atlas.Core.Testing.FakeWebSite, System.Threading.ManualResetEventSlim, Task> body)
+    {
+        const string Trusted = "owner/seed-versions", Stranger = "stranger/seed-versions";
+        var engine = StartFakeEngine(UiTestPython(), fake =>
+        {
+            fake.DataChecksum = InstalledVersionChecksum;
+            setup(fake);
+        });
+        var bytes = releases.ToDictionary(r => r.Version, r => StandInApworld(r.Version, r.Checksum, r.Match));
+        byte[] strangers = StandInApworld("9.9.9", seed, true);
+        static string Sha(byte[] b) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(b)).ToLowerInvariant();
+        using var gate = new System.Threading.ManualResetEventSlim(false);
+        await using var site = new AP_Atlas.Core.Testing.FakeWebSite();
+        site.Answer = (path, _) =>
+        {
+            if (path.StartsWith($"/repos/{Stranger}/releases", StringComparison.Ordinal))
+                return new AP_Atlas.Core.Testing.FakeWebSite.FullAnswer(200, System.Text.Encoding.UTF8.GetBytes(
+                    $"[{{\"tag_name\":\"9.9.9\",\"draft\":false,\"prerelease\":false,\"assets\":[{{\"name\":\"test_game.apworld\",\"browser_download_url\":\"http://localhost:{new Uri(site.Site).Port}/dl/stranger/test_game.apworld\",\"digest\":\"sha256:{Sha(strangers)}\",\"size\":{strangers.Length}}}]}}]"),
+                    "application/json");
+            if (path.StartsWith("/dl/", StringComparison.Ordinal))
+            {
+                gate.Wait(TimeSpan.FromSeconds(30)); // the scenario sees Atlas trying first
+                if (path == "/dl/stranger/test_game.apworld") return new AP_Atlas.Core.Testing.FakeWebSite.FullAnswer(200, strangers, "application/octet-stream");
+                foreach (var (version, file) in bytes)
+                    if (path == $"/dl/{version}/test_game.apworld") return new AP_Atlas.Core.Testing.FakeWebSite.FullAnswer(200, file, "application/octet-stream");
+            }
+            return new AP_Atlas.Core.Testing.FakeWebSite.FullAnswer(404, Array.Empty<byte>());
+        };
+        var list = ApworldSources.List;
+        var entry = new ApworldSource
+        {
+            Game = "Test Game",
+            Apworld = "test_game",
+            Repo = Trusted,
+            Versions = releases.Select(r => new ApworldVersion { Version = r.Version, Url = $"{site.Site}/dl/{r.Version}/test_game.apworld", Sha256 = Sha(bytes[r.Version]) }).ToList()
+        };
+        await using var server = LogicWorldServer(seed);
+        server.SlotName = "Quill";
+        var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Quill");
+        _profiles.Add(profile);
+        bool autoBefore = _appSettings.AutoFixApworldVersions;
+        string kept = System.IO.Path.Combine(AP_Atlas.Core.Games.GameFiles.ApworldsFolder(DataManager.GetDataDirectory(), "Test Game"), "127.0.0.1");
+        try
+        {
+            // GitHub may not be asked: the picker shows only what Atlas identified, and the tries never ask it.
+            AP_Atlas.Core.Permissions.ResetSessionForTests();
+            AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.GitHubLookups, null, false);
+            ApworldSources.ForgetSeedTriesForTests();
+            ApworldSources.UseListForTests(new ApworldSourceList
+            {
+                Format = list.Format,
+                Built = list.Built,
+                Source = list.Source,
+                Games = list.Games.Where(g => !string.Equals(g.Game, "Test Game", StringComparison.OrdinalIgnoreCase)).Append(entry).ToList()
+            });
+            _appSettings.AutoFixApworldVersions = true;
+            // Trust is where the downloads come from: the fake site (the stranger's link is on another host, "localhost").
+            ApworldSources.Approve(_appSettings, site.Site + "/");
+            _appSettings.ExtraApworldRepos["Test Game"] = new List<string> { Stranger };
+            // The stranger's release list, read earlier this session (as the Games page reads it): known, never tried.
+            AP_Atlas.Core.GitHubApi.TestSite = site.Site;
+            AP_Atlas.Core.GitHubApi.ResetForTests();
+            var listed = await ApworldSources.VersionsAsync("Test Game", new[] { Stranger }, "test_game", System.Threading.CancellationToken.None);
+            UiTestExpect(listed.Count == 1, $"the untrusted project's release list wasn't read: {listed.Count} versions");
+            int before = site.Requests.Count;
+            await OnConnectSlotPressedAsync("Quill", profile);
+            var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Quill"), "the slot's view");
+            ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.LogicTracker);
+            await body(slot, engine, site, gate);
+            var since = site.Requests.Skip(before).ToList();
+            UiTestExpect(since.All(r => r.StartsWith("/dl/", StringComparison.Ordinal)), $"Atlas asked GitHub while looking for the seed's version: {string.Join(", ", since)}");
+            UiTestExpect(!since.Contains("/dl/stranger/test_game.apworld"), "a release from a project the user doesn't trust was downloaded");
+        }
+        finally
+        {
+            gate.Set();
+            foreach (var picker in GetTree().Root.GetChildren().OfType<AP_Atlas.UI.ApworldPickerDialog>()) picker.QueueFree();
+            ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.Connections);
+            DeleteProfile(profile);
+            _appSettings.AutoFixApworldVersions = autoBefore;
+            _appSettings.SlotApworlds.Remove(AP_Atlas.Core.Annotations.SlotKey(profile.Id, "Quill"));
+            _appSettings.ApprovedApworldSources.Remove("127.0.0.1");
+            AP_Atlas.Core.Permissions.ResetSessionForTests();
+            _appSettings.ExtraApworldRepos.Remove("Test Game");
+            ApworldSources.UseListForTests(null);
+            AP_Atlas.Core.GitHubApi.TestSite = null;
+            AP_Atlas.Core.GitHubApi.ResetForTests();
+            if (System.IO.Directory.Exists(kept)) System.IO.Directory.Delete(kept, true);
+        }
+    }
+
+    /// <summary>(a) Another version, but the rebuilt world matches the server's: logic runs on the installed version, nothing warns, nothing is looked for.</summary>
+    private Task SeedVersionDiffersButLogicMatchesAsync() =>
+        WithSeedVersionsAsync("5eeda5eeda5eeda5eeda5eeda5eeda5eeda5eeda", _ => { },
+            new[] { ("4.2.0", "5eeda5eeda5eeda5eeda5eeda5eeda5eeda5eeda", true), ("4.1.0", "data-4.1.0", true) },
+            async (slot, engine, site, gate) =>
+            {
+                gate.Set(); // a download would go through at once: none may happen
+                await UiTestWaitForAsync(() => slot.LogicSettled ? slot : null, "the slot's logic to start");
+                await UiTestWaitAsync(1.0); // time for a search to start, if one wrongly did
+                UiTestExpect(slot.ApworldMatchesSeed == false && slot.EngineYamlInfo?["match"]?.Value<bool>() == true, "the engine didn't report another version with a matching world");
+                UiTestExpect(!slot.SeedVersionWanted && slot.LogicAccuracy == AP_Atlas.Core.Games.LogicAccuracy.AsChecked && slot.LogicAccuracyWarning == null && slot.AccuracyBannerShown == null,
+                    $"logic that matches the server warns about the version: {slot.LogicAccuracyWarning}");
+                UiTestExpect(!site.Requests.Any(r => r.StartsWith("/dl/", StringComparison.Ordinal)) && engine.ComponentRequests("AtlasChecksum").Count == 0 && slot.ChosenApworld == null,
+                    $"Atlas looked for the seed's version though logic works: {string.Join(", ", site.Requests)}");
+                UiTestExpect(!_alertLog.Entries.Any(e => e.Message.StartsWith("Quill:", StringComparison.Ordinal) && e.Message.Contains("another version")), "a card said the version differs");
+                ExpectLogic(slot, "on the installed version", inLogic: new long[] { 2000 }, outOfLogic: new long[] { 2001, 2002, 2003 }, goal: false, active: 1);
+                ShowEnginePage();
+                await UiTestWaitAsync(0.3);
+                var (glyph, text) = _enginePage!.SlotStateForTests(slot);
+                UiTestExpect(glyph == "✔" && text.Contains("though the seed was made with another"), $"the Atlas Engine page says {glyph} {text}");
+                ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.Games);
+                _gamesPage!.Select("Test Game");
+                await UiTestWaitAsync(0.2);
+                var lines = _gamesPage.SlotLines();
+                UiTestExpect(lines.Any(l => l.StartsWith("Quill:") && l.Contains("not the version its seed was made with") && !l.Contains("5eed")), $"the Games page says: {string.Join(" | ", lines)}");
+            });
+
+    /// <summary>(b) Another version and a world that doesn't match: Atlas tries the trusted versions it knows, newest first, says so meanwhile, and uses the seed's for the slot.</summary>
+    private Task SeedVersionFoundAsync()
+    {
+        const string seed = "5eedb5eedb5eedb5eedb5eedb5eedb5eedb5eedb";
+        return WithSeedVersionsAsync(seed, fake => fake.RebuildMatch = false,
+            new[] { ("5.3.0", "data-5.3.0", true), ("5.2.0", seed, true), ("5.1.0", seed, true) },
+            async (slot, engine, site, gate) =>
+            {
+                await UiTestWaitForAsync(() => slot.AccuracyBannerShown?.Contains("trying the seed's version") == true ? slot : null, "the banner to say Atlas is trying the seed's version");
+                UiTestExpect(slot.SeedVersionWanted && slot.AccuracyBannerShown!.Contains("another version of Test Game") && !slot.ChooseVersionOffered && !slot.AccuracyBannerShown.Contains("5eed"),
+                    $"while trying, the banner says: {slot.AccuracyBannerShown}");
+                gate.Set();
+                await UiTestWaitForAsync(() => slot.ChosenApworld?.Version == "5.2.0" && slot.LogicSettled && slot.ApworldMatchesSeed == true ? slot : null, "the slot to run on the seed's version", 60);
+                var downloads = site.Requests.Where(r => r.StartsWith("/dl/", StringComparison.Ordinal)).ToList();
+                UiTestExpect(downloads.SequenceEqual(new[] { "/dl/5.3.0/test_game.apworld", "/dl/5.2.0/test_game.apworld" }),
+                    $"Atlas downloaded {string.Join(", ", downloads)}, not the newest first stopping at the match");
+                UiTestExpect(engine.ComponentRequests("AtlasChecksum").Count == 2, $"{engine.ComponentRequests("AtlasChecksum").Count} versions were loaded to read their data");
+                var init = engine.Requests("init")[^1];
+                UiTestExpect(((string?)init["apworld_override"])?.Replace('\\', '/').Contains("/5.2.0/") == true && (string?)init["expected_checksum"] == seed,
+                    $"logic didn't restart on the seed's version: {init["apworld_override"]}");
+                UiTestExpect(slot.UsingSeedApworld && slot.LogicAccuracyWarning == null && slot.AccuracyBannerShown == null, $"after the switch, the banner says: {slot.AccuracyBannerShown}");
+                UiTestExpect(_alertLog.Entries.Any(e => e.Message.StartsWith("Quill:", StringComparison.Ordinal) && e.Message.Contains("5.2.0") && e.Message.Contains("found")), "no card said which version Atlas found");
+                UiTestExpect(DataManager.LoadSettings().SlotApworlds.TryGetValue(slot.AnnotationKey, out var chosen) && chosen.MatchesSeed && chosen.SeedChecksum == seed,
+                    "the version wasn't kept for the slot and its seed");
+            });
+    }
+
+    /// <summary>(c) A world that can't be rebuilt, on a seed of another version none of three known ones matches: then the Logic banner offers the picker.</summary>
+    private Task SeedVersionNotFoundAsync()
+    {
+        const string seed = "5eedc5eedc5eedc5eedc5eedc5eedc5eedc5eedc";
+        return WithSeedVersionsAsync(seed, fake => fake.StartError = ("generation_failed", "None of the YAMLs tried could rebuild this world."),
+            new[] { ("6.3.0", "data-6.3.0", true), ("6.2.0", "data-6.2.0", true), ("6.1.0", "data-6.1.0", true), ("6.0.0", seed, true) },
+            async (slot, engine, site, gate) =>
+            {
+                await UiTestWaitForAsync(() => slot.EngineProblem?.Code == "generation_failed" && slot.LogicNoticeShown?.Contains("trying the seed's version") == true ? slot : null,
+                    "the Logic banner to say Atlas is trying the seed's version");
+                UiTestExpect(!slot.LogicNoticeButtons().Contains("Choose the version…"), $"while trying, the banner offers: {string.Join(", ", slot.LogicNoticeButtons())}");
+                gate.Set();
+                await UiTestWaitForAsync(() => slot.LogicNoticeButtons().Contains("Choose the version…") ? slot : null, "the Logic banner to offer Choose the version…", 60);
+                var downloads = site.Requests.Where(r => r.StartsWith("/dl/", StringComparison.Ordinal)).ToList();
+                UiTestExpect(downloads.SequenceEqual(new[] { "/dl/6.3.0/test_game.apworld", "/dl/6.2.0/test_game.apworld", "/dl/6.1.0/test_game.apworld" }),
+                    $"Atlas downloaded {string.Join(", ", downloads)}, not three at most, newest first");
+                UiTestExpect(slot.ChosenApworld == null && slot.LogicNoticeShown!.Contains("None of the versions Atlas knows") && !slot.LogicNoticeShown.Contains("5eed"), $"the banner says: {slot.LogicNoticeShown}");
+                UiTestExpect(_alertLog.Entries.Any(e => e.Message.StartsWith("Quill:", StringComparison.Ordinal) && e.Message.Contains("couldn't find")), "no card said Atlas couldn't find the seed's version");
+                UiTestExpect(site.Requests.Where(r => !r.StartsWith("/dl/", StringComparison.Ordinal)).All(r => r.StartsWith("/repos/stranger/seed-versions/releases", StringComparison.Ordinal)),
+                    $"Atlas asked GitHub while looking for the seed's version: {string.Join(", ", site.Requests)}");
+                slot.PressLogicNotice("Choose the version…");
+                var picker = await UiTestWaitForAsync(() => GetTree().Root.GetChildren().OfType<AP_Atlas.UI.ApworldPickerDialog>().FirstOrDefault(d => !d.IsQueuedForDeletion()), "the version picker");
+                UiTestExpect(new[] { "6.3.0", "6.2.0", "6.1.0" }.All(v => picker.Choices.Any(c => c.Version == v && c.Downloaded && !c.MatchesSeed)) && !picker.Choices.Any(c => c.MatchesSeed),
+                    $"the picker lists {string.Join(", ", picker.Choices.Select(c => c.Version))}");
+                picker.EmitSignal(AcceptDialog.SignalName.Canceled);
+            });
     }
 
     private async Task LogicFollowsTheSlotAsync()
@@ -5611,8 +6155,8 @@ public partial class MainTrackerWindow
                 "the version chosen for the slot wasn't kept for it and its seed");
             _appSettings.SlotApworlds.Remove(slot.AnnotationKey);
 
-            // The Games page says which version each connected slot should run: with the engine's world data differing from
-            // the seed's and no version known to match, it says so and offers the picker (nothing is downloaded).
+            // The Games page says which version each connected slot runs: with the engine's world data differing from the
+            // seed's but its rebuilt world matching the server's, the installed version runs and nothing warns.
             engine.DataChecksum = "0000000000000000000000000000000000000000";
             engine.Apply();
             slot.RetryLogicEngine();
@@ -5621,7 +6165,8 @@ public partial class MainTrackerWindow
             _gamesPage!.Select("Test Game");
             await UiTestWaitAsync(0.2);
             var lines = _gamesPage.SlotLines();
-            UiTestExpect(lines.Any(l => l.StartsWith("Tester:") && l.Contains("isn't among the known versions")), $"the Games page doesn't say the slot's seed needs another version: {string.Join(" | ", lines)}");
+            UiTestExpect(lines.Any(l => l.StartsWith("Tester:") && l.Contains("not the version its seed was made with")) && slot.LogicAccuracyWarning == null && !slot.SeedVersionWanted,
+                $"the Games page doesn't say the slot runs the installed version, or logic warns: {string.Join(" | ", lines)} / {slot.LogicAccuracyWarning}");
             engine.DataChecksum = LogicWorldChecksum;
             engine.Apply();
             slot.RetryLogicEngine();

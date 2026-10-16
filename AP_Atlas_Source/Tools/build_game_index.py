@@ -11,10 +11,15 @@ Usage: python Tools/build_game_index.py --corpus <folder> [--baseline <packs bas
   --out       where to write (default: the bundled list, Scripts/Core/Engine/Data/apworld_sources.json)
 A developer tool, run by hand after a lab round; nothing in Atlas runs it.
 
-Each pack carries what the lab measured: "fit" and "checks" (its pins linked to the game's checks, refreshed every build),
+Each pack carries what the lab measured: "fit" and "checks" (its pins linked to the game's checks, refreshed every build), "size" (bytes, as the lab downloaded it),
 "notes" (short codes Atlas turns into sentences: other_version, other_game, scripts_stop, no_pictures). A pack whose mapping
 holds another game's ids is filed twice: under its manifest's game with "other_game" and "for_game", and under the game its
 ids are for with "named_game" (unmeasured there).
+
+Every version and pack the corpus holds gets "size": the bytes of the file the lab downloaded (the corpus copy, else the
+manifest's record), matched by SHA-256, so Atlas can say what adding a game downloads without asking GitHub. A project's
+current files (asset "zipball", which GitHub lists without a size) are measured the same way. A version only the old list
+knows keeps the size it had, or has none.
 """
 import argparse
 import json
@@ -60,6 +65,27 @@ def asset_url(repo, tag, asset):
 
 def loose(text):
     return re.sub(r'0+(\d)', r'\1', ''.join(c.lower() for c in text or '' if c.isalnum()))
+
+
+def corpus_sizes(corpus, manifest):
+    """Each corpus file's size in bytes, by its SHA-256 (lowercase): the copy on disk, else the manifest's record. A copy
+    whose size differs from the record is left out (said), since it isn't the file the record describes."""
+    sizes = {}
+    for item in manifest.get('files', []):
+        sha = (item.get('sha256') or '').lower()
+        if not sha:
+            continue
+        name = item.get('file') or ''
+        recorded = item.get('size') if isinstance(item.get('size'), int) and item.get('size') > 0 else None
+        path = os.path.join(corpus, name)
+        on_disk = os.path.getsize(path) if name and os.path.isfile(path) else None
+        if on_disk is not None and recorded is not None and on_disk != recorded:
+            print(f'{name}: {on_disk} bytes on disk, {recorded} in the manifest; no size recorded for it')
+            continue
+        size = on_disk or recorded
+        if size:
+            sizes[sha] = size
+    return sizes
 
 
 def mapping_ids(zip_path):
@@ -230,6 +256,13 @@ def main():
                 file_under(pack_game, dict(measured, notes=notes + ['other_game'], for_game=for_game))
                 if file_under(for_game, dict({'named_game': pack_game}, **({'notes': notes} if notes else {}))):
                     filed_elsewhere += 1
+    # Sizes by SHA-256 (the file's identity): every listing of the same file gets it, including old-list versions.
+    sizes = corpus_sizes(args.corpus, manifest)
+    for entry in games.values():
+        for listed in entry.get('versions', []) + entry.get('packs', []):
+            size = sizes.get((listed.get('sha256') or '').lower())
+            if size:
+                listed['size'] = size
     for entry in games.values():
         if 'packs' in entry:
             entry['packs'].sort(key=lambda p: -(p.get('fit') or -1))
@@ -242,8 +275,10 @@ def main():
     with_packs = sum(1 for g in out['games'] if g.get('packs'))
     loads = sum(1 for g in out['games'] if g.get('loads_with'))
     noted = sum(1 for g in out['games'] for p in g.get('packs', []) if p.get('notes'))
+    sized = sum(1 for g in out['games'] for v in g.get('versions', []) + g.get('packs', []) if v.get('size'))
+    listed = sum(len(g.get('versions', [])) + len(g.get('packs', [])) for g in out['games'])
     print(f'wrote {args.out}: {len(out["games"])} games ({added_games} new), {with_packs} with packs, {loads} known to load with Archipelago {ARCHIPELAGO}; '
-          f'{noted} packs with notes, {filed_elsewhere} filed under the game they are for')
+          f'{noted} packs with notes, {filed_elsewhere} filed under the game they are for; {sized} of {listed} versions and packs with their size')
 
 
 if __name__ == '__main__':

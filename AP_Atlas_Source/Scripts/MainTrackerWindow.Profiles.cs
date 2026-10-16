@@ -792,8 +792,11 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         // The apworld version chosen for the slot's seed.
         var apworldLine = Line();
         var choice = _appSettings.SlotApworlds.TryGetValue(key, out var c) ? c : null;
-        apworldLine.AddChild(AP_Atlas.UI.Kit.Text(choice != null ? Tr("{0} ({1}) for its seed").Replace("{0}", choice.Version).Replace("{1}", choice.Source)
-            : live != null && live.ApworldMatchesSeed == true ? Tr("The installed apworld matches its seed") : Tr("The engine's installed version")));
+        apworldLine.AddChild(AP_Atlas.UI.Kit.Text(choice != null ? Tr("Runs {0} ({1}) for its seed").Replace("{0}", choice.Version).Replace("{1}", choice.Source)
+            : live != null && live.ApworldMatchesSeed == true ? Tr("The installed apworld matches its seed")
+            : live != null && live.SeedVersionWanted ? Tr("Another version than its seed's, and logic doesn't match it. {0}").Replace("{0}", live.SeedVersionNote ?? "")
+            : live != null && live.ApworldMatchesSeed == false && live.EngineRunning ? Tr("The engine's installed version (not its seed's; its checks match the server's)")
+            : Tr("The engine's installed version")));
         if (live != null && (live.ApworldMatchesSeed == false || live.UsingSeedApworld))
             apworldLine.AddChild(AP_Atlas.UI.Kit.Button(Tr("Choose the version…"), Tr("Lists the game's releases; pick the one the seed's host used."), live.OpenApworldPicker, small: true));
         Row(Tr("Apworld"), apworldLine);

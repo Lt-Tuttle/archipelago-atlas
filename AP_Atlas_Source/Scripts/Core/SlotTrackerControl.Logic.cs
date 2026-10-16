@@ -34,16 +34,13 @@ public partial class SlotTrackerControl : MarginContainer
         SyncLogicViews();
     }
 
-    /// <summary>A logic engine finished starting: its item pool is new, and its apworld may not be the seed's.</summary>
+    /// <summary>A logic engine finished starting: its item pool is new, and the seed may want its own apworld version.</summary>
     private void OnEngineStarted()
     {
         UpdateItemHistoryUI(); // item pool is now available for "Not Yet Collected"
         RebuildPackIndex();    // ...and item names for pairing pack items that have no mapping
         UpdateKeyItemsUI();
-        // Fix the apworld without asking when the download source is already trusted (or the version is cached).
-        string checksum = ServerChecksumFor(Game);
-        if (Model.Logic.ApworldMatchesSeed == false && _appSettings.AutoFixApworldVersions && checksum != null && !_apworldFixAttempted.Contains(checksum))
-            FixApworldVersion(interactive: false);
+        CheckSeedVersion();
     }
 
     /// <summary>Excluded by your choice if you made one, else by the seed (as the logic engine reads its options).</summary>

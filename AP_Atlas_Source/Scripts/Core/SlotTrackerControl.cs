@@ -297,6 +297,7 @@ public partial class SlotTrackerControl : MarginContainer
         }
         if (checks) FeedNewChecksToScripts();
         if (change.HasFlag(AP_Atlas.Core.SlotChange.EngineStarted)) OnEngineStarted();
+        if (change.HasFlag(AP_Atlas.Core.SlotChange.EngineStartFailed)) CheckSeedVersion();
         if (change.HasFlag(AP_Atlas.Core.SlotChange.Logic)) ShowLogic();
         else if (change.HasFlag(AP_Atlas.Core.SlotChange.Race)) SyncLogicViews();
         if (change.HasFlag(AP_Atlas.Core.SlotChange.Hints)) _hintTracker?.SetHints(Model.CurrentHints);
@@ -574,6 +575,7 @@ public partial class SlotTrackerControl : MarginContainer
     {
         if (_ended) return;
         _ended = true;
+        StopSeedVersionTries(); // a search for the seed's version ends with the slot
         AP_Atlas.Core.ThemeColors.AccentChanged -= OnAccentChanged;
         AP_Atlas.Core.Annotations.Changed -= OnAnnotationsChanged;
         ChatFiltersChanged -= OnChatFiltersChanged;

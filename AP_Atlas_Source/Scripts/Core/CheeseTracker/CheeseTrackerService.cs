@@ -937,7 +937,7 @@ namespace AP_Atlas.Core.CheeseTracker
                 s.LogicHidden ? "race mode hides logic" :
                 !s.Logic.Running ? "its logic engine isn't running" :
                 !s.Logic.Settled ? "its logic is still being worked out" :
-                s.Logic.ApworldMatchesSeed == false ? "its apworld doesn't match the seed" :
+                s.Logic.Accuracy == AP_Atlas.Core.Games.LogicAccuracy.SeedVersion ? "its seed was made with another apworld version, and logic doesn't match it" :
                 s.LogicAccuracyWarning != null ? "its logic has an accuracy warning (Properties → Accuracy)" : null;
             return new SlotSnapshot
             {

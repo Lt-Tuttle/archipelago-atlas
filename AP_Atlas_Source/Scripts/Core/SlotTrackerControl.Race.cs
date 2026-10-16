@@ -48,7 +48,7 @@ public partial class SlotTrackerControl : MarginContainer
         get
         {
             string warning = Model.LogicAccuracyWarning;
-            return warning != null && ApworldMatchesSeed == false && _apworldFixStatus != null ? warning + " " + _apworldFixStatus : warning;
+            return warning != null && SeedVersionNote is { } note ? warning + " " + note : warning;
         }
     }
 
@@ -63,9 +63,10 @@ public partial class SlotTrackerControl : MarginContainer
             _lastAccuracyWarning = warning;
             AccuracyChanged?.Invoke();
         }
-        bool versionProblem = warning != null && ApworldMatchesSeed == false;
+        // One gate for every view: the seed's version is wanted only when logic doesn't work with the installed one.
+        bool versionProblem = warning != null && LogicAccuracy == AP_Atlas.Core.Games.LogicAccuracy.SeedVersion;
         _accuracyLinkYaml.Visible = warning != null && !versionProblem;
         _accuracyLinkYaml.Text = LinkedYamlSetting == null ? "Link YAML…" : "Change YAML…";
-        _accuracyFix.Visible = versionProblem;
+        _accuracyFix.Visible = versionProblem && !TryingSeedVersions;
     }
 }

@@ -75,7 +75,7 @@ internal static class FakeEngines
     }
 
     /// <summary>How Atlas starts the engine in portable mode: python -u -X utf8 atlas_run.py &lt;root&gt; UltimateBridge.</summary>
-    public static ProcessStartInfo StartInfo(string python, FakeLogicEngine engine)
+    public static ProcessStartInfo StartInfo(string python, FakeLogicEngine engine, string component = "UltimateBridge")
     {
         string engineDir = System.IO.Path.GetDirectoryName(engine.Root)!;
         var info = new ProcessStartInfo(python)
@@ -87,7 +87,7 @@ internal static class FakeEngines
             UseShellExecute = false,
             CreateNoWindow = true
         };
-        foreach (string arg in new[] { "-u", "-X", "utf8", System.IO.Path.Combine(engineDir, "atlas_run.py"), engine.Root, "UltimateBridge" }) info.ArgumentList.Add(arg);
+        foreach (string arg in new[] { "-u", "-X", "utf8", System.IO.Path.Combine(engineDir, "atlas_run.py"), engine.Root, component }) info.ArgumentList.Add(arg);
         info.Environment["TEMP"] = System.IO.Path.Combine(engineDir, "temp");
         info.Environment["TMP"] = System.IO.Path.Combine(engineDir, "temp");
         return info;

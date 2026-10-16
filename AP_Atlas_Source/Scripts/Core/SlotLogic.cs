@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using AP_Atlas.Core.EngineSetup;
+using AP_Atlas.Core.Games;
 using Archipelago.MultiClient.Net;
 using Archipelago.MultiClient.Net.Enums;
 using Newtonsoft.Json.Linq;
@@ -113,6 +114,22 @@ namespace AP_Atlas.Core
         /// </summary>
         public bool? ApworldMatchesSeed { get; private set; }
 
+        /// <summary>Atlas's copy of the seed's apworld version was given to this run but couldn't be loaded (the installed one ran).</summary>
+        public bool SeedApworldLoadFailed { get; private set; }
+
+        /// <summary>Whether the rebuilt world's locations match the server's, while logic runs (null: not compared, or not running).</summary>
+        public bool? RebuildMatches => Running && Engine.LastYamlInfo?["match"]?.Type == JTokenType.Boolean ? (bool)Engine.LastYamlInfo["match"]! : null;
+
+        /// <summary>
+        /// The connect-time version rule (<see cref="SeedVersionRule"/>): the seed was made with another apworld version AND
+        /// logic doesn't work with the one that ran (the start failed rebuilding the world, the rebuilt world doesn't match
+        /// the server's, or the seed's own version couldn't load). Only then does Atlas look for the seed's version.
+        /// </summary>
+        public bool SeedVersionWanted => SeedVersionRule.WantsSeedVersion(ApworldMatchesSeed, Running ? null : Problem?.Code, RebuildMatches, SeedApworldLoadFailed);
+
+        /// <summary>How far logic can be trusted as Atlas checks it: the one gate every view's warning uses.</summary>
+        public LogicAccuracy Accuracy => SeedVersionRule.Classify(Running, ApworldMatchesSeed, RebuildMatches, SeedApworldLoadFailed);
+
         /// <summary>
         /// The locations logic can't vouch for: the server's that the rebuilt world lacks, and those whose logic the check
         /// rebuilds (other seeds) see otherwise, so whether they're in logic depends on a choice the seed made that the
@@ -173,7 +190,7 @@ namespace AP_Atlas.Core
         private async Task StartAsync()
         {
             if (_disposed || Booting || Running) return;
-            if (AtlasEngine.SetupRunning)
+            if (AtlasEngine.EngineChanging)
             {
                 // Never start an engine whose files may be changing; setup's Changed event brings us back.
                 Problem = Paused();
@@ -193,9 +210,13 @@ namespace AP_Atlas.Core
             int run = ++_run;
             Booting = true;
             Problem = null;
+            // This run says again whether its apworld is the seed's (an earlier run's answer doesn't count).
+            ApworldMatchesSeed = null;
+            SeedApworldLoadFailed = false;
             Engine.SetInstall(AtlasEngine.Resolve(_settings));
             Status = "Starting the logic engine…";
             Notify();
+            bool startFailed = false;
             try
             {
                 // A game that ships with Archipelago has its world unpacked from Archipelago's release the first time a
@@ -250,6 +271,9 @@ namespace AP_Atlas.Core
                     Status = ProblemStatus(Problem);
                     _log($"Logic engine not started ({Problem.Code}): {Problem.Message}" +
                          (Problem.Details != null ? "\n" + Problem.Details.ToString(Newtonsoft.Json.Formatting.None) : ""));
+                    // The engine says what the world that couldn't start is: a seed made with another version may want its own.
+                    ReadApworld();
+                    startFailed = true;
                     Loaded = true;
                 }
             }
@@ -264,7 +288,7 @@ namespace AP_Atlas.Core
             finally
             {
                 if (run == _run) Booting = false;
-                if (!_disposed) Notify();
+                if (!_disposed) Notify(startFailed ? SlotChange.Logic | SlotChange.EngineStartFailed : SlotChange.Logic);
             }
         }
 
@@ -314,7 +338,7 @@ namespace AP_Atlas.Core
             return ApworldSources.CachedFor(_model.Game, checksum)?.File;
         }
 
-        /// <summary>Says how the world was rebuilt, and warns when it or the apworld doesn't match the seed.</summary>
+        /// <summary>Says how the world was rebuilt and, by the connect-time version rule, whether the seed wants its own apworld version.</summary>
         private void ReportStart()
         {
             string game = _model.Game, slot = _model.SlotName;
@@ -331,27 +355,20 @@ namespace AP_Atlas.Core
                 _ => "by the engine"
             };
             _log($"Logic engine running: world rebuilt {how}; locations {info?["got"]} of {info?["expected"]} expected, {info?["missing"]} missing, {info?["extra"]} extra.");
-            string? serverChecksum = ServerChecksum, localChecksum = Engine.LastDataChecksum;
-            ApworldMatchesSeed = serverChecksum == null || localChecksum == null ? null : serverChecksum == localChecksum;
-            var applied = Engine.LastApworldOverride;
-            if (applied?["used"]?.Type == JTokenType.Boolean && (bool)applied["used"]!)
-                _log($"Using {game} {applied["world_version"]} ({applied["file"]}) from Atlas's cache for this seed, in place of the installed copy (which isn't changed).");
-            else if (applied?["error"] != null)
+            ReadApworld();
+            string version = Engine.LastWorldVersion != null ? $" (version {Engine.LastWorldVersion})" : "";
+            // Whether logic works comes first: a different version whose rebuilt world matches the server's runs as it is.
+            if (SeedVersionWanted)
             {
-                // The cached version couldn't load in this engine: don't offer it again this session.
-                _seedApworldFailed.Add(serverChecksum ?? "");
-                Logger.LogWarning($"[{slot}] The seed's {game} apworld couldn't be loaded in this engine ({applied["error"]}); using the installed copy.");
-            }
-            if (ApworldMatchesSeed == false)
-            {
-                string version = Engine.LastWorldVersion != null ? $" (version {Engine.LastWorldVersion})" : "";
-                Status = "Logic running (apworld differs from the seed's)";
-                Logger.LogWarning($"[{slot}] The installed {game} apworld{version} isn't the one this seed was generated with: its data " +
-                    $"(checksum {Short(localChecksum)}) differs from the server's ({Short(serverChecksum)}). " +
-                    "Atlas will look for the seed's version.");
+                Status = "Logic running (made with another version)";
+                Logger.LogWarning($"[{slot}] This seed was made with another version of the {game} apworld than the one in use{version}, and " +
+                    (match == false ? $"the rebuilt world doesn't match the server ({info!["missing"]} locations missing, {info["extra"]} extra)" : "Atlas's copy of the seed's version couldn't be loaded here") +
+                    ". Atlas will look for the seed's version.");
                 return;
             }
-            if (ApworldMatchesSeed == true) _log($"The {game} apworld in use matches the seed's data (checksum {Short(localChecksum)}).");
+            if (ApworldMatchesSeed == false)
+                _log($"The {game} apworld in use{version} isn't the one this seed was made with (its data differs), but the rebuilt world matches the server's, so logic runs on it.");
+            else if (ApworldMatchesSeed == true) _log($"The {game} apworld in use{version} matches the seed's data.");
             if (match == false)
             {
                 int missing = info!["missing"]?.ToObject<int>() ?? 0, extra = info["extra"]?.ToObject<int>() ?? 0;
@@ -362,8 +379,26 @@ namespace AP_Atlas.Core
             else Status = "Logic running";
         }
 
-        /// <summary>A checksum's first 8 characters, for messages.</summary>
-        private static string Short(string? checksum) => checksum == null ? "" : checksum[..Math.Min(8, checksum.Length)];
+        /// <summary>
+        /// Reads what the last start said about the apworld (a start that failed too): whether its data is the seed's, and
+        /// whether Atlas's copy of the seed's version loaded in place of the installed one.
+        /// </summary>
+        private void ReadApworld()
+        {
+            string game = _model.Game, slot = _model.SlotName;
+            string? serverChecksum = ServerChecksum, localChecksum = Engine.LastDataChecksum;
+            ApworldMatchesSeed = serverChecksum == null || localChecksum == null ? null : serverChecksum == localChecksum;
+            var applied = Engine.LastApworldOverride;
+            SeedApworldLoadFailed = applied?["error"] != null;
+            if (applied?["used"]?.Type == JTokenType.Boolean && (bool)applied["used"]!)
+                _log($"Using {game} {applied["world_version"]} ({applied["file"]}) from Atlas's cache for this seed, in place of the installed copy (which isn't changed).");
+            else if (SeedApworldLoadFailed)
+            {
+                // The cached version couldn't load in this engine: don't offer it again this session.
+                _seedApworldFailed.Add(serverChecksum ?? "");
+                Logger.LogWarning($"[{slot}] The seed's {game} apworld couldn't be loaded in this engine ({applied!["error"]}); using the installed copy.");
+            }
+        }
 
         private static string ProblemStatus(EngineStartError e) => e.Code switch
         {
@@ -643,7 +678,7 @@ namespace AP_Atlas.Core
             _log("Logic engine failure: " + reason + (counted ? "" : " (not this slot's)"));
             StopRun();
             Loaded = true;
-            if (AtlasEngine.SetupRunning)
+            if (AtlasEngine.EngineChanging)
             {
                 // Stopped for an engine update, not a crash: wait for the update instead of counting a failure.
                 Problem = Paused();

@@ -17,6 +17,8 @@ public sealed class WorldsIndex
     [JsonProperty("zip_sha256")] public string ZipSha256 { get; set; } = "";
     /// <summary>The zip's one top folder, with its slash ("Archipelago-0.6.7/").</summary>
     [JsonProperty("zip_root")] public string ZipRoot { get; set; } = "";
+    /// <summary>The release zip's size in bytes (what downloading it costs, for the add's total); 0 when the index doesn't say.</summary>
+    [JsonProperty("zip_bytes")] public long ZipBytes { get; set; }
     /// <summary>World folders the core keeps (the generic world, the health check's game, the shared libraries).</summary>
     [JsonProperty("core_worlds")] public List<string> CoreWorlds { get; set; } = new();
     [JsonProperty("worlds")] public Dictionary<string, WorldEntry> Worlds { get; set; } = new(StringComparer.Ordinal);

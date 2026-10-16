@@ -9,7 +9,7 @@
 # crash on an item, answer late, fail to load, start a process of its own, leave an item's step out of an answer, send a
 # log line, a late answer to an earlier request and a reply-like line without an id first, or write one endless line on
 # standard error or on Atlas's channel. Everything it receives, and every crash, goes into a
-# journal the test reads. It reads and writes only its own folder.
+# journal the test reads. It writes only its own folder (its health check reads the worlds folder the rules name).
 import json
 import os
 import subprocess
@@ -74,25 +74,68 @@ def has_all(needs, items):
     return all(item in items for item in needs)
 
 
+def read_fake_world(path):
+    # A test's stand-in apworld: a zip with a fake_world.json ({"game", "data_checksum", "world_version", "locations",
+    # "items", "match": whether its rebuilt world matches the server's, "error": a load failure}).
+    import zipfile
+    with zipfile.ZipFile(path) as z:
+        name = next((n for n in z.namelist() if n.endswith('fake_world.json')), None)
+        return json.loads(z.read(name).decode('utf-8')) if name else {}
+
+
+def apworld_override(req, rules):
+    # As the bridge's apply_apworld_override: the seed's apworld Atlas has, used for this slot in place of the installed
+    # world unless that one already matches. Returns what the reply says about it, and the world used (None: the installed).
+    path = req.get('apworld_override')
+    if not path:
+        return None, None
+    expected = req.get('expected_checksum')
+    if expected and rules.get('data_checksum') == expected:
+        return {'used': False, 'reason': 'the installed copy already matches the seed'}, None
+    try:
+        world = read_fake_world(path)
+    except Exception as e:
+        return {'used': False, 'error': (type(e).__name__ + ': ' + str(e))[:300]}, None
+    if world.get('error'):
+        return {'used': False, 'error': str(world['error'])[:300]}, None
+    return {'used': True, 'file': os.path.basename(path), 'matches': bool(expected) and world.get('data_checksum') == expected,
+            'world_version': world.get('world_version')}, world
+
+
+def identity(rules, world):
+    # As the bridge's world_identity: the data checksum and version of the world in use.
+    source = world if world is not None else rules
+    out = {key: source[key] for key in ('data_checksum', 'world_version') if source.get(key)}
+    if world is not None: out.setdefault('data_checksum', 'fake')
+    return out
+
+
 def start(req, rules):
+    override, world = apworld_override(req, rules)
     error = rules.get('start_error')
     if error:
-        reply = {'status': 'error', 'game': req.get('game'), 'versions': versions()}
+        reply = {'status': 'error', 'game': req.get('game'), 'versions': versions(), 'apworld_override': override}
         reply.update(error)
+        if error.get('code') != 'world_missing':
+            # As the bridge: what the world that couldn't start is, so Atlas can tell whether the seed was made with another version.
+            reply.update(identity(rules, world))
         return reply
     expected = set(req.get('all_locations') or [])
     got = {loc['id'] for loc in rules['locations']}
     if expected:
         check = {'expected': len(expected), 'got': len(got), 'missing': len(expected - got), 'extra': len(got - expected),
                  'match': expected == got}
+        # The stand-in apworld, else the rules, can say whether the rebuild matches the server's, whatever the locations say.
+        forced = world.get('match') if world is not None and world.get('match') is not None else rules.get('rebuild_match')
+        if forced is not None:
+            check['match'] = bool(forced)
     else:
         check = {'expected': 0, 'got': len(got), 'missing': 0, 'extra': 0, 'match': None}
-    yaml = {'source': 'not_needed', 'apworld_override': None}
+    yaml = {'source': 'not_needed', 'apworld_override': override}
     yaml.update(check)
     reply = {'status': 'ready', 'item_pool': rules['pool'], 'yaml': yaml, 'versions': versions(), 'entrance_keys': entrance_keys(req, rules),
              'missing_locations': rules.get('rebuild_lacks') or []}
-    if rules.get('data_checksum'):
-        reply['data_checksum'] = rules['data_checksum']
+    reply.update(identity(rules, world))
     return reply
 
 
@@ -356,11 +399,8 @@ def checksum(*args):
     line = sys.stdin.readline()
     req = json.loads(line) if line and line.strip() else {}
     note({'component': 'AtlasChecksum', 'request': req})
-    import zipfile
     try:
-        with zipfile.ZipFile(req['apworld']) as z:
-            name = next((n for n in z.namelist() if n.endswith('fake_world.json')), None)
-            world = json.loads(z.read(name).decode('utf-8')) if name else {}
+        world = read_fake_world(req['apworld'])
     except Exception as e:
         send({'error': 'Traceback (most recent call last):\n' + type(e).__name__ + ': ' + str(e)})
         return
@@ -392,5 +432,43 @@ def game_sweep(*args):
     send({'done': True})
 
 
+def atlas_check(*args):
+    # As the bridge's AtlasCheck (the health check), when the rules ask for one ({"worlds_dir", "failures": {name: error}}):
+    # versions, the game of every apworld and world folder in worlds_dir (its archipelago.json names it), the failures
+    # named (by file or folder name without extension) left out of the games, and the tracker loading. Without "check"
+    # rules the engine has no health check, as an engine without the component answers. Every run is journaled.
+    note({'component': 'AtlasCheck', 'request': {}})
+    check = read_rules().get('check')
+    if not check:
+        send({'event': 'boot_failed', 'error': 'The AtlasCheck component is not installed in this engine.'})
+        return
+    import zipfile
+    games, failed, details = [], [], {}
+    failures = dict(check.get('failures') or {})
+    folder = check.get('worlds_dir') or ''
+    for name in (sorted(os.listdir(folder)) if os.path.isdir(folder) else []):
+        path = os.path.join(folder, name)
+        stem = os.path.splitext(name)[0]
+        game = None
+        try:
+            if name.endswith('.apworld'):
+                with zipfile.ZipFile(path) as z:
+                    manifest = next((n for n in z.namelist() if n.endswith('archipelago.json')), None)
+                    game = json.loads(z.read(manifest).decode('utf-8')).get('game') if manifest else None
+            elif os.path.isfile(os.path.join(path, 'archipelago.json')):
+                with open(os.path.join(path, 'archipelago.json'), encoding='utf-8') as f:
+                    game = json.load(f).get('game')
+        except Exception as e:
+            failures.setdefault(stem, type(e).__name__ + ': ' + str(e))
+        if stem in failures:
+            failed.append(stem)
+            details[stem] = {'error': failures[stem], 'path': path, 'is_zip': name.endswith('.apworld')}
+        elif game:
+            games.append(game)
+    out = versions()
+    out.update({'games': sorted(games), 'failed': failed, 'failed_details': details, 'tracker': True, 'api_missing': []})
+    send(out)
+
+
 components += [Component('AtlasYamlTemplate', yaml_template), Component('AtlasGenerate', generate), Component('AtlasHost', host), Component('AtlasSeedTest', seed_test), Component('AtlasChecksum', checksum),
-               Component('AtlasGameSweep', game_sweep)]
+               Component('AtlasGameSweep', game_sweep), Component('AtlasCheck', atlas_check)]

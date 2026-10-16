@@ -229,8 +229,17 @@ namespace AP_Atlas.Core
             for (int hop = 0; hop <= MaxRedirects; hop++)
             {
                 var (site, path) = Split(current);
-                var r = await SendCoreAsync(site, hop == 0 ? siteName : $"{siteName} (via {site})", HttpMethod.Get, path ?? "/", null, null, null, "*/*",
-                    timeout, maxBytes, null, part, progress, allowRedirect: true, ct).ConfigureAwait(false);
+                WebResponse r;
+                try
+                {
+                    r = await SendCoreAsync(site, hop == 0 ? siteName : $"{siteName} (via {site})", HttpMethod.Get, path ?? "/", null, null, null, "*/*",
+                        timeout, maxBytes, null, part, progress, allowRedirect: true, ct).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    TryDelete(part); // a cancelled download leaves nothing behind (its stream is closed by now)
+                    throw;
+                }
                 if (r.Outcome == WebOutcome.Rejected && r.Status >= 300 && r.Status < 400 && r.Header("location") is string location)
                 {
                     if (!Uri.TryCreate(new Uri(current), location, out var next) || NormalizeSite(next.AbsoluteUri) == null)

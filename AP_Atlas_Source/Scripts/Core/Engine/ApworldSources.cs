@@ -26,8 +26,8 @@ namespace AP_Atlas.Core.EngineSetup
         [JsonIgnore] public bool Prerelease { get; set; }
         /// <summary>When GitHub says the release was published (a time the site names; shown only).</summary>
         [JsonIgnore] public DateTime? Published { get; set; }
-        /// <summary>The file's size as GitHub lists it, or 0 when unknown (the community index doesn't say).</summary>
-        [JsonIgnore] public long Size { get; set; }
+        /// <summary>The file's size in bytes, as Atlas's game list records it (the pack lab's download) or GitHub lists it; 0 when unknown.</summary>
+        [JsonProperty("size", DefaultValueHandling = DefaultValueHandling.Ignore)] public long Size { get; set; }
     }
 
     public class ApworldSource
@@ -56,6 +56,8 @@ namespace AP_Atlas.Core.EngineSetup
         [JsonProperty("release")] public string Release { get; set; }
         [JsonProperty("asset")] public string Asset { get; set; }
         [JsonProperty("sha256")] public string Sha256 { get; set; }
+        /// <summary>The file's size in bytes as the pack lab downloaded it (a project's current files too, which GitHub lists without one); 0 when unknown.</summary>
+        [JsonProperty("size", DefaultValueHandling = DefaultValueHandling.Ignore)] public long Size { get; set; }
         /// <summary>Pin sections linked to the game's checks, in percent, or null when the lab had no names for the game.</summary>
         [JsonProperty("fit")] public int? Fit { get; set; }
         /// <summary>"1083 of 1322": the fit's counts.</summary>
@@ -265,6 +267,9 @@ namespace AP_Atlas.Core.EngineSetup
             List.Games.FirstOrDefault(g => string.Equals(g.Game, game, StringComparison.OrdinalIgnoreCase))
             ?? List.Games.FirstOrDefault(g => string.Equals(g.DisplayName, game, StringComparison.OrdinalIgnoreCase));
 
+        /// <summary>Uses this list as the game list (for tests: a game's releases at a fake site); null goes back to the bundled one.</summary>
+        internal static void UseListForTests(ApworldSourceList list) => _list = list;
+
         /// <summary>Forgets a list fetched by Update game list (for tests): the bundled one is used again.</summary>
         internal static void ForgetRefreshed()
         {
@@ -390,9 +395,14 @@ namespace AP_Atlas.Core.EngineSetup
         {
             var listing = await RepoAssetsAsync(repo, ct);
             if (listing.Problem != null) problems?.Add($"github.com/{repo}: {listing.Problem}");
-            var assets = listing.Assets;
+            return ListedVersions(repo, listing, apworldName);
+        }
+
+        /// <summary>A repository's versions of one apworld from its release list (by file name; a release with a single .apworld counts too).</summary>
+        private static List<ApworldVersion> ListedVersions(string repo, RepoListing listing, string apworldName)
+        {
             var versions = new List<ApworldVersion>();
-            foreach (var group in assets.GroupBy(a => a.Tag))
+            foreach (var group in listing.Assets.GroupBy(a => a.Tag))
             {
                 var asset = group.FirstOrDefault(a => apworldName != null && string.Equals(a.Name, apworldName + ".apworld", StringComparison.OrdinalIgnoreCase))
                             ?? (group.Count() == 1 ? group.First() : null);
@@ -815,7 +825,7 @@ namespace AP_Atlas.Core.EngineSetup
                 if (source != null && string.Equals(source.Repo, repo, StringComparison.OrdinalIgnoreCase))
                     foreach (var v in source.Versions)
                         if (!versions.Any(x => x.Url == v.Url || (x.Sha256 != null && v.Sha256 != null && x.Sha256.Equals(v.Sha256, StringComparison.OrdinalIgnoreCase))))
-                            versions.Add(new ApworldVersion { Version = AP_Atlas.Core.Games.ApworldChoices.NormalizeLabel(v.Version), Url = v.Url, Sha256 = v.Sha256, Origin = "index", Repo = repo });
+                            versions.Add(new ApworldVersion { Version = AP_Atlas.Core.Games.ApworldChoices.NormalizeLabel(v.Version), Url = v.Url, Sha256 = v.Sha256, Origin = "index", Repo = repo, Size = v.Size });
                 foreach (var v in versions.OrderByDescending(v => SortKey(v.Version)))
                     if (!result.Any(x => x.Url == v.Url || (x.Sha256 != null && v.Sha256 != null && x.Sha256.Equals(v.Sha256, StringComparison.OrdinalIgnoreCase))))
                         result.Add(v);
@@ -846,13 +856,8 @@ namespace AP_Atlas.Core.EngineSetup
 
         // --- Approval ---
 
-        /// <summary>What the user approves: the GitHub project, or the host for other links.</summary>
-        public static string SourceKey(string url)
-        {
-            var m = Regex.Match(url ?? "", @"^https://github\.com/([^/]+/[^/]+)/", RegexOptions.IgnoreCase);
-            if (m.Success) return "github.com/" + m.Groups[1].Value;
-            try { return new Uri(url).Host; } catch { return url ?? ""; }
-        }
+        /// <summary>What the user approves: the GitHub project, or the host for other links (one rule, shared with the add plan).</summary>
+        public static string SourceKey(string url) => AP_Atlas.Core.Games.AddGamesPlan.SourceKey(url);
 
         public static bool IsApproved(AppSettings settings, string url) =>
             settings?.ApprovedApworldSources?.Contains(SourceKey(url), StringComparer.OrdinalIgnoreCase) == true;
@@ -868,6 +873,16 @@ namespace AP_Atlas.Core.EngineSetup
                 DataManager.SaveSettings(settings);
             }
         }
+
+        /// <summary>Trusts a source by its key ("github.com/owner/name", or a host), as the Add games confirm names it.</summary>
+        public static void ApproveKey(AppSettings settings, string key)
+        {
+            if (!string.IsNullOrWhiteSpace(key)) Approve(settings, "https://" + key.Trim().TrimEnd('/') + "/");
+        }
+
+        /// <summary>The game list's packs for a game as the add plan weighs them (one mapping for the plan and the installer).</summary>
+        public static List<AP_Atlas.Core.Games.IndexPackFacts> PackFactsFor(string game) =>
+            PacksFor(game).Select(p => new AP_Atlas.Core.Games.IndexPackFacts(p.Repo ?? "", p.Release ?? "", p.Asset ?? "", p.Sha256, p.Size, p.Fit, p.Notes ?? new List<string>())).ToList();
 
         /// <summary>Downloads one version into the cache (kept for reuse), verified against its published SHA-256 when there is one.</summary>
         public static async Task<string> DownloadAsync(string game, string apworldName, ApworldVersion version, Action<string> log, CancellationToken ct)
@@ -885,6 +900,7 @@ namespace AP_Atlas.Core.EngineSetup
                 if (File.Exists(have) && (version.Sha256 == null || EngineDownloader.Sha256Of(have).Equals(version.Sha256, StringComparison.OrdinalIgnoreCase))) return have;
             log?.Invoke($"Downloading {game} {version.Version} from {SourceKey(version.Url)}" + (version.Sha256 != null ? " (checked against its published SHA-256)…" : " (no published hash to check against)…"));
             await EngineDownloader.DownloadAsync(version.Url, target, version.Sha256, null, ct);
+            ForgetIdentified(target); // a new file at a path Atlas knew: what it identified there before isn't this one
             return target;
         }
 
@@ -938,11 +954,13 @@ namespace AP_Atlas.Core.EngineSetup
         }
 
         /// <summary>
-        /// Finds the version of a game's apworld whose data matches a seed's checksum: tries the versions published in
-        /// these repositories (in order, newest first, up to maxTries), each downloaded (hash-checked) and loaded in a
-        /// throwaway process. Files identified before aren't loaded again. Returns the matching file, or null.
+        /// Finds the version of a game's apworld whose data matches a seed's checksum: tries the versions published in these
+        /// repositories (in order, newest first, up to maxTries), each downloaded (hash-checked) and loaded in a throwaway
+        /// process. Files identified before aren't loaded again. <paramref name="trying"/> hears each version's label
+        /// ("0.2.4 (owner/project)") as it's tried. Returns the matching file, or null.
         /// </summary>
-        public static Task<(ApworldVersion Version, string File)> FindMatchingAsync(EngineInstall install, string game, string seedChecksum, IEnumerable<string> repos, Action<string> log, CancellationToken ct, int maxTries = 40) =>
+        public static Task<(ApworldVersion Version, string File)> FindMatchingAsync(EngineInstall install, string game, string seedChecksum, IEnumerable<string> repos, Action<string> log, CancellationToken ct,
+            int maxTries = 40, Action<string> trying = null) =>
             AtlasEngine.ExclusiveAsync(async () =>
             {
                 var cached = CachedFor(game, seedChecksum);
@@ -952,44 +970,163 @@ namespace AP_Atlas.Core.EngineSetup
                     return (new ApworldVersion { Version = cached.Version, Url = cached.File }, cached.File);
                 }
                 var repoList = repos.ToList();
-                string apworldName = Find(game)?.Apworld ?? InstalledCopies(install, game).Select(c => Path.GetFileNameWithoutExtension(c.File)).FirstOrDefault();
+                string apworldName = ApworldNameOf(install, game);
                 var problems = new List<string>();
                 var versions = await VersionsAsync(game, repoList, apworldName, ct, problems);
                 foreach (var p in problems) log?.Invoke("  Couldn't read the releases of " + p);
                 var installedHashes = new HashSet<string>(InstalledCopies(install, game).Select(c => c.Sha256), StringComparer.OrdinalIgnoreCase);
                 versions = versions.Where(v => v.Sha256 == null || !installedHashes.Contains(v.Sha256)).ToList();
                 log?.Invoke($"Looking for the {game} apworld the seed was made with among {versions.Count} version(s) in {string.Join(", ", repoList.Select(r => "github.com/" + r))}…");
-                int tried = 0;
-                foreach (var version in versions)
-                {
-                    if (tried++ >= maxTries) { log?.Invoke($"Stopped after {maxTries} versions."); break; }
-                    string label = $"{version.Version} ({SourceKey(version.Url).Replace("github.com/", "")})";
-                    string file;
-                    try { file = await DownloadAsync(game, apworldName, version, log, ct); }
-                    catch (OperationCanceledException) { throw; }
-                    catch (Exception ex) { log?.Invoke($"  {label}: couldn't download ({ex.Message})"); continue; }
-                    string checksum;
-                    CachedApworld known;
-                    string fullFile = Path.GetFullPath(file);
-                    lock (CacheIndex) known = CacheIndex.FirstOrDefault(c => string.Equals(Resolved(c.File), fullFile, StringComparison.OrdinalIgnoreCase));
-                    if (known != null) checksum = known.Checksum;
-                    else
-                    {
-                        var id = await IdentifyAsync(install, file, game, ct);
-                        if (id.Error != null) { log?.Invoke($"  {label}: couldn't be loaded here ({FirstLine(id.Error)})"); continue; }
-                        // Every identified version is remembered, so another seed made with it is matched instantly.
-                        Remember(id.Game, id.Checksum, version.Version, file, $"{SourceKey(version.Url)} {version.Version}");
-                        checksum = id.Checksum;
-                    }
-                    bool match = string.Equals(checksum, seedChecksum, StringComparison.OrdinalIgnoreCase);
-                    log?.Invoke($"  {label}: data {Short(checksum)}{(match ? " ✔ matches the seed" : "")}");
-                    if (match) return (version, file);
-                }
+                var found = await TryEachAsync(install, game, apworldName, seedChecksum, versions, maxTries, log, trying, ct);
+                if (found.File != null) return found;
                 log?.Invoke(problems.Count > 0 && versions.Count == 0
                     ? "GitHub couldn't be checked just now, so Atlas couldn't look for the seed's version. It will try again later."
                     : $"None of the versions tried matches the seed's data ({Short(seedChecksum)}). The seed may use an unreleased or unlisted build: ask its host for the apworld, or add the project it came from.");
                 return ((ApworldVersion)null, (string)null);
-            }, ct);
+            }, ct, changesEngine: false);
+
+        private static readonly HashSet<string> _seedsTried = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Forgets which seeds had their versions tried (for tests).</summary>
+        internal static void ForgetSeedTriesForTests()
+        {
+            lock (_seedsTried) _seedsTried.Clear();
+        }
+
+        /// <summary>
+        /// The connect-time rule's silent tries (SeedVersionRule): up to three versions Atlas knows without asking GitHub, from
+        /// projects the user trusts, newest first (SeedVersionCandidates), stopping at the first whose data is the seed's. A
+        /// matching version Atlas already has is used at once when <paramref name="useCached"/> (another slot of the seed may
+        /// have found it while this one waited). One set of tries per seed in a session, whichever of its slots asks.
+        /// </summary>
+        public static Task<(ApworldVersion Version, string File)> FindSeedVersionAsync(IReadOnlyCollection<string> trustedSources, IReadOnlyCollection<string> addedRepos,
+            EngineInstall install, string game, string seedChecksum, bool useCached, Action<string> log, CancellationToken ct) =>
+            AtlasEngine.ExclusiveAsync(async () =>
+            {
+                var cached = useCached ? CachedFor(game, seedChecksum) : null;
+                if (cached != null)
+                {
+                    log?.Invoke($"Already have {game} {cached.Version ?? "?"} matching the seed.");
+                    return (new ApworldVersion { Version = cached.Version, Origin = "cache" }, cached.File);
+                }
+                string key = game + "|" + seedChecksum;
+                bool first;
+                lock (_seedsTried) first = _seedsTried.Add(key);
+                if (!first)
+                {
+                    log?.Invoke($"Atlas already tried the {game} versions it knows for this seed.");
+                    return ((ApworldVersion)null, (string)null);
+                }
+                var versions = SeedVersionCandidates(trustedSources, addedRepos, install, game, seedChecksum);
+                if (versions.Count == 0)
+                {
+                    log?.Invoke($"Atlas knows no version of {game} from a trusted project to try.");
+                    return ((ApworldVersion)null, (string)null);
+                }
+                log?.Invoke($"Trying {versions.Count} known version(s) of {game} for the seed, newest first: {string.Join(", ", versions.Select(v => v.Version))}…");
+                (ApworldVersion Version, string File) found;
+                try { found = await TryEachAsync(install, game, ApworldNameOf(install, game), seedChecksum, versions, versions.Count, log, null, ct); }
+                catch (OperationCanceledException)
+                {
+                    // A search stopped (the slot went) isn't one that was made: the next ask tries again, and what was
+                    // identified meanwhile is remembered, so it isn't loaded twice.
+                    lock (_seedsTried) _seedsTried.Remove(key);
+                    throw;
+                }
+                if (found.File == null) log?.Invoke("None of them is the seed's version.");
+                return found;
+            }, ct, changesEngine: false);
+
+        /// <summary>
+        /// The versions of a game's apworld Atlas knows without asking GitHub: the community index's, and those in release
+        /// lists already read this session (of the index's project, the project the installed copy came from, and the
+        /// projects the user added). Nothing is read online.
+        /// </summary>
+        public static List<ApworldVersion> KnownVersionsOffline(IEnumerable<string> addedRepos, EngineInstall install, string game)
+        {
+            var source = Find(game);
+            string apworldName = ApworldNameOf(install, game);
+            var result = new List<ApworldVersion>();
+            if (source != null)
+                foreach (var v in source.Versions.Where(v => !string.IsNullOrEmpty(v.Url)))
+                    result.Add(new ApworldVersion { Version = AP_Atlas.Core.Games.ApworldChoices.NormalizeLabel(v.Version), Url = v.Url, Sha256 = v.Sha256, Origin = "index", Repo = source.Repo, Size = v.Size });
+            var repos = InstalledCopies(install, game).Select(c => KnownSourceOf(c.Sha256).Repo).Where(r => r != null).ToList();
+            if (source?.Repo != null) repos.Add(source.Repo);
+            repos.AddRange(addedRepos ?? Enumerable.Empty<string>());
+            foreach (var repo in repos.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                RepoListing listing;
+                bool listed;
+                lock (_repoAssets) listed = _repoAssets.TryGetValue(repo, out listing);
+                if (listed) result.AddRange(ListedVersions(repo, listing, apworldName));
+            }
+            return result;
+        }
+
+        /// <summary>The versions the connect-time rule tries by itself (SeedVersionTries.Pick over KnownVersionsOffline). Nothing is read online.</summary>
+        public static List<ApworldVersion> SeedVersionCandidates(IReadOnlyCollection<string> trustedSources, IEnumerable<string> addedRepos, EngineInstall install, string game, string seedChecksum)
+        {
+            var known = KnownVersionsOffline(addedRepos, install, game);
+            // Trust is where the download comes from (as IsApproved and the add plan judge it), not the project that lists it.
+            static string SourceOf(ApworldVersion v) => SourceKey(v.Url);
+            var picked = AP_Atlas.Core.Games.SeedVersionTries.Pick(
+                known.Select(v => new AP_Atlas.Core.Games.PublishedApworld(v.Version, SourceOf(v), v.Url, v.Sha256, v.Prerelease, v.Published)),
+                IdentifiedFor(game), InstalledCopies(install, game).Select(c => c.Sha256), trustedSources, seedChecksum);
+            return picked.Select(c => known.First(v => v.Url == c.Url)).ToList();
+        }
+
+        private static string ApworldNameOf(EngineInstall install, string game) =>
+            Find(game)?.Apworld ?? InstalledCopies(install, game).Select(c => Path.GetFileNameWithoutExtension(c.File)).FirstOrDefault();
+
+        /// <summary>
+        /// Tries these versions in order, up to <paramref name="maxTries"/>: each downloaded (hash-checked) and loaded in a
+        /// throwaway process (a file identified before isn't loaded again); stops at the first whose data is the seed's.
+        /// </summary>
+        private static async Task<(ApworldVersion Version, string File)> TryEachAsync(EngineInstall install, string game, string apworldName, string seedChecksum,
+            IReadOnlyList<ApworldVersion> versions, int maxTries, Action<string> log, Action<string> trying, CancellationToken ct)
+        {
+            int tried = 0;
+            foreach (var version in versions)
+            {
+                if (tried++ >= maxTries) { log?.Invoke($"Stopped after {maxTries} versions."); break; }
+                string from = version.Repo != null ? "github.com/" + version.Repo : SourceKey(version.Url);
+                string label = $"{version.Version} ({from.Replace("github.com/", "")})";
+                trying?.Invoke(label);
+                string file;
+                try { file = await DownloadAsync(game, apworldName, version, log, ct); }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex) { log?.Invoke($"  {label}: couldn't download ({ex.Message})"); continue; }
+                string checksum;
+                CachedApworld known;
+                string fullFile = Path.GetFullPath(file);
+                lock (CacheIndex) known = CacheIndex.FirstOrDefault(c => string.Equals(Resolved(c.File), fullFile, StringComparison.OrdinalIgnoreCase));
+                if (known != null) checksum = known.Checksum;
+                else
+                {
+                    var id = await IdentifyAsync(install, file, game, ct);
+                    if (id.Error != null) { log?.Invoke($"  {label}: couldn't be loaded here ({FirstLine(id.Error)})"); continue; }
+                    // Every identified version is remembered, so another seed made with it is matched instantly.
+                    Remember(id.Game, id.Checksum, version.Version, file, $"{SourceKey(version.Url)} {version.Version}");
+                    checksum = id.Checksum;
+                }
+                bool match = string.Equals(checksum, seedChecksum, StringComparison.OrdinalIgnoreCase);
+                log?.Invoke($"  {label}: data {Short(checksum)}{(match ? " ✔ matches the seed" : "")}");
+                if (match) return (version, file);
+            }
+            return ((ApworldVersion)null, (string)null);
+        }
+
+        /// <summary>Forgets what Atlas identified a file as (a new download replaced it).</summary>
+        private static void ForgetIdentified(string file)
+        {
+            string full = Path.GetFullPath(file);
+            lock (CacheIndex)
+            {
+                if (CacheIndex.RemoveAll(c => string.Equals(Resolved(c.File), full, StringComparison.OrdinalIgnoreCase)) == 0) return;
+                try { SafeFile.WriteJson(CacheIndexPath, CacheIndex); }
+                catch (Exception ex) { Logger.LogWarning("Couldn't save the apworld cache index: " + ex.Message); }
+            }
+        }
 
         private static string Short(string checksum) => string.IsNullOrEmpty(checksum) ? "?" : checksum.Substring(0, Math.Min(8, checksum.Length));
 

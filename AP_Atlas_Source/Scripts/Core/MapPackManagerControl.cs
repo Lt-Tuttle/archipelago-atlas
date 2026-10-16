@@ -1041,19 +1041,21 @@ namespace AP_Atlas.Core
         /// <summary>
         /// Installs a project's pack without asking (the solo test, whose Start covered the downloads): the newest release
         /// that fits the game's names, by the Pack Doctor's check on each tried (newest first, at most three); with none
-        /// fitting, the best tried. Says what was tried, and gives the installed file.
+        /// fitting, the best tried. Says what was tried, and gives the installed file. Quiet (Add games): no card for the
+        /// install or a failure (Add games holds the Doctor's prompts itself). <paramref name="most"/>: releases tried at
+        /// most (Add games tries one: one download).
         /// </summary>
-        internal async Task<(bool Ok, string Detail, string File)> InstallFittingReleaseAsync(string game, string repo, Action<string> say)
+        internal async Task<(bool Ok, string Detail, string File)> InstallFittingReleaseAsync(string game, string repo, Action<string> say, bool quiet = false, int most = AP_Atlas.Core.Games.PackReleasePick.MostTried)
         {
             // No overlay: whoever asked shows the progress (the solo test's window), and Atlas stays usable meanwhile.
             string where = "github.com/" + repo, trying = NewTryingFolder();
             try
             {
-                var project = await TryProjectAsync(repo, trying, AP_Atlas.Core.Games.PackReleasePick.MostTried, say);
+                var project = await TryProjectAsync(repo, trying, most, say, quiet);
                 if (!GodotObject.IsInstanceValid(this)) return (false, "the window closed", null);
                 var chosen = AP_Atlas.Core.Games.PackReleasePick.Best(project.Tried);
                 if (chosen == null) return (false, project.Note ?? "no release of " + where + " could be downloaded and read", null);
-                string installed = await InstallDownloadedAsync(project.Files[chosen.Tag], project.Names[chosen.Tag], where, quiet: false);
+                string installed = await InstallDownloadedAsync(project.Files[chosen.Tag], project.Names[chosen.Tag], where, quiet);
                 if (installed == null) return (false, chosen.Tag + " fits best, but it couldn't be put among the packs (the log says why)", null);
                 return (true, AP_Atlas.Core.Games.PackReleasePick.Describe(project.Tried, chosen), installed);
             }
@@ -1141,7 +1143,7 @@ namespace AP_Atlas.Core
         /// each downloaded into <paramref name="trying"/> (never among the packs) and measured against the game's names;
         /// it stops at the first that fits. Nothing is installed.
         /// </summary>
-        private async Task<ProjectTry> TryProjectAsync(string repo, string trying, int most, Action<string> say)
+        private async Task<ProjectTry> TryProjectAsync(string repo, string trying, int most, Action<string> say, bool quiet = false)
         {
             var result = new ProjectTry();
             string where = "github.com/" + repo;
@@ -1157,13 +1159,13 @@ namespace AP_Atlas.Core
             result.CurrentFiles = releases.Count == 0;
             var tries = releases.Count > 0
                 ? releases.Take(most).Select(r => (Tag: r.Tag, Url: r.Url, Name: SafeZipName(r.FileName))).ToList()
-                : new List<(string Tag, string Url, string Name)> { ("current files", $"{GitHubApi.Site}/repos/{repo}/zipball", repo.Replace('/', '_') + ".zip") };
+                : new List<(string Tag, string Url, string Name)> { ("current files", $"{GitHubApi.TestSite ?? GitHubApi.Site}/repos/{repo}/zipball", repo.Replace('/', '_') + ".zip") };
             foreach (var (tag, url, name) in tries)
             {
                 say?.Invoke(releases.Count > 0 ? $"trying {where} {tag}" : $"trying {where}'s current files (it has no release)");
                 string file = System.IO.Path.Combine(trying, Guid.NewGuid().ToString("N") + ".zip");
                 result.Downloads++;
-                if (!await DownloadToAsync(url, where, file, name)) continue;
+                if (!await DownloadToAsync(url, where, file, name, quiet)) continue;
                 if (!GodotObject.IsInstanceValid(this)) return result;
                 var fit = await FitOfAsync(tag, file);
                 if (fit == null) continue;
@@ -1230,8 +1232,40 @@ namespace AP_Atlas.Core
             return await InstallDownloadedAsync(temp, safeName, where, quiet: false) != null;
         }
 
+        /// <summary>
+        /// Installs the pack Atlas's game list names for a game (Add games, whose confirm named the project), without reading
+        /// GitHub's release list: the release's file checked against the pack lab's SHA-256, or the project's current files.
+        /// Quiet: no card for the install or a failure (Add games holds the Doctor's prompts itself). The installed file, or
+        /// null and why. <paramref name="progress"/> gets (bytes so far, total or -1) on a worker thread.
+        /// </summary>
+        internal async Task<(string File, string Problem)> InstallIndexPackAsync(string game, AP_Atlas.Core.Games.IndexPackDownload pack, Action<long, long> progress, System.Threading.CancellationToken ct)
+        {
+            string packsDir = System.IO.Path.Combine(DataManager.GetDataDirectory(), "packs");
+            Directory.CreateDirectory(packsDir);
+            string where = "github.com/" + pack.Repo, safeName = SafeZipName(pack.FileName);
+            string temp = System.IO.Path.Combine(packsDir, $".download-{Guid.NewGuid():N}.tmp");
+            WebResponse r;
+            try { r = await PoliteHttp.DownloadAsync(pack.Url, where, temp, pack.Sha256, 256L * 1024 * 1024, TimeSpan.FromMinutes(10), progress, ct); }
+            catch (OperationCanceledException) { PoliteHttp.TryDelete(temp); throw; }
+            if (!r.Ok)
+            {
+                PoliteHttp.TryDelete(temp);
+                _logAction($"Couldn't download {game}'s map pack from {where}: {r.Message}", "red");
+                return (null, r.Message);
+            }
+            string problem = CheckPackZip(temp);
+            if (problem != null)
+            {
+                PoliteHttp.TryDelete(temp);
+                _logAction($"The download from {where} wasn't installed: {problem}.", "red");
+                return (null, problem);
+            }
+            string installed = await InstallDownloadedAsync(temp, safeName, where, quiet: true);
+            return installed == null ? (null, "it couldn't be put among the packs (the log says why)") : (installed, null);
+        }
+
         /// <summary>Downloads a pack to a file, checked as a pack's zip; false (and said) when it can't be.</summary>
-        private async Task<bool> DownloadToAsync(string url, string where, string temp, string safeName)
+        private async Task<bool> DownloadToAsync(string url, string where, string temp, string safeName, bool quiet = false)
         {
             // The progress shows in the page (the window stays usable); the progress callback runs off the main thread.
             ShowDownload(safeName, 0, -1);
@@ -1248,14 +1282,14 @@ namespace AP_Atlas.Core
             if (!r.Ok)
             {
                 PoliteHttp.TryDelete(temp);
-                Failed($"Couldn't download the pack from {where}: {r.Message}");
+                Failed($"Couldn't download the pack from {where}: {r.Message}", quiet);
                 return false;
             }
             string problem = CheckPackZip(temp);
             if (problem != null)
             {
                 PoliteHttp.TryDelete(temp);
-                Failed($"The download from {where} wasn't installed: {problem}.");
+                Failed($"The download from {where} wasn't installed: {problem}.", quiet);
                 return false;
             }
             return true;
@@ -1290,7 +1324,7 @@ namespace AP_Atlas.Core
                 catch (Exception ex)
                 {
                     PoliteHttp.TryDelete(temp);
-                    Failed($"Couldn't install the pack: {ex.Message}");
+                    Failed($"Couldn't install the pack: {ex.Message}", quiet);
                     return null;
                 }
             }
@@ -1326,6 +1360,13 @@ namespace AP_Atlas.Core
             if (b == null) return false;
             if (!string.IsNullOrEmpty(a.PackageUid) && !string.IsNullOrEmpty(b.PackageUid)) return string.Equals(a.PackageUid, b.PackageUid, StringComparison.OrdinalIgnoreCase);
             return string.Equals(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>A failure said as a card, or, quietly (its installer reports it), only logged.</summary>
+        private void Failed(string message, bool quiet)
+        {
+            if (!quiet) Failed(message);
+            else if (GodotObject.IsInstanceValid(this)) _logAction(message, "red");
         }
 
         private void Failed(string message)

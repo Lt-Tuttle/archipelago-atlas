@@ -33,4 +33,28 @@ public class PoliteHttpTests
         Assert.Equal(0, mismatched);
         Assert.Null(PoliteHttp.WaitingFor(site));
     }
+
+    [Fact]
+    public async Task A_cancelled_download_leaves_no_partial_file()
+    {
+        var spacing = PoliteHttp.Spacing;
+        PoliteHttp.Spacing = TimeSpan.Zero;
+        try
+        {
+            byte[] big = new byte[16 << 20];
+            await using var site = new AP_Atlas.Core.Testing.FakeWebSite();
+            site.Answer = (path, _) => new AP_Atlas.Core.Testing.FakeWebSite.FullAnswer(200, big, "application/octet-stream");
+            using var temp = new TempFolder();
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+            string dest = temp.File("pack.zip");
+            // The first bytes in, the user cancels.
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => PoliteHttp.DownloadAsync(site.Site + "/big.zip", "the test site", dest, null,
+                64L << 20, TimeSpan.FromMinutes(1), (done, _) => { if (done > 0) cts.Cancel(); }, cts.Token));
+            Assert.Empty(Directory.GetFiles(temp.Path));
+        }
+        finally
+        {
+            PoliteHttp.Spacing = spacing;
+        }
+    }
 }

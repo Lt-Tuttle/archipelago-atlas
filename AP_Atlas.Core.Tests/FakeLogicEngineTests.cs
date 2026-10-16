@@ -145,6 +145,123 @@ public class FakeLogicEngineTests
         }
     }
 
+    [Fact]
+    public async Task The_health_check_lists_the_games_in_its_worlds_folder_and_leaves_out_the_failures_it_is_told()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        string? python = await TestEnvironment.PythonAsync(ct);
+        if (python == null)
+        {
+            Assert.Skip("Python isn't installed here (CI runs this test).");
+            return;
+        }
+        using var dir = new TempFolder();
+        var engine = SmallWorld(dir);
+        // Without check rules the engine has no health check, as before.
+        Assert.Equal("boot_failed", (string?)(await RunOnceAsync(python, engine, "AtlasCheck", ct))["event"]);
+        string worlds = System.IO.Path.Combine(dir.Path, "worlds");
+        Directory.CreateDirectory(System.IO.Path.Combine(worlds, "unpacked"));
+        File.WriteAllText(System.IO.Path.Combine(worlds, "unpacked", "archipelago.json"), "{\"game\": \"Unpacked Game\"}");
+        WriteApworld(System.IO.Path.Combine(worlds, "alpha.apworld"), "Alpha Game");
+        WriteApworld(System.IO.Path.Combine(worlds, "broken.apworld"), "Broken Game");
+        engine.CheckWorldsDir = worlds;
+        engine.CheckFailures["broken"] = "ModuleNotFoundError: No module named 'nothing'";
+        engine.Apply();
+        var check = await RunOnceAsync(python, engine, "AtlasCheck", ct);
+        Assert.Equal(new[] { "Alpha Game", "Unpacked Game" }, check["games"]!.Select(g => (string?)g));
+        Assert.Equal(new[] { "broken" }, check["failed"]!.Select(g => (string?)g));
+        Assert.Equal("ModuleNotFoundError: No module named 'nothing'", (string?)check["failed_details"]!["broken"]!["error"]);
+        Assert.True((bool)check["tracker"]!);
+        Assert.NotNull(check["python"]);
+        Assert.Equal(2, engine.ComponentRequests("AtlasCheck").Count);
+    }
+
+    /// <summary>A one-shot component run as Atlas runs it (nothing on stdin): its first answer.</summary>
+    private static async Task<JObject> RunOnceAsync(string python, FakeLogicEngine engine, string component, CancellationToken ct)
+    {
+        using var process = Process.Start(FakeEngines.StartInfo(python, engine, component))!;
+        process.StandardInput.Close();
+        var errors = process.StandardError.ReadToEndAsync(ct);
+        while (await process.StandardOutput.ReadLineAsync(ct).AsTask().WaitAsync(TimeSpan.FromSeconds(30), ct) is { } line)
+            if (line.StartsWith('{')) return JObject.Parse(line);
+        throw new EndOfStreamException("the engine answered nothing: " + await errors);
+    }
+
+    private static void WriteApworld(string path, string game)
+    {
+        using var zip = System.IO.Compression.ZipFile.Open(path, System.IO.Compression.ZipArchiveMode.Create);
+        using var writer = new StreamWriter(zip.CreateEntry(System.IO.Path.GetFileNameWithoutExtension(path) + "/archipelago.json").Open());
+        writer.Write("{\"game\": \"" + game + "\"}");
+    }
+
+    [Fact]
+    public async Task Loads_the_seeds_apworld_and_says_what_a_world_that_cannot_start_is_as_the_bridge_does()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        string? python = await TestEnvironment.PythonAsync(ct);
+        if (python == null)
+        {
+            Assert.Skip("Python isn't installed here (CI runs this test).");
+            return;
+        }
+        using var dir = new TempFolder();
+        var engine = SmallWorld(dir); // its installed world's data: "feedface"
+        string seeds = System.IO.Path.Combine(dir.Path, "seed.apworld"), broken = System.IO.Path.Combine(dir.Path, "broken.apworld");
+        WriteStandIn(seeds, "5eed", "2.0.0", match: true);
+        System.IO.File.WriteAllText(broken, "not a zip");
+        engine.RebuildMatch = false;
+        engine.Apply();
+        await using var bridge = Bridge.Start(python, engine);
+
+        // The installed world: its own data, and a rebuild the rules say doesn't match the server's.
+        var installed = await bridge.AskAsync(Init(2000, 2001, 2002), ct);
+        Assert.Equal("feedface", (string?)installed["data_checksum"]);
+        Assert.False((bool)installed["yaml"]!["match"]!);
+
+        // The seed's apworld in its place: its data and version, and its own word on the rebuild.
+        var swapped = await bridge.AskAsync(WithOverride(Init(2000, 2001, 2002), seeds, "5eed"), ct);
+        Assert.Equal("5eed", (string?)swapped["data_checksum"]);
+        Assert.Equal("2.0.0", (string?)swapped["world_version"]);
+        Assert.True((bool)swapped["yaml"]!["apworld_override"]!["used"]!);
+        Assert.True((bool)swapped["yaml"]!["apworld_override"]!["matches"]!);
+        Assert.True((bool)swapped["yaml"]!["match"]!);
+
+        // The installed world is the seed's already: it's kept.
+        var kept = await bridge.AskAsync(WithOverride(Init(2000, 2001, 2002), seeds, "feedface"), ct);
+        Assert.False((bool)kept["yaml"]!["apworld_override"]!["used"]!);
+        Assert.Equal("feedface", (string?)kept["data_checksum"]);
+
+        // A copy that can't be loaded: said so, and the installed world runs.
+        var failed = await bridge.AskAsync(WithOverride(Init(2000, 2001, 2002), broken, "5eed"), ct);
+        Assert.NotNull(failed["yaml"]!["apworld_override"]!["error"]);
+        Assert.Equal("feedface", (string?)failed["data_checksum"]);
+
+        // A world that couldn't be rebuilt still says what it is; a missing world can't.
+        engine.StartError = ("generation_failed", "None of the YAMLs tried could rebuild this world.");
+        engine.Apply();
+        var refused = await bridge.AskAsync(Init(2000), ct);
+        Assert.Equal("generation_failed", (string?)refused["code"]);
+        Assert.Equal("feedface", (string?)refused["data_checksum"]);
+        engine.StartError = ("world_missing", "Test Game is not installed in this engine.");
+        engine.Apply();
+        var missing = await bridge.AskAsync(Init(2000), ct);
+        Assert.Null(missing["data_checksum"]);
+    }
+
+    private static JObject WithOverride(JObject init, string apworld, string expected)
+    {
+        init["apworld_override"] = apworld;
+        init["expected_checksum"] = expected;
+        return init;
+    }
+
+    private static void WriteStandIn(string path, string checksum, string version, bool match)
+    {
+        using var zip = System.IO.Compression.ZipFile.Open(path, System.IO.Compression.ZipArchiveMode.Create);
+        using var writer = new System.IO.StreamWriter(zip.CreateEntry("test_game/fake_world.json").Open());
+        writer.Write(new JObject { ["game"] = "Test Game", ["data_checksum"] = checksum, ["world_version"] = version, ["match"] = match }.ToString());
+    }
+
     private static FakeLogicEngine SmallWorld(TempFolder dir) => FakeEngines.SmallWorld(dir);
 
     private static JObject Init(params long[] locations) => FakeEngines.Init(locations);

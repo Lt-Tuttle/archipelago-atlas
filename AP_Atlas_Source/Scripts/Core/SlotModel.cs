@@ -35,6 +35,8 @@ namespace AP_Atlas.Core
         EngineStarted = 128,
         /// <summary>Race mode changed for this slot: the server said whether the room is a race, or its settings changed.</summary>
         Race = 256,
+        /// <summary>A logic engine's start failed (Problem says why): its seed may want its own apworld version.</summary>
+        EngineStartFailed = 512,
     }
 
     /// <summary>One line of a slot's text client: a server message, a new hint, or one of Atlas's own (BBCode).</summary>
@@ -425,20 +427,29 @@ namespace AP_Atlas.Core
         /// <summary>How many logic steps opened at least one check that isn't excluded (0 while race mode hides logic).</summary>
         public int LogicStepCount => LogicHidden ? 0 : Logic.Steps.Count(entry => !entry.IsStart && ShownLocations(entry.Locations).Count > 0);
 
-        /// <summary>Why this slot's logic is only approximate (null when it matches the seed as far as Atlas can check).</summary>
+        /// <summary>
+        /// Why this slot's logic is only approximate (null when it matches the seed as far as Atlas can check). A seed made
+        /// with another apworld version is mentioned only when logic doesn't work with the installed one
+        /// (<see cref="AP_Atlas.Core.Games.SeedVersionRule"/>): a different version whose rebuilt world matches runs as it is.
+        /// </summary>
         public string? LogicAccuracyWarning
         {
             get
             {
                 if (!Logic.Running) return null;
-                if (Logic.ApworldMatchesSeed == false)
-                    return $"Logic may be off: this seed was made with a different version of the {Game} apworld than the one installed" +
-                           (Logic.Engine.LastWorldVersion != null ? $" ({Logic.Engine.LastWorldVersion})" : "") + ".";
                 var info = Logic.Engine.LastYamlInfo;
-                if (info?["match"]?.Type == Newtonsoft.Json.Linq.JTokenType.Boolean && !(bool)info["match"]!)
-                    return $"Logic is approximate: your world was rebuilt, but it doesn't match the seed ({info["missing"]} locations missing, {info["extra"]} extra). " +
-                           "Usually the game keeps some options out of the server's data. Link the YAML used to generate the seed for exact logic.";
-                return null;
+                string differs = Logic.RebuildMatches == false ? $" ({info!["missing"]} locations missing, {info["extra"]} extra)" : "";
+                return Logic.Accuracy switch
+                {
+                    AP_Atlas.Core.Games.LogicAccuracy.SeedVersion =>
+                        $"Logic may be off: this seed was made with another version of {Game} than the one installed" +
+                        (Logic.Engine.LastWorldVersion != null ? $" ({Logic.Engine.LastWorldVersion})" : "") +
+                        (differs.Length > 0 ? $", and the rebuilt world doesn't match the server's{differs}." : ", and Atlas's copy of the seed's version couldn't be loaded here."),
+                    AP_Atlas.Core.Games.LogicAccuracy.RebuildDiffers =>
+                        $"Logic is approximate: your world was rebuilt, but it doesn't match the seed{differs}. " +
+                        "Usually the game keeps some options out of the server's data. Link the YAML used to generate the seed for exact logic.",
+                    _ => null
+                };
             }
         }
 
