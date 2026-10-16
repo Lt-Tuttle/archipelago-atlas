@@ -261,8 +261,12 @@ public partial class SlotTrackerControl : MarginContainer
                 AddButton("Get the game's world…", "Downloads Archipelago's release once (" + AP_Atlas.Core.EngineSetup.AtlasEngine.WorldsZipSize + " from GitHub) and unpacks this game's world from it; asks first", GetGameWorld);
                 break;
             case "world_missing":
-                // The engine runs; this game's apworld is what's missing, and the game's page installs it.
-                AddButton("Open the Games page", "Install the game's apworld in the Atlas Engine from its page", () => OpenGamesPageFor?.Invoke(Game));
+                // The engine runs; this game's logic is what's missing. Add games installs it (the game ticked) when Atlas knows
+                // where it comes from; else the game's page, where its project is added.
+                if (AP_Atlas.Core.EngineSetup.ApworldSources.LogicSourceKnown(_appSettings, Game))
+                    AddButton(Tr("Add this game…"), Tr("Opens Add games with this game ticked: Atlas says what it downloads, installs its logic (and a map pack), and logic starts again by itself"), () => AddGames?.Invoke(Game));
+                else
+                    AddButton("Open the Games page", "Add the game's project on its page, then add the game", () => OpenGamesPageFor?.Invoke(Game));
                 AddButton("Try again", "Start the logic engine again", RetryLogicEngine);
                 break;
             default:
@@ -292,7 +296,9 @@ public partial class SlotTrackerControl : MarginContainer
             case "no_engine":
                 return "Logic needs the Atlas Engine.\n" + e.Message + "\nAtlas can download everything it needs (about 50 MB, no installer).";
             case "world_missing":
-                return $"{Game} isn't installed in the logic engine.\nInstall its apworld on the Games page.";
+                return AP_Atlas.Core.EngineSetup.ApworldSources.LogicSourceKnown(_appSettings, Game)
+                    ? $"{Game} isn't in the logic engine yet.\nAdd this game: Atlas installs its logic (and a map pack), and logic starts again by itself."
+                    : $"{Game} isn't in the logic engine yet, and Atlas doesn't know where its apworld comes from.\nAdd its project on the Games page.";
             case "world_download":
                 return $"{Game}'s logic needs its world.\n{e.Message}";
             case "yaml_needed":
@@ -353,6 +359,9 @@ public partial class SlotTrackerControl : MarginContainer
 
     /// <summary>Shows the Games page on a game (set by MainTrackerWindow): the banner's way to a missing apworld.</summary>
     public Action<string> OpenGamesPageFor { get; set; }
+
+    /// <summary>Opens Add games with a game ticked (set by MainTrackerWindow): the banner's way to a game's missing logic, and the empty map's to its pack.</summary>
+    public Action<string> AddGames { get; set; }
 
     /// <summary>The logic banner's buttons, by text (for tests).</summary>
     internal List<string> LogicNoticeButtons() =>

@@ -86,6 +86,7 @@ public partial class MainTrackerWindow
         }
 
         await UiTestWaitAsync(1.0); // the window settles, as on a first run
+        _appSettings.FixTipDismissed = true; // the map's one tip stays off the scenarios' maps; its own scenario shows it
         // A window a desktop user would have (1600x1000): every pane fits at 100%, so the scenarios see Atlas whole.
         GetTree().Root.Size = new Vector2I(1600, 1000);
         await UiTestWaitAsync(0.3);
@@ -126,9 +127,9 @@ public partial class MainTrackerWindow
             KeyboardShortcutsAsync);
         await ScenarioAsync("Privacy & permissions: a section of the Settings page lists every permission Atlas can ask for with its state (asks each time, allowed until Atlas closes, always allowed, not until Atlas restarts) and every trusted apworld source; a kept answer and a trusted source can be taken back, which is saved; the section is found by its words",
             PrivacyAsync);
-        await ScenarioAsync("Home: Ctrl+1 shows it on its own; every tool has a button with a line and every link is https; a first start shows the Set up Atlas block (its button opens the setup window on Home, Add a multiworld… the Multiworlds page) and the setup line counts nothing done; a tip shows and Next tip goes around; a multiworld is listed with its line and one click connects its slot, its row says so and Open shows it on its page; New… makes a multiworld in a dialog on Home; Paste a room link… readies the room link box; the columns fit the page; with every step settled the line says so",
+        await ScenarioAsync("Home: Ctrl+1 shows it on its own; every tool has a button with a line and every link is https; a first start shows the Set up Atlas block (its button opens the setup window on Home, Add a multiworld… the Multiworlds page) and the setup line counts nothing done; a tip shows and Next tip goes around; a multiworld is listed with its line and one click connects its slot, its row says so and Open shows it on its page; New… makes a multiworld (its slots typed, no YAML) in a dialog on Home; Add games… sits beside New… and Paste a room link…, and beside Add a multiworld… on a first start, opening over Home; Paste a room link… readies the room link box; the columns fit the page; with every step settled the line says so",
             HomeAsync);
-        await ScenarioAsync("Games page: the Games tool lists every game in its group (community games from the index, the games your multiworlds play as added by you), with the games of your own slots first (from their saved stats and their linked YAMLs, each once), typed words narrow the list, a game's page opens on its Next step (Step N of M, the YAML only when a slot's logic needed one; Skip is remembered for the game, Show skipped steps brings them back, Ready to play when done) with the rest in folds, each step ticked as Atlas finds it; a YAML added once is listed under every game it names; the game's folders are inside Atlas's data folder; once GitHub may be asked, the page lists every version of every project (the game's own, and one of the same name found by one search), newest first with pre-releases marked and the newest full release named, and downloads nothing without a press; Add YAML offers the places a YAML may be; the release-files dialog fits the window with a check box per file; a Discord home is named on its link",
+        await ScenarioAsync("Games page: the Games tool lists every game in its group (community games from the index, the games your multiworlds play as added by you), with the games of your own slots first (from their saved stats and their linked YAMLs, each once), typed words narrow the list, a game's page opens on one card saying where it stands (Atlas can't add it yet, the engine first without one, Add this game once its project is known, Doctor… once a pack arrives) with its map packs, files and Advanced (the versions) in closed folds and no YAML anywhere; the game's folders are inside Atlas's data folder; once GitHub may be asked, the page lists every version of every project (the game's own, and one of the same name found by one search), newest first with pre-releases marked and the newest full release named, and downloads nothing without a press; the game's page still has no YAML; the release-files dialog fits the window with a check box per file; a Discord home is named on its link",
             GamesPageAsync);
         await ScenarioAsync("Help: the guide opens on its first topic with a topic per section; a topic shows its section, What's new the changelog, Credits & disclaimer the author and the credits, Licences Atlas's licence; a second Help command uses the same window at its topic; Home's What's new card lists the newest changes and leads here",
             HelpAsync);
@@ -142,7 +143,7 @@ public partial class MainTrackerWindow
             AccessibilityAsync);
         await ScenarioAsync("Multiworlds page: the editor scrolls as one with each label beside its box; a room link fills in the server address and the slots from the room's status page (asked first; never the room's page) and is kept, and asks before replacing a typed address; Add YAML keeps the file in Atlas's YAML folder and adds a slot per player it names (a placeholder name asks for the slot's name), each tied to it, and a slot's details show its game, YAML and map following (saved per slot); unsaved edits ask Save / Don't save / Cancel before another multiworld is selected, one is added, the page is left or Atlas closes (Cancel keeps everything, Don't save puts the multiworld back, Save writes it to disk); the eye shows the password until another multiworld is selected; every box has an (i) that explains it and leads to the guide; the Sphere Tracker box keeps a refused link and says why, and links the host's room once the user confirms the host made it; Home shows no address for a multiworld without one; a slot's rename takes effect on Enter or on leaving the field, never per keystroke, and its saved stats follow it; after a reconnect gives up, one status read (at most every ten minutes) offers the room's new port, or says the room is asleep; a connection the server refuses shows as a card",
             MultiworldsPageAsync);
-        await ScenarioAsync("Add a slot: + Add Slot opens a dialog (no placeholder row is added): Connect now follows the server address; a duplicate name keeps it open and says so; typed words find the game and the engine line says whether its logic is ready (Set up the Atlas Engine without an engine); a YAML names the slot and its game, with a choice when it names several players; Add keeps the slot with its game and YAML on disk and connects it",
+        await ScenarioAsync("Add a slot: + Add Slot opens a dialog (no placeholder row is added): Connect now follows the server address; a duplicate name keeps it open and says so; typed words find the game and the engine line says whether its logic is ready (Set up the Atlas Engine without an engine); no YAML is asked for; Add keeps the slot with its game on disk and connects it",
             AddSlotDialogAsync);
         await ScenarioAsync("Updates: nothing is asked of GitHub without the permission and the daily setting; with them, one read a day finds a newer version of the channel (an unchanged list is confirmed, never sent again) and offers it as a card with its notes; a download whose hash doesn't match the release's SHA256SUMS is refused and nothing is staged, a good one is staged ready for a restart; the swap moves the installed files aside and the release's in (PortableData untouched), the supervisor puts the previous version back when the new Atlas ends before its window and the Atlas put back says so, a started one confirms the note; a folder Atlas can't write to is said so",
             UpdatesWithoutGodotErrorsAsync);
@@ -202,7 +203,7 @@ public partial class MainTrackerWindow
             RaceRoomRestrictsAsync);
         await ScenarioAsync("Logic: the slot's logic follows its items and checks step by step; after an engine crash, an engine update or a restart it's rebuilt from scratch on a new engine; race mode can hide it",
             LogicFollowsTheSlotAsync);
-        await ScenarioAsync("Logic banner: when the engine runs but the game's apworld is missing, the Logic Tracker's banner offers the Games page (not the engine setup), and pressing it shows the Games page on the game",
+        await ScenarioAsync("Logic banner: when the engine runs but the game's apworld is missing, the Logic Tracker's banner offers Add this game… when Atlas's game list knows the game (Add games opens with it ticked, and the empty map offers its pack), else the Games page (not the engine setup), and pressing it shows the Games page on the game",
             LogicBannerAsync);
         await ScenarioAsync("Seed versions, logic matches: a slot whose seed was made with another apworld version, but whose rebuilt world matches the server's, runs logic on the installed version with no warning anywhere, and Atlas looks for nothing",
             SeedVersionDiffersButLogicMatchesAsync);
@@ -220,14 +221,18 @@ public partial class MainTrackerWindow
             SoloTestQuestionsAsync);
         await ScenarioAsync("Solo batch: Test every ready game… on the Games page runs the solo test over the games with a pack without a server or a slot (Host and Connect skipped, nothing installed, no multiworld made), writes a report per game saying so and a summary table naming each game's logic and pack scores",
             SoloBatchAsync);
-        await ScenarioAsync("Release facts: \"Which version works with my map pack?\" asks once for the game (the downloads' size and the project it trusts), downloads its newest releases into the game's folder (nothing is installed), reads what each one's guide and manifest say and loads each in a throwaway engine process to measure the installed map pack against its checks; the versions table says what works here and greys what doesn't with the reason (another Archipelago; the pack not fitting while another release fits); Atlas's pick is the newest release the pack fits, a pre-release too; the installed version's card shows its facts with ✓, ✗ and – and offers Switch to the pick; asked again, nothing is asked or downloaded twice",
+        await ScenarioAsync("Release facts: \"Which version works with my map pack?\" asks once for the game (the downloads' size and the project it trusts), downloads its newest releases into the game's folder (nothing is installed), reads what each one's guide and manifest say and loads each in a throwaway engine process to measure the installed map pack against its checks; the versions table says what works here and greys what doesn't with the reason (another Archipelago; the pack not fitting while another release fits); Atlas's pick is the newest release the pack fits, a pre-release too; the installed version's card shows its facts with ✓, ✗ and – and offers Switch to the pick; asked again, nothing is asked or downloaded twice; the game's card offers Update to the newest full release until the look rules it out",
             ReleaseFactsAsync);
         await ScenarioAsync("Game worlds on demand: a game that ships with Archipelago is listed on the Games page; its slot's logic waits for its world and says so, nothing downloaded; \"Get the game's world…\" asks the engine's permission, then Archipelago's release is downloaded once (checked against its hash) and only that game's world and the world it imports are unpacked into the engine's user folder, recorded with Archipelago's version, and the slot's logic starts; an installed apworld for a game takes precedence; after an update to another Archipelago the unpacked worlds are removed",
             GameWorldsOnDemandAsync);
         await ScenarioAsync("Adding games, the plan: a game list fetched with sizes plans a community game's newest release and the best pack that doesn't wait behind, with the download, the disk and the project to trust totalled and nothing asked of GitHub; the list's sizes reach the versions Atlas reads",
             AddGamesPlanAsync);
-        await ScenarioAsync("Add games installer: a plan of a community game, a game that ships with Archipelago and one whose apworld can't be downloaded runs as one batch: the apworld comes by the address and SHA-256 Atlas's game list names with no GitHub listing read, the official world is unpacked from Archipelago's release downloaded once, ONE engine health check covers both and the slots hear of the changed parts once; each map pack is installed from the list (the game's setup guide's own when the list has it, over the best fit) and made the game's pack, with no card and no Pack Doctor prompt, even from a connected slot of the game, whose logic restarts once (a prompted check of the same pack does ask); the apworld's project is trusted and the engine's downloads allowed for the session (always, with the tick); a second press while it runs is refused; one bar that never goes down says Game N of 3; the result names each game's logic and map, the failure with its reason, and the pack the Doctor wants looked at with its preview; a cancelled run downloads and checks nothing",
+        await ScenarioAsync("Add games installer: a plan of a community game, a game that ships with Archipelago and one whose apworld can't be downloaded runs as one batch: the apworld comes by the address and SHA-256 Atlas's game list names with no GitHub listing read, the official world is unpacked from Archipelago's release downloaded once, ONE engine health check covers both and the slots hear of the changed parts once; each map pack is installed from the list (the game's setup guide's own when the list has it, over the best fit) and made the game's pack, with no card and no Pack Doctor prompt, even from a connected slot of the game, whose logic restarts once (the summary's packs are postponed for the session; a prompted check of the same pack asks at the next start); the apworld's project is trusted and the engine's downloads allowed for the session (always, with the tick); a second press while it runs is refused; one bar that never goes down says Game N of 3; the result names each game's logic and map, the failure with its reason, and the pack the Doctor wants looked at with its preview; a cancelled run downloads and checks nothing",
             AddGamesInstallerAsync);
+        await ScenarioAsync("Add games screen: Add a slot's Logic line offers Add this game…, which opens Add games over it with the game ticked; the empty map leads with Get a map pack for a game Atlas's list has a pack for; Home's Add games… lists every game, the games of your multiworlds first and ticked where they need something, each row in plain words with its download, a game with nothing to add not tickable, typed words narrowing the list and the totals below; Add opens ONE confirm naming every project, what it trusts and Don't ask again, with nothing downloaded until Download and install; Back keeps the ticks; the run ends in a summary per game, the project trusted and the downloads always allowed by the tick; the Games overview's Add games… shows an added game as ready; Cancel during a batch stops it with nothing downloaded, and Try those again ticks what's left",
+            AddGamesScreenAsync);
+        await ScenarioAsync("Add games' fix them now: the Doctor links a pack's exact match by itself and the question leaves it out; one question names the pack with its line of what changes; Fix them now… previews every change and changes nothing before Apply; Apply links the confident match, sets the 60% one aside, marks the pack reviewed so no Fix now card follows, and says what it did and what's left with Review N…, which opens the Doctor's guide; Undo takes back exactly that step and keeps the answer; Later changes nothing, no card follows this session, the pack row keeps Fix and the card comes back at the next start; the map's one tip shows until Got it, for good",
+            PackFixHandoffAsync);
         await ScenarioAsync("BK: with logic running, checks left and none of them in logic, the Logic Tracker and Key Items say so with the count done, and the slot card says BK; an item that opens a check ends it",
             BkAsync);
         await ScenarioAsync("Hidden checks: a check logic wrongly calls in logic is hidden from the Logic Tracker's row menu (a right click), a map pin's menu, a Not on the map row's menu or Properties; it leaves the list, the map and the in-logic counts (logic itself unchanged) until unhidden, with Undo on the card; Show hidden lists it greyed and Show hidden checks dims its pin (both remembered); hiding the last check in logic makes the slot BK, and the slot's Unhide all (asked first) shows them all again",
@@ -1295,6 +1300,9 @@ public partial class MainTrackerWindow
             page.Select("Test Game");
             await UiTestWaitForAsync(() => page.VersionRows().Count == 4 ? page : null, "the game's four releases", 20);
             UiTestExpect(Downloads() == 0 && page.VersionFacts.All(f => f.Works.Length == 0 && !f.Greyed), "a release was looked inside before the press");
+            // The card: ready (its logic and its pack are here), offering the newest full release, which nothing has ruled out yet.
+            UiTestExpect(page.GameCardShown.Standing == AP_Atlas.Core.Games.GameStanding.Ready && page.GameCardShown.Line.Contains("Logic: 1.0.0 from github.com/owner/test-game") && page.UpdateOffered == "3.0.0",
+                $"before the look the card shows {page.GameCardShown} with Update to {page.UpdateOffered}");
             // The installed version's card before the look: the pack isn't measured against it yet.
             UiTestExpect(page.CardFactsShown.Count == 4 && page.CardFactsShown[0].Good == null && page.CardFactsShown[0].Text.Contains("isn't measured against it yet"),
                 $"the card before the look says: {string.Join(" | ", page.CardFactsShown.Select(f => f.Text))}");
@@ -1333,6 +1341,8 @@ public partial class MainTrackerWindow
             var switchButton = page.FindChildren("*", nameof(Button), true, false).OfType<Button>().FirstOrDefault(b => b.HasMeta("switch_button"));
             UiTestExpect(switchButton != null && switchButton.GetMeta("switch_button").AsString() == "2.1.0-beta" && switchButton.TooltipText.Contains("your map pack fits it"),
                 $"the card doesn't offer to switch to the pick: {switchButton?.Text}");
+            // The look ruled out every newer full release (3.0.0 needs another Archipelago; the pack doesn't fit 2.0.0 while it fits the pre-release): no Update.
+            UiTestExpect(page.UpdateOffered == null, $"the card still offers Update to {page.UpdateOffered}");
             // Asked again: no question, nothing downloaded again.
             page.LookInsideForTests("Test Game");
             await UiTestWaitAsync(0.3);
@@ -1608,6 +1618,11 @@ public partial class MainTrackerWindow
             // what kept it back; a hold released for a pack its holder asks about itself raises nothing, and one released
             // for none raises the prompt it held.
             await UiTestWaitForAsync(() => !AP_Atlas.Core.PopTracker.PackDoctorService.IsChecking(look!.PackKey) && !AP_Atlas.Core.PopTracker.PackDoctorService.IsBusy(look.PackKey) ? this : null, "the Doctor to be idle");
+            // The batch postponed the prompt of the pack its summary asks about: a prompted check raises nothing this session.
+            UiTestExpect(AP_Atlas.Core.PopTracker.PackDoctorService.Postponed(look!.PackKey, offer!.Original.Manifest?.GetActualVersion() ?? ""), "the batch didn't postpone the prompt of the pack its summary asks about");
+            await AP_Atlas.Core.PopTracker.PackDoctorService.CheckAsync(offer!.Original, prompt: true);
+            UiTestExpect(prompts == 0, $"a prompted check of a pack the summary asks about raised {prompts} prompt(s)");
+            AP_Atlas.Core.PopTracker.PackDoctorService.ForgetPostponedForTests(); // as at the next start: the controls below
             var answered = AP_Atlas.Core.PopTracker.PackDoctorService.HoldPrompts();
             await AP_Atlas.Core.PopTracker.PackDoctorService.CheckAsync(offer!.Original, prompt: true);
             answered.Release(new[] { look!.PackKey });
@@ -1660,6 +1675,7 @@ public partial class MainTrackerWindow
             AtlasEngine.PartsChanged -= OnParts;
             AP_Atlas.Core.PopTracker.PackDoctorService.FixSuggested -= OnFix;
             AP_Atlas.Core.PopTracker.PackDoctorService.ReviewSuggested -= OnReview;
+            AP_Atlas.Core.PopTracker.PackDoctorService.ForgetPostponedForTests();
             ApworldSources.UseListForTests(null);
             AtlasEngine.TestWorlds = null;
             GameAdder.TestGitHubSite = null;
@@ -1689,6 +1705,452 @@ public partial class MainTrackerWindow
             }
             if (System.IO.Directory.Exists(scratch)) System.IO.Directory.Delete(scratch, true);
             AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
+        }
+    }
+
+    private async Task AddGamesScreenAsync()
+    {
+        StartFakeEngine(UiTestPython(), fake => fake.CheckWorldsDir = AtlasEngine.UserWorldsDir);
+        const string alpha = "Add Screen Alpha", beta = "Add Screen Beta", gamma = "Add Screen Gamma", nowhere = "Add Screen Nowhere";
+        static byte[] Zip(params (string Name, string Text)[] files)
+        {
+            using var memory = new System.IO.MemoryStream();
+            using (var archive = new System.IO.Compression.ZipArchive(memory, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+                foreach (var (name, text) in files)
+                {
+                    using var writer = new System.IO.StreamWriter(archive.CreateEntry(name).Open());
+                    writer.Write(text);
+                }
+            return memory.ToArray();
+        }
+        static string Sha(byte[] bytes) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant();
+        string data = DataManager.GetDataDirectory();
+        string scratch = System.IO.Path.Combine(data, "uitest_add_screen");
+        System.IO.Directory.CreateDirectory(scratch);
+        byte[] alphaApworld = Zip(("add_screen_alpha/archipelago.json", "{\"game\": \"" + alpha + "\", \"world_version\": \"1.2.0\"}"), ("add_screen_alpha/__init__.py", "# " + alpha + "\n"));
+        byte[] betaApworld = Zip(("add_screen_beta/archipelago.json", "{\"game\": \"" + beta + "\"}"), ("add_screen_beta/__init__.py", "# " + beta + "\n"));
+        string alphaZip = System.IO.Path.Combine(scratch, "alpha.zip");
+        FakeMapPack.Write(alphaZip, "UI test screen pack", alpha);
+        byte[] alphaPack = await System.IO.File.ReadAllBytesAsync(alphaZip);
+        await using var site = new FakeWebSite();
+        site.Answer = (path, _) => path switch
+        {
+            "/dl/add_screen_alpha.apworld" => new FakeWebSite.FullAnswer(200, alphaApworld, "application/octet-stream"),
+            "/dl/add_screen_beta.apworld" => new FakeWebSite.FullAnswer(200, betaApworld, "application/octet-stream"),
+            "/gh/packs/screen-alpha/releases/download/v1/screen_alpha.zip" => new FakeWebSite.FullAnswer(200, alphaPack, "application/zip"),
+            _ => new FakeWebSite.FullAnswer(404, Array.Empty<byte>())
+        };
+        var gammaSource = new ApworldSource { Game = gamma };
+        var list = new ApworldSourceList
+        {
+            Format = "atlas-apworld-sources/1",
+            Built = "9999-12-31",
+            Source = "ui-test",
+            Games = new List<ApworldSource>
+            {
+                new ApworldSource { Game = alpha, Apworld = "add_screen_alpha", Repo = "owner/add-screen-alpha",
+                    Versions = { new ApworldVersion { Version = "1.2.0", Url = site.Site + "/dl/add_screen_alpha.apworld", Sha256 = Sha(alphaApworld), Size = alphaApworld.Length } },
+                    Packs = { new IndexPack { Repo = "packs/screen-alpha", Release = "v1", Asset = "screen_alpha.zip", Sha256 = Sha(alphaPack), Size = alphaPack.Length, Fit = 100 } } },
+                new ApworldSource { Game = beta, Apworld = "add_screen_beta", Repo = "owner/add-screen-beta",
+                    Versions = { new ApworldVersion { Version = "0.3.0", Url = site.Site + "/dl/add_screen_beta.apworld", Sha256 = Sha(betaApworld), Size = betaApworld.Length } } },
+                new ApworldSource { Game = nowhere },
+                gammaSource
+            }
+        };
+        // No official game of this test's is ticked: nothing may reach Archipelago's real release (the index lists one world,
+        // as an index must, for a game no multiworld plays).
+        var noWorlds = WorldsIndex.Parse(new JObject
+        {
+            ["archipelago"] = AtlasEngine.ArchipelagoVersion,
+            ["zip_sha256"] = new string('0', 64),
+            ["zip_root"] = "X/",
+            ["zip_bytes"] = 1,
+            ["core_worlds"] = new JArray(),
+            ["worlds"] = new JObject { ["add_screen_shipped"] = new JObject { ["games"] = new JArray("Add Screen Shipped"), ["needs"] = new JArray(), ["requirements"] = false, ["bytes"] = 1 } }
+        }.ToString());
+        string worlds = AtlasEngine.UserWorldsDir, packs = AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory();
+        var checkBefore = AtlasEngine.State.LastCheck;
+        var profile = new MultiworldProfile { Name = "UI test add screen" };
+        profile.Slots.Clear();
+        profile.Slots.Add("Quill");
+        profile.SavedStats["Quill"] = new SlotStats { GameName = alpha };
+        // Two more games the multiworld plays: Beta, addable from the start, and Gamma, which nothing is known of until its
+        // project joins the list while Add games shows.
+        profile.Slots.Add("Rook");
+        profile.SavedStats["Rook"] = new SlotStats { GameName = beta };
+        profile.Slots.Add("Kite");
+        profile.SavedStats["Kite"] = new SlotStats { GameName = gamma };
+        _profiles.Add(profile);
+        RefreshProfileList();
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        GameAdderRun? run = null;
+        AP_Atlas.UI.AddGamesDialog? Showing() => AP_Atlas.UI.AddGamesDialog.Showing is { } d && IsInstanceValid(d) && !d.IsQueuedForDeletion() ? d : null;
+        async Task<AP_Atlas.UI.AddGamesDialog> OpenedAsync(string what)
+        {
+            var opened = await UiTestWaitForAsync(Showing, what);
+            await UiTestWaitForAsync(() => opened.Panel.FactsPending == 0 ? opened : null, what + "'s rows", 20);
+            return opened;
+        }
+        // Only the test's games run: any game a leftover multiworld plays is unticked first.
+        void OnlyTicked(AP_Atlas.UI.AddGamesPanel p, string keep) { foreach (string g in p.Ticked.ToList()) if (g != keep) p.Tick(g, false); }
+        AP_Atlas.UI.AddSlotDialog? AddSlot() => GetChildren().OfType<AP_Atlas.UI.AddSlotDialog>().FirstOrDefault(d => !d.IsQueuedForDeletion());
+        try
+        {
+            ApworldSources.UseListForTests(list);
+            AtlasEngine.TestWorlds = (noWorlds, site.Site + "/dl/none.zip", new string('0', 64));
+            GameAdder.TestGitHubSite = site.Site + "/gh";
+            AP_Atlas.Core.GitHubApi.TestSite = site.Site;
+            AP_Atlas.Core.GitHubApi.ResetForTests();
+            AP_Atlas.Core.Permissions.ResetSessionForTests();
+            AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.EngineSetup, null, false);
+            AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.GitHubLookups, null, false);
+            _appSettings.ApprovedApworldSources.Remove("127.0.0.1"); // the confirm names it as a project to trust
+
+            // Add a slot: the game's logic isn't in the engine and the list knows it: Add this game… opens Add games over the dialog.
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+            SelectProfile(profile);
+            _addSlotButton!.EmitSignal(BaseButton.SignalName.Pressed);
+            var addSlot = await UiTestWaitForAsync(AddSlot, "the Add a slot dialog");
+            addSlot.ChooseGame(alpha);
+            UiTestExpect(addSlot.StatusActionText == "Add this game…", $"the engine line reads \"{addSlot.StatusText}\" with \"{addSlot.StatusActionText}\"");
+            addSlot.PressStatusActionForTests();
+            var overSlot = await OpenedAsync("Add games from Add a slot");
+            UiTestExpect(overSlot.GetParent() == addSlot && !overSlot.Exclusive && overSlot.Panel.IsTicked(alpha), "Add games didn't open over Add a slot, non-exclusive, with the game ticked");
+            // Past its list (its confirm here; a running batch or a summary alike), Add games outlives Add a slot: closing Add
+            // a slot hands it to the window, where it stays as it was.
+            overSlot.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
+            UiTestExpect(overSlot.Panel.CurrentStage == AP_Atlas.UI.AddGamesPanel.Stage.Confirm, $"Add on the dialog over Add a slot didn't show the confirm: {overSlot.Panel.CurrentStage}");
+            addSlot.EmitSignal(AcceptDialog.SignalName.Canceled);
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(AddSlot() == null && Showing() == overSlot && overSlot.GetParent() == this && overSlot.Visible && overSlot.Panel.CurrentStage == AP_Atlas.UI.AddGamesPanel.Stage.Confirm,
+                "closing Add a slot took Add games with it, or left it hidden or on another stage");
+            overSlot.EmitSignal(AcceptDialog.SignalName.Canceled);
+            await UiTestWaitAsync(0.1);
+            UiTestExpect(Showing() == null, "closing Add games on its confirm left it open");
+
+            // The empty map leads with the pack Atlas's list knows.
+            var map = new AP_Atlas.UI.MapTrackerControl(_appSettings);
+            try
+            {
+                map.GameName = alpha;
+                UiTestExpect(!map.AddGameButton.Visible, "the empty map offers a listed pack it wasn't told of");
+                bool asked = false;
+                map.AddGameRequested += () => asked = true;
+                map.PackListed = true;
+                UiTestExpect(map.AddGameButton.Visible && map.AddGameButton.Text == "Get a map pack for " + alpha + "…", $"the empty map's button says \"{map.AddGameButton.Text}\"");
+                map.AddGameButton.EmitSignal(BaseButton.SignalName.Pressed);
+                UiTestExpect(asked, "Get a map pack didn't ask for Add games");
+            }
+            finally { map.Free(); }
+
+            // Home's Add games…: the list, its words, the search and the totals; nothing asked of any site.
+            host.ShowTool(AP_Atlas.UI.Tool.Home);
+            var home = _homePage!;
+            home.AddGamesButton.EmitSignal(BaseButton.SignalName.Pressed);
+            var dialog = await OpenedAsync("Add games from Home");
+            var panel = dialog.Panel;
+            UiTestExpect(ShownContent() == home && dialog.GetParent() == this && !panel.EngineLeadShown, "Add games left Home, or leads with an engine that's set up");
+            await UiTestDialogSizedAsync(dialog, "the Add games dialog");
+            UiTestExpect(panel.IsTicked(alpha) && panel.IsTicked(beta) && !panel.IsTicked(gamma) && !panel.RowTickable(gamma),
+                $"every game of the multiworld that needs something isn't ticked (or one with nothing to add is): {string.Join(", ", panel.Ticked)}");
+            OnlyTicked(panel, alpha);
+            UiTestExpect(panel.Ticked.SequenceEqual(new[] { alpha }) && panel.Table.ShownRows.TakeWhile(r => r.Pinned).Any(r => r.Key == alpha)
+                && panel.RowWords(alpha) == "logic and map" && panel.RowSize(alpha) == "under 0.1 MB",
+                $"the game of the multiworld isn't first and ticked with its words: {panel.RowWords(alpha)} / {panel.RowSize(alpha)}");
+            UiTestExpect(panel.RowTickable(beta) && panel.RowWords(beta) == "logic (no map pack is known yet)" && !panel.RowTickable(nowhere) && panel.RowWords(nowhere).StartsWith("nothing to add", StringComparison.Ordinal),
+                $"the rows' words: {panel.RowWords(beta)} | {panel.RowWords(nowhere)}");
+            panel.Tick(nowhere, true);
+            UiTestExpect(!panel.IsTicked(nowhere), "a game with nothing to add was ticked");
+            // Read again (as after an engine change): Gamma, addable now that its project is listed, is ticked then; Beta, which
+            // the user unticked, stays unticked.
+            gammaSource.Repo = "owner/add-screen-gamma";
+            gammaSource.Versions.Add(new ApworldVersion { Version = "0.1.0", Url = site.Site + "/dl/add_screen_gamma.apworld", Sha256 = new string('c', 64), Size = 100 });
+            panel.Start();
+            UiTestExpect(panel.RowTickable(gamma) && panel.IsTicked(gamma) && !panel.IsTicked(beta) && panel.IsTicked(alpha),
+                $"a re-read didn't tick the game that became addable, or ticked one the user unticked: {string.Join(", ", panel.Ticked)}");
+            panel.Tick(gamma, false);
+            await UiTestWaitForAsync(() => panel.FactsPending == 0 ? panel : null, "the rows read again", 20);
+            UiTestExpect(panel.TotalsText == "1 game: under 0.1 MB to download, under 0.1 MB on this PC." && dialog.GetOkButton().Text == "Add 1 game…" && !dialog.GetOkButton().Disabled,
+                $"the totals read \"{panel.TotalsText}\" and the button \"{dialog.GetOkButton().Text}\"");
+            panel.Table.SearchBox.Text = "nowhere";
+            panel.Table.SearchBox.EmitSignal(LineEdit.SignalName.TextChanged, "nowhere");
+            await UiTestWaitAsync(0.35);
+            UiTestExpect(panel.Table.ShownRows.Select(r => r.Key).SequenceEqual(new[] { nowhere }), "typed words didn't narrow the list");
+            panel.Table.SearchBox.Text = "";
+            panel.Table.SearchBox.EmitSignal(LineEdit.SignalName.TextChanged, "");
+            await UiTestWaitAsync(0.35);
+            // The one confirm: every project named, what it trusts, Don't ask again; nothing downloaded yet. Back keeps the ticks.
+            dialog.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
+            UiTestExpect(panel.CurrentStage == AP_Atlas.UI.AddGamesPanel.Stage.Confirm && panel.ConfirmText.Contains("127.0.0.1") && panel.ConfirmText.Contains("github.com/packs/screen-alpha")
+                && panel.ConfirmText.Contains("only continue if you trust these projects") && panel.ConfirmText.Contains("Pressing Download and install trusts 127.0.0.1")
+                && panel.DontAskAgain is { Visible: true, ButtonPressed: false } && site.Requests.Count == 0 && dialog.SecondaryButton.Text == "Back",
+                $"the confirm reads: {panel.ConfirmText}");
+            await UiTestDialogSizedAsync(dialog, "the Add games confirm");
+            dialog.SecondaryButton.EmitSignal(BaseButton.SignalName.Pressed);
+            UiTestExpect(panel.CurrentStage == AP_Atlas.UI.AddGamesPanel.Stage.Pick && panel.IsTicked(alpha), "Back didn't return to the list with the ticks");
+            dialog.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
+            UiTestExpect(panel.ConfirmedPlan!.Games.Select(g => g.Game).SequenceEqual(new[] { alpha }), "the confirm's plan isn't the ticked game");
+            panel.DontAskAgain!.ButtonPressed = true;
+            dialog.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
+            UiTestExpect(panel.CurrentStage == AP_Atlas.UI.AddGamesPanel.Stage.Running && dialog.GetOkButton().Text == "Cancel" && !dialog.Exclusive, "the run doesn't show one bar with Cancel, Atlas usable");
+            // Closed while it runs (the window's ×), it hides and the batch goes on; it comes back with the summary.
+            dialog.Hide();
+            dialog.EmitSignal(AcceptDialog.SignalName.Canceled);
+            UiTestExpect(!dialog.IsQueuedForDeletion() && Showing() == dialog && panel.CurrentStage == AP_Atlas.UI.AddGamesPanel.Stage.Running, "closing Add games while it runs stopped it or freed it");
+            run = await UiTestWaitForAsync(() => panel.CurrentStage == AP_Atlas.UI.AddGamesPanel.Stage.Summary ? panel.Result : null, "the summary", 120);
+            UiTestExpect(dialog.Visible && !run.Outcome.Cancelled, "the batch closed out of sight was stopped, or didn't come back with its summary");
+            var lines = panel.SummaryLines();
+            UiTestExpect(run.Outcome.For(alpha).Logic.Outcome == AP_Atlas.Core.Games.AddStepOutcome.Done && lines.Contains("Logic: version 1.2.0 added.")
+                && lines.Contains("Map: github.com/packs/screen-alpha v1.") && lines[0].StartsWith("Done: ", StringComparison.Ordinal), $"the summary: {string.Join(" | ", lines)}");
+            UiTestExpect(lines.Contains(AP_Atlas.UI.PackFixHandoff.FixTip), "the summary doesn't end with the tip once a map came in");
+            UiTestExpect(AP_Atlas.Core.Permissions.IsAlwaysAllowed(_appSettings, AP_Atlas.Core.Permissions.EngineSetup) && ApworldSources.IsApproved(_appSettings, site.Site + "/dl/add_screen_alpha.apworld")
+                && !site.Requests.Any(r => r.StartsWith("/repos/", StringComparison.Ordinal)), "the tick didn't keep the downloads allowed, the project wasn't trusted, or GitHub's API was asked");
+            UiTestExpect(run.Fixes.Count == 0 || panel.FindChildren("*", nameof(VBoxContainer), true, false).Any(n => n.HasMeta("pack_fix_handoff")), "the packs to look at have no question in the summary");
+            if (run.Fixes.Any(f => !f.Plan.Nothing)) // something to fix: the question is on the dialog's buttons (else only Review per pack)
+            {
+                UiTestExpect(dialog.GetOkButton().Text == "Fix them now…" && dialog.SecondaryButton.Text == "Later", $"the packs' question isn't on the dialog's buttons: {dialog.GetOkButton().Text}");
+                dialog.SecondaryButton.EmitSignal(BaseButton.SignalName.Pressed); // Later
+            }
+            dialog.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed); // Done
+            await UiTestWaitForAsync(() => Showing() == null ? this : null, "Done to close Add games");
+
+            // The Games overview's Add games…: the added game is ready; Cancel mid-batch stops with nothing downloaded; Try those again.
+            host.ShowTool(AP_Atlas.UI.Tool.Games);
+            _gamesPage!.ShowOverviewForTests();
+            var overview = _gamesPage.FindChildren("*", nameof(Button), true, false).OfType<Button>().FirstOrDefault(b => b.HasMeta("add_games_button"));
+            UiTestExpect(overview != null, "the Games overview has no Add games… button");
+            overview!.EmitSignal(BaseButton.SignalName.Pressed);
+            dialog = await OpenedAsync("Add games from the Games overview");
+            panel = dialog.Panel;
+            OnlyTicked(panel, beta);
+            UiTestExpect(!panel.IsTicked(alpha) && panel.RowWords(alpha) == "ready" && !panel.RowTickable(alpha), $"the added game reads \"{panel.RowWords(alpha)}\"");
+            panel.Tick(beta, true);
+            dialog.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
+            UiTestExpect(panel.DontAskAgain is { Visible: false }, "Don't ask again shows once it's always allowed");
+            int requestsBefore = site.Requests.Count;
+            panel.StatusChanged += status => { if (status.Text.StartsWith("Game 1 of 1: ", StringComparison.Ordinal)) dialog.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed); };
+            dialog.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
+            var stopped = await UiTestWaitForAsync(() => panel.CurrentStage == AP_Atlas.UI.AddGamesPanel.Stage.Summary ? panel.Result : null, "the stopped batch's summary", 60);
+            UiTestExpect(stopped.Outcome.Cancelled && stopped.Outcome.For(beta).Logic.Outcome == AP_Atlas.Core.Games.AddStepOutcome.Cancelled && site.Requests.Count == requestsBefore
+                && panel.SummaryLines()[0].StartsWith("Stopped.", StringComparison.Ordinal) && dialog.SecondaryButton.Visible && dialog.SecondaryButton.Text == "Try those again",
+                $"Cancel didn't stop the batch with nothing downloaded: {string.Join(" | ", panel.SummaryLines())}");
+            dialog.SecondaryButton.EmitSignal(BaseButton.SignalName.Pressed);
+            UiTestExpect(panel.CurrentStage == AP_Atlas.UI.AddGamesPanel.Stage.Pick && panel.IsTicked(beta), "Try those again didn't tick what's left");
+            UiTestExpect(panel.Table.CountLabel.Text.EndsWith(" games", StringComparison.Ordinal), $"the list counts \"{panel.Table.CountLabel.Text}\"");
+            // A summary whose packs the Pack Doctor wants looked at (made up: nothing is read or changed): the dialog's own buttons
+            // ask, in sight (Fix them now… / Later); answered, Done, or the game asked for meanwhile, which goes back to the list
+            // with it ticked.
+            var fixOffers = VisualCheckHandoffSample().Item1;
+            panel.ShowSummaryForTests(VisualCheckSummarySample(fixOffers));
+            UiTestExpect(dialog.GetOkButton().Text == "Fix them now…" && dialog.SecondaryButton.Visible && dialog.SecondaryButton.Text == "Later"
+                && !panel.FindChildren("FixThemNow", nameof(Button), true, false).OfType<Button>().Any(b => b.IsVisibleInTree()),
+                $"the summary's question isn't on the dialog's buttons: {dialog.GetOkButton().Text} / {dialog.SecondaryButton.Text}");
+            dialog.SecondaryButton.EmitSignal(BaseButton.SignalName.Pressed);
+            UiTestExpect(dialog.GetOkButton().Text == "Done", $"once answered the button says {dialog.GetOkButton().Text}");
+            panel.Preselect(beta);
+            UiTestExpect(dialog.GetOkButton().Text == "Add " + beta + "…", $"a game asked for on the summary isn't offered: {dialog.GetOkButton().Text}");
+            dialog.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
+            UiTestExpect(panel.CurrentStage == AP_Atlas.UI.AddGamesPanel.Stage.Pick && panel.Ticked.SequenceEqual(new[] { beta }), $"the list didn't come back with the game asked for ticked: {string.Join(", ", panel.Ticked)}");
+            dialog.EmitSignal(AcceptDialog.SignalName.Canceled);
+            await UiTestWaitAsync(0.1);
+        }
+        finally
+        {
+            Showing()?.QueueFree();
+            AddSlot()?.QueueFree();
+            ApworldSources.UseListForTests(null);
+            AtlasEngine.TestWorlds = null;
+            GameAdder.TestGitHubSite = null;
+            AP_Atlas.Core.GitHubApi.TestSite = null;
+            AP_Atlas.Core.GitHubApi.ResetForTests();
+            AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.EngineSetup, null, false);
+            AP_Atlas.Core.Permissions.ResetSessionForTests();
+            AP_Atlas.Core.PopTracker.PackDoctorService.ForgetPostponedForTests();
+            AtlasEngine.State.LastCheck = checkBefore;
+            foreach (var fix in run?.Fixes ?? Array.Empty<PackFixOffer>()) AP_Atlas.Core.PopTracker.PackDoctorService.Reports.Remove(fix.Look.PackKey);
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+            if (_profiles.Contains(profile)) DeleteProfile(profile);
+            _appSettings.ApprovedApworldSources.Remove("127.0.0.1");
+            _appSettings.PreferredPacks.Remove(alpha);
+            DataManager.SaveSettings(_appSettings);
+            AP_Atlas.Core.SafeFile.Delete(System.IO.Path.Combine(worlds, "add_screen_alpha.apworld"));
+            AP_Atlas.Core.SafeFile.Delete(System.IO.Path.Combine(packs, "screen_alpha.zip"));
+            foreach (string game in new[] { alpha, beta })
+            {
+                string kept = AP_Atlas.Core.Games.GameFiles.ApworldsFolder(data, game);
+                if (System.IO.Directory.Exists(kept)) System.IO.Directory.Delete(kept, true);
+            }
+            if (System.IO.Directory.Exists(scratch)) System.IO.Directory.Delete(scratch, true);
+            AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
+        }
+    }
+
+    private async Task PackFixHandoffAsync()
+    {
+        const string game = "Handoff Test Game";
+        string zip = System.IO.Path.Combine(AP_Atlas.Core.PopTracker.PopTrackerPackLoader.GetPacksDirectory(), "uitest_handoff_pack.zip");
+        // "Shrine" / "Bell!" is the game's "Bell" once punctuation is ignored: the exact match the Doctor's first check links by
+        // itself. "Cave" / "Chest" lies inside "Cave Chest Room" (confident, about 88%); "Tower" / "Peak" shares a word with
+        // "Tower Top" (about 60%: set aside). The Shield's picture and the Broken map's can't be read: left for the user.
+        FakeMapPack.Write(zip, "UI test handoff pack", game,
+            locationsJson: """[{"name":"Shrine","sections":[{"name":"Bell!"}],"map_locations":[{"map":"World","x":30,"y":10}]},""" +
+                           """{"name":"Cave","sections":[{"name":"Chest"}],"map_locations":[{"map":"World","x":10,"y":10}]},""" +
+                           """{"name":"Tower","sections":[{"name":"Peak"}],"map_locations":[{"map":"World","x":50,"y":20}]}]""");
+        await using var server = new FakeArchipelagoServer { SlotGame = game };
+        server.SlotName = "Kestrel";
+        server.Games[game] = new FakeGame("4a4d0ff0123456789abcdef0123456789abcdef0",
+            new Dictionary<string, long> { ["Sword"] = 1000, ["Shield"] = 1001 },
+            new Dictionary<string, long> { ["Bell"] = 2000, ["Cave Chest Room"] = 2001, ["Tower Top"] = 2002 });
+        var profile = new MultiworldProfile { Name = "UI test handoff", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Kestrel");
+        _profiles.Add(profile);
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        int prompts = 0;
+        int fixPrompts = 0;
+        void OnFix(string k, int count, string name)
+        {
+            prompts++;
+            fixPrompts++;
+        }
+        void OnReview(string k, string message) => prompts++;
+        string key = "";
+        bool tipBefore = _appSettings.FixTipDismissed;
+        var handoffs = new List<AP_Atlas.UI.PackFixHandoff>();
+        // Whatever the scenarios before left: no hold on the Doctor's prompts, nothing postponed, and this pack's fixes and
+        // report as on a first start (the prompts are counted from here).
+        int leftHolds = AP_Atlas.Core.PopTracker.PackDoctorService.ResetPromptHoldsForTests();
+        if (leftHolds > 0) GD.Print($"UITEST INFO Add games' fix them now: {leftHolds} hold(s) on the Doctor's prompts were left by an earlier scenario");
+        AP_Atlas.Core.PopTracker.PackDoctorService.ForgetPostponedForTests();
+        if (AP_Atlas.Core.PopTracker.PopTrackerPackLoader.InspectZipPack(zip) is { } fresh)
+        {
+            string freshKey = AP_Atlas.Core.PopTracker.PackFixes.KeyFor(fresh);
+            AP_Atlas.Core.PopTracker.PackFixes.Reset(freshKey);
+            AP_Atlas.Core.PopTracker.PackDoctorService.Reports.Remove(freshKey);
+        }
+        var hold = AP_Atlas.Core.PopTracker.PackDoctorService.HoldPrompts(); // as Add games holds them
+        bool released = false;
+        try
+        {
+            AP_Atlas.Core.PopTracker.PackDoctorService.FixSuggested += OnFix;
+            AP_Atlas.Core.PopTracker.PackDoctorService.ReviewSuggested += OnReview;
+            _appSettings.FixTipDismissed = false;
+            AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
+            await OnConnectSlotPressedAsync("Kestrel", profile);
+            var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Kestrel"), "Kestrel's view");
+            var pack = await UiTestWaitForAsync(() => slot.Pack, "Kestrel to load the handoff pack");
+            key = AP_Atlas.Core.PopTracker.PackFixes.KeyFor(pack);
+            string version = pack.Manifest?.GetActualVersion() ?? "";
+            var tip = await UiTestWaitForAsync(() => slot.MapTracker.FixTipShown, "the map's tip");
+            UiTestExpect(tip.Contains("right-click", StringComparison.OrdinalIgnoreCase) && tip.Contains("Undo"), $"the map's tip: {tip}");
+            var auto = await UiTestWaitForAsync(() => AP_Atlas.Core.PopTracker.PackFixes.Get(key).Links.FirstOrDefault(l => l.Subject == "link:Shrine|Bell!"), "the Doctor to link the exact match by itself");
+            var offer = await AP_Atlas.Core.EngineSetup.GameAdder.OfferAsync(game, zip, System.Threading.CancellationToken.None);
+            UiTestExpect(offer != null, "the pack wasn't offered for fixing");
+            AP_Atlas.Core.PopTracker.PackDoctorService.PostponePrompts(new[] { (key, version) });
+            hold.Release(new[] { key });
+            released = true;
+            var plan = offer!.Plan;
+            var cave = plan.Link.FirstOrDefault(x => x.Finding.Subject == "link:Cave|Chest");
+            var tower = plan.SetAside.FirstOrDefault(f => f.Subject == "link:Tower|Peak");
+            double min = AP_Atlas.Core.PopTracker.PackDoctorService.SuggestedMinScore;
+            UiTestExpect(auto.Automatic && auto.ApLocationId == 2000 && !plan.Link.Any(x => x.Finding.Subject == "link:Shrine|Bell!") && !plan.SetAside.Any(f => f.Subject == "link:Shrine|Bell!"),
+                "the exact match isn't the Doctor's own link, or the question's plan has it");
+            UiTestExpect(cave.Pick?.Id == 2001 && cave.Pick.Score >= min && cave.Pick.Score < 1,
+                $"Cave / Chest isn't a confident link to Cave Chest Room: {(cave.Pick == null ? "not linked" : $"{cave.Pick.Label} {cave.Pick.Score:P0}")}");
+            UiTestExpect(tower != null && tower.Suggestions.Count > 0 && tower.Suggestions[0].Label == "Tower Top" && tower.Suggestions[0].Score >= 0.35 && tower.Suggestions[0].Score < min,
+                $"Tower / Peak isn't set aside with Tower Top under 85%: {(tower == null ? "not set aside" : string.Join(", ", tower.Suggestions.Select(s => $"{s.Label} {s.Score:P0}")))}");
+            UiTestExpect(offer.Look.Preview == "Links 1, sets 1 aside. One step: Undo reverses all of it." && prompts == 0, $"the preview line: {offer.Look.Preview}; {prompts} prompt(s)");
+            // The question, then one preview of every change; nothing changes before Apply.
+            var handoff = new AP_Atlas.UI.PackFixHandoff(new[] { offer }, (file, tab) => OpenPackDoctor(file, tab));
+            handoffs.Add(handoff);
+            AddChild(handoff);
+            var lines = handoff.Lines();
+            UiTestExpect(lines.FirstOrDefault() == "Atlas found things to look at in 1 map pack: fix them now?" && lines.Any(l => l.Contains("UI test handoff pack") && l.Contains(offer.Look.Preview)),
+                $"the question: {string.Join(" | ", lines)}");
+            int linksBefore = AP_Atlas.Core.PopTracker.PackFixes.Get(key).Links.Count;
+            handoff.PressFixThemNow();
+            var preview = await UiTestWaitForAsync(() => AP_Atlas.UI.FixPreviewDialog.Showing, "the preview of every change");
+            UiTestExpect(preview.Plans.Count == 1 && preview.Plans[0].Link.Count == 1 && preview.Plans[0].SetAside.Count == 1
+                && AP_Atlas.Core.PopTracker.PackFixes.Get(key).Links.Count == linksBefore && AP_Atlas.Core.PopTracker.PackFixes.Get(key).Ignored.Count == 0,
+                "the preview isn't the plan, or something changed before Apply");
+            preview.ChooseForTests(true);
+            await UiTestWaitForAsync(() => handoff.State == AP_Atlas.UI.PackFixHandoff.Stage.Done ? handoff : null, "the fixes and the check after them", 40);
+            var fixedFile = AP_Atlas.Core.PopTracker.PackFixes.Get(key);
+            UiTestExpect(fixedFile.Links.Any(l => l.Subject == "link:Cave|Chest" && l.ApLocationId == 2001 && l.Source == "suggested") && fixedFile.Ignored.Contains(tower!.Key) && fixedFile.ReviewedVersion == version,
+                "Fix them now didn't link Cave, set Tower aside and mark the pack reviewed");
+            int left = AP_Atlas.Core.PopTracker.PackDoctorService.Reports[key].NeedsReview.Count();
+            lines = handoff.Lines();
+            UiTestExpect(lines.Any(l => l.StartsWith("UI test handoff pack: linked 1 match", StringComparison.Ordinal)) && left > 0 && handoff.ReviewButton(key)?.Text == $"Review {left}…",
+                $"the result doesn't say what was done and what's left ({left}): {string.Join(" | ", lines)}");
+            // No card follows: the review answers (the postponement forgotten, as at the next start).
+            AP_Atlas.Core.PopTracker.PackDoctorService.ForgetPostponedForTests();
+            await AP_Atlas.Core.PopTracker.PackDoctorService.CheckAsync(offer.Original, prompt: true);
+            UiTestExpect(prompts == 0, $"a Fix now card followed the fix: {prompts}");
+            handoff.PressReview(key);
+            var doctor = await UiTestWaitForAsync(() => GetTree().Root.GetChildren().OfType<AP_Atlas.UI.PackDoctorWindow>().FirstOrDefault(w => w.Visible), "the Doctor from Review");
+            UiTestExpect(doctor.CurrentTabTitle == AP_Atlas.UI.PackDoctorWindow.GuideTab, $"Review opened the Doctor on {doctor.CurrentTabTitle}");
+            doctor.EmitSignal(Window.SignalName.CloseRequested);
+            handoff.PressUndo(key);
+            var undone = AP_Atlas.Core.PopTracker.PackFixes.Get(key);
+            UiTestExpect(!undone.Links.Any(l => l.Subject == "link:Cave|Chest") && !undone.Ignored.Contains(tower!.Key) && undone.Links.Any(l => l.Subject == "link:Shrine|Bell!" && l.Automatic)
+                && undone.ReviewedVersion == version, "Undo didn't take back exactly the card's step, or it took back the answer");
+            await UiTestWaitForAsync(() => handoff.Lines().Any(l => l.Contains("undone")) ? handoff : null, "the card to say it's undone");
+            // Later: nothing changes, no card this session, the pack row keeps Fix; the card comes back at the next start.
+            AP_Atlas.Core.PopTracker.PackFixes.SetReviewedVersion(key, ""); // a version not reviewed yet, as after an install
+            await AP_Atlas.Core.PopTracker.PackDoctorService.WhenIdleAsync(key, TimeSpan.FromSeconds(30));
+            var again = await AP_Atlas.Core.EngineSetup.GameAdder.OfferAsync(game, zip, System.Threading.CancellationToken.None);
+            UiTestExpect(again != null, "the pack wasn't offered again");
+            AP_Atlas.Core.PopTracker.PackDoctorService.PostponePrompts(new[] { (key, version) });
+            var later = new AP_Atlas.UI.PackFixHandoff(new[] { again! }, (file, tab) => OpenPackDoctor(file, tab));
+            handoffs.Add(later);
+            AddChild(later);
+            later.PressLater();
+            var kept = AP_Atlas.Core.PopTracker.PackFixes.Get(key);
+            UiTestExpect(later.State == AP_Atlas.UI.PackFixHandoff.Stage.Later && !kept.Links.Any(l => l.Subject == "link:Cave|Chest") && kept.ReviewedVersion == ""
+                && later.Lines().Any(l => l.StartsWith("Left as they are", StringComparison.Ordinal)), "Later changed something");
+            await AP_Atlas.Core.PopTracker.PackDoctorService.CheckAsync(again!.Original, prompt: true);
+            UiTestExpect(prompts == 0, $"a card came right after Later: {prompts}");
+            ShowGamePage(game);
+            await UiTestWaitForAsync(() => _packManagerPanel.FixButtonFor(key) is { Visible: true } b ? b : null, "the pack row's Fix button after Later");
+            // As at the next start. The Games page's rescan may be checking the pack: a check asked meanwhile only queues one
+            // without a prompt, so the Doctor is let finish first, and the card may come from either check.
+            await AP_Atlas.Core.PopTracker.PackDoctorService.WhenIdleAsync(key, TimeSpan.FromSeconds(30));
+            AP_Atlas.Core.PopTracker.PackDoctorService.ForgetPostponedForTests();
+            await AP_Atlas.Core.PopTracker.PackDoctorService.CheckAsync(again.Original, prompt: true);
+            await UiTestWaitForAsync(() => prompts >= 1 ? this : null, "the pack's Fix now card at the next start", 30);
+            // Postponed for the pack's version only: at that version no card; the same pack updated during the session (another
+            // version, in memory here) gets its card as usual.
+            await AP_Atlas.Core.PopTracker.PackDoctorService.WhenIdleAsync(key, TimeSpan.FromSeconds(30));
+            AP_Atlas.Core.PopTracker.PackDoctorService.PostponePrompts(new[] { (key, version) });
+            int fixesBefore = fixPrompts;
+            await AP_Atlas.Core.PopTracker.PackDoctorService.CheckAsync(again.Original, prompt: true);
+            UiTestExpect(fixPrompts == fixesBefore, $"the pack's postponed version raised its card: {fixPrompts - fixesBefore}");
+            var updated = AP_Atlas.Core.PopTracker.PopTrackerPackLoader.InspectZipPack(zip) ?? throw new InvalidOperationException("the pack couldn't be read again");
+            updated.Manifest!.PackageVersion = version + ".1";
+            await AP_Atlas.Core.PopTracker.PackDoctorService.WhenIdleAsync(key, TimeSpan.FromSeconds(30));
+            await AP_Atlas.Core.PopTracker.PackDoctorService.CheckAsync(updated, prompt: true);
+            await UiTestWaitForAsync(() => fixPrompts > fixesBefore ? this : null, "the updated pack's own Fix now card", 30);
+            AP_Atlas.Core.PopTracker.PackDoctorService.ForgetPostponedForTests();
+            // Got it: for good.
+            slot.MapTracker.PressFixTipGotIt();
+            UiTestExpect(_appSettings.FixTipDismissed && slot.MapTracker.FixTipShown == null, "Got it didn't put the tip away");
+            slot.RebuildPackIndex(); // the map loads the pack again
+            UiTestExpect(slot.MapTracker.FixTipShown == null, "the tip came back when the map loaded the pack again");
+        }
+        finally
+        {
+            if (!released) hold.Release(Array.Empty<string>());
+            AP_Atlas.Core.PopTracker.PackDoctorService.FixSuggested -= OnFix;
+            AP_Atlas.Core.PopTracker.PackDoctorService.ReviewSuggested -= OnReview;
+            AP_Atlas.Core.PopTracker.PackDoctorService.ForgetPostponedForTests();
+            _appSettings.FixTipDismissed = tipBefore;
+            AP_Atlas.UI.FixPreviewDialog.Showing?.ChooseForTests(false);
+            foreach (var h in handoffs) if (IsInstanceValid(h)) h.QueueFree();
+            foreach (var dialog in GetTree().Root.GetChildren().OfType<AP_Atlas.UI.PackDoctorWindow>()) dialog.QueueFree();
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+            if (_profiles.Contains(profile)) DeleteProfile(profile);
+            if (key.Length > 0) AP_Atlas.Core.PopTracker.PackFixes.Reset(key);
+            AP_Atlas.Core.SafeFile.Delete(zip);
         }
     }
 
@@ -1915,16 +2377,39 @@ public partial class MainTrackerWindow
         var host = (AP_Atlas.UI.IPropertiesHost)this;
         try
         {
+            // Atlas's game list knows Test Game (an apworld and a pack): the banner offers Add this game…, the empty map its pack.
+            ApworldSources.UseListForTests(new ApworldSourceList
+            {
+                Format = "atlas-apworld-sources/1",
+                Built = "9999-12-31",
+                Source = "ui-test",
+                Games = new List<ApworldSource> {
+                new ApworldSource { Game = "Test Game", Apworld = "test_game", Repo = "owner/test-game",
+                    Versions = { new ApworldVersion { Version = "1.0.0", Url = "https://github.com/owner/test-game/releases/download/v1/test_game.apworld", Sha256 = new string('a', 64), Size = 1000 } },
+                    Packs = { new IndexPack { Repo = "packs/test-game", Release = "v1", Asset = "test_game.zip", Sha256 = new string('b', 64), Size = 2000, Fit = 90 } } } }
+            });
             await OnConnectSlotPressedAsync("Tester", profile);
             var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Tester"), "the slot's view");
             host.ShowTool(AP_Atlas.UI.Tool.LogicTracker);
+            await UiTestWaitForAsync(() => slot.EngineProblem?.Code == "world_missing" && slot.LogicNoticeButtons().Contains("Add this game…") ? slot : null, "the banner's Add this game button");
+            UiTestExpect(!slot.LogicNoticeButtons().Contains("Set up Atlas Engine…") && !slot.LogicNoticeButtons().Contains("Open the Games page") && slot.MapTracker.AddGameButton.Visible,
+                $"the banner offers {string.Join(", ", slot.LogicNoticeButtons())}, or the empty map doesn't offer the listed pack");
+            slot.PressLogicNotice("Add this game…");
+            var addGames = await UiTestWaitForAsync(() => AP_Atlas.UI.AddGamesDialog.Showing, "Add games from the banner");
+            UiTestExpect(addGames.Panel.IsTicked("Test Game"), "Add games didn't open with the game ticked");
+            addGames.EmitSignal(AcceptDialog.SignalName.Canceled);
+            await UiTestWaitAsync(0.1);
+            // A game Atlas doesn't know where its logic comes from: the banner keeps the Games page, where its project is added.
+            ApworldSources.UseListForTests(null);
+            slot.PressLogicNotice("Try again");
             await UiTestWaitForAsync(() => slot.EngineProblem?.Code == "world_missing" && slot.LogicNoticeButtons().Contains("Open the Games page") ? slot : null, "the banner's Games page button");
-            UiTestExpect(!slot.LogicNoticeButtons().Contains("Set up Atlas Engine…"), $"the banner offers the engine setup for a missing apworld: {string.Join(", ", slot.LogicNoticeButtons())}");
             slot.PressLogicNotice("Open the Games page");
             await UiTestWaitForAsync(() => ShownContent() == _gamesPage && _gamesPage!.SelectedGame == "Test Game" ? _gamesPage : null, "the Games page on the game");
         }
         finally
         {
+            ApworldSources.UseListForTests(null);
+            AP_Atlas.UI.AddGamesDialog.Showing?.QueueFree();
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
             DeleteProfile(profile);
         }
@@ -2116,6 +2601,14 @@ public partial class MainTrackerWindow
         var steps = SetupSteps;
         UiTestExpect(home.WelcomeShown && home.WelcomeSetUpButton.Visible && home.RecentProfileIds.Count == 0 && home.SetUpButton == null && home.AddMultiworldButton != null,
             "a first start isn't greeted by the welcome card, or the setup's button shows twice");
+        // Add games… sits beside New… and Paste a room link… always, and beside Add a multiworld… on a first start; it opens over Home.
+        UiTestExpect(home.AddGamesFirstButton != null && home.AddGamesButton.Visible, "Home doesn't offer Add games… on a first start");
+        home.AddGamesFirstButton!.EmitSignal(BaseButton.SignalName.Pressed);
+        var homeAdd = await UiTestWaitForAsync(() => AP_Atlas.UI.AddGamesDialog.Showing, "Add games from Home's first start");
+        UiTestExpect(ShownContent() == home, "Add games… left Home");
+        homeAdd.EmitSignal(AcceptDialog.SignalName.Canceled);
+        await UiTestWaitAsync(0.1);
+        UiTestExpect(AP_Atlas.UI.AddGamesDialog.Showing == null, "closing Add games left it open");
         UiTestExpect(!GetChildren().OfType<AP_Atlas.UI.SetupWizard>().Any(w => !w.IsQueuedForDeletion()), "the setup window opened by itself");
         UiTestExpect(steps.Done(AP_Atlas.UI.SetupSteps.Engine) == AP_Atlas.Core.EngineSetup.AtlasEngine.Current.CanLaunch
             && AP_Atlas.UI.SetupSteps.All.Where(s => s != AP_Atlas.UI.SetupSteps.Engine).All(s => !steps.Done(s) && !steps.Skipped(s)),
@@ -2204,6 +2697,7 @@ public partial class MainTrackerWindow
             var newDialog = await UiTestWaitForAsync(() => QuickDialog("new-multiworld"), "the New multiworld dialog");
             UiTestExpect(ShownContent() == home, "New… left Home");
             await UiTestDialogSizedAsync(newDialog, "the New multiworld dialog");
+            UiTestExpect(newDialog.FindChild("AddYamlButton", true, false) == null && !newDialog.FindChildren("*", nameof(Button), true, false).OfType<Button>().Any(b => b.Text.Contains("YAML")), "New multiworld still offers a YAML");
             ((LineEdit)newDialog.FindChild("NameBox", true, false)).Text = "Quick MW";
             ((LineEdit)newDialog.FindChild("ServerBox", true, false)).Text = server.Url.ToString();
             var slotsBox = (VBoxContainer)newDialog.FindChild("SlotsBox", true, false);
@@ -2527,30 +3021,21 @@ public partial class MainTrackerWindow
             row.Select(0);
             await UiTestWaitAsync(0.1);
             UiTestExpect(page.SelectedGame == "Atlas Test Game", "selecting a game didn't show its page");
-            // Its Next step first (the apworld, step 1 of 2: no slot's logic needed a YAML), the other steps in folds, none
-            // done yet; nothing of the testing tools outside developer mode.
-            var steps = page.Steps();
-            UiTestExpect(steps.Count == 4 && steps.All(s => !s.Done) && steps.Select(s => s.Title).SequenceEqual(new[] { "The apworld in the Atlas Engine", "A map pack", "Your YAML", "Files its setup needs (only if its guide asks)" }),
-                $"the game's page has the steps {string.Join("; ", steps.Select(s => s.Title + (s.Done ? " (done)" : "")))}");
-            UiTestExpect(page.NextStep == ("The apworld in the Atlas Engine", "Step 1 of 2") && !page.DebugShown, $"the Next step card shows {page.NextStep}, or Debug shows outside developer mode");
-            UiTestExpect(new[] { "games:versions", "games:map-packs", "games:yaml", "games:files" }.All(key => AP_Atlas.UI.Kit.FoldedState(page, key) == true), "the game's other parts aren't folded");
-            // Skip (remembered for the game) shows the next step; with both skipped the card says Ready to play; Show skipped steps brings them back.
-            Button PageButton(string meta) => page.FindChildren("*", nameof(Button), true, false).OfType<Button>().First(b => b.HasMeta(meta) && !b.IsQueuedForDeletion());
-            PageButton("skip_step").EmitSignal(BaseButton.SignalName.Pressed);
-            await UiTestWaitForAsync(() => page.NextStep.Title == "A map pack" ? page : null, "Skip to show the next step");
-            UiTestExpect(page.NextStep.Line == "Step 2 of 2" && _appSettings.SkippedGameSteps.TryGetValue("Atlas Test Game", out var skippedSteps) && skippedSteps.Contains("apworld")
-                && DataManager.LoadSettings().SkippedGameSteps.ContainsKey("Atlas Test Game"), $"Skip shows {page.NextStep}, or wasn't remembered for the game");
-            PageButton("skip_step").EmitSignal(BaseButton.SignalName.Pressed);
-            await UiTestWaitForAsync(() => page.NextStep.Title == null ? page : null, "Ready to play with every step skipped");
-            UiTestExpect(page.NextStep.Line == "Ready to play", $"with every step skipped the card shows {page.NextStep}");
-            PageButton("unskip_steps").EmitSignal(BaseButton.SignalName.Pressed);
-            await UiTestWaitForAsync(() => page.NextStep.Title == "The apworld in the Atlas Engine" ? page : null, "Show skipped steps to bring the steps back");
-            UiTestExpect(!_appSettings.SkippedGameSteps.ContainsKey("Atlas Test Game"), "Show skipped steps didn't forget the game's skips");
-            // A YAML naming two games is listed under both, and ticks the step.
+            // One card on top (no source of its logic known yet: Atlas can't add it, with Add a project… and Choose a file…; no
+            // engine: the engine first), the rest in closed folds (Advanced holds the versions and file installs); no YAML on
+            // the page, nothing of the testing tools outside developer mode.
+            bool engineReady = AP_Atlas.Core.EngineSetup.AtlasEngine.Current is { CanLaunch: true };
+            Button? PageButton(string meta) => page.FindChildren("*", nameof(Button), true, false).OfType<Button>().FirstOrDefault(b => b.HasMeta(meta) && !b.IsQueuedForDeletion());
+            UiTestExpect(page.GameCardShown.Standing == (engineReady ? AP_Atlas.Core.Games.GameStanding.Unknown : AP_Atlas.Core.Games.GameStanding.EngineFirst) && page.UpdateOffered == null && !page.DebugShown,
+                $"the card shows {page.GameCardShown} with Update to {page.UpdateOffered}, or Debug shows outside developer mode (engine ready: {engineReady})");
+            UiTestExpect(new[] { "games:map-packs", "games:files", "games:advanced" }.All(key => AP_Atlas.UI.Kit.FoldedState(page, key) == true), "the game's other parts aren't folded");
+            UiTestExpect(PageButton("find_pack")?.Text == "Find a map pack…" && PageButton("game_doctor") == null, "the card doesn't offer to find a pack, or offers Doctor… without one");
+            bool NoYaml() => AP_Atlas.UI.Kit.FoldedState(page, "games:yaml") == null
+                && !page.FindChildren("*", nameof(Button), true, false).OfType<Button>().Any(b => b.Text.Contains("YAML"))
+                && !page.FindChildren("*", nameof(Label), true, false).OfType<Label>().Any(l => l.Text.Contains("YAML"));
+            UiTestExpect(NoYaml(), "the game's page speaks of a YAML");
+            // A slot's linked YAML still names its games for the list (the YAML itself isn't on the Games page).
             AP_Atlas.Core.SafeFile.WriteAllText(yaml, "name: Me\ngame:\n  Atlas Test Game: 1\n  Other Test Game: 1\n");
-            var entry = page.AddYamlFile(yaml) ?? throw new InvalidOperationException("the YAML wasn't added");
-            var library = AP_Atlas.Core.Games.YamlLibrary.Load(DataManager.GetDataDirectory());
-            UiTestExpect(entry.Games.Count == 2 && library.For("Atlas Test Game").Count == 1 && library.For("Other Test Game").Count == 1, "a two-game YAML isn't listed under both games");
             // A slot's linked YAML puts its games at the top too, before the slot ever connects.
             string meKey = AP_Atlas.Core.Annotations.SlotKey(profile.Id, "Me");
             _appSettings.SlotYamlPaths[meKey] = yaml;
@@ -2558,12 +3043,10 @@ public partial class MainTrackerWindow
             UiTestExpect(page.ShownSections[0] == "In your multiworlds (2)" && page.ShownGames.Take(2).OrderBy(g => g).SequenceEqual(new[] { "Atlas Test Game", "Other Test Game" }),
                 $"a linked YAML's games aren't listed first: {string.Join(" | ", page.ShownSections)}; {string.Join(", ", page.ShownGames.Take(3))}");
             _appSettings.SlotYamlPaths.Remove(meKey);
-            UiTestExpect(page.Steps().Any(s => s.Title == "Your YAML" && s.Done), "the YAML step isn't ticked once a YAML for the game is kept");
             // The game's folders are Atlas's own.
             string data = System.IO.Path.GetFullPath(DataManager.GetDataDirectory());
             UiTestExpect(System.IO.Path.GetFullPath(AP_Atlas.Core.Games.GameFiles.GameFolder(data, "Atlas Test Game")).StartsWith(data, StringComparison.OrdinalIgnoreCase)
                 && System.IO.Path.GetFullPath(AP_Atlas.Core.Games.GameFiles.YamlsFolder(data)).StartsWith(data, StringComparison.OrdinalIgnoreCase), "a game's folder isn't inside Atlas's data folder");
-            library.Remove(library.For("Atlas Test Game")[0]);
 
             // Every project's versions. GitHub is a fake site: the project added for the game publishes 1.0.0; a search for
             // projects of the same name finds a fork publishing 1.2.0 and a 1.3.0 pre-release (and an unrelated project,
@@ -2596,7 +3079,23 @@ public partial class MainTrackerWindow
             UiTestExpect(page.PickedVersion == "1.2.0", $"ticking 1.2.0 picked {page.PickedVersion}");
             UiTestExpect(github.Requests.Count(r => r.StartsWith("/search/")) == 1, $"GitHub was searched {github.Requests.Count(r => r.StartsWith("/search/"))} times, not once");
             UiTestExpect(!github.Requests.Any(r => r.StartsWith("/dl/")), "a version was downloaded without a press");
-            UiTestExpect(page.Steps().Any(s => s.Title == "A map pack" && !s.Done), "the map pack step is missing");
+            // With its project known, the card offers to add the game: its logic (from the project's newest release; its size is
+            // read from GitHub then), no map pack known. The versions live under the closed Advanced fold.
+            UiTestExpect(engineReady ? page.GameCardShown.Standing == AP_Atlas.Core.Games.GameStanding.Add && page.GameCardShown.Line.Contains("logic (no map pack is known yet)")
+                    && page.GameCardShown.Line.Contains("size not listed") && PageButton("add_game") != null
+                : page.GameCardShown.Standing == AP_Atlas.Core.Games.GameStanding.EngineFirst, $"with its project known the card shows {page.GameCardShown}");
+            var advanced = AP_Atlas.UI.Kit.SectionBody(page, "games:advanced");
+            UiTestExpect(advanced != null && AP_Atlas.UI.Kit.FoldedState(page, "games:advanced") == true && advanced.FindChildren("*", nameof(Button), true, false).OfType<Button>().Any(b => b.Text == "Add a project…"),
+                "the versions and their buttons aren't under the closed Advanced fold");
+            if (engineReady)
+            {
+                // Add this game… opens Add games with the game ticked (nothing is asked of any site before its confirm).
+                PageButton("add_game")!.EmitSignal(BaseButton.SignalName.Pressed);
+                var fromCard = await UiTestWaitForAsync(() => AP_Atlas.UI.AddGamesDialog.Showing, "Add games from the game's card");
+                UiTestExpect(fromCard.Panel.IsTicked("Atlas Test Game"), "the card's Add this game… didn't tick the game");
+                fromCard.EmitSignal(AcceptDialog.SignalName.Canceled);
+                await UiTestWaitAsync(0.1);
+            }
             // Map packs live on the Games page. A pack Atlas hasn't read yet still counts for its game (its manifest is read);
             // its row shows in the game's Map packs section once the rescan has read it, and not on another game's page; All
             // map packs, the entry at the list's foot, lists every pack, found by typed words, a pack for no game Atlas lists
@@ -2604,11 +3103,12 @@ public partial class MainTrackerWindow
             System.IO.Directory.CreateDirectory(packsDir);
             FakeMapPack.Write(gamePack, "UI test games pack", "Atlas Test Game");
             FakeMapPack.Write(strayPack, "UI test stray pack", "No Such Game At All");
-            // A pack arriving for a game whose page shows (a rescan's redraw) moves its Next step on.
+            // A pack arriving for a game whose page shows (a rescan's redraw) puts its Doctor… on the card.
             page.RefreshPacks();
-            await UiTestWaitForAsync(() => page.Steps().Any(s => s.Title == "A map pack" && s.Done) ? page : null, "the game's page to see the pack that arrived (its Next step moves on)");
+            await UiTestWaitForAsync(() => PageButton("game_doctor"), "the card to see the pack that arrived (Doctor… for it)");
             page.Refresh();
-            UiTestExpect(page.Steps().Any(s => s.Title == "A map pack" && s.Done), "a pack Atlas hasn't read yet doesn't count for its game");
+            UiTestExpect(string.Equals(System.IO.Path.GetFullPath(PageButton("game_doctor")?.GetMeta("game_doctor").AsString() ?? ""), System.IO.Path.GetFullPath(gamePack), StringComparison.OrdinalIgnoreCase)
+                && PageButton("find_pack")?.Text == "Find another map pack…", "a pack Atlas hasn't read yet doesn't count for its game on the card");
             _packManagerPanel.Rescan();
             Node? PackRow(string zip) => page.FindChildren("*", "", true, false).FirstOrDefault(n => IsInstanceValid(n) && !n.IsQueuedForDeletion() && n.HasMeta("pack_row") && n.GetMeta("pack_row").AsString() == zip);
             await UiTestWaitForAsync(() => PackRow(gamePack), "the game's pack row in its Map packs section");
@@ -2633,8 +3133,8 @@ public partial class MainTrackerWindow
             sure.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
             await UiTestWaitForAsync(() => !System.IO.File.Exists(strayPack) && PackRow(strayPack) == null && PackRow(gamePack) != null ? page : null, "the deleted pack to leave the folder and the list");
             page.Select("Atlas Test Game");
-            // Add YAML's menu offers Atlas's YAML folder (the install's Players folder and this game's downloads only when they exist).
-            UiTestExpect(page.YamlMenuItems().SequenceEqual(new[] { "From Atlas's YAML folder…" }), $"the Add YAML menu offers: {string.Join(", ", page.YamlMenuItems())}");
+            // Still no YAML on the game's page: a slot's YAML lives on its Details and the Logic Tracker's banner.
+            UiTestExpect(NoYaml(), "the game's page speaks of a YAML");
             // The release-files dialog: sized, a check box per file (the release's files besides the apworld), Select all; nothing downloads without Download.
             page.ListReleaseFilesForTests("Atlas Test Game");
             var files = await UiTestWaitForAsync(() => page.GetChildren().OfType<ConfirmationDialog>().FirstOrDefault(d => d.HasMeta("release_files") && !d.IsQueuedForDeletion()), "the release-files dialog");
@@ -2657,7 +3157,6 @@ public partial class MainTrackerWindow
             AP_Atlas.Core.GitHubApi.ResetForTests();
             AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.GitHubLookups, null, false);
             _appSettings.ExtraApworldRepos.Remove("Atlas Test Game");
-            _appSettings.SkippedGameSteps.Remove("Atlas Test Game");
             _appSettings.ApprovedApworldSources.Remove("github.com/owner/atlas-test");
             AP_Atlas.Core.SafeFile.Delete(yaml);
             foreach (string zip in new[] { gamePack, strayPack }) AP_Atlas.Core.SafeFile.Delete(zip);
@@ -2923,13 +3422,12 @@ public partial class MainTrackerWindow
     private async Task AddSlotDialogAsync()
     {
         await using var server = new FakeArchipelagoServer();
-        server.Slots.Add("Carol"); // the room knows the slot the YAML names
+        server.Slots.Add("Carol"); // the room knows the slot
         var profile = new MultiworldProfile { Name = "Add slot test", ServerUrl = server.Url.ToString() };
         profile.Slots.Clear();
         profile.Slots.Add("Tester");
         profile.SavedStats["Tester"] = new SlotStats { GameName = "Test Game" };
         var bare = new MultiworldProfile { Name = "Bare" };
-        string yaml = System.IO.Path.Combine(DataManager.GetDataDirectory(), "uitest_add_slot.yaml");
         string carolKey = AP_Atlas.Core.Annotations.SlotKey(profile.Id, "Carol");
         _profiles.Add(profile);
         _profiles.Add(bare);
@@ -2962,31 +3460,23 @@ public partial class MainTrackerWindow
             dialog.GameSearch.EmitSignal(LineEdit.SignalName.TextChanged, dialog.GameSearch.Text);
             UiTestExpect(dialog.ShownGames.Contains("Test Game") && dialog.CurrentGame == "Test Game", $"typing \"test game\" lists {string.Join(", ", dialog.ShownGames)} (game: {dialog.CurrentGame})");
             UiTestExpect(dialog.StatusText.Contains("isn't set up") && dialog.StatusActionText == "Set up the Atlas Engine", $"the engine line reads \"{dialog.StatusText}\" with \"{dialog.StatusActionText}\"");
-            // A YAML names the slot and its game: two players give a choice, the first filled in.
-            AP_Atlas.Core.SafeFile.WriteAllText(yaml, "name: Carol\ngame: Test Game\n---\nname: Dave\ngame: Other Game\n");
-            dialog.TakeYaml(yaml);
-            UiTestExpect(dialog.PlayerChoices().SequenceEqual(new[] { "Carol (Test Game)", "Dave (Other Game)" }) && dialog.NameInput.Text == "Carol" && dialog.CurrentGame == "Test Game",
-                $"the YAML's players aren't offered, or the first isn't filled in: {string.Join(", ", dialog.PlayerChoices())}; name \"{dialog.NameInput.Text}\", game \"{dialog.CurrentGame}\"");
-            dialog.ChoosePlayer(1);
-            UiTestExpect(dialog.NameInput.Text == "Dave" && dialog.CurrentGame == "Other Game", "choosing the second player didn't fill in its name and game");
-            dialog.ChoosePlayer(0);
-            // Add with Connect now: the slot is on disk with its game and its kept YAML, the dialog is gone, and the slot connects.
+            // No YAML in the dialog: logic asks for one only when the server's data can't rebuild the world.
+            UiTestExpect(!dialog.FindChildren("*", nameof(Button), true, false).OfType<Button>().Any(b => b.Text.Contains("YAML"))
+                && !dialog.FindChildren("*", nameof(Label), true, false).OfType<Label>().Any(l => l.Text.Contains("YAML")), "the Add a slot dialog still offers a YAML");
+            dialog.NameInput.Text = "Carol";
+            // Add with Connect now: the slot is on disk with its game, the dialog is gone, and the slot connects.
             dialog.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
             var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Carol"), "the new slot's view");
             UiTestExpect(profile.Slots.SequenceEqual(new[] { "Tester", "Carol" }) && profile.SavedStats.TryGetValue("Carol", out var carol) && carol.GameName == "Test Game"
-                && _appSettings.SlotYamlPaths.TryGetValue(carolKey, out var kept) && System.IO.File.Exists(kept) && !string.Equals(kept, yaml, StringComparison.OrdinalIgnoreCase)
+                && !_appSettings.SlotYamlPaths.ContainsKey(carolKey)
                 && DataManager.LoadProfiles().Any(p => p.Id == profile.Id && p.Slots.Contains("Carol")) && Dialog() == null,
-                "the slot wasn't added with its game and kept YAML, saved to disk, with the dialog closed");
+                "the slot wasn't added with its game, saved to disk, with the dialog closed (and no YAML tied to it)");
         }
         finally
         {
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
             if (_profiles.Contains(profile)) DeleteProfile(profile);
             if (_profiles.Contains(bare)) DeleteProfile(bare);
-            _appSettings.SlotYamlPaths.Remove(carolKey);
-            var library = AP_Atlas.Core.Games.YamlLibrary.Load(DataManager.GetDataDirectory());
-            foreach (var entry in library.For("Test Game").Concat(library.For("Other Game")).Where(e => e.File == "uitest_add_slot.yaml").Distinct().ToList()) library.Remove(entry);
-            AP_Atlas.Core.SafeFile.Delete(yaml);
         }
     }
 

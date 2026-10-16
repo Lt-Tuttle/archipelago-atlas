@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Godot;
 
@@ -127,7 +128,7 @@ namespace AP_Atlas.Core.PopTracker
                 }
                 int needs = report.NeedsReview.Count();
                 bool newOrChanged = fixes.ReviewedVersion != version;
-                if (prompt && newOrChanged && needs > 0)
+                if (prompt && newOrChanged && needs > 0 && !_postponed.Contains(PostponedKey(key, version)))
                 {
                     int fixable = report.Findings.Count(f => !f.Ignored && (f.Actions.HasFlag(FindingActions.LinkItem) || f.Actions.HasFlag(FindingActions.LinkLocation)));
                     string name = original.Manifest?.Name ?? key, review = $"Pack Doctor: {original.Manifest?.Name} has {needs} thing{(needs == 1 ? "" : "s")} to review.";
@@ -322,7 +323,8 @@ namespace AP_Atlas.Core.PopTracker
             {
                 if (_released) return;
                 _released = true;
-                if (--_promptHolds > 0) return;
+                _promptHolds = Math.Max(0, _promptHolds - 1);
+                if (_promptHolds > 0) return;
                 var held = _heldPrompts.ToList();
                 _heldPrompts.Clear();
                 foreach (var (key, raise) in held)
@@ -335,6 +337,41 @@ namespace AP_Atlas.Core.PopTracker
             if (_promptHolds == 0) { raise(); return; }
             _heldPrompts.RemoveAll(p => string.Equals(p.Key, key, StringComparison.OrdinalIgnoreCase));
             _heldPrompts.Add((key, raise));
+        }
+
+        // Pack versions Add games' summary asks about this session (answered or not): their own "Fix now" card waits for
+        // Atlas's next start, so Later isn't followed by the same question when a slot opens the pack. Another version of the
+        // pack (an update later in the session) asks as usual. Main thread.
+        private static readonly HashSet<string> _postponed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Holds back these packs' prompts until Atlas starts again (Add games asks about them itself). Main thread.</summary>
+        public static void PostponePrompts(IEnumerable<(string Key, string Version)> packs)
+        {
+            foreach (var (key, version) in packs) _postponed.Add(PostponedKey(key, version));
+        }
+
+        private static string PostponedKey(string packKey, string version) => packKey + "\n" + (version ?? "");
+
+        /// <summary>Whether a pack's prompt waits for Atlas's next start (for tests).</summary>
+        internal static bool Postponed(string packKey, string version) => _postponed.Contains(PostponedKey(packKey, version));
+
+        /// <summary>As at Atlas's start: no hold on the prompts and none held (for tests that mustn't depend on the ones before). Returns the holds there were.</summary>
+        internal static int ResetPromptHoldsForTests()
+        {
+            int holds = _promptHolds;
+            _promptHolds = 0;
+            _heldPrompts.Clear();
+            return holds;
+        }
+
+        /// <summary>As at Atlas's next start (for tests).</summary>
+        internal static void ForgetPostponedForTests() => _postponed.Clear();
+
+        /// <summary>Waits until no check of the pack runs or is queued (at most <paramref name="most"/>): its report is then the last word. Main thread.</summary>
+        public static async Task WhenIdleAsync(string packKey, TimeSpan most, CancellationToken ct = default)
+        {
+            var until = Deadline.In(most);
+            while ((IsChecking(packKey) || IsBusy(packKey)) && !until.Passed) await Task.Delay(250, ct);
         }
 
         /// <summary>Marks a pack's current version as reviewed (no more prompts until it changes).</summary>

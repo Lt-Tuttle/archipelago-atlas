@@ -117,7 +117,7 @@ namespace AP_Atlas.UI
 
             var gamesRow = new HBoxContainer();
             gamesRow.AddThemeConstantOverride("separation", 8);
-            var gamesNote = Wrapped(Kit.Muted(_tr("A game is set up on the Games page: its apworld (every version every known project publishes, the installed one marked), its map packs, your YAML and the files its setup needs.")));
+            var gamesNote = Wrapped(Kit.Muted(_tr("Games are added on the Games page (Add games…): each one's logic and a map pack in one step. A game's page has the rest: its versions under Advanced, and the files its setup needs.")));
             gamesRow.AddChild(gamesNote);
             gamesRow.AddChild(Kit.Button(_tr("Open the Games page"), _tr("Shows the Games page"), () => _hooks.OpenGamesPage()));
             page.AddChild(gamesRow);

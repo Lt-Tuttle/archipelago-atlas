@@ -140,7 +140,7 @@ namespace AP_Atlas.UI
                 return;
             }
             if (_selected == null) return;
-            // A pack installed for a game that had none (or its last one deleted) moves its Next step: the page is drawn again.
+            // A pack installed for a game that had none (or its last one deleted) changes its card: the page is drawn again.
             string shown = _selected;
             if (_games.Any(g => g.Game == shown) && PacksFor(shown).Count > 0 != _shownHasPack)
             {
@@ -170,7 +170,7 @@ namespace AP_Atlas.UI
 
         private List<PackFile> PacksFor(string game) => _packs.Where(p => PackIsFor(p, game)).ToList();
 
-        /// <summary>A game's map packs, as rows in a box of their own that RefreshPacks redraws (the map pack step finds one when there's none).</summary>
+        /// <summary>A game's map packs, as rows in a box of their own that RefreshPacks redraws (the card finds one when there's none).</summary>
         private void MapPacksSection(VBoxContainer fold, string game, List<PackFile> packs)
         {
             var body = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
@@ -184,7 +184,7 @@ namespace AP_Atlas.UI
         {
             if (packs.Count == 0)
             {
-                body.AddChild(Wrapped(Kit.Muted(_tr("No map pack for this game is installed. The map pack step finds one; All map packs, at the foot of the list, installs a zip you have."))));
+                body.AddChild(Wrapped(Kit.Muted(_tr("No map pack for this game is installed. The card above finds one (Add this game, or Find a map pack…); All map packs, at the foot of the list, installs a zip you have."))));
                 return;
             }
             if (_hooks.Packs is { } service) service.BuildPackRows(body, packs.Select(p => p.Path).ToList(), showGame: false);

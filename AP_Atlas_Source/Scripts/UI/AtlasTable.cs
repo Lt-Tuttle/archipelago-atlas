@@ -113,6 +113,12 @@ namespace AP_Atlas.UI
         public string EmptyText { get; set; }
         public string NoMatchText { get; set; }
 
+        /// <summary>
+        /// What this table's rows are, for its count: translated templates ("{0} game", "{0} games", "{0} of {1} games");
+        /// null counts rows.
+        /// </summary>
+        public (string One, string Many, string OfMany)? CountWords { get; set; }
+
         /// <summary>The most rows drawn (a room's page can hold tens of thousands); the count says so.</summary>
         public int MaxRows { get; set; } = int.MaxValue;
 
@@ -425,7 +431,9 @@ namespace AP_Atlas.UI
             _shownRows = shown;
 
             int total = TotalCount ?? _rows.Count;
-            string count = found == total ? string.Format(_tr(total == 1 ? "{0} row" : "{0} rows"), total.ToString("N0"))
+            string count = CountWords is { } noun
+                ? (found == total ? string.Format(total == 1 ? noun.One : noun.Many, total.ToString("N0")) : string.Format(noun.OfMany, found.ToString("N0"), total.ToString("N0")))
+                : found == total ? string.Format(_tr(total == 1 ? "{0} row" : "{0} rows"), total.ToString("N0"))
                 : string.Format(_tr("{0} of {1} rows"), found.ToString("N0"), total.ToString("N0"));
             if (found > MaxRows) count += " " + string.Format(_tr("(showing the first {0})"), MaxRows.ToString("N0"));
             CountLabel.Text = count;
@@ -476,6 +484,8 @@ namespace AP_Atlas.UI
                         empty.ClearCustomBgColor(k);
                         empty.SetSelectable(k, false);
                         empty.SetTooltipText(k, "");
+                        empty.SetCellMode(k, TreeItem.TreeCellMode.String); // the item may have been a row's check cell
+                        empty.SetEditable(k, false);
                     }
                     empty.SetText(0, _rows.Count == 0 ? EmptyText : NoMatchText);
                     empty.SetCustomColor(0, ThemeColors.TextSubtle);

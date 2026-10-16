@@ -117,6 +117,8 @@ namespace AP_Atlas.Core.EngineSetup
             {
                 b.Finished = true;
                 outcome.GitHubRequests = b.GitHubRequests;
+                // The packs its summary asks about: their own "Fix now" card waits for Atlas's next start, answered or not.
+                PackDoctorService.PostponePrompts(offers.Select(o => (o.Look.PackKey, o.Original.Manifest?.GetActualVersion() ?? "")));
                 hold.Release(offers.Select(o => o.Look.PackKey).ToList());
                 Volatile.Write(ref _running, 0);
             }
@@ -330,26 +332,35 @@ namespace AP_Atlas.Core.EngineSetup
             foreach (var (game, file) in packs)
             {
                 b.Ct.ThrowIfCancellationRequested();
-                LoadedPack? original;
-                try { original = PopTrackerPackLoader.InspectZipPack(file); }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    Logger.LogWarning($"[Add games] {Path.GetFileName(file)} couldn't be read for its check: {ex.Message}");
-                    continue;
-                }
-                if (original == null) continue;
-                string key = PackFixes.KeyFor(original);
-                var report = await SettledReportAsync(original, key, b.Ct);
-                if (report == null) continue;
-                var fixes = PackFixes.Get(key);
-                int needs = report.NeedsReview.Count();
-                // As the Doctor's own prompt decides: something to decide, in a version not reviewed yet.
-                if (needs == 0 || fixes.ReviewedVersion == (original.Manifest?.GetActualVersion() ?? "")) continue;
-                var plan = PackBulk.Suggested(report, fixes);
-                var look = new PackToLook(game, key, original.Manifest?.Name ?? Path.GetFileNameWithoutExtension(file), file, needs, plan.Summary());
-                b.Outcome.PacksToLook.Add(look);
-                offers.Add(new PackFixOffer(look, original, report, plan));
+                if (await OfferAsync(game, file, b.Ct) is not { } offer) continue;
+                b.Outcome.PacksToLook.Add(offer.Look);
+                offers.Add(offer);
             }
+        }
+
+        /// <summary>
+        /// A pack's offer for "fix them now?" once the Doctor has settled on it: null when it can't be read or wasn't checked, or
+        /// when nothing needs deciding in a version not reviewed yet (as the Doctor's own prompt decides). Main thread.
+        /// </summary>
+        internal static async Task<PackFixOffer?> OfferAsync(string game, string file, CancellationToken ct)
+        {
+            LoadedPack? original;
+            try { original = PopTrackerPackLoader.InspectZipPack(file); }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Logger.LogWarning($"[Add games] {Path.GetFileName(file)} couldn't be read for its check: {ex.Message}");
+                return null;
+            }
+            if (original == null) return null;
+            string key = PackFixes.KeyFor(original);
+            var report = await SettledReportAsync(original, key, ct);
+            if (report == null) return null;
+            var fixes = PackFixes.Get(key);
+            int needs = report.NeedsReview.Count();
+            if (needs == 0 || fixes.ReviewedVersion == (original.Manifest?.GetActualVersion() ?? "")) return null;
+            var plan = PackBulk.Suggested(report, fixes);
+            var look = new PackToLook(game, key, original.Manifest?.Name ?? Path.GetFileNameWithoutExtension(file), file, needs, plan.Summary());
+            return new PackFixOffer(look, original, report, plan);
         }
 
         /// <summary>
@@ -364,11 +375,7 @@ namespace AP_Atlas.Core.EngineSetup
             return PackDoctorService.Reports.TryGetValue(key, out var report) ? report : null;
         }
 
-        private static async Task DoctorIdleAsync(string key, CancellationToken ct)
-        {
-            var until = Deadline.In(DoctorWait);
-            while ((PackDoctorService.IsChecking(key) || PackDoctorService.IsBusy(key)) && !until.Passed) await Task.Delay(250, ct);
-        }
+        private static Task DoctorIdleAsync(string key, CancellationToken ct) => PackDoctorService.WhenIdleAsync(key, DoctorWait, ct);
 
         /// <summary>A running batch: its plan, rows, bar and the line it shows.</summary>
         private sealed class Batch

@@ -39,17 +39,22 @@ namespace AP_Atlas.UI
         public required Action<string, string, string> OpenDocument { get; init; }
         /// <summary>Shows the Atlas Engine page's seed test ("Verify logic against a seed…", developer mode).</summary>
         public required Action OpenSeedVerify { get; init; }
+        /// <summary>Opens Add games, the game ticked when given (the overview's button, a game's card).</summary>
+        public required Action<string?> AddGames { get; init; }
+        /// <summary>Opens "Start a pack" for a game (a connected slot of it gives the names, else the names Atlas kept).</summary>
+        public required Action<string> StartPack { get; init; }
     }
 
     /// <summary>
     /// The Games page: every game Atlas knows, in three groups (Official: they ship with Archipelago; Community: from the
     /// community index; Added by you: projects you added and apworlds you installed that the index doesn't know), found by
-    /// typed words and sorted by name, by readiness or by when you last played. A game's page holds its setup in
-    /// one place: the apworld in the engine (every version every known project publishes, the installed one marked, a
-    /// recommendation per connected slot), a map pack (installed, or found on GitHub from here), a YAML (kept in Atlas's
-    /// YAML folder, a multi-game one under each of its games), the loose files some games need (downloaded from a release
-    /// of your choice into the game's own folder; Atlas never runs them), your slots that play it (with the version
-    /// picker for a seed made with another version) and its setup guide. It opens on its Next step; the rest waits in folds, and the testing tools in Debug (developer mode).
+    /// typed words and sorted by name, by readiness or by when you last played. The overview offers Add games… (every
+    /// game with a check box; AddGamesPanel). A game's page opens on one card saying where the game stands (Ready to play,
+    /// Add this game, Update to …: GamesPage.GameCard), with its map packs, the loose files some games need (downloaded
+    /// from a release of your choice into the game's own folder; Atlas never runs them), its links and guides and your
+    /// slots that play it in folds; Advanced holds every version every known project publishes (the installed one's card,
+    /// the look inside the newest releases), a file of yours and your Archipelago install's copy; Debug (developer mode)
+    /// the testing tools. No YAML here: a slot's YAML is on its Details and the Logic Tracker's banner, where logic asks for one.
     /// </summary>
     public sealed partial class GamesPage : VBoxContainer
     {
@@ -75,7 +80,6 @@ namespace AP_Atlas.UI
         private List<GameEntry> _games = new();
         private string? _selected;
         private CancellationTokenSource? _running;
-        private YamlLibrary? _yamls;
         // What GitHub said this session, per game: the projects and every version they publish (nothing is asked twice).
         private readonly Dictionary<string, List<ApworldSources.ApworldRepo>> _projects = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, List<ApworldVersion>> _versions = new(StringComparer.OrdinalIgnoreCase);
@@ -193,7 +197,6 @@ namespace AP_Atlas.UI
 
         public void Refresh()
         {
-            _yamls = YamlLibrary.Load(DataManager.GetDataDirectory());
             _packs = ReadPacks();
             _games = CollectGames();
             if (_selected != null && _selected != AllPacksKey && !_games.Any(g => g.Game == _selected))
@@ -351,7 +354,12 @@ namespace AP_Atlas.UI
             Clear(_detail);
             _detail.AddChild(Kit.Heading(_tr("Games"), 1.4f));
             int official = _games.Count(g => g.Section == Section.Official), community = _games.Count(g => g.Section == Section.Community), yours = _games.Count(g => g.Section == Section.Yours);
-            _detail.AddChild(Wrapped(Kit.Text(_tr("Pick a game on the left to set it up: its apworld in the Atlas Engine, a map pack, your YAML and any files its setup needs, all from its page."))));
+            _detail.AddChild(Wrapped(Kit.Text(_tr("Add games… adds the games you play in one go: tick them, and Atlas installs each one's logic in the Atlas Engine and a map pack, after one question. A game's page, on the left, has the rest."))));
+            var addGames = Kit.Button(_tr("Add games…"), _tr("Every game Atlas knows with a check box, the games of your multiworlds ticked where they need something; Atlas says what it downloads and from where before anything starts."), () => _hooks.AddGames(null));
+            addGames.ThemeTypeVariation = Kit.PrimaryButton;
+            addGames.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
+            addGames.SetMeta("add_games_button", true);
+            _detail.AddChild(addGames);
             _detail.AddChild(Wrapped(Kit.Muted(_tr("{0} official games (they ship with Archipelago), {1} from the community index, {2} added by you.")
                 .Replace("{0}", official.ToString()).Replace("{1}", community.ToString()).Replace("{2}", yours.ToString()))));
             var install = AtlasEngine.Current;
@@ -365,7 +373,6 @@ namespace AP_Atlas.UI
             var row = new HFlowContainer();
             row.AddThemeConstantOverride("h_separation", 8);
             row.AddChild(Kit.Button(_tr("Open the games folder"), _tr("Where Atlas keeps each game's apworld releases and files."), () => OpenFolder(GameFiles.GamesFolder(DataManager.GetDataDirectory()))));
-            row.AddChild(Kit.Button(_tr("Open the YAML folder"), _tr("Where Atlas keeps the YAMLs you add."), () => OpenFolder(GameFiles.YamlsFolder(DataManager.GetDataDirectory()))));
             _detail.AddChild(row);
             OverviewDebugSection();
 
@@ -430,115 +437,50 @@ namespace AP_Atlas.UI
             _detail.AddChild(Kit.Heading(game, 1.4f));
             _detail.AddChild(Wrapped(Kit.Muted(entry.Section switch
             {
-                Section.Official => _tr("Official: ships with Archipelago, so the Atlas Engine has it."),
+                Section.Official => _tr("Official: it ships with Archipelago."),
                 Section.Community => _tr("Community: from the community index") + (entry.Repo != null ? " (github.com/" + entry.Repo + ")." : "."),
                 _ => _tr("Added by you") + (entry.Repo != null ? " (github.com/" + entry.Repo + ")." : ".")
             })));
 
-            // The steps: each says what Atlas has, with the button that does it. The first one the game needs that isn't
-            // done (or skipped) leads the page as its Next step; every other part waits in a fold, remembered as left.
-
-            // 1. The apworld: what's installed, and every version every known project publishes.
+            // One card on top says where the game stands, with the one thing to do (GamesPage.GameCard); the rest waits in
+            // folds, each kept as the user leaves it: its map packs, the files its setup needs, its links, your slots, then
+            // Advanced (every version of every project, a file of yours, your Archipelago install's copy) and Debug.
             var installed = engineReady ? ApworldSources.InstalledCopies(install!, game) : new List<(string File, string Sha256)>();
-            string? version = installed.Select(c => ApworldSources.KnownSourceOf(c.Sha256).Tag).FirstOrDefault(t => t != null);
             var choices = Choices(game, installed);
-            var newest = choices.FirstOrDefault(c => !c.Prerelease && c.Url != null);
+            var view = ViewOf(game, choices);
             bool anyProject = entry.Repo != null || ApworldSources.Find(game)?.Repo != null || _projects.TryGetValue(game, out var known) && known.Count > 0;
-            var apworldButtons = new List<Button>();
-            if (!engineReady) apworldButtons.Add(Kit.Button(_tr("Set up the Atlas Engine…"), null, _hooks.OpenEngineSetup));
-            else
-            {
-                if (entry.Section != Section.Official && (newest != null || anyProject))
-                    apworldButtons.Add(Kit.Button(entry.InEngine ? _tr("Update…") : _tr("Install…"),
-                        _tr("Installs the release Atlas picks in the Atlas Engine: the one your map pack fits, else the one whose own setup guide names a map tracker, else the newest full release (you're asked to trust a project once; the file is checked against its published SHA-256)."),
-                        () => InstallNewest(game)));
-                if (entry.Section != Section.Official)
-                    apworldButtons.Add(Kit.Button(_tr("Choose a file…"), _tr("Install an .apworld file you have."), () => InstallFile(game)));
-                if (entry.Section != Section.Official && install!.Mode == EngineMode.Portable && InstallFolderKnown)
-                    apworldButtons.Add(Kit.Button(_tr("Copy from my install…"), _tr("Looks in the Archipelago install you chose (its custom_worlds and lib/worlds folders, nothing else) for this game's apworld and copies it into the Atlas Engine."), () => CopyFromInstall(game)));
-            }
-            var apworldStep = new SetupStep("apworld", engineReady && entry.InEngine, _tr("The apworld in the Atlas Engine"),
-                !engineReady ? _tr("The Atlas Engine isn't set up yet.")
-                : entry.Section == Section.Official && AtlasEngine.WorldsToUnpack(install!, game).Count > 0
-                    ? _tr("Ships with Archipelago {0}: its world is unpacked from Archipelago's release when a slot first needs it ({1}, downloaded once, asked first).").Replace("{0}", AtlasEngine.ArchipelagoVersion).Replace("{1}", AtlasEngine.WorldsZipSize)
-                : entry.InEngine ? _tr("In the engine") + (version != null ? " (" + version + ")" : "") + "."
-                : check == null ? _tr("Atlas hasn't checked the engine yet: Check now on the Atlas Engine page says which games it has.")
-                : _tr("Not in the engine yet."), apworldButtons);
-
-            // 2. A map pack. The game's own setup guide may name the tracker its author recommends: offered first.
             var packs = PacksFor(game);
             _shownHasPack = packs.Count > 0;
+            _detail.AddChild(GameCard(entry, install, installed, choices, view, packs));
+
+            // Its map packs; while none is installed, the one the game's own setup guide recommends (with the release choice).
+            var packsFold = Kit.Section(_detail, _tr("Map packs for this game"), "games:map-packs", true, _hooks.Settings);
             var recommended = install != null ? ApworldSources.GuideTrackerProjects(install, game) : new List<(string Repo, string Text)>();
-            string packDetail = packs.Count > 0 ? _tr("Installed: {0} (under Map packs for this game).").Replace("{0}", string.Join(", ", packs.Select(p => p.Name)))
-                : _tr("None installed: the Map Tracker shows the game's map with one (a PopTracker pack).");
-            if (recommended.Count > 0) packDetail += " " + _tr("The game's setup guide recommends github.com/{0}.").Replace("{0}", recommended[0].Repo);
-            var packButtons = new List<Button>();
             if (recommended.Count > 0 && packs.Count == 0)
             {
                 string recommendedRepo = recommended[0].Repo;
+                packsFold.AddChild(Wrapped(Kit.Muted(_tr("The game's setup guide recommends github.com/{0}.").Replace("{0}", recommendedRepo))));
                 var recommendedButton = Kit.Button(_tr("Install the recommended pack…"), _tr("The pack the game's own setup guide links to (github.com/{0}): Atlas shows what would be downloaded, and the release choice when there are several, then installs it.").Replace("{0}", recommendedRepo), () => _hooks.InstallPack(game, recommendedRepo));
                 recommendedButton.SetMeta("recommended_pack", recommendedRepo);
-                packButtons.Add(recommendedButton);
+                var recommendedRow = new HFlowContainer();
+                recommendedRow.AddChild(recommendedButton);
+                packsFold.AddChild(recommendedRow);
             }
-            packButtons.Add(Kit.Button(_tr("Search GitHub for a pack…"), _tr("One search of GitHub for this game's PopTracker packs, when you press; you choose what to install."), () => _hooks.FindPack(game)));
-            var packStep = new SetupStep("pack", packs.Count > 0, _tr("A map pack"), packDetail, packButtons);
+            MapPacksSection(packsFold, game, packs);
 
-            // 3. A YAML (a step the game needs only when a slot's logic needed one).
-            var yamls = _yamls?.For(game) ?? new List<YamlEntry>();
-            var linked = _hooks.LiveSlots().Where(s => s.Game == game && s.LinkedYamlSetting != null).ToList();
-            var yamlStep = new SetupStep("yaml", yamls.Count > 0 || linked.Count > 0, _tr("Your YAML"),
-                yamls.Count > 0 ? _tr("{0} in Atlas's YAML folder.").Replace("{0}", yamls.Count.ToString())
-                    : _tr("Most games rebuild your world from the server's data; a few need your YAML. Keep yours here to link it to a slot in one click."),
-                new List<Button>
-                {
-                    Kit.Button(_tr("Add YAML…"), _tr("Copies a player YAML into Atlas's YAML folder (a multi-game YAML is listed under each of its games)."), () => AddYaml(null)),
-                    YamlPlacesMenu(game)
-                });
-
-            // 4. Files the game's setup needs (optional), each with the release it came from.
+            // Files the game's setup needs (only if its guide asks), each with the release it came from.
             string tools = GameFiles.ToolsFolder(DataManager.GetDataDirectory(), game);
             var records = Directory.Exists(tools) ? SafeFile.ReadJson(Path.Combine(tools, "tools.json"), () => new List<ToolRecord>()) ?? new List<ToolRecord>() : new List<ToolRecord>();
             int toolCount = Directory.Exists(tools) ? Directory.GetFiles(tools).Count(f => !f.EndsWith("tools.json", StringComparison.OrdinalIgnoreCase)) : 0;
-            var toolButtons = new List<Button>();
-            if (entry.Section != Section.Official && (newest != null || anyProject))
-                toolButtons.Add(Kit.Button(_tr("Get from a release…"), _tr("Pick one of the game's releases (the slot's version first), then the files to download besides the apworld."), () => ListReleaseFiles(game)));
-            toolButtons.Add(Kit.Button(_tr("Open folder"), _tr("The game's own folder in Atlas: its tools and the apworld releases Atlas downloaded."), () => OpenFolder(GameFiles.GameFolder(DataManager.GetDataDirectory(), game))));
-            var filesStep = new SetupStep("files", toolCount > 0, _tr("Files its setup needs (only if its guide asks)"),
-                (toolCount > 0 ? _tr("{0} file(s) in the game's folder.").Replace("{0}", toolCount.ToString()) + " " : "") +
-                _tr("Some games need a client, a patcher or a .bat from their release. Atlas keeps them in the game's folder and never runs them: the setup guide says what to do with each."),
-                toolButtons);
-
-            // The Next step card: the apworld, a map pack, and the YAML when a slot's logic needed one; then the trust line.
-            var required = new List<SetupStep> { apworldStep, packStep };
-            if (YamlNeeded(game)) required.Add(yamlStep);
-            var skipped = SkippedSteps(game);
-            var current = required.FirstOrDefault(s => !s.Done && !skipped.Contains(s.Id));
-            _detail.AddChild(NextStepCard(game, required, current, skipped));
-            if (GameTrustRecords.Line(install, game, _tr) is { } trust)
-            {
-                var trustLabel = Wrapped(Kit.Muted(trust));
-                trustLabel.SetMeta("trust_line", true);
-                _detail.AddChild(trustLabel);
-            }
-
-            // Everything else, folded: a step that isn't the next one sits in its own fold.
-            if (current?.Id != "apworld" || entry.Section != Section.Official)
-            {
-                var versionsFold = Kit.Section(_detail, _tr("Versions and releases"), "games:versions", true, _hooks.Settings);
-                if (current?.Id != "apworld") Step(versionsFold, apworldStep);
-                if (entry.Section != Section.Official) versionsFold.AddChild(VersionsSection(game, choices, installed));
-            }
-            var packsFold = Kit.Section(_detail, _tr("Map packs for this game"), "games:map-packs", true, _hooks.Settings);
-            if (current?.Id != "pack") Step(packsFold, packStep);
-            MapPacksSection(packsFold, game, packs);
-            if (current?.Id != "yaml" || yamls.Count > 0)
-            {
-                var yamlFold = Kit.Section(_detail, _tr("Your YAML"), "games:yaml", true, _hooks.Settings);
-                if (current?.Id != "yaml") Step(yamlFold, yamlStep);
-                foreach (var yaml in yamls) yamlFold.AddChild(YamlRow(game, yaml));
-            }
             var filesFold = Kit.Section(_detail, _tr("Files its setup needs"), "games:files", true, _hooks.Settings);
-            Step(filesFold, filesStep);
+            filesFold.AddChild(Wrapped(Kit.Muted((toolCount > 0 ? _tr("{0} file(s) in the game's folder.").Replace("{0}", toolCount.ToString()) + " " : "") +
+                _tr("Some games need a client, a patcher or a .bat from their release. Atlas keeps them in the game's folder and never runs them: the setup guide says what to do with each."))));
+            var toolButtons = new HFlowContainer();
+            toolButtons.AddThemeConstantOverride("h_separation", 8);
+            if (entry.Section != Section.Official && (choices.Any(c => !c.Prerelease && c.Url != null) || anyProject))
+                toolButtons.AddChild(Kit.Button(_tr("Get from a release…"), _tr("Pick one of the game's releases (the slot's version first), then the files to download besides the apworld."), () => ListReleaseFiles(game)));
+            toolButtons.AddChild(Kit.Button(_tr("Open folder"), _tr("The game's own folder in Atlas: its tools and the apworld releases Atlas downloaded."), () => OpenFolder(GameFiles.GameFolder(DataManager.GetDataDirectory(), game))));
+            filesFold.AddChild(toolButtons);
             foreach (var record in records.Where(r => File.Exists(Path.Combine(tools, r.File))))
             {
                 var toolRow = new HBoxContainer();
@@ -547,9 +489,6 @@ namespace AP_Atlas.UI
                 toolLabel.ClipText = true;
                 toolLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
                 toolRow.AddChild(toolLabel);
-                string toolPath = Path.Combine(tools, record.File);
-                if (IsYamlFile(toolPath))
-                    toolRow.AddChild(Kit.Button(_tr("Add as YAML"), _tr("Keeps this file in Atlas's YAML folder as a player YAML, listed under its games."), () => AddYamlFile(toolPath), small: true));
                 filesFold.AddChild(toolRow);
             }
 
@@ -574,12 +513,30 @@ namespace AP_Atlas.UI
             }
             if (links.GetChildCount() > 0) Kit.Section(_detail, _tr("Links and guides"), "games:links", true, _hooks.Settings).AddChild(links);
 
-            // Your slots that play it, each with the version it should run.
+            // Your slots that play it, each with the version it runs (one whose seed needs another version is on the card too).
             var slots = _hooks.LiveSlots().Where(s => string.Equals(s.Game, game, StringComparison.OrdinalIgnoreCase)).ToList();
             if (slots.Count > 0)
             {
-                var slotsFold = Kit.Section(_detail, _tr("Your slots"), "games:slots", true, _hooks.Settings);
+                var slotsFold = Kit.Section(_detail, _tr("Your slots ({0})").Replace("{0}", slots.Count.ToString()), "games:slots", true, _hooks.Settings);
                 foreach (var slot in slots) slotsFold.AddChild(SlotRow(slot));
+            }
+
+            // Advanced: what the engine has of the apworld, a file of yours, your Archipelago install's copy, and every version
+            // of every project (a game that ships with Archipelago has none of these).
+            if (entry.Section != Section.Official)
+            {
+                var advanced = Kit.Section(_detail, _tr("Advanced"), AdvancedKey, true, _hooks.Settings);
+                advanced.AddChild(Wrapped(Kit.Muted(ApworldLine(entry, engineReady, installed, check))));
+                if (engineReady)
+                {
+                    var fileButtons = new HFlowContainer();
+                    fileButtons.AddThemeConstantOverride("h_separation", 8);
+                    fileButtons.AddChild(Kit.Button(_tr("Choose a file…"), _tr("Install an .apworld file you have."), () => InstallFile(game)));
+                    if (install!.Mode == EngineMode.Portable && InstallFolderKnown)
+                        fileButtons.AddChild(Kit.Button(_tr("Copy from my install…"), _tr("Looks in the Archipelago install you chose (its custom_worlds and lib/worlds folders, nothing else) for this game's apworld and copies it into the Atlas Engine."), () => CopyFromInstall(game)));
+                    advanced.AddChild(fileButtons);
+                }
+                advanced.AddChild(VersionsSection(game, choices, installed, view));
             }
 
             // The testing tools, in developer mode only.
@@ -623,20 +580,9 @@ namespace AP_Atlas.UI
         private string CheckSummary(EngineInstall? install, string game) =>
             install != null && GameSweep.LastFor(install, game) is { } r ? _tr("Checked: {0}.").Replace("{0}", r.Summary) : "";
 
-        /// <summary>A setup step on a game's page: what Atlas has, and the buttons that do it.</summary>
-        private sealed record SetupStep(string Id, bool Done, string Title, string Detail, List<Button> Buttons);
-
-        private void Step(VBoxContainer steps, SetupStep step) => Step(steps, step.Done, step.Title, step.Detail, step.Buttons);
-
         private const string DebugKey = "games:debug";
-        // The Next step card as shown (for tests).
-        private string? _nextStepTitle;
-        private string _nextStepLine = "";
         // Whether the shown game had a pack when its page was drawn (a pack installed or deleted since redraws the page).
         private bool _shownHasPack;
-
-        /// <summary>The Next step card: the step it shows (null when the game is ready) and its line ("Step 1 of 2", or "Ready to play"; for tests).</summary>
-        public (string? Title, string Line) NextStep => (_nextStepTitle, _nextStepLine);
 
         /// <summary>Whether the page shows its Debug part (developer mode; for tests).</summary>
         public bool DebugShown => Kit.SectionBody(_detail, DebugKey) != null;
@@ -644,100 +590,6 @@ namespace AP_Atlas.UI
         /// <summary>The game page's line about whether a slot's logic is the seed's (for tests).</summary>
         public string TrustLine =>
             _detail.FindChildren("*", nameof(Label), true, false).OfType<Label>().FirstOrDefault(l => l.HasMeta("trust_line") && !l.IsQueuedForDeletion())?.Text ?? "";
-
-        /// <summary>
-        /// The top of a game's page: its next step (the first one it needs that isn't done or skipped) as "Step N of M" with
-        /// its buttons and Skip, or Ready to play; the steps done ticked on one line, the skipped ones with Show skipped steps.
-        /// </summary>
-        private PanelContainer NextStepCard(string game, List<SetupStep> required, SetupStep? current, HashSet<string> skipped)
-        {
-            var panel = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            panel.AddThemeStyleboxOverride("panel", new StyleBoxFlat
-            {
-                BgColor = ThemeColors.SurfaceSunken,
-                BorderColor = ThemeColors.AccentTint,
-                BorderWidthLeft = 3,
-                CornerRadiusTopLeft = 6,
-                CornerRadiusTopRight = 6,
-                CornerRadiusBottomLeft = 6,
-                CornerRadiusBottomRight = 6,
-                ContentMarginLeft = 12,
-                ContentMarginRight = 12,
-                ContentMarginTop = 10,
-                ContentMarginBottom = 10
-            });
-            panel.SetMeta("next_step", current?.Id ?? "ready");
-            var box = new VBoxContainer();
-            box.AddThemeConstantOverride("separation", 8);
-            panel.AddChild(box);
-            _nextStepTitle = current?.Title;
-            _nextStepLine = current == null ? _tr("Ready to play")
-                : _tr("Step {0} of {1}").Replace("{0}", (required.IndexOf(current) + 1).ToString()).Replace("{1}", required.Count.ToString());
-            var head = new HBoxContainer();
-            head.AddThemeConstantOverride("separation", 8);
-            var title = Kit.Heading(current == null ? _tr("Ready to play") : _tr("Next step"), 1.15f);
-            title.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-            head.AddChild(title);
-            if (current != null) head.AddChild(Kit.Muted(_nextStepLine));
-            box.AddChild(head);
-            if (current == null)
-                box.AddChild(Wrapped(Kit.Muted(_tr("Connect a slot that plays it: Atlas runs its logic and shows its map by itself."))));
-            else
-            {
-                var skip = Kit.Button(_tr("Skip"), _tr("Leaves this step for later and shows the next one; Atlas remembers it for this game. Show skipped steps brings it back."), () => SkipStep(game, current.Id), flat: true, small: true);
-                skip.SetMeta("skip_step", current.Id);
-                Step(box, current with { Buttons = current.Buttons.Append(skip).ToList() });
-            }
-            var done = required.Where(s => s.Done).Select(s => s.Title).ToList();
-            var passed = required.Where(s => !s.Done && skipped.Contains(s.Id)).Select(s => s.Title).ToList();
-            if (done.Count > 0 || passed.Count > 0)
-            {
-                var line = new HBoxContainer();
-                line.AddThemeConstantOverride("separation", 8);
-                if (done.Count > 0)
-                {
-                    line.AddChild(new TextureRect { Texture = LucideTextures.Get("circle-check", ThemeColors.Success, 0.8f), StretchMode = TextureRect.StretchModeEnum.KeepCentered, CustomMinimumSize = new Vector2(20, 20), TooltipText = _tr("Done") });
-                    var doneLabel = Wrapped(Kit.Muted(string.Join("  ·  ", done)));
-                    doneLabel.SetMeta("done_line", true);
-                    line.AddChild(doneLabel);
-                }
-                if (passed.Count > 0)
-                {
-                    line.AddChild(Wrapped(Kit.Subtle(_tr("Skipped: {0}").Replace("{0}", string.Join(", ", passed)))));
-                    var unskip = Kit.Button(_tr("Show skipped steps"), _tr("Brings this game's skipped steps back to its Next step."), () => SkipStep(game, null), flat: true, small: true);
-                    unskip.SetMeta("unskip_steps", true);
-                    line.AddChild(unskip);
-                }
-                box.AddChild(line);
-            }
-            return panel;
-        }
-
-        private HashSet<string> SkippedSteps(string game) =>
-            new(_hooks.Settings.SkippedGameSteps != null && _hooks.Settings.SkippedGameSteps.TryGetValue(game, out var ids) ? ids : new List<string>(), StringComparer.Ordinal);
-
-        /// <summary>Skips a step of a game's setup (remembered for the game), or with null brings its skipped steps back; the page redraws.</summary>
-        private void SkipStep(string game, string? id)
-        {
-            var all = _hooks.Settings.SkippedGameSteps ??= new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-            if (id == null) all.Remove(game);
-            else
-            {
-                if (!all.TryGetValue(game, out var ids)) all[game] = ids = new List<string>();
-                if (!ids.Contains(id)) ids.Add(id);
-            }
-            DataManager.SaveSettings(_hooks.Settings);
-            Ui.Defer(this, () => { if (_selected == game) ShowGame(game); });
-        }
-
-        /// <summary>
-        /// Whether the game's YAML is a step it needs: a slot's logic needed one (live: the engine asked for one, one would
-        /// help, or it rebuilt the world from one; kept: a slot's check was made on a world rebuilt from a YAML).
-        /// </summary>
-        private bool YamlNeeded(string game) =>
-            _hooks.LiveSlots().Any(s => string.Equals(s.Game, game, StringComparison.OrdinalIgnoreCase)
-                && (s.YamlWouldHelp || s.EngineYamlInfo?["source"]?.ToString() is "linked" or "players"))
-            || GameTrustRecords.Newest(game)?.UsedYaml == true;
 
         /// <summary>A game's testing tools (developer mode only): Check this game, the seed test and the solo test.</summary>
         private void DebugSection(string game, EngineInstall? install, bool engineReady)
@@ -850,7 +702,7 @@ namespace AP_Atlas.UI
         /// <summary>Shows the overview (no game selected), as the page does when nothing is picked (for tests).</summary>
         public void ShowOverviewForTests() => ShowOverview();
 
-        /// <summary>The page's steps wherever they show (the Next step card, the folds, Debug): each title and whether it's done (for tests).</summary>
+        /// <summary>The page's steps where they show (Debug's solo test): each title and whether it's done (for tests).</summary>
         public List<(string Title, bool Done)> Steps() =>
             _detail.FindChildren("*", nameof(HBoxContainer), true, false).Where(c => c.HasMeta("step_title"))
                 .Select(c => (c.GetMeta("step_title").AsString(), c.GetMeta("step_done").AsBool())).ToList();
@@ -896,7 +748,7 @@ namespace AP_Atlas.UI
         private static string? RepoOf(ApworldChoice choice) =>
             ApworldSources.ParseRepo(choice.Url ?? "") ?? (choice.Source.StartsWith("github.com/", StringComparison.OrdinalIgnoreCase) ? choice.Source.Substring("github.com/".Length) : null);
 
-        private Control VersionsSection(string game, List<ApworldChoice> choices, List<(string File, string Sha256)> installed)
+        private Control VersionsSection(string game, List<ApworldChoice> choices, List<(string File, string Sha256)> installed, ReleaseView view)
         {
             var box = new VBoxContainer();
             box.AddThemeConstantOverride("separation", 6);
@@ -920,7 +772,6 @@ namespace AP_Atlas.UI
             box.AddChild(lineLabel);
 
             // The installed version as a card of its facts; with none installed, the release Atlas would install and why.
-            var view = ViewOf(game, choices);
             _cardFacts = new List<(bool? Good, string Text)>();
             if (installed.Count > 0) box.AddChild(VersionCard(game, choices.FirstOrDefault(c => c.Installed), installed[0], view, choices));
             else if (view.Pick is { } pick && choices.FirstOrDefault(c => c.Url != null && SameRelease(pick.Release, c)) is { } pickChoice) box.AddChild(PickLine(game, pickChoice, pick));
@@ -1151,38 +1002,6 @@ namespace AP_Atlas.UI
             if (action != null) row.AddChild(action);
             if (slot.ApworldMatchesSeed == false || slot.UsingSeedApworld)
                 row.AddChild(Kit.Button(_tr("Choose the version…"), _tr("Lists the game's releases; pick the one the seed's host used, or let Atlas try them."), () => ApworldPickerDialog.Open(this, _hooks.Settings, slot, _tr)));
-            if (slot.LinkedYamlSetting != null) row.AddChild(Kit.Muted(_tr("YAML: {0}").Replace("{0}", Path.GetFileName(slot.LinkedYamlSetting))));
-            return row;
-        }
-
-
-        private Control YamlRow(string game, YamlEntry yaml)
-        {
-            var row = new HBoxContainer();
-            row.AddThemeConstantOverride("separation", 8);
-            row.AddChild(new Control { CustomMinimumSize = new Vector2(34, 0) });
-            string others = string.Join(", ", yaml.Games.Where(g => !string.Equals(g, game, StringComparison.OrdinalIgnoreCase)));
-            var label = Kit.Text(yaml.File + (yaml.Players.Count > 0 ? "  ·  " + string.Join(", ", yaml.Players) : "") + (others.Length > 0 ? "  ·  " + _tr("also {0}").Replace("{0}", others) : ""));
-            label.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-            label.ClipText = true;
-            row.AddChild(label);
-            string path = _yamls!.PathOf(yaml);
-            foreach (var slot in _hooks.LiveSlots().Where(s => string.Equals(s.Game, game, StringComparison.OrdinalIgnoreCase) && s.LinkedYamlSetting != path))
-            {
-                var target = slot;
-                row.AddChild(Kit.Button(_tr("Link to {0}").Replace("{0}", slot.SlotName), _tr("Logic rebuilds this slot's world from this YAML."), () =>
-                {
-                    target.LinkYaml(path);
-                    _hooks.Toast(_tr("Linked {0} to {1}.").Replace("{0}", yaml.File).Replace("{1}", target.SlotName), ThemeColors.TextSubtle);
-                    ShowGame(game);
-                }, small: true));
-            }
-            row.AddChild(Kit.Button(_tr("Remove"), _tr("Deletes Atlas's copy (not the file you added it from)."), () =>
-                Dialogs.Confirm(this, _tr("Remove YAML"), _tr("Remove {0} from Atlas's YAML folder? The file you added it from isn't touched.").Replace("{0}", yaml.File), _tr("Remove"), () =>
-                {
-                    _yamls.Remove(yaml);
-                    ShowGame(game);
-                }), small: true));
             return row;
         }
 
@@ -1243,9 +1062,6 @@ namespace AP_Atlas.UI
         private Node? _dialogParent;
 
         private Node DialogParent => _dialogParent != null && IsInstanceValid(_dialogParent) && _dialogParent.IsInsideTree() ? _dialogParent : this;
-
-        /// <summary>The newest full release of the game's apworld across its projects, after the user trusts the project (asked once); also from the Add a slot dialog.</summary>
-        internal void InstallNewest(string game, Node? dialogParent = null) => Async.Fire(InstallNewestAsync(game, dialogParent), "installing " + game);
 
         /// <summary>
         /// Installs the release Atlas picks from what it knows (<see cref="InstallBestAsync"/>, without looking inside more
@@ -1340,86 +1156,6 @@ namespace AP_Atlas.UI
             }, r => r.File.Length == 0 ? _tr("Your Archipelago install has no {0} apworld in custom_worlds or lib/worlds.").Replace("{0}", game)
                 : r.Ok ? _tr("{0} is in the Atlas Engine (copied from your install).").Replace("{0}", r.File)
                 : _tr("{0} couldn't be installed: the log says why.").Replace("{0}", r.File));
-        }
-
-        private const string DownArrow = "▾";
-
-        private static bool IsYamlFile(string path) => path.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".yml", StringComparison.OrdinalIgnoreCase);
-
-        /// <summary>The chosen Archipelago install's Players folder, when the install is known and the folder exists (never searched for).</summary>
-        private string? PlayersFolder()
-        {
-            string root = _hooks.Settings.ArchipelagoInstallationPath;
-            if (string.IsNullOrWhiteSpace(root)) return null;
-            string players = Path.Combine(root, "Players");
-            return Directory.Exists(players) ? players : null;
-        }
-
-        /// <summary>A ▾ beside Add YAML…: the other places a YAML may be (this game's downloaded files, the install's Players folder, Atlas's own folder).</summary>
-        private MenuButton YamlPlacesMenu(string game)
-        {
-            var menu = new MenuButton { Text = DownArrow, TooltipText = _tr("Other places to take a YAML from"), AccessibilityName = _tr("Add YAML from…"), FocusMode = FocusModeEnum.All };
-            var popup = menu.GetPopup();
-            string tools = GameFiles.ToolsFolder(DataManager.GetDataDirectory(), game);
-            popup.AboutToPopup += () =>
-            {
-                popup.Clear();
-                if (Directory.Exists(tools) && Directory.EnumerateFiles(tools).Any(IsYamlFile)) popup.AddItem(_tr("From this game's downloaded files…"), 0);
-                if (PlayersFolder() != null) popup.AddItem(_tr("From my Archipelago install's Players folder…"), 1);
-                popup.AddItem(_tr("From Atlas's YAML folder…"), 2);
-            };
-            popup.IdPressed += id => AddYaml(id switch { 0 => tools, 1 => PlayersFolder(), _ => GameFiles.YamlsFolder(DataManager.GetDataDirectory()) });
-            menu.SetMeta("yaml_places", true);
-            return menu;
-        }
-
-        /// <summary>The places the Add YAML menu offers right now (for tests).</summary>
-        public List<string> YamlMenuItems()
-        {
-            var menu = _detail.FindChildren("*", nameof(MenuButton), true, false).OfType<MenuButton>().FirstOrDefault(m => m.HasMeta("yaml_places"));
-            if (menu == null) return new List<string>();
-            var popup = menu.GetPopup();
-            popup.EmitSignal(PopupMenu.SignalName.AboutToPopup);
-            return Enumerable.Range(0, popup.ItemCount).Select(i => popup.GetItemText(i)).ToList();
-        }
-
-        /// <summary>Picks a player YAML to keep: from <paramref name="startFolder"/>, else where one was last picked, else the install's Players folder.</summary>
-        private void AddYaml(string? startFolder)
-        {
-            var dialog = new FileDialog
-            {
-                FileMode = FileDialog.FileModeEnum.OpenFile,
-                Access = FileDialog.AccessEnum.Filesystem,
-                Filters = new[] { "*.yaml, *.yml ; Archipelago player YAML" },
-                UseNativeDialog = true,
-                Title = _tr("A player YAML to keep in Atlas")
-            };
-            string? start = new[] { startFolder, _hooks.Settings.LastYamlFolder, PlayersFolder() }.FirstOrDefault(d => !string.IsNullOrWhiteSpace(d) && Directory.Exists(d));
-            if (start != null) dialog.CurrentDir = start;
-            dialog.FileSelected += path =>
-            {
-                dialog.QueueFree();
-                _hooks.Settings.LastYamlFolder = Path.GetDirectoryName(path) ?? "";
-                AddYamlFile(path);
-            };
-            dialog.Canceled += dialog.QueueFree;
-            AddChild(dialog);
-            dialog.PopupCentered(new Vector2I(900, 600));
-        }
-
-        /// <summary>Adds a YAML to Atlas's YAML folder and shows the page again (also used by tests).</summary>
-        public YamlEntry? AddYamlFile(string path)
-        {
-            _yamls ??= YamlLibrary.Load(DataManager.GetDataDirectory());
-            var (entry, problem) = _yamls.Add(path);
-            if (entry == null)
-            {
-                _hooks.Toast(_tr("That YAML can't be added: {0}.").Replace("{0}", problem ?? ""), ThemeColors.Error);
-                return null;
-            }
-            _hooks.Toast(_tr("Added {0} ({1}).").Replace("{0}", entry.File).Replace("{1}", string.Join(", ", entry.Games)), ThemeColors.TextSubtle);
-            Refresh();
-            return entry;
         }
 
         /// <summary>

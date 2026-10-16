@@ -163,6 +163,10 @@ public partial class SlotTrackerControl : MarginContainer
         _mapTracker.GameName = Game;
         _mapTracker.FindPackRequested += () => FindMapPack?.Invoke(Game);
         _mapTracker.StartPackRequested += () => StartPack?.Invoke(Game, this);
+        // Atlas's game list has a pack Add games would install for the game: the empty map leads with getting it (the game ticked).
+        _mapTracker.PackListed = AP_Atlas.Core.Games.AddGamesPlan.ChoosePack(AP_Atlas.Core.EngineSetup.ApworldSources.PackFactsFor(Game), Array.Empty<string>(),
+            AP_Atlas.Core.Games.AddGamesPlan.GitHubBudget, mayReadProjects: false) != null;
+        _mapTracker.AddGameRequested += () => AddGames?.Invoke(Game);
         _mapTracker.NoticesChanged += () => NoticesChanged?.Invoke();
         _mapTracker.PinPicked += (mapId, pinName, ids) =>
         {

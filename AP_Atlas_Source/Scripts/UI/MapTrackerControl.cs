@@ -83,6 +83,32 @@ namespace AP_Atlas.UI
         /// <summary>"Start a pack" was pressed (the slot makes one from the game's names).</summary>
         public event Action StartPackRequested;
 
+        /// <summary>"Get a map pack for {game}…" was pressed: Add games opens with the game ticked.</summary>
+        public event Action AddGameRequested;
+
+        private Button _addGameButton;
+        private Label _emptySubLabel;
+        private bool _packListed;
+
+        /// <summary>Whether Atlas's game list has a pack it would install for the game (set by the slot): the empty state then leads with "Get a map pack for {game}…".</summary>
+        public bool PackListed
+        {
+            get => _packListed;
+            set
+            {
+                _packListed = value;
+                if (_addGameButton != null) _addGameButton.Visible = value;
+                if (_emptySubLabel != null) _emptySubLabel.Text = EmptySubText();
+            }
+        }
+
+        /// <summary>The empty state's "Get a map pack for {game}…" (for tests).</summary>
+        public Button AddGameButton => _addGameButton;
+
+        private string EmptySubText() => _packListed
+            ? Translate("Atlas has no PopTracker map pack for this game yet, and its game list knows one.\nGet it here, find another on GitHub, or start one of your own; it shows here at once.")
+            : Translate("Atlas has no PopTracker map pack for this game.\nFind one on GitHub from here, install one on its game's page (Games, on the left), or start one of your own; it shows here at once.");
+
         private Button _findPackButton;
         private string _gameName = "";
 
@@ -97,6 +123,8 @@ namespace AP_Atlas.UI
                     _findPackButton.Text = _gameName.Length > 0 ? Translate("Find a map pack for {0}…").Replace("{0}", _gameName) : Translate("Find a map pack…");
                 if (_startPackButton != null)
                     _startPackButton.Text = _gameName.Length > 0 ? Translate("Start a pack for {0}…").Replace("{0}", _gameName) : Translate("Start a pack…");
+                if (_addGameButton != null)
+                    _addGameButton.Text = _gameName.Length > 0 ? Translate("Get a map pack for {0}…").Replace("{0}", _gameName) : Translate("Get a map pack…");
             }
         }
 
@@ -348,9 +376,14 @@ namespace AP_Atlas.UI
             var emptyLbl = new Label { Text = Translate("No map pack installed"), HorizontalAlignment = HorizontalAlignment.Center };
             emptyLbl.SetMeta("font_size_ratio", 2.0f);
             emptyVBox.AddChild(emptyLbl);
-            var emptySubLbl = new Label { Text = Translate("Atlas has no PopTracker map pack for this game.\nFind one on GitHub from here, install one on its game's page (Games, on the left), or start one of your own; it shows here at once."), HorizontalAlignment = Godot.HorizontalAlignment.Center };
-            emptySubLbl.AddThemeColorOverride("font_color", ThemeColors.TextSubtle);
-            emptyVBox.AddChild(emptySubLbl);
+            _emptySubLabel = new Label { Text = EmptySubText(), HorizontalAlignment = Godot.HorizontalAlignment.Center };
+            _emptySubLabel.AddThemeColorOverride("font_color", ThemeColors.TextSubtle);
+            emptyVBox.AddChild(_emptySubLabel);
+            _addGameButton = Kit.Button(Translate("Get a map pack…"), Translate("Opens Add games with this game ticked: Atlas says what it downloads and from where, then installs the map pack its game list knows (and the game's logic, if that's missing)."), () => AddGameRequested?.Invoke());
+            _addGameButton.ThemeTypeVariation = Kit.PrimaryButton;
+            _addGameButton.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
+            _addGameButton.Visible = _packListed;
+            emptyVBox.AddChild(_addGameButton);
             _findPackButton = Kit.Button(Translate("Find a map pack…"), Translate("One search of GitHub for this game's PopTracker packs, when you press; you choose what to install."), () => FindPackRequested?.Invoke());
             _findPackButton.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
             emptyVBox.AddChild(_findPackButton);
@@ -365,6 +398,7 @@ namespace AP_Atlas.UI
             DisplayOptionsChanged += OnDisplayOptionsChanged;
             // Options changed while this map was out of the tree: catch up.
             if (_shownDisplayVersion != _displayVersion) OnDisplayOptionsChanged();
+            HideFixTipIfPutAway();
         }
 
         // --- Display options (shared by every slot's map) ---
@@ -704,6 +738,7 @@ namespace AP_Atlas.UI
             {
                 RenderLocations();
             }
+            ShowFixTipOnce();
         }
 
         /// <summary>The slot's pack was removed or replaced: nothing of it is shown, and the empty state says why.</summary>
@@ -1139,6 +1174,7 @@ namespace AP_Atlas.UI
             notes.AddThemeConstantOverride("separation", 6);
             notes.AddChild(_unplacedPill);
             notes.AddChild(BuildPlaceBar());
+            notes.AddChild(BuildFixTip());
             // When the pack doesn't fit the seed: a note in the warning colour, its button the one thing that takes clicks here.
             _fitBar = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ShrinkEnd, MouseFilter = MouseFilterEnum.Pass, Visible = false };
             _fitBar.AddThemeStyleboxOverride("panel", new StyleBoxFlat

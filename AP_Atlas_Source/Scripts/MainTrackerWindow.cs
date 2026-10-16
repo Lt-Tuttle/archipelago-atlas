@@ -467,7 +467,10 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             StartSoloBatch = StartSoloBatch,
             StopSoloTest = StopSoloTest,
             OpenDocument = OpenDocument,
-            OpenSeedVerify = ShowSeedVerify
+            OpenSeedVerify = ShowSeedVerify,
+            AddGames = game => OpenAddGames(game),
+            StartPack = game => StartPack(game, ActiveSlotNodes().OfType<SlotTrackerControl>()
+                .FirstOrDefault(s => GodotObject.IsInstanceValid(s) && string.Equals(s.Game, game, System.StringComparison.OrdinalIgnoreCase)))
         });
         _gamesPage.Visible = false;
         _contentStage.AddChild(_gamesPage);

@@ -559,7 +559,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         badge.TooltipText = info.Value.Tooltip;
         badge.AddThemeColorOverride("font_color", info.Value.Color);
     }
-    /// <summary>+ Add Slot: the dialog with everything a slot needs (its name, game, YAML, the engine line and Connect now).</summary>
+    /// <summary>+ Add Slot: the dialog with everything a slot needs (its name, game, the engine line and Connect now).</summary>
     private void OnAddSlotPressed()
     {
         if (_selectedProfile == null) return;
@@ -571,15 +571,13 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             SlotNameTaken = name => profile.Slots.Contains(name),
             HasServer = !string.IsNullOrWhiteSpace(profile.ServerUrl),
             GameStatus = SlotGameStatus,
-            PickYaml = PickYamlFor,
-            KeepYaml = KeepYamlForSlots,
             Add = draft => AddSlotFromDraft(profile, draft),
         });
     }
 
     /// <summary>
     /// A slot from the Add a slot dialog: added to the multiworld (a new multiworld's placeholder slot gives way), its game
-    /// noted, its YAML tied to it, the multiworld saved to disk, and connected when asked.
+    /// noted, the multiworld saved to disk, and connected when asked.
     /// </summary>
     internal void AddSlotFromDraft(MultiworldProfile profile, AP_Atlas.UI.SlotDraft draft)
     {
@@ -593,11 +591,6 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             if (!profile.SavedStats.TryGetValue(name, out var stats)) profile.SavedStats[name] = stats = new SlotStats();
             if (string.IsNullOrWhiteSpace(stats.GameName)) stats.GameName = draft.Game;
         }
-        if (!string.IsNullOrEmpty(draft.YamlPath))
-        {
-            _appSettings.SlotYamlPaths[AP_Atlas.Core.Annotations.SlotKey(profile.Id, name)] = draft.YamlPath;
-            DataManager.SaveSettings(_appSettings);
-        }
         SaveProfileEdits(announce: true);
         PopulateSlotsList();
         RefreshProfileListStyles();
@@ -608,7 +601,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
 
     /// <summary>
     /// The Add a slot dialog's engine line for a game: the Atlas Engine isn't set up (Set up the Atlas Engine); the game's
-    /// apworld is in it (with its version when known); it isn't yet (Install the newest apworld… when a project is known).
+    /// logic is in it (with its version when known); it isn't yet: Add this game… (Add games, the game ticked, over this
+    /// dialog) when Atlas knows where its logic comes from, else a line to the Games page.
     /// </summary>
     private AP_Atlas.UI.GameStatus SlotGameStatus(string game)
     {
@@ -625,11 +619,19 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             return new AP_Atlas.UI.GameStatus((version != null ? Tr("Its apworld is in the Atlas Engine ({0}), so its logic is ready.").Replace("{0}", version)
                 : fromFile ? Tr("Its apworld is in the Atlas Engine, so its logic is ready.") : Tr("It ships with Archipelago, so the Atlas Engine has it and its logic is ready.")) + trust);
         }
-        bool known = AP_Atlas.Core.EngineSetup.ApworldSources.Find(game)?.Repo != null || (_appSettings.ExtraApworldRepos?.ContainsKey(game) ?? false);
-        if (known && _gamesPage != null)
-            return new AP_Atlas.UI.GameStatus(Tr("Its apworld isn't in the Atlas Engine yet, so its logic can't run."), Tr("Install the newest apworld…"), () => _gamesPage.InstallNewest(game, this));
+        if (AP_Atlas.Core.EngineSetup.ApworldSources.LogicSourceKnown(_appSettings, game))
+        {
+            bool official = AP_Atlas.Core.EngineSetup.AtlasEngine.Worlds.FolderFor(game) != null;
+            return new AP_Atlas.UI.GameStatus(official ? Tr("It ships with Archipelago; its world isn't in the Atlas Engine yet, so its logic can't run.")
+                    : Tr("Its apworld isn't in the Atlas Engine yet, so its logic can't run."),
+                Tr("Add this game…"), () => OpenAddGames(game, OpenAddSlotDialog()));
+        }
         return new AP_Atlas.UI.GameStatus(Tr("Its apworld isn't in the Atlas Engine yet, and no project is known for it: add one on the Games page."));
     }
+
+    /// <summary>The Add a slot dialog while it's open (Add games opens over it), else null.</summary>
+    private Node OpenAddSlotDialog() =>
+        GetChildren().OfType<AP_Atlas.UI.AddSlotDialog>().FirstOrDefault(d => GodotObject.IsInstanceValid(d) && !d.IsQueuedForDeletion());
 
     /// <summary>Keeps a YAML in Atlas's YAML folder: the kept copy's path and the players it names; null (with a card saying why) when it can't be kept or read.</summary>
     internal (string Kept, List<(string Name, List<string> Games)> Players)? KeepYamlForSlots(string path)

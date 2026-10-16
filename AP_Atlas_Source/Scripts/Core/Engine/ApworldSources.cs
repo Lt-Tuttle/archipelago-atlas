@@ -874,6 +874,17 @@ namespace AP_Atlas.Core.EngineSetup
             }
         }
 
+        /// <summary>
+        /// Whether Add games knows where a game's logic comes from: Archipelago's own world (it ships with Archipelago), a
+        /// version or a project in Atlas's game list, or a project the user added. Add a slot's line and the Logic banner
+        /// offer "Add this game…" only then.
+        /// </summary>
+        public static bool LogicSourceKnown(AppSettings settings, string game) =>
+            !string.IsNullOrWhiteSpace(game)
+            && (AtlasEngine.Worlds.FolderFor(game) != null
+                || Find(game) is { Official: false } source && (source.Versions.Count > 0 || !string.IsNullOrWhiteSpace(source.Repo))
+                || settings?.ExtraApworldRepos?.ContainsKey(game) == true);
+
         /// <summary>Trusts a source by its key ("github.com/owner/name", or a host), as the Add games confirm names it.</summary>
         public static void ApproveKey(AppSettings settings, string key)
         {

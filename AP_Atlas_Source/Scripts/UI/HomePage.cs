@@ -40,6 +40,8 @@ namespace AP_Atlas.UI
             public Action QuickAddMultiworld { get; init; } = () => { };
             /// <summary>Paste a room link…: the Multiworlds page with a new multiworld and its room link box ready.</summary>
             public Action AddFromRoomLink { get; init; } = () => { };
+            /// <summary>Add games…: the one Add games screen, over Home.</summary>
+            public Action AddGames { get; init; } = () => { };
             /// <summary>Open: the Multiworlds page with that multiworld selected.</summary>
             public Action<MultiworldProfile> OpenProfile { get; init; } = _ => { };
             public Action<Tool> ShowTool { get; init; } = _ => { };
@@ -63,6 +65,7 @@ namespace AP_Atlas.UI
             "Race mode hides what a race shouldn't show. It follows the room by itself; Multiworld → Race Mode… changes that.",
             "Every key can be changed: Settings → Keyboard, press the key's button, then the key you want.",
             "The Pack Doctor (a pack's Doctor… on its game's page) looks a pack over and fixes what it can before you use it.",
+            "A pin or tile wrong on the map? Right-click it and choose a fix; Undo is one click.",
             "Each panel's … button changes its font size; Settings → Appearance sets them all.",
             "Atlas never looks outside its own folder, or goes online for something new, without asking. Settings → Privacy & permissions lists every answer.",
             "A dropped connection reconnects by itself: a few tries over about 20 minutes, then it stops, so a closed room is never kept busy.",
@@ -103,6 +106,8 @@ namespace AP_Atlas.UI
         private readonly VBoxContainer _whatsNew = new();
         private readonly Button _whatsNewButton;
         private Button? _addMultiworldButton;
+        private Button? _addGamesFirstButton;
+        private readonly Button _addGamesButton;
         private Button? _setUpButton;
         private readonly PanelContainer _welcomeCard;
         private readonly Button _welcomeSetUp, _lookAround;
@@ -203,6 +208,9 @@ namespace AP_Atlas.UI
             var roomButton = Kit.Button(_tr("Paste a room link…"), _tr("A new multiworld from the room link the host shared: Atlas fills in the server and the players from the room's status page, with your permission."), () => _hooks.AddFromRoomLink(), small: true);
             roomButton.Name = "RoomLinkMultiworld";
             multiworldsHeader.AddChild(roomButton);
+            _addGamesButton = Kit.Button(_tr("Add games…"), _tr("Tick the games you play: Atlas adds their logic and a map pack each, with one question first (the games of your multiworlds come ticked)."), () => _hooks.AddGames(), small: true);
+            _addGamesButton.Name = "AddGames";
+            multiworldsHeader.AddChild(_addGamesButton);
             multiworldsBox.AddChild(multiworldsHeader);
             _recents.AddThemeConstantOverride("separation", 4);
             _recents.SizeFlagsHorizontal = SizeFlags.ExpandFill;
@@ -344,7 +352,7 @@ namespace AP_Atlas.UI
             "cheese-tracker" => "Your async multiworld's shared tracker, kept up to date from Atlas's logic.",
             "sphere-tracker" => "The host's spheretracker.de room: the multiworld, sphere by sphere.",
             "connections" => "Your servers, passwords and slots.",
-            "games" => "Every game, set up in one place: its apworld, its map packs (looked over by the Pack Doctor), your YAML and its files.",
+            "games" => "Every game Atlas knows: Add games… adds the ones you play (their logic and a map pack) in one go; each game's page has the rest.",
             "engine" => "The logic engine: whether logic can run, your slots' worlds, set up and repair.",
             "settings" => "Every setting, searchable; every key, yours to change.",
             _ => ""
@@ -381,6 +389,12 @@ namespace AP_Atlas.UI
 
         /// <summary>The first start's "Add a multiworld…" button (null while multiworlds exist).</summary>
         public Button? AddMultiworldButton => _addMultiworldButton;
+
+        /// <summary>The multiworlds card's "Add games…" (always there).</summary>
+        public Button AddGamesButton => _addGamesButton;
+
+        /// <summary>The first start's "Add games…" beside Add a multiworld… (null while multiworlds exist).</summary>
+        public Button? AddGamesFirstButton => _addGamesFirstButton;
 
         /// <summary>The multiworlds shown, most recently played first.</summary>
         public IReadOnlyList<string> RecentProfileIds { get; private set; } = Array.Empty<string>();
@@ -461,6 +475,7 @@ namespace AP_Atlas.UI
             _openButtons.Clear();
             _rowLines.Clear();
             _addMultiworldButton = null;
+            _addGamesFirstButton = null;
             _setUpButton = null;
             var profiles = _hooks.Profiles();
             var ordered = MultiworldProfile.MostRecentFirst(profiles);
@@ -487,6 +502,9 @@ namespace AP_Atlas.UI
                 }
                 _addMultiworldButton = Kit.Button(_tr("Add a multiworld…"), _tr("Straight to the Multiworlds page, for a multiworld typed by hand."), () => _hooks.AddMultiworld());
                 buttons.AddChild(_addMultiworldButton);
+                _addGamesFirstButton = Kit.Button(_tr("Add games…"), _tr("Tick the games you play: Atlas adds their logic and a map pack each, with one question first."), () => _hooks.AddGames(), flat: true);
+                _addGamesFirstButton.Name = "AddGamesFirst";
+                buttons.AddChild(_addGamesFirstButton);
                 block.AddChild(buttons);
                 block.AddChild(new Control { CustomMinimumSize = new Vector2(0, 8) });
                 _recents.AddChild(block);

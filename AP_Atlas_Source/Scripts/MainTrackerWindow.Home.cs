@@ -29,6 +29,7 @@ public partial class MainTrackerWindow
             AddMultiworld = OnAddProfilePressed,
             QuickAddMultiworld = () => AP_Atlas.UI.QuickSetup.NewMultiworld(this, QuickHooks()),
             AddFromRoomLink = AddProfileFromRoomLink,
+            AddGames = () => OpenAddGames(),
             OpenProfile = profile =>
             {
                 host.ShowTool(AP_Atlas.UI.Tool.Connections);
@@ -53,8 +54,6 @@ public partial class MainTrackerWindow
     private AP_Atlas.UI.QuickSetup.Hooks QuickHooks() => new AP_Atlas.UI.QuickSetup.Hooks
     {
         Tr = text => Tr(text),
-        PickYaml = PickYamlFor,
-        KeepYaml = KeepYamlForSlots,
         Create = draft => CreateProfileFromDraft(draft),
     };
 
@@ -70,7 +69,7 @@ public partial class MainTrackerWindow
 
     /// <summary>
     /// A multiworld from Home's New multiworld dialog: saved, selected on the Multiworlds page (Home stays where it is),
-    /// each slot's game noted and its YAML tied to it.
+    /// with its slots.
     /// </summary>
     internal MultiworldProfile CreateProfileFromDraft(AP_Atlas.UI.NewMultiworldDraft draft)
     {
@@ -78,12 +77,9 @@ public partial class MainTrackerWindow
         foreach (string slot in draft.Slots.Select(s => s.Trim()).Where(s => s.Length > 0).Distinct())
         {
             profile.Slots.Add(slot);
-            if (draft.GameBySlot.TryGetValue(slot, out var game) && !string.IsNullOrWhiteSpace(game)) profile.SavedStats[slot] = new SlotStats { GameName = game };
-            if (draft.YamlBySlot.TryGetValue(slot, out var yaml) && !string.IsNullOrEmpty(yaml)) _appSettings.SlotYamlPaths[AP_Atlas.Core.Annotations.SlotKey(profile.Id, slot)] = yaml;
         }
         _profiles.Add(profile);
         DataManager.SaveProfiles(_profiles);
-        DataManager.SaveSettings(_appSettings);
         RefreshProfileList();
         SelectProfile(profile);
         UpdateSidebar();

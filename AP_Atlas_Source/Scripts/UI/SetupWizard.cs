@@ -885,7 +885,7 @@ namespace AP_Atlas.UI
             var games = SlotGames().ToList();
             if (games.Count == 0)
             {
-                _gamesList.AddChild(Wrapped(_tr("None of your slots names its game yet. Atlas learns a slot's game when it first connects; the Games page then sets each one up (its apworld, a map pack, your YAML), and Add YAML… on the slots page names a game now."), muted: true));
+                _gamesList.AddChild(Wrapped(_tr("None of your slots names its game yet. Atlas learns a slot's game when it first connects; the Games page then sets each one up (its apworld and a map pack), and Add YAML… on the slots page names a game now."), muted: true));
             }
             foreach (string game in games)
             {
