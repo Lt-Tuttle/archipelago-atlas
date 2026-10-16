@@ -59,6 +59,30 @@ public partial class MainTrackerWindow
         Add("tools.cheese-settings", "Tools", "Cheese Tracker Settings…", "", OpenCheeseSettings);
         Add("tools.sphere-settings", "Tools", "Sphere Tracker Settings…", "", () => ShowSphereTab(AP_Atlas.UI.SphereTrackerTab.SettingsView));
         Add("tools.privacy", "Tools", "Privacy & Permissions…", "", OpenPrivacy);
+        // Tools → Debug: the testing tools, in developer mode only (hidden everywhere else: the menus, the palette, the key lists; refused).
+        AddDebug("debug.test-game", "Test This Game…", () =>
+        {
+            if (AP_Atlas.Core.EngineSetup.SoloTestRunner.Running is { } running) StartSoloTest(running.Game); // brings its window back
+            else WithDebugGame(StartSoloTest);
+        });
+        AddDebug("debug.stop-test", "Stop the Test Server", () =>
+        {
+            if (AP_Atlas.Core.EngineSetup.SoloTestRunner.Running == null) ShowToast(Tr("No solo test is running."), AP_Atlas.Core.ThemeColors.Warning);
+            else StopSoloTest();
+        });
+        AddDebug("debug.test-every-game", "Test Every Ready Game…", StartSoloBatch);
+        AddDebug("debug.check-game", "Check This Game", () => WithDebugGame(game =>
+        {
+            ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.Games);
+            _gamesPage?.Select(game);
+            _gamesPage?.CheckGame(game);
+        }));
+        AddDebug("debug.check-every-game", "Check Every Game", () =>
+        {
+            ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.Games);
+            _gamesPage?.CheckEveryGame();
+        });
+        AddDebug("debug.verify-seed", "Verify Logic Against a Seed…", ShowSeedVerify);
 
         Add("window.notifications", "Window", "Notifications…", "", OpenNotifications);
         Add("window.full-screen", "Window", "Full Screen", "F11", ToggleFullScreen);
@@ -84,6 +108,69 @@ public partial class MainTrackerWindow
 
     private void Add(string id, string menu, string title, string shortcut, Action run, Func<bool> enabled) =>
         _commands!.Add(new AP_Atlas.Core.Command(id, menu, title, shortcut, run) { Enabled = enabled });
+
+    /// <summary>A testing tool under Tools → Debug: shown and run in developer mode only.</summary>
+    private void AddDebug(string id, string title, Action run) =>
+        _commands!.Add(new AP_Atlas.Core.Command(id, "Debug", title, "", run) { Enabled = () => _appSettings.DeveloperMode, Shown = () => _appSettings.DeveloperMode });
+
+    /// <summary>
+    /// The game a Debug command acts on: the game whose page Games shows, else the selected slot's, else the game Games
+    /// showed last; without one, Games shows to pick it.
+    /// </summary>
+    private void WithDebugGame(Action<string> run)
+    {
+        string? slotGame = ((AP_Atlas.UI.IPropertiesHost)this).SelectedSlot?.Game;
+        string? game = (_currentTool == AP_Atlas.UI.Tool.Games ? _gamesPage?.ShownGame : null)
+            ?? (string.IsNullOrWhiteSpace(slotGame) ? null : slotGame) ?? _gamesPage?.ShownGame;
+        if (string.IsNullOrWhiteSpace(game))
+        {
+            ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.Games);
+            ShowToast(Tr("Pick a game on the Games page first, then run it again."), AP_Atlas.Core.ThemeColors.Warning);
+            return;
+        }
+        run(game);
+    }
+
+    private PopupMenu? _toolsMenu, _debugMenu;
+
+    /// <summary>Tools → Debug's item id and its separator's (the command items' ids start at CommandItemBase).</summary>
+    private const int DebugSubmenuItemId = 900, DebugSeparatorId = 901;
+
+    /// <summary>Puts Tools → Debug in the menu in developer mode and takes it out otherwise (the submenu itself stays, with its items, so nothing that holds a menu loses it).</summary>
+    private void ApplyDebugMenu()
+    {
+        if (_toolsMenu == null || _debugMenu == null) return;
+        int item = _toolsMenu.GetItemIndex(DebugSubmenuItemId);
+        if (_appSettings.DeveloperMode && item < 0)
+        {
+            _toolsMenu.AddSeparator("", DebugSeparatorId);
+            _toolsMenu.AddSubmenuNodeItem(Tr("Debug"), _debugMenu, DebugSubmenuItemId);
+        }
+        else if (!_appSettings.DeveloperMode && item >= 0)
+        {
+            _toolsMenu.RemoveItem(item);
+            int separator = _toolsMenu.GetItemIndex(DebugSeparatorId);
+            if (separator >= 0) _toolsMenu.RemoveItem(separator);
+        }
+    }
+
+    /// <summary>Developer mode changed: Tools → Debug comes or goes, and the key list and the Games page follow.</summary>
+    private void ApplyDeveloperMode()
+    {
+        ApplyDebugMenu();
+        if (!_appSettings.DeveloperMode)
+        {
+            // The testing tools go: nothing of theirs is left running out of reach (a batch ends after its current game).
+            bool stopped = AP_Atlas.Core.EngineSetup.SoloTestRunner.Running != null;
+            StopSoloTest();
+            foreach (var batch in GetChildren().OfType<AP_Atlas.UI.SoloBatchDialog>().Where(d => !d.IsQueuedForDeletion()))
+                stopped |= batch.CancelBatch();
+            if (stopped) ShowToast(Tr("Developer mode is off: the running test was stopped."), AP_Atlas.Core.ThemeColors.Warning);
+        }
+        _settingsPage?.Refilter();
+        _settingsPage?.RefreshRows(); // a key shared with a Debug command conflicts only while that command is listed
+        if (_gamesPage != null && _gamesPage.Visible) _gamesPage.Refresh();
+    }
 
     /// <summary>Builds the menu bar at the top of the window, from the commands and the stateful settings items.</summary>
     private void BuildMenuBar(Container rootVbox)
@@ -129,6 +216,22 @@ public partial class MainTrackerWindow
         AddCommandItems(menus["Tools"], AP_Atlas.UI.Tool.All.Select(t => "tool." + t.Id).ToArray());
         menus["Tools"].AddSeparator();
         AddCommandItems(menus["Tools"], "tools.cheese-settings", "tools.sphere-settings", "tools.privacy");
+        // Tools → Debug: built once with its items, put in the menu (or taken out) as developer mode changes.
+        _toolsMenu = menus["Tools"];
+        _debugMenu = new PopupMenu { Name = "DebugMenu" };
+        _toolsMenu.AddChild(_debugMenu);
+        var debugItems = new Dictionary<long, string>();
+        _commandItems[_debugMenu] = debugItems;
+        _debugMenu.IdPressed += id =>
+        {
+            if (debugItems.TryGetValue(id, out var commandId)) _commands!.Run(commandId);
+        };
+        AddCommandItems(_debugMenu, "debug.test-game", "debug.stop-test", "debug.test-every-game");
+        _debugMenu.AddSeparator();
+        AddCommandItems(_debugMenu, "debug.check-game", "debug.check-every-game");
+        _debugMenu.AddSeparator();
+        AddCommandItems(_debugMenu, "debug.verify-seed");
+        ApplyDebugMenu();
 
         AddCommandItems(menus["Window"], "window.notifications");
         menus["Window"].AddSeparator();
@@ -267,7 +370,7 @@ public partial class MainTrackerWindow
             new() { Id = "key", Title = "Key", MinWidth = 130, Ratio = 0 },
             new() { Id = "menu", Title = "Menu", MinWidth = 110, Ratio = 0 }
         });
-        table.SetRows(_commands!.All.Select(command => new AP_Atlas.UI.AtlasTable.Row
+        table.SetRows(_commands!.All.Where(command => command.Shown()).Select(command => new AP_Atlas.UI.AtlasTable.Row
         {
             Key = command.Id,
             Cells = new[]

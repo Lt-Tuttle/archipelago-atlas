@@ -23,6 +23,8 @@ namespace AP_Atlas.UI
         private readonly List<Section> _sections = new();
         private readonly List<Row> _rows = new();
         private readonly Dictionary<string, (Button Reset, Label Conflict)> _keyRows = new();
+        // Rows listed only while their condition holds (a Debug command's key: developer mode).
+        private readonly Dictionary<string, Func<bool>> _available = new();
 
         /// <summary>The sections, for the explorer: a button each, jumping to the section.</summary>
         public VBoxContainer SectionList { get; }
@@ -216,6 +218,19 @@ namespace AP_Atlas.UI
         /// <summary>Every row shows its setting as it is now (after a change made elsewhere: a key, a command).</summary>
         public void RefreshRows() => RefreshAll();
 
+        /// <summary>Lists a row only while <paramref name="available"/> says so; a search never shows it otherwise.</summary>
+        public void SetAvailable(string rowId, Func<bool> available)
+        {
+            if (!_rows.Any(r => r.Id == rowId)) throw new InvalidOperationException($"No setting is \"{rowId}\".");
+            _available[rowId] = available;
+        }
+
+        /// <summary>Whether a row is listed at all now (<see cref="SetAvailable"/>).</summary>
+        public bool IsAvailable(string rowId) => !_available.TryGetValue(rowId, out var available) || available();
+
+        /// <summary>Applies the search and the rows' availability again (after developer mode changed).</summary>
+        public void Refilter() => Filter();
+
         private void RefreshAll()
         {
             foreach (var row in _rows) row.Refresh();
@@ -262,7 +277,7 @@ namespace AP_Atlas.UI
                 bool any = false;
                 foreach (var row in _rows.Where(r => r.Section == section))
                 {
-                    bool match = AP_Atlas.Core.WordSearch.Matches(typed, _tr(row.Title), _tr(row.Description), _tr(section.Title));
+                    bool match = IsAvailable(row.Id) && AP_Atlas.Core.WordSearch.Matches(typed, _tr(row.Title), _tr(row.Description), _tr(section.Title));
                     row.Node.Visible = match;
                     any |= match;
                 }

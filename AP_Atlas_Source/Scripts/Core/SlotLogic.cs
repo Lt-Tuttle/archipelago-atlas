@@ -497,10 +497,29 @@ namespace AP_Atlas.Core
             CheckingTrust = false;
             if (check == null) throw new LogicEngineFailure(Engine.LastQueryFailure);
             Trust = check;
+            if (check.Built) RememberTrust(check);
             _log(!check.Built ? $"Whether this slot's logic can be trusted couldn't be checked: {check.Error}"
                 : check.Same ? "This world rebuilds the same with other seeds: its logic is the seed's."
                 : $"This world rebuilds otherwise with other seeds ({string.Join(", ", check.Examples)}): logic for the checks the rebuilds disagree about is unsure.");
             return true;
+        }
+
+        /// <summary>
+        /// Keeps what the check found for the game and the apworld this run used (GameTrustRecords: the Games page and Add
+        /// a slot say it), off the main thread; a failure is logged, never thrown into logic.
+        /// </summary>
+        private void RememberTrust(LogicEngineManager.TrustCheck check)
+        {
+            string game = _model.Game;
+            var install = Engine.Install;
+            if (string.IsNullOrEmpty(game) || install == null) return;
+            var applied = Engine.LastApworldOverride;
+            string? seedApworld = applied?["used"]?.Type == JTokenType.Boolean && (bool)applied["used"]! ? SeedApworldFile() : null;
+            string? worldVersion = Engine.LastWorldVersion, yamlSource = Engine.LastYamlInfo?["source"]?.ToString();
+            string? archipelago = Engine.LastVersions?["ap"]?.ToString(); // the Archipelago the engine runs (a world it ships)
+            var examples = (check.Examples ?? Array.Empty<string>()).ToList();
+            Async.Fire(() => Task.Run(() => GameTrustRecords.Remember(install, game, seedApworld, worldVersion, archipelago, yamlSource, check.Same, check.LogicDiffers, examples)),
+                "keeping what a slot's logic check found", tellUser: false);
         }
 
         // =====================================================================

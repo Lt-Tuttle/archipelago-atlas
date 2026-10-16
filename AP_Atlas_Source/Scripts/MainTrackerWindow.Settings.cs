@@ -235,18 +235,21 @@ public partial class MainTrackerWindow
             var bound = command;
             page.AddKey("keyboard", "key." + bound.Id, bound.Title, bound.Menu,
                 () => _commands.ShortcutOf(bound.Id), () => bound.DefaultShortcut, key => SetKeyBinding(bound.Id, key), () => ConflictsOf(bound.Id));
+            page.SetAvailable("key." + bound.Id, bound.Shown); // a Debug command's key: listed in developer mode only
         }
+        page.Refilter();
 
         AddUpdateSettings(page);
 
         page.AddSection("advanced", "Advanced");
         page.AddToggle("advanced", "developer-mode", "Developer mode",
-            "Shows Atlas's diagnostics: the Debug Log tab in the bottom pane, frame hitch warnings on the status bar, the Debug Log's menu items and the Atlas Engine page's seed test. Everything is written to the log file either way.",
+            "Shows Atlas's diagnostics and testing tools: the Debug Log tab in the bottom pane, frame hitch warnings on the status bar, the Debug Log's menu items, and Debug (in the Tools menu and on the Games page): the solo test (Test this game…, Test every ready game…), Check this game, Check every game and the Atlas Engine page's seed test. Everything is written to the log file either way.",
             () => _appSettings.DeveloperMode, on =>
             {
                 _appSettings.DeveloperMode = on;
                 DataManager.SaveSettings(_appSettings);
                 ApplyConsoleTabs();
+                ApplyDeveloperMode();
             });
 
         page.AddSection("data", "Data");
@@ -284,7 +287,7 @@ public partial class MainTrackerWindow
     {
         string key = _commands!.ShortcutOf(commandId);
         if (key.Length == 0) return "";
-        return string.Join(", ", _commands.All.Where(other => other.Id != commandId && _commands.ShortcutOf(other.Id) == key).Select(other => Tr(other.Title)));
+        return string.Join(", ", _commands.All.Where(other => other.Id != commandId && other.Shown() && _commands.ShortcutOf(other.Id) == key).Select(other => Tr(other.Title)));
     }
 
     private void ReportRaceMode()

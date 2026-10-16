@@ -24,6 +24,14 @@ namespace AP_Atlas.UI
         private readonly VBoxContainer _rows;
         private readonly Dictionary<string, Label> _rowLabels = new();
         private CancellationTokenSource? _cts;
+
+        /// <summary>Ends a running batch after the game it's on (its report and the summary are still written); whether one ran.</summary>
+        public bool CancelBatch()
+        {
+            if (_cts == null) return false;
+            _cts.Cancel();
+            return true;
+        }
         private string? _summaryPath;
 
         /// <summary>The summary file's path once the batch ended, or null (for tests).</summary>
@@ -188,7 +196,7 @@ namespace AP_Atlas.UI
             if (_cts != null)
             {
                 Hide();
-                _hooks.Notice?.Invoke(_tr("The batch keeps going; Test every ready game… on the Games page brings its window back."));
+                _hooks.Notice?.Invoke(_tr("The batch keeps going; Test every ready game… under Debug (the Tools menu, or the Games page) brings its window back."));
                 return;
             }
             QueueFree();

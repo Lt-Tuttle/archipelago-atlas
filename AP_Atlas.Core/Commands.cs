@@ -35,6 +35,9 @@ public sealed class Command
 
     /// <summary>Whether it can run right now (a disabled command is shown grey and its key does nothing).</summary>
     public Func<bool> Enabled { get; init; } = () => true;
+
+    /// <summary>Whether it's offered at all now: listed in the menus, the palette and the key lists (a Debug command outside developer mode isn't). A hidden command is refused like a disabled one.</summary>
+    public Func<bool> Shown { get; init; } = () => true;
 }
 
 /// <summary>
@@ -87,7 +90,7 @@ public sealed class Commands
     }
 
     /// <summary>
-    /// Runs whatever the key is bound to, skipping commands that are disabled right now. True when one ran
+    /// Runs whatever the key is bound to, skipping commands that are disabled or hidden right now. True when one ran
     /// (the key is taken); false when the key means nothing, so whatever else reads keys can have it.
     /// </summary>
     public bool RunShortcut(string? canonical)
@@ -95,7 +98,7 @@ public sealed class Commands
         if (string.IsNullOrEmpty(canonical)) return false;
         foreach (var command in _all)
         {
-            if (ShortcutOf(command.Id) != canonical || !command.Enabled()) continue;
+            if (ShortcutOf(command.Id) != canonical || !CanRun(command)) continue;
             RunNow(command);
             return true;
         }
@@ -105,10 +108,12 @@ public sealed class Commands
     /// <summary>Runs a command by id (a menu item). A failure is reported, never thrown into input handling.</summary>
     public bool Run(string id)
     {
-        if (!_byId.TryGetValue(id, out var command) || !command.Enabled()) return false;
+        if (!_byId.TryGetValue(id, out var command) || !CanRun(command)) return false;
         RunNow(command);
         return true;
     }
+
+    private static bool CanRun(Command command) => command.Shown() && command.Enabled();
 
     private static void RunNow(Command command)
     {
@@ -122,9 +127,9 @@ public sealed class Commands
         }
     }
 
-    /// <summary>Keys bound to more than one enabled command (the first wins; the shortcuts page will show these).</summary>
+    /// <summary>Keys bound to more than one listed command (the first wins; a hidden command's key conflicts with nothing).</summary>
     public IReadOnlyList<(string Shortcut, IReadOnlyList<Command> Bound)> Conflicts() =>
-        _all.GroupBy(c => ShortcutOf(c.Id))
+        _all.Where(c => c.Shown()).GroupBy(c => ShortcutOf(c.Id))
             .Where(g => g.Key.Length > 0 && g.Count() > 1)
             .Select(g => (g.Key, (IReadOnlyList<Command>)g.ToList()))
             .ToList();

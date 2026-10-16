@@ -199,6 +199,14 @@ namespace AP_Atlas.UI
             Ui.NextFrame(this, () => Ui.NextFrame(this, () => _scroll.EnsureControlVisible(target)));
         }
 
+        /// <summary>Opens Advanced and brings the seed test into view (Verify logic against a seed under Debug; developer mode).</summary>
+        public void ShowVerify()
+        {
+            if (Kit.FoldedState(this, AdvancedKey) == true) Kit.ToggleFold(this, AdvancedKey);
+            _verifyRow.Visible = _settings.DeveloperMode;
+            Ui.NextFrame(this, () => Ui.NextFrame(this, () => _scroll.EnsureControlVisible(_verifyRow)));
+        }
+
         // ---- For tests ----
 
         /// <summary>The status line's text.</summary>

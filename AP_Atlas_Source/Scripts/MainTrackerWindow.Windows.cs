@@ -160,6 +160,13 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
         else Show();
     }
 
+    /// <summary>Verify logic against a seed (Debug, developer mode): the Atlas Engine page with Advanced open on the seed test.</summary>
+    private void ShowSeedVerify()
+    {
+        ((AP_Atlas.UI.IPropertiesHost)this).ShowTool(AP_Atlas.UI.Tool.Engine);
+        _enginePage?.ShowVerify();
+    }
+
     /// <summary>
     /// Shows the game's page and searches GitHub for its packs: one search, because the user pressed for it (the map's
     /// empty state, a game's page). The results dialog shows over the page; a chosen pack downloads with its progress there.

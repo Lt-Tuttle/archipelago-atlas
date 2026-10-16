@@ -339,7 +339,7 @@ namespace AP_Atlas.UI
             if (_runner.Busy || _runner.ServerAddress != null)
             {
                 Hide();
-                _hooks.Notice?.Invoke(_tr("The test keeps going; Test this game… on the Games page brings its window back."));
+                _hooks.Notice?.Invoke(_tr("The test keeps going; Test this game… under Debug (the Tools menu, or the game's page) brings its window back."));
                 return;
             }
             _packChoice?.TrySetResult(new PackChoice(null));

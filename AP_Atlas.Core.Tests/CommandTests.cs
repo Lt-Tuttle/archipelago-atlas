@@ -94,6 +94,22 @@ public class CommandTests
     }
 
     [Fact]
+    public void A_hidden_command_is_refused_and_its_key_can_serve_another()
+    {
+        var commands = Registry();
+        bool shown = false;
+        int hidden = 0, other = 0;
+        commands.Add(new Command("test.hidden", "Debug", "Hidden", "Ctrl+J", () => hidden++) { Shown = () => shown });
+        commands.Add(new Command("test.other", "File", "Other", "Ctrl+J", () => other++));
+        Assert.False(commands.Run("test.hidden"));
+        Assert.True(commands.RunShortcut("Ctrl+J"));
+        Assert.Equal((0, 1), (hidden, other));
+        shown = true;
+        Assert.True(commands.Run("test.hidden"));
+        Assert.Equal((1, 1), (hidden, other));
+    }
+
+    [Fact]
     public void A_command_that_fails_is_reported_not_thrown()
     {
         var commands = Registry();

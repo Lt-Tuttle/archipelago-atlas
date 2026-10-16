@@ -140,6 +140,13 @@ namespace AP_Atlas.UI
                 return;
             }
             if (_selected == null) return;
+            // A pack installed for a game that had none (or its last one deleted) moves its Next step: the page is drawn again.
+            string shown = _selected;
+            if (_games.Any(g => g.Game == shown) && PacksFor(shown).Count > 0 != _shownHasPack)
+            {
+                Ui.Defer(this, () => { if (_selected == shown) ShowGame(shown); });
+                return;
+            }
             foreach (var body in _detail.FindChildren("*", nameof(VBoxContainer), true, false).OfType<VBoxContainer>().Where(b => b.HasMeta("game_packs") && GodotObject.IsInstanceValid(b)).ToList())
             {
                 Clear(body);
@@ -163,11 +170,13 @@ namespace AP_Atlas.UI
 
         private List<PackFile> PacksFor(string game) => _packs.Where(p => PackIsFor(p, game)).ToList();
 
-        /// <summary>A game's map packs, as rows (the step above finds one when there's none).</summary>
-        private void MapPacksSection(string game, List<PackFile> packs)
+        /// <summary>A game's map packs, as rows in a box of their own that RefreshPacks redraws (the map pack step finds one when there's none).</summary>
+        private void MapPacksSection(VBoxContainer fold, string game, List<PackFile> packs)
         {
-            var body = Kit.Section(_detail, _tr("Map packs"), "games:map-packs", false, _hooks.Settings);
+            var body = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            body.AddThemeConstantOverride("separation", 4);
             body.SetMeta("game_packs", game);
+            fold.AddChild(body);
             FillMapPacks(body, packs);
         }
 
@@ -175,7 +184,7 @@ namespace AP_Atlas.UI
         {
             if (packs.Count == 0)
             {
-                body.AddChild(Wrapped(Kit.Muted(_tr("No map pack for this game is installed. The step above finds one; All map packs, at the foot of the list, installs a zip you have."))));
+                body.AddChild(Wrapped(Kit.Muted(_tr("No map pack for this game is installed. The map pack step finds one; All map packs, at the foot of the list, installs a zip you have."))));
                 return;
             }
             if (_hooks.Packs is { } service) service.BuildPackRows(body, packs.Select(p => p.Path).ToList(), showGame: false);

@@ -220,7 +220,11 @@ public class LogicEngineManager
     /// <param name="Same">The world came out the same, logic too: every choice of the seed is restored, nothing is unsure.</param>
     /// <param name="Rebuilds">How many check rebuilds the engine keeps (0 when the world came out the same).</param>
     /// <param name="Examples">The first things that differ between the rebuilds (options, the world's values, entrances).</param>
-    public sealed record TrustCheck(bool Built, bool Same, int Rebuilds, IReadOnlyList<string> Examples, string Error);
+    public sealed record TrustCheck(bool Built, bool Same, int Rebuilds, IReadOnlyList<string> Examples, string Error)
+    {
+        /// <summary>Logic itself differs between the rebuilds (no items, half or all the progression items): some checks are unsure for every seed.</summary>
+        public bool LogicDiffers { get; init; }
+    }
 
     /// <summary>
     /// Rebuilds the slot's world again with other seeds and compares (the bridge's 'check'): a world whose tracker support
@@ -263,7 +267,7 @@ public class LogicEngineManager
             if (response["glitched"] is JArray glitched) LastGlitchedLocations = new HashSet<long>(glitched.ToObject<List<long>>());
             var differs = response["differs"] as JObject;
             var examples = (differs?["examples"] as JArray)?.Select(e => e.ToString()).ToList() ?? new List<string>();
-            return new TrustCheck(true, (bool?)differs?["same"] == true, (int?)response["rebuilds"] ?? 0, examples, null);
+            return new TrustCheck(true, (bool?)differs?["same"] == true, (int?)response["rebuilds"] ?? 0, examples, null) { LogicDiffers = (bool?)differs?["logic_differs"] == true };
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {

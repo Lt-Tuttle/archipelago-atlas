@@ -141,6 +141,8 @@ public class AppSettings
     public List<string> ApprovedApworldSources { get; set; } = new List<string>();
     /// <summary>Game → GitHub projects ("owner/name") the user added as sources of its apworld.</summary>
     public Dictionary<string, List<string>> ExtraApworldRepos { get; set; } = new Dictionary<string, List<string>>();
+    /// <summary>Game → the setup steps the user skipped on its page ("apworld", "pack", "yaml"): its Next step card passes them by until Show skipped steps.</summary>
+    public Dictionary<string, List<string>> SkippedGameSteps { get; set; } = new Dictionary<string, List<string>>();
 
     // Cheese Tracker (cheesetrackers.theincrediblewheelofchee.se, or another instance the user runs)
     /// <summary>The Cheese Tracker site Atlas talks to. The API key below is only ever sent to this site.</summary>
@@ -181,7 +183,7 @@ public class AppSettings
     public bool ShowBottomPane { get; set; } = true;
     public bool ShowStatusBar { get; set; } = true;
     public bool ShowSystemLogTab { get; set; } = true;
-    /// <summary>Shows Atlas's diagnostics: the Debug Log tab, frame hitch warnings on the status bar, the Debug Log's menu items.</summary>
+    /// <summary>Shows Atlas's diagnostics and testing tools: the Debug Log tab, frame hitch warnings, the Debug Log's menu items, Tools → Debug and the Games page's Debug parts.</summary>
     public bool DeveloperMode { get; set; } = false;
 
     // ---- Updates (Settings -> Updates) ----
@@ -410,6 +412,7 @@ public static class DataManager
         settings.ApworldSourcesUrl ??= "";
         settings.ApprovedApworldSources ??= new List<string>();
         settings.ExtraApworldRepos = new Dictionary<string, List<string>>(settings.ExtraApworldRepos ?? new Dictionary<string, List<string>>(), System.StringComparer.OrdinalIgnoreCase);
+        settings.SkippedGameSteps = new Dictionary<string, List<string>>(settings.SkippedGameSteps ?? new Dictionary<string, List<string>>(), System.StringComparer.OrdinalIgnoreCase);
         if (string.IsNullOrWhiteSpace(settings.CheeseInstanceUrl)) settings.CheeseInstanceUrl = AP_Atlas.Core.CheeseTracker.CheeseClient.DefaultInstance;
         settings.CheeseApiKeyProtected ??= "";
         settings.CheeseUserName ??= "";

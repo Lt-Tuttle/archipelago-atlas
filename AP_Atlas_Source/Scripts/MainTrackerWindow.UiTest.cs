@@ -128,7 +128,7 @@ public partial class MainTrackerWindow
             PrivacyAsync);
         await ScenarioAsync("Home: Ctrl+1 shows it on its own; every tool has a button with a line and every link is https; a first start shows the Set up Atlas block (its button opens the setup window on Home, Add a multiworld… the Multiworlds page) and the setup line counts nothing done; a tip shows and Next tip goes around; a multiworld is listed with its line and one click connects its slot, its row says so and Open shows it on its page; New… makes a multiworld in a dialog on Home; Paste a room link… readies the room link box; the columns fit the page; with every step settled the line says so",
             HomeAsync);
-        await ScenarioAsync("Games page: the Games tool lists every game in its group (community games from the index, the games your multiworlds play as added by you), with the games of your own slots first (from their saved stats and their linked YAMLs, each once), typed words narrow the list, a game's page walks its setup through (the apworld, a map pack, your YAML, the files it needs) with each step ticked as Atlas finds it; a YAML added once is listed under every game it names; the game's folders are inside Atlas's data folder; once GitHub may be asked, the page lists every version of every project (the game's own, and one of the same name found by one search), newest first with pre-releases marked and the newest full release named, and downloads nothing without a press; Add YAML offers the places a YAML may be; the release-files dialog fits the window with a check box per file; a Discord home is named on its link",
+        await ScenarioAsync("Games page: the Games tool lists every game in its group (community games from the index, the games your multiworlds play as added by you), with the games of your own slots first (from their saved stats and their linked YAMLs, each once), typed words narrow the list, a game's page opens on its Next step (Step N of M, the YAML only when a slot's logic needed one; Skip is remembered for the game, Show skipped steps brings them back, Ready to play when done) with the rest in folds, each step ticked as Atlas finds it; a YAML added once is listed under every game it names; the game's folders are inside Atlas's data folder; once GitHub may be asked, the page lists every version of every project (the game's own, and one of the same name found by one search), newest first with pre-releases marked and the newest full release named, and downloads nothing without a press; Add YAML offers the places a YAML may be; the release-files dialog fits the window with a check box per file; a Discord home is named on its link",
             GamesPageAsync);
         await ScenarioAsync("Help: the guide opens on its first topic with a topic per section; a topic shows its section, What's new the changelog, Credits & disclaimer the author and the credits, Licences Atlas's licence; a second Help command uses the same window at its topic; Home's What's new card lists the newest changes and leads here",
             HelpAsync);
@@ -136,7 +136,7 @@ public partial class MainTrackerWindow
             AlertsAsync);
         await ScenarioAsync("UI kit: a button from the kit runs its action once per press, honours enabled and keeps its tooltip; its text lines take the palette's colours; every heading from it wears the accent's heading colour and follows an accent change, wherever it is; the alert feed names a card's kind from the palette",
             UiKitAsync);
-        await ScenarioAsync("Developer mode: off, the Debug Log tab, its command, the Debug Log's menu items and the hitch warnings on the status bar are hidden, and a diagnostic line reaches the Debug Log and the file, never the System Log; on, each shows; the status bar's right end counts the connected slots, and a hidden tab that was current gives way to Chat",
+        await ScenarioAsync("Developer mode: off, the Debug Log tab, its command, the Debug Log's menu items, the hitch warnings on the status bar and the testing tools (Tools → Debug, the Games page's Debug parts, their key rows; the commands refused) are hidden, and a diagnostic line reaches the Debug Log and the file, never the System Log; on, each shows and Verify logic against a seed opens the Engine page's seed test; the status bar's right end counts the connected slots, and a hidden tab that was current gives way to Chat",
             DeveloperModeAsync);
         await ScenarioAsync("Accessibility: every button takes the keyboard focus (Tab reaches it, Enter presses it; a kit button can opt out beside a field), the theme draws a focus ring on every kind of control that takes the focus, Tab from the Settings search box moves on, a symbol-only kit button is named by its tooltip, and no button anywhere in the window shows only a symbol without a name for screen readers",
             AccessibilityAsync);
@@ -206,7 +206,7 @@ public partial class MainTrackerWindow
             LogicBannerAsync);
         await ScenarioAsync("Found entrances: a world that learns the entrances found in the game from the room's data storage (as Universal Tracker's own client does) has the slot ask the server about its key and read it at connect; each value is passed to the engine and what it opens is a step of its own; a new engine hears them again; Atlas never writes the key",
             FoundEntrancesAsync);
-        await ScenarioAsync("Logic you can trust: once a slot's logic starts, the engine rebuilds its world with other seeds; the checks the rebuilds disagree about, and those the rebuilt world lacks, aren't called in or out of logic but listed under Checklist with a banner saying why; Show logic anyway (remembered per slot) shows them, and List them as a checklist puts them back; Check this game on the Games page and Add a slot say up front that some checks will be unsure; a world the engine can't rebuild lists every check left as a checklist under its notice",
+        await ScenarioAsync("Logic you can trust: once a slot's logic starts, the engine rebuilds its world with other seeds; the checks the rebuilds disagree about, and those the rebuilt world lacks, aren't called in or out of logic but listed under Checklist with a banner saying why; Show logic anyway (remembered per slot) shows them, and List them as a checklist puts them back; the slot's check is kept for its game and apworld, and the game's page and Add a slot say it (Check this game, under Debug, says it up front too); a world the engine can't rebuild lists every check left as a checklist under its notice",
             LogicYouCanTrustAsync);
         await ScenarioAsync("Solo test: Test this game… on a game's page runs the whole chain against the fake engine (the apworld already there, a pack installed, a YAML from the engine, a seed generated again without the game's patch output when the first try wants a ROM, a server on this PC, the AtlasTest slot connected with the YAML, logic and the pack scored) and writes a scrubbed report with a JSON twin; the owner's notes land in it once; Stop ends the server and removes the test multiworld; a generation that fails outright ends the chain with the report saying so",
             SoloTestAsync);
@@ -686,6 +686,8 @@ public partial class MainTrackerWindow
         var tools = menus[3].GetPopup();
         UiTestExpect(tools.GetItemText(0) == "Home" && ShortcutShown(tools, 0) == "Ctrl+1" && tools.GetItemText(1) == "Map Tracker" && ShortcutShown(tools, 1) == "Ctrl+2",
             $"the Tools menu's first items are \"{tools.GetItemText(0)}\" ({ShortcutShown(tools, 0)}) and \"{tools.GetItemText(1)}\" ({ShortcutShown(tools, 1)})");
+        UiTestExpect(tools.GetItemIndex(DebugSubmenuItemId) < 0 && _debugMenu != null && _commandItems[_debugMenu].Count == 6,
+            "the Tools menu shows Debug outside developer mode, or its submenu doesn't hold the six testing tools");
 
         host.ShowTool(AP_Atlas.UI.Tool.Connections);
         _commands!.Run("tool.games");
@@ -801,8 +803,10 @@ public partial class MainTrackerWindow
         UiTestExpect(!developer.ButtonPressed && _bottomTabs.IsTabHidden(2), "developer mode is on, or the Debug Log tab shows, to begin with");
         developer.ButtonPressed = true;
         UiTestExpect(!_bottomTabs.IsTabHidden(2) && DataManager.LoadSettings().DeveloperMode, "developer mode didn't show the Debug Log tab, or wasn't saved");
+        UiTestExpect(page.IsShown("key.debug.check-game"), "a Debug command's key row doesn't show in developer mode");
         developer.ButtonPressed = false;
         UiTestExpect(_bottomTabs.IsTabHidden(2) && !_appSettings.DeveloperMode, "the Debug Log tab didn't go away with developer mode");
+        UiTestExpect(!page.IsShown("key.debug.check-game") && !page.IsAvailable("key.debug.check-game"), "a Debug command's key row stays outside developer mode");
 
         // A setting changed elsewhere shows as it is when the page shows again.
         _commands!.Run("view.status-bar");
@@ -822,7 +826,8 @@ public partial class MainTrackerWindow
         page.Search("qzx");
         UiTestExpect(!page.RowIds.Any(page.IsShown) && page.NothingMatches, "a search nothing matches doesn't say so");
         page.Search("");
-        UiTestExpect(page.RowIds.All(page.IsShown) && !page.NothingMatches, "clearing the search didn't bring every row back");
+        UiTestExpect(page.RowIds.Where(page.IsAvailable).All(page.IsShown) && !page.RowIds.Where(id => !page.IsAvailable(id)).Any(page.IsShown) && !page.NothingMatches,
+            "clearing the search didn't bring every row back, or brought a Debug command's key outside developer mode");
 
         // Jumping to a section scrolls to it (the explorer's buttons, a tool's gear button).
         page.ShowSection("data");
@@ -1072,6 +1077,8 @@ public partial class MainTrackerWindow
             }
         }
         WriteApworld(apworld);
+        bool developerBefore = _appSettings.DeveloperMode;
+        SetDeveloperModeForTests(true); // the solo test is a testing tool (Debug)
         try
         {
             host.ShowTool(AP_Atlas.UI.Tool.Games);
@@ -1200,6 +1207,7 @@ public partial class MainTrackerWindow
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
             AP_Atlas.Core.SafeFile.Delete(zip);
             AP_Atlas.Core.SafeFile.Delete(apworld);
+            SetDeveloperModeForTests(developerBefore);
             AP_Atlas.Core.PopTracker.PopTrackerPackLoader.NotifyPacksChanged();
             if (System.IO.Directory.Exists(reports)) foreach (string file in System.IO.Directory.GetFiles(reports, "Test_Game-*")) System.IO.File.Delete(file);
         }
@@ -1503,6 +1511,8 @@ public partial class MainTrackerWindow
         string reports = AP_Atlas.Core.EngineSetup.SoloTestRunner.ReportsFolder;
         int profilesBefore = _profiles.Count;
         AP_Atlas.UI.SoloBatchDialog? Dialog() => GetChildren().OfType<AP_Atlas.UI.SoloBatchDialog>().FirstOrDefault(d => !d.IsQueuedForDeletion());
+        bool developerBefore = _appSettings.DeveloperMode;
+        SetDeveloperModeForTests(true); // Test every ready game… is a testing tool (Debug)
         try
         {
             host.ShowTool(AP_Atlas.UI.Tool.Games);
@@ -1542,6 +1552,7 @@ public partial class MainTrackerWindow
         {
             AtlasEngine.State.LastCheck = checkBefore;
             Dialog()?.EmitSignal(AcceptDialog.SignalName.Confirmed);
+            SetDeveloperModeForTests(developerBefore);
             AP_Atlas.Core.EngineSetup.SoloTestRunner.StopAll();
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
             AP_Atlas.Core.SafeFile.Delete(zip);
@@ -1670,7 +1681,10 @@ public partial class MainTrackerWindow
             host.ShowTool(AP_Atlas.UI.Tool.LogicTracker);
             await UiTestWaitForAsync(() => slot.LogicSettled && slot.Model.Logic.Trust != null ? slot : null, "the slot's logic to be checked");
             UiTestExpect(engine.Requests("check").Count == 1, $"the engine was asked to check the world {engine.Requests("check").Count} times, not once");
-            UiTestExpect(slot.Model.Logic.Trust is { Built: true, Same: false }, $"the check says {slot.Model.Logic.Trust}");
+            UiTestExpect(slot.Model.Logic.Trust is { Built: true, Same: false, LogicDiffers: true }, $"the check says {slot.Model.Logic.Trust}");
+            // The slot's check is kept for its game and the apworld it ran on (named by its version).
+            var kept = await UiTestWaitForAsync(() => GameTrustRecords.Newest("Test Game") is { LogicDiffers: true } r ? r : null, "the slot's check to be kept for its game");
+            UiTestExpect(kept.Apworld.Length > 0 && kept.Version != null && kept.Examples.Contains("song_list"), $"the kept check names no apworld or version: {kept.Apworld} {kept.Version}");
             UiTestExpect(slot.Model.Logic.Unsure.SetEquals(new long[] { 2002, 2003 }), $"unsure: {string.Join(", ", slot.Model.Logic.Unsure)}");
             // Neither in nor out of logic: listed under Checklist, with the banner saying why.
             UiTestExpect(slot.IsLocationInLogic(2000) == true && slot.IsLocationInLogic(2001) == false && slot.IsLocationInLogic(2002) == null && slot.IsLocationInLogic(2003) == null,
@@ -1709,6 +1723,19 @@ public partial class MainTrackerWindow
                 var trust = GameSweep.LastFor(install, "Test Game")?.Trust;
                 UiTestExpect(trust is { LogicDiffers: true } && trust.Summary.Contains("unsure for every seed"), $"the check says: {trust?.Summary ?? "nothing"}");
                 UiTestExpect(SlotGameStatus("Test Game").Text.Contains("unsure for every seed"), $"Add a slot says: {SlotGameStatus("Test Game").Text}");
+                UiTestExpect(SlotGameStatus("Test Game").Text.Contains("Found by a slot's logic on"), $"Add a slot doesn't say whose check it is: {SlotGameStatus("Test Game").Text}");
+                host.ShowTool(AP_Atlas.UI.Tool.Games);
+                _gamesPage!.Select("Test Game");
+                UiTestExpect(_gamesPage.TrustLine.Contains("unsure for every seed") && _gamesPage.TrustLine.Contains("Found by a slot's logic on"), $"the game's page says: {_gamesPage.TrustLine}");
+                // Without a slot's check, both say what Check this game found, dated by that game's own check.
+                GameTrustRecords.ForgetForTests("Test Game");
+                string today = DateTime.Now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture); // wall clock: the check's date
+                string status = SlotGameStatus("Test Game").Text;
+                _gamesPage.Select("Test Game");
+                UiTestExpect(status.Contains("unsure for every seed") && status.Contains("Found by Check this game on " + today) && !status.Contains('{'),
+                    $"without a slot's check, Add a slot says: {status}");
+                UiTestExpect(_gamesPage.TrustLine.Contains("Found by Check this game on " + today) && !_gamesPage.TrustLine.Contains('{'), $"without a slot's check, the game's page says: {_gamesPage.TrustLine}");
+                host.ShowTool(AP_Atlas.UI.Tool.LogicTracker);
             }
             finally
             {
@@ -2159,8 +2186,25 @@ public partial class MainTrackerWindow
             row.Select(0);
             await UiTestWaitAsync(0.1);
             UiTestExpect(page.SelectedGame == "Atlas Test Game", "selecting a game didn't show its page");
+            // Its Next step first (the apworld, step 1 of 2: no slot's logic needed a YAML), the other steps in folds, none
+            // done yet; nothing of the testing tools outside developer mode.
             var steps = page.Steps();
-            UiTestExpect(steps.Count == 5 && steps.All(s => !s.Done) && steps[4].Title.StartsWith("A solo test", StringComparison.Ordinal), $"the game's page has the steps {string.Join("; ", steps.Select(s => s.Title + (s.Done ? " (done)" : "")))}");
+            UiTestExpect(steps.Count == 4 && steps.All(s => !s.Done) && steps.Select(s => s.Title).SequenceEqual(new[] { "The apworld in the Atlas Engine", "A map pack", "Your YAML", "Files its setup needs (only if its guide asks)" }),
+                $"the game's page has the steps {string.Join("; ", steps.Select(s => s.Title + (s.Done ? " (done)" : "")))}");
+            UiTestExpect(page.NextStep == ("The apworld in the Atlas Engine", "Step 1 of 2") && !page.DebugShown, $"the Next step card shows {page.NextStep}, or Debug shows outside developer mode");
+            UiTestExpect(new[] { "games:versions", "games:map-packs", "games:yaml", "games:files" }.All(key => AP_Atlas.UI.Kit.FoldedState(page, key) == true), "the game's other parts aren't folded");
+            // Skip (remembered for the game) shows the next step; with both skipped the card says Ready to play; Show skipped steps brings them back.
+            Button PageButton(string meta) => page.FindChildren("*", nameof(Button), true, false).OfType<Button>().First(b => b.HasMeta(meta) && !b.IsQueuedForDeletion());
+            PageButton("skip_step").EmitSignal(BaseButton.SignalName.Pressed);
+            await UiTestWaitForAsync(() => page.NextStep.Title == "A map pack" ? page : null, "Skip to show the next step");
+            UiTestExpect(page.NextStep.Line == "Step 2 of 2" && _appSettings.SkippedGameSteps.TryGetValue("Atlas Test Game", out var skippedSteps) && skippedSteps.Contains("apworld")
+                && DataManager.LoadSettings().SkippedGameSteps.ContainsKey("Atlas Test Game"), $"Skip shows {page.NextStep}, or wasn't remembered for the game");
+            PageButton("skip_step").EmitSignal(BaseButton.SignalName.Pressed);
+            await UiTestWaitForAsync(() => page.NextStep.Title == null ? page : null, "Ready to play with every step skipped");
+            UiTestExpect(page.NextStep.Line == "Ready to play", $"with every step skipped the card shows {page.NextStep}");
+            PageButton("unskip_steps").EmitSignal(BaseButton.SignalName.Pressed);
+            await UiTestWaitForAsync(() => page.NextStep.Title == "The apworld in the Atlas Engine" ? page : null, "Show skipped steps to bring the steps back");
+            UiTestExpect(!_appSettings.SkippedGameSteps.ContainsKey("Atlas Test Game"), "Show skipped steps didn't forget the game's skips");
             // A YAML naming two games is listed under both, and ticks the step.
             AP_Atlas.Core.SafeFile.WriteAllText(yaml, "name: Me\ngame:\n  Atlas Test Game: 1\n  Other Test Game: 1\n");
             var entry = page.AddYamlFile(yaml) ?? throw new InvalidOperationException("the YAML wasn't added");
@@ -2219,6 +2263,9 @@ public partial class MainTrackerWindow
             System.IO.Directory.CreateDirectory(packsDir);
             FakeMapPack.Write(gamePack, "UI test games pack", "Atlas Test Game");
             FakeMapPack.Write(strayPack, "UI test stray pack", "No Such Game At All");
+            // A pack arriving for a game whose page shows (a rescan's redraw) moves its Next step on.
+            page.RefreshPacks();
+            await UiTestWaitForAsync(() => page.Steps().Any(s => s.Title == "A map pack" && s.Done) ? page : null, "the game's page to see the pack that arrived (its Next step moves on)");
             page.Refresh();
             UiTestExpect(page.Steps().Any(s => s.Title == "A map pack" && s.Done), "a pack Atlas hasn't read yet doesn't count for its game");
             _packManagerPanel.Rescan();
@@ -2269,6 +2316,7 @@ public partial class MainTrackerWindow
             AP_Atlas.Core.GitHubApi.ResetForTests();
             AP_Atlas.Core.Permissions.SetAlways(_appSettings, AP_Atlas.Core.Permissions.GitHubLookups, null, false);
             _appSettings.ExtraApworldRepos.Remove("Atlas Test Game");
+            _appSettings.SkippedGameSteps.Remove("Atlas Test Game");
             _appSettings.ApprovedApworldSources.Remove("github.com/owner/atlas-test");
             AP_Atlas.Core.SafeFile.Delete(yaml);
             foreach (string zip in new[] { gamePack, strayPack }) AP_Atlas.Core.SafeFile.Delete(zip);
@@ -2366,6 +2414,14 @@ public partial class MainTrackerWindow
     /// <summary>A test input for the custom accent: near black, which no heading could wear as it is (not a colour Atlas draws with).</summary>
     private const string NearBlackHex = "#101010";
 
+    /// <summary>Developer mode on or off as its Settings toggle does it (not saved): for scenarios that use the testing tools (Debug).</summary>
+    private void SetDeveloperModeForTests(bool on)
+    {
+        _appSettings.DeveloperMode = on;
+        ApplyConsoleTabs();
+        ApplyDeveloperMode();
+    }
+
     private async Task DeveloperModeAsync()
     {
         var host = (AP_Atlas.UI.IPropertiesHost)this;
@@ -2387,6 +2443,14 @@ public partial class MainTrackerWindow
         string status = _globalStatusLabel.Text;
         OnHitch("Hitch 200 ms: a probe");
         UiTestExpect(_globalStatusLabel.Text == status, "a hitch reached the status bar with developer mode off");
+        // Off: the testing tools are hidden everywhere: no Tools → Debug, no Debug on the Games page, no key rows, refused.
+        var toolsMenu = _menuHbox.GetChildren().OfType<MenuButton>().First(m => m.Text == "Tools").GetPopup();
+        UiTestExpect(toolsMenu.GetItemIndex(DebugSubmenuItemId) < 0 && !_commands.Run("debug.check-every-game") && !_commands.Find("debug.test-game")!.Shown(),
+            "the Tools menu has Debug, or a Debug command runs or shows, with developer mode off");
+        UiTestExpect(!page.IsShown("key.debug.test-game"), "a Debug command's key row shows with developer mode off");
+        _gamesPage!.ShowOverviewForTests();
+        UiTestExpect(!_gamesPage.DebugShown && !_gamesPage.FindChildren("*", nameof(Button), true, false).OfType<Button>().Any(b => b.HasMeta("solo_batch_button") || b.Text == Tr("Check every game")),
+            "the Games overview offers the testing tools outside developer mode");
 
         // A diagnostic line: the Debug Log and the file, never the System Log.
         string probe = "diagnostic probe " + Guid.NewGuid().ToString("N");
@@ -2408,10 +2472,28 @@ public partial class MainTrackerWindow
         OnHitch("Hitch 200 ms: a probe");
         UiTestExpect(_globalStatusLabel.Text == "Hitch 200 ms: a probe", "a hitch didn't reach the status bar in developer mode");
         ShowStatus(Tr("Ready"));
+        // On: Tools → Debug holds the testing tools, their key rows show, the Games page has its Debug parts, and Verify
+        // logic against a seed opens the Engine page's seed test.
+        int debugIndex = toolsMenu.GetItemIndex(DebugSubmenuItemId);
+        UiTestExpect(debugIndex >= 0 && toolsMenu.GetItemText(debugIndex) == Tr("Debug") && _debugMenu!.ItemCount == 8, "Tools → Debug isn't there in developer mode");
+        UiTestExpect(page.IsShown("key.debug.test-game"), "a Debug command's key row is missing in developer mode");
+        _gamesPage.ShowOverviewForTests();
+        UiTestExpect(_gamesPage.DebugShown && _gamesPage.FindChildren("*", nameof(Button), true, false).OfType<Button>().Any(b => b.HasMeta("solo_batch_button")), "the Games overview has no Debug part in developer mode");
+        string anyGame = _gamesPage.GameNames().First();
+        _gamesPage.Select(anyGame);
+        UiTestExpect(_gamesPage.DebugShown && _gamesPage.Steps().Any(s => s.Title == Tr("A solo test")), $"{anyGame}'s page has no Debug part with the solo test in developer mode");
+        bool advancedFolded = AP_Atlas.UI.Kit.FoldedState(_enginePage!, AP_Atlas.UI.EnginePage.AdvancedKey) != false;
+        UiTestExpect(_commands.Run("debug.verify-seed"), "Verify Logic Against a Seed… didn't run in developer mode");
+        await UiTestWaitAsync(0.2);
+        UiTestExpect(ShownContent() == _enginePage && _enginePage.AdvancedOpen && _enginePage.VerifyShown, "Verify Logic Against a Seed… didn't open the seed test");
+        if (advancedFolded) AP_Atlas.UI.Kit.ToggleFold(_enginePage, AP_Atlas.UI.EnginePage.AdvancedKey); // Advanced as it was
+        host.ShowTool(AP_Atlas.UI.Tool.Connections);
 
         // Off again while the Debug Log is current: Chat takes its place.
         developer.ButtonPressed = false;
         UiTestExpect(_bottomTabs.IsTabHidden(2) && _currentTerminalTab == 0, "hiding the Debug Log while it was current didn't give way to Chat");
+        UiTestExpect(toolsMenu.GetItemIndex(DebugSubmenuItemId) < 0 && GodotObject.IsInstanceValid(_debugMenu) && !page.IsShown("key.debug.test-game"),
+            "turning developer mode off left Tools → Debug or its key rows, or freed the submenu");
 
         // The status bar's right end counts the connected slots.
         UiTestExpect(_statusConnectedLabel.Text == "", $"the status bar counts slots while none is connected: \"{_statusConnectedLabel.Text}\"");
@@ -3502,7 +3584,7 @@ public partial class MainTrackerWindow
         var input = palette.FindChildren("*", nameof(LineEdit), true, false).OfType<LineEdit>().First();
         var tree = palette.FindChildren("*", nameof(Tree), true, false).OfType<Tree>().First();
         UiTestExpect(input.HasFocus(), "the palette's typing box isn't focused");
-        int listed = Rows(tree).Count, expected = _commands!.All.Count(c => c.Enabled()) - 1; // the Debug Log waits for developer mode
+        int listed = Rows(tree).Count, expected = _commands!.All.Count(c => c.Shown() && c.Enabled()) - 1; // not itself; the Debug Log and Tools → Debug wait for developer mode
         UiTestExpect(listed == expected, $"the palette lists {listed} commands, not every command that can run but itself ({expected})");
         UiTestExpect(Rows(tree).Any(r => r[0] == "Map Tracker" && r[1] == "Ctrl+2"), "the palette doesn't show a command's key");
 

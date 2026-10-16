@@ -105,7 +105,7 @@ namespace AP_Atlas.UI
             var typed = AP_Atlas.Core.WordSearch.Words(_input.Text);
             foreach (var command in _commands.All)
             {
-                if (command.Id == OwnCommandId || !command.Enabled() || !Matches(typed, command)) continue;
+                if (command.Id == OwnCommandId || !command.Shown() || !command.Enabled() || !Matches(typed, command)) continue;
                 var row = _list.CreateItem(root);
                 row.SetText(0, _tr(command.Title));
                 row.SetText(1, _commands.ShortcutOf(command.Id));

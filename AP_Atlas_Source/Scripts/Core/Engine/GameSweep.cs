@@ -21,6 +21,8 @@ namespace AP_Atlas.Core.EngineSetup
         [JsonProperty("world_version")] public string WorldVersion { get; set; }
         [JsonProperty("error")] public string Error { get; set; }
         [JsonProperty("seconds")] public double Seconds { get; set; }
+        /// <summary>When this game was checked (null in results kept before Atlas recorded it; wall clock: shown as a date).</summary>
+        [JsonProperty("checked")] public DateTime? Checked { get; set; }
         /// <summary>Whether a slot of this game gets the seed's logic (one game's check only; null otherwise).</summary>
         [JsonProperty("trust")] public GameTrust Trust { get; set; }
 
@@ -119,7 +121,9 @@ namespace AP_Atlas.Core.EngineSetup
                     results[missing[0]] = new GameSweepResult { Game = missing[0], Error = "the engine stopped while testing this game" };
                     remaining = missing.Skip(1).ToList();
                 }
-                var record = new GameSweepRecord { Engine = install.Describe(), Tested = DateTime.Now, Results = results }; // wall clock: shown as a date
+                var now = DateTime.Now; // wall clock: shown as a date
+                foreach (var fresh in results.Values) fresh.Checked = now;
+                var record = new GameSweepRecord { Engine = install.Describe(), Tested = now, Results = results };
                 lock (Store)
                 {
                     // One game's check joins the earlier results of the others.

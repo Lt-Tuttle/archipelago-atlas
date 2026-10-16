@@ -259,7 +259,7 @@ def serve(*args):
                 same = not rules.get('unsure')
                 reply = update(list(req.get('base') or []), slot['missing'], rules, slot['found'])
                 reply.update({'check': 'built', 'rebuilds': 0 if same else 3,
-                              'differs': {'same': same, 'examples': [] if same else ['song_list']}})
+                              'differs': {'same': same, 'logic_differs': not same, 'examples': [] if same else ['song_list']}})
                 reply.update(unsure(slot, rules))
         elif action == 'steps':
             reply = steps(req, slots[key], rules)

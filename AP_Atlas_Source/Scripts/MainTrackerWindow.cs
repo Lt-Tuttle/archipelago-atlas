@@ -466,7 +466,8 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
             StartSoloTest = StartSoloTest,
             StartSoloBatch = StartSoloBatch,
             StopSoloTest = StopSoloTest,
-            OpenDocument = OpenDocument
+            OpenDocument = OpenDocument,
+            OpenSeedVerify = ShowSeedVerify
         });
         _gamesPage.Visible = false;
         _contentStage.AddChild(_gamesPage);
