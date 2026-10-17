@@ -260,8 +260,10 @@ namespace AP_Atlas.Core
         // Exclusions, and logic as the slot shows it (race mode and exclusions applied)
         // =====================================================================
 
-        /// <summary>The key this slot's notes, flags and exclusions are kept under.</summary>
-        public string AnnotationKey => Annotations.SlotKey(ProfileId, SlotName);
+        private string? _annotationKey;
+
+        /// <summary>The key this slot's notes, flags and exclusions are kept under (made once: every exclusion check asks for it).</summary>
+        public string AnnotationKey => _annotationKey ??= Annotations.SlotKey(ProfileId, SlotName);
 
         /// <summary>Excluded by your choice if you made one, else by the seed (as the logic engine reads its options).</summary>
         public bool IsExcluded(long location) => Annotations.GetExclusionOverride(AnnotationKey, location) ?? Logic.ExcludedBySeed(location);
@@ -373,6 +375,23 @@ namespace AP_Atlas.Core
             }
         }
 
+        /// <summary>Whether the seed made this a priority check (as the logic engine reads the rebuilt world; false while race mode hides logic).</summary>
+        public bool IsPriority(long location) => !LogicHidden && Logic.IsPriority(location);
+
+        /// <summary>The seed's priority checks in logic now that aren't done, excluded, unsure or hidden by you (0 while race mode hides logic). Iterates the priority checks only.</summary>
+        public int PriorityInLogicCount
+        {
+            get
+            {
+                var priority = Logic.Priority;
+                if (LogicHidden || priority.Count == 0) return 0;
+                var done = new HashSet<long>(Session.Locations.AllLocationsChecked);
+                var unsure = UnsureShown;
+                var hidden = HiddenChecks;
+                return priority.Count(id => Logic.Reachable.Contains(id) && !done.Contains(id) && !IsExcluded(id) && !unsure.Contains(id) && !hidden.Contains(id));
+            }
+        }
+
         /// <summary>
         /// BK ("burger king", as players say it): logic runs and is shown, checks remain, and none of them is in logic.
         /// Items from other players open the next ones.
@@ -444,14 +463,23 @@ namespace AP_Atlas.Core
                     AP_Atlas.Core.Games.LogicAccuracy.SeedVersion =>
                         $"Logic may be off: this seed was made with another version of {Game} than the one installed" +
                         (Logic.Engine.LastWorldVersion != null ? $" ({Logic.Engine.LastWorldVersion})" : "") +
-                        (differs.Length > 0 ? $", and the rebuilt world doesn't match the server's{differs}." : ", and Atlas's copy of the seed's version couldn't be loaded here."),
+                        (differs.Length > 0 ? $", and the rebuilt world doesn't match the server's{differs}." : ", and Atlas's copy of the seed's version couldn't be loaded here" +
+                        (Logic.Engine.LastApworldOverride?["reason"]?.ToString() is { Length: > 0 } why ? $" ({why})." : ".")),
                     AP_Atlas.Core.Games.LogicAccuracy.RebuildDiffers =>
-                        $"Logic is approximate: your world was rebuilt, but it doesn't match the seed{differs}. " +
-                        "Usually the game keeps some options out of the server's data. Link the YAML used to generate the seed for exact logic.",
+                        $"Logic approximate: the rebuilt world differs from the seed's{differs}." + (Logic.YamlCouldHelpRebuild ? " Link the YAML used for the seed." : ""),
                     _ => null
                 };
             }
         }
+
+        /// <summary>
+        /// The rebuilt world only lacks some of the server's checks (none extra, and not for the apworld version): those
+        /// are on the Checklist, so the unsure banner says it all and the accuracy banner stays away (Properties and
+        /// Cheese Tracker still see the warning).
+        /// </summary>
+        public bool RebuildGapOnChecklist =>
+            Logic.Accuracy == AP_Atlas.Core.Games.LogicAccuracy.RebuildDiffers && Logic.Engine.LastMissingLocations.Count > 0
+            && Logic.Engine.LastYamlInfo?["extra"]?.Type == Newtonsoft.Json.Linq.JTokenType.Integer && (int)Logic.Engine.LastYamlInfo["extra"]! == 0;
 
         // =====================================================================
         // Questions for the server (cached, so each is asked once)

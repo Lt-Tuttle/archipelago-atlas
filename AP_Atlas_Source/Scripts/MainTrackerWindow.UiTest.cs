@@ -213,8 +213,10 @@ public partial class MainTrackerWindow
             SeedVersionNotFoundAsync);
         await ScenarioAsync("Found entrances: a world that learns the entrances found in the game from the room's data storage (as Universal Tracker's own client does) has the slot ask the server about its key and read it at connect; each value is passed to the engine and what it opens is a step of its own; a new engine hears them again; Atlas never writes the key",
             FoundEntrancesAsync);
-        await ScenarioAsync("Logic you can trust: once a slot's logic starts, the engine rebuilds its world with other seeds; the checks the rebuilds disagree about, and those the rebuilt world lacks, aren't called in or out of logic but listed under Checklist with a banner saying why; Show logic anyway (remembered per slot) shows them, and List them as a checklist puts them back; the slot's check is kept for its game and apworld, and the game's page and Add a slot say it (Check this game, under Debug, says it up front too); a world the engine can't rebuild lists every check left as a checklist under its notice",
+        await ScenarioAsync("Logic you can trust: once a slot's logic starts, the engine rebuilds its world with other seeds; the checks the rebuilds disagree about, and those the rebuilt world lacks, aren't called in or out of logic but listed under Checklist with one short banner (its tooltip names the missing ones; the approximate-logic banner stays away; Link YAML… only while no YAML is linked); Show logic anyway (remembered per slot) shows them, and List them as a checklist puts them back; the slot's check is kept for its game and apworld, and the game's page and Add a slot say it (Check this game, under Debug, says it up front too); a world the engine can't rebuild says why in a few words and lists every check left as a checklist under its notice",
             LogicYouCanTrustAsync);
+        await ScenarioAsync("Priority checks: the engine names the seed's priority checks when a slot starts (whatever option set them); they're starred in the Logic Tracker, on the map and in Properties, the slot card counts those in logic, and Priority only (remembered) lists them alone; a YAML's ignored Archipelago stamp is said in Properties",
+            PriorityChecksAsync);
         await ScenarioAsync("Solo test: Test this game… on a game's page runs the whole chain against the fake engine (the apworld already there, a pack installed, a YAML from the engine, a seed generated again without the game's patch output when the first try wants a ROM, a server on this PC, the AtlasTest slot connected with the YAML, logic and the pack scored) and writes a scrubbed report with a JSON twin; the owner's notes land in it once; Stop ends the server and removes the test multiworld; a generation that fails outright ends the chain with the report saying so",
             SoloTestAsync);
         await ScenarioAsync("Solo test questions: a question the test asks (trusting the apworld's project) opens on the test's own window, so a click on that window can't bury it; Cancel ends the test at once even while the question waits; closing the window then answers the question \"no\", and a permission question whose window goes is a \"no\" that isn't remembered",
@@ -2677,6 +2679,7 @@ public partial class MainTrackerWindow
         {
             fake.Unsure.Add(2002);
             fake.RebuildLacks.Add(2003);
+            fake.RebuildSource = "slot_data";
         });
         await using var server = LogicWorldServer();
         var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
@@ -2684,6 +2687,7 @@ public partial class MainTrackerWindow
         profile.Slots.Add("Tester");
         _profiles.Add(profile);
         var host = (AP_Atlas.UI.IPropertiesHost)this;
+        string? linkedYaml = null;
         try
         {
             await OnConnectSlotPressedAsync("Tester", profile);
@@ -2703,12 +2707,27 @@ public partial class MainTrackerWindow
             UiTestExpect(slot.IsLocationUnsure(2002) && !slot.IsLocationUnsure(2001), "Properties wouldn't call the Tower Top unsure");
             await ExpectTreeAsync(slot, "with logic unsure about two checks", "── Base Logic (Starting Reachable) ──", "Cave Chest",
                 "── Checklist: logic unsure for this seed (2) ──", "Tower Top", "Gem Vault");
-            UiTestExpect(slot.UnsureBannerText?.Contains("unsure about 2 checks") == true, $"the banner says \"{slot.UnsureBannerText}\"");
+            UiTestExpect(slot.UnsureBannerText?.Contains("Logic unsure: 2 checks") == true, $"the banner says \"{slot.UnsureBannerText}\"");
+            // One banner: the Gem Vault the rebuilt world lacks is named in its tooltip with what differs, and the
+            // approximate-logic banner stays away (Properties still says it).
+            UiTestExpect(slot.UnsureBannerTip?.Contains("Not in the rebuilt world: Gem Vault") == true && slot.UnsureBannerTip.Contains("song_list"),
+                $"the banner's tooltip says \"{slot.UnsureBannerTip}\"");
+            UiTestExpect(slot.AccuracyBannerShown == null && slot.LogicAccuracyWarning?.Contains("(1 locations missing, 0 extra)") == true,
+                $"the accuracy banner shows \"{slot.AccuracyBannerShown}\"; the warning is \"{slot.LogicAccuracyWarning}\"");
+            // Rebuilt from the slot data's options with no YAML linked: the one banner offers Link YAML…, and the warning says so.
+            UiTestExpect(slot.UnsureBannerLinksYaml && slot.LogicAccuracyWarning?.Contains("Link the YAML used for the seed") == true,
+                $"with no YAML linked, the banner offers Link YAML… {slot.UnsureBannerLinksYaml}; the warning is \"{slot.LogicAccuracyWarning}\"");
+            // A YAML linked: neither asks for one any more (from the next answer on).
+            linkedYaml = System.IO.Path.Combine(DataManager.GetDataDirectory(), "Tester linked.yaml");
+            AP_Atlas.Core.SafeFile.WriteAllText(linkedYaml, "name: Tester\ngame: Test Game\n");
+            _appSettings.SlotYamlPaths[slot.AnnotationKey] = linkedYaml;
 
             // The Sword and the Shield: the door comes into logic; the tower stays unsure.
             await server.BroadcastAsync(FakeArchipelagoServer.ReceivedItems(0, new long[] { 1000, 1001 }, flags: 1));
             await UiTestWaitForAsync(() => slot.LogicSettled && slot.IsLocationInLogic(2001) == true ? slot : null, "the Sword to open the door");
             UiTestExpect(slot.IsLocationInLogic(2002) == null && slot.ActiveLogicCount == 2, $"the tower's logic is {slot.IsLocationInLogic(2002)}; {slot.ActiveLogicCount} in logic");
+            UiTestExpect(!slot.UnsureBannerLinksYaml && slot.LogicAccuracyWarning?.Contains("Link the YAML") == false && slot.UnsureBannerText != null,
+                $"with a YAML linked, the banner offers Link YAML… {slot.UnsureBannerLinksYaml}; the warning is \"{slot.LogicAccuracyWarning}\"");
 
             // Show logic anyway: the tower shows as the rebuild sees it, remembered for the slot; then back to the checklist.
             slot.PressUnsureBanner();
@@ -2717,7 +2736,7 @@ public partial class MainTrackerWindow
                 "Show logic anyway wasn't remembered for the slot");
             await ExpectTreeAsync(slot, "with unsure logic shown", "── Base Logic (Starting Reachable) ──", "Cave Chest",
                 "── Unlocked by: Sword (1 checks) ──", "Locked Door", "── Unlocked by: Shield (1 checks) ──", "Tower Top");
-            UiTestExpect(slot.UnsureBannerText?.StartsWith("Showing logic for 2 checks") == true, $"the banner says \"{slot.UnsureBannerText}\"");
+            UiTestExpect(slot.UnsureBannerText?.Contains("Showing unsure logic: 2 checks") == true, $"the banner says \"{slot.UnsureBannerText}\"");
             slot.PressUnsureBanner();
             await UiTestWaitForAsync(() => slot.IsLocationInLogic(2002) == null ? slot : null, "List them as a checklist to hide the tower's logic again");
 
@@ -2754,15 +2773,109 @@ public partial class MainTrackerWindow
 
             // A world the engine can't rebuild: every check left is listed as a checklist under the notice.
             engine.StartError = ("generation_failed", "None of the YAMLs tried could rebuild this world.");
+            engine.StartReason = "Needs Archipelago 0.6.8";
             engine.Apply();
+            _appSettings.SlotYamlPaths.Remove(slot.AnnotationKey);
             slot.RetryLogicEngine();
             await UiTestWaitForAsync(() => slot.EngineProblem?.Code == "generation_failed" ? slot : null, "the rebuild to fail");
+            // Why, in a few words; nothing linked, so Link YAML….
+            UiTestExpect(slot.LogicNoticeShown?.StartsWith("✖ World not rebuilt: Needs Archipelago 0.6.8") == true && slot.LogicNoticeButtons().Contains("Link YAML…"),
+                $"the notice says \"{slot.LogicNoticeShown}\" with [{string.Join(", ", slot.LogicNoticeButtons())}]");
             await ExpectTreeAsync(slot, "with logic not running", "── Checklist: logic isn't running (4) ──",
                 "Cave Chest", "Locked Door", "Tower Top", "Gem Vault");
         }
         finally
         {
             _appSettings.ShowUnsureLogic.Clear();
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+            if (linkedYaml != null)
+            {
+                foreach (var key in _appSettings.SlotYamlPaths.Where(entry => entry.Value == linkedYaml).Select(entry => entry.Key).ToList()) _appSettings.SlotYamlPaths.Remove(key);
+                System.IO.File.Delete(linkedYaml);
+            }
+            DeleteProfile(profile);
+        }
+    }
+
+    /// <summary>The seed's priority checks: known at start, ★ on rows, pins and Properties, the card's count, Priority only.</summary>
+    private async Task PriorityChecksAsync()
+    {
+        // The Locked Door and the Gem Vault are priority checks, the Tower Top excluded; the YAML's 0.6.8 stamp was ignored.
+        var engine = StartFakeEngine(UiTestPython(), fake =>
+        {
+            fake.Priority.AddRange(new long[] { 2001, 2003 });
+            fake.Excluded.Add(2002);
+            fake.RelaxedRequires = "0.6.8";
+        });
+        await using var server = LogicWorldServer();
+        server.SlotName = "Quill";
+        var profile = new MultiworldProfile { Name = "UI test", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Quill");
+        _profiles.Add(profile);
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        bool priorityOnlyBefore = _appSettings.LogicPriorityOnly;
+        try
+        {
+            _appSettings.LogicPriorityOnly = false;
+            await OnConnectSlotPressedAsync("Quill", profile);
+            var slot = await UiTestWaitForAsync(() => SlotView(profile.Id, "Quill"), "the slot's view");
+            host.ShowTool(AP_Atlas.UI.Tool.LogicTracker);
+            await UiTestWaitForAsync(() => slot.LogicSettled ? slot : null, "the slot's logic");
+            UiTestExpect(slot.HasPriorityChecks && slot.IsPriorityCheck(2001) && slot.IsPriorityCheck(2003) && !slot.IsPriorityCheck(2000), "the priority checks aren't known");
+            UiTestExpect(slot.IsExcludedBySeed(2002), "the seed's excluded check isn't known");
+            UiTestExpect(slot.PriorityOnlyOffered && slot.PriorityInLogicCount == 0, $"Priority only offered {slot.PriorityOnlyOffered}; {slot.PriorityInLogicCount} in logic with nothing received");
+            UiTestExpect(slot.MapTracker.MarkerLookup(2001).Priority && !slot.MapTracker.MarkerLookup(2000).Priority, "the map's pins don't know which checks are priority");
+            // Converted once: Properties reads the slot data on every render.
+            UiTestExpect(slot.SlotDataJson != null && ReferenceEquals(slot.SlotDataJson, slot.SlotDataJson), "the slot data is converted again on every read");
+
+            // The Sword opens the Locked Door: a priority check in logic, starred, counted on the slot card.
+            await server.BroadcastAsync(FakeArchipelagoServer.ReceivedItems(0, new long[] { 1000 }, flags: 1));
+            await UiTestWaitForAsync(() => slot.LogicSettled && slot.IsLocationInLogic(2001) == true ? slot : null, "the Sword to open the door");
+            UiTestExpect(slot.PriorityInLogicCount == 1, $"{slot.PriorityInLogicCount} priority checks in logic, not 1");
+            UiTestExpect(slot.LogicRow(2001)?.GetIcon(1)?.GetInstanceId() == AP_Atlas.Core.Annotations.MarkerIcon(0, false, false, priority: true).GetInstanceId() && slot.LogicRow(2000)?.GetIcon(1) == null,
+                "the priority row has no ★, or another row has one");
+            await UiTestWaitForAsync(() => _activeSessionsList.FindChildren("PriorityKpi", nameof(VBoxContainer), true, false).OfType<VBoxContainer>()
+                .FirstOrDefault(c => c.Visible && c.GetChildOrNull<Label>(1)?.Text == "1"), "the slot card to count 1 priority check in logic");
+
+            // Priority only lists the starred row alone, remembered; off, every row again.
+            slot.ShowPriorityOnly(true);
+            UiTestExpect(_appSettings.LogicPriorityOnly && slot.LogicRowShown(2001) && !slot.LogicRowShown(2000), "Priority only lists another row, or wasn't remembered");
+            UiTestExpect(!slot.MapTracker.MarkerLookup(2002).Priority, "a non-priority check has a star");
+            // Find in the Logic Tracker on a check without a star switches Priority only off, so the row shows.
+            slot.RevealLogicRow(2000);
+            UiTestExpect(slot.LogicRowShown(2000) && !_appSettings.LogicPriorityOnly, "Find in the Logic Tracker left Priority only hiding the Cave Chest");
+            slot.ShowPriorityOnly(true);
+            slot.ShowPriorityOnly(false);
+            UiTestExpect(slot.LogicRowShown(2001) && slot.LogicRowShown(2000), "Priority only off didn't list every row again");
+
+            // Properties: the check says so; the slot counts them, and says the YAML's stamp was ignored.
+            AP_Atlas.Core.Inspector.Inspect(slot.LocationTarget(2001));
+            await UiTestWaitForAsync(() => _propertiesPanel.SectionBody("Overview") is { } body && ShowsText(body, "★ Priority") ? slot : null, "the Locked Door's Properties to say it's a priority check");
+            AP_Atlas.Core.Inspector.Inspect(AP_Atlas.Core.InspectTarget.ForSlot(profile.Id, "Quill"));
+            await UiTestWaitForAsync(() => _propertiesPanel.SectionBody("Progress") is { } body && ShowsText(body, "★ Priority in logic") ? slot : null, "the slot's Properties to count its priority checks");
+            UiTestExpect(ShowsText(_propertiesPanel.SectionBody("Accuracy")!, "Archipelago 0.6.8 (ignored)"), "Properties doesn't say the YAML's version stamp was ignored");
+
+            // Race mode hiding logic hides the stars too: rows, pins, Properties and the card ask the same gate.
+            AP_Atlas.Core.RaceRules.SetMode(AP_Atlas.Core.RaceModeSetting.AlwaysOn);
+            AP_Atlas.Core.RaceRules.SetHideAllLogic(true);
+            UiTestExpect(!slot.IsPriorityCheck(2001) && !slot.HasPriorityChecks && !slot.MapTracker.MarkerLookup(2001).Priority && slot.PriorityInLogicCount == 0,
+                "race mode shows the priority checks");
+            // A marker change while logic is hidden redraws the rows' icons without the star.
+            var star = AP_Atlas.Core.Annotations.MarkerIcon(0, false, false, priority: true).GetInstanceId();
+            slot.SetChecksHidden(new long[] { 2000 }, true);
+            slot.SetChecksHidden(new long[] { 2000 }, false);
+            await UiTestWaitForAsync(() => slot.LogicRow(2001) is { } hiddenRow && hiddenRow.GetIcon(1)?.GetInstanceId() != star ? slot : null, "the priority row drawn without its ★ under race mode");
+            AP_Atlas.Core.RaceRules.SetHideAllLogic(false);
+            AP_Atlas.Core.RaceRules.SetMode(AP_Atlas.Core.RaceModeSetting.FollowServer);
+            UiTestExpect(slot.IsPriorityCheck(2001), "race mode off didn't show the priority checks again");
+            await UiTestWaitForAsync(() => slot.LogicRow(2001)?.GetIcon(1)?.GetInstanceId() == star ? slot : null, "the priority row's ★ to come back after race mode");
+        }
+        finally
+        {
+            AP_Atlas.Core.RaceRules.SetHideAllLogic(false);
+            AP_Atlas.Core.RaceRules.SetMode(AP_Atlas.Core.RaceModeSetting.FollowServer);
+            _appSettings.LogicPriorityOnly = priorityOnlyBefore;
             host.ShowTool(AP_Atlas.UI.Tool.Connections);
             DeleteProfile(profile);
         }
@@ -7074,6 +7187,12 @@ public partial class MainTrackerWindow
             await UiTestWaitForAsync(() => _propertiesPanel.SectionCollapsed("Overview") != null ? slot : null, "the slot in Properties");
             UiTestExpect(_propertiesPanel.SectionCollapsed("Overview") == false && _propertiesPanel.SectionCollapsed("Accuracy") == true
                 && _propertiesPanel.SectionCollapsed("Room") == true && _propertiesPanel.SectionCollapsed("Tracking") == true, "the slot's Accuracy, Room or Tracking doesn't start folded");
+            // Slot data makes its rows only when it's opened (a big world's is thousands).
+            UiTestExpect(_propertiesPanel.SectionCollapsed("Slot data") == true && !ShowsText(_propertiesPanel.SectionBody("Slot data")!, "slot_name"),
+                "the folded Slot data made its rows");
+            _propertiesPanel.ToggleSection("Slot data");
+            UiTestExpect(ShowsText(_propertiesPanel.SectionBody("Slot data")!, "slot_name"), "opening Slot data didn't make its rows");
+            _propertiesPanel.ToggleSection("Slot data");
             (_appSettings.CollapsedPropertySections, _appSettings.ExpandedPropertySections) = foldsBefore;
 
             // The Shield, sent without flags (as the server's /send does): still progression, because the world says so.

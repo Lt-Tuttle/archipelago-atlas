@@ -209,6 +209,9 @@ public class LogicEngineManager
     /// <summary>The server's locations the rebuilt world doesn't have (from the last start): logic can't say anything about them.</summary>
     public IReadOnlySet<long> LastMissingLocations { get; private set; } = new HashSet<long>();
 
+    /// <summary>The seed's priority checks the rebuilt world marks (whatever option set them; the server's ids), from the last start.</summary>
+    public IReadOnlySet<long> LastPriorityLocations { get; private set; } = new HashSet<long>();
+
     /// <summary>
     /// The locations whose logic the slot's check rebuilds see otherwise than its world, from the last answer (empty
     /// until <see cref="CheckTrustAsync"/> has run, and when the world rebuilds the same every time).
@@ -289,6 +292,7 @@ public class LogicEngineManager
         LastStartError = null;
         LastEntranceKeys = Array.Empty<string>();
         LastMissingLocations = new HashSet<long>();
+        LastPriorityLocations = new HashSet<long>();
         LastUnsure = new HashSet<long>();
         LastStartLoss = null;
         LastGoalReachable = null;
@@ -370,9 +374,10 @@ public class LogicEngineManager
                 {
                     Code = response["code"]?.ToString() ?? "error",
                     Message = response["message"]?.ToString() ?? "The engine couldn't start this slot.",
+                    Reason = ReasonOf(response),
                     Details = response
                 };
-                _logger($"Logic Engine Start Failed ({LastStartError.Code}): {LastStartError.Message}");
+                _logger($"Logic Engine Start Failed ({LastStartError.Code}): {LastStartError.Message}" + (LastStartError.Reason != null ? $" ({LastStartError.Reason})" : ""));
                 StopEngine(seat);
                 return false;
             }
@@ -382,6 +387,9 @@ public class LogicEngineManager
                 LastYamlInfo = response["yaml"] as JObject;
                 LastEntranceKeys = (response["entrance_keys"] as JArray)?.Select(key => (string)key).Where(key => !string.IsNullOrEmpty(key)).ToList() ?? new List<string>();
                 LastMissingLocations = new HashSet<long>((response["missing_locations"] as JArray)?.ToObject<List<long>>() ?? new List<long>());
+                LastPriorityLocations = new HashSet<long>((response["priority"] as JArray)?.ToObject<List<long>>() ?? new List<long>());
+                // Known before the first answer about items (they're fixed once the world is built).
+                if (response["excluded"] is JArray startExcluded) LastExcludedLocations = new HashSet<long>(startExcluded.ToObject<List<long>>());
                 var poolToken = response["item_pool"];
                 if (poolToken != null)
                 {
@@ -685,6 +693,10 @@ public class LogicEngineManager
     }
 
     /// <summary>Whether this engine can run logic (program files and the Universal Tracker are present).</summary>
+    // A start failure's reason in a few words, when the bridge gave one (a JSON null or blank is none).
+    private static string ReasonOf(JObject response) =>
+        response["reason"]?.Type == JTokenType.String && ((string)response["reason"]).Trim() is { Length: > 0 } reason ? reason : null;
+
     public bool IsEngineInstalled() => _install != null && AP_Atlas.Core.EngineSetup.AtlasEngine.ProblemWith(_install) == null;
 }
 
@@ -693,5 +705,9 @@ public class EngineStartError
 {
     public string Code { get; set; }
     public string Message { get; set; }
+
+    /// <summary>Why, in a few plain words ("Needs Archipelago 0.6.8"), when the engine could say; else null (Message says it).</summary>
+    public string Reason { get; set; }
+
     public JObject Details { get; set; }
 }

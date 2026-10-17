@@ -26,8 +26,8 @@ namespace AP_Atlas.UI
         /// <summary>A map was chosen in the list.</summary>
         public event Action<string> MapPicked;
 
-        /// <summary>Flag color and special mark for an AP location id. Set by the owner.</summary>
-        public Func<long, (int Flag, bool Special)> MarkerLookup { get; set; }
+        /// <summary>Flag color, special mark and whether it's a priority check of the seed, for an AP location id. Set by the owner.</summary>
+        public Func<long, (int Flag, bool Special, bool Priority)> MarkerLookup { get; set; }
 
         /// <summary>Whether a location is excluded (by the seed's options or by the user). Set by the owner.</summary>
         public Func<long, bool> IsExcluded { get; set; }
@@ -1625,12 +1625,13 @@ namespace AP_Atlas.UI
                 if (MarkerLookup != null && ids.Count > 0)
                 {
                     int flag = 0;
-                    bool special = false;
+                    bool special = false, priority = false;
                     foreach (long id in ids)
                     {
                         var m = MarkerLookup(id);
                         if (m.Flag > 0 && flag == 0) flag = m.Flag;
                         special |= m.Special;
+                        priority |= m.Priority && !_checkedLocs.Contains(id); // a done check's star would point nowhere
                     }
                     if (flag > 0) Ring(AP_Atlas.Core.Annotations.FlagColor(flag));
                     if (special)
@@ -1638,9 +1639,10 @@ namespace AP_Atlas.UI
                         style.ShadowColor = AP_Atlas.Core.Annotations.SpecialColor;
                         style.ShadowSize = Math.Max(4, (int)(size * 0.35f));
                     }
-                    if (flag > 0 || special)
+                    btn.Priority = priority;
+                    if (flag > 0 || special || priority)
                     {
-                        string extra = (flag > 0 ? $"\nFlag: {AP_Atlas.Core.Annotations.FlagLabel(flag)}" : "") + (special ? "\n◆ Special" : "");
+                        string extra = (flag > 0 ? $"\nFlag: {AP_Atlas.Core.Annotations.FlagLabel(flag)}" : "") + (special ? "\n◆ Special" : "") + (priority ? "\n★ " + Translate("Priority") : "");
                         btn.TooltipText += extra;
                     }
                 }

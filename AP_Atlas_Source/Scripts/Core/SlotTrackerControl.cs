@@ -198,7 +198,7 @@ public partial class SlotTrackerControl : MarginContainer
         _mapTracker.MarkerLookup = id =>
         {
             var a = AP_Atlas.Core.Annotations.Get(AnnotationKey, AP_Atlas.Core.Annotations.LocationKey(id));
-            return (a?.Flag ?? 0, AP_Atlas.Core.Annotations.IsSpecialLocation(Game, Session.Locations.GetLocationNameFromId(id)));
+            return (a?.Flag ?? 0, AP_Atlas.Core.Annotations.IsSpecialLocation(Game, Session.Locations.GetLocationNameFromId(id)), Model.IsPriority(id));
         };
 
         BuildLogicTrackerView();
@@ -308,7 +308,12 @@ public partial class SlotTrackerControl : MarginContainer
         if (change.HasFlag(AP_Atlas.Core.SlotChange.EngineStarted)) OnEngineStarted();
         if (change.HasFlag(AP_Atlas.Core.SlotChange.EngineStartFailed)) CheckSeedVersion();
         if (change.HasFlag(AP_Atlas.Core.SlotChange.Logic)) ShowLogic();
-        else if (change.HasFlag(AP_Atlas.Core.SlotChange.Race)) SyncLogicViews();
+        else if (change.HasFlag(AP_Atlas.Core.SlotChange.Race))
+        {
+            // Rows drawn while race mode hid logic have no star: draw them again (the Checklist split too).
+            RenderLogicTree(forceFull: true);
+            SyncLogicViews();
+        }
         if (change.HasFlag(AP_Atlas.Core.SlotChange.Hints)) _hintTracker?.SetHints(Model.CurrentHints);
         if (change.HasFlag(AP_Atlas.Core.SlotChange.Messages)) OnNewChatLines();
         RaiseStateChanged();
@@ -319,6 +324,15 @@ public partial class SlotTrackerControl : MarginContainer
 
     /// <summary>Whether logic is unsure about the location for this seed (shown as a checklist item; SlotModel.UnsureShown).</summary>
     public bool IsLocationUnsure(long locationId) => Model.UnsureShown.Contains(locationId);
+
+    /// <summary>Whether the seed made this a priority check (★; SlotModel.IsPriority, false in race mode).</summary>
+    public bool IsPriorityCheck(long locationId) => Model.IsPriority(locationId);
+
+    /// <summary>Whether logic says the seed has priority checks, shown (the ★ count and Priority only show then).</summary>
+    public bool HasPriorityChecks => !LogicHidden && Model.Logic.Priority.Count > 0;
+
+    /// <summary>The seed's priority checks in logic now (SlotModel.PriorityInLogicCount).</summary>
+    public int PriorityInLogicCount => Model.PriorityInLogicCount;
 
     // =====================================================================
     // Properties panel support
@@ -505,6 +519,7 @@ public partial class SlotTrackerControl : MarginContainer
             // Whatever hides the row is switched off so it can be seen: Flagged only for an unmarked check, Show checked
             // for a done one (each button saves its setting and shows the rows again).
             if (_logicFlaggedOnly?.ButtonPressed == true && !_logicMarkedRows.Contains(locationId)) _logicFlaggedOnly.ButtonPressed = false;
+            if (_logicPriorityOnly?.ButtonPressed == true && !Model.IsPriority(locationId)) _logicPriorityOnly.ButtonPressed = false;
             if (_logicRowsShownChecked.Contains(locationId) && _logicShowChecked != null && !_logicShowChecked.ButtonPressed) _logicShowChecked.ButtonPressed = true;
             if (_logicRowsShownHidden.Contains(locationId) && _logicShowHidden != null && !_logicShowHidden.ButtonPressed) _logicShowHidden.ButtonPressed = true;
         }

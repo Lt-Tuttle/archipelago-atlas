@@ -12,6 +12,9 @@
     The run also gets empty stand-ins for the user's folders and the temp folder, and fails if anything is written to
     them (see footprint.ps1).
 
+    The four live-logic pictures (a slot on the UI test's fake logic engine and server) need the Python on the PATH;
+    without one they're skipped.
+
     Exit code: 0 all pictures taken (and, with -Baseline, all the same), 1 some differ from the baseline (look at the
     .diff.png pictures), 2 refused or set up wrongly, 3 failed or timed out, 5 something was written outside Atlas's
     folder.
@@ -76,6 +79,19 @@ if (-not $NoBuild) {
     }
 }
 
+# The live-logic pictures run a slot on the UI test's fake logic engine, on a Python. Atlas never looks for one itself:
+# this names the one on the PATH, if it runs (the Windows Store's "python" alias exists even when Python isn't installed).
+$python = $null
+$onPath = Get-Command python -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($onPath) {
+    try {
+        $found = "$(& $onPath.Source -c 'import sys; print(sys.executable)' 2>$null)".Trim()
+        if ($LASTEXITCODE -eq 0 -and $found -and (Test-Path -LiteralPath $found)) { $python = $found }
+    }
+    catch { }
+}
+if (-not $python) { Write-Host 'No Python on the PATH: the live-logic pictures are skipped.' -ForegroundColor Yellow }
+
 $scratch = Join-Path $ScratchRoot ('atlas-visualcheck-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
 $data = Join-Path $scratch 'data'
 if (-not $OutDir) { $OutDir = Join-Path $scratch 'pictures' }
@@ -98,6 +114,7 @@ $psi.CreateNoWindow = $true
 # Only the child process sees these, so nothing leaks into the caller's session.
 $psi.EnvironmentVariables['ATLAS_DATA_DIR'] = $data
 $psi.EnvironmentVariables['ATLAS_VISUALCHECK'] = $OutDir
+if ($python) { $psi.EnvironmentVariables['ATLAS_UITEST_PYTHON'] = $python } elseif ($psi.EnvironmentVariables.ContainsKey('ATLAS_UITEST_PYTHON')) { $psi.EnvironmentVariables.Remove('ATLAS_UITEST_PYTHON') }
 if ($Baseline) { $psi.EnvironmentVariables['ATLAS_VISUALCHECK_BASELINE'] = $Baseline }
 if ($Scale) { $psi.EnvironmentVariables['ATLAS_VISUALCHECK_SCALE'] = $Scale.ToString([System.Globalization.CultureInfo]::InvariantCulture) } elseif ($psi.EnvironmentVariables.ContainsKey('ATLAS_VISUALCHECK_SCALE')) { $psi.EnvironmentVariables.Remove('ATLAS_VISUALCHECK_SCALE') }
 # The theme pictured: dark unless asked (never the PC's Windows mode, so two machines take the same pictures).

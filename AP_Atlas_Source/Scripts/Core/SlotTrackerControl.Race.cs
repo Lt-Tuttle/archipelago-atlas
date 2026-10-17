@@ -56,7 +56,8 @@ public partial class SlotTrackerControl : MarginContainer
     {
         if (_accuracyBanner == null) return;
         string warning = LogicHidden ? null : LogicAccuracyWarning;
-        _accuracyBanner.Visible = warning != null;
+        // A rebuild that only lacks some checks is said by the unsure banner (they're on the Checklist): one banner, not two.
+        _accuracyBanner.Visible = warning != null && !Model.RebuildGapOnChecklist;
         _accuracyText.Text = "⚠ " + warning;
         if (warning != _lastAccuracyWarning)
         {

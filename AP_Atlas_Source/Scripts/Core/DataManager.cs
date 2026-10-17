@@ -93,6 +93,8 @@ public class AppSettings
     public bool LogicShowChecked { get; set; }
     /// <summary>Whether the Logic Tracker also lists the checks you hid (greyed); they never count as in logic.</summary>
     public bool LogicShowHidden { get; set; }
+    /// <summary>Whether the Logic Tracker lists only the seed's priority checks (★), on slots that have some.</summary>
+    public bool LogicPriorityOnly { get; set; }
     /// <summary>Whether the Map Tracker shows the checks you hid as dimmed pins (off: a pin of only hidden checks goes).</summary>
     public bool MapShowHidden { get; set; }
     /// <summary>The text client's filters turned off (ChatLines' keys: chat, hints, system, progression, useful, filler, traps), shared by every slot.</summary>

@@ -340,7 +340,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 var statsHBox = new HBoxContainer { Name = "StatsHBox", SizeFlagsHorizontal = SizeFlags.ExpandFill, Alignment = BoxContainer.AlignmentMode.Center };
                 statsHBox.AddThemeConstantOverride("separation", 2);
                 statsContainer.AddChild(statsHBox);
-                void AddKpiCol(string title, string val, Godot.Color valColor, string name = null)
+                VBoxContainer AddKpiCol(string title, string val, Godot.Color valColor, string name = null)
                 {
                     var col = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
                     if (name != null) col.Name = name;
@@ -354,6 +354,7 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                     lblVal.AddThemeColorOverride("font_color", valColor);
                     col.AddChild(lblVal);
                     statsHBox.AddChild(col);
+                    return col;
                 }
                 AddKpiCol("Total", total.ToString(), AP_Atlas.Core.ThemeColors.TextMuted);
                 AddKpiCol("Done", complete.ToString(), AP_Atlas.Core.ThemeColors.Progress);
@@ -371,6 +372,12 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                 {
                     AddKpiCol("◆", AP_Atlas.Core.Annotations.SpecialItemNames(gameName).Count().ToString(), AP_Atlas.Core.ThemeColors.TextSubtle, "SpecialKpi");
                 }
+                // The seed's priority checks in logic (★), once logic says it has some; the update below keeps it.
+                bool priorityShown = isConnected && session != null && !logicHidden && session.HasPriorityChecks;
+                int priorityCount = priorityShown ? session.PriorityInLogicCount : 0;
+                var priorityCol = AddKpiCol("★", priorityCount.ToString(), priorityCount > 0 ? AP_Atlas.Core.ThemeColors.Success : AP_Atlas.Core.ThemeColors.TextSubtle, "PriorityKpi");
+                priorityCol.Visible = priorityShown;
+                priorityCol.TooltipText = Tr("Priority checks in logic");
                 cardVBox.AddChild(statsContainer);
                 var footerHBox = new HBoxContainer { Name = "FooterHBox", SizeFlagsHorizontal = SizeFlags.ExpandFill };
                 var statusFooter = new Label
@@ -593,6 +600,18 @@ public partial class MainTrackerWindow : Control, AP_Atlas.UI.IPropertiesHost
                                     {
                                         special.Text = $"{specialGot}/{specialTotal}";
                                         SetFontColor(special, specialGot >= specialTotal ? AP_Atlas.Core.ThemeColors.Success : AP_Atlas.Core.Annotations.SpecialColor);
+                                    }
+                                }
+                                var priorityKpi = statsContainer?.GetNodeOrNull<HBoxContainer>("StatsHBox")?.GetNodeOrNull<VBoxContainer>("PriorityKpi");
+                                if (priorityKpi != null)
+                                {
+                                    bool shown = isConnected && activeSlot != null && !logicHidden && activeSlot.HasPriorityChecks;
+                                    if (priorityKpi.Visible != shown) priorityKpi.Visible = shown;
+                                    if (shown && priorityKpi.GetChildOrNull<Label>(1) is { } value)
+                                    {
+                                        int count = activeSlot.PriorityInLogicCount;
+                                        if (value.Text != count.ToString()) value.Text = count.ToString();
+                                        SetFontColor(value, count > 0 ? AP_Atlas.Core.ThemeColors.Success : null);
                                     }
                                 }
                                 var game = cardVBox.GetNodeOrNull<HBoxContainer>("FooterHBox")?.GetNodeOrNull<Label>("GameName");

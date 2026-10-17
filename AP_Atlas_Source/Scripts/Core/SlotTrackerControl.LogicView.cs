@@ -35,6 +35,22 @@ public partial class SlotTrackerControl : MarginContainer
         _logicFlaggedOnly = new Button { ToggleMode = true, Text = "Flagged / special only", TooltipText = "Show only checks you flagged, noted or marked special." };
         _logicFlaggedOnly.Toggled += _ => ApplyAllLogicMarkers();
         toolbar.AddChild(_logicFlaggedOnly);
+        // The seed's priority checks only (★): shown when it has some, remembered.
+        _logicPriorityOnly = new Button
+        {
+            ToggleMode = true,
+            Text = "★ Priority only",
+            Visible = false,
+            ButtonPressed = _appSettings.LogicPriorityOnly,
+            TooltipText = "Show only the seed's priority checks (★), as Atlas rebuilt your options"
+        };
+        _logicPriorityOnly.Toggled += on =>
+        {
+            _appSettings.LogicPriorityOnly = on;
+            DataManager.SaveSettingsSoon(_appSettings);
+            ApplyLogicVisibility();
+        };
+        toolbar.AddChild(_logicPriorityOnly);
         // Done checks are hidden: the list is what's left in logic. This brings them back (remembered).
         _logicShowChecked = new Button { ToggleMode = true, Text = "Show checked", TooltipText = "Also list the checks you've done (greyed), under the step that opened them.", ButtonPressed = _appSettings.LogicShowChecked };
         _logicShowChecked.Toggled += on =>
@@ -70,12 +86,16 @@ public partial class SlotTrackerControl : MarginContainer
         // Logic Atlas is unsure about for this seed: said above the list, with the choice to see it anyway.
         _unsureBanner = new HBoxContainer { Visible = false };
         _unsureBanner.AddThemeConstantOverride("separation", 10);
-        _unsureText = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        _unsureText = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = MouseFilterEnum.Pass };
         _unsureText.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.Warning);
         _unsureBanner.AddChild(_unsureText);
         _unsureButton = new Button();
         _unsureButton.Pressed += () => Model.ShowUnsureLogic = !Model.ShowUnsureLogic;
         _unsureBanner.AddChild(_unsureButton);
+        // A gap a YAML could close, with none linked: the one banner offers it (the accuracy banner stays away).
+        _unsureLinkYaml = new Button { Text = "Link YAML…", Visible = false, TooltipText = "Choose the YAML used to generate this seed; Atlas remembers it for this slot" };
+        _unsureLinkYaml.Pressed += PickYaml;
+        _unsureBanner.AddChild(_unsureLinkYaml);
         vbox.AddChild(_unsureBanner);
         _engineStatusLabel = new Label { Text = "Logic not running", SizeFlagsHorizontal = SizeFlags.ExpandFill, HorizontalAlignment = HorizontalAlignment.Right };
         toolbar.AddChild(_engineStatusLabel);
@@ -147,7 +167,7 @@ public partial class SlotTrackerControl : MarginContainer
         // Shown instead of the list when there's no logic to show: race mode, or an engine problem with its fixes.
         _logicNotice = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, Alignment = BoxContainer.AlignmentMode.Center, Visible = false };
         _logicNotice.AddThemeConstantOverride("separation", 14);
-        _logicNoticeText = new Label { HorizontalAlignment = HorizontalAlignment.Center, AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        _logicNoticeText = new Label { HorizontalAlignment = HorizontalAlignment.Center, AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = MouseFilterEnum.Pass };
         _logicNoticeText.AddThemeColorOverride("font_color", AP_Atlas.Core.ThemeColors.TextSubtle);
         _logicNotice.AddChild(_logicNoticeText);
         _logicNoticeActions = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
@@ -161,10 +181,17 @@ public partial class SlotTrackerControl : MarginContainer
     private HBoxContainer _unsureBanner;
     private Label _unsureText;
     private Button _unsureButton;
+    private Button _unsureLinkYaml;
     private bool _logicChecklistShown;
 
     /// <summary>What the Logic Tracker says about logic it's unsure of (null while it says nothing), for the UI test.</summary>
     public string UnsureBannerText => _unsureBanner?.Visible == true ? _unsureText.Text : null;
+
+    /// <summary>The unsure banner's tooltip, or null while it's hidden (for the UI test).</summary>
+    internal string UnsureBannerTip => _unsureBanner?.Visible == true ? _unsureText.TooltipText : null;
+
+    /// <summary>Whether the unsure banner offers Link YAML… (for the UI test).</summary>
+    internal bool UnsureBannerLinksYaml => _unsureBanner?.Visible == true && _unsureLinkYaml.Visible;
 
     /// <summary>Presses the unsure banner's button (Show logic anyway / List them as a checklist), for the UI test.</summary>
     public void PressUnsureBanner() => _unsureButton?.EmitSignal(BaseButton.SignalName.Pressed);
@@ -202,22 +229,33 @@ public partial class SlotTrackerControl : MarginContainer
         int unsure = Model.Logic.Running && !LogicHidden ? Model.Logic.Unsure.Count : 0;
         _unsureBanner.Visible = unsure > 0;
         if (unsure == 0) return;
+        string count = unsure.ToString(System.Globalization.CultureInfo.InvariantCulture);
         if (Model.ShowUnsureLogic)
         {
-            _unsureText.Text = $"Showing logic for {unsure} checks Atlas is unsure about: it may be wrong for this seed.";
+            _unsureText.Text = "⚠ " + Tr("Showing unsure logic: {0} checks").Replace("{0}", count);
             _unsureButton.Text = "List them as a checklist";
             _unsureButton.TooltipText = "List the checks logic is unsure about under Checklist, without saying whether they're in logic";
         }
         else
         {
-            _unsureText.Text = $"Logic is unsure about {unsure} checks of this seed: this world doesn't keep all of its seed's choices in its slot data, " +
-                               "so Atlas can't tell whether they're in logic. They're listed under Checklist.";
+            _unsureText.Text = "⚠ " + Tr("Logic unsure: {0} checks · on the Checklist").Replace("{0}", count);
             _unsureButton.Text = "Show logic anyway";
             _unsureButton.TooltipText = "Show what Atlas's rebuild of the world says about them (it may be wrong for this seed); remembered for this slot";
         }
+        _unsureLinkYaml.Visible = Model.RebuildGapOnChecklist && Model.Logic.YamlCouldHelpRebuild;
+        _unsureText.TooltipText = UnsureTip();
+    }
+
+    /// <summary>The unsure banner's tooltip: what it means, the checks the rebuilt world lacks by name, and what differs between rebuilds.</summary>
+    private string UnsureTip()
+    {
+        var lines = new List<string> { Tr("Atlas can't tell whether these are in logic for this seed.") };
+        if (Model.Logic.MissingNames() is { } missing) lines.Add(Tr("Not in the rebuilt world: {0}").Replace("{0}", missing));
+        if (Model.Logic.Trust is { Examples.Count: > 0 } trust) lines.Add(Tr("Differs between rebuilds: {0}").Replace("{0}", string.Join(", ", trust.Examples.Take(3))));
+        return string.Join("\n", lines);
     }
     private HBoxContainer _logicNoticeActions;
-    private Button _logicFlaggedOnly, _logicShowChecked, _logicShowHidden;
+    private Button _logicFlaggedOnly, _logicPriorityOnly, _logicShowChecked, _logicShowHidden;
     // Rows the user flagged, noted or marked special (for the "flagged only" filter), kept as their markers are drawn.
     private readonly HashSet<long> _logicMarkedRows = new HashSet<long>();
 
@@ -235,6 +273,15 @@ public partial class SlotTrackerControl : MarginContainer
     {
         if (_logicShowHidden != null) _logicShowHidden.ButtonPressed = on;
     }
+
+    /// <summary>Turns the Logic Tracker's Priority only on or off, as its button does (for the UI test).</summary>
+    public void ShowPriorityOnly(bool on)
+    {
+        if (_logicPriorityOnly != null) _logicPriorityOnly.ButtonPressed = on;
+    }
+
+    /// <summary>Whether the Logic Tracker offers Priority only (for the UI test).</summary>
+    internal bool PriorityOnlyOffered => _logicPriorityOnly?.Visible == true;
 
     /// <summary>What the Show hidden button says, or null while it isn't shown (for the UI test).</summary>
     internal string ShowHiddenText => _logicShowHidden?.Visible == true ? _logicShowHidden.Text : null;
@@ -330,7 +377,7 @@ public partial class SlotTrackerControl : MarginContainer
     {
         var a = AP_Atlas.Core.Annotations.Get(AnnotationKey, AP_Atlas.Core.Annotations.LocationKey(locId));
         bool special = AP_Atlas.Core.Annotations.IsSpecialLocation(Game, Session.Locations.GetLocationNameFromId(locId));
-        row.SetIcon(1, AP_Atlas.Core.Annotations.MarkerIcon(a?.Flag ?? 0, special, !string.IsNullOrWhiteSpace(a?.Note)));
+        row.SetIcon(1, AP_Atlas.Core.Annotations.MarkerIcon(a?.Flag ?? 0, special, !string.IsNullOrWhiteSpace(a?.Note), Model.IsPriority(locId)));
         row.SetIconMaxWidth(1, Math.Max(16, _appSettings.ContentFontSize * 2));
         if (a != null || special) _logicMarkedRows.Add(locId);
         else _logicMarkedRows.Remove(locId);
@@ -345,12 +392,17 @@ public partial class SlotTrackerControl : MarginContainer
 
     /// <summary>
     /// Which rows show: the checks left (and the done ones with Show checked, the ones you hid with Show hidden, both
-    /// greyed), only marked ones under "flagged only". A step's count says how many of its checks show, and a step with none goes.
+    /// greyed), only marked ones under "flagged only", only priority ones under "Priority only". A step's count says how
+    /// many of its checks show, and a step with none goes.
     /// </summary>
     private void ApplyLogicVisibility()
     {
         if (_logicTree == null || Session == null) return;
         bool flaggedOnly = _logicFlaggedOnly?.ButtonPressed == true;
+        // Only for a slot with priority checks: a slot without any never empties its list. The button's own state (the
+        // remembered choice is its default), so Find in the Logic Tracker can switch it off.
+        var priority = Model.Logic.Priority;
+        bool priorityOnly = _logicPriorityOnly?.ButtonPressed == true && priority.Count > 0;
         bool showChecked = _appSettings.LogicShowChecked;
         bool showHidden = _appSettings.LogicShowHidden;
         var hidden = Model.HiddenChecks;
@@ -367,7 +419,7 @@ public partial class SlotTrackerControl : MarginContainer
                 if (hiddenRow) _logicRowsShownHidden.Add(locId);
                 else _logicRowsShownHidden.Remove(locId);
             }
-            bool visible = (showChecked || !done) && (showHidden || !hiddenRow) && (!flaggedOnly || _logicMarkedRows.Contains(locId));
+            bool visible = (showChecked || !done) && (showHidden || !hiddenRow) && (!flaggedOnly || _logicMarkedRows.Contains(locId)) && (!priorityOnly || priority.Contains(locId));
             if (row.Visible != visible) row.Visible = visible;
         }
         if (_logicShowHidden != null)

@@ -148,6 +148,18 @@ internal sealed class FakeLogicEngine
     /// <summary>The server's locations the rebuilt world lacks (reported when a slot starts).</summary>
     public List<long> RebuildLacks { get; } = new();
 
+    /// <summary>The seed's priority checks, as the rebuilt world marks them (reported when a slot starts, those the server has).</summary>
+    public List<long> Priority { get; } = new();
+
+    /// <summary>With <see cref="StartError"/>: the failure's reason in a few words, as the bridge's plain_reason gives it (null: none).</summary>
+    public string? StartReason { get; set; }
+
+    /// <summary>The newer Archipelago version a YAML named that the rebuild ignored, as the bridge's relax_requires reports it (null: none).</summary>
+    public string? RelaxedRequires { get; set; }
+
+    /// <summary>How the slot's world was rebuilt, as the bridge reports it ("slot_data", "linked", …); null: from the server's data, no YAML needed.</summary>
+    public string? RebuildSource { get; set; }
+
     /// <summary>
     /// The folder the health check (AtlasCheck) reads, or null for an engine without one (its check fails, as before). The
     /// check lists the game of each apworld and world folder in it (its archipelago.json names it) and passes.
@@ -170,7 +182,7 @@ internal sealed class FakeLogicEngine
             ["data_checksum"] = DataChecksum,
             ["world_version"] = WorldVersion,
             ["rebuild_match"] = RebuildMatch,
-            ["start_error"] = StartError is { } error ? new JObject { ["code"] = error.Code, ["message"] = error.Message } : JValue.CreateNull(),
+            ["start_error"] = StartError is { } error ? StartErrorJson(error.Code, error.Message) : JValue.CreateNull(),
             ["crash"] = CrashOnItem is { } item ? new JObject { ["on_item"] = item, ["times"] = CrashTimes } : JValue.CreateNull(),
             ["delays"] = JObject.FromObject(Delays),
             ["chatter"] = Chatter,
@@ -182,6 +194,9 @@ internal sealed class FakeLogicEngine
             ["entrance_key"] = EntranceKey,
             ["unsure"] = new JArray(Unsure),
             ["rebuild_lacks"] = new JArray(RebuildLacks),
+            ["priority"] = new JArray(Priority),
+            ["relaxed_requires"] = RelaxedRequires,
+            ["rebuild_source"] = RebuildSource,
             ["check"] = CheckWorldsDir == null ? JValue.CreateNull() : new JObject { ["worlds_dir"] = CheckWorldsDir, ["failures"] = JObject.FromObject(CheckFailures) },
             ["behind_entrance"] = new JObject(BehindEntrance.Select(entry => new JProperty(entry.Key.ToString(System.Globalization.CultureInfo.InvariantCulture), entry.Value)))
         };
@@ -237,6 +252,13 @@ internal sealed class FakeLogicEngine
 
     /// <summary>The process ids of the processes the engine started of its own (<see cref="SpawnChild"/>), oldest first.</summary>
     public IReadOnlyList<int> Children => Journal().Where(entry => (string?)entry["event"] == "child").Select(entry => (int)entry["child_pid"]!).ToList();
+
+    private JObject StartErrorJson(string code, string message)
+    {
+        var json = new JObject { ["code"] = code, ["message"] = message };
+        if (StartReason != null) json["reason"] = StartReason;
+        return json;
+    }
 
     private void Write(string relative, string text) => File.WriteAllText(Path.Combine(Root, relative), text.ReplaceLineEndings("\n"));
 }

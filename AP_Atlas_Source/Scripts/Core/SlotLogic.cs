@@ -161,6 +161,33 @@ namespace AP_Atlas.Core
         /// <summary>The seed excluded this location (as the engine read the seed's options).</summary>
         public bool ExcludedBySeed(long location) => Engine.LastExcludedLocations?.Contains(location) == true;
 
+        /// <summary>
+        /// The seed's priority checks, as the rebuilt world marks them, whatever option set them (the standard
+        /// priority_locations or a world's own, such as Elden Ring's priority_location_groups). Empty while logic isn't running.
+        /// </summary>
+        public IReadOnlySet<long> Priority => Running ? Engine.LastPriorityLocations : NoLocations;
+
+        private static readonly IReadOnlySet<long> NoLocations = new HashSet<long>();
+
+        /// <summary>Whether the seed made this a priority check (false while logic isn't running).</summary>
+        public bool IsPriority(long location) => Priority.Contains(location);
+
+        /// <summary>The server's checks the rebuilt world lacks, by name in the server's order: the first <paramref name="shown"/>, then how many more. Null when it lacks none.</summary>
+        public string? MissingNames(int shown = 10)
+        {
+            var missing = Engine.LastMissingLocations;
+            if (missing.Count == 0) return null;
+            var names = Session.Locations.AllLocations.Where(missing.Contains).Take(shown)
+                .Select(id => Session.Locations.GetLocationNameFromId(id) ?? id.ToString(System.Globalization.CultureInfo.InvariantCulture)).ToList();
+            return string.Join(", ", names) + (missing.Count > names.Count ? $" (+{missing.Count - names.Count} more)" : "");
+        }
+
+        /// <summary>
+        /// Whether linking the player's YAML could make the rebuilt world closer to the seed: nothing is linked, and the world
+        /// was rebuilt from a YAML Atlas found or built (a world that needs none doesn't read one).
+        /// </summary>
+        public bool YamlCouldHelpRebuild => Running && LinkedYamlPath == null && Engine.LastYamlInfo?["source"]?.ToString() is "slot_data" or "players";
+
         /// <summary>The location is reachable only with glitches, as of the last answer.</summary>
         public bool IsGlitched(long location) => Engine.LastGlitchedLocations?.Contains(location) == true;
 
@@ -269,7 +296,7 @@ namespace AP_Atlas.Core
                 {
                     Problem = Engine.LastStartError ?? new EngineStartError { Code = "error", Message = "The logic engine couldn't start." };
                     Status = ProblemStatus(Problem);
-                    _log($"Logic engine not started ({Problem.Code}): {Problem.Message}" +
+                    _log($"Logic engine not started ({Problem.Code}): {Problem.Message}" + (Problem.Reason != null ? $" ({Problem.Reason})" : "") +
                          (Problem.Details != null ? "\n" + Problem.Details.ToString(Newtonsoft.Json.Formatting.None) : ""));
                     // The engine says what the world that couldn't start is: a seed made with another version may want its own.
                     ReadApworld();
@@ -355,6 +382,9 @@ namespace AP_Atlas.Core
                 _ => "by the engine"
             };
             _log($"Logic engine running: world rebuilt {how}; locations {info?["got"]} of {info?["expected"]} expected, {info?["missing"]} missing, {info?["extra"]} extra.");
+            if (MissingNames() is { } missingNames) _log($"Not in the rebuilt world: {missingNames}.");
+            if (info?["relaxed_requires"]?.ToString() is { Length: > 0 } stamp)
+                _log($"The YAML asks for Archipelago {stamp}; its apworld runs on this engine's {Engine.LastVersions?["ap"]}, so the world was rebuilt anyway.");
             ReadApworld();
             string version = Engine.LastWorldVersion != null ? $" (version {Engine.LastWorldVersion})" : "";
             // Whether logic works comes first: a different version whose rebuilt world matches the server's runs as it is.
@@ -373,8 +403,9 @@ namespace AP_Atlas.Core
             {
                 int missing = info!["missing"]?.ToObject<int>() ?? 0, extra = info["extra"]?.ToObject<int>() ?? 0;
                 Status = $"Logic running (world differs: {missing} missing, {extra} extra)";
-                Logger.LogWarning($"[{slot}] The rebuilt world doesn't match the server ({missing} locations missing, {extra} extra). Logic may be off. " +
-                    "Linking the YAML used to generate the seed, or matching the game's apworld version, usually fixes this.");
+                Logger.LogWarning($"[{slot}] The rebuilt world doesn't match the server ({missing} locations missing, {extra} extra). " +
+                    (extra == 0 ? "The missing ones are on the Checklist." : "Logic may be off.") +
+                    (YamlCouldHelpRebuild ? " Linking the YAML used for the seed may fix this." : " Matching the game's apworld version may fix this."));
             }
             else Status = "Logic running";
         }

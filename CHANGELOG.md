@@ -8,6 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 Development toward the first public beta, 0.1.0.
 
 ### Added
+- **Priority checks, for every game** (round 14, from the owner's Elden Ring slot): the engine reads the seed's priority checks from the rebuilt world, whatever option set them (the YAML's priority_locations, or a world's own, like Elden Ring's priority_location_groups). A ★ marks them in the Logic Tracker, on the map and in Properties; **★ Priority only** lists them alone (remembered); the slot card counts those in logic.
 - **Atlas fixes map packs by itself** (round 12): when a pack is installed, updated or first used, its confident fixes (the same name, the only one of its kind, or 85% and up, with no clash) are made without asking; one card says what was fixed and what's left, with **Review fixes** (each with Undo, and Undo all). What you undo stays undone. Replaces "Fix them now?" after adding games and the Fix now card.
 - **Changes** beside Notices on the Map Tracker: the checks you hid and every fix to the pack (yours and Atlas's, marked), each with Undo and Show on map.
 - **Install games…** at the top of the Games list, always; and an **Installed** group under "In your multiworlds" (games whose logic Atlas installed or whose map pack is installed, even partly).
@@ -200,6 +201,7 @@ Development toward the first public beta, 0.1.0.
   - The UI test checks that every command is in a menu with its key shown, that the keys and a rebind work at once, and that the menu bar never runs a stale key itself.
 
 ### Changed
+- **One logic banner, short** (round 14): when the rebuilt world only lacks some checks, the unsure line says it ("⚠ Logic unsure: 5 checks · on the Checklist", the missing ones named in its tooltip), with no second banner and no "link the YAML" when one is linked. A world that couldn't be rebuilt says why in a few words ("✖ World not rebuilt: Needs Archipelago 0.6.8"), here, on the Atlas Engine page and in Properties.
 - **Install games without walls of text** (round 13, the owner's rule "don't be wordy"): the list says a few words per game ("logic + map", "logic + the guide's map") with the sentence in the cell's tooltip, in a wider dialog so nothing is cut; the confirm is "Install N games · size", a line per game and "From N projects" (the projects and what installing trusts in its tooltip), and the tick; the summary is a line per game with one number per item (logic 1.2.0, map 1129/1150, 35 fixes with Review), the details in tooltips. Map packs on GitHub: a badge per project (Guide's pick, Fits 97%) and one line of facts; the description and the pack lab's notes in the tooltip.
 - **Install games installs the apworld version a game's map pack was measured on** (Atlas's game list records it per pack, a pre-release too), else the newest full release; the row's tooltip says which and why. A map that pins under three quarters of the game's checks is flagged in the summary, with **Find the version that fits…**.
 - **Dots that move while Atlas works**, beside the step in Install games and in engine runs, while a step runs without the bar moving (the engine's check, the map packs' checks); the bar also moves per pack while the packs are checked.
@@ -343,6 +345,8 @@ Development toward the first public beta, 0.1.0.
   - An image you choose for a Pack Doctor fix is checked the same way before it's copied.
 
 ### Fixed
+- A YAML from Archipelago 0.6.8's launcher (requires: version: 0.6.8) couldn't rebuild a world on Atlas's 0.6.7 engine though its apworld runs on 0.6.7 (Elden Ring 0.1.2), and Atlas then fetched an older apworld for nothing. A tracking rebuild now ignores that stamp when the apworld allows the engine; a seed version made for a newer Archipelago is refused with the version it needs, and a game left unloaded for that reason says which version it needs.
+- Properties took 170–260 ms per render on a slot with big slot data (Elden Ring's is 1 MB): the slot data is converted once per slot, and the folded Slot data section makes its rows only when opened.
 - Install games found no map pack for Ship of Harkinian while Find a map pack… found the one its setup guide names: Atlas's list had that project only as a copy it can't download. Such a copy now counts as none, and the guide's project is read on GitHub; the game list's build keeps the downloadable record when one file is listed twice.
 - Install games' summary said "Logic: added." with no version for a game that ships with Archipelago (it says Archipelago's version now), and "1593 are left for you on the map's Notices" for Dark Souls II, one per unlinked pin section; it now says how many of the game's checks have a pin. The pack card's count of what's left is gone too, for the same reason.
 - Save on the Multiworlds page left the SLOTS list showing the old names; a connected slot can no longer be renamed under its connection.

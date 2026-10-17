@@ -121,7 +121,9 @@ def start(req, rules):
             reply.update(identity(rules, world))
         return reply
     expected = set(req.get('all_locations') or [])
-    got = {loc['id'] for loc in rules['locations']}
+    # The locations the rebuilt world lacks (rebuild_lacks) count as missing, as the bridge's verify counts them.
+    lacks = set(rules.get('rebuild_lacks') or [])
+    got = {loc['id'] for loc in rules['locations']} - lacks
     if expected:
         check = {'expected': len(expected), 'got': len(got), 'missing': len(expected - got), 'extra': len(got - expected),
                  'match': expected == got}
@@ -131,10 +133,15 @@ def start(req, rules):
             check['match'] = bool(forced)
     else:
         check = {'expected': 0, 'got': len(got), 'missing': 0, 'extra': 0, 'match': None}
-    yaml = {'source': 'not_needed', 'apworld_override': override}
+    # How the world was rebuilt, as the bridge says it (rebuild_source: 'slot_data', 'linked', …; else no YAML needed).
+    yaml = {'source': rules.get('rebuild_source') or 'not_needed', 'apworld_override': override}
+    if rules.get('relaxed_requires'):
+        yaml['relaxed_requires'] = rules['relaxed_requires']  # as the bridge's relax_requires reports a YAML's dropped stamp
     yaml.update(check)
+    # As the bridge: the seed's priority checks the server has, and its excluded ones, known at start.
+    priority = [loc for loc in rules.get('priority') or [] if not expected or loc in expected]
     reply = {'status': 'ready', 'item_pool': rules['pool'], 'yaml': yaml, 'versions': versions(), 'entrance_keys': entrance_keys(req, rules),
-             'missing_locations': rules.get('rebuild_lacks') or []}
+             'missing_locations': rules.get('rebuild_lacks') or [], 'priority': priority, 'excluded': rules.get('excluded', [])}
     reply.update(identity(rules, world))
     return reply
 

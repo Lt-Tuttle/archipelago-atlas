@@ -22,9 +22,28 @@ namespace AP_Atlas.UI
         /// <summary>The border's width, left alone by the paint.</summary>
         public float Border { get; set; } = MapPinGeometry.DefaultBorder;
 
+        /// <summary>The pin holds a priority check of the seed: a ★ in its middle.</summary>
+        public bool Priority { get; set; }
+
         public override void _Draw()
         {
             if (SplitRight is { } right) DrawRightHalf(this, Size, Border, Shape, right);
+            if (Priority) DrawPriorityStar(this, Size, Rotation);
+        }
+
+        /// <summary>A small ★ in the pin's middle, upright however the pin is turned (a diamond is a square turned 45°).</summary>
+        public static void DrawPriorityStar(CanvasItem item, Vector2 size, float turn)
+        {
+            float s = Math.Min(size.X, size.Y);
+            if (s <= 0) return;
+            item.DrawSetTransform(new Vector2(s / 2, s / 2), -turn, Vector2.One);
+            var star = AP_Atlas.Core.Annotations.StarCorners(0, 0, s * 0.36f);
+            item.DrawColoredPolygon(star, AP_Atlas.Core.Annotations.PriorityColor);
+            var outline = new Vector2[star.Length + 1];
+            star.CopyTo(outline, 0);
+            outline[star.Length] = star[0];
+            item.DrawPolyline(outline, AP_Atlas.Core.ThemeColors.MapPinBorder, 1f, true);
+            item.DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
         }
 
         /// <summary>Sets the border's width on every stylebox the pin wears (the canvas scales it with the zoom).</summary>

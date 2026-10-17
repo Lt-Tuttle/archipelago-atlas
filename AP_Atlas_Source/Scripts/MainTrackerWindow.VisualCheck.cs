@@ -169,8 +169,59 @@ public partial class MainTrackerWindow
         await VisualCheckWaitAsync(0.8);
         await VisualCheckPictureAsync("profile_properties");
 
+        // A live slot's logic on the UI test's fake engine and server (only with a Python for it): the one banner, ★ rows,
+        // Priority only, the card's ★ count, the slot's Properties, a world that couldn't be rebuilt.
+        if (!string.IsNullOrWhiteSpace(System.Environment.GetEnvironmentVariable("ATLAS_UITEST_PYTHON"))) await VisualCheckLiveLogicAsync();
+        else VisualCheckPrint("VISUALCHECK SKIP live logic: no Python (ATLAS_UITEST_PYTHON)");
+
         VisualCheckPrint($"VISUALCHECK TAKEN: {_visualCheckPictures.Count} pictures in {Path.GetFullPath(VisualCheckFolder)}");
         return string.IsNullOrWhiteSpace(baseline) ? 0 : VisualCheckCompare(Path.GetFullPath(baseline));
+    }
+
+    /// <summary>A live slot's logic pictured: priority stars, Priority only, the slot's Properties, a world not rebuilt.</summary>
+    private async Task VisualCheckLiveLogicAsync()
+    {
+        var host = (AP_Atlas.UI.IPropertiesHost)this;
+        var engine = StartFakeEngine(UiTestPython(), fake =>
+        {
+            fake.Priority.AddRange(new long[] { 2000, 2001 });
+            fake.Unsure.Add(2002);
+            fake.RebuildLacks.Add(2003);
+        });
+        await using var server = LogicWorldServer();
+        server.SlotName = "Quill";
+        var profile = new MultiworldProfile { Name = "Sample multiworld", ServerUrl = server.Url.ToString() };
+        profile.Slots.Clear();
+        profile.Slots.Add("Quill");
+        _profiles.Add(profile);
+        try
+        {
+            await OnConnectSlotPressedAsync("Quill", profile);
+            await VisualCheckWaitForAsync(() => SlotView(profile.Id, "Quill") is { LogicSettled: true } s && s.Model.Logic.Trust != null, 30);
+            var slot = SlotView(profile.Id, "Quill") ?? throw new System.InvalidOperationException("the live slot didn't connect");
+            host.ShowTool(AP_Atlas.UI.Tool.LogicTracker);
+            await VisualCheckWaitAsync(0.8);
+            await VisualCheckPictureAsync("logic_priority");
+            slot.ShowPriorityOnly(true);
+            await VisualCheckWaitAsync(0.3);
+            await VisualCheckPictureAsync("logic_priority_only");
+            slot.ShowPriorityOnly(false);
+            AP_Atlas.Core.Inspector.Inspect(AP_Atlas.Core.InspectTarget.ForSlot(profile.Id, "Quill"));
+            await VisualCheckWaitAsync(0.8);
+            await VisualCheckPictureAsync("slot_properties_priority");
+            engine.StartError = ("generation_failed", "None of the YAMLs tried could rebuild this world.");
+            engine.StartReason = "Needs Archipelago 0.6.8";
+            engine.Apply();
+            slot.RetryLogicEngine();
+            await VisualCheckWaitForAsync(() => slot.EngineProblem?.Code == "generation_failed", 30);
+            await VisualCheckWaitAsync(0.5);
+            await VisualCheckPictureAsync("logic_not_rebuilt");
+        }
+        finally
+        {
+            host.ShowTool(AP_Atlas.UI.Tool.Connections);
+            DeleteProfile(profile);
+        }
     }
 
     /// <summary>Opens a window, takes its picture, then closes whatever the step opened.</summary>

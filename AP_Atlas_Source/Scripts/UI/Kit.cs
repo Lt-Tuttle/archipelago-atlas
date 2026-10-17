@@ -151,9 +151,9 @@ namespace AP_Atlas.UI
         /// A folding section: a quiet header ("▶  Title" closed, "▼  Title" open) and an indented body that rows go into.
         /// It starts as its default and remembers the user opening or closing it (<see cref="Folds"/>, kept in the
         /// settings under <paramref name="key"/>, shared by every view that uses the same key). It can sit in any parent,
-        /// another section's body included. Returns the body.
+        /// another section's body included. With <paramref name="fill"/>, its rows are made the first time it shows (now, if it starts open). Returns the body.
         /// </summary>
-        public static VBoxContainer Section(Container parent, string title, string key, bool collapsedByDefault, AppSettings settings)
+        public static VBoxContainer Section(Container parent, string title, string key, bool collapsedByDefault, AppSettings settings, Action<VBoxContainer>? fill = null)
         {
             var collapsed = settings.CollapsedPropertySections ??= new System.Collections.Generic.List<string>();
             var expanded = settings.ExpandedPropertySections ??= new System.Collections.Generic.List<string>();
@@ -179,12 +179,21 @@ namespace AP_Atlas.UI
             var body = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
             body.AddThemeConstantOverride("separation", 4);
             margin.AddChild(body);
+            bool filled = fill == null;
+            void Fill()
+            {
+                if (filled) return;
+                filled = true;
+                fill!(body);
+            }
+            if (!isCollapsed) Fill();
 
             header.Pressed += () =>
             {
                 bool nowCollapsed = margin.Visible;
                 margin.Visible = !nowCollapsed;
                 header.Text = (nowCollapsed ? "▶  " : "▼  ") + title;
+                if (!nowCollapsed) Fill();
                 Folds.Remember(key, nowCollapsed, collapsedByDefault, collapsed, expanded);
                 DataManager.SaveSettings(settings);
             };

@@ -473,9 +473,12 @@ namespace AP_Atlas.UI
             title.TooltipText = words.TitleTooltip;
             title.MouseFilter = MouseFilterEnum.Pass;
             box.AddChild(title);
-            var games = new VBoxContainer();
-            games.AddThemeConstantOverride("separation", 4);
-            foreach (var game in words.Games) games.AddChild(ConfirmLine(game));
+            // One grid for every game, so the columns line up whatever a size says ("+ Archipelago's release").
+            var games = new GridContainer { Columns = 3 };
+            games.AddThemeConstantOverride("h_separation", 12);
+            games.AddThemeConstantOverride("v_separation", 4);
+            games.SetMeta("add_games_games", true);
+            foreach (var game in words.Games) ConfirmLine(games, game);
             box.AddChild(games);
             var projects = new HBoxContainer { MouseFilter = MouseFilterEnum.Pass, TooltipText = words.ProjectsTooltip };
             projects.AddThemeConstantOverride("separation", 6);
@@ -499,24 +502,26 @@ namespace AP_Atlas.UI
             ConfirmText = words.AllText;
         }
 
-        /// <summary>A game's line of the confirm: its name, what it gets and its download, each cut with "…" if long (the tooltip has them whole, and the details).</summary>
-        private Control ConfirmLine(AddConfirmGame game)
+        /// <summary>A game's line of the confirm, three cells of the grid: its name, what it gets and its download, the name and what it
+        /// gets cut with "…" if long (each cell's tooltip has them whole, and the details).</summary>
+        private void ConfirmLine(GridContainer grid, AddConfirmGame game)
         {
-            var line = new HBoxContainer { MouseFilter = MouseFilterEnum.Pass, TooltipText = game.Game + " · " + game.Gets + " · " + game.Size + "\n" + game.Tooltip };
-            line.AddThemeConstantOverride("separation", 12);
-            line.SetMeta("add_games_game_line", game.Game);
-            line.AddChild(OneLine(Kit.Text(game.Game), expand: true));
+            string tooltip = game.Game + " · " + game.Gets + " · " + game.Size + "\n" + game.Tooltip;
+            var name = OneLine(Kit.Text(game.Game), expand: true);
             var gets = OneLine(Kit.Muted(game.Gets), expand: false);
             gets.CustomMinimumSize = new Vector2(Narrow ? 200 : 230, 0);
-            line.AddChild(gets);
-            // The size is never cut (its width a floor, so the lines line up): the game's name gives way instead.
+            // The size is never cut: the game's name gives way instead.
             var size = Kit.Muted(game.Size);
             size.AutowrapMode = TextServer.AutowrapMode.Off;
-            size.SizeFlagsHorizontal = SizeFlags.ShrinkEnd;
-            size.CustomMinimumSize = new Vector2(Narrow ? 130 : 170, 0);
+            size.SizeFlagsHorizontal = SizeFlags.Fill;
             size.HorizontalAlignment = HorizontalAlignment.Right;
-            line.AddChild(size);
-            return line;
+            foreach (var cell in new[] { name, gets, size })
+            {
+                cell.MouseFilter = MouseFilterEnum.Pass;
+                cell.TooltipText = tooltip;
+                cell.SetMeta("add_games_game_line", game.Game);
+                grid.AddChild(cell);
+            }
         }
 
         // ---- The run ----
@@ -859,8 +864,8 @@ namespace AP_Atlas.UI
         }
         /// <summary>The confirm's line per game, as shown ("name · gets · size").</summary>
         public List<string> ConfirmLines() =>
-            _confirm.FindChildren("*", nameof(HBoxContainer), true, false).OfType<HBoxContainer>().Where(c => c.HasMeta("add_games_game_line"))
-                .Select(c => string.Join(" · ", c.GetChildren().OfType<Label>().Select(l => l.Text))).ToList();
+            _confirm.FindChildren("*", nameof(GridContainer), true, false).OfType<GridContainer>().Where(g => g.HasMeta("add_games_games"))
+                .SelectMany(g => g.GetChildren().OfType<Label>().Chunk(3)).Select(cells => string.Join(" · ", cells.Select(l => l.Text))).ToList();
         public GameAdderRun? Result { get; private set; }
         public List<string> SummaryLines() =>
             _summary.FindChildren("*", nameof(Label), true, false).OfType<Label>().Where(l => l.HasMeta("add_games_line") || l.HasMeta("add_games_headline")).Select(l => l.Text).ToList();

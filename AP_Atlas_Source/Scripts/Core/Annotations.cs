@@ -76,6 +76,8 @@ namespace AP_Atlas.Core
         };
         public static readonly Color SpecialColor = new Color("#FFC53D");
         public static readonly Color SpecialBg = new Color("#3A2F0B");
+        /// <summary>The ★ of the seed's priority checks (light, with a dark outline: it reads on every pin colour and theme).</summary>
+        public static readonly Color PriorityColor = new Color("#F4F4F8");
 
         /// <summary>Raised after any change (main thread).</summary>
         public static event Action Changed;
@@ -322,29 +324,58 @@ namespace AP_Atlas.Core
         // Markers for tables (Tree cell icons)
         // =====================================================================
 
-        private static readonly Dictionary<(int flag, bool special, bool note), ImageTexture> _iconCache = new();
+        private static readonly Dictionary<(int flag, bool special, bool note, bool priority), ImageTexture> _iconCache = new();
 
         /// <summary>
-        /// A small strip showing a flag dot, a special diamond and a note mark, in that order, for whichever apply.
-        /// Null when none apply. Cached per combination.
+        /// A small strip showing a flag dot, a special diamond, a note mark and a priority star (the seed's priority check),
+        /// in that order, for whichever apply. Null when none apply. Cached per combination.
         /// </summary>
-        public static Texture2D MarkerIcon(int flag, bool special, bool note)
+        public static Texture2D MarkerIcon(int flag, bool special, bool note, bool priority = false)
         {
-            if (flag == 0 && !special && !note) return null;
-            var key = (flag, special, note);
+            if (flag == 0 && !special && !note && !priority) return null;
+            var key = (flag, special, note, priority);
             if (_iconCache.TryGetValue(key, out var cached)) return cached;
 
             const int cell = 24;
-            int marks = (flag > 0 ? 1 : 0) + (special ? 1 : 0) + (note ? 1 : 0);
+            int marks = (flag > 0 ? 1 : 0) + (special ? 1 : 0) + (note ? 1 : 0) + (priority ? 1 : 0);
             var img = Image.CreateEmpty(cell * marks, cell, false, Image.Format.Rgba8);
             img.Fill(Colors.Transparent);
             int x0 = 0;
             if (flag > 0) { DrawDot(img, x0, cell, FlagColor(flag)); x0 += cell; }
             if (special) { DrawDiamond(img, x0, cell, SpecialColor); x0 += cell; }
-            if (note) DrawNote(img, x0, cell, new Color("#C8C8D0"));
+            if (note) { DrawNote(img, x0, cell, new Color("#C8C8D0")); x0 += cell; }
+            if (priority) DrawStar(img, x0, cell, PriorityColor);
             var tex = ImageTexture.CreateFromImage(img);
             _iconCache[key] = tex;
             return tex;
+        }
+
+        private static void DrawStar(Image img, int x0, int cell, Color c)
+        {
+            // A pixel is the star's inside its ten corners, the outline's inside a slightly bigger star.
+            float cx = x0 + cell / 2f - 0.5f, cy = cell / 2f + cell * 0.04f, r = cell * 0.46f;
+            var star = StarCorners(cx, cy, r);
+            var outline = StarCorners(cx, cy, r + 1.5f);
+            for (int x = x0; x < x0 + cell; x++)
+                for (int y = 0; y < cell; y++)
+                {
+                    var p = new Vector2(x, y);
+                    if (Geometry2D.IsPointInPolygon(p, star)) img.SetPixel(x, y, c);
+                    else if (Geometry2D.IsPointInPolygon(p, outline)) img.SetPixel(x, y, new Color(0, 0, 0, 0.8f));
+                }
+        }
+
+        /// <summary>The ten corners of a five-pointed star, point up, around (cx, cy) with outer radius r (the map's pins draw it too).</summary>
+        public static Vector2[] StarCorners(float cx, float cy, float r)
+        {
+            var corners = new Vector2[10];
+            for (int i = 0; i < 10; i++)
+            {
+                float angle = Mathf.Pi * i / 5f - Mathf.Pi / 2f;
+                float radius = i % 2 == 0 ? r : r * 0.42f;
+                corners[i] = new Vector2(cx + radius * Mathf.Cos(angle), cy + radius * Mathf.Sin(angle));
+            }
+            return corners;
         }
 
         private static void DrawDot(Image img, int x0, int cell, Color c)

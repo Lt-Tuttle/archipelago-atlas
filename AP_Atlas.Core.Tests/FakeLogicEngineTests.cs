@@ -85,6 +85,38 @@ public class FakeLogicEngineTests
     }
 
     [Fact]
+    public async Task Start_names_the_priority_and_excluded_checks_and_says_why_a_start_failed()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        string? python = await TestEnvironment.PythonAsync(ct);
+        if (python == null)
+        {
+            Assert.Skip("Python isn't installed here (CI runs this test).");
+            return;
+        }
+        using var dir = new TempFolder();
+        var engine = SmallWorld(dir);
+        engine.Priority.Add(2001);
+        engine.RebuildLacks.Add(2000);
+        engine.Apply();
+        await using var bridge = Bridge.Start(python, engine);
+
+        // Known when the slot starts, before any answer about items; a check the rebuild lacks is missing from it.
+        var ready = await bridge.AskAsync(Init(2000, 2001, 2002), ct);
+        Assert.Equal(new long[] { 2001 }, Ids(ready["priority"]));
+        Assert.Equal(new long[] { 2002 }, Ids(ready["excluded"]));
+        Assert.Equal(new long[] { 2000 }, Ids(ready["missing_locations"]));
+        Assert.Equal(1L, (long)ready["yaml"]!["missing"]!);
+        Assert.False((bool)ready["yaml"]!["match"]!);
+
+        engine.StartError = ("generation_failed", "None of the YAMLs tried could rebuild this world.");
+        engine.StartReason = "Needs Archipelago 0.6.8";
+        engine.Apply();
+        var refused = await bridge.AskAsync(Init(2000), ct);
+        Assert.Equal("Needs Archipelago 0.6.8", (string?)refused["reason"]);
+    }
+
+    [Fact]
     public async Task Misbehaves_only_as_asked()
     {
         var ct = TestContext.Current.CancellationToken;

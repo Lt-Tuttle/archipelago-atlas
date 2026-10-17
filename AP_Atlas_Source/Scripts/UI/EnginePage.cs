@@ -407,7 +407,9 @@ namespace AP_Atlas.UI
         {
             if (slot.EngineBooting) return ("…", Muted, _tr("Starting the logic engine…"));
             if (slot.EngineProblem != null)
-                return ("✖", Bad, slot.EngineProblem.Message + (slot.SeedVersionNote is { } note
+                return ("✖", Bad, (slot.EngineProblem.Reason is not { } why ? slot.EngineProblem.Message
+                    : slot.EngineProblem.Code == "world_missing" ? _tr("{0} isn't loaded: {1}").Replace("{0}", slot.Game).Replace("{1}", why)
+                    : _tr("World not rebuilt: {0}").Replace("{0}", why)) + (slot.SeedVersionNote is { } note
                     ? " " + _tr("This seed was made with another version of {0}.").Replace("{0}", slot.Game) + " " + note : ""));
             if (!slot.EngineRunning) return ("○", Muted, _tr("Logic isn't running"));
             var info = slot.EngineYamlInfo;
@@ -427,8 +429,9 @@ namespace AP_Atlas.UI
                     .Replace("{0}", slot.Game).Replace("{1}", slot.InstalledWorldVersion != null ? _tr(" (version {0})").Replace("{0}", slot.InstalledWorldVersion) : "")
                     + " " + slot.SeedVersionNote);
             if (match?.Type == Newtonsoft.Json.Linq.JTokenType.Boolean && !(bool)match)
-                return ("▲", Warn, how + _tr(", but it differs from the server: {0} locations missing, {1} extra. Link the YAML used for the seed.")
-                    .Replace("{0}", info?["missing"]?.ToString()).Replace("{1}", info?["extra"]?.ToString()));
+                return ("▲", Warn, how + _tr(", but it differs from the server: {0} locations missing, {1} extra.")
+                    .Replace("{0}", info?["missing"]?.ToString()).Replace("{1}", info?["extra"]?.ToString())
+                    + (slot.Model.Logic.YamlCouldHelpRebuild ? " " + _tr("Link the YAML used for the seed.") : ""));
             if (match?.Type == Newtonsoft.Json.Linq.JTokenType.Boolean)
                 return ("✔", Good, how + _tr("; all {0} locations match the server").Replace("{0}", info?["expected"]?.ToString())
                     + (slot.ApworldMatchesSeed == true ? _tr(", and the apworld's data matches the seed's.")

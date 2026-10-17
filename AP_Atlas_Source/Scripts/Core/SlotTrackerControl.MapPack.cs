@@ -216,6 +216,12 @@ public partial class SlotTrackerControl : MarginContainer
 
     /// <summary>The options and data the server sent this slot at login.</summary>
     public Dictionary<string, object> SlotDataSnapshot => _slotData;
+
+    // The slot data as JSON, made once (a big world's is a megabyte: Properties converted it on every render).
+    private Newtonsoft.Json.Linq.JToken _slotDataJson;
+
+    /// <summary>The slot data as JSON, converted once per slot. Read only (Properties shows it).</summary>
+    public Newtonsoft.Json.Linq.JToken SlotDataJson => _slotDataJson ??= Newtonsoft.Json.Linq.JToken.FromObject(_slotData ?? new Dictionary<string, object>());
     /// <summary>The pack's scripts running for this slot (null until ready, or if the pack has none).</summary>
     public AP_Atlas.Core.PopTracker.PackScriptHost PackScripts => _scripts?.Scripts;
 

@@ -170,6 +170,7 @@ namespace AP_Atlas.UI
         /// </summary>
         private void BuildAccuracy(SlotTrackerControl slot)
         {
+            using var __perf = PerfMonitor.Measure("Properties: accuracy");
             // Folded by default: its title says when something inside needs a look.
             bool needsLook = !slot.LogicHidden && slot.LogicAccuracyWarning != null;
             Section(needsLook ? "Accuracy (needs a look)" : "Accuracy");
@@ -177,7 +178,7 @@ namespace AP_Atlas.UI
             if (slot.LogicHidden) { Row("Logic", Colored("Hidden by race mode", Muted)); return; }
             if (!slot.EngineRunning)
             {
-                Row("Logic", Colored(slot.EngineProblem != null ? "Not running: " + slot.EngineProblem.Message : "Not running", Muted));
+                Row("Logic", Colored(slot.EngineProblem != null ? "Not running: " + (slot.EngineProblem.Reason ?? slot.EngineProblem.Message) : "Not running", Muted));
                 return;
             }
 
@@ -192,6 +193,9 @@ namespace AP_Atlas.UI
                 "players" => file + " in the Players folder",
                 _ => "The engine"
             });
+            if (info?["relaxed_requires"]?.ToString() is { Length: > 0 } stamp)
+                Row(Tr("YAML's version stamp"), Colored(Tr("Archipelago {0} (ignored)").Replace("{0}", stamp), Muted),
+                    Tr("Its apworld runs on the engine's Archipelago {0}, so Atlas rebuilt the world anyway").Replace("{0}", slot.EngineVersions?["ap"]?.ToString() ?? "?"));
 
             var match = info?["match"];
             if (match?.Type == Newtonsoft.Json.Linq.JTokenType.Boolean)
@@ -314,7 +318,13 @@ namespace AP_Atlas.UI
             }
             else if (slot.EngineRunning)
             {
-                Row("In logic now", Colored(slot.ActiveLogicCount.ToString(), slot.ActiveLogicCount > 0 ? Good : Muted));
+                int active = slot.ActiveLogicCount;
+                Row("In logic now", Colored(active.ToString(), active > 0 ? Good : Muted));
+                if (slot.HasPriorityChecks)
+                {
+                    int priority = slot.PriorityInLogicCount;
+                    Row("★ Priority in logic", Colored(priority.ToString(), priority > 0 ? Good : Muted), Tr("The seed's priority checks in logic now (Archipelago places progression items there first)"));
+                }
                 int hiddenInLogic = slot.HiddenInLogicCount;
                 if (hiddenInLogic > 0)
                     Row("Hidden by you", Colored(hiddenInLogic.ToString(), Muted), "Checks in logic you hid because logic is wrong about them: left out of the count above, the Logic Tracker and the map until you unhide them");
@@ -366,7 +376,7 @@ namespace AP_Atlas.UI
 
             BuildSpecialProgress(slot);
             BuildFlaggedList(slot);
-            BuildSeedSettings(slot.SeedSettings(), slot.PackScripts != null, Newtonsoft.Json.Linq.JToken.FromObject(slot.SlotDataSnapshot ?? new Dictionary<string, object>()), live: true,
+            BuildSeedSettings(slot.SeedSettings(), slot.PackScripts != null, slot.SlotDataJson, live: true,
                 scriptsStopped: slot.PackScripts?.StopReason);
 
             Section("Room");
@@ -468,6 +478,7 @@ namespace AP_Atlas.UI
         private void BuildSeedSettings(List<PackScriptHost.SettingInfo> settings, bool scriptsRan, Newtonsoft.Json.Linq.JToken slotData, bool live, DateTime? savedAt = null,
             string scriptsStopped = null)
         {
+            using var __perf = PerfMonitor.Measure("Properties: seed settings and slot data");
             Section("Seed settings");
             if (!live && savedAt != null) AddHint($"From this slot's options as of {savedAt:yyyy-MM-dd HH:mm}.");
             if (settings.Count == 0)
@@ -483,17 +494,14 @@ namespace AP_Atlas.UI
                 Row(s.Name, Colored(state, s.On ? Good : ThemeColors.TextMuted) + detail, "Set by the map pack's script from this slot's options");
             }
 
-            // Everything the server sent, for any game: the options live under "options" in most worlds.
+            // Everything the server sent, for any game: the options live under "options" in most worlds. Its rows are made
+            // when the section is opened (a big world's slot data has thousands of entries).
             if (slotData is Newtonsoft.Json.Linq.JObject obj && obj.Count > 0)
             {
-                Section("Slot data");
-                AddHint("The options and data the server sent this slot at login.");
-                int shown = 0;
-                foreach (var (path, val) in Flatten(obj, ""))
-                {
-                    if (++shown > 250) { AddHint("…more (copy the panel to see everything)."); break; }
-                    PlainRow(path, val, ThemeColors.TextMuted);
-                }
+                var rows = Flatten(obj, "").Take(251).ToList();
+                string more = rows.Count > 250 ? "…more (copy the panel to see everything)." : null;
+                if (more != null) rows.RemoveAt(250);
+                LazySection("Slot data", "The options and data the server sent this slot at login.", rows, more);
             }
         }
 
@@ -683,6 +691,8 @@ namespace AP_Atlas.UI
                 case "you": Row("Excluded", Colored("Yes, by you (left out of logic counts, the Logic Tracker and the map; the server isn't told)", Muted)); break;
                 case "included by you": Row("Excluded", Colored("No: the seed excludes it, but you included it", ThemeColors.TextMuted)); break;
             }
+            if (owner?.IsPriorityCheck(t.LocationId) == true)
+                Row("★ Priority", Colored(Tr("Yes"), ThemeColors.Text), Tr("A priority check, as Atlas rebuilt your options: Archipelago places progression items there first"));
             if (isChecked != true && owner?.IsHiddenCheck(t.LocationId) == true)
                 Row("Hidden", Colored("Yes, by you: left out of the Logic Tracker, the map and the in-logic counts" + (inLogic == true ? " (logic still calls it in logic)" : ""), Muted));
             if (hint != null) Row("Hinted", LinkTo(StatusText(hint.Status, hint.Found), HintT(view, hint), StatusColor(hint.Status, hint.Found)));

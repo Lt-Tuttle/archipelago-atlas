@@ -263,6 +263,127 @@ class fixed_generation_seed:
         return False
 
 
+def read_manifest(path):
+    # An apworld's archipelago.json as a dict ({} when it has none or it can't be read).
+    try:
+        import zipfile
+        with zipfile.ZipFile(path) as z:
+            name = next((n for n in z.namelist() if n.endswith('archipelago.json')), None)
+            return json.loads(z.read(name).decode('utf-8-sig')) if name else {}
+    except Exception as e:
+        note('The manifest of ' + os.path.basename(str(path)) + ' could not be read: ' + type(e).__name__ + ': ' + str(e))
+        return {}
+
+
+def core_version(text):
+    # An Archipelago version as Archipelago compares them ("0.6.8" -> (0, 6, 8)), or None when it isn't one.
+    try:
+        from Utils import tuplize_version
+        return tuplize_version(str(text))
+    except Exception:
+        return None
+
+
+def unfit_reason(manifest):
+    # Why Archipelago wouldn't load an apworld with this manifest on this engine (worlds/__init__.py), in a few words;
+    # None when it would.
+    from Utils import version_tuple
+    low = core_version(manifest.get('minimum_ap_version') or '')
+    high = core_version(manifest.get('maximum_ap_version') or '')
+    if low is not None and low > version_tuple:
+        return 'Needs Archipelago ' + str(manifest['minimum_ap_version'])
+    if high is not None and high < version_tuple:
+        return 'Needs Archipelago ' + str(manifest['maximum_ap_version']) + ' or older'
+    return None
+
+
+def refuse_unfit_apworld(path):
+    # As Archipelago refuses an apworld made for another core version, said in a few words.
+    reason = unfit_reason(read_manifest(path))
+    if reason:
+        raise RuntimeError(reason)
+
+
+def unloaded_reason(game):
+    # For a game the engine doesn't have: an apworld of it that Archipelago skipped because it was made for another core
+    # (its loader only logs that), in a few words. None when there's none.
+    try:
+        import worlds
+        for source in getattr(worlds, 'world_sources', None) or []:
+            if not getattr(source, 'is_zip', False):
+                continue
+            manifest = read_manifest(getattr(source, 'resolved_path', None) or '')
+            if str(manifest.get('game', '')).lower() == str(game or '').lower():
+                reason = unfit_reason(manifest)
+                if reason:
+                    return reason
+    except Exception as e:
+        note("Why " + str(game) + " didn't load could not be read: " + type(e).__name__ + ': ' + str(e))
+    return None
+
+
+def relax_requires(cls, doc):
+    # A YAML's "requires: version" names the Archipelago that wrote it (0.6.8's launcher template writes 0.6.8), and
+    # Generate refuses it on an older engine. For a tracking rebuild the world's own minimum is what counts: Archipelago
+    # doesn't load an apworld whose minimum is above it, and a seed's version is refused the same way
+    # (apply_apworld_override). So a stamp above this engine is dropped when the world allows the engine; the game versions
+    # and plando stay. Returns the doc to generate from (a copy when changed) and the version dropped, or None.
+    requires = doc.get('requires') if isinstance(doc, dict) else None
+    if not isinstance(requires, dict) or 'version' not in requires:
+        return doc, None
+    from Utils import version_tuple
+    wanted = core_version(requires['version'])
+    if wanted is None or wanted <= version_tuple:
+        return doc, None  # Generate takes it, or says what's wrong with it
+    path = getattr(cls, 'zip_path', None)
+    minimum = core_version(read_manifest(path).get('minimum_ap_version') or '') if path else None
+    if minimum is not None and minimum > version_tuple:
+        return doc, None  # the world itself needs it: Generate refuses, and the reason names the version
+    doc = dict(doc)
+    doc['requires'] = {k: v for k, v in requires.items() if k != 'version'}
+    return doc, str(requires['version'])
+
+
+# Why a rebuild failed, in a few plain words: Generate's own messages first (Generate.py roll_settings and handle_option,
+# Options.verify), each as (pattern, words, code). Anything else is the error's own line.
+PLAIN_REASONS = [
+    (r'required version of generator is at least ([0-9]+(?:\.[0-9]+)*)', 'Needs Archipelago {0}', 'needs_archipelago'),
+    (r'required version of world "([^"]+)" is at least ([0-9]+(?:\.[0-9]+)*)', 'Needs {0} apworld {1}', 'needs_world_version'),
+    (r'required version of world "([^"]+)" is no later than ([0-9]+(?:\.[0-9]+)*)', 'Needs {0} apworld {1} or older', 'needs_world_version'),
+    (r'required plando module (.+?), which is not enabled', 'Needs plando: {0}', 'needs_plando'),
+    (r'No (?:functional )?world found to handle game (.+?)\. Did you mean', '{0} not installed', 'no_world'),
+    (r'No game options for selected game "(.+?)" found', 'No {0} options in the YAML', 'no_options'),
+    (r'Error generating option (\S+) in ', 'Option {0} rejected', 'option'),
+    (r'Found unexpected key (.+?) in (.+?)\. Allowed keys', '{1}: unknown {0}', 'option'),
+]
+_REASON_WRAPPERS = re.compile(r'^(?:Which caused:\s*)?(?:Exception|ValueError|RuntimeError|(?:Options\.)?OptionError):\s*')
+
+
+def short_note(text):
+    """A note as one short line (a YAML parser's error runs to several lines with the file's path)."""
+    line = (text or '').strip().splitlines()[0].strip() if (text or '').strip() else ''
+    if not line:
+        return None
+    return line if len(line) <= 100 else line[:99] + '\u2026'
+
+
+def plain_reason(text):
+    # Why a rebuild failed, in a few words, and a code Atlas can act on ('other': the error's own words). Generate puts
+    # the root cause on the line after "Please fix your yaml." (Utils.get_all_causes); otherwise the last line says it.
+    text = text or ''
+    for pattern, words, code in PLAIN_REASONS:
+        found = re.search(pattern, text)
+        if found:
+            return words.format(*found.groups()), code
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    marker = next((i for i, line in enumerate(lines) if line.endswith('Please fix your yaml.')), None)
+    line = lines[marker + 1] if marker is not None and marker + 1 < len(lines) else (lines[-1] if lines else '')
+    line = _REASON_WRAPPERS.sub('', line)
+    if not line:
+        return None, 'other'
+    return (line if len(line) <= 100 else line[:99] + '…'), 'other'
+
+
 def generate_with(tracker_cls, logger, cls, game, slot_name, slot_data, doc, all_entrances_known=False, seed=None):
     # Rebuilds one player's world from one YAML, in a folder of its own (no other YAML can affect it). The engine's own
     # Players folder must exist, whatever the caller (a slot start makes it; the game sweep didn't, and on an engine no
@@ -343,30 +464,32 @@ def smoke_test():
 
 def yaml_candidates(cls, game, slot_name, slot_data, linked_path, players_dir):
     # In order: the YAML the user linked to this slot, one built from slot data, a match in the Players folder.
+    # Each is (source, file, doc, the Archipelago version a YAML's "requires" named that the doc no longer asks for).
     resolved, total = resolved_options(cls, slot_data)
     notes = []
     cands = []
 
     def overlay(doc):
+        doc, relaxed = relax_requires(cls, doc)
         doc = dict(doc)
         doc['name'] = slot_name
         doc['game'] = game
         section = dict(doc.get(game) or {})
         section.update(resolved)
         doc[game] = section
-        return doc
+        return doc, relaxed
 
     if linked_path:
         try:
             doc = pick_doc(load_yaml_docs(linked_path), game, slot_name, False)
             if doc is not None:
-                cands.append(('linked', os.path.basename(linked_path), overlay(doc)))
+                cands.append(('linked', os.path.basename(linked_path)) + overlay(doc))
             else:
                 notes.append('The linked YAML has no ' + game + ' player.')
         except Exception as e:
             notes.append('The linked YAML could not be read: ' + str(e))
     if resolved:
-        cands.append(('slot_data', None, {'name': slot_name, 'game': game, game: dict(resolved)}))
+        cands.append(('slot_data', None, {'name': slot_name, 'game': game, game: dict(resolved)}, None))
     if players_dir and os.path.isdir(players_dir):
         for fname in sorted(os.listdir(players_dir)):
             if not fname.lower().endswith(('.yaml', '.yml')):
@@ -377,7 +500,7 @@ def yaml_candidates(cls, game, slot_name, slot_data, linked_path, players_dir):
                 note('The YAML ' + fname + ' in the Players folder could not be read: ' + type(e).__name__ + ': ' + str(e))
                 continue
             if doc is not None:
-                cands.append(('players', fname, overlay(doc)))
+                cands.append(('players', fname) + overlay(doc))
     return cands, notes, len(resolved), total
 
 def apply_apworld_override(req):
@@ -393,6 +516,8 @@ def apply_apworld_override(req):
     if current is not None and expected and world_identity(current).get('data_checksum') == expected:
         return {'used': False, 'reason': 'the installed copy already matches the seed'}
     try:
+        # As Archipelago's loader refuses an apworld made for another core (worlds/__init__.py), before anything is swapped.
+        refuse_unfit_apworld(path)
         swap_in_apworld(path, game)
         loaded = AutoWorldRegister.world_types.get(game)
         identity = world_identity(loaded) if loaded is not None else {}
@@ -401,7 +526,7 @@ def apply_apworld_override(req):
                 'world_version': identity.get('world_version')}
     except Exception as e:
         # swap_in_apworld restored the installed copy: the slot carries on with it, and Atlas reports why.
-        return {'used': False, 'error': (type(e).__name__ + ': ' + str(e))[:300]}
+        return {'used': False, 'error': (type(e).__name__ + ': ' + str(e))[:300], 'reason': plain_reason(str(e))[0]}
 
 
 def start_slot(req, logger):
@@ -418,6 +543,7 @@ def start_slot(req, logger):
         import worlds
         return None, {'code': 'world_missing', 'message': game + ' is not installed in this engine.',
                       'failed_worlds': [str(w) for w in getattr(worlds, 'failed_world_loads', [])],
+                      'reason': unloaded_reason(game),
                       'apworld_override': override}
     if getattr(cls, 'disable_ut', False):
         return None, {'code': 'ut_disabled', 'message': "This game's author asked for the Universal Tracker not to be used with it."}
@@ -436,7 +562,9 @@ def start_slot(req, logger):
         if getattr(c, 'tracker_disabled', False):
             return None, {'code': 'ut_disabled', 'message': "This game's author asked for the Universal Tracker not to be used with it."}
         if c.multiworld is None or c.player_id is None:
-            return None, {'code': 'generation_failed', 'message': getattr(c, 'gen_error', None) or 'The world could not be rebuilt from the slot data.',
+            error = getattr(c, 'gen_error', None) or 'The world could not be rebuilt from the slot data.'
+            reason, reason_code = plain_reason(error)
+            return None, {'code': 'generation_failed', 'message': error, 'reason': reason, 'reason_code': reason_code,
                           'apworld_override': override}
         info = {'source': 'not_needed', 'apworld_override': override, '_rebuild': None}
         info.update(verify(c, all_locations))
@@ -444,32 +572,44 @@ def start_slot(req, logger):
     cands, notes, used, total = yaml_candidates(cls, game, slot_name, slot_data, req.get('yaml_path'), players_dir)
     attempts = []
     best = None
-    for source, fname, doc in cands:
+    for source, fname, doc, relaxed in cands:
         try:
             c, err = generate_with(TrackerCore, logger, cls, game, slot_name, slot_data, doc, known, rebuild_seed(req))
         except Exception as e:
             c, err = None, str(e)
         if c is None:
-            # The end of a traceback says what went wrong; its start only where.
+            # The end of a traceback says what went wrong; its start only where. Its gist, in a few words, goes first.
             text = (err or '').strip()
-            attempts.append({'source': source, 'file': fname, 'ok': False, 'error': text if len(text) <= 600 else '...' + text[-600:]})
+            reason, reason_code = plain_reason(text)
+            attempts.append({'source': source, 'file': fname, 'ok': False, 'reason': reason, 'reason_code': reason_code,
+                             'error': text if len(text) <= 600 else '...' + text[-600:]})
             continue
         v = verify(c, all_locations)
         attempt = {'source': source, 'file': fname, 'ok': True}
+        if relaxed:
+            attempt['relaxed_requires'] = relaxed
         attempt.update(v)
         attempts.append(attempt)
         score = v['missing'] + v['extra']
         if best is None or score < best[0]:
-            best = (score, c, source, fname, v, doc)
+            best = (score, c, source, fname, v, doc, relaxed)
         if v['match'] is not False:
             break  # this YAML rebuilds exactly the server's locations
     if best is None:
         code = 'generation_failed' if cands else 'yaml_needed'
         message = ('None of the YAMLs tried could rebuild this world.' if cands else
                    game + " needs this player's YAML: its slot data doesn't include the options.")
-        return None, {'code': code, 'message': message, 'attempts': attempts, 'notes': notes, 'apworld_override': override}
+        # Why, in a few words: the linked YAML's failure first (the one the user chose), else the first one; with no YAML, the notes.
+        failed = [a for a in attempts if not a['ok']]
+        first = next((a for a in failed if a['source'] == 'linked'), failed[0] if failed else None)
+        return None, {'code': code, 'message': message,
+                      'reason': first.get('reason') if first else short_note(notes[0] if notes else None),
+                      'reason_code': first.get('reason_code') if first else None,
+                      'attempts': attempts, 'notes': notes, 'apworld_override': override}
     info = {'source': best[2], 'file': best[3], 'options_from_slot_data': used, 'options_total': total,
             'attempts': attempts, 'notes': notes, 'apworld_override': override, '_rebuild': best[5]}
+    if best[6]:
+        info['relaxed_requires'] = best[6]
     info.update(best[4])
     return best[1], info
 
@@ -610,6 +750,8 @@ class Slot:
         self.start_req = None
         self.rebuild = None
         self.world_cls = None
+        # The locations the seed excluded (fixed once the world is built: read once, at init or the first answer).
+        self.excluded = None
 
 
 def found_entrance_keys(core, req):
@@ -691,9 +833,15 @@ def handle_init(req, logger):
     slot.entrance_keys = found_entrance_keys(core, req)
     slot.start_req = dict(req)
     slot.rebuild = info.pop('_rebuild', None)
+    # Fixed once the world is built: what the seed excluded, and its priority checks (those the server has).
+    slot.excluded = progress_ids(core, 'EXCLUDED')
+    priority = priority_ids(core, slot.excluded)
+    if all_locations:
+        priority &= set(all_locations)
     reply = {'status': 'ready', 'item_pool': item_pool(core), 'yaml': info, 'versions': versions(), 'entrance_keys': slot.entrance_keys,
              # The server's locations the rebuilt world doesn't have: logic can't say anything about them.
-             'missing_locations': sorted(set(all_locations) - server_ids(core)) if all_locations else []}
+             'missing_locations': sorted(set(all_locations) - server_ids(core)) if all_locations else [],
+             'priority': sorted(priority), 'excluded': sorted(slot.excluded)}
     world_cls = AutoWorldRegister.world_types.get(req.get('game'))
     slot.world_cls = world_cls
     if world_cls is not None:
@@ -701,15 +849,41 @@ def handle_init(req, logger):
     return reply, slot
 
 
+def progress_ids(core, kind):
+    # The rebuilt world's locations of one progress type ('EXCLUDED', 'PRIORITY'), by their server ids.
+    found = set()
+    for loc in core.multiworld.get_locations(getattr(core, 'player_id', None) or 1):
+        progress = getattr(loc, 'progress_type', None)
+        if progress is not None and getattr(progress, 'name', '') == kind and isinstance(loc.address, int):
+            found.add(loc.address)
+    return found
+
+
+def priority_ids(core, excluded):
+    # The seed's priority checks: what the world marked PRIORITY itself (Elden Ring's priority_location_groups, in
+    # create_items), and the standard priority_locations, which Archipelago's Main applies after set_rules and Universal
+    # Tracker doesn't: minus exclude_locations, and never an excluded one (as Main leaves it). A world that marks them only
+    # while filling isn't seen (Universal Tracker stops at generate_basic).
+    found = progress_ids(core, 'PRIORITY')
+    try:
+        options = core.get_current_world().options
+        names = set(options.priority_locations.value) - set(options.exclude_locations.value)
+    except Exception:
+        names = set()
+    if names:
+        for loc in core.multiworld.get_locations(getattr(core, 'player_id', None) or 1):
+            if loc.name in names and isinstance(loc.address, int) and loc.address not in excluded:
+                found.add(loc.address)
+    return found
+
+
 def report_state(slot, items, reachable, state):
     # The slot's answer for these items: what the seed excluded, what's reachable only with glitches, and whether the
     # goal is. Kept as the slot's last answer ('explain' answers about this exact state; 'steps' starts from it).
     core = slot.core
-    excluded = []
-    for loc in core.multiworld.get_locations(getattr(core, 'player_id', None) or 1):
-        progress = getattr(loc, 'progress_type', None)
-        if progress is not None and getattr(progress, 'name', '') == 'EXCLUDED' and isinstance(loc.address, int):
-            excluded.append(loc.address)
+    if slot.excluded is None:
+        slot.excluded = progress_ids(core, 'EXCLUDED')  # fixed once the world is built: read once (the seed test's probe Slot too)
+    excluded = sorted(slot.excluded)
     glitched = [int(a) for a in (getattr(core, 'glitched_locations', None) or []) if isinstance(a, int)]
     slot.last_items = list(items)
     slot.last_reachable = set(reachable)

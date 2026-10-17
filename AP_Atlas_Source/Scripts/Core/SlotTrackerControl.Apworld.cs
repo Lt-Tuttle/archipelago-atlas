@@ -217,10 +217,12 @@ public partial class SlotTrackerControl : MarginContainer
         if (emptyState != null && emptyState != _shownEmptyState) _progressionTracker.RefreshMarkers();
         _shownEmptyState = emptyState;
         if (_logicFlaggedOnly != null) _logicFlaggedOnly.Visible = !LogicHidden && !problem;
+        if (_logicPriorityOnly != null) _logicPriorityOnly.Visible = !LogicHidden && !problem && HasPriorityChecks;
         if (_logicShowChecked != null) _logicShowChecked.Visible = !LogicHidden && !problem;
         if (_logicShowHidden != null && (LogicHidden || problem)) _logicShowHidden.Visible = false;
         if (_logicNotice == null) return;
         _logicNotice.Visible = LogicHidden || problem;
+        _logicNoticeText.TooltipText = "";
         foreach (Node n in _logicNoticeActions.GetChildren()) n.QueueFree();
         if (LogicHidden)
         {
@@ -235,6 +237,7 @@ public partial class SlotTrackerControl : MarginContainer
             return;
         }
         _logicNoticeText.Text = EngineProblemText(EngineProblem);
+        _logicNoticeText.TooltipText = AttemptsTip(EngineProblem);
         // A start that failed on a seed made with another version: say so, and what Atlas is doing about it.
         if (SeedVersionNote is { } versionNote)
             _logicNoticeText.Text += "\n" + Tr("This seed was made with another version of {0}.").Replace("{0}", Game) + " " + versionNote;
@@ -251,7 +254,7 @@ public partial class SlotTrackerControl : MarginContainer
                 if (SeedVersionWanted && !TryingSeedVersions)
                     AddButton(Tr("Choose the version…"), Tr("Lists the game's releases: pick the one the seed's host used, choose their file, or let Atlas try them (for this slot only; your install isn't changed)"),
                         () => FixApworldVersion(interactive: true));
-                AddButton("Link YAML…", "Choose this player's YAML; Atlas remembers it for this slot", PickYaml);
+                AddButton(LinkedYamlSetting == null ? "Link YAML…" : "Change YAML…", "Choose this player's YAML; Atlas remembers it for this slot", PickYaml);
                 AddButton("Atlas Engine…", "Open the engine setup", () => OpenEngineSetup?.Invoke());
                 break;
             case "ut_disabled":
@@ -269,7 +272,7 @@ public partial class SlotTrackerControl : MarginContainer
             case "world_missing":
                 // The engine runs; this game's logic is what's missing. Add games installs it (the game ticked) when Atlas knows
                 // where it comes from; else the game's page, where its project is added.
-                if (AP_Atlas.Core.EngineSetup.ApworldSources.LogicSourceKnown(_appSettings, Game))
+                if (EngineProblem.Reason == null && AP_Atlas.Core.EngineSetup.ApworldSources.LogicSourceKnown(_appSettings, Game))
                     AddButton(Tr("Install this game…"), Tr("Opens Install games with this game ticked: Atlas says what it downloads, installs its logic (and a map pack), and logic starts again by itself"), () => AddGames?.Invoke(Game));
                 else
                     AddButton("Open the Games page", "Add the game's project on its page, then add the game", () => OpenGamesPageFor?.Invoke(Game));
@@ -302,15 +305,16 @@ public partial class SlotTrackerControl : MarginContainer
             case "no_engine":
                 return "Logic needs the Atlas Engine.\n" + e.Message + "\nAtlas can download everything it needs (about 50 MB, no installer).";
             case "world_missing":
+                if (e.Reason != null) return "✖ " + Tr("{0} isn't loaded: {1}").Replace("{0}", Game).Replace("{1}", e.Reason);
                 return AP_Atlas.Core.EngineSetup.ApworldSources.LogicSourceKnown(_appSettings, Game)
                     ? $"{Game} isn't in the logic engine yet.\nInstall this game: Atlas installs its logic (and a map pack), and logic starts again by itself."
                     : $"{Game} isn't in the logic engine yet, and Atlas doesn't know where its apworld comes from.\nAdd its project on the Games page.";
             case "world_download":
                 return $"{Game}'s logic needs its world.\n{e.Message}";
             case "yaml_needed":
-                return $"{Game} can't rebuild your world from the server's data alone.\nLink this player's YAML (the file used to generate the seed).";
+                return $"{Game} can't rebuild your world from the server's data alone.\nLink this player's YAML (the file used to generate the seed)." + (e.Reason != null ? "\n" + e.Reason : "");
             case "generation_failed":
-                return $"Your world couldn't be rebuilt.\n{e.Message}\nLink the YAML used to generate the seed, or check the game's apworld version.";
+                return e.Reason != null ? "✖ " + Tr("World not rebuilt: {0}").Replace("{0}", e.Reason) : "✖ " + Tr("World not rebuilt");
             case "ut_disabled":
                 return $"The author of {Game}'s apworld asked trackers not to compute its logic.\nEverything else in Atlas still works.";
             case "restarting":
@@ -318,6 +322,20 @@ public partial class SlotTrackerControl : MarginContainer
             default:
                 return "The logic engine couldn't start.\n" + e.Message;
         }
+    }
+
+    /// <summary>
+    /// Each YAML the engine tried and why it failed, a line each (the failure's tooltip; the log has the whole error). With
+    /// none, the message behind a short reason (or behind "World not rebuilt").
+    /// </summary>
+    private static string AttemptsTip(EngineStartError e)
+    {
+        var lines = e.Details?["attempts"] is Newtonsoft.Json.Linq.JArray attempts
+            ? attempts.OfType<Newtonsoft.Json.Linq.JObject>()
+                .Where(a => a["ok"]?.Type == Newtonsoft.Json.Linq.JTokenType.Boolean && !(bool)a["ok"])
+                .Select(a => $"{(string)a["file"] ?? ((string)a["source"] == "slot_data" ? "Server's data" : (string)a["source"])}: {(string)a["reason"] ?? "failed"}").ToList()
+            : new List<string>();
+        return lines.Count > 0 ? string.Join("\n", lines) : e.Reason != null || e.Code == "generation_failed" ? e.Message ?? "" : "";
     }
 
     /// <summary>"Get the game's world…": the engine-setup permission (asked here), then logic starts again, which unpacks it.</summary>

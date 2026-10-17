@@ -420,6 +420,35 @@ namespace AP_Atlas.UI
         /// <summary>Starts a collapsible section. Subsequent rows go into it until the next section.</summary>
         private void Section(string title) => _currentSectionBody = Fold(_content, title);
 
+        /// <summary>
+        /// A section of plain rows made only when it's opened (it starts folded: a long list then costs nothing). Their
+        /// text goes into the panel's copy at once.
+        /// </summary>
+        private void LazySection(string title, string hint, IReadOnlyList<(string Label, string Value)> rows, string more)
+        {
+            string key = SectionKey(title);
+            _plainText.AppendLine("[" + title + "]").AppendLine(hint);
+            foreach (var (label, value) in rows) _plainText.AppendLine(label + ": " + value);
+            if (more != null) _plainText.AppendLine(more);
+            _currentSectionBody = Kit.Section(_content, title, key, CollapsedByDefault.Contains(key), _host.Settings, body =>
+            {
+                var (section, text) = (_currentSectionBody, _plainText);
+                _currentSectionBody = body;
+                _plainText = new StringBuilder(); // already in the copy
+                try
+                {
+                    AddHint(hint);
+                    foreach (var (label, value) in rows) PlainRow(label, value, ThemeColors.TextMuted);
+                    if (more != null) AddHint(more);
+                }
+                finally
+                {
+                    (_currentSectionBody, _plainText) = (section, text);
+                }
+                MainTrackerWindow.SetFontSizeRecursive(body, _host.Settings.PropertiesFontSize);
+            });
+        }
+
         /// <summary>A collapsible part inside the current section; rows go into it while <see cref="_currentSectionBody"/> is set to it.</summary>
         private VBoxContainer SubSection(string title) => Fold(Target, title);
 
