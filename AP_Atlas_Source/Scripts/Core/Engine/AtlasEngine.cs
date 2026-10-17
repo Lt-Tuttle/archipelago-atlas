@@ -134,9 +134,9 @@ namespace AP_Atlas.Core.EngineSetup
         private const string PipWheelUrl = "https://files.pythonhosted.org/packages/f3/6e/1736e5b4ae2b778ef2f81c47d797de9f891d4d8acb047a24ca37a60294dd/pip-26.2.1-py3-none-any.whl";
         private const string PipWheelSha256 = "71138adf1f4ca900cdb7d289c21b7494329f2332b6d85f0e1c42108c0384ed3e";
 
-        public const string ArchipelagoVersion = "0.6.7";
-        private const string ArchipelagoUrl = "https://github.com/ArchipelagoMW/Archipelago/archive/refs/tags/0.6.7.zip";
-        private const string ArchipelagoSha256 = "440dfc50afd35663ccac1052a14bd7dc733b130894282870becb6903174d674a";
+        public const string ArchipelagoVersion = "0.6.8";
+        private const string ArchipelagoUrl = "https://github.com/ArchipelagoMW/Archipelago/archive/refs/tags/0.6.8.zip";
+        private const string ArchipelagoSha256 = "9eff23511fafc3f21089fab2c1e5960ad0b4a6db1b42ef3205b36e33449ac2bc";
 
         public const string TrackerVersion = "v0.3.4";
         private const string TrackerUrl = "https://github.com/FarisTheAncient/Archipelago/releases/download/Tracker_v0.3.4/tracker.apworld";

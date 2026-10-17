@@ -1,8 +1,8 @@
-# The Atlas Engine's Python packages for Archipelago 0.6.7, Python 3.12.10 on Windows (64-bit wheels only):
+# The Atlas Engine's Python packages for Archipelago 0.6.8, Python 3.12.10 on Windows (64-bit wheels only):
 # exact versions, and the SHA-256 of every file PyPI publishes for them. Atlas installs these with --require-hashes,
-# so nothing else can be installed. Built by Tools/build_engine_lock.py on 2026-10-05; rebuild when
+# so nothing else can be installed. Built by Tools/build_engine_lock.py on 2026-10-17; rebuild when
 # AtlasEngine.ArchipelagoVersion changes.
-# requirements-signature: 51DD45A730EB9E05
+# requirements-signature: 67E15A6F4B1E0654
 
 bsdiff4==1.2.6 \
     --hash=sha256:04bb2948301ad48123d308bf2342c83cae81d7edb52d11bdde00266d89ca071e \
@@ -706,9 +706,9 @@ orjson==3.11.7 \
 pathspec==1.0.4 \
     --hash=sha256:0210e2ae8a21a9137c0d470578cb0e595af87edaa6ebf12ff176f14a02e0e645 \
     --hash=sha256:fb6ae2fd4e7c921a165808a552060e722767cfa526f99ca5156ed2ce45a5c723
-platformdirs==4.9.4 \
-    --hash=sha256:1ec356301b7dc906d83f371c8f487070e99d3ccf9e501686456394622a01a934 \
-    --hash=sha256:68a9a4619a666ea6439f2ff250c12a853cd1cbd5158d258bd824a7df6be2f868
+platformdirs==4.10.1 \
+    --hash=sha256:0e4eff26be2d75293977f7cddc153fd9b8eaa7fb0c7b64ffe4076cb443117443 \
+    --hash=sha256:ceab4084426fe6319ce18e86deada8ab1b7487c7aee7040c55e277c9ae793695
 Pymem==1.14.0 \
     --hash=sha256:29f6c32bcad0032888afabadf97d1e4c7757f88873de4d79f7f4c1df9b9e7ef1 \
     --hash=sha256:2b9cc64b49d0685f73d616ab1f638611f87e8d649869e7a556f050f677c42a7e

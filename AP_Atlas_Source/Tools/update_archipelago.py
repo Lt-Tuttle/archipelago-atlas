@@ -215,6 +215,19 @@ class Files:
         return self.current(key)
 
 
+def rename_folder(src, dst, tries=20):
+    """os.rename for a folder, tried again for a while: Windows refuses to move a folder whose new files a virus scanner or
+    the indexer still has open (WinError 5 right after a copy). Never a copy and delete."""
+    for attempt in range(tries):
+        try:
+            os.rename(src, dst)
+            return
+        except PermissionError:
+            if attempt == tries - 1:
+                raise
+            time.sleep(1.5)
+
+
 def find_once(text, pattern, where):
     found = list(re.finditer(pattern, text, re.MULTILINE))
     if len(found) != 1:
@@ -889,7 +902,7 @@ def build_phase(args, repo, v, origin, work, env, zip_path, sha, state, save, pi
         if os.path.isdir(part):
             shutil.rmtree(part)  # this tool's own unfinished copy
         shutil.copytree(data, part, ignore=skip_old_zips)
-        os.rename(part, cache)
+        rename_folder(part, cache)
     missing = cache_problems(os.path.join(cache, 'engine'), pins, requirements['signature'], requirements['rebuilt'])
     if missing:
         raise Stop(8, f'{cache}\\engine lacks what the engine build would download, which this run may not (put it there, or move '
@@ -904,7 +917,7 @@ def build_phase(args, repo, v, origin, work, env, zip_path, sha, state, save, pi
     if os.path.isdir(core) and core_version(core) != v:
         if not os.path.exists(aside):
             try:
-                os.rename(core, aside)
+                rename_folder(core, aside)
             except OSError as e:
                 raise Stop(8, f"{core} couldn't be set aside as {aside} (is something using it?): {e}")
         elif core_version(aside) != origin:
@@ -1118,7 +1131,7 @@ def rollback(args, repo, v, work, env):
             n += 1
             failed = core + f'-{v}-failed-{n}'
         try:
-            os.rename(core, failed)
+            rename_folder(core, failed)
         except OSError as e:
             raise Stop(3, f"{core} couldn't be moved aside as {failed} (is something using it?), so the old core in {aside} isn't back: {e}")
         print(f'What the build left in Builds\\engine-core is now {failed}.')
@@ -1127,7 +1140,7 @@ def rollback(args, repo, v, work, env):
             raise Stop(3, f"The old core {aside} can't go back: {core} is in the way (its core.json says {core_version(core)}). "
                           'Move one of them, then run this again.')
         try:
-            os.rename(aside, core)
+            rename_folder(aside, core)
         except OSError as e:
             raise Stop(3, f"The old core {aside} couldn't be renamed back to {core} (is something using it?): {e}")
         print(f'{aside} is Builds\\engine-core again.')
@@ -1137,7 +1150,7 @@ def rollback(args, repo, v, work, env):
         n += 1
     os.rename(state_path, os.path.join(work, f'state.rolled-back-{n}.json'))
     if os.path.isdir(os.path.join(work, 'backup')):
-        os.rename(os.path.join(work, 'backup'), os.path.join(work, f'backup.rolled-back-{n}'))
+        rename_folder(os.path.join(work, 'backup'), os.path.join(work, f'backup.rolled-back-{n}'))
     print('Put back: ' + (', '.join(restored) or 'nothing (the files were already their originals)') + '. Then: dotnet build AP_Atlas_Source/AP_Atlas.sln')
     return 0
 

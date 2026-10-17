@@ -100,13 +100,17 @@ def merged_name(paths):
 def status(entry):
     if not entry or not entry.get('finished'):
         return None
-    if entry.get('step') != 'done':
+    # A seed generated but not scored (the engine couldn't rebuild it, or its world asks trackers not to) is a failure.
+    if entry.get('step') != 'done' or entry.get('score_error'):
         return 'failed'
     return 'exact' if entry.get('exact') else 'differs'
 
 
 def label(entry):
     s = status(entry)
+    if s == 'failed' and entry.get('step') == 'done':
+        code = entry['score_error'].get('code') if isinstance(entry.get('score_error'), dict) else None
+        return f'failed (score: {code})' if code else 'failed (score)'
     return f"failed ({entry.get('step')})" if s == 'failed' else (s or 'not run')
 
 

@@ -26,7 +26,7 @@ The Atlas Engine ships with Atlas, in its `engine` folder: these come from their
 |---|---|---|---|
 | Python 3.12.10 (embeddable) | Python Software Foundation | https://www.python.org/downloads/release/python-31210/ | PSF License |
 | pip 26.2.1 | Python Packaging Authority | https://pypi.org/project/pip/26.2.1/ | MIT |
-| Archipelago 0.6.7 | The Archipelago contributors | https://github.com/ArchipelagoMW/Archipelago/releases/tag/0.6.7 | MIT |
+| Archipelago 0.6.8 | The Archipelago contributors | https://github.com/ArchipelagoMW/Archipelago/releases/tag/0.6.8 | MIT |
 | Universal Tracker v0.3.4 | FarisTheAncient and contributors | https://github.com/FarisTheAncient/Archipelago/releases/tag/Tracker_v0.3.4 | MIT |
 
 Archipelago's Python packages, from [PyPI](https://pypi.org) (exact versions, every file hash-checked):
@@ -44,7 +44,7 @@ Archipelago's Python packages, from [PyPI](https://pypi.org) (exact versions, ev
 | MarkupSafe 3.0.4 | Pallets | https://github.com/pallets/markupsafe | BSD 3-Clause |
 | orjson 3.11.7 | ijl | https://github.com/ijl/orjson | MPL 2.0 and (Apache 2.0 or MIT) |
 | pathspec 1.0.4 | Caleb P. Burns | https://github.com/cpburnz/python-pathspec | MPL 2.0 |
-| platformdirs 4.9.4 | The tox-dev team | https://github.com/tox-dev/platformdirs | MIT |
+| platformdirs 4.10.1 | The tox-dev team | https://github.com/tox-dev/platformdirs | MIT |
 | Pymem 1.14.0 | Fabien Reboia | https://github.com/srounet/Pymem | MIT |
 | PyYAML 6.0.3 | Kirill Simonov and the YAML project | https://github.com/yaml/pyyaml | MIT |
 | requests 2.34.2 | Kenneth Reitz and the PSF | https://github.com/psf/requests | Apache 2.0 |

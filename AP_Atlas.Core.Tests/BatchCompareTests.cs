@@ -61,8 +61,12 @@ public class BatchCompareTests
             ["Wobbly"] = Done(false, late: 2),
             ["Old Game"] = Done(true),
             ["Gone"] = Done(true),
-            ["Rebuilds Wrong"] = Done(true)
+            ["Rebuilds Wrong"] = Done(true),
+            ["Opted Out"] = Done(false, late: 3)
         });
+        // A world that now asks trackers not to rebuild it (Starcraft 2 and Sonic Adventure 2 Battle in 0.6.8) scores nothing.
+        var optedOut = Done(false);
+        optedOut["score_error"] = new JObject { ["code"] = "ut_disabled", ["message"] = "This game's author asked for the Universal Tracker not to be used with it." };
         // The new batch in two parts, each with what it ran on beside it (a wildcard names both; the .meta.json isn't a part).
         Write(dir.File("batch.p1.json"), new JObject
         {
@@ -77,7 +81,8 @@ public class BatchCompareTests
             ["Crashes"] = Failed("score", worldTrace),
             ["Fixed"] = Done(true),
             ["Brand New"] = Done(true),
-            ["Rebuilds Wrong"] = rebuildsWrong
+            ["Rebuilds Wrong"] = rebuildsWrong,
+            ["Opted Out"] = optedOut
         });
         foreach (string part in new[] { "batch.p1.meta.json", "batch.p2.meta.json" })
             Write(dir.File(part), new JObject { ["archipelago"] = "9.9.9", ["bridge_sha256"] = "ab12", ["runs"] = new JArray(new JObject { ["archipelago"] = "9.9.9", ["bridge_sha256"] = "ab12" }) });
@@ -96,7 +101,8 @@ public class BatchCompareTests
             ["Wobbly"] = "wobbly",
             ["Old Game"] = "oldgame",
             ["Gone"] = "gone",
-            ["Rebuilds Wrong"] = "rebuilds"
+            ["Rebuilds Wrong"] = "rebuilds",
+            ["Opted Out"] = "optedout"
         };
         var newGames = new JObject
         {
@@ -109,7 +115,8 @@ public class BatchCompareTests
             ["Generates Now"] = "generates",
             ["Wobbly"] = "wobbly",
             ["Brand New"] = "brandnew",
-            ["Rebuilds Wrong"] = "rebuilds"
+            ["Rebuilds Wrong"] = "rebuilds",
+            ["Opted Out"] = "optedout"
         };
         Names(dir.File("names-old"), oldGames, new JObject { ["Chest"] = 1, ["Door"] = 2 });
         Names(dir.File("names-new"), newGames, new JObject { ["Chest"] = 1, ["Gate"] = 2, ["Tower"] = 3 });
@@ -126,7 +133,7 @@ public class BatchCompareTests
 
         // The parts merged into batch.json (the parts' name without .pN), for a control run's --seeds-from.
         var merged = JObject.Parse(File.ReadAllText(dir.File("batch.json"))).Properties().Select(p => p.Name).OrderBy(n => n, StringComparer.Ordinal);
-        Assert.Equal(new[] { "Brand New", "Broken", "Crashes", "Fixed", "Generates Now", "Rebuilds Wrong", "Slipped", "Steady", "Wobbly" }, merged);
+        Assert.Equal(new[] { "Brand New", "Broken", "Crashes", "Fixed", "Generates Now", "Opted Out", "Rebuilds Wrong", "Slipped", "Steady", "Wobbly" }, merged);
 
         var o = JObject.Parse(File.ReadAllText(Path.Combine(dir.Path, "report", "compare.json")));
         var games = (JObject)o["games"]!;
@@ -159,7 +166,10 @@ public class BatchCompareTests
         Assert.False((bool)games["Crashes"]!["own_code"]!);
         Assert.False((bool)games["Crashes"]!["blocks"]!);
         // The traceback in a seed test's answer (a dict, a list in it) is read as text, newlines and all: Atlas's hook, so it blocks.
-        Assert.Equal("exact → differs", (string?)games["Rebuilds Wrong"]!["reason"]);
+        Assert.Equal("exact → failed (score)", (string?)games["Rebuilds Wrong"]!["reason"]);
+        Assert.Equal("regression", Class("Opted Out"));
+        Assert.Equal("differs → failed (score: ut_disabled)", (string?)games["Opted Out"]!["reason"]);
+        Assert.False((bool)games["Opted Out"]!["blocks"]!);
         Assert.True((bool)games["Rebuilds Wrong"]!["own_code"]!);
         Assert.True((bool)games["Rebuilds Wrong"]!["blocks"]!);
         Assert.Equal(new[] { "Broken", "Rebuilds Wrong" }, o["blocking"]!.Select(g => (string?)g));
@@ -169,7 +179,7 @@ public class BatchCompareTests
         Assert.Equal((1, 0, 1), ((int)locations["added"]!, (int)locations["removed"]!, (int)locations["renamed"]!));
 
         // compare.regressions.txt: what the control can run again (the regressions the new batch ran), one game a line.
-        Assert.Equal(new[] { "Broken", "Crashes", "Rebuilds Wrong", "Slipped" }, File.ReadAllLines(Path.Combine(dir.Path, "report", "compare.regressions.txt")));
+        Assert.Equal(new[] { "Broken", "Crashes", "Opted Out", "Rebuilds Wrong", "Slipped" }, File.ReadAllLines(Path.Combine(dir.Path, "report", "compare.regressions.txt")));
         Assert.Contains("**BLOCKS** Broken", File.ReadAllText(report));
     }
 

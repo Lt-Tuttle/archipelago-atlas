@@ -219,7 +219,7 @@ SOFTWARE.
 ## Archipelago
 
 https://github.com/ArchipelagoMW/Archipelago  
-License: MIT. Atlas's icon is drawn in the style of Archipelago's logo. The Atlas Engine that ships with Atlas includes Archipelago 0.6.7's core (`engine/archipelago`, this license in its `LICENSE` file) and Universal Tracker v0.3.4 (`engine/archipelago/worlds/tracker.apworld`, from FarisTheAncient's fork of Archipelago, https://github.com/FarisTheAncient/Archipelago, under this same license); a game's world comes from Archipelago's release when a slot first needs it. The Archipelago Atlas is a community tool, not affiliated with or endorsed by the Archipelago project.
+License: MIT. Atlas's icon is drawn in the style of Archipelago's logo. The Atlas Engine that ships with Atlas includes Archipelago 0.6.8's core (`engine/archipelago`, this license in its `LICENSE` file) and Universal Tracker v0.3.4 (`engine/archipelago/worlds/tracker.apworld`, from FarisTheAncient's fork of Archipelago, https://github.com/FarisTheAncient/Archipelago, under this same license); a game's world comes from Archipelago's release when a slot first needs it. The Archipelago Atlas is a community tool, not affiliated with or endorsed by the Archipelago project.
 
 ```
 MIT License
@@ -275,7 +275,7 @@ Archipelago's Python packages and pip, from PyPI (https://pypi.org). Each one's 
 | orjson 3.11.7 | MPL 2.0 and (Apache 2.0 or MIT) | https://github.com/ijl/orjson |
 | pathspec 1.0.4 | MPL 2.0 | https://github.com/cpburnz/python-pathspec |
 | pip 26.2.1 | MIT | https://github.com/pypa/pip |
-| platformdirs 4.9.4 | MIT | https://github.com/tox-dev/platformdirs |
+| platformdirs 4.10.1 | MIT | https://github.com/tox-dev/platformdirs |
 | Pymem 1.14.0 | MIT | https://github.com/srounet/Pymem |
 | PyYAML 6.0.3 | MIT | https://github.com/yaml/pyyaml |
 | requests 2.34.2 | Apache 2.0 (its NOTICE ships too) | https://github.com/psf/requests |

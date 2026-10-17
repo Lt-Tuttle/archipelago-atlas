@@ -203,6 +203,14 @@ Development toward the first public beta, 0.1.0.
   - The UI test checks that every command is in a menu with its key shown, that the keys and a rebind work at once, and that the menu bar never runs a stale key itself.
 
 ### Changed
+- **The Atlas Engine runs Archipelago 0.6.8** (was 0.6.7), moved with `Tools/update_archipelago.py` and checked over every game Atlas's lab loads: 403 games, each with the last run's YAML and seed, 393 unchanged, none worse because of Atlas. For players:
+  - **YAMLs from Archipelago 0.6.8's launcher** work as they are.
+  - **Gauntlet Legends** is new. **Donkey Kong Country 3** left Archipelago in 0.6.8; a seed with it needs its apworld from Archipelago 0.6.7.
+  - **Starcraft 2 and Sonic Adventure 2 Battle** ask trackers not to rebuild their worlds from 0.6.8 on; Atlas respects that, so their checks show without logic.
+  - **Dr. Mario** loads now; **Sonic Adventure DX** logic is exact; **Oracle of Seasons** generates.
+  - Names changed in **Muse Dash** (new songs), **The Witness**, **TUNIC** and **Timespinner** (506 locations renamed: Timespinner's map packs link fewer checks until their authors update them).
+  - The first slot of a game that ships with Archipelago downloads 0.6.8's release once (about 22 MB). A game's logic checks recorded on 0.6.7 say they were for another version.
+  - Archipelago's packages: platformdirs 4.10.1 (was 4.9.4).
 - **The portable engine updates its Archipelago** (round 15): when Atlas pins another Archipelago, the engine's Archipelago step says "Archipelago 0.6.7 installed; Atlas uses 0.6.8" with **Update** (**Use 0.6.8** when the installed one is newer), and setting up does the same. A kept release zip with the pinned SHA-256 isn't downloaded again.
   - **No needless package reinstall:** the packages stay when the new Archipelago's requirements are the same, and the page no longer says "Archipelago's requirements changed" after an update.
   - **Game worlds wait for the update:** a portable engine refuses worlds from another Archipelago until it updates. The slot says "Archipelago needs updating" with **Atlas Engine…**; nothing is unpacked onto the old core, and its worlds aren't removed until then. Once the update passes its check they go at once (not at Atlas's next start), and each is unpacked from the new release when a slot needs it. Such a game isn't shown as ready meanwhile (Install games, the solo test and Check this game say to update first), and the Atlas Engine page says "Archipelago needs updating: 0.6.7 → 0.6.8" up top with **Update Archipelago** (it said Ready, with the update only under Advanced).
