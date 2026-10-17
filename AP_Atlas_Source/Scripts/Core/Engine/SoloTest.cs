@@ -143,6 +143,7 @@ namespace AP_Atlas.Core.EngineSetup
                         check = await AtlasEngine.RunCheckAsync(install, line => progress?.Report(new SoloTestProgress(SoloTestStep.Apworld, SoloStepOutcome.Running, "checking the engine", line)), ct);
                     }
                     bool has = check?.Games.Contains(Game, StringComparer.OrdinalIgnoreCase) == true;
+                    if (!has && AtlasEngine.WorldsWaitForCore(install, Game)) return Failed(AtlasEngine.CoreOutdatedProblem);
                     if (!has && AtlasEngine.WorldsToUnpack(install, Game).Count > 0)
                     {
                         // The game ships with Archipelago: its world is unpacked from Archipelago's release (a batch run

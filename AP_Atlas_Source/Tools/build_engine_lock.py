@@ -2,6 +2,7 @@
 
 Usage:
     python Tools/build_engine_lock.py <Archipelago source folder> <engine python.exe> <output lock file>
+        [--index-url URL] [--json-base URL]   (PyPI's own by default; anything else only http://127.0.0.1:<port>, for the tests)
 
 It applies the same filter as AtlasEngine.FilteredRequirements (no desktop GUI or build tools, plus the packages some
 worlds import without listing them), asks pip which exact packages that resolves to for the engine's Python on Windows
@@ -10,12 +11,12 @@ The engine then installs with --require-hashes, so only exactly these files can 
 
 Re-run it whenever Archipelago's pinned version (AtlasEngine.ArchipelagoVersion) changes, and commit the new lock.
 """
+import argparse
 import hashlib
 import json
 import os
 import re
 import subprocess
-import sys
 import tempfile
 import time
 import urllib.request
@@ -25,6 +26,10 @@ from datetime import date
 SKIPPED = {"kivy", "kivymd", "cython", "pyshortcuts"}
 EXTRA = ["requests", "setuptools<81"]
 USER_AGENT = "TheArchipelagoAtlas-build-tools (+https://github.com/Lt-Tuttle/archipelago-atlas)"
+INDEX_URL = "https://pypi.org/simple"
+JSON_BASE = "https://pypi.org/pypi"
+LOOPBACK = re.compile(r"^http://127\.0\.0\.1:\d{1,5}(/.*)?$")
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
 def filtered_requirements(ap_dir):
@@ -47,15 +52,17 @@ def signature(text):
     return hashlib.sha256(text.encode("utf-8")).hexdigest().upper()[:16]
 
 
-def pypi_hashes(name, version):
-    url = f"https://pypi.org/pypi/{name}/{version}/json"
+def pypi_hashes(name, version, json_base=JSON_BASE):
+    url = f"{json_base}/{name}/{version}/json"
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
-    with urllib.request.urlopen(request, timeout=30) as response:
+    # A site on this PC is never reached through a proxy.
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({})) if LOOPBACK.match(json_base) else urllib.request.build_opener()
+    with opener.open(request, timeout=30) as response:
         data = json.load(response)
     return sorted({f["digests"]["sha256"] for f in data.get("urls", []) if f.get("digests", {}).get("sha256")})
 
 
-def main(ap_dir, python_exe, out_path):
+def main(ap_dir, python_exe, out_path, index_url=INDEX_URL, json_base=JSON_BASE):
     text = filtered_requirements(ap_dir)
     with tempfile.TemporaryDirectory() as tmp:
         req = os.path.join(tmp, "requirements.txt")
@@ -64,12 +71,15 @@ def main(ap_dir, python_exe, out_path):
             f.write(text)
         cmd = [python_exe, "-m", "pip", "install", "--dry-run", "--ignore-installed", "--quiet", "--disable-pip-version-check",
                "--only-binary=:all:", "--report", report, "-r", req]
-        subprocess.run(cmd, check=True)
+        if index_url != INDEX_URL:
+            cmd[4:4] = ["--index-url", index_url]
+        subprocess.run(cmd, check=True, stdin=subprocess.DEVNULL, creationflags=NO_WINDOW)
         with open(report, encoding="utf-8") as f:
             resolved = json.load(f)
     pins = sorted(((p["metadata"]["name"], p["metadata"]["version"]) for p in resolved["install"]), key=lambda x: x[0].lower())
 
-    py_version = subprocess.run([python_exe, "-c", "import platform; print(platform.python_version())"], capture_output=True, text=True, check=True).stdout.strip()
+    py_version = subprocess.run([python_exe, "-c", "import platform; print(platform.python_version())"], capture_output=True, text=True, check=True,
+                                stdin=subprocess.DEVNULL, creationflags=NO_WINDOW).stdout.strip()
     ap_version = "?"
     try:
         with open(os.path.join(ap_dir, "Utils.py"), encoding="utf-8") as f:
@@ -87,7 +97,7 @@ def main(ap_dir, python_exe, out_path):
         "",
     ]
     for name, version in pins:
-        hashes = pypi_hashes(name, version)
+        hashes = pypi_hashes(name, version, json_base)
         if not hashes:
             raise SystemExit(f"PyPI lists no files for {name} {version}")
         out.append(f"{name}=={version} \\")
@@ -99,6 +109,14 @@ def main(ap_dir, python_exe, out_path):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 4:
-        raise SystemExit(__doc__)
-    main(sys.argv[1], sys.argv[2], sys.argv[3])
+    parser = argparse.ArgumentParser(usage=__doc__)
+    parser.add_argument("ap_dir")
+    parser.add_argument("python_exe")
+    parser.add_argument("out_path")
+    parser.add_argument("--index-url", default=INDEX_URL)
+    parser.add_argument("--json-base", default=JSON_BASE)
+    args = parser.parse_args()
+    for name, value, default in (("--index-url", args.index_url, INDEX_URL), ("--json-base", args.json_base, JSON_BASE)):
+        if value.rstrip("/") != default and not LOOPBACK.match(value):
+            parser.error(f"{name} {value}: only PyPI, or a site on this PC (http://127.0.0.1:<port>).")
+    main(args.ap_dir, args.python_exe, args.out_path, args.index_url.rstrip("/"), args.json_base.rstrip("/"))

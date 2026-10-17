@@ -110,8 +110,9 @@ namespace AP_Atlas.Core.EngineSetup
             ProcessStartInfo info;
             if (Mode == EngineMode.Portable)
             {
-                // -u: unbuffered; -X utf8: UTF-8 pipes whatever the system code page is.
-                info = new ProcessStartInfo { FileName = ComponentPython, WorkingDirectory = Root };
+                // -u: unbuffered; -X utf8: UTF-8 pipes whatever the system code page is. It works in the engine's temp folder,
+                // never in the core (atlas_run.py moves there too): a file a world writes where it runs stays out of it.
+                info = new ProcessStartInfo { FileName = ComponentPython, WorkingDirectory = AtlasEngine.TempDir };
                 foreach (var arg in new[] { "-u", "-X", "utf8", AtlasEngine.RunnerPath, Root, component }) info.ArgumentList.Add(arg);
             }
             else

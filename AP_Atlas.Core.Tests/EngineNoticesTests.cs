@@ -20,6 +20,6 @@ public sealed class EngineNoticesTests
         }
         Assert.Contains("Python 3.12.10", notices);
         Assert.Contains("engine/python/LICENSE.txt", notices);
-        Assert.Contains("Universal Tracker v0.3.4", notices);
+        Assert.Contains($"Universal Tracker {EnginePins.Read().Tracker}", notices);
     }
 }

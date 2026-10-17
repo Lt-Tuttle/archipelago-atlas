@@ -124,7 +124,8 @@ public class BridgeRebuildTests
         File.WriteAllText(probe, Probe);
 
         var info = new ProcessStartInfo(python) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
-        foreach (string arg in new[] { "-I", "-X", "utf8", probe, stub, bridge, fits, newer }) info.ArgumentList.Add(arg);
+        // -B: no compiled files beside the copies (-I ignores PYTHONDONTWRITEBYTECODE, so it's the flag).
+        foreach (string arg in new[] { "-I", "-B", "-X", "utf8", probe, stub, bridge, fits, newer }) info.ArgumentList.Add(arg);
         using var process = Process.Start(info)!;
         var output = process.StandardOutput.ReadToEndAsync(ct);
         var errors = process.StandardError.ReadToEndAsync(ct);

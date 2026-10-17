@@ -268,7 +268,7 @@ public sealed class AddGamesPlanTests
     public void The_shipped_worlds_index_knows_the_release_zips_size()
     {
         var index = WorldsIndex.Parse(File.ReadAllText(TestEnvironment.RepoFile("AP_Atlas_Source", "Scripts", "Core", "Engine", "Data", "archipelago_worlds.json")));
-        Assert.Equal(22_424_521, index.ZipBytes);
+        Assert.InRange(index.ZipBytes, 10_000_000L, 200_000_000L);
         Assert.All(index.Worlds, w => Assert.True(w.Value.Bytes > 0, w.Key + " has no size"));
     }
 

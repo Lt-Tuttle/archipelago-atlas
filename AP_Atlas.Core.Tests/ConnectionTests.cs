@@ -426,21 +426,25 @@ public class EngineRunnerTests
                 return cache_path("datapackage", game, checksum + ".json")
             """);
         File.WriteAllText(Path.Combine(archipelago, "worlds", "__init__.py"), "");
+        // A world that writes where it runs (a region diagram), as some do while a seed generates.
         File.WriteAllText(Path.Combine(archipelago, "worlds", "LauncherComponents.py"), """
-            import json, sys, tempfile
+            import json, os, sys, tempfile
             class Component:
                 def __init__(self, display_name, func):
                     self.display_name, self.func = display_name, func
             def probe():
                 import Utils
                 from Utils import cache_path
+                with open("Player1.puml", "w") as f:
+                    f.write("@startuml")
                 # Answers go to Atlas's channel, the process's own standard output (the runner sends prints elsewhere).
                 sys.__stdout__.write(json.dumps({"direct": cache_path("common.json"), "inside": Utils.load_data_package_for_checksum("G", "c"),
-                                                 "temp": tempfile.mkdtemp(prefix="probe_")}) + "\n")
+                                                 "temp": tempfile.mkdtemp(prefix="probe_"), "works_in": os.path.abspath("Player1.puml")}) + "\n")
             components = [Component("AtlasProbe", probe)]
             """);
 
-        var info = new ProcessStartInfo(python) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
+        // Started in the core, as Atlas once started it: the runner still works in the engine folder and imports from the core.
+        var info = new ProcessStartInfo(python) { WorkingDirectory = archipelago, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
         foreach (string arg in new[] { "-u", "-X", "utf8", Path.Combine(engine, "atlas_run.py"), archipelago, "AtlasProbe" }) info.ArgumentList.Add(arg);
         info.Environment["ATLAS_TEST_OUTSIDE"] = outside;
         info.Environment["TEMP"] = Path.Combine(outside, "Temp");
@@ -453,8 +457,10 @@ public class EngineRunnerTests
         Assert.True(process.ExitCode == 0, "the runner failed: " + await errors);
 
         var paths = JObject.Parse((await output).Trim().Split('\n').Last());
-        foreach (string name in new[] { "direct", "inside", "temp" })
+        foreach (string name in new[] { "direct", "inside", "temp", "works_in" })
             Assert.StartsWith(engine + Path.DirectorySeparatorChar, (string?)paths[name]);
+        Assert.Equal(Path.Combine(engine, "temp", "Player1.puml"), (string?)paths["works_in"]);
+        Assert.False(File.Exists(Path.Combine(archipelago, "Player1.puml")), "the world wrote into the core");
         Assert.Empty(Directory.GetFiles(outside, "*", SearchOption.AllDirectories));
         Assert.Equal(new[] { Path.Combine(outside, "Temp") }, Directory.GetDirectories(outside, "*", SearchOption.AllDirectories));
     }

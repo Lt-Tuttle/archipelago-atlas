@@ -99,6 +99,8 @@ namespace AP_Atlas.Core.EngineSetup
         [JsonProperty("format")] public string Format { get; set; }
         [JsonProperty("built")] public string Built { get; set; }
         [JsonProperty("source")] public string Source { get; set; }
+        /// <summary>The Archipelago the list's games were loaded with (the lab's).</summary>
+        [JsonProperty("archipelago")] public string Archipelago { get; set; }
         [JsonProperty("games")] public List<ApworldSource> Games { get; set; } = new();
     }
 

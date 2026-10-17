@@ -266,6 +266,9 @@ public partial class SlotTrackerControl : MarginContainer
                 AddButton("Set up Atlas Engine…", "Download and check what logic needs", () => OpenEngineSetup?.Invoke());
                 AddButton("Try again", "Start the logic engine again", RetryLogicEngine);
                 break;
+            case "core_outdated":
+                AddButton("Atlas Engine…", "Open the engine setup to update Archipelago", () => OpenEngineSetup?.Invoke());
+                break;
             case "world_download":
                 AddButton("Get the game's world…", "Downloads Archipelago's release once (" + AP_Atlas.Core.EngineSetup.AtlasEngine.WorldsZipSize + " from GitHub) and unpacks this game's world from it; asks first", GetGameWorld);
                 break;
@@ -311,6 +314,8 @@ public partial class SlotTrackerControl : MarginContainer
                     : $"{Game} isn't in the logic engine yet, and Atlas doesn't know where its apworld comes from.\nAdd its project on the Games page.";
             case "world_download":
                 return $"{Game}'s logic needs its world.\n{e.Message}";
+            case "core_outdated":
+                return $"{Game}'s world is waiting for Archipelago's update.\n{e.Message}";
             case "yaml_needed":
                 return $"{Game} can't rebuild your world from the server's data alone.\nLink this player's YAML (the file used to generate the seed)." + (e.Reason != null ? "\n" + e.Reason : "");
             case "generation_failed":

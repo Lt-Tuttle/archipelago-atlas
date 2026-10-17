@@ -5,6 +5,8 @@ release and SHA-256), the lab's name tables (which worlds load with the engine's
 
 Usage: python Tools/build_game_index.py --corpus <folder> [--baseline <packs baseline json>] [--findings <json>] [--out <json>]
   --corpus    the lab's corpus folder (names/_load_report.json and names/*.json under it, the packs in packs/)
+  --names     the name tables' folder instead of <corpus>/names (a lab built on another Archipelago: names-0.6.8)
+  --archipelago  the Archipelago the lab ran, for a load report that doesn't say (older than round 15; else 0.6.7)
   --manifest  the corpus manifest (default: Tests/corpus_manifest.json)
   --baseline  a packs baseline the corpus check recorded with every game's names (pack fit per game)
   --findings  the corpus check's findings (ATLAS_SELFTEST_PACKS_FINDINGS) for the packs' notes
@@ -42,7 +44,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.dirname(HERE)
 DATA = os.path.join(PROJECT, 'Scripts', 'Core', 'Engine', 'Data')
 FORMAT = 'atlas-apworld-sources/1'
-ARCHIPELAGO = '0.6.7'
+# The Archipelago a load report from before round 15 was made on (a newer report says its own).
+OLD_REPORT_ARCHIPELAGO = '0.6.7'
 # A pack is for another game when this share of its mapping's ids are that game's and few are its own.
 FOR_GAME_SHARE = 0.9
 OWN_GAME_SHARE = 0.1
@@ -222,10 +225,9 @@ def mapping_ids(zip_path):
     return ids
 
 
-def load_names(corpus):
+def load_names(folder):
     """Every game's location ids, from the lab's name tables."""
     tables = {}
-    folder = os.path.join(corpus, 'names')
     if not os.path.isdir(folder):
         return tables
     for name in os.listdir(folder):
@@ -293,14 +295,21 @@ def main():
     ap.add_argument('--findings')
     ap.add_argument('--out', default=os.path.join(DATA, 'apworld_sources.json'))
     ap.add_argument('--old', default=os.path.join(DATA, 'apworld_sources.json'))
+    ap.add_argument('--names', default='')
+    ap.add_argument('--archipelago', default='')
     args = ap.parse_args()
+    names_dir = args.names or os.path.join(args.corpus, 'names')
 
     with open(args.old, encoding='utf-8-sig') as f:
         old = json.load(f)
     with open(args.manifest, encoding='utf-8-sig') as f:
         manifest = json.load(f)
-    report_path = os.path.join(args.corpus, 'names', '_load_report.json')
+    report_path = os.path.join(names_dir, '_load_report.json')
     report = json.load(open(report_path, encoding='utf-8-sig')) if os.path.exists(report_path) else {}
+    # The Archipelago the lab's worlds loaded with: the load report's own, else the one given, else the old reports' version.
+    archipelago = report.get('archipelago') or args.archipelago or OLD_REPORT_ARCHIPELAGO
+    if args.archipelago and archipelago != args.archipelago:
+        print(f'the load report says Archipelago {archipelago}; --archipelago {args.archipelago} is not used')
     loaded_games = {g.lower() for g in (report.get('games') or {})}
     measured_on = measured_files(report)
     baseline = json.load(open(args.baseline, encoding='utf-8-sig')) if args.baseline else {}
@@ -308,7 +317,7 @@ def main():
     findings_by_pack = {}
     for row in findings:
         findings_by_pack.setdefault(str(row.get('pack', '')).lower(), []).append(row)
-    names = load_names(args.corpus)
+    names = load_names(names_dir)
     with open(os.path.join(DATA, 'archipelago_worlds.json'), encoding='utf-8-sig') as f:
         official_names = [g for info in json.load(f).get('worlds', {}).values() for g in info.get('games', [])]
     official_names += [g for g in names]
@@ -344,7 +353,7 @@ def main():
             if not any(v.get('sha256') == version['sha256'] or v.get('url') == version['url'] for v in entry['versions']):
                 entry['versions'].insert(0, version)
             if key in loaded_games:
-                entry['loads_with'] = ARCHIPELAGO
+                entry['loads_with'] = archipelago
         elif kind == 'pack':
             # A pack's game comes from the corpus check (the manifest's game is the search's, often blank).
             pack_file = os.path.basename(item.get('file') or '')
@@ -418,7 +427,7 @@ def main():
             entry['packs'].sort(key=lambda p: -(p.get('fit') or -1))
 
     out = {'format': FORMAT, 'built': date.today().isoformat(), 'source': 'the Atlas pack lab (github.com/Lt-Tuttle/archipelago-atlas), seeded from Eijebong/Archipelago-index (archived)',
-           'archipelago': ARCHIPELAGO, 'games': sorted(games.values(), key=lambda g: g['game'].lower())}
+           'archipelago': archipelago, 'games': sorted(games.values(), key=lambda g: g['game'].lower())}
     with open(args.out, 'w', encoding='utf-8', newline='\r\n') as f:
         json.dump(out, f, indent=1, ensure_ascii=False)
         f.write('\n')
@@ -428,7 +437,7 @@ def main():
     sized = sum(1 for g in out['games'] for v in g.get('versions', []) + g.get('packs', []) if v.get('size'))
     on_version = sum(1 for g in out['games'] for p in g.get('packs', []) if p.get('apworld_version'))
     listed = sum(len(g.get('versions', [])) + len(g.get('packs', [])) for g in out['games'])
-    print(f'wrote {args.out}: {len(out["games"])} games ({added_games} new), {with_packs} with packs, {loads} known to load with Archipelago {ARCHIPELAGO}; '
+    print(f'wrote {args.out}: {len(out["games"])} games ({added_games} new), {with_packs} with packs, {loads} known to load with Archipelago {archipelago}; '
           f'{noted} packs with notes, {filed_elsewhere} filed under the game they are for; {sized} of {listed} versions and packs with their size; '
           f'{on_version} packs say the apworld version they were measured on')
     if unfiled:

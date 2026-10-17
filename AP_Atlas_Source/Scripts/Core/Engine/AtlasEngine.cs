@@ -228,6 +228,17 @@ namespace AP_Atlas.Core.EngineSetup
 
         public static bool IsShipped => ShippedCoreDir != null;
 
+        /// <summary>The Archipelago the engine's core is: the shipped core's, else the one set up in the data folder (null before setup).</summary>
+        public static string CoreArchipelago => IsShipped ? ShippedStamp.Archipelago : State.Archipelago;
+
+        /// <summary>
+        /// Whether Atlas's portable engine, set up in the data folder, has another Archipelago than the pinned one (Atlas was
+        /// updated, or went back): its Archipelago step says Update, and Set up everything takes it to the pin.
+        /// </summary>
+        public static bool ArchipelagoUpdateDue(EngineInstall install) =>
+            install?.Mode == EngineMode.Portable && !IsShipped && File.Exists(Path.Combine(ArchipelagoDir, "Utils.py"))
+            && EngineVersions.NeedsArchipelagoUpdate(State.Archipelago, ArchipelagoVersion);
+
         public const string CoreStampFile = "core.json";
 
         /// <summary>
@@ -368,9 +379,18 @@ namespace AP_Atlas.Core.EngineSetup
             Directory.Exists(Path.Combine(ArchipelagoDir, "worlds", folder)) || Directory.Exists(Path.Combine(UserWorldsDir, folder));
 
         /// <summary>
+        /// Why the game worlds Atlas unpacks can't load on this engine's core (they're another Archipelago's: Atlas pins a
+        /// new one and the core is still the old), or null when they can.
+        /// </summary>
+        public static string CoreOutdatedProblem =>
+            EngineVersions.WorldsFitCore(CoreArchipelago, Worlds.Archipelago) ? null
+            : $"This engine's Archipelago is {CoreArchipelago}; its game worlds are {Worlds.Archipelago}'s. Update Archipelago on the Atlas Engine page.";
+
+        /// <summary>
         /// The world folders a game needs unpacked before its logic can run: none when its world is there already, when an
-        /// installed apworld provides the game (it takes precedence), when it isn't one of this Archipelago's games, or
-        /// for another engine than Atlas's own.
+        /// installed apworld provides the game (it takes precedence), when it isn't one of this Archipelago's games, or for
+        /// another engine than Atlas's own. While the core is another Archipelago's they're still listed (the game isn't
+        /// ready), but unpacking them waits for its update: <see cref="WorldsWaitForCore"/>.
         /// </summary>
         public static List<string> WorldsToUnpack(EngineInstall install, string game)
         {
@@ -381,11 +401,18 @@ namespace AP_Atlas.Core.EngineSetup
             return Worlds.Closure(folder).Where(f => !WorldPresent(f)).ToList();
         }
 
+        /// <summary>
+        /// Whether a game's world is still to be unpacked and the core is another Archipelago's, so it can't be yet
+        /// (<see cref="EnsureWorldsAsync"/> refuses it and says why: <see cref="CoreOutdatedProblem"/>).
+        /// </summary>
+        public static bool WorldsWaitForCore(EngineInstall install, string game) =>
+            CoreOutdatedProblem != null && WorldsToUnpack(install, game).Count > 0;
+
         /// <summary>Whether Archipelago's release zip is here to unpack worlds from (nothing to download).</summary>
         public static bool WorldsZipPresent => File.Exists(WorldsZipPath);
 
-        /// <summary>About how much the worlds' zip downloads, for the question.</summary>
-        public const string WorldsZipSize = "about 22 MB";
+        /// <summary>About how much the worlds' zip downloads, for the question (the index's size; a rough figure when it doesn't say).</summary>
+        public static string WorldsZipSize => WorldsZipBytes > 0 ? AP_Atlas.Core.Games.AddGamesWords.Megabytes(WorldsZipBytes, s => s) : "about 22 MB";
 
         /// <summary>The worlds' zip in bytes, from the worlds index (the UI test's own index too); 0 when it doesn't say.</summary>
         public static long WorldsZipBytes => Worlds.ZipBytes;
@@ -408,6 +435,13 @@ namespace AP_Atlas.Core.EngineSetup
         {
             var wanted = games.Where(g => !string.IsNullOrEmpty(g)).Distinct(StringComparer.OrdinalIgnoreCase).Select(g => (Game: g, Folders: WorldsToUnpack(install, g))).Where(w => w.Folders.Count > 0).ToList();
             if (wanted.Count == 0) return true;
+            // Worlds from another Archipelago than the core's would load onto the wrong one: none until it's updated.
+            if (CoreOutdatedProblem is { } outdated)
+            {
+                log?.Invoke(outdated);
+                Logger.LogWarning("[Atlas Engine] " + outdated);
+                return false;
+            }
             var folders = wanted.SelectMany(w => w.Folders).Distinct().ToList();
             try
             {
@@ -490,27 +524,29 @@ namespace AP_Atlas.Core.EngineSetup
             }
             finally { DeleteDir(staging); }
             var record = SafeFile.ReadJson(UnpackedRecordPath, () => new UnpackedWorlds()) ?? new UnpackedWorlds();
-            record.Archipelago = ArchipelagoVersion;
+            record.Archipelago = Worlds.Archipelago;
             if (!record.Folders.Contains(folder)) record.Folders.Add(folder);
             SafeFile.WriteJson(UnpackedRecordPath, record);
-            log?.Invoke($"Unpacked the {folder} world from Archipelago {ArchipelagoVersion}.");
+            log?.Invoke($"Unpacked the {folder} world from Archipelago {Worlds.Archipelago}.");
         }
 
         /// <summary>
         /// World folders unpacked from another Archipelago (Atlas was updated to a newer one) are removed, with the older
-        /// zip: the next slot that needs one unpacks it from the new release.
+        /// zip: the next slot that needs one unpacks it from the new release. Nothing is removed while the core is still
+        /// the older Archipelago (its worlds are the ones that load on it).
         /// </summary>
         private static void ForgetWorldsOfAnotherArchipelago()
         {
             try
             {
+                if (CoreOutdatedProblem != null) return;
                 var record = File.Exists(UnpackedRecordPath) ? SafeFile.ReadJson(UnpackedRecordPath, () => new UnpackedWorlds()) : null;
-                if (record != null && record.Archipelago != ArchipelagoVersion)
+                if (record != null && record.Archipelago != Worlds.Archipelago)
                 {
                     foreach (string folder in record.Folders.Where(f => f.Length > 0 && !f.Contains('.') && !f.Contains('/') && !f.Contains('\\')))
                         DeleteDir(Path.Combine(UserWorldsDir, folder));
                     SafeFile.Delete(UnpackedRecordPath);
-                    Logger.LogInfo($"[Atlas Engine] Removed the game worlds unpacked from Archipelago {record.Archipelago}; they're unpacked from {ArchipelagoVersion} when needed.");
+                    Logger.LogInfo($"[Atlas Engine] Removed the game worlds unpacked from Archipelago {record.Archipelago}; they're unpacked from {Worlds.Archipelago} when needed.");
                 }
                 if (Directory.Exists(DownloadsDir))
                     foreach (var zip in Directory.GetFiles(DownloadsDir, "Archipelago-*.zip").Where(z => !Path.GetFileName(z).Equals(Path.GetFileName(WorldsZipPath), StringComparison.OrdinalIgnoreCase)))
@@ -808,13 +844,18 @@ namespace AP_Atlas.Core.EngineSetup
                     Action = python ? null : "Download"
                 });
                 bool ap = File.Exists(Path.Combine(ArchipelagoDir, "Utils.py"));
+                // Another Archipelago than the pinned one (Atlas was updated, or went back): the step takes the engine to the pin.
+                bool update = ArchipelagoUpdateDue(install);
+                bool newer = update && System.Version.TryParse(State.Archipelago, out var installedAp) && System.Version.TryParse(ArchipelagoVersion, out var pinnedAp) && installedAp > pinnedAp;
                 steps.Add(new EngineStepStatus
                 {
                     Id = EngineStepId.Archipelago,
                     Title = "Archipelago",
-                    State = ap ? EngineStepState.Ok : EngineStepState.Missing,
-                    Detail = ap ? $"Archipelago {State.Archipelago ?? "?"} (source, {Size(ArchipelagoDir)})" : $"Archipelago {ArchipelagoVersion} source, about 22 MB from GitHub",
-                    Action = ap ? null : "Download"
+                    State = !ap ? EngineStepState.Missing : update ? EngineStepState.Warning : EngineStepState.Ok,
+                    Detail = !ap ? $"Archipelago {ArchipelagoVersion} source, {WorldsZipSize} from GitHub"
+                        : update ? $"Archipelago {State.Archipelago} installed; Atlas uses {ArchipelagoVersion} ({WorldsZipSize} from GitHub)"
+                        : $"Archipelago {State.Archipelago ?? "?"} (source, {Size(ArchipelagoDir)})",
+                    Action = !ap ? "Download" : !update ? null : newer ? $"Use {ArchipelagoVersion}" : "Update"
                 });
                 string wanted = ap ? PackagesSignature() : null;
                 bool packages = ap && State.PackagesSignature != null && State.PackagesSignature == wanted;
@@ -1300,7 +1341,11 @@ namespace AP_Atlas.Core.EngineSetup
                     switch (step)
                     {
                         case EngineStepId.Runtime: await InstallRuntimeCoreAsync(log, progress, ct); break;
-                        case EngineStepId.Archipelago: await InstallArchipelagoCoreAsync(log, progress, ct); break;
+                        case EngineStepId.Archipelago:
+                            await InstallArchipelagoCoreAsync(log, progress, ct);
+                            // As setup does: the packages again only when the new Archipelago's requirements changed.
+                            if (State.PackagesSignature == null && File.Exists(PythonExe)) await InstallPackagesCoreAsync(log, ct);
+                            break;
                         case EngineStepId.Packages:
                             if (!IsShipped && State.PackagesSignature != PackagesSignature()) await InstallPackagesCoreAsync(log, ct);
                             if (install.Mode == EngineMode.Portable && LastCheck(install) == null) await RunCheckAsync(install, log, ct);
@@ -1339,7 +1384,13 @@ namespace AP_Atlas.Core.EngineSetup
             var check = await RunCheckAsync(install, log, ct);
             if (check.Passed)
             {
-                if (install.Mode == EngineMode.Portable) CommitUpdates();
+                if (install.Mode == EngineMode.Portable)
+                {
+                    CommitUpdates();
+                    // After an Archipelago update, the old one's unpacked worlds go now, not at Atlas's next start (the slots that
+                    // restart would load them onto the new core); each is unpacked again from the new release when needed.
+                    ForgetWorldsOfAnotherArchipelago();
+                }
                 if (install.Mode == EngineMode.Portable && IsShipped)
                 {
                     State.CheckedCore = ShippedStamp.Key;
@@ -1404,14 +1455,16 @@ namespace AP_Atlas.Core.EngineSetup
         private static async Task InstallArchipelagoCoreAsync(Action<string> log, Action<float> progress, CancellationToken ct)
         {
             EnsureFreeSpace(EngineDir);
-            Phase(log, "archipelago", $"Downloading Archipelago {ArchipelagoVersion} from GitHub…");
             string zip = Path.Combine(DownloadsDir, $"Archipelago-{ArchipelagoVersion}.zip");
-            await EngineDownloader.DownloadAsync(ArchipelagoUrl, zip, ArchipelagoSha256, Report(progress), ct);
+            // A kept zip with the pinned SHA-256 (the worlds' zip, or one a build put there) isn't downloaded again.
+            bool kept = File.Exists(zip) && EngineDownloader.Sha256Of(zip).Equals(ArchipelagoSha256, StringComparison.OrdinalIgnoreCase);
+            Phase(log, "archipelago", kept ? $"Using the kept Archipelago {ArchipelagoVersion} release…" : $"Downloading Archipelago {ArchipelagoVersion} from GitHub…");
+            if (!kept) await EngineDownloader.DownloadAsync(ArchipelagoUrl, zip, ArchipelagoSha256, Report(progress), ct);
             Stage(log, "Verified. Unpacking Archipelago…");
             string staging = ArchipelagoDir + ".new";
             DeleteDir(staging);
             await ZipFile.ExtractToDirectoryAsync(zip, staging, ct);
-            // The archive holds one top folder (Archipelago-0.6.7/).
+            // The archive holds one top folder (Archipelago-<version>/).
             var tops = Directory.GetDirectories(staging);
             if (tops.Length != 1 || !File.Exists(Path.Combine(tops[0], "Utils.py")))
                 throw new InvalidDataException("The Archipelago download doesn't look like Archipelago's source.");
@@ -1426,7 +1479,8 @@ namespace AP_Atlas.Core.EngineSetup
             SwapIn(inner, ArchipelagoDir);
             DeleteDir(staging);
             State.Archipelago = ArchipelagoVersion;
-            State.PackagesSignature = null;
+            // The packages live in the runtime (python\), which this swap doesn't touch: they stay when the requirements are the same.
+            if (State.PackagesSignature != PackagesSignature()) State.PackagesSignature = null;
             State.LastCheck = null;
             SaveState();
             WriteRunner();

@@ -1443,6 +1443,14 @@ def tracker_support(cls):
             'without_yaml': bool(getattr(cls, 'ut_can_gen_without_yaml', False))}
 
 
+def differs(a, b):
+    # Values that can't be compared (Archipelago 0.6.8's Options raise TypeError against another kind) differ.
+    try:
+        return bool(a != b)
+    except TypeError:
+        return True
+
+
 def world_differences(seed_world, rebuilt_world):
     # What differs between the generator's world and the rebuilt one: option values, the world's own values (plain
     # data only; a rebuilt world's tracker flags left out) and where each entrance leads.
@@ -1451,7 +1459,7 @@ def world_differences(seed_world, rebuilt_world):
     for name in sorted(set(vars(seed_opts) if seed_opts else ()) | set(vars(rebuilt_opts) if rebuilt_opts else ())):
         a = plain_value(getattr(getattr(seed_opts, name, None), 'value', None))
         b = plain_value(getattr(getattr(rebuilt_opts, name, None), 'value', None))
-        if a != b:
+        if differs(a, b):
             out['options'].append({'name': name, 'seed': short_value(a), 'rebuilt': short_value(b)})
     ignore = {'options', 'multiworld', 'random', 'player'}
     for name in sorted(set(vars(seed_world)) | set(vars(rebuilt_world))):
@@ -1460,7 +1468,7 @@ def world_differences(seed_world, rebuilt_world):
         a, b = plain_value(getattr(seed_world, name, None)), plain_value(getattr(rebuilt_world, name, None))
         if a is None and b is None:
             continue
-        if a != b:
+        if differs(a, b):
             out['values'].append({'name': name, 'seed': short_value(a), 'rebuilt': short_value(b)})
 
     def leads(world):

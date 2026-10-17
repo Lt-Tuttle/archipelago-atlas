@@ -40,6 +40,8 @@ public partial class MainTrackerWindow
                 if (!ok) GD.PrintErr("ENGINEBUILD FAILED: " + AtlasEngine.LastSetupProblem);
                 else if (!AtlasEngine.WorldsZipPresent) GD.PrintErr("ENGINEBUILD FAILED: Archipelago's zip wasn't kept for the game worlds.");
                 else if (AtlasEngine.Worlds.Worlds.Keys.Any(AtlasEngine.WorldPresent)) GD.PrintErr("ENGINEBUILD FAILED: the core holds game worlds it should unpack on demand.");
+                else if (EngineVersions.CoreStampProblem(AtlasEngine.State.Archipelago, AtlasEngine.ArchipelagoVersion, AtlasEngine.State.Tracker, AtlasEngine.TrackerVersion) is { } stampProblem)
+                    GD.PrintErr("ENGINEBUILD FAILED: " + stampProblem);
                 else
                 {
                     AtlasEngine.WriteCoreStamp();

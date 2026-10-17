@@ -1336,13 +1336,13 @@ public partial class MainTrackerWindow
             await UiTestWaitForAsync(() => page.VersionFacts.Count == 4 && page.VersionFacts.Any(f => f.Works.Length > 0) ? page : null, "the table's facts");
             var facts = page.VersionFacts;
             UiTestExpect(facts.Select(f => f.Version).SequenceEqual(new[] { "3.0.0", "2.1.0-beta", "2.0.0", "1.0.0" }), $"the rows are {string.Join(", ", facts.Select(f => f.Version))}");
-            UiTestExpect(facts[0].Greyed && facts[0].Works == "It needs Archipelago 9.9.9 or newer; the engine has 0.6.7", $"3.0.0 says: {facts[0].Works}");
+            UiTestExpect(facts[0].Greyed && facts[0].Works == $"It needs Archipelago 9.9.9 or newer; the engine has {AtlasEngine.ArchipelagoVersion}", $"3.0.0 says: {facts[0].Works}");
             UiTestExpect(!facts[1].Greyed && facts[1].Works.StartsWith("Atlas's pick", StringComparison.Ordinal) && facts[1].Works.Contains("map pack 100%") && facts[1].Works.Contains("its guide names a tracker"), $"2.1.0-beta says: {facts[1].Works}");
             UiTestExpect(facts[2].Greyed && facts[3].Greyed && facts[2].Works == "Your map pack places 50% of its pins with it", $"2.0.0 says: {facts[2].Works}; 1.0.0: {facts[3].Works}");
             // The installed version's card: ✗ for the pack, – for the guide it lacks, ✓ for the Archipelago it runs on; Switch to the pick.
             var card = page.CardFactsShown;
             UiTestExpect(card.Count == 4 && card[0].Good == false && card[0].Text.Contains("doesn't fit it well: 50%") && card[1].Good == null && card[1].Text == "It bundles no setup guide."
-                && card[2].Good == true && card[2].Text.Contains("Archipelago 0.6.7") && card[3].Good == null,
+                && card[2].Good == true && card[2].Text.Contains("Archipelago " + AtlasEngine.ArchipelagoVersion) && card[3].Good == null,
                 $"the card says: {string.Join(" | ", card.Select(f => (f.Good == true ? "✓ " : f.Good == false ? "✗ " : "– ") + f.Text))}");
             var switchButton = page.FindChildren("*", nameof(Button), true, false).OfType<Button>().FirstOrDefault(b => b.HasMeta("switch_button"));
             UiTestExpect(switchButton != null && switchButton.GetMeta("switch_button").AsString() == "2.1.0-beta" && switchButton.TooltipText.Contains("your map pack fits it"),
@@ -2401,6 +2401,27 @@ public partial class MainTrackerWindow
             // The game's world and the one it imports are to be unpacked; nothing is downloaded before a slot needs it.
             UiTestExpect(AtlasEngine.WorldsToUnpack(install, game).SequenceEqual(new[] { "on_demand", "shared_lib" }) && !AtlasEngine.WorldsZipPresent,
                 $"the game would unpack {string.Join(", ", AtlasEngine.WorldsToUnpack(install, game))}");
+            // A core that's another Archipelago (Atlas pins a newer one): the game still needs its world, which waits for the
+            // update (nothing unpacked or asked), and the Engine page says so up top with the button that updates it.
+            if (!AtlasEngine.IsShipped)
+            {
+                string? coreBefore = AtlasEngine.State.Archipelago;
+                try
+                {
+                    AtlasEngine.State.Archipelago = "0.0.1";
+                    UiTestExpect(AtlasEngine.WorldsToUnpack(install, game).Count == 2 && AtlasEngine.WorldsWaitForCore(install, game), "a game whose world waits for the core's update reads as ready");
+                    bool unpackedOnOld = await AtlasEngine.EnsureWorldsAsync(install, new[] { game }, true, null, System.Threading.CancellationToken.None);
+                    UiTestExpect(!unpackedOnOld && site.Requests.Count == 0 && !System.IO.Directory.Exists(System.IO.Path.Combine(worlds, "on_demand")), "a world was fetched or unpacked onto another Archipelago's core");
+                    _enginePage!.RenderNow();
+                    UiTestExpect(_enginePage.StatusText == $"Archipelago needs updating: 0.0.1 → {AtlasEngine.ArchipelagoVersion}." && _enginePage.SetUpShown == "Update Archipelago",
+                        $"the Engine page says \"{_enginePage.StatusText}\" with {_enginePage.SetUpShown ?? "no setup button"}");
+                }
+                finally
+                {
+                    AtlasEngine.State.Archipelago = coreBefore;
+                    _enginePage!.RenderNow();
+                }
+            }
             // The Games page lists Archipelago's own games, each saying its world is unpacked when a slot needs it.
             host.ShowTool(AP_Atlas.UI.Tool.Games);
             _gamesPage!.Refresh();
@@ -2512,7 +2533,7 @@ public partial class MainTrackerWindow
             // Atlas's game list: the overview offers Update game list, and the list ships official games' packs with their measured fit (no community source for them).
             UiTestExpect(_gamesPage.FindChildren("*", nameof(Button), true, false).OfType<Button>().Any(b => b.HasMeta("update_game_list")), "the Games overview has no Update game list button");
             var listed = AP_Atlas.Core.EngineSetup.ApworldSources.List.Games;
-            UiTestExpect(listed.Count(g => g.Official) > 50 && listed.Any(g => g.Official && g.Packs.Count > 0 && g.Packs[0].Fit != null) && listed.Any(g => !g.Official && g.LoadsWith == "0.6.7")
+            UiTestExpect(listed.Count(g => g.Official) > 50 && listed.Any(g => g.Official && g.Packs.Count > 0 && g.Packs[0].Fit != null) && listed.Any(g => !g.Official && g.LoadsWith == AP_Atlas.Core.EngineSetup.ApworldSources.List.Archipelago)
                 && !_gamesPage.GameNames().Contains("A Hat in Time") || _gamesPage.GameNames().Contains("A Hat in Time") && AP_Atlas.Core.EngineSetup.ApworldSources.Find("A Hat in Time")?.Repo == null,
                 "the bundled game list lacks official games' packs with their fit, or lists an official game as a community source");
             button!.EmitSignal(BaseButton.SignalName.Pressed);

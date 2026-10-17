@@ -4,16 +4,17 @@
     outside its own folder.
 
 .DESCRIPTION
-    Godot, .NET and Python find the user's folders and the temp folder through APPDATA, LOCALAPPDATA, TEMP and TMP. A
-    test run gets empty stand-ins for them, and afterwards any file in them is something Atlas would have written
-    outside its folder on a user's PC. Empty folders are allowed: Godot always makes its user folder
-    (%APPDATA%\Godot\app_userdata\The Archipelago Atlas) when it starts, and there's no setting to stop it.
+    Godot, .NET and Python find the user's folders and the temp folder through APPDATA, LOCALAPPDATA, TEMP and TMP
+    (Python's tempfile reads TMPDIR first, which Git Bash sets). A test run gets empty stand-ins for them, and afterwards
+    any file in them is something Atlas would have written outside its folder on a user's PC. Empty folders are
+    allowed: Godot always makes its user folder (%APPDATA%\Godot\app_userdata\The Archipelago Atlas) when it starts,
+    and there's no setting to stop it.
 #>
 
 # Points a test run's user folders and temp folder at empty stand-ins under $Scratch; returns where they are.
 function Set-StandInUserFolders([System.Diagnostics.ProcessStartInfo]$Info, [string]$Scratch) {
     $outside = Join-Path $Scratch 'outside'
-    $folders = [ordered]@{ APPDATA = 'AppData\Roaming'; LOCALAPPDATA = 'AppData\Local'; TEMP = 'Temp'; TMP = 'Temp' }
+    $folders = [ordered]@{ APPDATA = 'AppData\Roaming'; LOCALAPPDATA = 'AppData\Local'; TEMP = 'Temp'; TMP = 'Temp'; TMPDIR = 'Temp' }
     foreach ($name in $folders.Keys) {
         $dir = Join-Path $outside $folders[$name]
         New-Item -ItemType Directory -Path $dir -Force | Out-Null

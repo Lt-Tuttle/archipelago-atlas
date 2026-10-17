@@ -200,7 +200,9 @@ namespace AP_Atlas.Core.EngineSetup
                 foreach (string game in worldGames) b.Outcome.For(game).Logic = AddStep.Failed(problem);
             if (problem != null || install == null || (files.Count == 0 && worldGames.Count == 0)) return;
             b.Ct.ThrowIfCancellationRequested();
-            bool zip = !AtlasEngine.WorldsZipPresent && worldGames.Any(g => AtlasEngine.WorldsToUnpack(install, g).Count > 0);
+            // Worlds wait while the core is another Archipelago's: nothing is downloaded for them then.
+            bool outdated = AtlasEngine.CoreOutdatedProblem != null;
+            bool zip = !outdated && !AtlasEngine.WorldsZipPresent && worldGames.Any(g => AtlasEngine.WorldsToUnpack(install, g).Count > 0);
             b.Enter(AddGamesProgress.EnginePart, zip
                 ? T("Downloading Archipelago's worlds ({0}), then adding to the Atlas Engine…").Replace("{0}", AtlasEngine.WorldsZipSize)
                 : T("Adding to the Atlas Engine and checking it…"));
@@ -220,7 +222,9 @@ namespace AP_Atlas.Core.EngineSetup
                 row.LogicShips = true;
                 // Its world comes from Archipelago's pinned release, so that's its version (round 13: Dark Souls III read "Logic: added.").
                 row.Logic = missing
-                    ? (done.Cancelled ? AddStep.Cancelled : AddStep.Failed(T("Archipelago's release couldn't be downloaded or its world unpacked (the log says why); try again later")))
+                    ? (done.Cancelled ? AddStep.Cancelled
+                        : outdated ? AddStep.Failed(T("Archipelago needs updating first (Atlas Engine page)"))
+                        : AddStep.Failed(T("Archipelago's release couldn't be downloaded or its world unpacked (the log says why); try again later")))
                     : done.Check?.Error != null ? AddStep.Failed(T("the engine's health check failed: {0}").Replace("{0}", done.Check.Problem))
                     : done.Check != null && !done.Check.Games.Contains(game, StringComparer.OrdinalIgnoreCase) ? AddStep.Failed(T("its world is unpacked, but it doesn't load in the engine"))
                     : AddStep.Done(AtlasEngine.ArchipelagoVersion);

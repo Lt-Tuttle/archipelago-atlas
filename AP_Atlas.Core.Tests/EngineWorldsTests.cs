@@ -61,7 +61,7 @@ public sealed class EngineWorldsTests
     public void The_shipped_index_lists_Archipelagos_games_and_keeps_the_health_checks_game_in_the_core()
     {
         var index = WorldsIndex.Parse(File.ReadAllText(TestEnvironment.RepoFile("AP_Atlas_Source", "Scripts", "Core", "Engine", "Data", "archipelago_worlds.json")));
-        Assert.Equal("0.6.7", index.Archipelago);
+        Assert.Equal($"Archipelago-{index.Archipelago}/", index.ZipRoot);
         Assert.Contains("checksfinder", index.CoreWorlds);
         Assert.Contains("generic", index.CoreWorlds);
         Assert.Equal("alttp", index.FolderFor("A Link to the Past"));

@@ -211,6 +211,10 @@ namespace AP_Atlas.UI
 
         /// <summary>The status line's text.</summary>
         public string StatusText => _status.Text;
+        /// <summary>The setup button's text while it shows (Set up everything, or Update Archipelago), else null.</summary>
+        public string? SetUpShown => _setupAll.Visible ? _setupAll.Text : null;
+        /// <summary>Draws the page again now (no health check of its own, as showing it may start).</summary>
+        public void RenderNow() => Render();
         /// <summary>Whether Advanced is open.</summary>
         public bool AdvancedOpen => Kit.FoldedState(this, AdvancedKey) == false;
         /// <summary>The log's text.</summary>
@@ -236,8 +240,15 @@ namespace AP_Atlas.UI
             RenderSteps(install, busy);
             RenderSlots();
             string? problem = AtlasEngine.ProblemWith(install);
+            // Logic runs, but on another Archipelago than Atlas's: Set up everything updates it (the step under Advanced says so too).
+            bool update = problem == null && AtlasEngine.ArchipelagoUpdateDue(install);
             bool canSetUp = install.Mode == EngineMode.Portable || (install.CanLaunch && AtlasEngine.MayWriteTo(install));
-            _setupAll.Visible = problem != null && canSetUp;
+            _setupAll.Visible = (problem != null || update) && canSetUp;
+            _setupAll.Text = update ? _tr("Update Archipelago") : _tr("Set up everything");
+            _setupAll.TooltipText = update
+                ? _tr("Puts Archipelago {0} ({1} from GitHub) in place of {2}, then runs a health check (asked first; the file is checked against a fixed hash).")
+                    .Replace("{0}", AtlasEngine.ArchipelagoVersion).Replace("{1}", AtlasEngine.WorldsZipSize).Replace("{2}", AtlasEngine.State.Archipelago)
+                : _tr("Downloads and installs whatever is missing, then runs a health check (asked first; every file is checked against a fixed hash).");
             _setupAll.Disabled = busy;
             _showAdvanced.Visible = problem != null && !canSetUp && !busy;
             _check.Disabled = busy;
@@ -245,6 +256,7 @@ namespace AP_Atlas.UI
             _verifyRow.Visible = _settings.DeveloperMode;
             if (busy) SetStatus(_runName + "…", ThemeColors.TextMuted);
             else if (problem != null) SetStatus(problem, Warn);
+            else if (update) SetStatus(_tr("Archipelago needs updating: {0} → {1}.").Replace("{0}", AtlasEngine.State.Archipelago).Replace("{1}", AtlasEngine.ArchipelagoVersion), Warn);
             else if (AtlasEngine.LastCheck(install) is { } check && !check.Passed) SetStatus(_tr("Logic runs on the {0}, but its last health check found a problem: see Parts under Advanced.").Replace("{0}", install.Describe()), Warn);
             else SetStatus(_tr("Ready: logic runs on the {0}.").Replace("{0}", install.Describe()), Good);
             Ui.NextFrame(this, () => MainTrackerWindow.SetFontSizeRecursive(this, _hooks.FontSize()));

@@ -6,7 +6,7 @@
 # Archipelago's own folder (the engine's core: shipped with Atlas, or downloaded) is only read. What Atlas or the user
 # adds lives in Atlas's engine data folder, named by ATLAS_ENGINE_DATA: Archipelago's user folder (ap: the game worlds
 # unpacked when a slot needs them, installed apworlds, Players, host.yaml) and the packages worlds declare
-# (site-packages).
+# (site-packages). The process works in that folder's temp folder, so a file written where it runs stays there too.
 import importlib.abc
 import importlib.machinery
 import os
@@ -14,6 +14,9 @@ import re
 import sys
 import json
 import logging
+
+# This script's folder (Atlas keeps it in the engine folder): the engine folder when ATLAS_ENGINE_DATA names none.
+HERE = os.path.dirname(os.path.abspath(__file__))
 
 # World name -> why it didn't load ({'missing': module or None, 'error': text}). The health check reports it,
 # so Atlas can install a world's declared packages instead of just saying it failed.
@@ -74,13 +77,19 @@ def use_engine_data():
     sys.meta_path.insert(0, _UserWorlds(worlds_folder))
 
 
+def engine_temp():
+    # The engine folder's temp folder: Python's temporary files, and where the process works.
+    temp = os.path.join(os.environ.get('ATLAS_ENGINE_DATA') or HERE, 'temp')
+    os.makedirs(temp, exist_ok=True)
+    return temp
+
+
 def keep_files_in_engine_folder():
     # Archipelago keeps a per-user cache (data packages, a client id) in %LocalAppData%\Archipelago, and Python's
     # temporary files go to %TEMP%: both outside Atlas's folder. They stay in the engine folder instead (Atlas also
     # points the process's environment there; this holds whatever the installed packages do).
-    engine = os.environ.get('ATLAS_ENGINE_DATA') or os.path.dirname(os.path.abspath(__file__))
-    temp = os.path.join(engine, 'temp')
-    os.makedirs(temp, exist_ok=True)
+    engine = os.environ.get('ATLAS_ENGINE_DATA') or HERE
+    temp = engine_temp()
     for name in ('TEMP', 'TMP', 'TMPDIR'):
         os.environ[name] = temp
     import tempfile
@@ -112,12 +121,17 @@ def main():
     # answers. Anything else that prints (a world as it loads, the tracker) goes to standard error, which Atlas logs,
     # so it can never be taken for an answer.
     sys.stdout = sys.stderr
-    os.chdir(root)
+    # Never in Archipelago's own folder: the core ships with Atlas and is only read, and a world that writes where it runs
+    # (a region diagram, Player1.puml) would write into it. Archipelago finds its own files from its folder (local_path),
+    # and its imports from the path.
+    os.chdir(engine_temp())
     sys.path.insert(0, root)
     sys.argv = [os.path.join(root, 'Launcher.py')]
     use_engine_data()
 
-    # Never pip-install or prompt on stdin: stdin carries Atlas's requests.
+    # Never pip-install or prompt on stdin: stdin carries Atlas's requests. Archipelago's own switch first (a later
+    # requirement added at import resets update_ran), then the flag.
+    os.environ['SKIP_REQUIREMENTS_UPDATE'] = '1'
     import ModuleUpdate
     ModuleUpdate.update_ran = True
     keep_files_in_engine_folder()

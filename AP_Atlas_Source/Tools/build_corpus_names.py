@@ -6,16 +6,20 @@ games load (atlas_run.py --atlas-games) and the AtlasNames component for their n
 GameNames' shape (<corpus>\names\<Game> (local install).json), plus names\_load_report.json saying which worlds didn't
 load and why, and which apworld file (by its SHA-256) each community game's names came from: the version the packs are
 measured on (build_game_index.py records it per pack). Nothing downloaded; nothing the corpus holds is run except as
-Archipelago loads a world.
+Archipelago loads a world. The load report also says the core's Archipelago version and the bridge's SHA-256.
 
 Usage:
   python Tools/build_corpus_names.py --corpus "...\Pack Corpus" --lab "...\Pack Corpus\lab"
-      [--core Builds\engine-core] [--archipelago-zip Builds\engine-data\engine\downloads\Archipelago-0.6.7.zip] [--skip-unpack]
+      [--core Builds\engine-core] [--archipelago-zip <zip>] [--names-dir <corpus>\names] [--skip-unpack]
+The zip is the core's own Archipelago by default: Archipelago-<version>.zip (the version from the core's Utils.py) in
+Builds\ap-update\<version>\, else in Builds\engine-data\engine\downloads\. A zip of another version is refused: its worlds
+would load onto the wrong core.
 """
 import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -33,10 +37,14 @@ def unpack_worlds(archipelago_zip, worlds_dir):
         names = z.namelist()
         prefix = names[0].split('/')[0] + '/' if '/' in names[0] else ''
         count = 0
+        root = os.path.realpath(worlds_dir)
         for name in names:
             if not name.startswith(prefix + 'worlds/') or name.endswith('/'):
                 continue
             rel = name[len(prefix + 'worlds/'):]
+            # Nothing outside the lab's worlds folder: a zip with such an entry isn't Archipelago's release.
+            if '..' in re.split(r'[\\/]', rel) or rel.startswith(('/', '\\')) or ':' in rel:
+                sys.exit(f'refused: {archipelago_zip} has an entry outside its folder: {name!r}')
             folder = rel.split('/', 1)[0]
             if '/' not in rel or folder.endswith('.apworld'):
                 if rel.endswith('.apworld'):
@@ -45,11 +53,40 @@ def unpack_worlds(archipelago_zip, worlds_dir):
                     continue
             else:
                 dest = os.path.join(worlds_dir, rel.replace('/', os.sep))
+            if not os.path.realpath(dest).startswith(root + os.sep):
+                sys.exit(f'refused: {archipelago_zip} has an entry outside its folder: {name!r}')
             os.makedirs(os.path.dirname(dest), exist_ok=True)
             with z.open(name) as src, open(dest, 'wb') as out:
                 shutil.copyfileobj(src, out)
             count += 1
     return count
+
+
+def core_version(core):
+    """The core's Archipelago version, from its Utils.py; None without one."""
+    try:
+        with open(os.path.join(core, 'archipelago', 'Utils.py'), encoding='utf-8-sig') as f:
+            found = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', f.read())
+    except OSError:
+        return None
+    return found.group(1) if found else None
+
+
+def zip_version(archipelago_zip):
+    """The version an Archipelago release zip is of, from its one top folder (Archipelago-<version>/); None otherwise."""
+    with zipfile.ZipFile(archipelago_zip) as z:
+        tops = {name.split('/', 1)[0] for name in z.namelist()}
+    found = re.fullmatch(r'Archipelago-(.+)', tops.pop()) if len(tops) == 1 else None
+    return found.group(1) if found else None
+
+
+def bridge_sha256(worlds_dir):
+    """The SHA-256 of the bridge the lab's engine loads (its UltimateBridge.apworld); None without one."""
+    try:
+        with zipfile.ZipFile(os.path.join(worlds_dir, 'UltimateBridge.apworld')) as z:
+            return hashlib.sha256(z.read('UltimateBridge/__init__.py')).hexdigest()
+    except (OSError, KeyError, zipfile.BadZipFile):
+        return None
 
 
 def run_engine(python, core, lab, component, request=None, timeout=1800):
@@ -58,7 +95,8 @@ def run_engine(python, core, lab, component, request=None, timeout=1800):
                TEMP=os.path.join(lab, 'home', 'Temp'), TMP=os.path.join(lab, 'home', 'Temp'), PYTHONPYCACHEPREFIX=os.path.join(lab, 'pycache'))
     for d in ('home/AppData', 'home/Local', 'home/Temp'):
         os.makedirs(os.path.join(lab, d), exist_ok=True)
-    args = [python, '-I', os.path.join(PY_DIR, 'atlas_run.py'), os.path.join(core, 'archipelago'), component]
+    # -I ignores PYTHONPYCACHEPREFIX: the compiled files go to the lab by -X, never into the core.
+    args = [python, '-I', '-X', 'pycache_prefix=' + os.path.join(lab, 'pycache'), os.path.join(PY_DIR, 'atlas_run.py'), os.path.join(core, 'archipelago'), component]
     r = subprocess.run(args, input=(json.dumps(request) + '\n') if request is not None else None, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=timeout, cwd=lab, env=env)
     with open(os.path.join(lab, f'{component}.stderr.txt'), 'w', encoding='utf-8') as f:
         f.write(r.stderr)
@@ -71,9 +109,25 @@ def main():
     ap.add_argument('--corpus', required=True)
     ap.add_argument('--lab', required=True)
     ap.add_argument('--core', default=os.path.join(ROOT, 'Builds', 'engine-core'))
-    ap.add_argument('--archipelago-zip', default=os.path.join(ROOT, 'Builds', 'engine-data', 'engine', 'downloads', 'Archipelago-0.6.7.zip'))
+    ap.add_argument('--archipelago-zip', default='', help="Archipelago's release zip (default: the core's version, found in Builds)")
+    ap.add_argument('--names-dir', default='', help='where the name tables and the load report go (default: <corpus>\\names)')
     ap.add_argument('--skip-unpack', action='store_true')
     args = ap.parse_args()
+
+    version = core_version(args.core)
+    if not args.skip_unpack:
+        # The official worlds must be the core's own Archipelago's: another version's would load onto the wrong core.
+        if not version:
+            sys.exit(f"refused: no Archipelago version in {os.path.join(args.core, 'archipelago', 'Utils.py')}")
+        if not args.archipelago_zip:
+            candidates = [os.path.join(ROOT, 'Builds', 'ap-update', version, f'Archipelago-{version}.zip'),
+                          os.path.join(ROOT, 'Builds', 'engine-data', 'engine', 'downloads', f'Archipelago-{version}.zip')]
+            args.archipelago_zip = next((c for c in candidates if os.path.isfile(c)), '')
+            if not args.archipelago_zip:
+                sys.exit(f'refused: no Archipelago-{version}.zip in ' + ' or '.join(os.path.dirname(c) for c in candidates) + '; pass --archipelago-zip')
+        made_for = zip_version(args.archipelago_zip)
+        if made_for != version:
+            sys.exit(f'refused: {args.archipelago_zip} is Archipelago {made_for or "(no Archipelago-<version>/ folder)"}; the core is {version}')
 
     lab = os.path.abspath(args.lab)
     worlds = os.path.join(lab, 'ap', 'worlds')
@@ -81,6 +135,7 @@ def main():
     os.makedirs(os.path.join(lab, 'ap', 'Players'), exist_ok=True)
     python = os.path.join(args.core, 'python', 'python.exe')
     if not args.skip_unpack:
+        print(f'Archipelago {version}: {args.archipelago_zip}', flush=True)
         n = unpack_worlds(args.archipelago_zip, worlds)
         print(f'unpacked {n} files of the official worlds', flush=True)
         copied = 0
@@ -109,7 +164,7 @@ def main():
     errors = listing.get('errors', {})
     failed = listing.get('failed', [])
     print(f'{len(games)} games load; {len(failed)} worlds failed', flush=True)
-    names_dir = os.path.join(args.corpus, 'names')
+    names_dir = args.names_dir or os.path.join(args.corpus, 'names')
     os.makedirs(names_dir, exist_ok=True)
     wanted = sorted(g for g in games if g not in ('Archipelago', 'Universal Tracker'))
     answer = run_engine(python, args.core, lab, 'AtlasNames', {'games': wanted}) or {}
@@ -132,7 +187,8 @@ def main():
             with open(path, 'rb') as src:
                 apworlds[game] = {'module': module, 'sha256': hashlib.sha256(src.read()).hexdigest()}
     with open(os.path.join(names_dir, '_load_report.json'), 'w', encoding='utf-8') as f:
-        json.dump({'written': written, 'games': games, 'failed': failed, 'errors': errors, 'names_error': answer.get('error'), 'apworlds': apworlds}, f, indent=1)
+        json.dump({'written': written, 'games': games, 'failed': failed, 'errors': errors, 'names_error': answer.get('error'), 'apworlds': apworlds,
+                   'archipelago': version, 'bridge_sha256': bridge_sha256(worlds)}, f, indent=1)
     print(f'wrote {written} name tables; load report in {names_dir}', flush=True)
     for name, why in errors.items():
         print('  failed:', name, '-', (why.get('error') or '')[:140], flush=True)

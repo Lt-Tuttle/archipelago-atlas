@@ -37,3 +37,7 @@ VisualCheck/
 
 # Test results written by dotnet test
 TestResults/
+
+# Compiled Python (a test or a tool run beside the sources)
+__pycache__/
+*.pyc

@@ -80,7 +80,7 @@ internal static class FakeEngines
         string engineDir = System.IO.Path.GetDirectoryName(engine.Root)!;
         var info = new ProcessStartInfo(python)
         {
-            WorkingDirectory = engine.Root,
+            WorkingDirectory = Directory.CreateDirectory(System.IO.Path.Combine(engineDir, "temp")).FullName,
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,

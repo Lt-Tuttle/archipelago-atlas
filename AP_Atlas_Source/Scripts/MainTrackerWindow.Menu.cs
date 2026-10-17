@@ -293,9 +293,9 @@ public partial class MainTrackerWindow
     {
         var engine = AP_Atlas.Core.EngineSetup.AtlasEngine.Current;
         if (!engine.CanLaunch) return "not set up";
-        // The portable engine is the pinned Archipelago; the user's own install isn't named by its path (a path can name the user).
+        // The portable engine's own Archipelago (the pinned one before setup); the user's own install isn't named by its path (a path can name the user).
         return engine.Mode == AP_Atlas.Core.EngineSetup.EngineMode.Portable
-            ? "Atlas portable engine, Archipelago " + AP_Atlas.Core.EngineSetup.AtlasEngine.ArchipelagoVersion
+            ? "Atlas portable engine, Archipelago " + (AP_Atlas.Core.EngineSetup.AtlasEngine.CoreArchipelago ?? AP_Atlas.Core.EngineSetup.AtlasEngine.ArchipelagoVersion)
             : "your Archipelago install";
     }
 

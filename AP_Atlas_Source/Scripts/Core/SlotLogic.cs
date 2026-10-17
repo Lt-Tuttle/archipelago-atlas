@@ -247,7 +247,15 @@ namespace AP_Atlas.Core
             try
             {
                 // A game that ships with Archipelago has its world unpacked from Archipelago's release the first time a
-                // slot needs it (the release downloaded once, with the engine-setup permission).
+                // slot needs it (the release downloaded once, with the engine-setup permission). Not onto a core that's
+                // another Archipelago: that waits for the engine's update.
+                if (SeedApworldFile() == null && AtlasEngine.WorldsWaitForCore(Engine.Install, _model.Game))
+                {
+                    Problem = new EngineStartError { Code = "core_outdated", Message = AtlasEngine.CoreOutdatedProblem };
+                    Status = ProblemStatus(Problem);
+                    Loaded = true;
+                    return;
+                }
                 if (SeedApworldFile() == null && AtlasEngine.WorldsToUnpack(Engine.Install, _model.Game).Count > 0)
                 {
                     bool mayDownload = Permissions.IsAllowed(_settings, Permissions.EngineSetup);
@@ -436,6 +444,7 @@ namespace AP_Atlas.Core
             "no_engine" => "Logic needs the Atlas Engine",
             "world_missing" => "The game isn't installed in the engine",
             "world_download" => "The game's world isn't downloaded yet",
+            "core_outdated" => "Archipelago needs updating",
             "yaml_needed" => "Logic needs the player's YAML",
             "generation_failed" => "The world couldn't be rebuilt",
             "ut_disabled" => "Logic is disabled by the game",
@@ -809,7 +818,7 @@ namespace AP_Atlas.Core
         private void OnEngineSetupChanged() => AP_Atlas.UI.Ui.Defer(null, () =>
         {
             if (_disposed || Running || Booting || Problem == null) return;
-            if (Problem.Code is "no_engine" or "world_missing" or "world_download" or "no_response" or "crashed" or "error" or "paused") Start();
+            if (Problem.Code is "no_engine" or "world_missing" or "world_download" or "core_outdated" or "no_response" or "crashed" or "error" or "paused") Start();
         }, $"restarting {_model.SlotName}'s logic after an engine change");
 
         private void Notify(SlotChange change = SlotChange.Logic) => _model.Report(change);

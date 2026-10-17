@@ -98,11 +98,14 @@ Write-Host ("  " + ($text -split "`r?`n" | Where-Object { $_ -match 'ENGINEBUILD
 # 2. The core, from there: no compiled files, nothing a user adds.
 $engine = Join-Path $Cache 'engine'
 $tracker = Join-Path $engine 'ap\worlds\tracker.apworld'
-$zip = Get-ChildItem -LiteralPath (Join-Path $engine 'downloads') -Filter 'Archipelago-*.zip' | Select-Object -First 1
 foreach ($required in (Join-Path $engine 'python\python.exe'), (Join-Path $engine 'archipelago\Utils.py'), $tracker, (Join-Path $engine 'core.json')) {
     if (-not (Test-Path -LiteralPath $required)) { Stop-Engine 7 "The engine's setup left no $required." }
 }
-if (-not $zip) { Stop-Engine 7 "The engine's setup kept no Archipelago zip." }
+# The zip of the Archipelago the core was built on (the cache can keep another version's beside it).
+$coreArchipelago = (Get-Content -Raw -LiteralPath (Join-Path $engine 'core.json') | ConvertFrom-Json).Archipelago
+$zipPath = Join-Path $engine "downloads\Archipelago-$coreArchipelago.zip"
+if (-not $coreArchipelago -or -not (Test-Path -LiteralPath $zipPath)) { Stop-Engine 7 "The engine's setup kept no Archipelago-$coreArchipelago.zip." }
+$zip = Get-Item -LiteralPath $zipPath
 if (Test-Path -LiteralPath $Out) { Remove-Item -LiteralPath $Out -Recurse -Force }
 New-Item -ItemType Directory -Path $Out -Force | Out-Null
 $skip = @('__pycache__', 'custom_worlds', 'Players', 'logs')

@@ -658,7 +658,8 @@ namespace AP_Atlas.UI
                 if (!Run(_tr("Checking {0}…").Replace("{0}", game), (log, ct) => GameSweep.RunAsync(install, log, ct, new[] { game }), _ => CheckSummary(install, game)))
                     _hooks.Toast(_tr("The Games page is busy: try again when its current run ends."), ThemeColors.Warning);
             }
-            if (AtlasEngine.WorldsToUnpack(install, game).Count == 0 || AtlasEngine.WorldsZipPresent || AtlasEngine.MayDownloadWorlds) Check();
+            if (AtlasEngine.WorldsWaitForCore(install, game)) _hooks.Toast(_tr("Update Archipelago first (Atlas Engine page)."), ThemeColors.Warning);
+            else if (AtlasEngine.WorldsToUnpack(install, game).Count == 0 || AtlasEngine.WorldsZipPresent || AtlasEngine.MayDownloadWorlds) Check();
             else PermissionDialog.Ask(DialogParent, _hooks.Settings, Permissions.EngineSetup, null, null, allowed => { if (allowed) Check(); });
         }
 
