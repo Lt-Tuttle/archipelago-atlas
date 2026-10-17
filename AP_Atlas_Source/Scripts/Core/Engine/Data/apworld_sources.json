@@ -1,6 +1,6 @@
 {
  "format": "atlas-apworld-sources/1",
- "built": "2026-10-15",
+ "built": "2026-10-17",
  "source": "the Atlas pack lab (github.com/Lt-Tuttle/archipelago-atlas), seeded from Eijebong/Archipelago-index (archived)",
  "archipelago": "0.6.7",
  "games": [
@@ -97,22 +97,22 @@
      "size": 21432374
     },
     {
+     "repo": "gwilymtv/alttp-ap-poptracker-pack",
+     "release": "current files",
+     "asset": "zipball",
+     "sha256": "3e07668b177490249600d904cc1aae2d031fff180d0522791da295b15aff84c3",
+     "fit": 96,
+     "checks": "295 of 307",
+     "size": 67585153
+    },
+    {
      "repo": "StripesOO7/alttp-ap-poptracker-pack",
      "release": "v0.5.1",
      "asset": "alttp-ap-tracker-v0.5.1.zip",
      "sha256": "0fec704050d51db22703576e821b82f26bc162d3b3f942db38048f037c3eca66",
      "fit": 87,
-     "checks": "316 of 364",
+     "checks": "316 of 363",
      "size": 30932425
-    },
-    {
-     "repo": "gwilymtv/alttp-ap-poptracker-pack",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "3e07668b177490249600d904cc1aae2d031fff180d0522791da295b15aff84c3",
-     "fit": 87,
-     "checks": "295 of 339",
-     "size": 67585153
     },
     {
      "repo": "StripesOO7/alttp-ap-poptracker-pack",
@@ -120,7 +120,7 @@
      "asset": "alttp-ap-tracker-v0.5.2-beta-10.zip",
      "sha256": "0fda693c42043693aa86d7ba508203ca558eab563322cad82aafdf8517321246",
      "fit": 13,
-     "checks": "321 of 2390",
+     "checks": "321 of 2389",
      "notes": [
       "other_version"
      ],
@@ -132,7 +132,7 @@
      "asset": "zipball",
      "sha256": "fae889ae481daa69687543bba899ce99bc2cf237e7b920974e1621b8b5ed4c0b",
      "fit": 10,
-     "checks": "321 of 3141",
+     "checks": "321 of 3140",
      "notes": [
       "other_version"
      ],
@@ -213,27 +213,6 @@
      "fit": 100,
      "checks": "24 of 24",
      "size": 48168
-    },
-    {
-     "repo": "EverydaySimpleDev/EmoTrackerPacks",
-     "release": "1.0.5",
-     "asset": "crpia_randomizer_everydaysimpledev.zip",
-     "sha256": "aa01c6f8eb45ff262f7f3232f79c0590ac4e4b578dd7458dc63aeaaa2bc79c3e",
-     "size": 15850790
-    },
-    {
-     "repo": "OmegaZeron/Star-Fox-Adventures-AP-PopTracker-Pack",
-     "release": "0.1.2",
-     "asset": "sfa_ap.zip",
-     "sha256": "a15133dc831d3acd5c106d6b4389e8bae024fae783e62b80f4d01b7f3f7a60f7",
-     "size": 2892062
-    },
-    {
-     "repo": "MichelFenouil/Star-Fox-Adventures-AP-PopTracker-Pack",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "3681a745994a97d29b26c812353518417403c2ffcd8315f127e30dee7828c718",
-     "size": 4433327
     }
    ]
   },
@@ -296,6 +275,7 @@
      "sha256": "5375cbb1c8a93a893eeff93faebfd1c630fced7c008a64616b222b97bff2f4bd",
      "fit": 100,
      "checks": "166 of 166",
+     "apworld_version": "1.5.0-beta",
      "size": 127265
     }
    ]
@@ -378,39 +358,33 @@
    "loads_with": "0.6.7",
    "packs": [
     {
-     "repo": "PixieCatSupreme/anodyne-ap-tracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "a134a236d1e199ca79359454f0386a9810e355b62f31a8a04d271c665b7f9f0e",
-     "fit": 14,
-     "checks": "416 of 2966",
-     "notes": [
-      "other_version"
-     ],
-     "size": 6506279
-    },
-    {
      "repo": "mayor-wren/anodyne-ap-tracker",
      "release": "current files",
      "asset": "zipball",
      "sha256": "6670ca5e96a7828a0c2150520380e731e103fa5d81603365b5cf2d4aaf7b292b",
-     "fit": 14,
-     "checks": "416 of 2953",
-     "notes": [
-      "other_version"
-     ],
+     "fit": 76,
+     "checks": "416 of 549",
+     "apworld_version": "0.6.3",
      "size": 6500410
+    },
+    {
+     "repo": "PixieCatSupreme/anodyne-ap-tracker",
+     "release": "current files",
+     "asset": "zipball",
+     "sha256": "a134a236d1e199ca79359454f0386a9810e355b62f31a8a04d271c665b7f9f0e",
+     "fit": 74,
+     "checks": "416 of 562",
+     "apworld_version": "0.6.3",
+     "size": 6506279
     },
     {
      "repo": "palex00/anodyne-ap-tracker",
      "release": "current files",
      "asset": "zipball",
      "sha256": "7a6d0c002fd35797ef27733931915583defa936f62a972f03903e556758a998d",
-     "fit": 14,
-     "checks": "416 of 2966",
-     "notes": [
-      "other_version"
-     ],
+     "fit": 74,
+     "checks": "416 of 562",
+     "apworld_version": "0.6.3",
      "size": 6503293
     },
     {
@@ -418,11 +392,12 @@
      "release": "current files",
      "asset": "zipball",
      "sha256": "b0b9c7a6006e23085f267371b28da95615304bc21e6e0568cb726c9b604a6303",
-     "fit": 5,
-     "checks": "136 of 2635",
+     "fit": 59,
+     "checks": "136 of 231",
      "notes": [
       "other_version"
      ],
+     "apworld_version": "0.6.3",
      "size": 32846707
     },
     {
@@ -430,11 +405,12 @@
      "release": "current files",
      "asset": "zipball",
      "sha256": "7a8f73fac2fc2ce3e3192fc4e089588cf945f1ecd2e5f5ae254bafc5eb8f897e",
-     "fit": 5,
-     "checks": "136 of 2635",
+     "fit": 59,
+     "checks": "136 of 231",
      "notes": [
       "other_version"
      ],
+     "apworld_version": "0.6.3",
      "size": 32846003
     }
    ]
@@ -666,15 +642,6 @@
      "sha256": "5356fcd0a488a1f044a54bc83b199280fa7d55af76193b82e48097a037ae8c73",
      "size": 17947
     }
-   ],
-   "packs": [
-    {
-     "repo": "palex00/crystal-ap-tracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "4e6d6757fe16632d9dc35be1c6aaf1612a602fa99112eb0271e5a770f76bcf8e",
-     "size": 13964743
-    }
    ]
   },
   {
@@ -782,30 +749,7 @@
      "sha256": "52347d734459e6ba79797bf94d6911d9c28977f5b0a0d0e1d4e77d4e7a66cf32"
     }
    ],
-   "loads_with": "0.6.7",
-   "packs": [
-    {
-     "repo": "Ouro-dev/astalon-poptracker",
-     "release": "v0.2.1",
-     "asset": "astalon-poptracker.zip",
-     "sha256": "5886b1cdfd1b0d188efd8863cd3ed1624979bd747209475b0eb0de6d5d97b78b",
-     "size": 290563
-    },
-    {
-     "repo": "drtchops/astalon-poptracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "0edaf87e21df1944280fbe4e0ffcc0974b3d81bdb684c30f5e3e7cf83b5ddc53",
-     "size": 295392
-    },
-    {
-     "repo": "graygooglitch/astalon-poptracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "b420082d4b96f4d7469574f853609c24c8d5baae6680e99625094b48edfe0a85",
-     "size": 296402
-    }
-   ]
+   "loads_with": "0.6.7"
   },
   {
    "game": "Autopelago",
@@ -930,6 +874,7 @@
      "sha256": "1401d19c956a4f754c5c127d69fd998d3ec1bd473d1c8f41dd25e11521f957f2",
      "fit": 100,
      "checks": "969 of 969",
+     "apworld_version": "0.1.9",
      "size": 10844553
     }
    ]
@@ -962,6 +907,7 @@
      "sha256": "18908c23cacf330cd8fab45b15a4a29b4381026ce92ef142bd63dae5171a204a",
      "fit": 100,
      "checks": "939 of 941",
+     "apworld_version": "4.13.1",
      "size": 22631975
     },
     {
@@ -971,6 +917,7 @@
      "sha256": "d0ee619f792c6e563d8afa9be06c84f70578baa4d2f65d63d947637c4d70803a",
      "fit": 100,
      "checks": "3281 of 3292",
+     "apworld_version": "4.13.1",
      "size": 28669801
     },
     {
@@ -980,6 +927,7 @@
      "sha256": "1550366266b3859a3ce4dc58f8aa7dc5acf76d0596f092aa80506db769e5a9a7",
      "fit": 100,
      "checks": "3281 of 3292",
+     "apworld_version": "4.13.1",
      "size": 28668927
     },
     {
@@ -989,6 +937,7 @@
      "sha256": "c32d00084e10ec3d151cf5398c27531648baeaa6505f66047b0e3a0ce095cf33",
      "fit": 78,
      "checks": "4285 of 5505",
+     "apworld_version": "4.13.1",
      "size": 28713365
     },
     {
@@ -998,6 +947,7 @@
      "sha256": "67edfb72fc459df8de43000fadf940141a3921fa76d0f2075cacc644fa8b07d3",
      "fit": 78,
      "checks": "4285 of 5505",
+     "apworld_version": "4.13.1",
      "size": 28713158
     }
    ]
@@ -1190,13 +1140,6 @@
    ],
    "packs": [
     {
-     "repo": "Pikachu979/Bomberman-64-The-Second-Attack-Poptracker",
-     "release": "V0.0.2",
-     "asset": "bomberman_tsav0_0_2.zip",
-     "sha256": "aec3984d3405e2f56616448460581cc263f619c8ff0dcdde8fa3dcaa8176382c",
-     "size": 714210
-    },
-    {
      "repo": "RunInAWeek/Bomberman-64-AP-Tracker",
      "release": "v0.5.0.1",
      "asset": "Bomberman64_0.5.0.1.zip",
@@ -1302,6 +1245,7 @@
      "notes": [
       "no_pictures"
      ],
+     "apworld_version": "0.16.0",
      "size": 100972
     }
    ]
@@ -1382,6 +1326,8 @@
      "release": "1.0",
      "asset": "castlevaniaCotM_maptracker_sassyvania.zip",
      "sha256": "866756d6d84ed3fdda762c33f399a473267020430c667228f614acaae32d3890",
+     "fit": 97,
+     "checks": "122 of 126",
      "size": 237989
     }
    ]
@@ -1449,6 +1395,7 @@
      "sha256": "3447796b6a596f3067c43970dc1b5170f76036baff544b786d16c8268cd537f1",
      "fit": 80,
      "checks": "101 of 126",
+     "apworld_version": "0.3.0-alpha",
      "size": 9036090
     },
     {
@@ -1458,6 +1405,7 @@
      "sha256": "f8c2498c59f0456646d94f9e2d9f4c36c55d311fd96a4626a180ff59045c0c66",
      "fit": 80,
      "checks": "101 of 126",
+     "apworld_version": "0.3.0-alpha",
      "size": 4492065
     },
     {
@@ -1470,6 +1418,7 @@
      "notes": [
       "other_version"
      ],
+     "apworld_version": "0.3.0-alpha",
      "size": 2139271
     }
    ]
@@ -1621,13 +1570,6 @@
      "sha256": "160c6a6d14c2ce02dab21efa21db9f4039bf66ed983b9d48498530fd5efaf681",
      "named_game": "Celeste",
      "size": 16134857
-    },
-    {
-     "repo": "Awsomekeldeo/Celeste-Open-World-AP-Tracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "ba64bfb261647b0d20bf5fe0d584d9a4e27b6674fde8ed98180e6a8080d0efa0",
-     "size": 889361
     }
    ]
   },
@@ -1659,6 +1601,7 @@
      "sha256": "4ab00248bb4b3f8cae539d04dfb6d50542db79959ddc368fa2c2fedc5fb1d825",
      "fit": 100,
      "checks": "86 of 86",
+     "apworld_version": "0.3.2",
      "size": 531865
     }
    ]
@@ -1800,7 +1743,7 @@
      "asset": "CivVI-poptracker-pack.zip",
      "sha256": "51dfd870e52869e2859936449fb9399571dc141303731d926dfc37da89f4c094",
      "fit": 72,
-     "checks": "277 of 385",
+     "checks": "277 of 384",
      "size": 20497398
     }
    ]
@@ -1911,6 +1854,7 @@
      "sha256": "49fe87a6fa505fd0a663f6fa28b88fe909ab47c90fe23c8fd24d52ae62f5bdaa",
      "fit": 82,
      "checks": "2277 of 2785",
+     "apworld_version": "0.10.0-pre.4",
      "size": 9903142
     },
     {
@@ -1920,6 +1864,7 @@
      "sha256": "bffbd069eaed27748373f7ef033b9ff90f55632d2d41158b08cafc39523299da",
      "fit": 82,
      "checks": "2273 of 2781",
+     "apworld_version": "0.10.0-pre.4",
      "size": 29633089
     },
     {
@@ -1929,6 +1874,7 @@
      "sha256": "dc8cea8b81022d5e5aede46540faa099bdd14ca67868e3b638c34fbb24a613c0",
      "fit": 82,
      "checks": "2277 of 2785",
+     "apworld_version": "0.10.0-pre.4",
      "size": 9904288
     },
     {
@@ -1938,6 +1884,7 @@
      "sha256": "e529152d642747a99761dd085e194c96711438d484e6080057a5b7aed46fbd3a",
      "fit": 82,
      "checks": "2284 of 2785",
+     "apworld_version": "0.10.0-pre.4",
      "size": 9908141
     },
     {
@@ -1945,11 +1892,12 @@
      "release": "current files",
      "asset": "zipball",
      "sha256": "4c9148e7e7232e92d694398dc4bea649616321275d8338a3073aaa480ea23f17",
-     "fit": 0,
-     "checks": "2 of 813",
+     "fit": 1,
+     "checks": "5 of 813",
      "notes": [
       "other_version"
      ],
+     "apworld_version": "0.10.0-pre.4",
      "size": 4145944
     }
    ]
@@ -2037,14 +1985,8 @@
      "sha256": "166e6a3223f3f04bbae19d2c15ba49b3f1cc827220063983637c1b608f784ca1",
      "fit": 74,
      "checks": "217 of 292",
+     "apworld_version": "alpha03l",
      "size": 8810144
-    },
-    {
-     "repo": "KeiperDontCare/Cuphead-AP-Poptracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "3d4f7ec7fbb95fc53a57bdae0694a3fd6f50e1c83c32ef148933f8c32785424f",
-     "size": 888713
     }
    ]
   },
@@ -2072,16 +2014,7 @@
      "sha256": "20c11777398fbe3abf437e3f64aed35b408aab7962b2405bece2ce45602436ac"
     }
    ],
-   "loads_with": "0.6.7",
-   "packs": [
-    {
-     "repo": "cloudofdarkhole6/DC1-poptracker",
-     "release": "0.1.2",
-     "asset": "DC1-poptracker_0.1.2.zip",
-     "sha256": "608753761b1180c14b4329f5232709c2d803de4206e22b23ab4fe9e071766fdf",
-     "size": 224352
-    }
-   ]
+   "loads_with": "0.6.7"
   },
   {
    "game": "Dark Souls II",
@@ -2111,6 +2044,7 @@
      "sha256": "36b41bbd0c5702c3d820d2fe3237ff1792bb0a1474ef7823c594481587c3247c",
      "fit": 99,
      "checks": "3007 of 3036",
+     "apworld_version": "0.6.0-alpha.2",
      "size": 15655923
     },
     {
@@ -2120,6 +2054,7 @@
      "sha256": "04efea73789547007d4b8dfa7a987fa3e97dfdab007ad1423629c8f235e6f6e2",
      "fit": 99,
      "checks": "3007 of 3036",
+     "apworld_version": "0.6.0-alpha.2",
      "size": 15717750
     },
     {
@@ -2129,6 +2064,7 @@
      "sha256": "0f0c1f0a980b00dad2c9fefc0d1ec93f19f378dc92aa3898089d51a34a60edc6",
      "fit": 99,
      "checks": "3007 of 3036",
+     "apworld_version": "0.6.0-alpha.2",
      "size": 15665547
     },
     {
@@ -2138,6 +2074,7 @@
      "sha256": "691eb87605b03a5c03188101b9c74fdb22487d0b37d1fbba87c7ff95e194d33f",
      "fit": 99,
      "checks": "3007 of 3036",
+     "apworld_version": "0.6.0-alpha.2",
      "size": 15668475
     },
     {
@@ -2147,6 +2084,7 @@
      "sha256": "bea93ce00ed52ad16f02ece65936dbd314329881fc86cf014ee8dc52d3b48bc0",
      "fit": 98,
      "checks": "2981 of 3036",
+     "apworld_version": "0.6.0-alpha.2",
      "size": 15659800
     },
     {
@@ -2156,6 +2094,7 @@
      "sha256": "16daaae0c3362f2423fa91d7a343ee53b56859b5ffd9a18c4f18755cc3dc3d0b",
      "fit": 98,
      "checks": "2981 of 3036",
+     "apworld_version": "0.6.0-alpha.2",
      "size": 15663870
     }
    ]
@@ -2236,6 +2175,7 @@
      "sha256": "ddadd2332b31c496990c51ff96a1b83fc30eaee8bc9e0b6fbfe0576faea38c05",
      "fit": 72,
      "checks": "1172 of 1632",
+     "apworld_version": "0.1.1.0",
      "size": 27001657
     }
    ]
@@ -2332,6 +2272,7 @@
      "sha256": "1d0dbc286c06cff4655afede9f97145c27b96c945791fb29e5744b4bff8bacd6",
      "fit": 79,
      "checks": "194 of 246",
+     "apworld_version": "0.3.0",
      "size": 21484835
     }
    ]
@@ -2379,14 +2320,8 @@
      "sha256": "3e0d9f0618d2bb399bc9ed236f595fcbac73d69ad5b5d1ee39e16ffb2835256c",
      "fit": 100,
      "checks": "2667 of 2672",
+     "apworld_version": "1.1.4",
      "size": 20977091
-    },
-    {
-     "repo": "theUofCWildcat/DKR-Poptracker",
-     "release": "1.0.1",
-     "asset": "DKR_AP_Pack.zip",
-     "sha256": "0003227e8c95a22c202931ee24a2b8cf1ab1563a003bbb48d214377699a5208d",
-     "size": 485179
     }
    ]
   },
@@ -2432,22 +2367,6 @@
      "version": "1.2.3",
      "url": "https://github.com/TheLX5/Archipelago/releases/download/dkc-v1.2.3/dkc.apworld",
      "sha256": "8ace167f8818f4a986218b6419bad1e835193d94c632ef7e30690b84f7f13968"
-    }
-   ],
-   "packs": [
-    {
-     "repo": "MagicMason1000/DKCR-AP-PopTracker-Package",
-     "release": "v0.3.2",
-     "asset": "dkcr_ap_tracker_v0.3.2.zip",
-     "sha256": "8dbbefede86d94752a78233f4bf9a898cdbec63f76949da37b51a7b59a36bdb5",
-     "size": 30323896
-    },
-    {
-     "repo": "jhobz/dkctf-ap-tracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "88b3477da7fcb7db26bc9e00042d0ee18c9cbde5595b76009e52ce04d045fa51",
-     "size": 8530641
     }
    ]
   },
@@ -2633,13 +2552,6 @@
      "fit": 100,
      "checks": "958 of 958",
      "size": 2169140
-    },
-    {
-     "repo": "subenji/doom2_poptracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "bada8148313ae0585974226a07366fa499646b20a39d4e72b96abc61e206f517",
-     "size": 1316376
     }
    ]
   },
@@ -2717,6 +2629,7 @@
      "sha256": "75355343c10fe392a5f9b2e745ea3cf53147699986ca356b84a5dc70591acd44",
      "fit": 100,
      "checks": "1608 of 1608",
+     "apworld_version": "0.0.8",
      "size": 1520952
     }
    ]
@@ -2828,17 +2741,7 @@
      "sha256": "5bec1178120e695ea7f6f35596c049aa9b949d89a95d83233c636be4b605fd52"
     }
    ],
-   "loads_with": "0.6.7",
-   "packs": [
-    {
-     "repo": "CTConqueror/FF1PR-AP-MapTracker",
-     "release": "0.1.5",
-     "asset": "FF1PR-AP-MapTracker-0.1.5.zip",
-     "sha256": "03aabc5ab25293fc067012986a722f0864778a1922f2592d2eb0e370891d2fc4",
-     "named_game": "Final Fantasy",
-     "size": 2103476
-    }
-   ]
+   "loads_with": "0.6.7"
   },
   {
    "game": "Final Fantasy",
@@ -2857,38 +2760,6 @@
      "fit": 99,
      "checks": "379 of 381",
      "size": 5348617
-    },
-    {
-     "repo": "seto10987/FFV-Career-Day-AP",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "dd91a3d74b492f3e238e9ba55a309d2d667b01788a8cfdcb7e7d3d9bba83557a",
-     "size": 49800261
-    },
-    {
-     "repo": "CTConqueror/FF1PR-AP-MapTracker",
-     "release": "0.1.5",
-     "asset": "FF1PR-AP-MapTracker-0.1.5.zip",
-     "sha256": "03aabc5ab25293fc067012986a722f0864778a1922f2592d2eb0e370891d2fc4",
-     "notes": [
-      "other_game"
-     ],
-     "for_game": "FF1 Pixel Remaster",
-     "size": 2103476
-    },
-    {
-     "repo": "CaptStack/ffxii-poptracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "ccab78c86d3b29745a6a16e523a10679f73ab7502ed328308d3138e9e0280fca",
-     "size": 186043415
-    },
-    {
-     "repo": "Sonicshadowsilver2/ffxii-poptracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "ef0b5a08576ab7a10d562850b9d915393b460c1b13f90bdf974c4dba7b120431",
-     "size": 185530480
     }
    ]
   },
@@ -2923,7 +2794,7 @@
      "asset": "ffmq-ap.zip",
      "sha256": "7eaa9527ae379ab27830d9d50a31d6d3d61baa9f22be37aeed8f498179686ddd",
      "fit": 100,
-     "checks": "406 of 407",
+     "checks": "407 of 407",
      "size": 1179472
     }
    ]
@@ -3108,16 +2979,7 @@
      "size": 28021
     }
    ],
-   "loads_with": "0.6.7",
-   "packs": [
-    {
-     "repo": "Rooby-Roo/Frogmonster_Tracker",
-     "release": "v0.0.1",
-     "asset": "Frogmonster.zip",
-     "sha256": "54496f1b60ae68c9f21694e866cf529700947fca125bda1af372a11e0e9e9aad",
-     "size": 568631
-    }
-   ]
+   "loads_with": "0.6.7"
   },
   {
    "game": "Garfield Kart - Furious Racing",
@@ -3225,16 +3087,7 @@
      "sha256": "5a8fd8b2078c809a2beda41218e74c7c56f11693a00555c71230263ea23c892b"
     }
    ],
-   "loads_with": "0.6.7",
-   "packs": [
-    {
-     "repo": "Kryen112/gauntlet_legends_n64_ap_tracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "d8dc980cb89cc79bce38b866f0d8308f0b28607d396e25da1c4654f1ce067137",
-     "size": 4114379
-    }
-   ]
+   "loads_with": "0.6.7"
   },
   {
    "game": "Glover",
@@ -3368,6 +3221,7 @@
      "sha256": "66755ce37c4caefa79c4e3d19496a2d0a07e59dd4251e574e6d2d459007fc5b1",
      "fit": 100,
      "checks": "1572 of 1572",
+     "apworld_version": "0.4.1",
      "size": 119960749
     }
    ]
@@ -3400,6 +3254,7 @@
      "sha256": "1267876c4033c911ca2d2b2a77a07429c69bbe67a5104a0e2fc7f617831c0031",
      "fit": 99,
      "checks": "1126 of 1133",
+     "apworld_version": "0.16.3",
      "size": 39740943
     },
     {
@@ -3409,6 +3264,7 @@
      "sha256": "4e31ab7a75546f5786d5e011c4650a508f399d012637f5c6e31c8fa5fd4af3ef",
      "fit": 0,
      "checks": "1 of 2147",
+     "apworld_version": "0.16.3",
      "size": 4949991
     }
    ]
@@ -3624,16 +3480,7 @@
      "sha256": "bbb2870da51373933590f037d731189401e422e919b8163980410331bca5fd96"
     }
    ],
-   "loads_with": "0.6.7",
-   "packs": [
-    {
-     "repo": "tustin2121/hifi-rush-poptracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "dbfd6c4af0385561e28a739471fecc2b012deaaed73a28752aec806b03010655",
-     "size": 523361281
-    }
-   ]
+   "loads_with": "0.6.7"
   },
   {
    "game": "HITMAN World of Assassination",
@@ -3652,15 +3499,6 @@
      "version": "0.7.2",
      "url": "https://github.com/BenDipp/Archipelago/releases/download/0.7.2/hitman_woa.apworld",
      "sha256": "f8748f20f4d730996d7919a2beaf22abf25c0c2bfd2e1ae0d4fa2d8c6c87f694"
-    }
-   ],
-   "packs": [
-    {
-     "repo": "BenDipp/HitmanPopTracker",
-     "release": "v0.4.0",
-     "asset": "HitmanPopTracker_0.4.0.zip",
-     "sha256": "75ee17985369ca990905be1042038b9ee24e22a92617dc0755fb758f0dd0b403",
-     "size": 13697489
     }
    ]
   },
@@ -3739,6 +3577,7 @@
      "sha256": "d308359335a2b81728721db4d61cf96b0384fe92f624bc1765938ca21c79271a",
      "fit": 100,
      "checks": "172 of 172",
+     "apworld_version": "0.3.0-alpha",
      "size": 12386469
     }
    ]
@@ -3820,13 +3659,6 @@
      "fit": 100,
      "checks": "100 of 100",
      "size": 2147497
-    },
-    {
-     "repo": "jugarrit/Inscryption_Poptracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "1ab73a35dd97799025c81115b84356f24c08ae28827893c14f9c26ecbb0571d5",
-     "size": 2515523
     }
    ]
   },
@@ -3902,15 +3734,6 @@
      "url": "https://github.com/Extra-2-Dew/ArchipelagoRandomizer/releases/download/0.3.0/ittle_dew_2.apworld",
      "sha256": "33e427e512a7548665b9b1a2bbfc9dde6d9f104a53d9d757179c2eac877b7df0",
      "size": 131715
-    }
-   ],
-   "packs": [
-    {
-     "repo": "arborelia/ittledew2-poptracker",
-     "release": "v3.1",
-     "asset": "ArchipelagoRandomizer.zip",
-     "sha256": "b471529575570bb8b2657254b2bc505c9d9d92774b35709e773b4640d88d1849",
-     "size": 4154009
     }
    ]
   },
@@ -4088,37 +3911,7 @@
    "home": null,
    "repo": null,
    "versions": [],
-   "official": true,
-   "packs": [
-    {
-     "repo": "culk/Kingdom-Hearts-FM-AP-Tracker",
-     "release": "v1.5.1",
-     "asset": "kh1_ap_tracker.zip",
-     "sha256": "20dd46849e34cfa8a948a223042cf37dce199e94cf7fe77167de2d7f26b16a20",
-     "size": 22645864
-    },
-    {
-     "repo": "AlexandraIsabel/Kingdom-Hearts-FM-AP-Tracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "6c9afc54668ed60a59b191ecb94efa0a87487e52884c32be5bf27376c5225d3b",
-     "size": 22338149
-    },
-    {
-     "repo": "WVision01/ap-khbbs-poptracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "22029acbec0e66d5fc88f56e8efc6f4a0ca07767af0db7db7877b3a0db007f98",
-     "size": 885042
-    },
-    {
-     "repo": "gaithernOrg/Kingdom-Hearts-FM-AP-Tracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "78ced458d2522e3f61125e08f788d3ec87505d79117dcbb89817b93cdfec7131",
-     "size": 22328462
-    }
-   ]
+   "official": true
   },
   {
    "game": "Kingdom Hearts 2",
@@ -4135,7 +3928,7 @@
      "asset": "zipball",
      "sha256": "ec6842194904056ae4d5e851ca9e3a10a32330d9a567b1001a9680d6a0bc2698",
      "fit": 100,
-     "checks": "1962 of 1968",
+     "checks": "1962 of 1963",
      "size": 2265710
     },
     {
@@ -4153,7 +3946,7 @@
      "asset": "zipball",
      "sha256": "1ef5ac32f173589c4d509fcded03baa07dad2c4c9f86e3e2399b7a00d8a54028",
      "fit": 100,
-     "checks": "1962 of 1968",
+     "checks": "1962 of 1963",
      "size": 2265677
     },
     {
@@ -4162,7 +3955,7 @@
      "asset": "zipball",
      "sha256": "7c21f420bde42bd923cc6b7616566e414ab44565d5a054d3b8430dff3f1f4a58",
      "fit": 100,
-     "checks": "1962 of 1968",
+     "checks": "1962 of 1963",
      "size": 2344087
     },
     {
@@ -4213,6 +4006,7 @@
      "sha256": "7719a610658b2369dc1e6ddf73d4bedc5905f417515dd487bae0a75af14a6368",
      "fit": 100,
      "checks": "1282 of 1282",
+     "apworld_version": "0.2.0",
      "size": 4377189
     }
    ]
@@ -4276,23 +4070,7 @@
      "size": 30995
     }
    ],
-   "loads_with": "0.6.7",
-   "packs": [
-    {
-     "repo": "jhobz/khddd-ap-tracker",
-     "release": "v0.2.2",
-     "asset": "khddd-ap-tracker.zip",
-     "sha256": "a3ac13d85cb6e981f1c17f7b1e4f69798d0152780010d7aeb3bf5014acc7edf5",
-     "size": 5872554
-    },
-    {
-     "repo": "lallaria/khddd-ap-poptracker",
-     "release": "v0.3.3",
-     "asset": "khddd-ap-tracker.zip",
-     "sha256": "9d587a0b66cc06a4d5de2e77eb5662e14856706eeb55bb96a21a781ae876bc82",
-     "size": 7444956
-    }
-   ]
+   "loads_with": "0.6.7"
   },
   {
    "game": "Kingdom Hearts RE Chain of Memories",
@@ -4322,6 +4100,7 @@
      "sha256": "b8ed508833cb3ee92c20933e9136a6cff00b5c583ff985739675fc7fa5cef8b0",
      "fit": 99,
      "checks": "1657 of 1668",
+     "apworld_version": "1.4.3",
      "size": 9337418
     }
    ]
@@ -4353,15 +4132,6 @@
      "url": "https://github.com/Silvris/Archipelago/releases/download/k64_0.3.2/k64.apworld",
      "sha256": "8883369770056a232db0a6a9ba6802841fe7c463d3aff2a192c2751d14157e35"
     }
-   ],
-   "packs": [
-    {
-     "repo": "routhken/Kirby64_aptracker",
-     "release": "v1.0.4",
-     "asset": "Kirby64_aptracker.zip",
-     "sha256": "b5725f5355d4f6edfcf06dce8ad7bf8ab490d625047bc8d9817d0577a159271d",
-     "size": 1145069
-    }
    ]
   },
   {
@@ -4392,6 +4162,7 @@
      "sha256": "59b8fdd49e8548b70370e3037e11764bb295a38fb9a8a0ce8b0730f0df890cef",
      "fit": 94,
      "checks": "1543 of 1633",
+     "apworld_version": "1.2.1-TEST",
      "size": 6425032
     }
    ]
@@ -4535,6 +4306,7 @@
      "sha256": "6d478f46928603711c8a65464e9aa001e02458e52eff4d6267ee31802ef15426",
      "fit": 100,
      "checks": "1489 of 1490",
+     "apworld_version": "1.4.4",
      "size": 3436850
     }
    ]
@@ -4614,23 +4386,7 @@
      "size": 68868
     }
    ],
-   "loads_with": "0.6.7",
-   "packs": [
-    {
-     "repo": "CaFlavien/Lies-of-P-Poptracker",
-     "release": "v0.1.10",
-     "asset": "Lies-of-P-Poptracker-v0.1.10.zip",
-     "sha256": "9f05106eb2da5d7ae22e7d507c175ddf3e3084c53d643a688c0cd9f677e30648",
-     "size": 56009099
-    },
-    {
-     "repo": "Nirxis/Lies-of-P-Poptracker",
-     "release": "v0.1.10",
-     "asset": "Lies-of-P-Poptracker-v0.1.10.zip",
-     "sha256": "17e47f3531a9169f87524568d314b8b1f0e9bdfca2948b6d13d204f4eee71c11",
-     "size": 55167410
-    }
-   ]
+   "loads_with": "0.6.7"
   },
   {
    "game": "Lightning Returns: Final Fantasy XIII",
@@ -4693,16 +4449,7 @@
    "home": null,
    "repo": null,
    "versions": [],
-   "official": true,
-   "packs": [
-    {
-     "repo": "Ishigh1/LADX_AP_Poptracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "c7813ed62939d971baa5c9129ffc0df41875cf55de09073a2e4c972fc6c753e9",
-     "size": 5183670
-    }
-   ]
+   "official": true
   },
   {
    "game": "Links Awakening DX Beta",
@@ -4932,6 +4679,7 @@
      "sha256": "39b0ea20264af52b11c7b22faf92b889f4eed0fa6d8a7a27bcdede85a5280b10",
      "fit": 75,
      "checks": "1526 of 2045",
+     "apworld_version": "1.1.2",
      "size": 14577932
     }
    ]
@@ -6191,6 +5939,7 @@
      "sha256": "7fd8e6b9d024f84bb983f21a0bca7f132e236781fcd042eae35ddb9838ddfcc3",
      "fit": 99,
      "checks": "1684 of 1699",
+     "apworld_version": "2.4.1",
      "size": 21090145
     }
    ]
@@ -6289,6 +6038,7 @@
      "sha256": "ecd4c9db282811aaa41f53d03f514a7f482e0b00b0d7b24919c288f3ed68ba42",
      "fit": 100,
      "checks": "1429 of 1430",
+     "apworld_version": "0.2.2",
      "size": 14763321
     }
    ]
@@ -7013,6 +6763,8 @@
      "release": "current files",
      "asset": "zipball",
      "sha256": "4088dd2431f4ff1149e6ca6a64e8d1a3605b21723ff2e9b896480da306b1e3fb",
+     "fit": 100,
+     "checks": "1096 of 1096",
      "size": 11743372
     },
     {
@@ -7020,6 +6772,8 @@
      "release": "current files",
      "asset": "zipball",
      "sha256": "81a40ebd5d9fa728d25080e6c10426f68f94ebd6021303af43ac08c707434fab",
+     "fit": 100,
+     "checks": "1096 of 1096",
      "size": 11745687
     },
     {
@@ -7027,6 +6781,8 @@
      "release": "current files",
      "asset": "zipball",
      "sha256": "6b1d36b497607544ee377b7b1d845611fb477f005ad8c8dc17e14e4ecff26766",
+     "fit": 100,
+     "checks": "1020 of 1021",
      "size": 14953585
     },
     {
@@ -7034,6 +6790,8 @@
      "release": "current files",
      "asset": "zipball",
      "sha256": "a5ed0dfc8e7ac3d6f526e3d928d8867711967b441050f33dd55ff9c4c8b0bff6",
+     "fit": 100,
+     "checks": "1038 of 1038",
      "size": 8870887
     },
     {
@@ -7041,6 +6799,8 @@
      "release": "current files",
      "asset": "zipball",
      "sha256": "1d718c44cd36c6a944b31fa59ba95d5a170ec018c551fc5d784c083befac80dd",
+     "fit": 100,
+     "checks": "1096 of 1096",
      "size": 11745710
     }
    ]
@@ -7109,6 +6869,21 @@
      "sha256": "c4a4ef57367109bd0ef96a053ce966aef0123953eefa4bedf632f2aa7c989772",
      "size": 158198
     }
+   ],
+   "packs": [
+    {
+     "repo": "Razerock/double-dash-ap-tracker",
+     "release": "current files",
+     "asset": "zipball",
+     "sha256": "10cf2041ea11987a14b0f412a65162342871ee49c76264914f169bfb2d6b79d1",
+     "fit": 22,
+     "checks": "252 of 1164",
+     "notes": [
+      "other_version"
+     ],
+     "apworld_version": "0.3.2",
+     "size": 3514417
+    }
    ]
   },
   {
@@ -7140,7 +6915,19 @@
      "sha256": "2f32f48bd6bb42913b2e9d1f23cf7fd7daff3813c0ac39ee7fa9cc7cac7780bc"
     }
    ],
-   "loads_with": "0.6.7"
+   "loads_with": "0.6.7",
+   "packs": [
+    {
+     "repo": "MarioManTAW/MarioSuperSluggersAPTracker",
+     "release": "v0.3.0",
+     "asset": "mss_tracker_0.3.0.zip",
+     "sha256": "358cfd8e680abc09420e7c497d4b6f52f3b8ff78ef8bc5fef1bbe7dbd2736f2f",
+     "fit": 98,
+     "checks": "216 of 221",
+     "apworld_version": "1.0.0",
+     "size": 3055220
+    }
+   ]
   },
   {
    "game": "Mega Man",
@@ -7153,22 +6940,6 @@
      "version": "0.1.1",
      "url": "https://github.com/Silvris/Archipelago/releases/download/mm1_0.1.1/mm1.apworld",
      "sha256": "e2f48109530fadbfd3ef6fe3463df7d63f215f83358bf9a63788e27c31f2dcdf"
-    }
-   ],
-   "packs": [
-    {
-     "repo": "BrianCumminger/megamanx-ap-poptracker",
-     "release": "v1.0.4",
-     "asset": "megamanx-ap-poptracker.zip",
-     "sha256": "fd97eedba3d9d53c804c237639c24de49c51a3c2b8ca78a14680eb207f0e15b2",
-     "size": 2054388
-    },
-    {
-     "repo": "Colbydude/MegaManLegends-AP-Tracker",
-     "release": "v0.3.0.1",
-     "asset": "MML-AP-v0.3.0.1.zip",
-     "sha256": "aa455d802ab66c3cc1fb74c8a004706b96ced62e9bf40f50fe0e459ef044e332",
-     "size": 35714622
     }
    ]
   },
@@ -7198,20 +6969,6 @@
      "fit": 99,
      "checks": "142 of 144",
      "size": 951322
-    },
-    {
-     "repo": "BrianCumminger/megamanx2-ap-poptracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "6ca5a53565d7c999f6fdc8268de952f0d4dbc52db2090ab998e65e5e63c136a4",
-     "size": 2569233
-    },
-    {
-     "repo": "Michpem/megamanx2-ap-poptracker",
-     "release": "1.1.4",
-     "asset": "megamanx2-ap-poptracker.zip",
-     "sha256": "51ef1222aa813d175a9284fda7d0e9a2954434f9f08a1fa85e43d5f7aee14c14",
-     "size": 5324198
     }
    ]
   },
@@ -7250,27 +7007,6 @@
      "fit": 98,
      "checks": "337 of 345",
      "size": 4248737
-    },
-    {
-     "repo": "BrianCumminger/megamanx3-ap-poptracker",
-     "release": "v1.0.3",
-     "asset": "megamanx3-ap-poptracker.zip",
-     "sha256": "d407fdd78208e4c0c1576a0d4d70bc2aef5044148a8b6fb8aaa1faebfa00e486",
-     "size": 3003737
-    },
-    {
-     "repo": "Michpem/megamanx3-ap-poptracker",
-     "release": "1.0.5",
-     "asset": "megamanx3-ap-poptracker.zip",
-     "sha256": "7a1a58193d6584b4458304cf88ce1ae6604da10f75dc24fa811cf3dada422279",
-     "size": 6259866
-    },
-    {
-     "repo": "drothe/megamanx3-ap-poptracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "35aed27fee787de2a945267de73918c2f255f86f3e332181035f475dcece3a96",
-     "size": 3027211
     }
    ]
   },
@@ -7296,6 +7032,15 @@
      "url": "https://github.com/TheLX5/Archipelago/releases/download/mmx-v1.6.0-beta/mmx.apworld",
      "sha256": "cf76f45a6ef735ed529f9c1537b1d68ad16ff10975c7d2a43834562588258111"
     }
+   ],
+   "packs": [
+    {
+     "repo": "BrianCumminger/megamanx-ap-poptracker",
+     "release": "v1.0.4",
+     "asset": "megamanx-ap-poptracker.zip",
+     "sha256": "fd97eedba3d9d53c804c237639c24de49c51a3c2b8ca78a14680eb207f0e15b2",
+     "size": 2054388
+    }
    ]
   },
   {
@@ -7314,6 +7059,22 @@
      "version": "1.2.0",
      "url": "https://github.com/TheLX5/Archipelago/releases/download/mmx2-v1.2.0/mmx2.apworld",
      "sha256": null
+    }
+   ],
+   "packs": [
+    {
+     "repo": "BrianCumminger/megamanx2-ap-poptracker",
+     "release": "current files",
+     "asset": "zipball",
+     "sha256": "6ca5a53565d7c999f6fdc8268de952f0d4dbc52db2090ab998e65e5e63c136a4",
+     "size": 2569233
+    },
+    {
+     "repo": "Michpem/megamanx2-ap-poptracker",
+     "release": "1.1.4",
+     "asset": "megamanx2-ap-poptracker.zip",
+     "sha256": "51ef1222aa813d175a9284fda7d0e9a2954434f9f08a1fa85e43d5f7aee14c14",
+     "size": 5324198
     }
    ]
   },
@@ -7343,6 +7104,29 @@
      "version": "1.5.1",
      "url": "https://github.com/TheLX5/Archipelago/releases/download/mmx3-v1.5.1/mmx3.apworld",
      "sha256": null
+    }
+   ],
+   "packs": [
+    {
+     "repo": "BrianCumminger/megamanx3-ap-poptracker",
+     "release": "v1.0.3",
+     "asset": "megamanx3-ap-poptracker.zip",
+     "sha256": "d407fdd78208e4c0c1576a0d4d70bc2aef5044148a8b6fb8aaa1faebfa00e486",
+     "size": 3003737
+    },
+    {
+     "repo": "Michpem/megamanx3-ap-poptracker",
+     "release": "1.0.5",
+     "asset": "megamanx3-ap-poptracker.zip",
+     "sha256": "7a1a58193d6584b4458304cf88ce1ae6604da10f75dc24fa811cf3dada422279",
+     "size": 6259866
+    },
+    {
+     "repo": "drothe/megamanx3-ap-poptracker",
+     "release": "current files",
+     "asset": "zipball",
+     "sha256": "35aed27fee787de2a945267de73918c2f255f86f3e332181035f475dcece3a96",
+     "size": 3027211
     }
    ]
   },
@@ -7374,6 +7158,7 @@
      "sha256": "f452140390d5304913b050e617b99cfc11899c90ae5963d758e796757429cb43",
      "fit": 100,
      "checks": "172 of 172",
+     "apworld_version": "0.1.3",
      "size": 17398100
     }
    ]
@@ -7385,30 +7170,7 @@
    "home": null,
    "repo": null,
    "versions": [],
-   "official": true,
-   "packs": [
-    {
-     "repo": "MisterIbis/MMBN3_AP_Tracker",
-     "release": "0.3.0.0",
-     "asset": "MMBN3_AP_Tracker.zip",
-     "sha256": "baee5a72a10802be86ef65eccef6c460b0afda3c6a4de0b8409ba85d73820b12",
-     "size": 5699444
-    },
-    {
-     "repo": "Phantom5800/mmbn3-tracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "4cdcfbe33731c23d6edfa248f675dff2cb6b95c4b78ca1341b2ea46a124876de",
-     "size": 16119788
-    },
-    {
-     "repo": "XKirby/MMBN3_AP_Tracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "2d60ba35678135324d00f3858008e4e40bd3803231c4f95ef226c18323537b5d",
-     "size": 14441307
-    }
-   ]
+   "official": true
   },
   {
    "game": "Melatonin",
@@ -7445,16 +7207,7 @@
      "size": 89262
     }
    ],
-   "loads_with": "0.6.7",
-   "packs": [
-    {
-     "repo": "RopeyRed/MGS-Masala_Garden_Salad-Poptracker_Pack",
-     "release": "v1.0-Release",
-     "asset": "MGS-Masala_Garden_Salad-Poptracker_Pack_v1.0.zip",
-     "sha256": "7c0bbc85a6c54c42c42ce896fa78f4eead4911cefc030763f137abd95bc14b89",
-     "size": 7835385
-    }
-   ]
+   "loads_with": "0.6.7"
   },
   {
    "game": "MetroCUBEvania",
@@ -7534,6 +7287,7 @@
      "sha256": "7a855ff67be27c8be1e543e03dac3edd80b1b9415b1e15b013ea65cf7004583c",
      "fit": 100,
      "checks": "202 of 202",
+     "apworld_version": "0.5.3",
      "size": 519202
     }
    ]
@@ -7682,8 +7436,9 @@
      "release": "v1.7.7",
      "asset": "Momodora.MF.Tracker.zip",
      "sha256": "10cc129ba84e8f46b210fd491c8b4cf2031b0c9f12f8889137bb8418b6cf6601",
-     "fit": 50,
-     "checks": "164 of 325",
+     "fit": 98,
+     "checks": "164 of 168",
+     "apworld_version": "1.8.0",
      "size": 22756927
     }
    ]
@@ -7746,6 +7501,7 @@
      "sha256": "6f3b5b8ba09245944cdcd185e8e712f7761a1cc3f04b884c216e60f731ced88b",
      "fit": 89,
      "checks": "576 of 650",
+     "apworld_version": "1.3.7",
      "size": 830826
     }
    ]
@@ -7906,16 +7662,7 @@
    "home": null,
    "repo": null,
    "versions": [],
-   "official": true,
-   "packs": [
-    {
-     "repo": "shirosoluna/ootr-poptracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "340f4c469f601cf1e322bcdc4c1eaf75bb15b346fbadc4e3c9de24e879ba5e25",
-     "size": 17949800
-    }
-   ]
+   "official": true
   },
   {
    "game": "Once Upon a Katamari",
@@ -8043,6 +7790,7 @@
      "sha256": "532f5edbb8ef0843ab2d357123f03f0ed0a38e8204266a93827c8b4f93c76c67",
      "fit": 0,
      "checks": "0 of 3",
+     "apworld_version": "1.3.2-beta",
      "size": 30718
     }
    ]
@@ -8145,6 +7893,7 @@
      "sha256": "cafb2224ba3ab90ca6f073e86858fd3319e57e41652196ee39b6784a3bf88e02",
      "fit": 0,
      "checks": "0 of 3",
+     "apworld_version": "1.3.1",
      "size": 2151554
     }
    ]
@@ -8156,16 +7905,7 @@
    "home": null,
    "repo": null,
    "versions": [],
-   "official": true,
-   "packs": [
-    {
-     "repo": "Aalaizah/Overcooked2PopTracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "dc307b0c0acec44e7bdffff8a99463b3112e6a3b7bb75d71d4ab811a9666fd48",
-     "size": 1315473
-    }
-   ]
+   "official": true
   },
   {
    "game": "Paper Mario",
@@ -8204,24 +7944,6 @@
      "fit": 97,
      "checks": "973 of 1002",
      "size": 44400974
-    },
-    {
-     "repo": "Redriel57/Super-Paper-Mario-AP",
-     "release": "v1.0.2",
-     "asset": "SPMR_Manual_Tracker_1.0.2.zip",
-     "sha256": "4b67d070979d43c3c404fc4921d005865fb45ad49b0405a46383e6b61558b36a",
-     "size": 11426800
-    },
-    {
-     "repo": "ZobeePlays/TTYD-Randomizer-AP-Tracker",
-     "release": "1.1.3",
-     "asset": "TTYD-AP-1.1.3.zip",
-     "sha256": "6cd755e85e6c7d16fd6ddef055deb44b86ac08e247cd208d18ae09261ec1a8d8",
-     "notes": [
-      "other_game"
-     ],
-     "for_game": "Paper Mario: The Thousand-Year Door",
-     "size": 37716226
     }
    ]
   },
@@ -8269,24 +7991,7 @@
      "sha256": "7f332862847021a05df07897f2f4140fd0f626a25b5e244da3313c332e92b33e"
     }
    ],
-   "loads_with": "0.6.7",
-   "packs": [
-    {
-     "repo": "ZobeePlays/TTYD-Randomizer-AP-Tracker",
-     "release": "1.1.3",
-     "asset": "TTYD-AP-1.1.3.zip",
-     "sha256": "6cd755e85e6c7d16fd6ddef055deb44b86ac08e247cd208d18ae09261ec1a8d8",
-     "named_game": "Paper Mario",
-     "size": 37716226
-    },
-    {
-     "repo": "JRTRCT/TTYD-Randomizer-AP-Tracker",
-     "release": "v1.1.4_Beta-7",
-     "asset": "TTYD-AP-1.1.4_Beta-7.zip",
-     "sha256": "b7080ab57e9361f1a25104043d3debeb9352ef4801f0e19a955a2b10e912c52c",
-     "size": 109141174
-    }
-   ]
+   "loads_with": "0.6.7"
   },
   {
    "game": "Peaks of Yore",
@@ -8584,7 +8289,19 @@
      "sha256": "976a43f8240379680dd153c603043df659ae67d3ed70db9141146c5e33e47a90"
     }
    ],
-   "loads_with": "0.6.7"
+   "loads_with": "0.6.7",
+   "packs": [
+    {
+     "repo": "palex00/crystal-ap-tracker",
+     "release": "current files",
+     "asset": "zipball",
+     "sha256": "4e6d6757fe16632d9dc35be1c6aaf1612a602fa99112eb0271e5a770f76bcf8e",
+     "fit": 45,
+     "checks": "2540 of 5617",
+     "apworld_version": "6.0.4",
+     "size": 13964743
+    }
+   ]
   },
   {
    "game": "Pokemon Emerald",
@@ -8600,6 +8317,17 @@
      "release": "current files",
      "asset": "zipball",
      "sha256": "9f113d6818069c459d32f53f5f836d85d85008fcd9f0127b1c17976dc81014f6",
+     "fit": 100,
+     "checks": "425 of 425",
+     "size": 1571160
+    },
+    {
+     "repo": "sh0xy/emerald-ap-tracker",
+     "release": "current files",
+     "asset": "zipball",
+     "sha256": "f0d2d3fa3da3f56bc8c303ad2c488d99f590041915bb11195f57e22cf1ea822f",
+     "fit": 100,
+     "checks": "425 of 425",
      "size": 1571160
     },
     {
@@ -8607,6 +8335,8 @@
      "release": "current files",
      "asset": "zipball",
      "sha256": "f759d82bbc505378cf47ae259f5a3d3c181ce12c0015b5fb6b22779aea4c451e",
+     "fit": 96,
+     "checks": "413 of 428",
      "size": 1570290
     },
     {
@@ -8614,6 +8344,8 @@
      "release": "current files",
      "asset": "zipball",
      "sha256": "fda87a4c532feda976082b6e2846c8b10d149a76901e0da9e88bd53362cc6350",
+     "fit": 94,
+     "checks": "439 of 468",
      "size": 3528850
     },
     {
@@ -8621,20 +8353,20 @@
      "release": "current files",
      "asset": "zipball",
      "sha256": "bb47e08c2a49713f82c4bf3d971a6aacd7cf761333a2abb0035149db89c3aa0d",
+     "fit": 91,
+     "checks": "419 of 460",
      "size": 3525403
-    },
-    {
-     "repo": "sh0xy/emerald-ap-tracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "f0d2d3fa3da3f56bc8c303ad2c488d99f590041915bb11195f57e22cf1ea822f",
-     "size": 1571160
     },
     {
      "repo": "wafflesoup/emerald-ap-tracker",
      "release": "current files",
      "asset": "zipball",
      "sha256": "fd5f99d70e3251d8d65c308a201e99b98f7adbb611e3a872a692693200cd9ee1",
+     "fit": 3,
+     "checks": "10 of 302",
+     "notes": [
+      "other_version"
+     ],
      "size": 751388
     }
    ]
@@ -8683,7 +8415,19 @@
      "sha256": "78db46d972735f314409b863a90c94ac90a5a76d824c953828005032f9f20547"
     }
    ],
-   "loads_with": "0.6.7"
+   "loads_with": "0.6.7",
+   "packs": [
+    {
+     "repo": "vyneras/pokemon-frlg-tracker",
+     "release": "4.1.3",
+     "asset": "pokemon-frlg-tracker.zip",
+     "sha256": "494e93dc24c83f6da4fac62c9358492d15b1319be4c4f625a2f15b84911daafc",
+     "fit": 79,
+     "checks": "2709 of 3426",
+     "apworld_version": "1.1.5",
+     "size": 8666154
+    }
+   ]
   },
   {
    "game": "Pokemon Mystery Dungeon Explorers of Sky",
@@ -8708,6 +8452,7 @@
      "sha256": "3bf44c522d9a07e945950822e5cccd091f91200a642186e7098fd2f2085f5f0a",
      "fit": 30,
      "checks": "444 of 1497",
+     "apworld_version": "0.3.2",
      "size": 3255052
     }
    ]
@@ -8792,6 +8537,7 @@
      "sha256": "916796abb3bfd1293ac0a92811b17aa638abe4e71a3b6b4c50c93fbe45b45201",
      "fit": 76,
      "checks": "3440 of 4555",
+     "apworld_version": "0.2.2",
      "size": 31718000
     }
    ]
@@ -8970,16 +8716,7 @@
      "size": 62546
     }
    ],
-   "loads_with": "0.6.7",
-   "packs": [
-    {
-     "repo": "pterodactal666/Powerwash-Simulator-Archipelago-Poptracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "7b3e8eb5f5bd5c6fdb93a471abe0b974515e83f5e7ff3cd54e9d8dee3b16c2f3",
-     "size": 576
-    }
-   ]
+   "loads_with": "0.6.7"
   },
   {
    "game": "Pseudoregalia",
@@ -9060,6 +8797,7 @@
      "sha256": "60fe7584bf54b77643b3b29ed0d306fe063975819d32e225cffef08b4006fa34",
      "fit": 99,
      "checks": "364 of 367",
+     "apworld_version": "1.0.0",
      "size": 23978780
     }
    ]
@@ -9102,16 +8840,7 @@
    "home": null,
    "repo": null,
    "versions": [],
-   "official": true,
-   "packs": [
-    {
-     "repo": "PrimePentad/Raft-AP-Poptracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "1a82906ed19d9e06cb7a8577ec27f7ab8621ad8c17f706e853ddf6952ed7e28c",
-     "size": 5420710
-    }
-   ]
+   "official": true
   },
   {
    "game": "Rain World",
@@ -9156,6 +8885,7 @@
      "sha256": "2ed43057ac2125e428876c546ba9dfa3ed3dc459f810ef896793201c95d6e6df",
      "fit": 100,
      "checks": "1221 of 1222",
+     "apworld_version": "1.6.0",
      "size": 16912964
     },
     {
@@ -9165,6 +8895,7 @@
      "sha256": "f9fccd55764e7d8de3495d5df97ae00d5b4e97fa2a8fee96d68fad23487563c3",
      "fit": 99,
      "checks": "1203 of 1216",
+     "apworld_version": "1.6.0",
      "size": 16866352
     }
    ]
@@ -9197,6 +8928,7 @@
      "sha256": "1aeaf406b0a0927a0920ac9780ab9b3cbb4e55a6e02f80d549ea689d8a1fc860",
      "fit": 44,
      "checks": "188 of 426",
+     "apworld_version": "0.2.1",
      "size": 22058174
     }
    ]
@@ -9254,6 +8986,7 @@
      "sha256": "5c2d072e0bf7adf76685f1619e9d6b8083a545ab30c890b9180c4ef48c17021f",
      "fit": 99,
      "checks": "216 of 218",
+     "apworld_version": "0.6.4",
      "size": 8999007
     },
     {
@@ -9263,6 +8996,7 @@
      "sha256": "8cf96da30e7f98772c0e2a3d71ff7fcad95e69aa2865a6a33f8bf5efc9c2c7ae",
      "fit": 99,
      "checks": "216 of 218",
+     "apworld_version": "0.6.4",
      "size": 9954147
     }
    ]
@@ -9296,16 +9030,7 @@
      "sha256": "5caaf268e2c8b90bff3ba8b834d4f6fedcaaf18950f77a83ee79bcd7c2b1067c"
     }
    ],
-   "loads_with": "0.6.7",
-   "packs": [
-    {
-     "repo": "SomeLazyGamer/RaC-3-UYA-AP-Poptracker",
-     "release": "1.6.1",
-     "asset": "RaC3_Tracker_SLG_1.6.1.zip",
-     "sha256": "2e054c683b6e095a6c822f32983ad27fb8fdef1db8d16d106d278360217b6b6e",
-     "size": 4571921
-    }
-   ]
+   "loads_with": "0.6.7"
   },
   {
    "game": "Refunct",
@@ -9472,6 +9197,7 @@
      "sha256": "a72c9f76c786764b7355629a77564a3298370b98d31c166c7cd8438f81c4bf2e",
      "fit": 96,
      "checks": "99 of 103",
+     "apworld_version": "0.21.1",
      "size": 362351
     }
    ]
@@ -9608,16 +9334,7 @@
      "sha256": "10906919a9bd626ee735a9e27f01546870b0558c9021632090e580a831a4102b"
     }
    ],
-   "loads_with": "0.6.7",
-   "packs": [
-    {
-     "repo": "Wateczny/RM-PopTracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "5e4659a76b4e78983be8193072901d74f7fdc28d7ec538a4d211eda924b97655",
-     "size": 12733
-    }
-   ]
+   "loads_with": "0.6.7"
   },
   {
    "game": "Satisfactory",
@@ -9672,6 +9389,7 @@
      "sha256": "b60dcbb8b6858750c3a4a2467d641b864491884422cd7af65ff7bde45564f7ee",
      "fit": 100,
      "checks": "774 of 774",
+     "apworld_version": "3.6.6",
      "size": 2623329
     }
    ]
@@ -9698,18 +9416,24 @@
    "loads_with": "0.6.7",
    "packs": [
     {
-     "repo": "DeltaJordan/n100f-poptracker-pack",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "9b8ad26983f16df231a03eb02058dc6d3a4fdde9d70ba42dd9f245eb8341672a",
-     "size": 3381997
-    },
-    {
      "repo": "imklubb/no100f-poptracker",
      "release": "v1.0.1",
      "asset": "ap_n100f_1.0.1.zip",
      "sha256": "acacb22059574fb97536949d3dfd4b16aaf90f452a7a1b37c44fb0ba288bece8",
+     "fit": 98,
+     "checks": "5422 of 5531",
+     "apworld_version": "Release_1_4_0",
      "size": 3965652
+    },
+    {
+     "repo": "DeltaJordan/n100f-poptracker-pack",
+     "release": "current files",
+     "asset": "zipball",
+     "sha256": "9b8ad26983f16df231a03eb02058dc6d3a4fdde9d70ba42dd9f245eb8341672a",
+     "fit": 33,
+     "checks": "48 of 147",
+     "apworld_version": "Release_1_4_0",
+     "size": 3381997
     }
    ]
   },
@@ -9772,6 +9496,7 @@
      "sha256": "175a8449a771d26da39688ebbd96b5dc363ca2c072a5341089c5ba0ff574739e",
      "fit": 90,
      "checks": "1089 of 1207",
+     "apworld_version": "0.5.2",
      "size": 3099938
     }
    ]
@@ -9815,10 +9540,11 @@
     {
      "repo": "Brian0255/ship-of-harkinian-ap-tracker",
      "release": "1.0.2",
-     "asset": "(from the beta's packs folder)",
+     "asset": "ship-of-harkinian-ap-tracker-1.0.2.zip",
      "sha256": "fac7789b804d0a4c448cff15856a313b19d234437543a33472d00170607e6ca5",
      "fit": 100,
      "checks": "1851 of 1853",
+     "apworld_version": "1.4.2",
      "size": 9626154
     }
    ]
@@ -9907,6 +9633,7 @@
      "sha256": "337ae385e555b349c232812ee959bd93742db049b4d5d7caf72c111a1512b357",
      "fit": 90,
      "checks": "650 of 725",
+     "apworld_version": "0.5.6",
      "size": 8598026
     }
    ]
@@ -10021,14 +9748,8 @@
      "sha256": "8cb292dcbe9329007a524a7d0d94914fe7a172ae25ec88f9ce5b4b9bc584b70a",
      "fit": 100,
      "checks": "315 of 315",
+     "apworld_version": "0.3.2.1",
      "size": 10347295
-    },
-    {
-     "repo": "SterliaBirb/Slime-Rancher-Poptracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "43ca416e6699f46187111ff25a19cfa4834cb124fcee75127e85895801839a93",
-     "size": 1071
     }
    ]
   },
@@ -10070,6 +9791,7 @@
      "sha256": "53feb03703a1264f3762430ca4d9b42dd03f6535bef366b78f3c650e40cbbfd7",
      "fit": 100,
      "checks": "395 of 395",
+     "apworld_version": "1.1.0",
      "size": 41221905
     }
    ]
@@ -10112,6 +9834,7 @@
      "sha256": "b0a692fdc3e9c976cc747b44c6de23b316bffa7ccfda70df7b326d86f607f531",
      "fit": 99,
      "checks": "175 of 176",
+     "apworld_version": "0.3.5-alpha",
      "size": 2012170
     }
    ]
@@ -10268,6 +9991,7 @@
       "other_game"
      ],
      "for_game": "Sonic Adventure 2 Battle",
+     "apworld_version": "1.2.2",
      "size": 101001034
     }
    ]
@@ -10320,6 +10044,7 @@
      "sha256": "99d96713589f1981422ed9c18ebc89ea8cbe9f750c134777c44b58a21acd9109",
      "fit": 96,
      "checks": "5216 of 5424",
+     "apworld_version": "2.2.0",
      "size": 1039291
     }
    ]
@@ -10373,16 +10098,7 @@
      "sha256": "3913b90071319151d622c09fb28fd5203a072189d47c2705605824e5b9113d66"
     }
    ],
-   "loads_with": "0.6.7",
-   "packs": [
-    {
-     "repo": "powerlord/soulblazer-poptracker",
-     "release": "v2.5.2",
-     "asset": "soulblazer-poptracker-2.5.2.zip",
-     "sha256": "68a317fd1317fdc2a3fd1181e6bcf3b4e385f4f703b5e6221fc43e376a36152f",
-     "size": 1772056
-    }
-   ]
+   "loads_with": "0.6.7"
   },
   {
    "game": "Spelunker",
@@ -10406,6 +10122,7 @@
      "sha256": "0b8d608cdee5c91f00e22bf75e946bc8de09aacf9bdfa1268f7052d8b418378b",
      "fit": 99,
      "checks": "153 of 154",
+     "apworld_version": "0.0.1",
      "size": 251973
     }
    ]
@@ -10509,6 +10226,7 @@
      "sha256": "aceca7630e2fbbe13cae88b74d88375dc60b66aeed865755b5a714403da22f24",
      "fit": 100,
      "checks": "3308 of 3308",
+     "apworld_version": "2.1.0",
      "size": 61130826
     }
    ]
@@ -10575,6 +10293,7 @@
      "sha256": "2c6a0a62db808cbf95654757fc46b879900ff7e879f49a9a44112b0bfcde62c9",
      "fit": 95,
      "checks": "4033 of 4259",
+     "apworld_version": "1.3.4",
      "size": 138409226
     }
    ]
@@ -10742,6 +10461,7 @@
      "sha256": "ea7783888a42663d22551646c4fd38a449a59e73524ba63fb66f744ec75cd544",
      "fit": 99,
      "checks": "136 of 138",
+     "apworld_version": "0.1.15+norandom",
      "size": 327309
     }
    ]
@@ -10794,20 +10514,6 @@
      "asset": "sm64ap-moves-tracker-v1.0.0.zip",
      "sha256": "1d51682f75207e10e2cef433a11ee1bb4e5bf6bd696742fc43c301e4988ad054",
      "size": 691996
-    },
-    {
-     "repo": "RedKitsune8/Super-Mario-64-AP-Tracker",
-     "release": "latest",
-     "asset": "Super-Mario-64-AP-Tracker.zip",
-     "sha256": "5280a1e80af5eea403979addb6dc5f7f5e31a75683dba3ce69378fafe20808e0",
-     "size": 246932
-    },
-    {
-     "repo": "chrisblammo123/sm64-poptracker-autotracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "d767ec09168a1cc5dc402fc9087f6bcc4613dec4bcd4278ddf14b12fd0b7de7d",
-     "size": 1412
     }
    ]
   },
@@ -10844,14 +10550,8 @@
      "sha256": "f28e988db8a639a258ba10659bd5efd382e95f243c9d19943532773369270512",
      "fit": 98,
      "checks": "716 of 731",
+     "apworld_version": "0.6.2",
      "size": 87826627
-    },
-    {
-     "repo": "Hinaloth/Phantasy-Star-AP-Poptracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "bf02deccb136e13fc1404a96b5052bf950ab5677cb71c87e6d900736f9255564",
-     "size": 1379
     }
    ]
   },
@@ -10903,27 +10603,6 @@
      "fit": 99,
      "checks": "101 of 102",
      "size": 221088
-    },
-    {
-     "repo": "seto10987/SMRPG-AP-Tracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "3d81e7e3ee964d61cb1c2ed6b4415df179370ee9752884fad661b8dbd88f8198",
-     "size": 558432
-    },
-    {
-     "repo": "studkid/subversion_ap_tracker",
-     "release": "0.2",
-     "asset": "subversion_ap_tracker.zip",
-     "sha256": "0ff3b7aec9e01172cae5c2ceba15dc1376fadb30d60b67ba9d6e91abc1c2759e",
-     "size": 1181765
-    },
-    {
-     "repo": "subenji/subversion_ap_tracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "ce9301ba9cf5fddbd3f52970de6471782203cbd828b8d2a5a46c9c76db28ed30",
-     "size": 162897
     }
    ]
   },
@@ -10950,6 +10629,7 @@
      "sha256": "15a549d6380eaa84031d6dbba396411a93a398af70e8fc7d9dab7d5c8220bb68",
      "fit": 100,
      "checks": "374 of 375",
+     "apworld_version": "0.8.16+unofficial",
      "size": 192484
     },
     {
@@ -10959,14 +10639,8 @@
      "sha256": "0ed9c5b117a9563b3294559dc45d50619529ba7f57bf9fb62d64d314fb01d612",
      "fit": 100,
      "checks": "374 of 375",
+     "apworld_version": "0.8.16+unofficial",
      "size": 661688
-    },
-    {
-     "repo": "Vodkanakas/SotN-poptracker-vertical-map-addon",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "2bfd71abedf50b6c95ba019fa6c4e76ee232460ebb7ffe1c18c3ed765196d537",
-     "size": 38377
     }
    ]
   },
@@ -11066,6 +10740,7 @@
      "sha256": "0bd14b09cdc92406a6d04129eaffe88bee276a6a51b3d10eda7f22f4bf051367",
      "fit": 100,
      "checks": "26 of 26",
+     "apworld_version": "1.6.4",
      "size": 13980867
     },
     {
@@ -11073,8 +10748,9 @@
      "release": "v0.2",
      "asset": "Tevi.Poptracker.zip",
      "sha256": "0a9abef18aeb546a3ade41f48a518cb45e9d16b813c90b53b03ae2ea1cfe1e53",
-     "fit": 65,
-     "checks": "416 of 640",
+     "fit": 71,
+     "checks": "457 of 640",
+     "apworld_version": "1.6.4",
      "size": 3866106
     },
     {
@@ -11082,19 +10758,13 @@
      "release": "0.6.6",
      "asset": "Tevi_Poptracker.zip",
      "sha256": "a7ca051d3ac6a036b3ee36d84ff384faaf322e8835a8ec1861ccb12eaafdd4a0",
-     "fit": 30,
-     "checks": "443 of 1494",
+     "fit": 44,
+     "checks": "655 of 1494",
      "notes": [
       "other_version"
      ],
+     "apworld_version": "1.6.4",
      "size": 2149809
-    },
-    {
-     "repo": "vegemii/TEVI-PopTracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "ecaae65193c8d749d3a28637ab825571cf6ff11c74368ff6e64cbd6171b5950c",
-     "size": 468
     }
    ]
   },
@@ -11182,6 +10852,7 @@
      "sha256": "ee402572a7f252a0e9ca9c7d71790507ba20b1b3c0d59c6edcfbcc9f92a4acd6",
      "fit": 97,
      "checks": "1014 of 1046",
+     "apworld_version": "1.6.3",
      "size": 9472515
     }
    ]
@@ -11209,44 +10880,7 @@
    "home": null,
    "repo": null,
    "versions": [],
-   "official": true,
-   "packs": [
-    {
-     "repo": "Br00ty/ooa_brooty",
-     "release": "0.8.2",
-     "asset": "ooa_brooty.zip",
-     "sha256": "6d46835da6efa5b523035097b641fcbe85525225e56fc0f21473a3489dc7b593",
-     "size": 3243141
-    },
-    {
-     "repo": "seto10987/Oracle-of-Seasons-AP-Poptracker-Pack",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "990959dcd8cee4a2e9aa8b35af871337f80463f142c63f5b33c9399ae0abdbf0",
-     "size": 10170514
-    },
-    {
-     "repo": "Dranzior/ooa_brooty",
-     "release": "0.9.12-map_preview",
-     "asset": "ooa.zip",
-     "sha256": "60bc2fb7d95edee301e64f3b47475c0b1689cc8c1cfae5fac61d6cee845ac438",
-     "size": 5229830
-    },
-    {
-     "repo": "carrotinator/spirit-tracks-poptracker-ap",
-     "release": "v5.2",
-     "asset": "spirit-tracks-poptracker-ap.zip",
-     "sha256": "23a1da331f16005dff1b0f7366fd852d0cdfc178c6d092fe47dd8d4abd72dea0",
-     "size": 2060576
-    },
-    {
-     "repo": "deoxis9001/Oracle-of-Seasons-AP-Poptracker-Pack",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "78d0ca0388459810decd06a2c1276789828495a504e6dbfdfa4ce41e2f6332b0",
-     "size": 10171350
-    }
-   ]
+   "official": true
   },
   {
    "game": "The Legend of Zelda - Oracle of Ages",
@@ -11295,12 +10929,33 @@
    "loads_with": "0.6.7",
    "packs": [
     {
+     "repo": "seto10987/Oracle-of-Seasons-AP-Poptracker-Pack",
+     "release": "current files",
+     "asset": "zipball",
+     "sha256": "990959dcd8cee4a2e9aa8b35af871337f80463f142c63f5b33c9399ae0abdbf0",
+     "fit": 97,
+     "checks": "606 of 627",
+     "apworld_version": "23.0.4",
+     "size": 10170514
+    },
+    {
+     "repo": "deoxis9001/Oracle-of-Seasons-AP-Poptracker-Pack",
+     "release": "current files",
+     "asset": "zipball",
+     "sha256": "78d0ca0388459810decd06a2c1276789828495a504e6dbfdfa4ce41e2f6332b0",
+     "fit": 97,
+     "checks": "606 of 627",
+     "apworld_version": "23.0.4",
+     "size": 10171350
+    },
+    {
      "repo": "OmegaZeron/Oracle-of-Seasons-AP-Poptracker-Pack",
      "release": "9.0.1",
      "asset": "seasons_ap.zip",
      "sha256": "da7aab04fcbf6da1755cd588be386cca22f4cf7c6c44c89ac122086a1584f8eb",
-     "fit": 80,
-     "checks": "382 of 477",
+     "fit": 92,
+     "checks": "382 of 416",
+     "apworld_version": "23.0.4",
      "size": 9382012
     }
    ]
@@ -11399,16 +11054,7 @@
    "home": null,
    "repo": null,
    "versions": [],
-   "official": true,
-   "packs": [
-    {
-     "repo": "DaltonSW/TWW-PopTracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "1bd388dd28b91e664bef3dbc20cca789fbc9c76c25399f5040d693189acf9445",
-     "size": 1587
-    }
-   ]
+   "official": true
   },
   {
    "game": "The Witness",
@@ -11417,51 +11063,7 @@
    "home": null,
    "repo": null,
    "versions": [],
-   "official": true,
-   "packs": [
-    {
-     "repo": "NewSoupVi/witness_archipelago_tracker",
-     "release": "v0.6.3.0",
-     "asset": "witness_archipelago_tracker.zip",
-     "sha256": "0c1f65fceb598a3ad465c6406edc89ef1c096bf12e3ca4686b03ebe2ea940367",
-     "size": 6248018
-    },
-    {
-     "repo": "Ars-Ignis/witness_archipelago_tracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "54e4406d08e6eecc994a63e7931ac73135abdda7be7cedde1b6ac1df430fe6ed",
-     "size": 4963888
-    },
-    {
-     "repo": "Beaker271/witness_archipelago_tracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "36a35a948faefa2d6279927243781f32035f84051cacf8c4015235b7aa4d4134",
-     "size": 9416175
-    },
-    {
-     "repo": "KF-2015/witness_archipelago_tracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "3ebd8ba9fbf6cc4d477aad56dc0762385a82e21b691e8310582bdb226d5c27e6",
-     "size": 9876543
-    },
-    {
-     "repo": "Sophira/witness_archipelago_tracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "09bb507400c879b1d5a0d1becbc838f2f43a4db3625830f3a3a107be22e18496",
-     "size": 9668770
-    },
-    {
-     "repo": "StripesOO7/witness_archipelago_tracker",
-     "release": "current files",
-     "asset": "zipball",
-     "sha256": "1dac2cbd0981edbc09e5ebca9fb71c4dfc6f231a3996bed837978330437fb592",
-     "size": 9427760
-    }
-   ]
+   "official": true
   },
   {
    "game": "ToeJam and Earl",
@@ -11532,6 +11134,7 @@
      "sha256": "4b38fa5a0c8bee5889d010b8c0863b062ba13276fe15d28edacc5065f4253725",
      "fit": 99,
      "checks": "586 of 591",
+     "apworld_version": "2.1.0",
      "size": 15522512
     }
    ]
@@ -11966,6 +11569,7 @@
      "sha256": "f0df36d3b6caed94b4bcaaa308fe235eb16cf8cd7cf352c233b93fe943cd88fc",
      "fit": 87,
      "checks": "284 of 327",
+     "apworld_version": "3.5.6",
      "size": 16834769
     }
    ]
@@ -12069,6 +11673,7 @@
      "sha256": "b36671f11eeb9d2029f8b59fd3c7056c82a1dc97a34a9165dc885fcec58851aa",
      "fit": 100,
      "checks": "157 of 157",
+     "apworld_version": "1.2.1",
      "size": 489941
     }
    ]
@@ -12230,11 +11835,14 @@
    "loads_with": "0.6.7",
    "packs": [
     {
-     "repo": "LizzieTwoShoes/WL3-AP-PopTracker-Pack",
-     "release": "v0.4.1",
-     "asset": "WL3-AP-PopTracker-Pack.zip",
-     "sha256": "dd4c39fedcb882d0c50c238ab6c79a5e9cd827674c4438015525c5d921154e05",
-     "size": 271778
+     "repo": "randomcodegen/wl_ap_tracker",
+     "release": "1.1.7",
+     "asset": "wl_ap_tracker_1.1.7.zip",
+     "sha256": "ca200ab8996e369295a70f3425a244ee25301e36c6a66c11d93ac61afcbbcca0",
+     "fit": 100,
+     "checks": "1179 of 1179",
+     "apworld_version": "1.2.6",
+     "size": 6580931
     }
    ]
   },
@@ -12301,6 +11909,7 @@
      "sha256": "7a292dff8f72bf181b4976339c982a113871258ea724b1e91f3e79e7e34e345b",
      "fit": 100,
      "checks": "656 of 657",
+     "apworld_version": "3.4.0",
      "size": 20777060
     }
    ]
@@ -12543,6 +12152,7 @@
      "sha256": "eef5edb4b2a9a126f460e21aa5c6f67432f4e13990559930c6f46bd2e6deffc9",
      "fit": 33,
      "checks": "247 of 749",
+     "apworld_version": "0.2.5",
      "size": 1582948
     }
    ]

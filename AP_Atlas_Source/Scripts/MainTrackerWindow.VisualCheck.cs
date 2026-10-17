@@ -309,10 +309,17 @@ public partial class MainTrackerWindow
         new AP_Atlas.Core.PopTracker.PackChange("tiles", "tile:hookshot", "Tile Hookshot: shows Hookshot", "automatic", "the only 'Hookshot' in the game", new System.DateTime(2026, 10, 16, 9, 0, 0), null)
     };
 
+    private static readonly System.Text.RegularExpressions.Regex LocalPort = new(@"127\.0\.0\.1:\d+");
+
     private async Task VisualCheckPictureAsync(string name)
     {
         // Frame-time reports in the status bar ("Hitch …") differ from run to run: pictures show the bar at rest.
         if (_globalStatusLabel != null && _globalStatusLabel.Text.StartsWith("Hitch ")) _globalStatusLabel.Text = "Ready";
+        // The fake servers listen on a port the system picks, another each run: pictures show Archipelago's default port.
+        foreach (var label in FindChildren("*", nameof(Label), true, false).OfType<Label>())
+            if (label.Text.Contains("127.0.0.1:")) label.Text = LocalPort.Replace(label.Text, "127.0.0.1:38281");
+        foreach (var rich in FindChildren("*", nameof(RichTextLabel), true, false).OfType<RichTextLabel>())
+            if (rich.Text.Contains("127.0.0.1:")) rich.Text = LocalPort.Replace(rich.Text, "127.0.0.1:38281");
         // A text box's caret is drawn only while the OS window is the active one, which differs from run to run: no control keeps the focus in a picture.
         GetViewport().GuiReleaseFocus();
         // Let deferred layout finish, then draw now: in low-processor mode Godot draws only when something changed.

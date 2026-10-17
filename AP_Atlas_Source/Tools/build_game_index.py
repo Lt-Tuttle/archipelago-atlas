@@ -18,7 +18,10 @@ the load report; none when the list has no version with that SHA-256; Install ga
 "size" (bytes, as the lab downloaded it),
 "notes" (short codes Atlas turns into sentences: other_version, other_game, scripts_stop, no_pictures). A pack whose mapping
 holds another game's ids is filed twice: under its manifest's game with "other_game" and "for_game", and under the game its
-ids are for with "named_game" (unmeasured there).
+ids are for with "named_game" (unmeasured there). A pack the lab couldn't measure (its game isn't in the lab's engine) is
+filed only where Atlas will load it: under a game its manifest names (GameNameRule.PackIsFor, as PopTrackerPackLoader reads
+it), the game whose search found it first; one that names no listed game isn't filed (Install games would download a pack
+that never shows: a Star Fox Adventures tracker found by a search for "Adventure").
 
 Every version and pack the corpus holds gets "size": the bytes of the file the lab downloaded (the corpus copy, else the
 manifest's record), matched by SHA-256, so Atlas can say what adding a game downloads without asking GitHub. A project's
@@ -63,6 +66,76 @@ def game_key(name):
     if word:
         words.append(''.join(word))
     return ' '.join(ROMAN_WORDS.get(w, w) for w in words if w != 'and')
+
+def after_colon(name):
+    return name.split(':', 1)[1] if name and ':' in name else None
+
+
+def same_game(a, b):
+    key = game_key(a or '')
+    return bool(key) and key == game_key(b or '')
+
+
+def pack_is_for(pack_name, game):
+    """GameNameRule.PackIsFor: a pack's name (its manifest's game or its title) names the game: the same name, or the part
+    after one's colon is the other."""
+    return same_game(pack_name, game) or same_game(after_colon(pack_name), game) or same_game(after_colon(game), pack_name)
+
+
+def lenient_json(text):
+    """JSON as Newtonsoft (the app's reader) takes it from pack authors: comments and trailing commas allowed."""
+    out, i, n = [], 0, len(text)
+    while i < n:
+        c = text[i]
+        if c == '"':
+            j = i + 1
+            while j < n and text[j] != '"':
+                j += 2 if text[j] == '\\' else 1
+            out.append(text[i:j + 1])
+            i = j + 1
+        elif text.startswith('//', i):
+            i = text.find('\n', i)
+            i = n if i < 0 else i
+        elif text.startswith('/*', i):
+            i = text.find('*/', i + 2)
+            i = n if i < 0 else i + 2
+        else:
+            out.append(c)
+            i += 1
+    return json.loads(re.sub(r',(\s*[}\]])', r'\1', ''.join(out)))
+
+
+def manifest_names(zip_path):
+    """The game and title a pack's manifest gives (the zip's first manifest.json or pack.json, as the app reads it); [] when
+    it has none or it can't be read."""
+    try:
+        with zipfile.ZipFile(zip_path) as z:
+            entry = next((n for n in z.namelist() if n.lower().endswith('manifest.json') or n.lower().endswith('pack.json')), None)
+            if entry is None:
+                return []
+            manifest = lenient_json(z.read(entry).decode('utf-8-sig', 'replace'))
+    except (OSError, zipfile.BadZipFile, ValueError):
+        return []
+    if not isinstance(manifest, dict):
+        return []
+    return [str(manifest.get(k)) for k in ('game_name', 'name') if isinstance(manifest.get(k), str) and manifest.get(k).strip()]
+
+
+def game_atlas_loads(zip_path, searched, candidates):
+    """The game an unmeasured pack is for, as Atlas will load it: the searched game when its manifest names it, else the one
+    listed game it names (exact text first); None for none, or two."""
+    names = manifest_names(zip_path)
+    if not names:
+        return None
+    if searched and any(pack_is_for(n, searched) for n in names):
+        return searched
+    for n in names:
+        exact = next((c for c in candidates if c.lower() == n.lower()), None)
+        if exact:
+            return exact
+    found = {c.lower(): c for c in candidates if any(pack_is_for(n, c) for n in names)}
+    return next(iter(found.values())) if len(found) == 1 else None
+
 
 FOR_GAME_MIN_IDS = 20
 # Another version of the apworld: this share of the mapping's ids aren't the game's, and the pack fits less than this.
@@ -255,6 +328,7 @@ def main():
         g.pop('packs', None)
     added_games = 0
     filed_elsewhere = 0
+    unfiled = []
     for item in manifest.get('files', []):
         kind, game, repo = item.get('kind'), (item.get('game') or '').strip(), item.get('repo') or ''
         if kind == 'apworld':
@@ -276,7 +350,14 @@ def main():
             pack_file = os.path.basename(item.get('file') or '')
             fit = fit_by_file.get(pack_file.lower())
             base_entry = baseline_by_file.get(pack_file.lower())
-            pack_game = (fit[2] if fit else '') or ((base_entry or {}).get('Game') or '') or game
+            pack_game = (fit[2] if fit else '') or ((base_entry or {}).get('Game') or '')
+            if not pack_game and repo:
+                # Unmeasured: filed where Atlas will load it, by its manifest (the search's game is only where it was found).
+                candidates = [g['game'] for g in games.values()] + official_names
+                pack_game = game_atlas_loads(os.path.join(args.corpus, item.get('file') or ''), game, candidates) or ''
+                if not pack_game:
+                    unfiled.append(f'{repo} ({pack_file}; found for {game or "no game"})')
+                    continue
             if not pack_game or not repo:
                 continue
             for_game, notes = pack_facts(pack_file, pack_game, args.corpus, names, findings_by_pack, base_entry)
@@ -350,6 +431,10 @@ def main():
     print(f'wrote {args.out}: {len(out["games"])} games ({added_games} new), {with_packs} with packs, {loads} known to load with Archipelago {ARCHIPELAGO}; '
           f'{noted} packs with notes, {filed_elsewhere} filed under the game they are for; {sized} of {listed} versions and packs with their size; '
           f'{on_version} packs say the apworld version they were measured on')
+    if unfiled:
+        print(f'{len(unfiled)} unmeasured packs name no listed game in their manifest, not filed:')
+        for line in unfiled:
+            print('  ' + line)
 
 
 if __name__ == '__main__':
